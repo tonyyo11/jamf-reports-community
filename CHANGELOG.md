@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation refresh: the threat model is updated to 2.9.0, the architecture notes match the
+  current code, and the third-party notices now list swift-argument-parser and IBM Plex Mono.
+
 ### Security
 
 - Report and archive folders in /Users/Shared or ~/Public are refused, because every account on
@@ -42,6 +47,18 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Exporting the inventory CSV from cached data is no longer blocked by an expired or rejected
+  token.
+- When a Generate run's refresh fails, the message now says how to generate from the cached
+  snapshots instead.
+- A refused output folder is reported once per run, not once for every file format.
+- An inventory CSV with more than 10,000 rows now says how many rows were left out.
+- The period report waits for a running refresh or report, as the other reports do.
+- Sheet names that end in a quote mark no longer produce a workbook Excel refuses to open.
+- A blueprint that is not deployed shows a dash instead of zeros on the DDM screen.
+- Missing counts on the Compliance Devices and Compliance Rules sheets are blank instead of 0.
+- A mobile device whose supervision state is unknown reads "Unknown" instead of "Unsupervised".
+- Demo mode no longer reads the real home folder for Device Lookup or the Run History log paths.
 - Snapshot retention goes by the date in each file name, so a sync provider that re-stamps
   downloaded files can no longer get newer snapshots archived or deleted. A summary whose name
   holds a date that does not exist is aged by its modified time instead.

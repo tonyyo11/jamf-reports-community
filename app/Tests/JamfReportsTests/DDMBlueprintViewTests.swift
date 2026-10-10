@@ -79,6 +79,13 @@ final class DDMBlueprintViewTests: XCTestCase {
             platformPath: true, hasPlatformData: true))
     }
 
+    func testACountThatIsMissingReadsAsADashNotZero() {
+        XCTAssertEqual(DDMBlueprintView.countText(9, "ok"), "9 ok")
+        XCTAssertEqual(DDMBlueprintView.countText(0, "failed"), "0 failed")
+        XCTAssertEqual(DDMBlueprintView.countText(nil, "ok"), "\u{2014} ok")
+        XCTAssertEqual(DDMBlueprintView.countText(nil, "pending"), "\u{2014} pending")
+    }
+
     // MARK: - Sort helpers
 
     func testBlueprintsSortFailedFirstThenPendingThenName() {

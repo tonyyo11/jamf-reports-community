@@ -205,7 +205,8 @@ final class GenerateSheetStateTests: XCTestCase {
 
     /// A failed format reads its cause, as other screens do, once per exit code.
     func testFailedFormatsAreExplainedByTheirExitCode() {
-        let result = GenerateAllResult(succeeded: [.pdf], failed: [(.xlsx, 1), (.csv, 3), (.html, 1)])
+        let result = GenerateAllResult(
+            succeeded: [.pdf], failed: [(.xlsx, 1), (.csv, 3), (.html, 1)])
         let (count, message) = GenerateSheetState.summarize(result)
         XCTAssertEqual(count, 1)
         XCTAssertEqual(message, "Generated PDF. "
@@ -273,7 +274,9 @@ final class GenerateSheetStateTests: XCTestCase {
         let template = state.resolvedTemplate
         XCTAssertEqual(template.identifier, "custom")
         if let customTemplate = template as? CustomTemplate {
-            XCTAssertEqual(Set(customTemplate.includedSheets), Set([.executiveSummary, .securityPosture]))
+            XCTAssertEqual(
+                Set(customTemplate.includedSheets),
+                Set([.executiveSummary, .securityPosture]))
         } else {
             XCTFail("Expected CustomTemplate, got \(type(of: template))")
         }

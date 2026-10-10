@@ -864,10 +864,11 @@ final class Workbook: @unchecked Sendable {
     private func sanitizeSheetName(_ name: String) -> String {
         let invalid = CharacterSet(charactersIn: "[]:*?/\\")
         var s = name.components(separatedBy: invalid).joined(separator: " ")
-        s = s.trimmingCharacters(in: CharacterSet(charactersIn: "'"))
         s = String(String.UnicodeScalarView(CellValue.stripControlCharacters(s)))
-        if s.isEmpty { s = "Sheet" }
-        return Self.truncated(s, toUTF16Units: Self.maxSheetNameUnits)
+        // After the cut, which can leave a quote at the end that Excel refuses.
+        s = Self.truncated(s, toUTF16Units: Self.maxSheetNameUnits)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "'"))
+        return s.isEmpty ? "Sheet" : s
     }
 
     /// `text` cut to at most `units` UTF-16 units on a Character boundary, so neither a

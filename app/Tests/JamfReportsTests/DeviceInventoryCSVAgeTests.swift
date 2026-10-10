@@ -169,3 +169,22 @@ final class DeviceInventoryCSVAgeTests: XCTestCase {
         )
     }
 }
+
+/// A CSV over the row cap is read up to the cap, and the Devices warnings say so.
+final class DeviceInventoryCSVRowCapTests: XCTestCase {
+
+    func testACSVWithinTheCapGetsNoWarning() {
+        XCTAssertNil(DeviceInventoryService.csvRowCapWarning(file: "a.csv", rowCount: 10_000))
+        XCTAssertNil(DeviceInventoryService.csvRowCapWarning(file: "a.csv", rowCount: 0))
+    }
+
+    func testACSVOverTheCapNamesTheCapAndTheDroppedCount() {
+        let warning = DeviceInventoryService.csvRowCapWarning(file: "a.csv", rowCount: 12_345)
+        XCTAssertEqual(
+            warning,
+            "a.csv: read the first 10000 rows and left out the other 2345 "
+                + "(rows over the 10000-row limit).")
+        XCTAssertTrue(DeviceInventoryService.csvRowCapWarning(file: "a.csv", rowCount: 10_001)?
+            .contains("left out the other 1 (row over") == true)
+    }
+}
