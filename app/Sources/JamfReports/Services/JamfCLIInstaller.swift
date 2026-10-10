@@ -84,9 +84,10 @@ final class JamfCLIInstaller {
         URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")!
 
     /// Hosts allowed to serve a `jamf-cli` release asset. Even though the URL
-    /// comes from a GitHub API response over TLS, we re-validate the host
-    /// because a tampered API response or an MITM-altered redirect could
-    /// otherwise point the download at an attacker-controlled origin.
+    /// comes from a GitHub API response over TLS, we validate the host before
+    /// the download (`validateAsset`) and again on the URL that answered
+    /// (`isTrustedFinalURL`), because a tampered API response or a redirect
+    /// could otherwise point the download at an attacker-controlled origin.
     static let trustedAssetHosts: Set<String> = [
         "github.com",
         "objects.githubusercontent.com",
@@ -193,6 +194,14 @@ final class JamfCLIInstaller {
             case .invalidName(let n):    "Invalid asset name: \(n)"
             }
         }
+    }
+
+    /// Whether the URL that answered a download is an https URL on the allow-list. `nil` (no
+    /// response URL) is untrusted.
+    static func isTrustedFinalURL(_ url: URL?) -> Bool {
+        guard let url, url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased() else { return false }
+        return trustedAssetHosts.contains(host)
     }
 
     /// Validates a release asset before download. Throws `AssetValidationError`
@@ -789,6 +798,12 @@ final class JamfCLIInstaller {
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
         let (downloaded, response) = try await URLSession.shared.download(for: request)
+        // URLSession follows redirects; the host that actually served the bytes is checked
+        // here, before the file leaves URLSession's temp location.
+        guard isTrustedFinalURL(response.url) else {
+            try? FileManager.default.removeItem(at: downloaded)
+            throw AssetValidationError.untrustedHost(response.url?.host)
+        }
         try validateHTTP(response)
 
         let destination = try safeDestination(in: directory, name: filename ?? asset.name)

@@ -7,6 +7,24 @@ import XCTest
 @MainActor
 final class JamfCLIInstallerTests: XCTestCase {
 
+    // MARK: - isTrustedFinalURL
+
+    /// The download follows redirects, so the host that answered is checked after the fact.
+    func test_isTrustedFinalURL_acceptsTheGitHubAssetHosts() {
+        for host in JamfCLIInstaller.trustedAssetHosts {
+            XCTAssertTrue(JamfCLIInstaller.isTrustedFinalURL(URL(string: "https://\(host)/a.zip")))
+        }
+        XCTAssertTrue(JamfCLIInstaller.isTrustedFinalURL(URL(string: "https://GitHub.com/a.zip")))
+    }
+
+    func test_isTrustedFinalURL_rejectsRedirectsOffTheAllowList() {
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(URL(string: "https://evil.example/a.zip")))
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(
+            URL(string: "https://github.com.evil.example/a.zip")))
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(URL(string: "http://github.com/a.zip")))
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(nil))
+    }
+
     // MARK: - extractChecksum
 
     func test_extractChecksum_simpleSpaceSeparated() {
