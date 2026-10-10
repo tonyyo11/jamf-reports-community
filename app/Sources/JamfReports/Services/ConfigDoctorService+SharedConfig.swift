@@ -15,7 +15,7 @@ extension ConfigDoctorService {
             return value.isEmpty ? "(not set)" : "\"\(ConfigSchema.displayText(value))\""
         }
         let lines = drifts.map { drift in
-            let key = drift.key == .notifyURL ? "notify.url (host)" : drift.key.rawValue
+            let key = drift.key == .notifyURL ? "notify.url" : drift.key.rawValue
             return "\(key): pinned \(shown(drift.pinned)), now \(shown(drift.current))"
         }
         return [DoctorRow(

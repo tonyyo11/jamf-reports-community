@@ -103,6 +103,7 @@ final class SharedConfigPinTests: XCTestCase {
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("hooks.example.com"))
         XCTAssertFalse(text.contains("secret-token"))
+        XCTAssertFalse(text.contains("https://"))
     }
 
     func testUnchangedConfigReportsNoDriftAndLogsNothing() throws {
@@ -182,7 +183,7 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(pin.notifyURLHost, "hooks.example.com")
         XCTAssertEqual(pin.retentionArchiveDir, "")
         XCTAssertEqual(Set(check().drifts.map(\.key)),
-                       [.sharedEnabled, .historicalDir, .protectProfile],
+                       [.sharedEnabled, .historicalDir, .protectProfile, .notifyURL],
                        "only the keys the old pin lacks, and that config.yaml sets, read as changed")
     }
 
@@ -306,7 +307,7 @@ final class SharedConfigPinTests: XCTestCase {
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",
             retentionEnabled: true, retentionMode: "archive", retentionArchiveDir: "",
             sharedEnabled: "true", historicalDir: "", protectProfile: "", notifyDetail: "full",
-            notifyURLHost: "a.example.com")
+            notifyURLHost: "a.example.com", notifyURLHash: "")
         var changed = base
         changed.outputDir = "/Volumes/x"
         changed.retentionMode = "delete"
@@ -356,13 +357,17 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
-    func testChangedWebhookHostBlocksTheSendButAChangedPathDoesNot() throws {
+    func testAChangedWebhookHostPortOrURLBlocksTheSend() throws {
         try writeConfig(webhook: "https://hooks.example.com/a")
         _ = check()
-        try writeConfig(webhook: "https://hooks.example.com/other-path")
         XCTAssertNotNil(sendable())
-        try writeConfig(webhook: "https://collector.attacker.test/a")
-        XCTAssertNil(sendable())
+        for changed in ["https://hooks.example.com/other-path", "https://hooks.example.com:8443/a",
+                        "https://collector.attacker.test/a"] {
+            try writeConfig(webhook: changed)
+            XCTAssertNil(sendable(), changed)
+        }
+        try writeConfig(webhook: "https://hooks.example.com/a")
+        XCTAssertNotNil(sendable())
     }
 
     func testConfirmRepinsAndPartialConfirmLeavesOtherKeysDrifted() throws {

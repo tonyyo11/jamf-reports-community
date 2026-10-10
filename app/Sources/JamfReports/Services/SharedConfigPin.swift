@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import os
 
@@ -30,8 +31,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// Keys (`Key.rawValue`) pinned at first sight that this Mac's operator has not yet
     /// confirmed: an absolute folder outside the workspace, and `retention.mode: delete`.
     var unconfirmed: [String] = []
-    /// Host only. The webhook URL itself is a credential and never leaves config.yaml.
+    /// `host` or `host:port` of the webhook URL. The URL itself is a credential and never
+    /// leaves config.yaml; `notifyURLHash` is its SHA-256, so a changed path or token drifts too.
     var notifyURLHost: String
+    var notifyURLHash: String = ""
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -61,7 +64,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .historicalDir: pin.historicalDir
             case .protectProfile: pin.protectProfile
             case .notifyDetail: pin.notifyDetail
-            case .notifyURL: pin.notifyURLHost
+            case .notifyURL:
+                pin.notifyURLHash.isEmpty
+                    ? pin.notifyURLHost
+                    : "\(pin.notifyURLHost) (URL fingerprint \(pin.notifyURLHash.prefix(8)))"
             }
         }
 
@@ -78,7 +84,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .historicalDir: pin.historicalDir = source.historicalDir
             case .protectProfile: pin.protectProfile = source.protectProfile
             case .notifyDetail: pin.notifyDetail = source.notifyDetail
-            case .notifyURL: pin.notifyURLHost = source.notifyURLHost
+            case .notifyURL:
+                pin.notifyURLHost = source.notifyURLHost
+                pin.notifyURLHash = source.notifyURLHash
             }
         }
     }
@@ -158,8 +166,18 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             protectProfile: ((raw("protect", "profile") as? String) ?? "")
                 .trimmingCharacters(in: .whitespaces),
             notifyDetail: notifyDetail,
-            notifyURLHost: URL(string: typedURL)?.host?.lowercased() ?? ""
+            notifyURLHost: webhookHost(typedURL),
+            notifyURLHash: typedURL.isEmpty ? "" : SharedConfigPin.sha256Hex(typedURL)
         )
+    }
+
+    private static func webhookHost(_ url: String) -> String {
+        guard let parsed = URL(string: url), let host = parsed.host?.lowercased() else { return "" }
+        return parsed.port.map { "\(host):\($0)" } ?? host
+    }
+
+    private static func sha256Hex(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - Store
@@ -543,5 +561,6 @@ extension SharedConfigPin {
         notifyDetail = try c.decodeIfPresent(String.self, forKey: .notifyDetail) ?? "full"
         unconfirmed = try c.decodeIfPresent([String].self, forKey: .unconfirmed) ?? []
         notifyURLHost = try c.decodeIfPresent(String.self, forKey: .notifyURLHost) ?? ""
+        notifyURLHash = try c.decodeIfPresent(String.self, forKey: .notifyURLHash) ?? ""
     }
 }
