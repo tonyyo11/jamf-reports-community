@@ -278,6 +278,31 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         removeOverrides(for: workspace)
     }
 
+    // MARK: - Which saves confirm
+
+    /// The folder keys a Config screen save changed against what the screen loaded. A save that
+    /// leaves a folder as it was does not confirm it, whatever a peer wrote there.
+    static func changedFolderKeys(
+        before: (outputDir: String, archiveDir: String)?,
+        after: (outputDir: String, archiveDir: String)
+    ) -> Set<Key> {
+        guard let before else { return [] }
+        func differs(_ lhs: String, _ rhs: String) -> Bool {
+            lhs.trimmingCharacters(in: .whitespacesAndNewlines)
+                != rhs.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var keys: Set<Key> = []
+        if differs(before.outputDir, after.outputDir) { keys.insert(.outputDir) }
+        if differs(before.archiveDir, after.archiveDir) { keys.insert(.archiveDir) }
+        return keys
+    }
+
+    /// The notification keys a save changed against what config.yaml held.
+    static func changedNotifyKeys(previousURL: String, newURL: String) -> Set<Key> {
+        previousURL.trimmingCharacters(in: .whitespaces)
+            == newURL.trimmingCharacters(in: .whitespaces) ? [] : [.notifyURL]
+    }
+
     // MARK: - Effective values
 
     /// `retention` with the drifted keys put back to a safe value: a changed mode archives,

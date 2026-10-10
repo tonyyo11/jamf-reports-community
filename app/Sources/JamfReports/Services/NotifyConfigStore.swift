@@ -59,12 +59,15 @@ enum NotifyConfigWriter {
         enabled: Bool, provider: String, url: String, detail: String, profile: String
     ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
         guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
+        let previousURL = NotifyConfigLoader.load(profile: profile).resolvedURL
         let saved = try ConfigService.saveBlock(key: "notify", profile: profile) {
             apply(enabled: enabled, provider: provider, url: url, detail: detail, to: &$0)
         }
-        // The webhook typed on this Mac is the one this Mac should keep using.
+        // A webhook typed on this Mac is the one this Mac keeps using; toggling the switch or
+        // the detail level with the URL as it was does not confirm a peer's URL.
+        let changed = SharedConfigPin.changedNotifyKeys(previousURL: previousURL, newURL: url)
         do {
-            try SharedConfigPin.confirm(profile: profile, keys: [.notifyURL])
+            if !changed.isEmpty { try SharedConfigPin.confirm(profile: profile, keys: changed) }
         } catch {
             AppLogger.webhook.warning(
                 "SharedConfigPin: could not confirm after save: \(error.localizedDescription, privacy: .public)")

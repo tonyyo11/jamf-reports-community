@@ -448,8 +448,31 @@ final class SharedConfigPinTests: XCTestCase {
         _ = check()
         try writeConfig(retentionMode: "delete", webhook: "https://collector.example.org/a")
         try NotifyConfigWriter.save(
-            enabled: true, provider: "teams", url: "https://collector.example.org/a",
+            enabled: true, provider: "teams", url: "https://hooks.example.com/mine",
             detail: "full", profile: profile)
         XCTAssertEqual(check().drifts.map(\.key), [.retentionMode])
+    }
+
+    func testTogglingNotificationsWithTheURLAsItWasDoesNotConfirmAPeersURL() throws {
+        try writeConfig()
+        _ = check()
+        try writeConfig(webhook: "https://collector.example.org/a")
+        try NotifyConfigWriter.save(
+            enabled: false, provider: "teams", url: "https://collector.example.org/a",
+            detail: "minimal", profile: profile)
+        XCTAssertEqual(check().drifts.map(\.key), [.notifyURL])
+    }
+
+    func testASaveConfirmsAFolderOnlyWhenItChangedIt() {
+        let loaded = (outputDir: "/Volumes/a", archiveDir: "")
+        XCTAssertEqual(SharedConfigPin.changedFolderKeys(
+            before: loaded, after: (outputDir: "/Volumes/a ", archiveDir: "")), [])
+        XCTAssertEqual(SharedConfigPin.changedFolderKeys(
+            before: loaded, after: (outputDir: "/Volumes/a", archiveDir: "old")), [.archiveDir])
+        XCTAssertEqual(SharedConfigPin.changedFolderKeys(
+            before: loaded, after: (outputDir: "/Volumes/b", archiveDir: "old")),
+            [.outputDir, .archiveDir])
+        XCTAssertEqual(SharedConfigPin.changedFolderKeys(
+            before: nil, after: (outputDir: "/Volumes/b", archiveDir: "")), [])
     }
 }

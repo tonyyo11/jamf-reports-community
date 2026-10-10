@@ -781,6 +781,9 @@ final class WorkspaceStore {
         // background item's all-profiles runs treat it as a real workspace.
         guard !demoMode else { return ConfigSaveReport() }
         syncColumnMappingsToState()
+        let changedFolders = SharedConfigPin.changedFolderKeys(
+            before: _savedState.map { ($0.outputDir, $0.archiveDir) },
+            after: (configState.outputDir, configState.archiveDir))
         let saved = try ConfigService.save(
             profile: profile,
             state: configState,
@@ -789,8 +792,8 @@ final class WorkspaceStore {
         )
         _loadedDoc = saved.document
         _loadedStamp = saved.stamp
-        // The output folders on screen are what the operator just saved on this Mac.
-        confirmSharedConfig([.outputDir, .archiveDir])
+        // A folder this save changed was typed on this Mac; one it left alone is not confirmed.
+        confirmSharedConfig(changedFolders)
         // A block left as typed was not written: the screen goes back to what the file holds
         // for it, rather than calling its own entries saved.
         if saved.report.keptBlocks.contains("custom_eas") {
@@ -809,6 +812,7 @@ final class WorkspaceStore {
 
     /// A save on this Mac confirms the shared-config keys it wrote, and only those.
     private func confirmSharedConfig(_ keys: Set<SharedConfigPin.Key>) {
+        guard !keys.isEmpty else { return }
         do {
             try SharedConfigPin.confirm(profile: profile, keys: keys)
         } catch {
