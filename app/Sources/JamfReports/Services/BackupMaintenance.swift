@@ -18,6 +18,50 @@ enum BackupMaintenance {
     /// Age past which an orphaned `.tmp-*` staging dir is considered abandoned.
     static let staleTempAge: TimeInterval = 86_400  // 24 hours
 
+    /// `URLResourceValues.volumeIsLocal`; nil when the volume cannot be asked. The default of
+    /// the `volumeIsLocal` parameters below, so a test can stand in for an NFS mount.
+    @Sendable
+    static func isOnLocalVolume(_ url: URL) -> Bool? {
+        (try? url.resourceValues(forKeys: [.volumeIsLocalKey]))?.volumeIsLocal
+    }
+
+    /// The profile's `shared_workspace.enabled`: true when set to true, or when config.yaml
+    /// exists but cannot be loaded. False when there is no config.yaml.
+    private static func sharedWorkspaceEnabled(profile: String) -> Bool {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return false }
+        do {
+            let config = try ConfigLoader.load(from: configURL)
+            // The same tri-state `ReportEngine.coordinationGate` reads; only an explicit
+            // true counts here, the auto case is the path check below.
+            return config.sharedWorkspace?.isEnabled(workspaceIsSynced: false) ?? false
+        } catch {
+            // A config that exists but will not load may still say the folder is shared.
+            // Reading that as "not shared" would unscope the prune and could delete another
+            // Mac's backups; keeping more is the safe failure.
+            AppLogger.collect.warning(
+                "BackupMaintenance: config.yaml unreadable, treating storage as shared")
+            return true
+        }
+    }
+
+    /// Why `backupsRoot` counts as shared with other Macs, or nil for local storage.
+    /// A sync-provider path, a volume that is not local (NFS or autofs outside `/Volumes`)
+    /// and `shared_workspace.enabled: true` each suffice: pruning wrongly scoped to this Mac
+    /// only keeps backups, while pruning wrongly unscoped deletes another Mac's.
+    private static func sharedStorageDescription(
+        _ backupsRoot: URL, profile: String,
+        volumeIsLocal: @Sendable (URL) -> Bool?
+    ) -> String? {
+        if let provider = CloudStorage.provider(for: backupsRoot) {
+            return "on \(provider.displayName)"
+        }
+        if volumeIsLocal(backupsRoot) == false { return "on a network volume" }
+        if sharedWorkspaceEnabled(profile: profile) { return "in a shared workspace" }
+        return nil
+    }
+
     /// `yyyyMMdd` stamp for scheduled-backup labels.
     static func dateStamp(now: Date = Date()) -> String {
         let formatter = DateFormatter()
@@ -43,11 +87,12 @@ enum BackupMaintenance {
     /// 2. **Any unparseable name aborts the whole prune.** If we cannot order
     ///    every candidate confidently we delete none of them — growing the
     ///    backups directory is recoverable, deleting the wrong one is not.
-    /// 3. **On synced storage, only this machine's own backups are pruned.**
+    /// 3. **On shared storage, only this machine's own backups are pruned.**
     ///    A shared folder holds every Mac's backups, so an unscoped prune would
     ///    spend this machine's `keep` budget on other people's work and cut
-    ///    everyone's retention. Ownership comes from the `.jrc-host` stamp
-    ///    written beside each backup; anything without one — a pre-2.7.0
+    ///    everyone's retention. Shared means a sync-provider path, a non-local volume or
+    ///    `shared_workspace.enabled: true` . Ownership comes from the
+    ///    `.jrc-host` stamp written beside each backup; anything without one — a pre-2.7.0
     ///    backup, or another Mac's — is left alone, because we only delete what
     ///    we can prove is ours. Local storage keeps the original unscoped
     ///    behaviour: there is one writer by definition, and scoping it would
@@ -55,10 +100,12 @@ enum BackupMaintenance {
     static func pruneScheduledBackups(
         profile: String,
         keep: Int,
-        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil,
+        volumeIsLocal: @Sendable (URL) -> Bool? = BackupMaintenance.isOnLocalVolume
     ) {
         guard let backupsRoot = backupsRoot(for: profile) else { return }
-        let sharedProvider = CloudStorage.provider(for: backupsRoot)
+        let sharedWhere = sharedStorageDescription(
+            backupsRoot, profile: profile, volumeIsLocal: volumeIsLocal)
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: backupsRoot,
@@ -71,13 +118,13 @@ enum BackupMaintenance {
             return isDir && manifestLabel(of: url)?.hasPrefix("scheduled-") == true
         }
 
-        if let provider = sharedProvider {
+        if let sharedWhere {
             let mine = candidates.filter { ownerHostID(of: $0) == SharedWorkspace.currentHost.id }
             let others = candidates.count - mine.count
             if others > 0 {
                 onLine?(.init(
                     timestamp: Date(), level: .info,
-                    text: "[info] backups are on \(provider.displayName) — pruning only this "
+                    text: "[info] backups are \(sharedWhere) — pruning only this "
                         + "Mac's \(mine.count) scheduled backup(s); leaving \(others) belonging "
                         + "to another machine (or made before ownership was recorded)."
                 ))
@@ -146,12 +193,18 @@ enum BackupMaintenance {
     /// Delete `.tmp-*` staging directories older than `staleTempAge`.
     /// Returns the names of the directories removed (for logging/tests).
     @discardableResult
-    static func cleanStaleTempDirs(profile: String, now: Date = Date()) -> [String] {
+    static func cleanStaleTempDirs(
+        profile: String, now: Date = Date(),
+        volumeIsLocal: @Sendable (URL) -> Bool? = BackupMaintenance.isOnLocalVolume
+    ) -> [String] {
         guard let backupsRoot = backupsRoot(for: profile) else { return [] }
         // Staleness here can only come from mtime — a `.tmp-<UUID>` name carries
         // no timestamp. On synced storage that mtime is the provider's, and the
         // directory may belong to another Mac's in-flight backup, so don't sweep.
-        if CloudStorage.provider(for: backupsRoot) != nil { return [] }
+        if sharedStorageDescription(
+            backupsRoot, profile: profile, volumeIsLocal: volumeIsLocal) != nil {
+            return []
+        }
         let fm = FileManager.default
         // .tmp-* dirs are dot-prefixed → must NOT skip hidden files here.
         guard let entries = try? fm.contentsOfDirectory(

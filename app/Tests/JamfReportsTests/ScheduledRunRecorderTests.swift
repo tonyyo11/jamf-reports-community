@@ -45,6 +45,31 @@ final class ScheduledRunRecorderTests: XCTestCase {
         XCTAssertTrue(text.contains("[info] exit 0 after"))
     }
 
+    /// Credentials are redacted in the file itself; the markers Run History and
+    /// `CollectHonestyWatcher` parse come through byte-identical.
+    func testRecordRedactsCredentialsAndKeepsMarkersIntact() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        let markers = [
+            "[plan] profile prod \u{2014} collecting 3 sources: a, b, c",
+            "[partial] summary not written: no source landed this run",
+            "[skip] dashboard: listed in jamf_cli.collect_skip",
+            "[ok] sha256: 0123456789abcdef0123456789abcdef",
+        ]
+
+        recorder.record("[warn] auth failed client_secret: abcdefgh1234")
+        markers.forEach { recorder.record($0) }
+        recorder.finish(exitCode: 0)
+
+        let lines = try String(contentsOf: recorder.logURL, encoding: .utf8)
+            .split(separator: "\n").map(String.init)
+        XCTAssertFalse(lines.contains { $0.contains("abcdefgh1234") })
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[warn] auth failed") })
+        for marker in markers { XCTAssertTrue(lines.contains(marker), marker) }
+        XCTAssertTrue(lines.last?.hasPrefix("[info] exit 0 after ") ?? false)
+        XCTAssertEqual(lines.last, lines.last.map { LogRedactor.redact($0) })
+    }
+
     /// A run that never began (a collect the tick lock refused) leaves no log, and the
     /// status file of the run before it is not touched.
     func testDiscardRemovesTheLogAndKeepsThePreviousStatus() throws {

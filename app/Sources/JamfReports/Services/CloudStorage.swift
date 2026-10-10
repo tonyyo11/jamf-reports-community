@@ -100,6 +100,27 @@ enum CloudStorage {
         name.range(of: #"^summary_\d{4}-\d{2}-\d{2}\.json$"#, options: .regularExpression) != nil
     }
 
+    /// Local midnight of the date in a canonical `summary_yyyy-MM-dd.json` name, else nil.
+    /// Local time, like `snapshotTimestamp`, so both put a file on the same calendar day.
+    static func summaryDate(of url: URL) -> Date? {
+        let name = url.lastPathComponent
+        guard isCanonicalSummaryFilename(name) else { return nil }
+        let day = String(name.dropFirst("summary_".count).prefix(10))
+        // DateFormatter rolls 2026-02-31 over to March 3; only a date that formats back to the
+        // same text is a real one.
+        guard let date = summaryDayFormatter.date(from: day),
+              summaryDayFormatter.string(from: date) == day else { return nil }
+        return date
+    }
+
+    private static let summaryDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .iso8601)
+        return f
+    }()
+
     /// Best-effort recognition of a sync provider's conflict/duplicate copy.
     /// Applied as a filter by every snapshot picker (via
     /// `FileManager.isSelectableSnapshot`) *and* surfaced to the operator by
