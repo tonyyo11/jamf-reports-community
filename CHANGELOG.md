@@ -11,6 +11,7 @@ versions in this repository map to git tags.
 
 - Report and archive folders in /Users/Shared or ~/Public are refused, because every account on
   the Mac can read them. Reports fall back to the workspace folder and the run log says why.
+- Output folders under /tmp are refused like /Users/Shared and ~/Public.
 - A custom workspace folder must be owned by you, not writable by its group or everyone, and have
   no access control list. Folders under /Volumes and cloud storage are exempt. A folder you
   already use keeps working, and Config Doctor flags it.

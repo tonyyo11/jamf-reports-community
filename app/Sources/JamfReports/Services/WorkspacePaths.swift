@@ -247,14 +247,16 @@ enum WorkspacePaths {
         }
     }
 
-    /// True for a folder every local account can read: `/Users/Shared` and `~/Public`.
+    /// True for a folder every local account can read: `/Users/Shared`, `~/Public` and `/tmp`.
     /// Applied only to the folders the engine writes reports into (`output.output_dir`,
     /// `output.archive_dir`, `retention.archive_dir`). A workspace root, `jamf_cli.data_dir`,
     /// a save panel or an explicit CLI path is a deliberate choice, and refusing one that
     /// already holds data would orphan it. Same matching as `isSensitiveAbsolutePath`.
     static func isWorldReadableSharedFolder(_ url: URL) -> Bool {
         let path = folded(resolvedForPolicy(url))
-        if relative(path, under: "/users/shared") != nil { return true }
+        // `/tmp` resolves to `/private/tmp`, which the symlink-resolved path then carries.
+        let shared = ["/users/shared", "/tmp", "/private/tmp"]
+        if shared.contains(where: { relative(path, under: $0) != nil }) { return true }
         return homeFolds().contains { relative(path, under: $0 + "/public") != nil }
     }
 
