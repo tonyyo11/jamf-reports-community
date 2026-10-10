@@ -38,7 +38,7 @@ enum JamfCLIIdentity {
     // `/opt/homebrew/bin/` is user-writable; a post-onboarding swap would
     // receive credentials. The cache below lets us re-verify cheaply on
     // every spawn, short-circuiting when the binary's fingerprint (resolved
-    // path, size, mtime, inode) matches a previously-verified entry.
+    // path, size, mtime, ctime, inode) matches a previously-verified entry.
 
     /// Errors surfaced by `ensureVerifiedJamfCLI`. Distinct cases let the
     /// caller emit a precise user-facing diagnostic and let post-mortem
@@ -54,14 +54,19 @@ enum JamfCLIIdentity {
     }
 
     /// Fingerprint stored in the verified-binary cache. Keyed on the
-    /// symlink-resolved path, size, modification time and inode so any
-    /// rewrite (homebrew upgrade, malicious swap, even a same-content
+    /// symlink-resolved path, size, modification time, change time and inode
+    /// so any rewrite (homebrew upgrade, malicious swap, even a same-content
     /// `touch`) invalidates the cached approval. A restored mtime does not
-    /// hide a replaced file: the replacement is a different inode.
+    /// hide a replaced file (the replacement is a different inode) or an
+    /// in-place overwrite followed by `utimes` (ctime cannot be set from
+    /// userland, and every write, `utimes` or `chmod` moves it; a `chmod`
+    /// therefore costs one extra verify, nothing more).
     struct Fingerprint: Hashable {
         let path: String
         let size: Int64
         let mtime: TimeInterval
+        let ctimeSeconds: Int64
+        let ctimeNanoseconds: Int
         let inode: UInt64
     }
 
@@ -75,7 +80,7 @@ enum JamfCLIIdentity {
     /// uses `CodeSignVerifier.verify(url:expectedTeamID:)`.
     ///
     /// Cache contract: a successful verify inserts the binary's
-    /// `(resolved path, size, mtime, inode)` fingerprint into a
+    /// `(resolved path, size, mtime, ctime, inode)` fingerprint into a
     /// process-local set. The next call with the same fingerprint
     /// short-circuits. A binary swap (different size or inode) or a
     /// homebrew upgrade (different mtime) produces a different
@@ -134,6 +139,9 @@ enum JamfCLIIdentity {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: resolved) else {
             return nil
         }
+        // attributesOfItem has no ctime key, so read it with stat().
+        var info = stat()
+        guard stat(resolved, &info) == 0 else { return nil }
         let size: Int64
         if let n = attrs[.size] as? Int64 {
             size = n
@@ -148,7 +156,10 @@ enum JamfCLIIdentity {
         }
         return Fingerprint(
             path: resolved, size: size,
-            mtime: mtime.timeIntervalSinceReferenceDate, inode: inode)
+            mtime: mtime.timeIntervalSinceReferenceDate,
+            ctimeSeconds: Int64(info.st_ctimespec.tv_sec),
+            ctimeNanoseconds: Int(info.st_ctimespec.tv_nsec),
+            inode: inode)
     }
 
     private static func cacheContains(_ fp: Fingerprint) -> Bool {

@@ -151,6 +151,32 @@ final class JamfCLIIdentityVerificationCacheTests: XCTestCase {
         XCTAssertEqual(counter.value, 2, "A replaced file (new inode) must be verified again")
     }
 
+    /// Overwriting the same inode in place and restoring mtime keeps path, size, mtime and inode.
+    /// ctime cannot be set from userland, so it is the field that still moves.
+    func testCacheInvalidatedWhenOverwrittenInPlaceWithMtimeRestored() throws {
+        let counter = SendableCounter()
+        let verify: @Sendable (URL, String) -> Bool = { _, _ in
+            counter.increment()
+            return true
+        }
+        let pinned = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        try FileManager.default.setAttributes(
+            [.modificationDate: pinned], ofItemAtPath: binary.path)
+        _ = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: binary, verify: verify)
+        XCTAssertEqual(counter.value, 1)
+
+        let size = try Data(contentsOf: binary).count
+        let handle = try FileHandle(forWritingTo: binary)
+        try handle.seek(toOffset: 0)
+        try handle.write(contentsOf: Data(String(repeating: "x", count: size).utf8))
+        try handle.close()
+        try FileManager.default.setAttributes(
+            [.modificationDate: pinned], ofItemAtPath: binary.path)
+
+        _ = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: binary, verify: verify)
+        XCTAssertEqual(counter.value, 2, "An in-place overwrite with restored mtime must be verified again")
+    }
+
     // MARK: - Verifier failure returns an error and does not cache
 
     func testVerifierFailureReturnsUntrustedAndDoesNotCache() {
