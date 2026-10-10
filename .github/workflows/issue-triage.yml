@@ -38,9 +38,14 @@ jobs:
       (github.event.action == 'opened' || github.event.label.name == 'claude')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Read-only: the model's process environment holds this job's token, so a
+    # prompt-injected model must find nothing it can write with. Posting is the
+    # `post` job's, which runs no model and has no checkout.
     permissions:
       contents: read
-      issues: write
+      issues: read
+    outputs:
+      comment: ${{ steps.triage.outputs.structured_output }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -50,28 +55,30 @@ jobs:
           persist-credentials: false
 
       - name: Triage
+        id: triage
         uses: anthropics/claude-code-action@c96dd0a84e0232ab86947fca5fe34f1caae8792f  # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Must be the auto-generated workflow token, never a PAT: it is scoped
-          # to the `permissions:` block above and expires when the job ends, so a
-          # prompt-injection attempt cannot recover a durable credential.
+          # to the read-only `permissions:` block above and expires when the job
+          # ends, so a prompt-injection attempt cannot recover a durable credential.
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Required for the action to run for reporters without write access —
           # i.e. every community reporter, which is the entire point here.
           allowed_non_write_users: "*"
           # Tool allow-list, the layer that actually constrains the model rather
-          # than asking it nicely. Read-only code access plus exactly one write
-          # verb: posting a comment on THIS issue (the number is an integer the
-          # event supplies, so the interpolation is safe). No Edit, no Write, no
-          # general Bash, no git, no gh commands that mutate anything else, no
-          # reading the runner's process environment (`//` is an absolute path
-          # in a permission rule; a single `/` is relative to the checkout),
-          # and no posting a FILE as the comment body, which would carry any
-          # readable file into a public issue. Even a fully successful prompt
-          # injection has no tool with which to change code or to post
-          # anywhere else; the issues-write token is the residual exposure,
-          # and it expires with the job.
+          # than asking it nicely. Read-only code access and one read-only gh
+          # verb. The model has NO tool that writes anywhere: it returns its
+          # findings as `structured_output` (--json-schema) and the `post`
+          # job below, which runs no model, posts them. A `Bash(gh
+          # ... comment N:*)` rule cannot be made to bind, because deny rules are
+          # prefix matches and `--body-file=x`, `-Fx` and flag reordering all
+          # pass them. Read stays open for the checkout; the deny list keeps it
+          # off the runner's own credential-bearing paths (`//` is an absolute
+          # path in a permission rule; a single `/` is relative to the checkout).
+          # The action puts the job token and the subscription token in the
+          # model process environment (parse-sdk-options.ts, run.ts), so
+          # /proc/*/environ is the path that matters.
           #
           # Model + turn cap are the cost controls. This runs on the maintainer's
           # subscription and is triggered by members of the public, so it is
@@ -80,8 +87,9 @@ jobs:
           # starts truncating mid-investigation; drop the model to
           # claude-haiku-4-5-20251001 if volume ever outweighs depth.
           claude_args: |
-            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue comment ${{ github.event.issue.number }}:*)"
-            --disallowedTools "Read(//proc/**),Bash(gh issue comment ${{ github.event.issue.number }} --body-file:*),Bash(gh issue comment ${{ github.event.issue.number }} -F:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*)"
+            --disallowedTools "Read(//proc/**),Read(//tmp/**),Read(//home/runner/work/_temp/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**),Read(//home/runner/.ssh/**)"
+            --json-schema '{"type":"object","properties":{"comment":{"type":"string"}},"required":["comment"],"additionalProperties":false}'
             --model claude-sonnet-5
             --max-turns 25
           prompt: |
@@ -123,17 +131,17 @@ jobs:
                - WORKS AS DESIGNED — the behavior is intentional. Explain why
                  and what the reporter probably wants instead.
 
-            4. Post ONE comment on the issue with your findings, using
-               `gh issue comment <number> --body "<text>"` with the text
-               inline (never --body-file). Structure it:
-               what you understand the problem to be, what you found in the
-               code (with file:line), your verdict, and any specific next step
-               for the reporter. Be direct and concise. No emoji.
+            4. Return ONE comment in the `comment` field of your structured result.
+               You cannot post anything yourself; the workflow posts it and adds
+               the "Automated triage by Claude" line, so do not write that line.
+               Structure it: what you understand the problem to be, what you found
+               in the code (with file:line), your verdict, and any specific next
+               step for the reporter. Be direct and concise. No emoji.
 
             HARD RULES:
             - Read-only. Do not edit files, open pull requests, push branches,
               add or remove labels, or close the issue.
-            - Post exactly one comment. Do not comment more than once.
+            - Return exactly one comment.
             - Never state a cause you have not traced in the code. "I could not
               determine this from the code" is a good answer; a confident guess
               is not.
@@ -141,6 +149,40 @@ jobs:
               numbers, or usernames in your comment, even if the reporter pasted
               them into the issue. This project is used in government fleets;
               treat everything operator-supplied as sensitive.
-            - Begin the comment with this line exactly:
-              "_Automated triage by Claude. A maintainer will follow up — treat
-              this as a first pass, not a verdict from the project owner._"
+
+  # Model-free: the only job with a write token, and it never holds a model's
+  # output in a shell string. A prompt-injected model can choose the text of one
+  # comment on this issue and nothing else.
+  post:
+    needs: triage
+    if: needs.triage.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Post comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          STRUCTURED: ${{ needs.triage.outputs.comment }}
+        run: |
+          set -euo pipefail
+          if [ -z "$STRUCTURED" ]; then
+            echo "::error::triage returned no comment"
+            exit 1
+          fi
+          max_bytes=20000
+          banner='_Automated triage by Claude. A maintainer will follow up — treat this as a first pass, not a verdict from the project owner._'
+          out="${RUNNER_TEMP}/triage-comment.md"
+          printf '%s' "$STRUCTURED" | jq -er '.comment | select(type == "string" and length > 0)' > "${out}.body"
+          if [ "$(wc -c < "${out}.body")" -gt "$max_bytes" ]; then
+            echo "::error::triage comment exceeds ${max_bytes} bytes; not posting"
+            exit 1
+          fi
+          if grep -Eq 'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|sk-ant-' "${out}.body"; then
+            echo "::error::triage comment matches a token pattern; not posting"
+            exit 1
+          fi
+          { printf '%s\n\n' "$banner"; cat "${out}.body"; } > "$out"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$out"
