@@ -175,6 +175,40 @@ final class SOFAScoreFeedTests: XCTestCase {
         XCTAssertEqual(current("26.6.2.1"), true, "a longer version compares as newer")
     }
 
+    private func majorFeed(_ releases: String, xprotect: String = "") -> String {
+        let extra = xprotect.isEmpty ? "" : ", \"XProtectPlistConfigData\": \(xprotect)"
+        return "{\"OSVersions\": [{\"SecurityReleases\": [\(releases)]}]\(extra)}"
+    }
+
+    /// A forged or edited feed that dates every release of a major in the future would
+    /// otherwise read "nothing is required yet" and mark every Mac on that major current.
+    func testAMajorWhoseReleasesAreAllFutureDatedIsUnknownNotCurrent() throws {
+        let feed = try feed(majorFeed("""
+            {"ProductVersion": "26.9", "ReleaseDate": "2027-01-01T00:00:00Z"},
+            {"ProductVersion": "26.8", "ReleaseDate": "2026-12-01T00:00:00Z"}
+            """))
+        XCTAssertNil(feed.isCurrent("26.0", graceDays: 30, now: Self.now))
+        XCTAssertNil(feed.isCurrent("26.9", graceDays: 30, now: Self.now))
+    }
+
+    func testAFutureDatedNewestReleaseIsIgnoredAndTheOlderRealOneIsRequired() throws {
+        let feed = try feed(majorFeed("""
+            {"ProductVersion": "26.9", "ReleaseDate": "2027-01-01T00:00:00Z"},
+            {"ProductVersion": "26.6.2", "ReleaseDate": "2026-08-17T17:00:00Z"}
+            """))
+        XCTAssertEqual(feed.isCurrent("26.6.2", graceDays: 30, now: Self.now), true)
+        XCTAssertEqual(feed.isCurrent("26.6.1", graceDays: 30, now: Self.now), false)
+    }
+
+    /// Release day can look like tomorrow across time zones, so 12 hours ahead still counts.
+    func testAReleaseDatedHalfADayAheadStillCounts() throws {
+        let feed = try feed(majorFeed("""
+            {"ProductVersion": "26.8", "ReleaseDate": "2026-10-06T00:00:00Z"}
+            """))
+        XCTAssertEqual(feed.isCurrent("26.0", graceDays: 30, now: Self.now), true,
+                       "within the grace period, so nothing is required yet; not unknown")
+    }
+
     /// The same Mac is behind with a short grace period and current with a long one.
     func testTheGracePeriodMovesTheRequiredRelease() throws {
         let feed = try feed()
@@ -233,6 +267,20 @@ final class SOFAScoreFeedTests: XCTestCase {
         let later = Self.date("2026-10-20T00:00:00Z")
         XCTAssertEqual(feed.isXProtectCurrent(5362, graceDays: 14, now: later), false,
                        "20 days after the release, 14 days of grace are used up")
+    }
+
+    /// A future-dated release must not buy every older XProtect an unbounded grace period.
+    func testAFutureDatedXProtectReleaseGivesNoGrace() throws {
+        let future = try feed(majorFeed("", xprotect: """
+            {"com.apple.XProtect": "5363", "ReleaseDate": "2027-01-01T00:00:00Z"}
+            """))
+        XCTAssertEqual(future.isXProtectCurrent(5362, graceDays: 14, now: Self.now), false)
+        XCTAssertEqual(future.isXProtectCurrent(5363, graceDays: 14, now: Self.now), true)
+
+        let halfDayAhead = try feed(majorFeed("", xprotect: """
+            {"com.apple.XProtect": "5363", "ReleaseDate": "2026-10-06T00:00:00Z"}
+            """))
+        XCTAssertEqual(halfDayAhead.isXProtectCurrent(5362, graceDays: 14, now: Self.now), true)
     }
 
     func testXProtectIsUnknownWithoutAnXProtectVersionInTheFeed() throws {
