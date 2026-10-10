@@ -42,10 +42,22 @@ final class JamfCLIInstaller {
         var refused: Bool = false
     }
 
-    private struct CommandResult: Sendable {
+    /// Seconds a brew command gets before it is stopped. `update()` holds the tick lock, so a
+    /// hung `brew update` (a captive portal) would otherwise refuse every collect.
+    nonisolated static let brewTimeout: TimeInterval = 300
+    /// Seconds `brew --prefix` gets. It runs on the main actor through `currentInstallation()`,
+    /// so a hung brew freezes the UI for this long.
+    nonisolated static let brewProbeTimeout: TimeInterval = 30
+    /// Seconds an archive tool (tar, unzip) gets.
+    nonisolated static let archiveToolTimeout: TimeInterval = 60
+
+    struct CommandResult: Sendable {
         let exitCode: Int32
         let stdout: String
         let stderr: String
+        /// The child outlived `timeout` and was terminated.
+        var timedOut: Bool = false
+        var timeout: TimeInterval = 0
 
         var combinedOutput: String {
             [stdout, stderr]
@@ -455,7 +467,7 @@ final class JamfCLIInstaller {
         #endif
         let result = runProcessSync(
             executable: brew, arguments: ["--prefix", "jamf-cli"],
-            environment: environmentForBrew()
+            environment: environmentForBrew(), timeout: brewProbeTimeout
         )
         guard result.exitCode == 0 else { return nil }
         let prefix = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -466,22 +478,31 @@ final class JamfCLIInstaller {
         return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
     }
 
-    private static func checkHomebrewUpdate(for installation: Installation) async -> UpdateResult {
+    static func checkHomebrewUpdate(
+        for installation: Installation,
+        timeout: TimeInterval = brewTimeout
+    ) async -> UpdateResult {
         guard let brew = brewExecutable(for: installation) else {
             return UpdateResult(succeeded: false, message: "Homebrew install detected, but brew was not found.")
         }
         let brewEnv = environmentForBrew()
-        let update = await runProcess(executable: brew, arguments: ["update"], environment: brewEnv)
+        let update = await runProcess(
+            executable: brew, arguments: ["update"], environment: brewEnv, timeout: timeout
+        )
         guard update.exitCode == 0 else {
             return UpdateResult(
                 succeeded: false,
-                message: "brew update failed: \(summarize(update))"
+                message: failureText("brew update", update)
             )
         }
 
         let outdated = await runProcess(
-            executable: brew, arguments: ["outdated", "--quiet", "jamf-cli"], environment: brewEnv
+            executable: brew, arguments: ["outdated", "--quiet", "jamf-cli"], environment: brewEnv,
+            timeout: timeout
         )
+        guard outdated.exitCode == 0, !outdated.timedOut else {
+            return UpdateResult(succeeded: false, message: failureText("brew outdated", outdated))
+        }
         let output = outdated.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         if output.isEmpty {
             return UpdateResult(
@@ -497,21 +518,24 @@ final class JamfCLIInstaller {
             return UpdateResult(succeeded: false, message: "Homebrew install detected, but brew was not found.")
         }
         let brewEnv = environmentForBrew()
-        let update = await runProcess(executable: brew, arguments: ["update"], environment: brewEnv)
+        let update = await runProcess(
+            executable: brew, arguments: ["update"], environment: brewEnv, timeout: brewTimeout
+        )
         guard update.exitCode == 0 else {
             return UpdateResult(
                 succeeded: false,
-                message: "brew update failed: \(summarize(update))"
+                message: failureText("brew update", update)
             )
         }
 
         let upgrade = await runProcess(
-            executable: brew, arguments: ["upgrade", "jamf-cli"], environment: brewEnv
+            executable: brew, arguments: ["upgrade", "jamf-cli"], environment: brewEnv,
+            timeout: brewTimeout
         )
         guard upgrade.exitCode == 0 else {
             return UpdateResult(
                 succeeded: false,
-                message: "brew upgrade jamf-cli failed: \(summarize(upgrade))"
+                message: failureText("brew upgrade jamf-cli", upgrade)
             )
         }
 
@@ -886,13 +910,13 @@ final class JamfCLIInstaller {
             let extract = await runProcess(
                 executable: URL(fileURLWithPath: "/usr/bin/tar"),
                 arguments: ["-xzf", downloaded.path, "-C", directory.path],
-                environment: environmentForArchiveTool()
+                environment: environmentForArchiveTool(), timeout: archiveToolTimeout
             )
             guard extract.exitCode == 0 else {
                 throw NSError(
                     domain: "JamfCLIInstaller",
                     code: Int(extract.exitCode),
-                    userInfo: [NSLocalizedDescriptionKey: "tar failed: \(summarize(extract))"]
+                    userInfo: [NSLocalizedDescriptionKey: failureText("tar", extract)]
                 )
             }
             return try findExtractedJamfCLI(in: directory)
@@ -902,13 +926,13 @@ final class JamfCLIInstaller {
             let extract = await runProcess(
                 executable: URL(fileURLWithPath: "/usr/bin/unzip"),
                 arguments: ["-q", downloaded.path, "-d", directory.path],
-                environment: environmentForArchiveTool()
+                environment: environmentForArchiveTool(), timeout: archiveToolTimeout
             )
             guard extract.exitCode == 0 else {
                 throw NSError(
                     domain: "JamfCLIInstaller",
                     code: Int(extract.exitCode),
-                    userInfo: [NSLocalizedDescriptionKey: "unzip failed: \(summarize(extract))"]
+                    userInfo: [NSLocalizedDescriptionKey: failureText("unzip", extract)]
                 )
             }
             return try findExtractedJamfCLI(in: directory)
@@ -942,14 +966,16 @@ final class JamfCLIInstaller {
 
         let listing = await runProcess(
             executable: executable, arguments: arguments,
-            environment: environmentForArchiveTool()
+            environment: environmentForArchiveTool(), timeout: archiveToolTimeout
         )
         guard listing.exitCode == 0 else {
             throw NSError(
                 domain: "JamfCLIInstaller",
                 code: 7,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Archive listing failed for \(assetName): \(summarize(listing))"]
+                    listing.timedOut
+                        ? failureText("Archive listing for \(assetName)", listing)
+                        : "Archive listing failed for \(assetName): \(summarize(listing))"]
             )
         }
 
@@ -1116,95 +1142,112 @@ final class JamfCLIInstaller {
     /// `CLIBridge.environmentForJamfCLI()` for jamf-cli invocations,
     /// `environmentForBrew()` for Homebrew, `environmentForArchiveTool()` for
     /// tar/unzip. Leave nil only when a caller genuinely needs the full parent env.
-    private nonisolated static func runProcessSync(
+    /// A child still running after `timeout` seconds is terminated (SIGTERM, then SIGKILL after
+    /// `CLIBridge.timeoutKillGrace`) and the result has `timedOut` set. Blocks the calling
+    /// thread, so call it off the main actor.
+    nonisolated static func runProcessSync(
         executable: URL,
         arguments: [String],
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        timeout: TimeInterval
     ) -> CommandResult {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        if let environment { process.environment = environment }
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        // Drain pipes concurrently via readabilityHandler before waitUntilExit
-        // to prevent a deadlock when the child writes more than the kernel pipe
-        // buffer (~64 KB) before exiting. waitUntilExit after readDataToEndOfFile
-        // is safe once the pipes are drained.
-        let stdoutDrainer = ProcessPipeDrainer(pipe: stdout)
-        let stderrDrainer = ProcessPipeDrainer(pipe: stderr)
-        stdoutDrainer.start()
-        stderrDrainer.start()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            stdoutDrainer.cancel()
-            stderrDrainer.cancel()
-            return CommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
+        let command = RunningCommand(
+            executable: executable, arguments: arguments, environment: environment)
+        let exited = DispatchSemaphore(value: 0)
+        if let failure = command.start(timeout: timeout, onExit: { exited.signal() }) {
+            return CommandResult(exitCode: -1, stdout: "", stderr: failure)
         }
-
-        let outData = stdoutDrainer.finish()
-        let errData = stderrDrainer.finish()
-        return CommandResult(
-            exitCode: process.terminationStatus,
-            stdout: String(data: outData, encoding: .utf8) ?? "",
-            stderr: String(data: errData, encoding: .utf8) ?? ""
-        )
+        exited.wait()
+        return command.result(timeout: timeout)
     }
 
-    /// See `runProcessSync` — same `environment` semantics.
-    private nonisolated static func runProcess(
+    /// See `runProcessSync` — same `environment` and `timeout` semantics.
+    nonisolated static func runProcess(
         executable: URL,
         arguments: [String],
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        timeout: TimeInterval
     ) async -> CommandResult {
-        await withCheckedContinuation { continuation in
-            let process = Process()
+        let command = RunningCommand(
+            executable: executable, arguments: arguments, environment: environment)
+        return await withCheckedContinuation { continuation in
+            let failure = command.start(timeout: timeout) {
+                continuation.resume(returning: command.result(timeout: timeout))
+            }
+            if let failure {
+                continuation.resume(
+                    returning: CommandResult(exitCode: -1, stdout: "", stderr: failure))
+            }
+        }
+    }
+
+    /// One child with piped output and a deadline. `start` returns nil once the child runs, or
+    /// the launch error's text; `onExit` runs when it has exited, including after a timeout.
+    private final class RunningCommand: @unchecked Sendable {
+        private let process = Process()
+        private let stdout = Pipe()
+        private let stderr = Pipe()
+        private let stdoutDrainer: ProcessPipeDrainer
+        private let stderrDrainer: ProcessPipeDrainer
+        private let box = TimedProcessBox()
+
+        init(executable: URL, arguments: [String], environment: [String: String]?) {
             process.executableURL = executable
             process.arguments = arguments
             if let environment { process.environment = environment }
-
-            let stdout = Pipe()
-            let stderr = Pipe()
             process.standardOutput = stdout
             process.standardError = stderr
+            stdoutDrainer = ProcessPipeDrainer(pipe: stdout)
+            stderrDrainer = ProcessPipeDrainer(pipe: stderr)
+        }
 
-            let stdoutDrainer = ProcessPipeDrainer(pipe: stdout)
-            let stderrDrainer = ProcessPipeDrainer(pipe: stderr)
+        func start(timeout: TimeInterval, onExit: @escaping @Sendable () -> Void) -> String? {
+            // Drain while the child runs, or output past the pipe buffer would block it.
             stdoutDrainer.start()
             stderrDrainer.start()
-
-            process.terminationHandler = { proc in
-                let out = stdoutDrainer.finish()
-                let err = stderrDrainer.finish()
-                continuation.resume(
-                    returning: CommandResult(
-                        exitCode: proc.terminationStatus,
-                        stdout: String(data: out, encoding: .utf8) ?? "",
-                        stderr: String(data: err, encoding: .utf8) ?? ""
-                    )
-                )
+            box.set(process)
+            process.terminationHandler = { [box] _ in
+                box.disarmTimeout()
+                onExit()
             }
-
             do {
                 try process.run()
             } catch {
                 stdoutDrainer.cancel()
                 stderrDrainer.cancel()
-                continuation.resume(
-                    returning: CommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
-                )
+                return error.localizedDescription
             }
+            box.armTimeout(timeout)
+            return nil
+        }
+
+        func result(timeout: TimeInterval) -> CommandResult {
+            if box.didTimeOut {
+                // A grandchild may still hold the pipes; do not wait for their EOF.
+                stdoutDrainer.cancel()
+                stderrDrainer.cancel()
+                return CommandResult(
+                    exitCode: process.terminationStatus, stdout: "", stderr: "",
+                    timedOut: true, timeout: timeout)
+            }
+            return CommandResult(
+                exitCode: process.terminationStatus,
+                stdout: String(data: stdoutDrainer.finish(), encoding: .utf8) ?? "",
+                stderr: String(data: stderrDrainer.finish(), encoding: .utf8) ?? ""
+            )
         }
     }
 
-    private static func summarize(_ result: CommandResult) -> String {
+    /// "<command> failed: <first lines of output>", or for a child stopped at its limit
+    /// "<command> did not finish within N s".
+    nonisolated static func failureText(_ command: String, _ result: CommandResult) -> String {
+        if result.timedOut {
+            return "\(command) did not finish within \(Int(result.timeout.rounded())) s"
+        }
+        return "\(command) failed: \(summarize(result))"
+    }
+
+    private nonisolated static func summarize(_ result: CommandResult) -> String {
         let text = result.combinedOutput
         if text.isEmpty { return "exit \(result.exitCode)" }
         return text.split(separator: "\n").prefix(3).joined(separator: " ")
