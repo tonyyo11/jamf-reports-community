@@ -150,6 +150,73 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         XCTAssertEqual(remaining.count, 3, "ambiguous ordering must abort the whole prune")
     }
 
+    // MARK: - Shared storage the path alone does not reveal
+
+    private func seedMixedOwnerBackups() throws {
+        try makeBackup("20260825T010000", owner: SharedWorkspace.currentHost.id)
+        try makeBackup("20260825T020000", owner: "some-other-host-abc123")
+        try makeBackup("20260825T030000", owner: nil)
+    }
+
+    private func assertOnlyOwnBackupPruned(
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let remaining = Set(try FileManager.default.contentsOfDirectory(atPath: backupsDir.path))
+        XCTAssertFalse(remaining.contains("20260825T010000"), "our own is prunable",
+                       file: file, line: line)
+        XCTAssertTrue(remaining.contains("20260825T020000"), "another host's survives",
+                      file: file, line: line)
+        XCTAssertTrue(remaining.contains("20260825T030000"), "an unstamped one survives",
+                      file: file, line: line)
+    }
+
+    /// An NFS or autofs mount outside `/Volumes` looks local by path.
+    func testANonLocalVolumeIsScopedToThisMachine() throws {
+        try seedMixedOwnerBackups()
+        let probe = BackupMaintenance.StorageProbe(
+            volumeIsLocal: { _ in false }, sharedWorkspaceEnabled: { _ in false })
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0, probe: probe)
+        try assertOnlyOwnBackupPruned()
+    }
+
+    func testAnExplicitSharedWorkspaceIsScopedToThisMachine() throws {
+        try seedMixedOwnerBackups()
+        let probe = BackupMaintenance.StorageProbe(
+            volumeIsLocal: { _ in true }, sharedWorkspaceEnabled: { _ in true })
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0, probe: probe)
+        try assertOnlyOwnBackupPruned()
+    }
+
+    func testSharedWorkspaceEnabledInConfigYamlIsRead() throws {
+        try seedMixedOwnerBackups()
+        try "shared_workspace:\n  enabled: true\n".write(
+            to: ProfileService.workspaceURL(for: profile)!.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0)
+        try assertOnlyOwnBackupPruned()
+    }
+
+    func testLocalStorageNotMarkedSharedStillPrunesEverything() throws {
+        try seedMixedOwnerBackups()
+        let probe = BackupMaintenance.StorageProbe(
+            volumeIsLocal: { _ in true }, sharedWorkspaceEnabled: { _ in false })
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0, probe: probe)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: backupsDir.path), [])
+    }
+
+    func testStagingDirsOnSharedStorageAreNotSweptWhateverThePath() throws {
+        let stale = backupsDir.appendingPathComponent(".tmp-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-3 * 86_400)], ofItemAtPath: stale.path)
+        let shared = BackupMaintenance.StorageProbe(
+            volumeIsLocal: { _ in false }, sharedWorkspaceEnabled: { _ in false })
+
+        XCTAssertEqual(BackupMaintenance.cleanStaleTempDirs(profile: profile, probe: shared), [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertEqual(BackupMaintenance.cleanStaleTempDirs(profile: profile).count, 1)
+    }
+
     /// Ordering is by folder name, never mtime — the whole reason this is safe
     /// on a volume where a sync provider rewrites modification dates.
     func testNewestIsChosenByNameNotModificationDate() throws {
