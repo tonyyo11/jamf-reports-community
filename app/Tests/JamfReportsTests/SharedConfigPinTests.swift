@@ -171,20 +171,30 @@ final class SharedConfigPinTests: XCTestCase {
             profile: profile, appSupport: appSupport).count, 1)
     }
 
-    func testAPinWrittenBeforeAKeyWasAddedStillReads() throws {
-        try writeConfig()
+    func testAPinWrittenBeforeAKeyWasAddedPinsThatKeyAtItsFirstSight() throws {
+        try writeConfig(historicalDir: outside, protectProfile: "protect-a")
         _ = check()
         let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
         let old = #"{"allowAbsolutePaths":false,"outputDir":"","archiveDir":"","dataDir":"","#
-            + #""retentionEnabled":true,"retentionMode":"archive","notifyURLHost":"hooks.example.com"}"#
+            + #""retentionEnabled":true,"retentionMode":"archive","#
+            + #""notifyURLHost":"hooks.example.com"}"#
         try old.write(to: store, atomically: true, encoding: .utf8)
         guard case .pin(let pin) = SharedConfigPin.read(profile: profile, appSupport: appSupport)
         else { return XCTFail("an older pin should still decode") }
         XCTAssertEqual(pin.notifyURLHost, "hooks.example.com")
-        XCTAssertEqual(pin.retentionArchiveDir, "")
-        XCTAssertEqual(Set(check().drifts.map(\.key)),
-                       [.sharedEnabled, .historicalDir, .protectProfile, .notifyURL],
-                       "only the keys the old pin lacks, and that config.yaml sets, read as changed")
+        XCTAssertFalse(pin.pinnedKeys.contains("protect.profile"))
+        XCTAssertFalse(pin.pinnedKeys.contains("notify.url"), "it has no URL hash")
+
+        // The keys it lacks are pinned now, not read as changed; the webhook keeps sending, and
+        // an absolute folder that is new to the pin waits for a Confirm.
+        let result = check()
+        XCTAssertEqual(result.drifts.map(\.key), [.historicalDir])
+        XCTAssertEqual(result.drifts.first?.pinned, SharedConfigPin.firstSightNote)
+        XCTAssertNotNil(sendable())
+        guard case .pin(let upgraded) = SharedConfigPin.read(
+            profile: profile, appSupport: appSupport) else { return XCTFail("pin missing") }
+        XCTAssertEqual(Set(upgraded.pinnedKeys), Set(SharedConfigPin.Key.allCases.map(\.rawValue)))
+        XCTAssertEqual(upgraded.protectProfile, "protect-a")
     }
 
     func testAFirstSightSaveFailureIsLoggedOnTheRun() throws {
