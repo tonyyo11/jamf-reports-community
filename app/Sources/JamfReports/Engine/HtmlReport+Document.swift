@@ -28,6 +28,7 @@ extension HtmlReport {
         <html lang="en" data-theme="light">
         <head>
         <meta charset="UTF-8">
+        \(Self.reportContentSecurityPolicyMeta)
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="report-sha256" content="\(placeholder)">
         <title>\(titleEscaped) — Jamf Instance Report</title>

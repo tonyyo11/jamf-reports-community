@@ -211,13 +211,13 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Existing mitigations:**
   - Swift `HtmlSectionFormatters.escapeHTML` wraps every dynamic insertion in `HtmlReport` (see `HtmlReport+Sections.swift:9` — "All user-controlled strings MUST go through `escapeHTML`").
   - HTML output is self-contained — no remote `<script src>`.
-  - The embedded jamf-cli dashboard page runs in a sandboxed frame under its own CSP (T-24).
+  - The report carries a CSP meta (`default-src 'none'`, no requests, frames, fonts or `<base>`, images only as `data:`), and the embedded jamf-cli dashboard page runs in a sandboxed frame under the same policy (T-24).
   - **PR-3 added landmarks + table captions** for a11y, no XSS regression.
 - **Likelihood:** Low — escaping is centralized.
 - **Impact:** Medium.
 - **Priority: LOW–MEDIUM.**
 - **Recommended mitigations:**
-  - The report has no CSP of its own. The earlier suggestion of a `script-src 'none'` meta policy no longer works: the report ships one inline script that drives Expand all / Collapse all, the print handling and the theme switch, and that policy would disable it. A report-wide policy would need a hash or nonce for that script. The only CSP today is the one added to the dashboard frame's page (T-24).
+  - The report's CSP allows inline script and style, because the report ships one inline script (Expand all / Collapse all, print handling, theme switch) and inline styles. It stops an injected script from sending data out or loading anything, not from running; a policy that also stopped inline script would need a hash or nonce for the report's own script.
   - Add Swift malicious-payload tests over the HTML/CSV sinks (`<script>`, `"><img onerror>`, `=SUM`, `+1+1`, etc.) — the prior Python `test_sanitization.py` corpus was removed with the Python engine.
   - Lint/regex check that any new `HtmlReport` interpolation site routes through `escapeHTML`.
 
@@ -453,11 +453,11 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 ### T-24. Embedded jamf-cli dashboard frame (NEW, 2.9.0, accepted)
 - **Goal:** Use script in the jamf-cli dashboard page to leave the frame, reach the report or send data out.
 - **Path:** `HtmlReport+Dashboard` embeds the newest `dashboard` snapshot (a page jamf-cli 1.31+ writes) in an `<iframe srcdoc>` with `sandbox="allow-scripts"`. A hostile page, from a replaced snapshot (A1) or from attacker-influenced names in the tenant, would run script inside the frame.
-- **Existing mitigations:** No `allow-same-origin`, so the page cannot read the report, its file or storage. A CSP meta is added to the page before embedding (`default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'`): no requests, frames or fonts, no `<base>`, no form posts. The report accepts a `postMessage` only from that frame, for its height. Pages over 4,000,000 bytes are not embedded. The payload is fleet aggregates and admin-set names; jamf-cli's page holds no device names, serials or usernames. The print path shows a note instead of the frame.
+- **Existing mitigations:** No `allow-same-origin`, so the page cannot read the report, its file or storage. The report itself carries a CSP meta right after `<meta charset>` (`default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'`), which the `srcdoc` frame inherits, and the same meta is prefixed at byte 0 of the page (after `<!DOCTYPE html>`) before embedding, so no content of the page can precede it: no requests, frames or fonts, no `<base>`, no form posts. Probed in WKWebView and Chrome: a page that hides a fake `<head>` in a comment no longer gets past it. The report accepts a `postMessage` only from that frame, for its height. Pages over 4,000,000 bytes are not embedded. The payload is fleet aggregates and admin-set names; jamf-cli's page holds no device names, serials or usernames. The print path shows a note instead of the frame.
 - **Likelihood:** Low.
 - **Impact:** Low (aggregates only).
 - **Priority: LOW (accepted).**
-- **Residual:** A sandboxed frame may always navigate itself, and no sandbox token or CSP directive stops that (`navigate-to` never shipped). A hostile page could replace its own content or show a misleading one. Dropping `allow-scripts` would stop script but would lose the height and theme sync, collapse and filters. Open check: confirm upstream's `dashboard_html.go` builds the page with `html/template`, so tenant-supplied names are escaped at the source (tracked in epic #207, K17).
+- **Residual:** A sandboxed frame may always navigate itself, and no sandbox token or CSP directive stops that (`navigate-to` never shipped). A hostile page could replace its own content or show a misleading one. Dropping `allow-scripts` would stop script but would lose the height and theme sync, collapse and filters. Upstream's `dashboard_html.go` (jamf-cli v1.33.0, `internal/commands/dashboard_html.go`) imports `html/template` and has no `template.HTML`, `JS`, `URL` or `CSS` casts, so tenant-supplied names are escaped at the source (epic #207, K17 answered; a code read of one tag, so the CSP stays).
 
 ### T-25. Custom workspace root with weak ownership or permissions (NEW, 2.9.0)
 - **Goal:** Read or alter workspace data by placing the workspace where another account can write.
@@ -495,7 +495,7 @@ Open threats first, then those closed by PR-10..PR-12.
 | Threat | Priority | Notes |
 |---|---|---|
 | T-9 Supply-chain (SwiftPM deps / scripts) | LOW–MEDIUM | Two pinned deps (ZIPFoundation, swift-argument-parser via `Package.resolved`); CODEOWNERS gap — see §9 |
-| T-3 HTML XSS in shared report | LOW–MEDIUM | Centralized `escapeHTML`; Swift sink tests still recommended; a report-wide CSP needs a script hash or nonce |
+| T-3 HTML XSS in shared report | LOW–MEDIUM | Centralized `escapeHTML`; Swift sink tests still recommended; the report's CSP blocks outbound requests but allows inline script (a hash or nonce would close that) |
 | T-4 XLSX formula injection | LOW–MEDIUM | `OOXMLWriter.sanitizeString` + Patch CSV escaper; Swift malicious-payload tests recommended |
 | T-8 Exit-code silent fallback | LOW–MEDIUM | Stale banner + PARTIAL pill close UI surface |
 | T-2 Tampered cached JSON | LOW–MEDIUM | Swift verify + writer (2.6, with `require_manifest`) + AuditView surfacing; summaries, SOFA and patch-release-dates not stamped |
@@ -560,8 +560,8 @@ highest-value remaining actions are:
    CI, store it in a hardware token if possible, and publish a "verify build" doc
    carrying each release artifact's SHA-256 and the signing certificate fingerprint.
 5. **Add Swift malicious-payload tests over the XLSX/CSV/HTML sinks (T-3 / T-4).**
-   The prior Python sanitization corpus is gone. A report-wide CSP is only worth
-   adding with a hash or nonce for the report's own script.
+   The prior Python sanitization corpus is gone. The report's CSP blocks outbound
+   requests; a hash or nonce for its own script would also block injected inline script.
 
 The diagnostic-bundle PII redaction gaps surfaced during release prep are
 already closed (see T-7).
