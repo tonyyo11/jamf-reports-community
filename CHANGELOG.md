@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation refresh: the threat model is updated to 2.9.0, the architecture notes match the
+  current code, and the third-party notices now list swift-argument-parser and IBM Plex Mono.
+
 ### Security
 
 - Report and archive folders in /Users/Shared or ~/Public are refused, because every account on
