@@ -53,7 +53,9 @@ enum WorkspaceRootStore {
                     + "access (chmod go-w) or pick another folder."
             case .hasACL:
                 return "That folder has an access control list that can give other accounts "
-                    + "access. Remove it (chmod -N) or pick another folder."
+                    + "access. macOS puts one on its own home subfolders (Documents, Desktop), "
+                    + "so a folder created inside one is fine. Otherwise remove it (chmod -N) or "
+                    + "pick another folder."
             }
         }
     }

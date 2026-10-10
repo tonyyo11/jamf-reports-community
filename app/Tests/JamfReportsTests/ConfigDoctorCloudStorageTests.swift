@@ -167,6 +167,7 @@ final class ConfigDoctorCloudStorageTests: XCTestCase {
             let row = rows.first { $0.id == "cloud.root" }
             XCTAssertEqual(row?.severity, .fail, "\(validation)")
             XCTAssertNotNil(row?.hint, "\(validation)")
+            XCTAssertTrue(row?.detail.contains("keeps using this folder") == true, "\(validation)")
         }
     }
 

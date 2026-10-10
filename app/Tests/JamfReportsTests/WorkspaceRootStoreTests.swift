@@ -232,7 +232,8 @@ final class WorkspaceRootStoreTests: XCTestCase {
         XCTAssertNotNil(WorkspaceRootStore.Validation.sensitiveLocation.message)
         XCTAssertNotNil(WorkspaceRootStore.Validation.notOwned.message)
         XCTAssertNotNil(WorkspaceRootStore.Validation.groupOrWorldWritable.message)
-        XCTAssertNotNil(WorkspaceRootStore.Validation.hasACL.message)
+        XCTAssertTrue(WorkspaceRootStore.Validation.hasACL.message?.contains("Documents") == true,
+                      "the message says a macOS home subfolder can carry the ACL")
         XCTAssertNil(WorkspaceRootStore.Validation.ok.message, "a pass has nothing to say")
     }
 

@@ -1417,7 +1417,8 @@ extension ConfigDoctorService {
                 severity: .fail,
                 title: "Workspace folder is open to other accounts",
                 detail: "\(path): \(inputs.rootValidation.message ?? "") Device inventory and "
-                    + "run logs kept here are exposed to them, and the app refuses it as a new root.",
+                    + "run logs kept here are exposed to them. The app keeps using this folder "
+                    + "until the root is changed, and would refuse it as a new root.",
                 hint: "Fix the folder's owner or permissions, or point Settings › Workspace at a "
                     + "folder you own."
             )]
