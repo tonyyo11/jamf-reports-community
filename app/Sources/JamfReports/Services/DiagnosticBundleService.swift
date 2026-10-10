@@ -57,6 +57,7 @@ final class DiagnosticRedactor {
     private let emailRE: NSRegularExpression
     private let serialRE: NSRegularExpression
     private let homePathRE: NSRegularExpression
+    private let ipv4RE: NSRegularExpression
 
     /// Literals per compiled alternation. Not a cap: a category with more is split across
     /// several regexes, since a cap dropped the shortest literals from redaction.
@@ -84,6 +85,7 @@ final class DiagnosticRedactor {
         "hostname": "host", "host_name": "host", "host": "host",
         "collectedbyhost": "host",
         "ipaddress": "ip", "ip_address": "ip",
+        "lastipaddress": "ip", "lastreportedip": "ip", "lastreportedipv4": "ip",
         "username": "user", "user_name": "user", "user": "user",
         "realname": "user", "real_name": "user",
         // operatorUserHost is "username@hostname-first-label"; the email regex
@@ -119,6 +121,10 @@ final class DiagnosticRedactor {
             #"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"#)
         self.serialRE = Self.mustCompile(#"\b[B-DF-HJ-NP-TV-Z0-9]{10,12}\b"#)
         self.homePathRE = Self.mustCompile(#"(/Users/)([A-Za-z0-9._-]+)"#)
+        // The lookarounds keep a version such as `v1.2.3.4` or `1.2.3.4.5` out of the match.
+        self.ipv4RE = Self.mustCompile(
+            #"(?<![\w.\-])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"#
+            + #"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w\-]|\.\d)"#)
     }
 
     // MARK: - Public API
@@ -154,6 +160,8 @@ final class DiagnosticRedactor {
                 self.placeholder("host", g[0] ?? "")
             }
         }
+        // `ip` has no keep-flag, like the key-based rule and the seeded literals.
+        out = replaceMatches(ipv4RE, in: out) { g in self.placeholder("ip", g[0] ?? "") }
         if redactEmails {
             out = replaceMatches(emailRE, in: out) { g in self.placeholder("email", g[0] ?? "") }
         }
@@ -266,8 +274,10 @@ final class DiagnosticRedactor {
         var chunks: [NSRegularExpression] = []
         for start in stride(from: 0, to: literals.count, by: Self.seedChunkSize) {
             let chunk = literals[start..<min(start + Self.seedChunkSize, literals.count)]
-            let pattern = chunk.map { NSRegularExpression.escapedPattern(for: $0) }
+            // Whole-word only: seeding "Main" must not cut into "Maintenance".
+            let alternation = chunk.map { NSRegularExpression.escapedPattern(for: $0) }
                 .joined(separator: "|")
+            let pattern = "(?<![A-Za-z0-9])(?:\(alternation))(?![A-Za-z0-9])"
             do {
                 let regex = try NSRegularExpression(pattern: pattern)
                 chunks.append(regex)
@@ -320,6 +330,18 @@ final class DiagnosticRedactor {
         }
     }
 
+    /// A bare `name` key is not a PII key (policies and profiles have one), but a computer
+    /// record's `general.name` is the device name.
+    private func harvestGeneralName(
+        _ key: String, _ value: Any, into sets: inout [String: Set<String>]
+    ) {
+        guard key.lowercased() == "general", let general = value as? [String: Any],
+              let name = (general["name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else { return }
+        sets["device", default: []].insert(name)
+    }
+
     private func harvest(_ value: Any, into sets: inout [String: Set<String>]) {
         if let dict = value as? [String: Any] {
             for (key, val) in dict {
@@ -327,6 +349,7 @@ final class DiagnosticRedactor {
                     let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty { sets[category, default: []].insert(trimmed) }
                 }
+                harvestGeneralName(key, val, into: &sets)
                 harvest(val, into: &sets)
             }
         } else if let array = value as? [Any] {
@@ -359,20 +382,20 @@ final class DiagnosticRedactor {
         func add(_ pattern: String, _ template: String, ci: Bool = true) {
             patterns.append((mustCompile(pattern, ci ? [.caseInsensitive] : []), template))
         }
-        add(#"(client_secret\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#,
+        add(#"(client_secret["']?\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#,
             "$1REDACTED_CLIENT_SECRET$3")
-        add(#"(client_id\s*[:=]\s*["']?)([A-Fa-f0-9\-]{20,}|[A-Za-z0-9_\-]{16,64})(["']?)"#,
+        add(#"(client_id["']?\s*[:=]\s*["']?)([A-Fa-f0-9\-]{20,}|[A-Za-z0-9_\-]{16,64})(["']?)"#,
             "$1REDACTED_CLIENT_ID$3")
         add(#"(Bearer\s+)[A-Za-z0-9._\-+/=]{20,}"#, "$1REDACTED_BEARER")
         add(#"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"#,
             "REDACTED_JWT", ci: false)
         add(#"("access_token"\s*:\s*")[^"]+(")"#, "$1REDACTED_ACCESS_TOKEN$2", ci: false)
         add(#"("refresh_token"\s*:\s*")[^"]+(")"#, "$1REDACTED_REFRESH_TOKEN$2", ci: false)
-        add(#"(password\s*[:=]\s*["']?)([^"'\s,}]{1,})(["']?)"#, "$1REDACTED_PASSWORD$3")
-        add(#"(api_?key\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#, "$1REDACTED_API_KEY$3")
+        add(#"(password["']?\s*[:=]\s*["']?)([^"'\s,}]{1,})(["']?)"#, "$1REDACTED_PASSWORD$3")
+        add(#"(api_?key["']?\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#, "$1REDACTED_API_KEY$3")
         // Single regex token; splitting the literal would obscure the pattern.
         // swiftlint:disable:next line_length
-        add(#"((?:\w*token\w*|\bpat|\w*private_key\w*)\s*[:=]\s*["']?)(?!REDACTED)([^"'\s,}]{8,})(["']?)"#,
+        add(#"((?:\w*token\w*|\bpat|\w*private_key\w*)["']?\s*[:=]\s*["']?)(?!REDACTED)([^"'\s,}]{8,})(["']?)"#,
             "$1REDACTED_TOKEN$3")
         add(#"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}"#, "$1REDACTED_BASIC_CREDENTIAL")
         add(#"(webhook_url\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#,
@@ -649,7 +672,8 @@ enum DiagnosticBundleService {
                 continue
             }
             var content = String(decoding: data, as: UTF8.self)
-            if let redactor { content = redactor.redactText(content) }
+            // Same chain as LogRedactor.redactedForSharing, so shared and bundled logs match.
+            if let redactor { content = redactor.redactText(LogRedactor.redact(content)) }
             if (try? writeText(content, to: staging.appendingPathComponent(arcname))) == nil {
                 entries.append(.skipped(path: arcname, reason: "could not stage log"))
                 continue
@@ -804,17 +828,19 @@ enum DiagnosticBundleService {
     /// entry) when no profile is configured, the binary is absent, or the run
     /// fails — a diagnostic bundle should never fail on its own optional probe.
     static func collectDoctor(
-        cliProfile: String, into staging: URL, redactor: DiagnosticRedactor?
+        cliProfile: String, into staging: URL, redactor: DiagnosticRedactor?,
+        binary: URL? = ExecutableLocator.locate("jamf-cli")
     ) -> [ManifestEntry] {
         guard !cliProfile.isEmpty, ProfileService.isValid(cliProfile) else { return [] }
-        guard let binary = ExecutableLocator.locate("jamf-cli") else { return [] }
+        guard let binary else { return [] }
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return []
         }
-        let result = runProcess(
-            binary.path, ["-p", cliProfile, "doctor", "--output", "json"], timeout: 15)
-        guard result.code == 0, let data = result.stdout.data(using: .utf8) else { return [] }
-        return stageDoctorJSON(data, into: staging, redactor: redactor)
+        // The probe drains both pipes while the child runs; nil is a launch failure or timeout.
+        guard let result = JamfCLIProbe.run(
+            executable: binary, arguments: ["-p", cliProfile, "doctor", "--output", "json"],
+            timeout: 15), result.exitCode == 0 else { return [] }
+        return stageDoctorJSON(result.stdout, into: staging, redactor: redactor)
     }
 
     /// Pure: parse `doctor` JSON, redact it, and write `doctor.json`. Split from
@@ -949,11 +975,12 @@ enum DiagnosticBundleService {
         }
     }
 
-    private static func jamfCLIVersion() -> String {
-        // Use the same locator every CLIBridge spawn uses so we get the canonical
-        // binary (handles Homebrew cellar symlinks, custom PATH installs, etc.)
-        // rather than hard-coded paths that may miss the actual installation.
-        guard let binary = ExecutableLocator.locate("jamf-cli") else {
+    // The default is the locator every CLIBridge spawn uses, so the canonical binary is
+    // found (Homebrew cellar symlinks, custom PATH installs) rather than a hard-coded path.
+    static func jamfCLIVersion(
+        binary: URL? = ExecutableLocator.locate("jamf-cli")
+    ) -> String {
+        guard let binary else {
             return "not installed"
         }
         // Apply the codesign gate before running the binary, mirroring
@@ -963,9 +990,13 @@ enum DiagnosticBundleService {
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return "unavailable (codesign gate rejected binary)"
         }
-        let result = runProcess(binary.path, ["--version"], timeout: 10)
-        guard result.code == 0 else { return "unavailable (exit \(result.code))" }
-        let text = result.stdout.isEmpty ? result.stderr : result.stdout
+        guard let result = JamfCLIProbe.run(
+            executable: binary, arguments: ["--version"], timeout: 10) else {
+            return "unavailable (did not run)"
+        }
+        guard result.exitCode == 0 else { return "unavailable (exit \(result.exitCode))" }
+        let out = String(decoding: result.stdout, as: UTF8.self)
+        let text = out.isEmpty ? String(decoding: result.stderr, as: UTF8.self) : out
         if let first = text.split(separator: "\n").first {
             return first.trimmingCharacters(in: .whitespaces)
         }
