@@ -230,6 +230,15 @@ Note that `retention.enabled` is **off by default** — raw `jamf-cli-data/` sna
 kept indefinitely until an admin opts in, so this risk only applies to workspaces that
 have already turned retention on.
 
+**A peer who can write the shared `config.yaml` steers every Mac.** On a shared workspace
+each Mac reads the same file, so whoever can write the folder, or the sync account behind
+it, can change the output and archive folders (with `output.allow_absolute_paths`), the
+retention mode, and the webhook in `notify.url` for all of them. The app refuses system
+and credentials folders as output folders, but a folder it allows is used. Limit write
+access to the shared folder to the reporting team, and review changes to `config.yaml`
+the way you would review any file that holds a webhook URL. If this matters in your
+environment, prefer the publish layout above, where `config.yaml` stays local.
+
 **`jamf_cli.require_manifest` hardens against tampered snapshots.** When set to `true`,
 each collected raw snapshot gets a sibling SHA-256 `manifest.json`, and every report-
 generation entry point (xlsx, HTML, PDF, School) refuses to run at all if the newest
@@ -266,7 +275,7 @@ credential/secret material (always redacted).
 
 ## Diagnostic Bundle Redaction Scope
 
-**`diagnostic-bundle` and run history log export redact credentials and most PII, but not bare IP addresses.**
+**`diagnostic-bundle` and run history log export redact credentials, most PII and IPv4 addresses.**
 
 The diagnostic bundle includes:
 
@@ -274,20 +283,27 @@ The diagnostic bundle includes:
   descriptions replaced with placeholders)
 - Recent logs (secrets, webhook URLs, the Jamf server address and the profile's tenant and
   environment IDs removed)
-- Snapshots (PII redacted with stable hash placeholders: `device-<8hex>`, `serial-<8hex>`)
-- Workspace tree listing (paths visible, but no data)
+- Recent daily summaries (`summary_<date>.json`), with PII redacted by stable hash
+  placeholders such as `device-<8hex>` and `serial-<8hex>`
+- A workspace tree listing (paths visible, but no data)
+- Version details for the app, macOS and `jamf-cli`, and the output of `jamf-cli doctor`
+  with the server hostname removed
+
+It does not include the raw `jamf-cli-data/` snapshots.
 
 Run History's **Copy log** and **Export log…**, and the export in Settings › Logging, apply
 the same redaction before the text reaches the clipboard or a file: secrets, webhook URLs
 (Slack, Teams, Teams Workflows, Power Automate), the Jamf server address and the profile's
 tenant and environment IDs are removed. The log on screen is not changed.
 
-**Exception:** if your Jamf Pro instance is addressed by IP (e.g., `https://192.168.1.10/`) 
-instead of a hostname, those IPs remain in the bundle and exports. Server URLs are NOT redacted
-by the IP-redaction heuristic (which matches only hostnames with alphabetic TLDs).
+**IP addresses:** IPv4 addresses are redacted wherever they appear in the text, and so are
+the values of the last-reported-IP fields (`lastIpAddress`, `lastReportedIp`). That
+covers a Jamf Pro instance addressed by IP (e.g., `https://192.168.1.10/`). The IP rule
+matches IPv4 addresses only. Hostnames in URLs are redacted, but other infrastructure
+details, such as the paths in the workspace tree listing, stay visible.
 
-**Before sharing a bundle or log export**, review it and redact IP addresses or other
-infrastructure details if your security policy requires it:
+**Before sharing a bundle or log export**, review it and redact other infrastructure
+details if your security policy requires it:
 
 ```bash
 # Inspect the bundle contents
