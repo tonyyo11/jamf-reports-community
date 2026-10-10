@@ -7,6 +7,25 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Security
+
+- Secrets and IP addresses in quoted JSON are now redacted in diagnostic bundles and in logs you
+  copy or export, and names are redacted only when they match as whole words.
+- jamf-cli is checked again right before your credentials are sent to it, and again after its file
+  changes in place.
+- A jamf-cli download that is redirected off GitHub's hosts is refused.
+- The raw token JSON is no longer kept in memory.
+
+### Fixed
+
+- jamf-cli output lines that were split across reads, or that ended with CRLF, no longer vanish or
+  break in two, which had hidden the cause of some failures.
+- A hung `jamf-cli config list` no longer freezes a collect or the profile list.
+- The diagnostic bundle's jamf-cli checks no longer hang when jamf-cli writes a lot to stderr.
+- Check for update no longer blocks the window.
+- A pre-release jamf-cli now counts as older than its release, and the dashboard and the newer
+  command-name behaviour treat a release candidate of their minimum version as below it.
+
 ### Dependencies
 
 - Reviewed jamf-cli 1.33.0 (2026-10-09). Its bulk-operation, setup-scope, blueprint-import and
