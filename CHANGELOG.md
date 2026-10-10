@@ -25,6 +25,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A hung Homebrew or archive step during a jamf-cli install or update now times out with a message
+  naming the step, instead of blocking collects for hours.
+- Onboarding gives up with a clear message if jamf-cli stops responding, and sends its answers to
+  the prompts one at a time.
 - jamf-cli output lines that were split across reads, or that ended with CRLF, no longer vanish or
   break in two, which had hidden the cause of some failures.
 - A hung `jamf-cli config list` no longer freezes a collect or the profile list.
