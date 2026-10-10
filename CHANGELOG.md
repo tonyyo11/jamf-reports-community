@@ -12,6 +12,23 @@ versions in this repository map to git tags.
 - Documentation refresh: the threat model is updated to 2.9.0, the architecture notes match the
   current code, and the third-party notices now list swift-argument-parser and IBM Plex Mono.
 
+### Security
+
+- The Security Score no longer trusts a macOS SOFA feed with future-dated releases: a release
+  dated more than a day ahead is ignored, a macOS version with only such releases scores as
+  unknown rather than current, and a future-dated XProtect release gives older XProtect
+  versions no grace period.
+- The issue-triage workflow can comment only on the issue that triggered it, cannot post a file
+  as the comment body, cannot read the runner's process environment, and no longer leaves the
+  checkout token on disk.
+
+### Fixed
+
+- Release tooling: the notary profile named for the app now also reaches the DMG step (it
+  worked only when the profile was called JamfReports-Notary), every release signature asks
+  for a secure timestamp, and a public release build stops instead of falling back to an
+  ad-hoc signature that would fail at notarization.
+
 ### Dependencies
 
 - Reviewed jamf-cli 1.33.0 (2026-10-09). Its bulk-operation, setup-scope, blueprint-import and

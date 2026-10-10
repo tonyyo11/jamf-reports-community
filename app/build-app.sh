@@ -241,6 +241,14 @@ if [[ -z "${SIGNING_IDENTITY:-}" ]]; then
   fi
 fi
 
+# A public release must never leave here ad-hoc signed, whether the identity was
+# missing or set to "-" by hand: build-pkg.sh's codesign --verify passes such a
+# bundle and the failure only surfaces at notarization.
+if [[ "$RELEASE_CHANNEL" == "release" && "$SIGNING_IDENTITY" == "-" ]]; then
+  echo "✗ RELEASE=1 needs a Developer ID Application identity; ad-hoc is refused" >&2
+  exit 1
+fi
+
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
   TS_FLAG="--timestamp=none"
 else
