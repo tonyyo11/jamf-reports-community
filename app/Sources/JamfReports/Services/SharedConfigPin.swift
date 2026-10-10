@@ -480,8 +480,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
 
     /// Runs an automatic collect (catch-up, self-remediation, the background refresh): nobody
     /// is at the keyboard, so inside `body` a checkpoint installs the safe path values as a
-    /// headless run does, and they are removed again afterwards so the person's own
-    /// actions keep reading config.yaml as typed.
+    /// headless run does, and they are removed again afterwards.
+    ///
+    /// The override is process-wide for the workspace, not task-local: a task-local would be
+    /// lost in a `Task.detached` inside the engine, which would fall back to the unsafe
+    /// folders. So for the minutes the collect runs, GUI reads of that workspace (Reports,
+    /// Devices, a manual action started meanwhile) see the safe folders too; afterwards they
+    /// read config.yaml as typed again.
     static func unattended<T: Sendable>(
         profile: String, _ body: @Sendable () async throws -> T
     ) async rethrows -> T {
