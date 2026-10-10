@@ -25,6 +25,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The scheduled overdue digest now goes to each profile's own webhook, so one tenant's channel no longer lists another's schedules.
 - jamf-cli output lines that were split across reads, or that ended with CRLF, no longer vanish or
   break in two, which had hidden the cause of some failures.
 - A hung `jamf-cli config list` no longer freezes a collect or the profile list.
