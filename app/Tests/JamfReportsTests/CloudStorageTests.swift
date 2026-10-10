@@ -166,4 +166,18 @@ final class CloudStorageTests: XCTestCase {
             "computers_20200101T000000.json"
         )
     }
+
+    func testSummaryDateComesFromTheCanonicalNameOnly() throws {
+        func date(_ name: String) -> Date? {
+            CloudStorage.summaryDate(of: URL(fileURLWithPath: "/x/\(name)"))
+        }
+        let parts = try XCTUnwrap(date("summary_2026-08-20.json").map {
+            Calendar(identifier: .iso8601).dateComponents([.year, .month, .day, .hour], from: $0)
+        })
+        XCTAssertEqual([parts.year, parts.month, parts.day, parts.hour], [2026, 8, 20, 0])
+        XCTAssertNil(date("summary_2026-08-20 2.json"), "a conflict copy has no date")
+        XCTAssertNil(date("summary_2026-13-45.json"))
+        XCTAssertNil(date("summary_2026-02-31.json"), "no rolling over into March")
+        XCTAssertNil(date("computers_20260820T000000.json"))
+    }
 }

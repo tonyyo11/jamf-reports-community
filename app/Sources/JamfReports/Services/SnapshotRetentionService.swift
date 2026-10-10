@@ -156,7 +156,8 @@ enum SnapshotRetentionService {
         guard !raw.isEmpty else { return nil }
         return try WorkspacePaths.resolve(
             rawValue: raw, fallback: "_archive",
-            workspace: workspace.resolvingSymlinksInPath().standardizedFileURL)
+            workspace: workspace.resolvingSymlinksInPath().standardizedFileURL,
+            reportsFolder: true)
     }
 
     private static func loadRetentionConfig(workspace: URL) -> RetentionConfig? {
@@ -262,7 +263,11 @@ enum SnapshotRetentionService {
             at: dir, includingPropertiesForKeys: keys, options: .skipsHiddenFiles
         ) else { return SweepResult(acted: 0, failed: 0) }
 
-        let files: [(url: URL, modified: Date)] = entries.compactMap { url in
+        // Ranked and aged by the date in the name, as every snapshot picker orders: a sync
+        // provider restamps mtime on download, so mtime would put old downloads ahead of newer
+        // local snapshots. mtime is a last resort for a name that carries no valid date. A date
+        // past `now` (a skewed clock) counts as now, so it cannot outrank real snapshots for good.
+        let files: [(url: URL, date: Date)] = entries.compactMap { url in
             // Anything else in the folder is not ours to count or remove. That includes
             // manifest.json, written last and so always newest, which would otherwise
             // take a keep_count slot.
@@ -270,12 +275,18 @@ enum SnapshotRetentionService {
             let vals = try? url.resourceValues(forKeys: Set(keys))
             guard vals?.isRegularFile == true, let modified = vals?.contentModificationDate
             else { return nil }
-            return (url, modified)
+            let named = CloudStorage.snapshotTimestamp(of: url)
+                ?? CloudStorage.summaryDate(of: url)
+            return (url, min(named ?? modified, now))
         }
         guard !files.isEmpty else { return SweepResult(acted: 0, failed: 0) }
 
         // Newest first → index == rank.
-        let sorted = files.sorted { $0.modified > $1.modified }
+        let sorted = files.sorted {
+            $0.date != $1.date
+                ? $0.date > $1.date
+                : $0.url.lastPathComponent > $1.url.lastPathComponent
+        }
         let cutoff = now.addingTimeInterval(-Double(policy.keepDays) * 86_400)
 
         var acted = 0
@@ -284,7 +295,7 @@ enum SnapshotRetentionService {
             // Keep a file if EITHER rule protects it: within the count floor
             // (N newest) OR within the age horizon. Act only when neither does.
             let protectedByCount = policy.keepCount > 0 && rank < policy.keepCount
-            let protectedByAge = policy.keepDays > 0 && entry.modified >= cutoff
+            let protectedByAge = policy.keepDays > 0 && entry.date >= cutoff
             if protectedByCount || protectedByAge { continue }
             if act(on: entry.url, archiveSubpath: archiveSubpath, archiveRoot: archiveRoot,
                    policy: policy, fm: fm, onLine: onLine) {
