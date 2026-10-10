@@ -176,4 +176,69 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
             "Error message must be the hardcoded generic string, not interpolated"
         )
     }
+
+    // MARK: - gate at launch
+
+    /// The gate at registration time is followed by a version probe of up to 60 s, so the check
+    /// that matters is the one immediately before the child is spawned.
+    func test_runWithPTY_failingVerifierStopsTheLaunch() async throws {
+        let dir = try makeStubDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (stub, marker) = try makeMarkerStub(in: dir)
+
+        do {
+            _ = try await OnboardingFlow.runWithPTY(
+                executable: stub, arguments: [marker.path], stdin: Data(),
+                enforce: true, expectedTeamID: "TEAM", verify: { _, _ in false }
+            )
+            XCTFail("An untrusted binary must not launch")
+        } catch let OnboardingFlow.FlowError.processFailed(message) {
+            XCTAssertTrue(message.contains("signature verification failed"), message)
+        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: marker.path),
+            "The child must not have run")
+    }
+
+    /// The verified path and the launched path are the same symlink-resolved file.
+    func test_runWithPTY_verifiesAndLaunchesTheResolvedPath() async throws {
+        let dir = try makeStubDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (stub, marker) = try makeMarkerStub(in: dir)
+        let link = dir.appendingPathComponent("link-to-stub")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: stub)
+
+        let seen = PathRecorder()
+        let result = try await OnboardingFlow.runWithPTY(
+            executable: link, arguments: [marker.path], stdin: Data(),
+            enforce: true, expectedTeamID: "TEAM",
+            verify: { url, _ in seen.record(url.path); return true }
+        )
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(seen.paths, [stub.resolvingSymlinksInPath().path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+    }
+
+    private func makeStubDir() throws -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("OnboardingGate-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// A script that creates the file named by its first argument. Not named `jamf-cli`, which
+    /// `CLIBridge.codesignGate` keys on.
+    private func makeMarkerStub(in dir: URL) throws -> (stub: URL, marker: URL) {
+        let stub = dir.appendingPathComponent("onboarding-stub")
+        try Data("#!/bin/sh\ntouch \"$1\"\n".utf8).write(to: stub)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        return (stub, dir.appendingPathComponent("launched"))
+    }
+}
+
+private final class PathRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+    func record(_ path: String) { lock.lock(); stored.append(path); lock.unlock() }
+    var paths: [String] { lock.lock(); defer { lock.unlock() }; return stored }
 }

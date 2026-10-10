@@ -1176,6 +1176,17 @@ final class OnboardingFlow {
         expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
         verify: (URL, String) -> Bool = { CodeSignVerifier.verify(url: $0, expectedTeamID: $1) }
     ) throws {
+        try Self.signatureGate(
+            binary: binary, enforce: enforce, expectedTeamID: expectedTeamID, verify: verify)
+    }
+
+    /// The gate itself, callable off the main actor so `runWithPTY` can repeat it at launch.
+    nonisolated static func signatureGate(
+        binary: URL,
+        enforce: Bool = JamfCLIIdentity.enforceSignatureCheck,
+        expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
+        verify: (URL, String) -> Bool = { CodeSignVerifier.verify(url: $0, expectedTeamID: $1) }
+    ) throws {
         if enforce {
             guard let teamID = expectedTeamID, verify(binary, teamID) else {
                 throw FlowError.processFailed(
@@ -1378,7 +1389,7 @@ final class OnboardingFlow {
         return redacted
     }
 
-    private struct PTYResult: Sendable {
+    struct PTYResult: Sendable {
         let exitCode: Int32
         let combined: String
     }
@@ -1387,10 +1398,19 @@ final class OnboardingFlow {
     /// that probe for a controlling terminal (e.g. `jamf-cli config add-profile`,
     /// which reads credentials via `golang.org/x/term`) work without launching a
     /// separate Terminal window.
-    private nonisolated static func runWithPTY(
+    ///
+    /// The signature gate runs again here, on the symlink-resolved path that is then launched,
+    /// immediately before `process.run()`: the registration-time gate is followed by a
+    /// version probe of up to 60 s and the PTY setup, which is long enough to swap the binary.
+    nonisolated static func runWithPTY(
         executable: URL,
         arguments: [String],
-        stdin: Data
+        stdin: Data,
+        enforce: Bool = JamfCLIIdentity.enforceSignatureCheck,
+        expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
+        verify: @escaping @Sendable (URL, String) -> Bool = {
+            CodeSignVerifier.verify(url: $0, expectedTeamID: $1)
+        }
     ) async throws -> PTYResult {
         try await Task.detached(priority: .userInitiated) {
             let master = Darwin.posix_openpt(O_RDWR | O_NOCTTY)
@@ -1429,7 +1449,8 @@ final class OnboardingFlow {
             let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
 
             let process = Process()
-            process.executableURL = executable
+            let launchURL = executable.resolvingSymlinksInPath()
+            process.executableURL = launchURL
             process.arguments = arguments
             // SF-10/B-13: this is the most security-sensitive Process site —
             // it streams the user's client secret over the PTY into jamf-cli.
@@ -1441,6 +1462,14 @@ final class OnboardingFlow {
             process.standardOutput = slaveHandle
             process.standardError = slaveHandle
 
+            do {
+                try signatureGate(
+                    binary: launchURL, enforce: enforce,
+                    expectedTeamID: expectedTeamID, verify: verify)
+            } catch {
+                Darwin.close(slave)
+                throw error
+            }
             do {
                 try process.run()
             } catch {
