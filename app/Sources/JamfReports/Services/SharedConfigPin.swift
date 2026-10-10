@@ -223,12 +223,45 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return current(workspace: workspace)
     }
 
-    /// Re-pins `keys` (all of them when nil) to what config.yaml holds now; a local workspace
-    /// has no pin and is left alone. Other drifted keys
-    /// stay drifted: a Config screen save that only writes the output folders must not
-    /// confirm a peer's retention change.
+    enum ConfirmError: Error, LocalizedError {
+        case changedSinceShown
+
+        var errorDescription: String? {
+            "config.yaml changed since the row was shown; reload Config Doctor and check again."
+        }
+    }
+
+    /// Re-pins the drifts a person was shown, each only while config.yaml still holds the value
+    /// that was shown: a peer's second edit after the row loaded stays drifted. A pin that cannot
+    /// be read is replaced only when every key still matches. A local workspace is left alone.
     static func confirm(
-        profile: String, keys: Set<Key>? = nil, appSupport: URL = AppSupport.directory()
+        profile: String, drifts: [Drift], appSupport: URL = AppSupport.directory()
+    ) throws {
+        guard let workspace = ProfileService.workspaceURL(for: profile),
+              let current = sharedCurrent(
+                profile: profile, workspace: workspace, appSupport: appSupport)
+        else { return }
+        var pin: SharedConfigPin
+        var unreadable = false
+        switch read(profile: profile, appSupport: appSupport) {
+        case .absent: pin = current
+        case .pin(let stored): pin = stored
+        case .unreadable: pin = current; unreadable = true
+        }
+        var confirmed = 0
+        for drift in drifts where drift.key.text(of: current) == drift.current {
+            drift.key.copy(from: current, into: &pin)
+            confirmed += 1
+        }
+        if unreadable, confirmed < Key.allCases.count { throw ConfirmError.changedSinceShown }
+        try save(pin, profile: profile, appSupport: appSupport)
+        removeOverrides(for: workspace)
+    }
+
+    /// Re-pins `keys` to what config.yaml holds now, for a save on this Mac that changed them.
+    /// Other keys stay as they are, drifted or not, and a pin that cannot be read stays so.
+    static func confirm(
+        profile: String, keys: Set<Key>, appSupport: URL = AppSupport.directory()
     ) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let current = sharedCurrent(
@@ -238,12 +271,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         switch read(profile: profile, appSupport: appSupport) {
         case .absent: pin = current
         case .pin(let stored): pin = stored
-        case .unreadable:
-            // Only a full confirm replaces a pin that cannot be read.
-            guard keys == nil else { return }
-            pin = current
+        case .unreadable: return
         }
-        for key in keys ?? Set(Key.allCases) { key.copy(from: current, into: &pin) }
+        for key in keys { key.copy(from: current, into: &pin) }
         try save(pin, profile: profile, appSupport: appSupport)
         removeOverrides(for: workspace)
     }

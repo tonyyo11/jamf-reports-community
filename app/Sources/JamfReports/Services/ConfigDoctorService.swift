@@ -20,8 +20,8 @@ struct DoctorRow: Identifiable, Sendable, Equatable {
 
 /// What a row's button does. The screen runs it for the active profile.
 enum DoctorAction: Sendable, Equatable {
-    /// Re-pin this Mac's shared-config values to what config.yaml holds now.
-    case confirmSharedConfig
+    /// Re-pin the listed values, each only while config.yaml still holds the value shown.
+    case confirmSharedConfig([SharedConfigPin.Drift])
 }
 
 /// The full result of a config-doctor run, with per-severity counts.

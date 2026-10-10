@@ -60,6 +60,12 @@ final class SharedConfigPinTests: XCTestCase {
                        atomically: true, encoding: .utf8)
     }
 
+    /// What the Doctor's Confirm button does: re-pin every drift as it is shown now.
+    private func confirmAll() throws {
+        try SharedConfigPin.confirm(
+            profile: profile, drifts: check().drifts, appSupport: appSupport)
+    }
+
     private func check() -> SharedConfigPin.Check {
         SharedConfigPin.check(profile: profile, appSupport: appSupport)
     }
@@ -176,6 +182,38 @@ final class SharedConfigPinTests: XCTestCase {
                       lines.all[0])
     }
 
+    func testConfirmRepinsAKeyOnlyWhileConfigYamlStillHoldsTheShownValue() throws {
+        try writeConfig(retentionMode: "archive")
+        _ = check()
+        try writeConfig(retentionMode: "delete")
+        let shown = check().drifts
+        XCTAssertEqual(shown.map(\.key), [.retentionMode])
+
+        // A peer edits again after the row was shown.
+        try writeConfig(retentionMode: "archive", webhook: "https://collector.attacker.test/a")
+        try SharedConfigPin.confirm(profile: profile, drifts: shown, appSupport: appSupport)
+        XCTAssertEqual(check().drifts.map(\.key), [.notifyURL],
+                       "the retention row no longer matched, the webhook was never shown")
+        guard case .pin(let pin) = SharedConfigPin.read(profile: profile, appSupport: appSupport)
+        else { return XCTFail("pin missing") }
+        XCTAssertEqual(pin.retentionMode, "archive")
+        XCTAssertEqual(pin.notifyURLHost, "hooks.example.com")
+    }
+
+    func testConfirmingAnUnreadablePinNeedsEveryKeyToStillMatch() throws {
+        try writeConfig()
+        _ = check()
+        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        try "not json".write(to: store, atomically: true, encoding: .utf8)
+        let shown = check().drifts
+        try writeConfig(retentionMode: "delete")
+        XCTAssertThrowsError(try SharedConfigPin.confirm(
+            profile: profile, drifts: shown, appSupport: appSupport))
+        XCTAssertEqual(Set(check().drifts.map(\.key)), Set(SharedConfigPin.Key.allCases))
+        try SharedConfigPin.confirm(profile: profile, drifts: check().drifts, appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
     func testDiffNamesEachChangedKeyInConfigYamlSpelling() {
         let base = SharedConfigPin(
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",
@@ -226,7 +264,7 @@ final class SharedConfigPinTests: XCTestCase {
         let root = SnapshotRetentionService.resolvedArchiveRoot(config: safe, workspace: workspace)
         XCTAssertEqual(root.lastPathComponent, "_archive")
 
-        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        try confirmAll()
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
@@ -249,7 +287,7 @@ final class SharedConfigPinTests: XCTestCase {
         try SharedConfigPin.confirm(profile: profile, keys: [.outputDir], appSupport: appSupport)
         XCTAssertEqual(check().drifts.map(\.key), [.retentionMode, .notifyURL])
 
-        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        try confirmAll()
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
@@ -337,7 +375,7 @@ final class SharedConfigPinTests: XCTestCase {
         SharedConfigPin.markHeadless()
         SharedConfigPin.checkpoint(profile: profile, appSupport: appSupport, onLine: nil)
         XCTAssertNotEqual(try WorkspacePaths.outputDir(for: profile).path, outside + "-peer")
-        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        try confirmAll()
         XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside + "-peer")
     }
 
@@ -388,20 +426,20 @@ final class SharedConfigPinTests: XCTestCase {
         let row = try XCTUnwrap(rows.first)
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(row.severity, .warn)
-        XCTAssertEqual(row.action, .confirmSharedConfig)
+        XCTAssertEqual(row.action, .confirmSharedConfig(check().drifts))
         XCTAssertTrue(row.detail.contains("retention.mode: pinned \"archive\", now \"delete\""))
         XCTAssertTrue(row.detail.contains("hooks.example.com"))
         XCTAssertTrue(row.detail.contains("collector.attacker.test"))
         XCTAssertFalse(row.detail.contains("secret-token"))
 
-        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        try confirmAll()
         XCTAssertTrue(ConfigDoctorService.sharedConfigRows(
             profile: profile, appSupport: appSupport).isEmpty)
     }
 
     func testConfirmOnALocalWorkspaceWritesNoPin() throws {
         try writeConfig(shared: false)
-        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        try confirmAll()
         XCTAssertNil(SharedConfigPin.load(profile: profile, appSupport: appSupport))
     }
 

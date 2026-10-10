@@ -26,7 +26,7 @@ extension ConfigDoctorService {
                 + "scheduled runs and the command-line tool on this Mac use the safe value for "
                 + "each key (workspace Generated Reports folder, archive instead of delete, "
                 + "no webhook send).",
-            action: .confirmSharedConfig
+            action: .confirmSharedConfig(drifts)
         )]
     }
 }

@@ -355,11 +355,13 @@ struct AuditView: View {
 
     private func runDoctorAction(_ action: DoctorAction) {
         switch action {
-        case .confirmSharedConfig:
+        case .confirmSharedConfig(let drifts):
             let profile = workspace.profile
             Task {
                 do {
-                    try await Task.detached { try SharedConfigPin.confirm(profile: profile) }.value
+                    try await Task.detached {
+                        try SharedConfigPin.confirm(profile: profile, drifts: drifts)
+                    }.value
                     workspace.toast = Toast(
                         message: "Shared config confirmed on this Mac", style: .success)
                 } catch {
