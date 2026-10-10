@@ -108,13 +108,35 @@ The shipped refactor diverged from the proposal above:
   exhaustiveness goal is met by the enum + `LocalizedError`, not the
   `throws(...)` annotation.
 
-- **Nine cases, not six.** `executableNotFound` and `invalidArgument`
+- **Fifteen cases, not six.** `CLIBridgeError` in
+  `Services/CLIBridge+Generation.swift` now has: `notImplemented`,
+  `codesignRejected`, `launchFailed`, `invalidProfile`, `workspaceMissing`,
+  `profileCaseConflict`, `configLoadFailed`, `configWriteRefused`,
+  `executableNotFound`, `invalidArgument`, `directoryOperationFailed`,
+  `tickLockHeld`, `collectInProgress`, `toolUpdateInProgress` and
+  `generateInProgress`. `executableNotFound` and `invalidArgument`
   surfaced at ~8 and ~2 sites respectively; `directoryOperationFailed`
   was added during review to stop a `createDirectory`/`moveItem` failure
   reporting as `workspaceMissing`. `codesignRejected` dropped its
   `executable:` associated value (logged at the throw site instead);
-  `csvMissing(inbox:)` became `csvMissing(profile:)` so no path is
-  carried.
+  `csvMissing(inbox:)` became `csvMissing(profile:)` and was later replaced
+  by `tickLockHeld`, so no path is carried.
+
+- **Four cases are refusals, not failures.** `tickLockHeld`,
+  `collectInProgress`, `toolUpdateInProgress` and `generateInProgress` mean
+  the collect or report was turned away before it started because something
+  else holds the work. `CLIBridgeError.isCollectRefusal` is the one test for
+  them. They throw rather than returning exit `1`, the UI shows them as
+  information, and they leave no Run History record. The lock they come from
+  is described in `CLAUDE.md` under "CLIBridge+TickLock".
+
+- **The `Int32` side now has more named values than 1 to 6.** Exit `7`
+  (`exitCodePartialFailure`, jamf-cli 1.19+) means some sub-operations failed
+  and stdout holds valid JSON for the rest. Exit `8`
+  (`exitCodeRefusedByPolicy`, jamf-cli 1.28+) means the command is outside
+  what the profile's API publishes. `-2` (`exitCodeTimedOut`) is a local
+  sentinel for a call that hit its timeout and was terminated; it is not a
+  jamf-cli code. `CLAUDE.md` holds the table of what the app does with each.
 
 - **`CLIBridgeError: LocalizedError` with per-case path-safe
   `errorDescription`.** No home directory, workspace path, hostname, or
@@ -127,7 +149,7 @@ The shipped refactor diverged from the proposal above:
   failure *inside* `generate`/`collect`/`backup` after a successful
   spawn is neither a pre-spawn error nor a real jamf-cli exit code; it
   returns `1` (generic failure). `CLIBridgeError` is scoped strictly to
-  pre-spawn failures.
+  failures before the spawn, including the four refusals above.
 
 - **`runDeviceDetailProcess` is a deliberate exception — it still
   returns `Int32` (`-1` on failure).** It is a fire-and-forget free

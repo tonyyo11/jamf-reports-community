@@ -20,8 +20,8 @@ Before running a release, ensure your machine has:
 ```bash
 cd app
 
-RELEASE_VERSION=2.1.0 \
-DEVELOPER_ID_APP="Developer ID Application: Tony Young (XXXXXXXXXX)" \
+RELEASE_VERSION=X.Y.Z \
+DEVELOPER_ID_APP="Developer ID Application: Your Name (XXXXXXXXXX)" \
 NOTARY_KEYCHAIN_PROFILE="apple-id-profile" \
 ./scripts/release.sh
 ```
@@ -35,10 +35,13 @@ After a successful release:
 ```
 app/build/
 ├── JamfReports.app           # Signed, notarized app bundle
-└── JamfReports-2.1.0.dmg     # Distribution DMG
+└── JamfReports-X.Y.Z.dmg     # Distribution DMG (signed, notarized, stapled)
 ```
 
-Upload the `.dmg` to GitHub Releases. The app has no built-in auto-updater —
+The installer package is a separate step, run from `app/` after the app is built and
+signed (see `build-pkg.sh` below). It writes `app/build/JamfReports-X.Y.Z.pkg`.
+
+Upload the `.dmg` (and the `.pkg`, if you built one) to GitHub Releases. The app has no built-in auto-updater —
 the "Check for Updates…" menu item opens the GitHub Releases page so users can
 download the latest build.
 
@@ -49,8 +52,8 @@ download the latest build.
 Top-level orchestrator. Runs steps in order: build → sign → notarize → package.
 
 **Environment variables (all required):**
-- `RELEASE_VERSION` — Version string (e.g., `2.1.0`)
-- `DEVELOPER_ID_APP` — Developer ID identity name (e.g., `Developer ID Application: Tony Young (XXXXXXXXXX)`)
+- `RELEASE_VERSION` — Version string (e.g., `X.Y.Z`)
+- `DEVELOPER_ID_APP` — Developer ID identity name (e.g., `Developer ID Application: Your Name (XXXXXXXXXX)`)
 - `NOTARY_KEYCHAIN_PROFILE` — Keychain profile name for notarization credentials
 
 **Exit codes:**
@@ -112,6 +115,8 @@ Packages the notarized app into a distributable DMG.
 3. Copy app to staging
 4. Create Applications symlink
 5. Build UDZO-compressed DMG with `hdiutil`
+6. Unless `SKIP_NOTARIZE` is set: sign the DMG, submit it to `xcrun notarytool`, staple
+   and validate it (needs `DEVELOPER_ID_APP` and notary credentials)
 
 **Exit codes:**
 - 0 = DMG created successfully
@@ -120,12 +125,34 @@ Packages the notarized app into a distributable DMG.
 
 **Idempotent:** Removes old DMG first, so re-running is safe.
 
+### `build-pkg.sh` (in `app/`, not `app/scripts/`)
+
+Builds the installer package from an already-built, signed `build/JamfReports.app`.
+It is not part of `release.sh`.
+
+**Arguments:** `$1` = `debug` (default) or `release`. Only `release` verifies the app
+signature, notarizes and staples the package, and names it as a release
+(`JamfReports-X.Y.Z.pkg`); a `debug` package is named as a beta and is not notarized.
+
+**Environment variables:** `TEAM_ID` (required, picks the Developer ID Installer
+identity), `INSTALLER_IDENTITY` (optional override), `NOTARY_PROFILE` (default
+`JamfReports-Notary`), `SKIP_NOTARIZE`.
+
+The package installs `JamfReports.app` to `/Applications` and carries no pre- or
+post-install scripts.
+
+## What CI does
+
+`.github/workflows/release.yml` runs on a `v*` tag and attaches a source zip and
+`SHA256SUMS` to the GitHub Release. It does not build, sign or notarize the app; the
+steps above run on the maintainer's Mac.
+
 ## Troubleshooting
 
 ### Identity not found in Keychain
 
 ```
-✗ Identity not found in keychain: Developer ID Application: Tony Young (XXXXXXXXXX)
+✗ Identity not found in keychain: Developer ID Application: Your Name (XXXXXXXXXX)
 ```
 
 **Fix:**

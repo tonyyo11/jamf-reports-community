@@ -1,6 +1,6 @@
 # Period Report — design
 
-_Status: design, not implemented. 2026-08-27._
+_Status: implemented in 2.7.0; this document records the original design. See the wiki's Period Reports page for the operator view. Original design date 2026-08-27._
 
 ## Problem
 
@@ -95,9 +95,8 @@ begins at 2.7.0: an early period simply shows its real, shorter window.
 
 The output labels the period `1 Apr 2026 – 30 Jun 2026` and never `FY2026 Q3`.
 Fiscal calendars differ between organisations — a US federal FY starts in
-October, a commercial one in January — and the two source documents behind this
-design disagree with each other about which quarter Apr–Jun is. A mislabelled
-quarter in a report to management is worse than no label. The operator applies
+October, a commercial one in January. A mislabelled quarter in a report to
+management is worse than no label. The operator applies
 their own naming in the narrative document.
 
 ## Architecture
@@ -189,11 +188,13 @@ A "Period report" action in `ReportsView`, opening a sheet with period selection
 (D4) and metric selection from the discovered catalogue (D1). Generated artifacts
 stay listed with every other report.
 
-The metric selection persists per profile in `@AppStorage`, as the custom
-template's sheet selection already does — periodic reporting repeats, and
-re-picking twenty metrics each quarter is the kind of friction that stops a
-feature being used. A selection naming a metric no longer in the catalogue is
-dropped silently on load rather than shown as an error.
+As built, the metric selection is not persisted. It lives in the sheet's `@State`
+and starts from `PeriodReportService.defaultSelection` (fleet metrics only; EAs
+are opt-in) each time the sheet opens. The original design persisted it per
+profile in `@AppStorage`, as the custom template's sheet selection does, because
+re-picking twenty metrics each quarter is friction; that was not built.
+`PeriodReportService.pruneSelection` drops a selected metric that is no longer in
+the catalogue when the catalogue reloads, rather than showing an error.
 
 ## Deferred
 
