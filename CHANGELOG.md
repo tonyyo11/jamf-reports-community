@@ -38,6 +38,7 @@ versions in this repository map to git tags.
 
 - Two scheduled runs can no longer start together, and a Mac that slept in the middle of a run no
   longer has that run taken over when it wakes.
+- The scheduled overdue digest now goes to each profile's own webhook, so one tenant's channel no longer lists another's schedules.
 - Exporting the inventory CSV from cached data is no longer blocked by an expired or rejected
   token.
 - When a Generate run's refresh fails, the message now says how to generate from the cached
