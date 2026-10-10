@@ -1033,7 +1033,9 @@ final class JamfCLIInstaller {
         }
     }
 
-    private nonisolated static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+    /// Orders two version strings by their numeric core; on an equal core a pre-release
+    /// (`1.30.0-rc1`) ranks below the release. Build metadata after `+` is ignored.
+    nonisolated static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
         let left = versionParts(lhs)
         let right = versionParts(rhs)
         let count = max(left.count, right.count)
@@ -1043,14 +1045,29 @@ final class JamfCLIInstaller {
             if l < r { return .orderedAscending }
             if l > r { return .orderedDescending }
         }
-        return .orderedSame
+        switch (preRelease(lhs), preRelease(rhs)) {
+        case (nil, nil): return .orderedSame
+        case (.some, nil): return .orderedAscending
+        case (nil, .some): return .orderedDescending
+        case let (l?, r?): return l.compare(r, options: .numeric)
+        }
     }
 
+    /// The numeric core of a version: what precedes the first `-` or `+`.
     private nonisolated static func versionParts(_ version: String) -> [Int] {
-        version
+        let core = version.prefix { $0 != "-" && $0 != "+" }
+        return core
             .trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             .split { !$0.isNumber }
             .compactMap { Int($0) }
+    }
+
+    /// The text after the first `-` (and before any `+`), or nil for a release.
+    private nonisolated static func preRelease(_ version: String) -> String? {
+        let withoutBuild = version.prefix { $0 != "+" }
+        guard let dash = withoutBuild.firstIndex(of: "-") else { return nil }
+        let text = withoutBuild[withoutBuild.index(after: dash)...]
+        return text.isEmpty ? nil : String(text)
     }
 
     /// Minimal environment for Homebrew subprocess invocations. Pins the same
