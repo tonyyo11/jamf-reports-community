@@ -251,12 +251,8 @@ enum WebhookNotifier {
     /// network error so callers can record a warning in the run audit trail.
     @discardableResult
     static func send(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
-        let url: URL
-        switch endpoint(for: config) {
-        case .notConfigured: return true
-        case .invalidURL: return false
-        case .url(let resolved): url = resolved
-        }
+        let ep = endpoint(for: config)
+        guard case .url(let url) = ep else { return ep == .notConfigured }
         AppLogger.webhook.debug("posting \(config.resolvedProvider.rawValue, privacy: .public) digest")
         guard let body = payload(provider: config.resolvedProvider, title: title, facts: facts) else {
             AppLogger.webhook.warning(
@@ -289,12 +285,8 @@ enum WebhookNotifier {
     /// Never throws.
     @discardableResult
     static func sendFailed(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
-        let url: URL
-        switch endpoint(for: config) {
-        case .notConfigured: return true
-        case .invalidURL: return false
-        case .url(let resolved): url = resolved
-        }
+        let ep = endpoint(for: config)
+        guard case .url(let url) = ep else { return ep == .notConfigured }
         guard let body = failedPayload(provider: config.resolvedProvider, title: title, facts: facts) else {
             AppLogger.webhook.warning(
                 "WebhookNotifier: failed to encode failed-run \(config.resolvedProvider.rawValue, privacy: .public) payload"
@@ -326,12 +318,8 @@ enum WebhookNotifier {
     /// Never throws.
     @discardableResult
     static func sendAlert(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
-        let url: URL
-        switch endpoint(for: config) {
-        case .notConfigured: return true
-        case .invalidURL: return false
-        case .url(let resolved): url = resolved
-        }
+        let ep = endpoint(for: config)
+        guard case .url(let url) = ep else { return ep == .notConfigured }
         guard let body = alertPayload(provider: config.resolvedProvider, title: title, facts: facts) else {
             AppLogger.webhook.warning(
                 "WebhookNotifier: failed to encode alert \(config.resolvedProvider.rawValue, privacy: .public) payload"

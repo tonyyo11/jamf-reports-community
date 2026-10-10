@@ -173,17 +173,8 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
     /// An NFS or autofs mount outside `/Volumes` looks local by path.
     func testANonLocalVolumeIsScopedToThisMachine() throws {
         try seedMixedOwnerBackups()
-        let probe = BackupMaintenance.StorageProbe(
-            volumeIsLocal: { _ in false }, sharedWorkspaceEnabled: { _ in false })
-        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0, probe: probe)
-        try assertOnlyOwnBackupPruned()
-    }
-
-    func testAnExplicitSharedWorkspaceIsScopedToThisMachine() throws {
-        try seedMixedOwnerBackups()
-        let probe = BackupMaintenance.StorageProbe(
-            volumeIsLocal: { _ in true }, sharedWorkspaceEnabled: { _ in true })
-        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0, probe: probe)
+        BackupMaintenance.pruneScheduledBackups(
+            profile: profile, keep: 0, volumeIsLocal: { _ in false })
         try assertOnlyOwnBackupPruned()
     }
 
@@ -214,9 +205,10 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
 
     func testLocalStorageNotMarkedSharedStillPrunesEverything() throws {
         try seedMixedOwnerBackups()
-        let probe = BackupMaintenance.StorageProbe(
-            volumeIsLocal: { _ in true }, sharedWorkspaceEnabled: { _ in false })
-        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0, probe: probe)
+        try "shared_workspace:\n  enabled: false\n".write(
+            to: ProfileService.workspaceURL(for: profile)!.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: backupsDir.path), [])
     }
 
@@ -225,10 +217,10 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
         try FileManager.default.setAttributes(
             [.modificationDate: Date().addingTimeInterval(-3 * 86_400)], ofItemAtPath: stale.path)
-        let shared = BackupMaintenance.StorageProbe(
-            volumeIsLocal: { _ in false }, sharedWorkspaceEnabled: { _ in false })
 
-        XCTAssertEqual(BackupMaintenance.cleanStaleTempDirs(profile: profile, probe: shared), [])
+        XCTAssertEqual(
+            BackupMaintenance.cleanStaleTempDirs(profile: profile, volumeIsLocal: { _ in false }),
+            [])
         XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
         XCTAssertEqual(BackupMaintenance.cleanStaleTempDirs(profile: profile).count, 1)
     }
