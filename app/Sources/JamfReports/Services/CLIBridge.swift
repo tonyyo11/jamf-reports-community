@@ -270,7 +270,8 @@ final class CLIBridge {
                     let data = handle.availableData
                     let lines = data.isEmpty ? stdoutLines.finish() : stdoutLines.lines(from: data)
                     for line in lines {
-                        onLine(.init(timestamp: Date(), level: LogLevel.from(line: line), text: line))
+                        onLine(.init(
+                            timestamp: Date(), level: LogLevel.from(line: line), text: line))
                     }
                     if data.isEmpty {
                         handle.readabilityHandler = nil

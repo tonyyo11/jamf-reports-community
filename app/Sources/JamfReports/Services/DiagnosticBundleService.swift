@@ -393,9 +393,9 @@ final class DiagnosticRedactor {
         add(#"("refresh_token"\s*:\s*")[^"]+(")"#, "$1REDACTED_REFRESH_TOKEN$2", ci: false)
         add(#"(password["']?\s*[:=]\s*["']?)([^"'\s,}]{1,})(["']?)"#, "$1REDACTED_PASSWORD$3")
         add(#"(api_?key["']?\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#, "$1REDACTED_API_KEY$3")
-        // Single regex token; splitting the literal would obscure the pattern.
-        // swiftlint:disable:next line_length
-        add(#"((?:\w*token\w*|\bpat|\w*private_key\w*)["']?\s*[:=]\s*["']?)(?!REDACTED)([^"'\s,}]{8,})(["']?)"#,
+        // Key name and separator, then the value; the lookahead skips an already-masked value.
+        add(#"((?:\w*token\w*|\bpat|\w*private_key\w*)["']?\s*[:=]\s*["']?)"#
+            + #"(?!REDACTED)([^"'\s,}]{8,})(["']?)"#,
             "$1REDACTED_TOKEN$3")
         add(#"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}"#, "$1REDACTED_BASIC_CREDENTIAL")
         add(#"(webhook_url\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#,
