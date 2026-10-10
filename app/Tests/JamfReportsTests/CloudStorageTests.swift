@@ -177,6 +177,7 @@ final class CloudStorageTests: XCTestCase {
         XCTAssertEqual([parts.year, parts.month, parts.day, parts.hour], [2026, 8, 20, 0])
         XCTAssertNil(date("summary_2026-08-20 2.json"), "a conflict copy has no date")
         XCTAssertNil(date("summary_2026-13-45.json"))
+        XCTAssertNil(date("summary_2026-02-31.json"), "no rolling over into March")
         XCTAssertNil(date("computers_20260820T000000.json"))
     }
 }

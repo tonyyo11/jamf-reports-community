@@ -170,6 +170,23 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
     }
 
+    /// `summary_2026-13-45.json` matches the canonical pattern but is no date, so its mtime ages it.
+    func testASummaryWithAnInvalidDateInItsNameIsAgedByItsMtime() throws {
+        let summariesDir = root.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        let stale = summariesDir.appendingPathComponent("summary_2026-13-45.json")
+        let fresh = summariesDir.appendingPathComponent("summary_2026-02-31.json")
+        try writeFile(stale, ageDays: 400)
+        try writeFile(fresh, ageDays: 1)
+
+        let acted = SnapshotRetentionService.sweep(
+            dataDir: dataDir, summariesDir: summariesDir, archiveRoot: archiveRoot,
+            policy: policy(mode: .delete, keepDays: 30, includeSummaries: true))
+
+        XCTAssertEqual(acted, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path))
+    }
+
     // MARK: - Skip-list
 
     func testNonSnapshotSubdirsAndArchiveNeverSwept() throws {

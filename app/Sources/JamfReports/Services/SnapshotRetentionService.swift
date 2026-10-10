@@ -265,7 +265,8 @@ enum SnapshotRetentionService {
 
         // Ranked and aged by the date in the name, as every snapshot picker orders: a sync
         // provider restamps mtime on download, so mtime would put old downloads ahead of newer
-        // local snapshots. Every candidate is stamped; mtime is a last resort only.
+        // local snapshots. mtime is a last resort for a name that carries no valid date. A date
+        // past `now` (a skewed clock) counts as now, so it cannot outrank real snapshots for good.
         let files: [(url: URL, date: Date)] = entries.compactMap { url in
             // Anything else in the folder is not ours to count or remove. That includes
             // manifest.json, written last and so always newest, which would otherwise
@@ -276,13 +277,15 @@ enum SnapshotRetentionService {
             else { return nil }
             let named = CloudStorage.snapshotTimestamp(of: url)
                 ?? CloudStorage.summaryDate(of: url)
-            return (url, named ?? modified)
+            return (url, min(named ?? modified, now))
         }
         guard !files.isEmpty else { return SweepResult(acted: 0, failed: 0) }
 
         // Newest first → index == rank.
         let sorted = files.sorted {
-            $0.date != $1.date ? $0.date > $1.date : $0.url.lastPathComponent > $1.url.lastPathComponent
+            $0.date != $1.date
+                ? $0.date > $1.date
+                : $0.url.lastPathComponent > $1.url.lastPathComponent
         }
         let cutoff = now.addingTimeInterval(-Double(policy.keepDays) * 86_400)
 

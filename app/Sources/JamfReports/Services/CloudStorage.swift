@@ -106,7 +106,11 @@ enum CloudStorage {
         let name = url.lastPathComponent
         guard isCanonicalSummaryFilename(name) else { return nil }
         let day = String(name.dropFirst("summary_".count).prefix(10))
-        return summaryDayFormatter.date(from: day)
+        // DateFormatter rolls 2026-02-31 over to March 3; only a date that formats back to the
+        // same text is a real one.
+        guard let date = summaryDayFormatter.date(from: day),
+              summaryDayFormatter.string(from: date) == day else { return nil }
+        return date
     }
 
     private static let summaryDayFormatter: DateFormatter = {
