@@ -12,6 +12,12 @@ versions in this repository map to git tags.
 - Report and archive folders in /Users/Shared or ~/Public are refused, because every account on
   the Mac can read them. Reports fall back to the workspace folder and the run log says why.
 - Output folders under /tmp are refused like /Users/Shared and ~/Public.
+- On a shared workspace, each Mac now remembers the report, archive and data folders, the
+  absolute-path opt-in, the retention switch and mode, and the webhook host it was set up with.
+  If another Mac changes one in the shared config.yaml, background runs and the command-line
+  tool on this Mac keep to safe values until you confirm it in Config Doctor: reports go to the
+  workspace's Generated Reports folder, retention archives instead of deleting, and no webhook is
+  sent. The run log names each changed key and the run is not marked partial.
 - A custom workspace folder must be owned by you, not writable by its group or everyone, and have
   no access control list. Folders under /Volumes and cloud storage are exempt. A folder you
   already use keeps working, and Config Doctor flags it.

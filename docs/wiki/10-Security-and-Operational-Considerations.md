@@ -222,13 +222,31 @@ see — each with what to do about it.
 
 ## Configuration Integrity
 
+**A shared `config.yaml` can be edited by any Mac that can write the folder, so each Mac
+pins what matters.** On a shared workspace (a sync-provider or `/Volumes` folder, or
+`shared_workspace.enabled: true`), every Mac reads the same `config.yaml`, and three things in
+it decide where data goes: the report, archive and data folders with
+`output.allow_absolute_paths`, the retention switch and `retention.mode` (archive or delete),
+and the host of the `notify.url` webhook. Each Mac records the values it was set up with in its
+own Application Support folder (the webhook host only, never the URL) and compares them with
+`config.yaml` at the start of every collect and report. If a value changed, a scheduled run, the
+background item or the `jamf-reports` command on that Mac keeps to a safe value for that key:
+reports go to the `Generated Reports` folder in the workspace, retention archives and never
+deletes, a changed data folder reads as the default `jamf-cli-data`, and no webhook is sent. The
+run log gets one `[warn] shared config changed <key>` line per key, and the run still counts as
+successful. To accept the change, open Audit, then Config Doctor, read the "Shared config changed
+since this Mac pinned it" row, which lists each key with its pinned and current value, and click
+Confirm. Saving the output folders or the notification settings in the app on that Mac also
+confirms just those keys. A local workspace is never pinned. `retention.archive_dir` is not
+pinned yet.
+
 **`config.yaml` retention settings are honored when synced.** The `retention.mode` setting
 (archive or delete) and `retention.snapshot_keep_days` are read from `config.yaml` at
-collect time, not stored in the app. If a synced config is modified to `mode: delete` and
-`snapshot_keep_days: 1`, a snapshot collection will purge older raw data before you notice.
-Note that `retention.enabled` is **off by default** — raw `jamf-cli-data/` snapshots are
-kept indefinitely until an admin opts in, so this risk only applies to workspaces that
-have already turned retention on.
+collect time, not stored in the app. A shared workspace pins `retention.enabled` and
+`retention.mode` per Mac (above), so a peer's change to `delete` archives on a Mac that has not
+confirmed it; on a local workspace the file is the only authority. `retention.enabled` is
+**off by default** — raw `jamf-cli-data/` snapshots are kept indefinitely until an admin opts
+in, so this risk only applies to workspaces that have already turned retention on.
 
 **`jamf_cli.require_manifest` hardens against tampered snapshots.** When set to `true`,
 each collected raw snapshot gets a sibling SHA-256 `manifest.json`, and every report-
