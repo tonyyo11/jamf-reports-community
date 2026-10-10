@@ -51,13 +51,12 @@ enum WorkspaceRootStore {
     /// Resolution order — first match wins:
     /// 1. `JRC_TEST_WORKSPACES_ROOT` (DEBUG only) so tests are never affected
     ///    by a real preference on the developer's machine.
-    /// 2. `JRC_WORKSPACES_ROOT` — explicit, used by headless runs.
-    /// 3. The stored preference.
-    /// 4. `~/Jamf-Reports`.
-    ///
-    /// In DEBUG, a test process reading the standard preferences gets a temporary
-    /// folder of its own in place of 3 and 4, as `AppSupport` does, so a test that
-    /// sets no root never writes the real one.
+    /// 2. In DEBUG, a test process reading the standard preferences gets a temporary
+    ///    folder of its own, as `AppSupport` does, so a test that sets no root never
+    ///    writes the real one, whatever `JRC_WORKSPACES_ROOT` holds.
+    /// 3. `JRC_WORKSPACES_ROOT` — explicit, used by headless runs.
+    /// 4. The stored preference.
+    /// 5. `~/Jamf-Reports`.
     ///
     /// A stored path that has become unusable (share unmounted, folder deleted)
     /// is **not** silently swapped for the default: doing so would start a
@@ -71,18 +70,17 @@ enum WorkspaceRootStore {
         if let path = environment["JRC_TEST_WORKSPACES_ROOT"], !path.isEmpty {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
+        // Before the headless variable, so a root exported in the developer's shell for the
+        // CLI cannot send a test run to their real workspaces. A test that checks resolution
+        // passes its own preferences suite.
+        if NSClassFromString("XCTestCase") != nil, defaults === UserDefaults.standard {
+            return testProcessRoot
+        }
         #endif
 
         if let path = environment[environmentKey], !path.isEmpty {
             return refusingSensitive(URL(fileURLWithPath: path, isDirectory: true))
         }
-
-        #if DEBUG
-        // A test that checks resolution passes its own preferences suite.
-        if NSClassFromString("XCTestCase") != nil, defaults === UserDefaults.standard {
-            return testProcessRoot
-        }
-        #endif
 
         if let stored = defaults.string(forKey: defaultsKey),
            !stored.trimmingCharacters(in: .whitespaces).isEmpty {

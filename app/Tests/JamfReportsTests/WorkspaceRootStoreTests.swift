@@ -52,6 +52,17 @@ final class WorkspaceRootStoreTests: XCTestCase {
         XCTAssertEqual(ProfileService.workspacesRoot().path, root.path)
     }
 
+    /// A `JRC_WORKSPACES_ROOT` exported in the developer's shell for the included CLI must not
+    /// steer a test run onto their real workspaces: under XCTest the test root wins.
+    func testATestProcessIgnoresTheHeadlessRootVariable() {
+        let real = scratch.appendingPathComponent("real-root")
+        let root = WorkspaceRootStore.current(
+            environment: [WorkspaceRootStore.environmentKey: real.path])
+        XCTAssertNotEqual(root.path, real.path)
+        XCTAssertTrue(root.path.hasPrefix(FileManager.default.temporaryDirectory.path),
+                      root.path)
+    }
+
     func testDefaultsToHomeWhenNothingIsConfigured() {
         let root = WorkspaceRootStore.current(defaults: defaults, environment: [:])
         XCTAssertEqual(root.path, WorkspaceRootStore.defaultRoot.path)
@@ -208,11 +219,11 @@ final class WorkspaceRootStoreTests: XCTestCase {
     /// Every screen that tells the operator where a file lives routes through
     /// these. Ten views used to hardcode `~/Jamf-Reports/<profile>/…`, which
     /// names a path that stops existing the moment the root moves.
-    /// A root under the home folder, set the way a headless run sets one: a test process
-    /// that sets none gets a temporary folder.
+    /// A root under the home folder, set through the test variable: a test process that
+    /// sets none gets a temporary folder.
     private func withDefaultRootInEnvironment(_ body: () -> Void) {
-        setenv(WorkspaceRootStore.environmentKey, WorkspaceRootStore.defaultRoot.path, 1)
-        defer { unsetenv(WorkspaceRootStore.environmentKey) }
+        setenv("JRC_TEST_WORKSPACES_ROOT", WorkspaceRootStore.defaultRoot.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
         body()
     }
 
@@ -240,8 +251,8 @@ final class WorkspaceRootStoreTests: XCTestCase {
     /// A root outside the home directory has no `~` form and must print in
     /// full — abbreviating it would name the wrong folder.
     func testDisplayRootPrintsNonHomePathsInFull() {
-        setenv(WorkspaceRootStore.environmentKey, "/Volumes/TeamShare/Jamf Reports", 1)
-        defer { unsetenv(WorkspaceRootStore.environmentKey) }
+        setenv("JRC_TEST_WORKSPACES_ROOT", "/Volumes/TeamShare/Jamf Reports", 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
         XCTAssertEqual(WorkspaceRootStore.displayRoot, "/Volumes/TeamShare/Jamf Reports")
     }
 
