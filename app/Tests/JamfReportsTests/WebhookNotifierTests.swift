@@ -81,7 +81,8 @@ final class WebhookNotifierTests: XCTestCase {
         let off = NotifyConfig(enabled: false, provider: "teams", url: "https://exa mple.com/x")
         XCTAssertEqual(WebhookNotifier.endpoint(for: off), .notConfigured)
         let sent = await WebhookNotifier.send(config: off, title: "t", facts: facts)
-        let alert = await WebhookNotifier.sendAlert(config: NotifyConfig(), title: "t", facts: facts)
+        let alert = await WebhookNotifier.sendAlert(
+            config: NotifyConfig(), title: "t", facts: facts)
         XCTAssertTrue(sent)
         XCTAssertTrue(alert)
     }

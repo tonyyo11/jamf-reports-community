@@ -170,7 +170,8 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
     }
 
-    /// `summary_2026-13-45.json` matches the canonical pattern but is no date, so its mtime ages it.
+    /// `summary_2026-13-45.json` matches the canonical pattern but is no date, so its mtime
+    /// ages it.
     func testASummaryWithAnInvalidDateInItsNameIsAgedByItsMtime() throws {
         let summariesDir = root.appendingPathComponent("snapshots/summaries", isDirectory: true)
         let stale = summariesDir.appendingPathComponent("summary_2026-13-45.json")
