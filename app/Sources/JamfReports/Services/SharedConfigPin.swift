@@ -395,6 +395,24 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
     }
 
+    @TaskLocal private static var inUnattendedScope = false
+
+    /// Runs an automatic collect (catch-up, self-remediation, the background refresh): nobody
+    /// is at the keyboard, so inside `body` a checkpoint installs the safe path values as a
+    /// headless run does, and they are removed again afterwards so the person's own
+    /// actions keep reading config.yaml as typed.
+    static func unattended<T: Sendable>(
+        profile: String, _ body: @Sendable () async throws -> T
+    ) async rethrows -> T {
+        defer {
+            if let workspace = ProfileService.workspaceURL(for: profile),
+               !state.withLock({ $0.headless }) {
+                removeOverrides(for: workspace)
+            }
+        }
+        return try await $inUnattendedScope.withValue(true) { try await body() }
+    }
+
     /// Run at the start of a collect or generate: checks the pin, logs one `[warn]` per drifted
     /// key (once per process for the same value), and in a headless run installs the safe
     /// path values for `WorkspacePaths`.
@@ -417,8 +435,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             onLine?(.init(timestamp: Date(), level: .warn, text: note))
         }
         let id = overrideID(workspace)
+        let unattendedRun = inUnattendedScope
         let fresh: [Drift] = state.withLock { state in
-            if state.headless {
+            if state.headless || unattendedRun {
                 state.overrides[id] = overrides.isEmpty ? nil : overrides
             }
             return result.drifts.filter {

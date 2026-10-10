@@ -419,6 +419,22 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside + "-peer")
     }
 
+    func testAnAutomaticGUICollectUsesSafeFoldersOnlyWhileItRuns() async throws {
+        try writeConfig(outputDir: outside, allowAbsolute: true)
+        _ = check()
+        try writeConfig(outputDir: outside + "-peer", allowAbsolute: true)
+        let appSupport = self.appSupport!
+        let profile = self.profile
+
+        let during = try await SharedConfigPin.unattended(profile: profile) {
+            SharedConfigPin.checkpoint(profile: profile, appSupport: appSupport, onLine: nil)
+            return try WorkspacePaths.outputDir(for: profile).lastPathComponent
+        }
+        XCTAssertEqual(during, WorkspacePaths.generatedReportsDirName)
+        XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside + "-peer",
+                       "a person's own action reads the typed value again afterwards")
+    }
+
     func testConfirmingEndsTheFallback() throws {
         try writeConfig(outputDir: outside, allowAbsolute: true)
         _ = check()
