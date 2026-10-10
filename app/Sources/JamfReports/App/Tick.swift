@@ -17,9 +17,10 @@ func runTick(
             return 1
         }
     }
+    let hold: TickLockHold
     switch lock.claim() {
-    case .acquired:
-        break
+    case .acquired(let held):
+        hold = held
     case .heldElsewhere:
         // Stamp the refusal before returning: the non-catch-up window for the
         // wake that eventually gets in is measured from here, not from that
@@ -38,7 +39,7 @@ func runTick(
         failures.finish()
         return 1
     }
-    defer { lock.release() }
+    defer { hold.release() }
     let blockedSince = TickLock.takeBlockedSince()
 
     // Listed before the schedules load: Run now only queues a label whose schedule
@@ -69,8 +70,8 @@ func runTick(
         save: { try $0.save() },
         clearRunNowMarker: { TickRunner.clearRunNowMarker(label: $0) },
         perform: { run in
-            lock.touch()
-            return await lock.keepingAlive { await runSchedule(run.schedule, verbose: false) }
+            hold.touch()
+            return await hold.keepingAlive { await runSchedule(run.schedule, verbose: false) }
         },
         recordFailure: failures.record,
         // Once per wake, after all runs, so a schedule that just fired is not

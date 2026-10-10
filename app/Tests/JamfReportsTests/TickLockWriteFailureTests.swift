@@ -33,7 +33,8 @@ final class TickLockWriteFailureTests: XCTestCase {
 
     func testAnUnwritableLockFileFailsTheTickInsteadOfReadingAsHeld() async throws {
         let lock = TickLock(url: readOnlyDir.appendingPathComponent(".tick.lock"))
-        try XCTSkipIf(lock.claim() != .writeFailed, "the directory is writable (running as root?)")
+        try XCTSkipIf(
+            lock.claim().kind != "writeFailed", "the directory is writable (running as root?)")
 
         let exit = await runTick(arguments: ["--tick"], lock: lock)
 

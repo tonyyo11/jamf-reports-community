@@ -31,6 +31,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Two scheduled runs can no longer start together, and a Mac that slept in the middle of a run no
+  longer has that run taken over when it wakes.
 - Snapshot retention goes by the date in each file name, so a sync provider that re-stamps
   downloaded files can no longer get newer snapshots archived or deleted. A summary whose name
   holds a date that does not exist is aged by its modified time instead.

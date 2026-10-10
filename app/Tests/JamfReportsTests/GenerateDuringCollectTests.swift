@@ -95,7 +95,7 @@ final class GenerateDuringCollectTests: XCTestCase {
             return 0
         }
         XCTAssertEqual(code, 0)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        XCTAssertTrue(lock.namesNoHolder)
 
         let refused = WorkspaceStore.exportFailureToast(
             CLIBridgeError.collectInProgress, operation: "PDF generation")

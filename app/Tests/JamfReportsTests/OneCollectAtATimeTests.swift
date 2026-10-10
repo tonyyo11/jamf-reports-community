@@ -250,7 +250,7 @@ final class OneCollectAtATimeTests: XCTestCase {
         }
         XCTAssertEqual(outer, "collectInProgress \(getpid())")
         XCTAssertFalse(CLIBridge.collectRunning)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        XCTAssertTrue(lock.namesNoHolder)
     }
 
     func testTheBridgeRefusesBeforeRunningAnything() async throws {

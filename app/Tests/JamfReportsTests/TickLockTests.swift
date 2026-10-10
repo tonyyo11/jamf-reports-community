@@ -10,104 +10,97 @@ final class TickLockTests: XCTestCase {
         return url
     }
 
-    func testAcquireWritesPidAndReleaseRemovesIt() throws {
+    func testClaimWritesPidAndReleaseLeavesTheFileEmpty() throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 4242, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 4242))
         XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "4242")
-        lock.release(pid: 4242)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        hold.release()
+        XCTAssertTrue(lock.namesNoHolder)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: lock.url.path),
+                      "the file is never unlinked: two inodes would give two locks")
     }
 
-    func testLivePidBlocksASecondAcquire() {
+    func testASecondClaimInTheSameProcessIsHeldElsewhere() throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
-        XCTAssertFalse(lock.acquire(pid: 2, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        defer { hold.release() }
+        XCTAssertEqual(lock.claim(pid: 2).kind, "heldElsewhere")
+        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "100",
+                       "the turned-away claim leaves the holder's file alone")
     }
 
-    func testDeadPidIsTakenOver() throws {
+    func testReleaseThenClaimSucceeds() throws {
+        let lock = TickLock(url: lockURL())
+        try XCTUnwrap(lock.claimedHold(pid: 100)).release()
+        let second = try XCTUnwrap(lock.claimedHold(pid: 7))
+        defer { second.release() }
+        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
+    }
+
+    func testReleaseIsIdempotentAndDoesNotFreeANewHolder() throws {
+        let lock = TickLock(url: lockURL())
+        let first = try XCTUnwrap(lock.claimedHold(pid: 100))
+        first.release()
+        let second = try XCTUnwrap(lock.claimedHold(pid: 7))
+        defer { second.release() }
+        first.release()
+        XCTAssertEqual(lock.claim(pid: 8).kind, "heldElsewhere", "a spent hold frees nothing")
+    }
+
+    /// The kernel drops the lock with the descriptor, so a holder that is gone, whatever pid
+    /// the file still names, never blocks a claim.
+    func testALockWhoseHolderIsGoneIsClaimableEvenWithAPidInTheFile() throws {
         let lock = TickLock(url: lockURL())
         try Data("99999".utf8).write(to: lock.url)
-        XCTAssertTrue(lock.acquire(pid: 7, isAlive: { $0 != 99999 }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 7))
+        defer { hold.release() }
         XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
     }
 
-    /// Pids are recycled and a run can wedge on a hung network call, so an
-    /// alive-looking holder is not enough to block forever.
-    func testAnOldLockIsTakenOverEvenWhenItsPidLooksAlive() throws {
+    /// The sleep case: a Mac asleep mid-collect wakes with the holder's mtime hours old and its
+    /// heartbeat not yet run. The kernel lock still stands, so no second run starts.
+    func testAnOldMtimeWithALiveHolderIsStillHeldElsewhere() throws {
         let lock = TickLock(url: lockURL())
-        try Data("4242".utf8).write(to: lock.url)
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        defer { hold.release() }
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         try FileManager.default.setAttributes(
             [.modificationDate: old], ofItemAtPath: lock.url.path)
-        XCTAssertTrue(lock.acquire(pid: 7, isAlive: { _ in true }))
-        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
+        XCTAssertEqual(lock.claim(pid: 7).kind, "heldElsewhere")
+        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "100")
+        XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 7, isAlive: { _ in true }),
+                       "the probe's mtime heuristic is separate from the kernel lock")
     }
 
-    func testGarbageLockFileIsTakenOver() throws {
+    /// The heartbeat's give-up closes the descriptor, which is what lets a wedged live
+    /// holder's lock be claimed.
+    func testAHoldThatGaveUpIsClaimable() async throws {
         let lock = TickLock(url: lockURL())
-        try Data("not a pid".utf8).write(to: lock.url)
-        XCTAssertTrue(lock.acquire(pid: 7, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        let beats = hold.heartbeat(every: .milliseconds(10), limit: .milliseconds(50))
+        await beats.value
+        XCTAssertTrue(lock.namesNoHolder, "a given-up lock names nobody, so the probe lets go")
+        let next = try XCTUnwrap(lock.claimedHold(pid: 7))
+        next.release()
     }
 
-    /// `kill(0, 0)` signals the caller's own process group and succeeds, `kill(-1, 0)` every
-    /// process, and `kill(1, 0)` reaches launchd (EPERM, which counts as alive): none of them
-    /// is a holder, so a lock file naming one must not hold off every run until it goes stale.
-    func testAHolderPidOfOneOrBelowIsGarbageNotALiveProcess() throws {
-        for text in ["0", "1", "-1", "-5"] {
-            let lock = TickLock(url: lockURL())
-            try Data(text.utf8).write(to: lock.url)
-            XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 7), "pid \(text) read as alive")
-            XCTAssertTrue(lock.acquire(pid: 7), "pid \(text) blocked a takeover")
-            XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
-        }
+    func testALockFileThatIsASymlinkIsRefused() throws {
+        let target = lockURL()
+        try Data("untouched".utf8).write(to: target)
+        let link = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tick-link-\(UUID().uuidString).lock")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        addTeardownBlock { try? FileManager.default.removeItem(at: link) }
+        XCTAssertEqual(TickLock(url: link).claim(pid: 7).kind, "writeFailed")
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "untouched")
     }
 
-    /// A takeover must not have its lock deleted by the process it displaced.
-    func testReleaseLeavesAFileOwnedByAnotherPidInPlace() throws {
+    func testTheLockFileIsPrivateToTheOwner() throws {
         let lock = TickLock(url: lockURL())
-        try Data("7".utf8).write(to: lock.url)
-        lock.release(pid: 4242)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: lock.url.path))
-    }
-
-    func testTouchResetsTheLockFileModificationDate() throws {
-        let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
-        let old = Date().addingTimeInterval(-2 * 60 * 60)
-        try FileManager.default.setAttributes(
-            [.modificationDate: old], ofItemAtPath: lock.url.path)
-        lock.touch()
-        let modified = try modificationDate(of: lock.url)
-        XCTAssertLessThan(abs(modified.timeIntervalSinceNow), 5)
-    }
-
-    // MARK: - claim
-
-    func testClaimNamesALiveHolderElsewhereAndLeavesItsFile() throws {
-        let lock = TickLock(url: lockURL())
-        try Data("4242".utf8).write(to: lock.url)
-        XCTAssertEqual(lock.claim(pid: 7, isAlive: { _ in true }), .heldElsewhere)
-        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "4242")
-    }
-
-    /// One read decides. The holder letting go right after that read still means it held
-    /// the lock; a second look used to read the gap as a write failure, and the collect
-    /// then ran with no lock at all.
-    func testClaimDecidesFromOneReadWhenTheHolderReleasesRightAfter() throws {
-        let lock = TickLock(url: lockURL())
-        try Data("4242".utf8).write(to: lock.url)
-        let claim = lock.claim(pid: 7, isAlive: { _ in
-            lock.release(pid: 4242)
-            return true
-        })
-        XCTAssertEqual(claim, .heldElsewhere)
-    }
-
-    func testClaimReportsALockFileItCouldNotWrite() {
-        let lock = TickLock(url: FileManager.default.temporaryDirectory
-            .appendingPathComponent("missing-\(UUID().uuidString)/tick.lock"))
-        XCTAssertEqual(lock.claim(pid: 7, isAlive: { _ in true }), .writeFailed)
-        XCTAssertFalse(lock.acquire(pid: 7, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 7))
+        defer { hold.release() }
+        let attributes = try FileManager.default.attributesOfItem(atPath: lock.url.path)
+        XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o600)
     }
 
     /// The pid is on disk once the write lands, so a failed chmod must not report the lock
@@ -115,36 +108,56 @@ final class TickLockTests: XCTestCase {
     func testAPermissionsFailureAfterTheWriteStillHoldsTheLock() throws {
         let lock = TickLock(url: lockURL())
         struct Refused: Error {}
-        let claim = lock.claim(pid: 7, isAlive: { _ in true }, protect: { _ in throw Refused() })
-        XCTAssertEqual(claim, .acquired)
+        guard case .acquired(let hold) = lock.claim(pid: 7, protect: { _ in throw Refused() })
+        else { return XCTFail("the claim must stand") }
         XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
-        lock.release(pid: 7)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        hold.release()
+        XCTAssertTrue(lock.namesNoHolder)
     }
 
-    /// A second collect in a process that already holds the lock keeps holding it when the
-    /// rewrite fails, so the first to finish cannot remove the file under the second.
-    func testAFailedRewriteKeepsAHoldThisProcessAlreadyHas() throws {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tick-ro-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let lock = TickLock(url: dir.appendingPathComponent("tick.lock"))
-        XCTAssertEqual(lock.claim(pid: 7, isAlive: { _ in true }), .acquired)
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
-        defer {
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o700], ofItemAtPath: dir.path)
-            try? FileManager.default.removeItem(at: dir)
-        }
-        XCTAssertEqual(lock.claim(pid: 7, isAlive: { _ in true }), .acquired)
-        XCTAssertEqual(lock.claim(pid: 8, isAlive: { _ in false }), .writeFailed)
+    func testClaimReportsALockFileItCouldNotWrite() {
+        let lock = TickLock(url: FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-\(UUID().uuidString)/tick.lock"))
+        XCTAssertEqual(lock.claim(pid: 7).kind, "writeFailed")
+    }
+
+    func testTouchResetsTheLockFileModificationDate() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        defer { hold.release() }
+        let old = Date().addingTimeInterval(-2 * 60 * 60)
+        try FileManager.default.setAttributes(
+            [.modificationDate: old], ofItemAtPath: lock.url.path)
+        hold.touch()
+        let modified = try modificationDate(of: lock.url)
+        XCTAssertLessThan(abs(modified.timeIntervalSinceNow), 5)
+    }
+
+    // MARK: - The probe reads a live holder
+
+    func testTheProbeSeesALiveHolderWithoutAcquiringOrWriting() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 4242))
+        defer { hold.release() }
+        XCTAssertTrue(lock.isHeldByAnotherLiveProcess(pid: 7, isAlive: { _ in true }))
+        XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 4242, isAlive: { _ in true }),
+                       "the holder itself is not another process")
+        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "4242")
+        XCTAssertEqual(lock.claim(pid: 8).kind, "heldElsewhere", "probing left the lock held")
+    }
+
+    func testTheProbeLetsGoOfAReleasedLock() throws {
+        let lock = TickLock(url: lockURL())
+        try XCTUnwrap(lock.claimedHold(pid: 4242)).release()
+        XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 7, isAlive: { _ in true }))
     }
 
     // MARK: - isHeldByAnotherLiveProcess
 
-    func testHeldCheckIsFalseForOwnPid() {
+    func testHeldCheckIsFalseForOwnPid() throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 4242, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 4242))
+        defer { hold.release() }
         XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 4242, isAlive: { _ in true }))
     }
 
@@ -194,11 +207,12 @@ final class TickLockTests: XCTestCase {
     /// wake takes it over mid-collect.
     func testKeepingAliveTouchesTheLockWhileTheBodyRuns() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        defer { hold.release() }
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         try FileManager.default.setAttributes(
             [.modificationDate: old], ofItemAtPath: lock.url.path)
-        let value = await lock.keepingAlive(every: .milliseconds(20)) { () async -> Int in
+        let value = await hold.keepingAlive(every: .milliseconds(20)) { () async -> Int in
             try? await Task.sleep(for: .milliseconds(400))
             return 42
         }
@@ -209,8 +223,9 @@ final class TickLockTests: XCTestCase {
 
     func testKeepingAliveStopsWhenTheBodyReturns() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
-        _ = await lock.keepingAlive(every: .milliseconds(20)) { () async -> Bool in
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        defer { hold.release() }
+        _ = await hold.keepingAlive(every: .milliseconds(20)) { () async -> Bool in
             try? await Task.sleep(for: .milliseconds(100))
             return true
         }
@@ -226,11 +241,12 @@ final class TickLockTests: XCTestCase {
     /// itself and cancels them when the collect ends.
     func testHeartbeatTouchesTheLockUntilCancelled() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        defer { hold.release() }
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         try FileManager.default.setAttributes(
             [.modificationDate: old], ofItemAtPath: lock.url.path)
-        let beats = lock.heartbeat(every: .milliseconds(20))
+        let beats = hold.heartbeat(every: .milliseconds(20))
         try await Task.sleep(for: .milliseconds(200))
         let touched = try modificationDate(of: lock.url)
         XCTAssertLessThan(abs(touched.timeIntervalSinceNow), 5)
@@ -247,9 +263,10 @@ final class TickLockTests: XCTestCase {
 
     func testKeepingAliveStopsBeatingAfterItsLimit() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
+        let hold = try XCTUnwrap(lock.claimedHold(pid: 100))
+        defer { hold.release() }
         let old = Date().addingTimeInterval(-2 * 60 * 60)
-        _ = await lock.keepingAlive(every: .milliseconds(20), limit: .milliseconds(100)) {
+        _ = await hold.keepingAlive(every: .milliseconds(20), limit: .milliseconds(100)) {
             () async -> Bool in
             try? await Task.sleep(for: .milliseconds(200))
             try? FileManager.default.setAttributes(
