@@ -126,7 +126,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             (.retentionArchiveDir, current.retentionArchiveDir),
         ]
         var keys = folders.filter { outside($0.1) }.map(\.0)
-        if current.retentionMode == RetentionConfig.Mode.delete.rawValue { keys.append(.retentionMode) }
+        if current.retentionMode == RetentionConfig.Mode.delete.rawValue {
+            keys.append(.retentionMode)
+        }
         pin.unconfirmed = keys.map(\.rawValue)
         return pin
     }

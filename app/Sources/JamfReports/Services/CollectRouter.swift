@@ -143,7 +143,8 @@ enum CollectRouter {
             guard SharedConfigPin.protectAllowed(profile: profile) else {
                 onLine(.init(timestamp: Date(), level: .info,
                              text: "[skip] protect: protect.profile changed in the shared "
-                                + "config.yaml and is not confirmed on this Mac — Protect not collected"))
+                                + "config.yaml and is not confirmed on this Mac — "
+                                + "Protect not collected"))
                 return
             }
             guard disposition == .collected else {

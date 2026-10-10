@@ -71,8 +71,9 @@ enum NotifyConfigWriter {
         do {
             if !changed.isEmpty { try SharedConfigPin.confirm(profile: profile, keys: changed) }
         } catch {
+            let reason = error.localizedDescription
             AppLogger.webhook.warning(
-                "SharedConfigPin: could not confirm after save: \(error.localizedDescription, privacy: .public)")
+                "SharedConfigPin: could not confirm after save: \(reason, privacy: .public)")
         }
         return saved
     }
