@@ -51,6 +51,11 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case notifyDetail = "notify.detail"
         case notifyURL = "notify.url"
 
+        /// `text(of:)` with everything a comparison needs: the webhook's full URL hash.
+        fileprivate func token(of pin: SharedConfigPin) -> String {
+            self == .notifyURL ? "\(pin.notifyURLHost) \(pin.notifyURLHash)" : text(of: pin)
+        }
+
         /// Place in `allCases`, which orders the rows and warnings.
         fileprivate var position: Int { Key.allCases.firstIndex(of: self) ?? Int.max }
 
@@ -97,7 +102,17 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     struct Drift: Sendable, Equatable {
         let key: Key
         let pinned: String
+        /// What the row shows. The webhook shows host, port and a short fingerprint.
         let current: String
+        /// What Confirm compares: the whole value, including the full URL hash.
+        let currentToken: String
+
+        init(key: Key, pinned: String, current: String, currentToken: String? = nil) {
+            self.key = key
+            self.pinned = pinned
+            self.current = current
+            self.currentToken = currentToken ?? current
+        }
     }
 
     /// Each key whose value differs, in `Key.allCases` order.
@@ -105,7 +120,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         Key.allCases.compactMap { key in
             let was = key.text(of: pinned)
             let now = key.text(of: current)
-            return was == now ? nil : Drift(key: key, pinned: was, current: now)
+            return key.token(of: pinned) == key.token(of: current)
+                ? nil
+                : Drift(key: key, pinned: was, current: now, currentToken: key.token(of: current))
         }
     }
 
@@ -267,7 +284,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case .unreadable:
             // Fail closed: with no pin to compare against, every key reads as changed.
             let drifts = Key.allCases.map {
-                Drift(key: $0, pinned: "(pin unreadable)", current: $0.text(of: current))
+                Drift(key: $0, pinned: "(pin unreadable)", current: $0.text(of: current),
+                      currentToken: $0.token(of: current))
             }
             return Check(workspace: workspace, pinned: nil, drifts: drifts)
         case .pin(let pinned):
@@ -283,7 +301,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     ) -> [Drift] {
         let waiting = pin.unconfirmed.compactMap(Key.init(rawValue:))
             .filter { key in !changed.contains { $0.key == key } }
-            .map { Drift(key: $0, pinned: firstSightNote, current: $0.text(of: current)) }
+            .map {
+                Drift(key: $0, pinned: firstSightNote, current: $0.text(of: current),
+                      currentToken: $0.token(of: current))
+            }
         return (changed + waiting).sorted { $0.key.position < $1.key.position }
     }
 
@@ -335,7 +356,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case .unreadable: pin = firstPin(current: current, workspace: workspace); unreadable = true
         }
         var confirmed = 0
-        for drift in drifts where drift.key.text(of: current) == drift.current {
+        for drift in drifts where drift.key.token(of: current) == drift.currentToken {
             drift.key.copy(from: current, into: &pin)
             pin.unconfirmed.removeAll { $0 == drift.key.rawValue }
             confirmed += 1
@@ -530,7 +551,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
         let fresh = result.drifts.filter { drift in
             announcements?.seen.withLock {
-                $0.insert("\(id)|\(drift.key.rawValue)|\(drift.current)").inserted
+                $0.insert("\(id)|\(drift.key.rawValue)|\(drift.currentToken)").inserted
             } ?? true
         }
         for drift in fresh {

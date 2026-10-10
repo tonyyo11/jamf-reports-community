@@ -216,6 +216,24 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(pin.notifyURLHost, "hooks.example.com")
     }
 
+    func testConfirmComparesTheFullWebhookHashNotTheShortFingerprint() throws {
+        try writeConfig(webhook: "https://hooks.example.com/a")
+        _ = check()
+        try writeConfig(webhook: "https://collector.attacker.test/a")
+        let shown = try XCTUnwrap(check().drifts.first)
+        XCTAssertTrue(shown.current.contains("URL fingerprint"))
+        XCTAssertEqual(shown.currentToken.split(separator: " ").last?.count, 64)
+
+        // A drift whose short form matches but whose full hash does not is not confirmed.
+        let forged = SharedConfigPin.Drift(
+            key: .notifyURL, pinned: shown.pinned, current: shown.current,
+            currentToken: shown.currentToken + "0")
+        try SharedConfigPin.confirm(profile: profile, drifts: [forged], appSupport: appSupport)
+        XCTAssertEqual(check().drifts.map(\.key), [.notifyURL])
+        try SharedConfigPin.confirm(profile: profile, drifts: [shown], appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
     func testConfirmingAnUnreadablePinNeedsEveryKeyToStillMatch() throws {
         try writeConfig()
         _ = check()
