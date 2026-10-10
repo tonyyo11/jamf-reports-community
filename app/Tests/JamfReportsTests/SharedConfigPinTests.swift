@@ -131,6 +131,51 @@ final class SharedConfigPinTests: XCTestCase {
             sharedEnabled: nil, onSyncProvider: false, pinExists: false))
     }
 
+    func testAnUnreadablePinFailsClosedWithEveryKeyDrifted() throws {
+        try writeConfig(retentionMode: "archive")
+        _ = check()
+        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        try "not json".write(to: store, atomically: true, encoding: .utf8)
+
+        let result = check()
+        XCTAssertEqual(Set(result.drifts.map(\.key)), Set(SharedConfigPin.Key.allCases))
+        XCTAssertEqual(try String(contentsOf: store, encoding: .utf8), "not json",
+                       "the file is not replaced by what config.yaml holds")
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        let safe = SharedConfigPin.effectiveRetention(config.retention, check: result)
+        XCTAssertEqual(safe?.resolvedMode, .archive)
+        XCTAssertEqual(safe?.isEnabled, false)
+        XCTAssertFalse(SharedConfigPin.webhookAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertEqual(ConfigDoctorService.sharedConfigRows(
+            profile: profile, appSupport: appSupport).count, 1)
+    }
+
+    func testAPinWrittenBeforeAKeyWasAddedStillReads() throws {
+        try writeConfig()
+        _ = check()
+        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let old = #"{"allowAbsolutePaths":false,"outputDir":"","archiveDir":"","dataDir":"","#
+            + #""retentionEnabled":true,"retentionMode":"archive","notifyURLHost":"hooks.example.com"}"#
+        try old.write(to: store, atomically: true, encoding: .utf8)
+        guard case .pin(let pin) = SharedConfigPin.read(profile: profile, appSupport: appSupport)
+        else { return XCTFail("an older pin should still decode") }
+        XCTAssertEqual(pin.notifyURLHost, "hooks.example.com")
+        XCTAssertEqual(pin.retentionArchiveDir, "")
+        XCTAssertTrue(check().drifts.map(\.key) == [.sharedEnabled],
+                      "only the key the old pin lacks reads as changed")
+    }
+
+    func testAFirstSightSaveFailureIsLoggedOnTheRun() throws {
+        try writeConfig()
+        let missing = root.appendingPathComponent("no-such-folder/support", isDirectory: true)
+        let lines = LineBox()
+        SharedConfigPin.checkpoint(
+            profile: profile, appSupport: missing, onLine: { lines.add($0.text) })
+        XCTAssertEqual(lines.all.count, 1)
+        XCTAssertTrue(lines.all[0].hasPrefix("[warn] shared config could not be pinned"),
+                      lines.all[0])
+    }
+
     func testDiffNamesEachChangedKeyInConfigYamlSpelling() {
         let base = SharedConfigPin(
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",

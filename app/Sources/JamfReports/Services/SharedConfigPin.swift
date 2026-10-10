@@ -122,16 +122,30 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             "shared-config-pin-\(ProfileName.pathComponent(profile)).json")
     }
 
-    static func load(profile: String, appSupport: URL) -> SharedConfigPin? {
-        guard let data = try? Data(contentsOf: storeURL(profile: profile, appSupport: appSupport))
-        else { return nil }
-        do {
-            return try JSONDecoder().decode(SharedConfigPin.self, from: data)
-        } catch {
-            AppLogger.collect.warning(
-                "SharedConfigPin: pin for a profile could not be decoded, pinning again")
+    /// What the store holds. Only a missing file is a first sight: a pin that exists but
+    /// cannot be read is `unreadable`, never a reason to pin the file's current contents.
+    enum Stored: Sendable {
+        case absent
+        case unreadable
+        case pin(SharedConfigPin)
+
+        var pin: SharedConfigPin? {
+            if case .pin(let pin) = self { return pin }
             return nil
         }
+    }
+
+    static func read(profile: String, appSupport: URL) -> Stored {
+        let url = storeURL(profile: profile, appSupport: appSupport)
+        guard FileManager.default.fileExists(atPath: url.path) else { return .absent }
+        guard let data = try? Data(contentsOf: url),
+              let pin = try? JSONDecoder().decode(SharedConfigPin.self, from: data)
+        else { return .unreadable }
+        return .pin(pin)
+    }
+
+    static func load(profile: String, appSupport: URL) -> SharedConfigPin? {
+        read(profile: profile, appSupport: appSupport).pin
     }
 
     static func save(_ pin: SharedConfigPin, profile: String, appSupport: URL) throws {
@@ -149,6 +163,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let workspace: URL?
         let pinned: SharedConfigPin?
         let drifts: [Drift]
+        /// Lines for the run log about the check itself, such as a pin that could not be saved.
+        var notes: [String] = []
 
         func isDrifted(_ key: Key) -> Bool { drifts.contains { $0.key == key } }
     }
@@ -163,18 +179,26 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             profile: profile, workspace: workspace, appSupport: appSupport) else {
             return Check(workspace: workspace, pinned: nil, drifts: [])
         }
-        guard let pinned = load(profile: profile, appSupport: appSupport) else {
+        switch read(profile: profile, appSupport: appSupport) {
+        case .absent:
+            var notes: [String] = []
             do {
                 try save(current, profile: profile, appSupport: appSupport)
             } catch {
-                let reason = error.localizedDescription
-                AppLogger.collect.warning(
-                    "SharedConfigPin: could not record the pin: \(reason, privacy: .public)")
+                notes.append("[warn] shared config could not be pinned on this Mac: "
+                    + error.localizedDescription)
             }
-            return Check(workspace: workspace, pinned: current, drifts: [])
+            return Check(workspace: workspace, pinned: current, drifts: [], notes: notes)
+        case .unreadable:
+            // Fail closed: with no pin to compare against, every key reads as changed.
+            let drifts = Key.allCases.map {
+                Drift(key: $0, pinned: "(pin unreadable)", current: $0.text(of: current))
+            }
+            return Check(workspace: workspace, pinned: nil, drifts: drifts)
+        case .pin(let pinned):
+            return Check(workspace: workspace, pinned: pinned,
+                         drifts: diff(pinned: pinned, current: current))
         }
-        return Check(workspace: workspace, pinned: pinned,
-                     drifts: diff(pinned: pinned, current: current))
     }
 
     /// Whether a workspace is pinned. Unlike `SharedWorkspace.isEffectivelyShared`, which
@@ -210,7 +234,15 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
               let current = sharedCurrent(
                 profile: profile, workspace: workspace, appSupport: appSupport)
         else { return }
-        var pin = load(profile: profile, appSupport: appSupport) ?? current
+        var pin: SharedConfigPin
+        switch read(profile: profile, appSupport: appSupport) {
+        case .absent: pin = current
+        case .pin(let stored): pin = stored
+        case .unreadable:
+            // Only a full confirm replaces a pin that cannot be read.
+            guard keys == nil else { return }
+            pin = current
+        }
         for key in keys ?? Set(Key.allCases) { key.copy(from: current, into: &pin) }
         try save(pin, profile: profile, appSupport: appSupport)
         removeOverrides(for: workspace)
@@ -222,9 +254,11 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// never deletes, a changed `enabled` keeps the pinned setting, and a changed
     /// `archive_dir` reads as the default `_archive` in the workspace.
     static func effectiveRetention(_ config: RetentionConfig?, check: Check) -> RetentionConfig? {
-        guard var safe = config, let pinned = check.pinned else { return config }
+        guard var safe = config else { return config }
         if check.isDrifted(.retentionMode) { safe.mode = RetentionConfig.Mode.archive.rawValue }
-        if check.isDrifted(.retentionEnabled) { safe.enabled = pinned.retentionEnabled }
+        if check.isDrifted(.retentionEnabled) {
+            safe.enabled = check.pinned?.retentionEnabled ?? false
+        }
         if check.isDrifted(.retentionArchiveDir) { safe.archiveDir = nil }
         return safe
     }
@@ -279,6 +313,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             archiveDir: result.isDrifted(.archiveDir),
             dataDir: result.isDrifted(.dataDir),
             absolutePaths: result.isDrifted(.allowAbsolutePaths))
+        for note in result.notes {
+            AppLogger.collect.warning("\(note, privacy: .public)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: note))
+        }
         let id = overrideID(workspace)
         let fresh: [Drift] = state.withLock { state in
             if state.headless {
@@ -317,5 +355,22 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
 
     private static func overrideID(_ workspace: URL) -> String {
         workspace.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+}
+
+extension SharedConfigPin {
+    /// Every field is optional on disk, so a pin written before a key was added still reads.
+    /// A key it lacks compares as empty, which is a drift when config.yaml sets it.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        allowAbsolutePaths = try c.decodeIfPresent(Bool.self, forKey: .allowAbsolutePaths) ?? false
+        outputDir = try c.decodeIfPresent(String.self, forKey: .outputDir) ?? ""
+        archiveDir = try c.decodeIfPresent(String.self, forKey: .archiveDir) ?? ""
+        dataDir = try c.decodeIfPresent(String.self, forKey: .dataDir) ?? ""
+        retentionEnabled = try c.decodeIfPresent(Bool.self, forKey: .retentionEnabled) ?? false
+        retentionMode = try c.decodeIfPresent(String.self, forKey: .retentionMode) ?? "archive"
+        retentionArchiveDir = try c.decodeIfPresent(String.self, forKey: .retentionArchiveDir) ?? ""
+        sharedEnabled = try c.decodeIfPresent(String.self, forKey: .sharedEnabled) ?? ""
+        notifyURLHost = try c.decodeIfPresent(String.self, forKey: .notifyURLHost) ?? ""
     }
 }
