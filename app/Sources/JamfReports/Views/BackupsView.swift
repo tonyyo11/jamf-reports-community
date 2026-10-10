@@ -116,7 +116,11 @@ struct BackupsView: View {
             // Sweep abandoned .tmp-* staging dirs (interrupted backups) before
             // listing — production accumulated one that was months old.
             if !workspace.demoMode {
-                let removed = BackupMaintenance.cleanStaleTempDirs(profile: workspace.profile)
+                // Probes the volume and decodes config.yaml, which can block on a network mount.
+                let profile = workspace.profile
+                let removed = await Task.detached(priority: .utility) {
+                    BackupMaintenance.cleanStaleTempDirs(profile: profile)
+                }.value
                 if !removed.isEmpty {
                     workspace.toast = Toast(
                         message: "Removed \(removed.count) abandoned backup staging folder\(removed.count == 1 ? "" : "s")",

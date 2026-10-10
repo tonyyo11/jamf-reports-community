@@ -9,6 +9,12 @@ versions in this repository map to git tags.
 
 ### Security
 
+- Report and archive folders in /Users/Shared or ~/Public are refused, because every account on
+  the Mac can read them. Reports fall back to the workspace folder and the run log says why.
+- A custom workspace folder must be owned by you, not writable by its group or everyone, and have
+  no access control list. Folders under /Volumes and cloud storage are exempt. A folder you
+  already use keeps working, and Config Doctor flags it.
+- Run logs have credentials masked in the file itself, not only when you view them.
 - Secrets and IP addresses in quoted JSON are now redacted in diagnostic bundles and in logs you
   copy or export, and names are redacted only when they match as whole words.
 - jamf-cli is checked again right before your credentials are sent to it, and again after its file
@@ -37,6 +43,16 @@ versions in this repository map to git tags.
 - Missing counts on the Compliance Devices and Compliance Rules sheets are blank instead of 0.
 - A mobile device whose supervision state is unknown reads "Unknown" instead of "Unsupervised".
 - Demo mode no longer reads the real home folder for Device Lookup or the Run History log paths.
+- Snapshot retention goes by the date in each file name, so a sync provider that re-stamps
+  downloaded files can no longer get newer snapshots archived or deleted. A summary whose name
+  holds a date that does not exist is aged by its modified time instead.
+- Backup pruning only touches this Mac's own backups on network volumes and shared workspaces,
+  and also when config.yaml will not load, so another Mac's backups are kept.
+- A webhook URL that cannot be parsed counts as a failed send and is retried, instead of being
+  marked as sent.
+- The background item exits with an error when its lock file cannot be written, and says so in
+  Run History, instead of reporting that another run is in progress.
+- The onboarding tip now says jamf-cli keeps the credentials in the keychain.
 - Release tooling: the notary profile named for the app now also reaches the DMG step (it
   worked only when the profile was called JamfReports-Notary), every release signature asks
   for a secure timestamp, and a public release build stops instead of falling back to an
