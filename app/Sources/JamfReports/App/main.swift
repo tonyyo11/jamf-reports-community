@@ -110,10 +110,12 @@ private func appendFleetLog(_ message: String) {
 /// overdue coverage. Call EXACTLY ONCE per `--scheduled-run` process, after all
 /// per-profile work, so a fleet-wide missed run still reaches the operator.
 ///
-/// The overdue evaluation is fleet-wide (all JRC LaunchAgents); the notify
-/// webhook is resolved from the first non-excluded profile whose `notify:` is
-/// usable. The `DayMarker(name: "overdue-notify")` once-per-day gate is SHARED
-/// with the GUI path so the two never double-fire. Best-effort — never throws.
+/// The overdue evaluation spans every profile, but each profile's schedules go
+/// only to that profile's own `notify:` webhook; a fleet-wide (`isMulti`)
+/// schedule goes to every usable webhook (`OverdueDigestRouting`). A profile
+/// with no usable webhook is warned about, never cross-posted. Each send is
+/// gated by that workspace's `DayMarker(name: "overdue-notify")`, SHARED with
+/// the GUI path so the two never double-fire. Best-effort — never throws.
 ///
 /// Accepted ordering gap (2.6.1 review): running AFTER the per-profile work
 /// means a crash during that work suppresses this run's digest. Bounded, not
@@ -134,52 +136,65 @@ func notifyOverdueSchedulesHeadless(
     let overdue = AutomationHealth.evaluate(inputs: inputs)
         .filter { $0.kind == .overdue }
     guard !overdue.isEmpty else { return }
-    guard let resolved = firstUsableNotify(in: profiles) else {
-        // No profile has a usable notify webhook = total silence on a real
-        // overdue condition. Warn loudly rather than discover it only by
-        // absence — mirrors notifyMetricAlerts' equivalent guard.
-        let message = "[warn] \(overdue.count) overdue schedule(s) but no profile has a usable "
-            + "notify webhook — overdue digest cannot be delivered"
-        AppLogger.webhook.warning("\(message, privacy: .public)")
-        fputs(message + "\n", stderr)
-        return
-    }
+
     let marker = DayMarker(name: "overdue-notify")
     let today = SummaryJSONParser.dateFormatter.string(from: Date())
-    guard marker.lastStampedDay(in: resolved.workspace) != today else { return }
+    let workspaces = notifyWorkspaces(in: profiles.filter { !excluded.contains($0) })
+    let targets = workspaces.map { entry in
+        OverdueDigestRouting.Target(
+            profile: entry.profile, notify: entry.notify,
+            sentToday: marker.lastStampedDay(in: entry.workspace) == today)
+    }
+    let routing = OverdueDigestRouting.route(overdue: overdue, targets: targets)
 
-    // Reuse the GUI's fact builder so the two paths emit byte-identical cards
-    // (and honor notify.detail minimal/full the same way).
-    let facts = WorkspaceStore.overdueFacts(
-        detail: resolved.notify.resolvedDetail, profile: resolved.profile, overdue: overdue
-    )
-    let sent = await WebhookNotifier.sendFailed(
-        config: resolved.notify,
-        title: "Scheduled run overdue — \(overdue.count) schedule" + (overdue.count == 1 ? "" : "s"),
-        facts: facts
-    )
-    guard sent else { return }
-    // Stamp only on a successful send so a transient webhook failure retries next run.
-    marker.stamp(day: today, in: resolved.workspace)
-    print("[info] overdue schedule digest posted headlessly (\(overdue.count) overdue)")
+    if !routing.undeliverable.isEmpty {
+        // A real overdue condition with no webhook to carry it = silence.
+        // Warn loudly rather than discover it only by absence — mirrors
+        // notifyMetricAlerts' equivalent guard.
+        let owners = Set(routing.undeliverable.map { $0.isMulti ? "all profiles" : $0.profile })
+            .sorted().joined(separator: ", ")
+        let message = "[warn] \(routing.undeliverable.count) overdue schedule(s) for \(owners) "
+            + "but no usable notify webhook — overdue digest cannot be delivered"
+        AppLogger.webhook.warning("\(message, privacy: .public)")
+        fputs(message + "\n", stderr)
+    }
+
+    for batch in routing.batches {
+        guard let entry = workspaces.first(where: { $0.profile == batch.profile }) else { continue }
+        // Reuse the GUI's fact builder so the two paths emit byte-identical cards
+        // (and honor notify.detail minimal/full the same way).
+        let facts = WorkspaceStore.overdueFacts(
+            detail: entry.notify.resolvedDetail, profile: batch.profile, overdue: batch.issues
+        )
+        let count = batch.issues.count
+        let sent = await WebhookNotifier.sendFailed(
+            config: entry.notify,
+            title: "Scheduled run overdue — \(count) schedule" + (count == 1 ? "" : "s"),
+            facts: facts
+        )
+        guard sent else { continue }
+        // Stamp only on a successful send so a transient webhook failure retries next run.
+        marker.stamp(day: today, in: entry.workspace)
+        print("[info] overdue schedule digest posted headlessly for \(batch.profile) "
+            + "(\(count) overdue)")
+    }
 }
 
-/// First profile in `profiles` (discovery order) whose `config.yaml` `notify:`
-/// block is usable, with its notify config and workspace URL. nil when none
-/// qualifies. Best-effort per profile — an unreadable/undecodable config skips.
-private func firstUsableNotify(
+/// Each profile in `profiles` whose `config.yaml` `notify:` block is usable, with
+/// its notify config and workspace URL, in discovery order. Best-effort per
+/// profile — an unreadable/undecodable config is left out.
+private func notifyWorkspaces(
     in profiles: [String]
-) -> (profile: String, notify: NotifyConfig, workspace: URL)? {
-    for profile in profiles {
+) -> [(profile: String, notify: NotifyConfig, workspace: URL)] {
+    profiles.compactMap { profile in
         guard ProfileService.isValid(profile),
-              let workspace = ProfileService.workspaceURL(for: profile) else { continue }
+              let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
         let url = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: url.path),
               let config = try? ConfigLoader.load(from: url),
-              let notify = config.notify, notify.isUsable else { continue }
+              let notify = config.notify, notify.isUsable else { return nil }
         return (profile, notify, workspace)
     }
-    return nil
 }
 
 /// The installed jamf-cli version when it is present but below the supported
