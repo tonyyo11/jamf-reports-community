@@ -405,9 +405,9 @@ extension DemoData {
                 .init(name: "Beta Test Group", state: "DEPLOYED", scope: 24,
                       steps: 1, succeeded: 22, failed: 0, pending: 2),
                 .init(name: "Legacy Profile Removal", state: "NOT_DEPLOYED", scope: 100,
-                      steps: 1, succeeded: 0, failed: nil, pending: nil),
+                      steps: 1, succeeded: nil, failed: nil, pending: nil),
                 .init(name: "OOO Macs Lockdown", state: "OUT_OF_DATE", scope: 12,
-                      steps: 3, succeeded: 0, failed: nil, pending: nil),
+                      steps: 3, succeeded: nil, failed: nil, pending: nil),
             ],
             declarations: [
                 .init(source: "Baseline Security", type: "blueprint", declarations: 4,

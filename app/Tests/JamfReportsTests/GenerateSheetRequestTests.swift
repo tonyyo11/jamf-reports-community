@@ -225,6 +225,20 @@ final class GenerateSheetRequestTests: XCTestCase {
         }
     }
 
+    /// A collect that throws (not a refusal) leaves the cached snapshots usable; say so.
+    func testAThrowingCollectExplainsItAndPointsAtCachedSnapshots() async {
+        let state = GenerateSheetState()
+        let error = ReportEngineError.collectFailed(kind: "computers", exitCode: 1)
+        let events = Events()
+        let outcome = await run(state.request(), events: events, collect: { throw error })
+        XCTAssertEqual(events.log, ["collect"])
+        XCTAssertEqual(outcome.count, 0)
+        XCTAssertEqual(
+            outcome.message,
+            CLIBridge.explainOperationError(error, operation: "Collect")
+                + " Uncheck Collect fresh data first to generate from cached snapshots.")
+    }
+
     func testSchoolAsksForNoNarrative() async {
         let state = GenerateSheetState()
         state.selectedTemplateID = SchoolTemplate().identifier

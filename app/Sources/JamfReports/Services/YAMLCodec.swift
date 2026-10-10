@@ -553,30 +553,15 @@ private struct Parser {
             let trimmed = trimmedContent(line)
             if currentIndent < indent { break }
             if Self.isListItem(trimmed) {
-                // Sequence items no key took. Well-formed documents never
-                // reach here (a list under a bare `key:` is consumed by
-                // parseNestedValue below), so this is a mis-indented item
-                // or the corrupt `key: []` + orphaned `- item` pattern from
-                // pre-fix GUI builds. Repair by attaching the items to the
-                // previous key when it holds an empty/null value; otherwise
-                // drop them — either way, keep parsing so the keys after the
-                // orphans are not silently lost.
-                let orphanLine = index + 1
-                let orphans = parseSequence(indent: currentIndent).items
-                if let last = entries.indices.last,
-                   entries[last].value == .sequence([]) || entries[last].value == .scalar(.null) {
-                    entries[last].value = .sequence(orphans)
-                    repairedKeys.insert(entries[last].key)
-                } else if currentIndent > indent, let childIndent, childIndent != currentIndent {
-                    note(orphanLine, .indentation(found: currentIndent, expected: childIndent))
-                } else {
-                    note(orphanLine, .orphanItems)
-                }
+                attachOrphanItems(
+                    at: currentIndent, mappingIndent: indent, childIndent: childIndent,
+                    entries: &entries)
                 continue
             }
             guard currentIndent == indent else {
-                let expected = [keyColumn, childIndent].compactMap { $0 }
-                    .first { $0 != currentIndent } ?? indent
+                let expected = Self.expectedColumn(
+                    found: currentIndent, keyColumn: keyColumn, childIndent: childIndent,
+                    mappingIndent: indent)
                 note(index + 1, .indentation(found: currentIndent, expected: expected))
                 index += 1
                 continue
@@ -611,6 +596,36 @@ private struct Parser {
         }
 
         return .init(entries: entries)
+    }
+
+    /// Sequence items no key took. Well-formed documents never reach here (a list under a bare
+    /// `key:` is consumed by `parseNestedValue`), so this is a mis-indented item or the corrupt
+    /// `key: []` + orphaned `- item` pattern from pre-fix GUI builds. Repair by attaching the
+    /// items to the previous key when it holds an empty/null value; otherwise drop them. Either
+    /// way parsing goes on, so the keys after the orphans are not silently lost.
+    private mutating func attachOrphanItems(
+        at currentIndent: Int, mappingIndent: Int, childIndent: Int?,
+        entries: inout [YAMLCodec.YAMLEntry]
+    ) {
+        let orphanLine = index + 1
+        let orphans = parseSequence(indent: currentIndent).items
+        if let last = entries.indices.last,
+           entries[last].value == .sequence([]) || entries[last].value == .scalar(.null) {
+            entries[last].value = .sequence(orphans)
+            repairedKeys.insert(entries[last].key)
+        } else if currentIndent > mappingIndent, let childIndent, childIndent != currentIndent {
+            note(orphanLine, .indentation(found: currentIndent, expected: childIndent))
+        } else {
+            note(orphanLine, .orphanItems)
+        }
+    }
+
+    /// The column a mis-indented line should have been at: the last nested block's key column,
+    /// else the block's own, whichever differs from where the line sits, else the mapping's.
+    private static func expectedColumn(
+        found: Int, keyColumn: Int?, childIndent: Int?, mappingIndent: Int
+    ) -> Int {
+        [keyColumn, childIndent].compactMap { $0 }.first { $0 != found } ?? mappingIndent
     }
 
     /// A `|` or `>` value is not supported. It keeps reading as the indicator, as before; the

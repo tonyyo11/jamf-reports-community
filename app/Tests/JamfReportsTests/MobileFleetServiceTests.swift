@@ -1057,4 +1057,12 @@ final class MobileFleetServiceTests: XCTestCase {
             MobileFleetView.tableHeight(rows: 1, rowHeight: 26, cap: 430)
         )
     }
+
+    /// A device with no supervision state is "Unknown", not "Unsupervised".
+    func testDetailPillSaysUnknownWhenSupervisionIsMissing() {
+        XCTAssertEqual(MobileFleetView.supervisionPill(true).text, "Supervised")
+        XCTAssertEqual(MobileFleetView.supervisionPill(false).text, "Unsupervised")
+        XCTAssertEqual(MobileFleetView.supervisionPill(nil).text, "Unknown")
+        XCTAssertEqual(MobileFleetView.supervisionPill(nil).tone, .muted)
+    }
 }

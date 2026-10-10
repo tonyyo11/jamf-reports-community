@@ -1875,8 +1875,8 @@ struct CoreDashboard: Sendable {
             ws.write(item["benchmark"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["device"] as? String ?? "", row: row, col: 1, format: .cell)
             ws.write(item["deviceId"] as? String ?? "", row: row, col: 2, format: .cell)
-            ws.write(asInt(item["rulesPassed"]) ?? 0, row: row, col: 3, format: .cell)
-            ws.write(asInt(item["rulesFailed"]) ?? 0, row: row, col: 4, format: .cell)
+            ws.write(asInt(item["rulesPassed"]), row: row, col: 3, format: .cell)
+            ws.write(asInt(item["rulesFailed"]), row: row, col: 4, format: .cell)
             ws.write(compliance, row: row, col: 5, format: fmt)
             row += 1
         }
@@ -1903,10 +1903,10 @@ struct CoreDashboard: Sendable {
             let pctStr = item["passRate"] as? String ?? ""
             ws.write(item["benchmark"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["rule"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(asInt(item["passed"]) ?? 0, row: row, col: 2, format: .cell)
-            ws.write(asInt(item["failed"]) ?? 0, row: row, col: 3, format: .cell)
-            ws.write(asInt(item["unknown"]) ?? 0, row: row, col: 4, format: .cell)
-            ws.write(asInt(item["devices"]) ?? 0, row: row, col: 5, format: .cell)
+            ws.write(asInt(item["passed"]), row: row, col: 2, format: .cell)
+            ws.write(asInt(item["failed"]), row: row, col: 3, format: .cell)
+            ws.write(asInt(item["unknown"]), row: row, col: 4, format: .cell)
+            ws.write(asInt(item["devices"]), row: row, col: 5, format: .cell)
             ws.write(pctStr, row: row, col: 6, format: colorForPctString(pctStr))
             row += 1
         }

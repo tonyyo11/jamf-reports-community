@@ -1,5 +1,20 @@
 # ADR PR-22+: Per-report tiered collection with screen-driven defaults
 
+> **Historical.** This is the 2026-05-18 proposal, kept for the reasoning. Most of its
+> Decision did not ship as written. Current behaviour is in `CLAUDE.md` (search for
+> "Collect plan", "Failure causes" and `CollectionTier`).
+>
+> **What shipped:** three tiers (Refresh, Inventory, Scan) with fixed cadences in
+> `CollectionTier` (12 hours, 2 days, weekly); per-kind `state/<kind>.last` files read
+> through `StateFileStore` and a due check in `ReportEngine.collect`; a once-per-day
+> guard on a full-tier collect; and `jamf_cli.collect_skip` for kinds an on-prem server
+> cannot take.
+>
+> **What did not ship:** the server-load presets and the Custom mode, the
+> `collect_cadence` config block (retired in 2.3.0), pacing between
+> calls, time-of-day and day-of-month gating, and `TieredLaunchAgentWriter` (deleted;
+> schedules are now run by the bundled `--tick` background item).
+
 **Status:** Accepted — implemented in PR-22 (engine), PR-23 (GUI), and
 PR-24 (`RefreshCoordinator` wiring). The "Open questions" Q1–Q4 below were
 all resolved during implementation; the "Phasing" section records the
@@ -14,8 +29,7 @@ original 2026-05-18 plan, not the final PR split (PR-24 became the
 
 ## Context
 
-The reference zsh deployment at
-`~/Jamf-Reports/jamf-cli-data/collect.zsh`
+The reference zsh deployment (a private script that lives outside this repository)
 schedules jamf-cli commands at **per-report cadences**:
 
 - **Daily** (every 86400 s): `overview`, `policy-status`
@@ -24,7 +38,7 @@ schedules jamf-cli commands at **per-report cadences**:
 - **Excluded forever**: `update-status`, `profile-status` (kill the on-prem
   Jamf Pro server with memory exhaustion / per-device enumeration cost)
 
-Mechanics: a single LaunchAgent fires daily at 07:00; `collect.zsh` checks
+Mechanics: a single LaunchAgent fires daily at 07:00; the script checks
 per-report `state/<report>.last` files and skips anything not due. 30 s
 sleep between calls; rotation keeps newest 30 JSON files per directory.
 
@@ -55,7 +69,7 @@ So the user gap is real: there is no way in today's GUI to express
 on-prem server."
 
 The intent — articulated by Tony in the 2026-05-18 review — is **not**
-1:1 parity with `collect.zsh`. It is:
+1:1 parity with the reference script. It is:
 
 > *"the app should be able to keep historical data, regularly
 > download/record that historical data, and present as much up to date
@@ -86,7 +100,7 @@ never have to hand-edit `config.yaml` to express this.
 
 **Non-goals:**
 
-- 1:1 `collect.zsh` parity. We will NOT initially port: time-of-day
+- 1:1 parity with the reference script. We will NOT initially port: time-of-day
   gating ("only run failures before 10 AM"), day-of-month gating
   ("only on 1st/15th"), or the 30 s inter-call pacing. Each is a
   defensible v2 feature; none is load-bearing for the goal.
@@ -121,7 +135,7 @@ Three tiers, not four, because:
 - Two is too few (everything is either "Overview-fresh" or "weekly" —
   doesn't reflect that Deep Dives benefit from updates between
   expensive `--scan-failures` runs).
-- Four (the user's collect.zsh has overview-only / daily / weekly /
+- Four (the user's reference script has overview-only / daily / weekly /
   biweekly) over-specifies for a GUI surface. Biweekly is a special
   case of weekly with extra gating; we collapse it into weekly and
   defer time-of-day gating to a follow-up.
@@ -190,12 +204,12 @@ a preset per profile. Existing profiles that have `collect_skip:
 [update-status, ...]` set auto-pick **On-prem** on migration.
 
 The Custom mode exposes a per-report cadence editor for the small
-audience that wants `collect.zsh`-level granularity.
+audience that wants reference-script-level granularity.
 
 ### Engine model — state files and `is_due()`
 
 `<workspace>/jamf-cli-data/state/<report>.last` holds a Unix epoch
-timestamp of the last successful fetch (mirrors `collect.zsh`'s
+timestamp of the last successful fetch (mirrors the reference script's
 mechanism, deliberately). On every `ReportEngine.collect` invocation:
 
 ```
@@ -209,7 +223,7 @@ sleep(pacing) between fetches
 
 Pacing defaults to 0 s for cloud, 15 s for on-prem (via preset). The
 preset's `pace_seconds` is what `_run_jamfcli_to_file`'s 30 s in
-`collect.zsh` becomes — same intent, configurable.
+the reference script becomes — same intent, configurable.
 
 State files are per-profile (under the workspace's `jamf-cli-data/state/`).
 No global state.
@@ -271,7 +285,7 @@ to "trigger Refresh tier" with no behavioral change.
 
 ### Q3: Time-of-day gating — defer or include?
 
-`collect.zsh` runs failure scans only on 1st/15th and only before 10 AM.
+The reference script runs failure scans only on 1st/15th and only before 10 AM.
 GUI translation is awkward ("Schedules form runs at fixed time; how
 does 'only on these days' compose?").
 
@@ -359,7 +373,7 @@ configurable.
 - `snapshot-only` becomes a genuinely cheap option; small-fleet
   on-prem users can run it hourly without fear.
 - Server-load presets give a sensible default to non-power-users.
-  Custom mode is there for `collect.zsh`-level granularity.
+  Custom mode is there for reference-script-level granularity.
 - `collect_skip` (PR-16) graduates from binary skip-toggle to a real
   cadence model that includes "never" as a value.
 - Removes dead code (`TieredLaunchAgentWriter`) and reconciles the
@@ -392,17 +406,10 @@ configurable.
 
 ## References
 
-- `~/Jamf-Reports/jamf-cli-data/collect.zsh` —
-  reference implementation, lines 253-328 cover the daily/weekly/biweekly
-  tier definitions and the `is_due()` mechanic
-- `app/Sources/JamfReports/Services/CollectionTier.swift` — existing
-  `ScheduleTier` enum (to be replaced)
-- `app/Sources/JamfReports/Services/RefreshCoordinator.swift` —
-  existing in-app coordinator (to be retargeted at the new tier names)
-- `app/Sources/JamfReports/Services/TieredLaunchAgentWriter.swift` —
-  unwired scaffolding (to be deleted in PR-23)
-- `app/Sources/JamfReports/Engine/ReportEngine.swift:745+` — the
-  `collect` static method that this ADR modifies
+- `app/Sources/JamfReports/Services/CollectionTier.swift` — the tier enum as built
+- `app/Sources/JamfReports/Services/CadenceResolver.swift` — the due check
+- `app/Sources/JamfReports/Services/RefreshCoordinator.swift` — the in-app coordinator
+- `ReportEngine.collect` — the static method this ADR modified
 - PR-16 (`jamf_cli.collect_skip`): the binary skip mechanism this ADR
   generalizes
 - PR-20 (snapshot-only emits summary.json): the Trends-recording
