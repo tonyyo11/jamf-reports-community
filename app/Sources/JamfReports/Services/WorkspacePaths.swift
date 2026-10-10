@@ -201,7 +201,7 @@ enum WorkspacePaths {
 
     /// True when an absolute path resolves to a known-sensitive location
     /// (system directories, `/Applications`, `~/Library`, every dot-entry directly under
-    /// home, keychain config). Used by tests of the disallowed-absolute-path policy and by
+    /// home, keychain config, and for output paths `/Users/Shared` and `~/Public`). Used by tests of the disallowed-absolute-path policy and by
     /// future callers that gate `output.allow_absolute_paths` enforcement.
     ///
     /// The path need not exist: a peer-edited config.yaml can name a folder the app would
@@ -229,6 +229,15 @@ enum WorkspacePaths {
         let denied = ["/etc", "/var", "/private", "/system", "/library", "/usr", "/bin", "/sbin",
                       "/applications"]
         if denied.contains(where: { relative(path, under: $0) != nil }) { return true }
+
+        // Readable by every local account. A workspace root keeps the 2.8.3 rule: a stored
+        // root that newly failed would fall back to the default and orphan its history.
+        if !workspaceRoot {
+            if relative(path, under: "/users/shared") != nil { return true }
+            if homes.contains(where: { relative(path, under: $0 + "/public") != nil }) {
+                return true
+            }
+        }
 
         // Home dotfiles and dot-folders (.zshrc, .netrc, .gitconfig, .docker, .ssh, ...) are
         // where credentials and shell start-up files live; none is a place for reports.

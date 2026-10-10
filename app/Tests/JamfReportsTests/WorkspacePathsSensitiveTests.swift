@@ -59,6 +59,20 @@ final class WorkspacePathsSensitiveTests: XCTestCase {
         }
     }
 
+    /// Every local account can read these, so a report written there is readable by all of them.
+    func testSharedFoldersAreDeniedForOutputButNotForAWorkspaceRoot() {
+        func root(_ path: String) -> Bool {
+            WorkspacePaths.isSensitiveAbsolutePath(URL(fileURLWithPath: path), workspaceRoot: true)
+        }
+        for path in ["/Users/Shared/reports", "/users/shared/reports", "/Users/Shared",
+                     "\(home)/Public/x", "\(home)/public/x", "\(home)/Public"] {
+            XCTAssertTrue(sensitive(path), path)
+            XCTAssertFalse(root(path), path)
+        }
+        XCTAssertFalse(sensitive("/Users/SharedBy/x"))
+        XCTAssertFalse(sensitive("\(home)/PublicNotes/x"))
+    }
+
     func testOrdinaryFoldersUnderHomeAreAllowed() {
         for path in ["Documents/Reports", "Jamf-Reports/prod", "Desktop/new-folder/x"] {
             XCTAssertFalse(sensitive("\(home)/\(path)"), path)
