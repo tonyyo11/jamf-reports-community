@@ -553,7 +553,12 @@ extension WorkspaceStore {
             \(tiers.map(\.rawValue).sorted().joined(separator: ","), privacy: .public)
             """
         )
-        await Self.remediateOne(profile: profile, tiers: tiers, collect: collect)
+        if await Self.remediateOne(profile: profile, tiers: tiers, collect: collect) {
+            // A collect or tick got in after the check above: nothing ran, so the hour stays
+            // unclaimed and the next pass retries.
+            Self.remediationMarker.clear(in: workspace)
+            return false
+        }
         await refreshDataFreshness()
         return true
     }
@@ -635,11 +640,14 @@ extension WorkspaceStore {
         _ config: ReportConfig?
     ) async throws -> Void
 
+    /// True when the collect was refused (`CLIBridgeError.isCollectRefusal`): another collect or
+    /// the tick holds the lock. That is standing down, not a failure, and it stops the loop.
+    @discardableResult
     nonisolated static func remediateOne(
         profile: String,
         tiers: Set<CollectionTier>,
         collect: RemediationCollector = defaultRemediationCollector
-    ) async {
+    ) async -> Bool {
         let config: ReportConfig? = {
             guard let url = ProfileService.workspaceURL(for: profile)?
                 .appendingPathComponent("config.yaml"),
@@ -654,6 +662,15 @@ extension WorkspaceStore {
             do {
                 try await collect(profile, [tier], config)
             } catch {
+                if CLIBridgeError.isCollectRefusal(error) {
+                    AppLogger.collect.info(
+                        """
+                        Auto-remediation stood down for \(profile, privacy: .public): \
+                        \(error.localizedDescription, privacy: .public)
+                        """
+                    )
+                    return true
+                }
                 // A failed remediation is not silent: the failure counters advanced
                 // inside collect, so the next evaluation reports a HIGHER count and
                 // the banner escalates rather than resetting.
@@ -666,6 +683,7 @@ extension WorkspaceStore {
                 )
             }
         }
+        return false
     }
 
     /// Held like a GUI collect, so a tick cannot start beside this one.
@@ -883,7 +901,12 @@ extension WorkspaceStore {
         let status = "catching up daily data · profile=\(targets.joined(separator: ", "))"
         targets.forEach { beginCollect(for: $0, status: status) }
         defer { targets.forEach { endCollect(for: $0) } }
-        await Self.runCatchUp(profiles: targets, collect: collect)
+        if await Self.runCatchUp(profiles: targets, collect: collect) {
+            // A collect or tick got in after the check above: leave the day unclaimed so the
+            // next pass retries; profiles already collected no-op on their cadence filter.
+            Self.lastCatchUpDay = nil
+            return false
+        }
         return true
     }
 
@@ -912,18 +935,21 @@ extension WorkspaceStore {
         return discovered.filter { ProfileService.isValid($0) && !excluded.contains($0) }
     }
 
-    /// Sequential per-profile catch-up collect, off the main actor.
+    /// Sequential per-profile catch-up collect, off the main actor. True when a profile's
+    /// collect was refused (another collect or the tick holds the lock); the rest are skipped.
     nonisolated private static func runCatchUp(
         profiles: [String], collect: CatchUpCollector
-    ) async {
+    ) async -> Bool {
         for profile in profiles {
-            await catchUpOne(profile, collect: collect)
+            if await catchUpOne(profile, collect: collect) { return true }
         }
+        return false
     }
 
+    /// True when the collect was refused, which is standing down rather than a failure.
     nonisolated private static func catchUpOne(
         _ profile: String, collect: CatchUpCollector
-    ) async {
+    ) async -> Bool {
         let config: ReportConfig? = {
             guard let url = ProfileService.workspaceURL(for: profile)?
                 .appendingPathComponent("config.yaml"),
@@ -933,9 +959,19 @@ extension WorkspaceStore {
         do {
             try await collect(profile, config)
         } catch {
+            if CLIBridgeError.isCollectRefusal(error) {
+                AppLogger.collect.info(
+                    """
+                    Catch-up stood down for \(profile, privacy: .public): \
+                    \(error.localizedDescription, privacy: .public)
+                    """
+                )
+                return true
+            }
             AppLogger.cli.warning(
                 "Catch-up collect failed for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
         }
+        return false
     }
 }

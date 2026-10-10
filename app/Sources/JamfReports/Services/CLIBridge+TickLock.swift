@@ -94,7 +94,7 @@ extension CLIBridge {
         let id: Int
         /// Nil when the lock file could not be written: the hold still keeps the app's own
         /// collects apart.
-        let claimed: (lock: TickLock, beats: Task<Void, Never>)?
+        let claimed: (hold: TickLockHold, beats: Task<Void, Never>)?
     }
 
     /// Checked and set with no suspension between, so two callers cannot both pass.
@@ -107,7 +107,7 @@ extension CLIBridge {
             throw running
         }
         let lock = tickLock()
-        let claimed: (lock: TickLock, beats: Task<Void, Never>)?
+        let claimed: (hold: TickLockHold, beats: Task<Void, Never>)?
         switch lock.claim() {
         case .heldElsewhere:
             AppLogger.event(
@@ -116,9 +116,9 @@ extension CLIBridge {
         case .writeFailed:
             // `claim` logged why. A tick needs the same file, so none can start beside this.
             claimed = nil
-        case .acquired:
+        case .acquired(let held):
             holdsTickLock = true
-            claimed = (lock, lock.heartbeat(every: interval))
+            claimed = (held, held.heartbeat(every: interval))
         }
         holdPurpose = purpose
         holdSerial += 1
@@ -130,15 +130,17 @@ extension CLIBridge {
         guard let claimed = hold.claimed else { return }
         claimed.beats.cancel()
         holdsTickLock = false
-        claimed.lock.release()
+        claimed.hold.release()
         tickLockReleasedAt = Date()
     }
 
-    /// Runs `body` holding the tick lock, touching it every `beatEvery` for up to the tick's
-    /// six hours. Throws, without running `body`, `CLIBridgeError.collectInProgress`,
-    /// `.generateInProgress` or `.toolUpdateInProgress` when another hold is running in this
-    /// process, and `CLIBridgeError.tickLockHeld` when another live process holds the lock.
-    /// A collect inside `holdingGenerate` runs under that hold instead.
+    /// Runs `body` holding the tick lock (a kernel `flock` this process keeps open, so a sleep
+    /// or a crash never leaves it stale), touching it every `beatEvery` and giving it up after
+    /// the tick's six hours. Throws, without running `body`,
+    /// `CLIBridgeError.collectInProgress`, `.generateInProgress` or `.toolUpdateInProgress`
+    /// when another hold is running in this process, and `CLIBridgeError.tickLockHeld` when
+    /// another live process holds the lock. A collect inside `holdingGenerate` runs under that
+    /// hold instead.
     static func holdingTickLock<T: Sendable>(
         purpose: HoldPurpose = .collect,
         beatEvery interval: Duration = TickLock.heartbeatInterval,

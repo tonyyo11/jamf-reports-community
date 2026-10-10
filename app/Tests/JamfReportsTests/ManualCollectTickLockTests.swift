@@ -43,8 +43,9 @@ final class ManualCollectTickLockTests: XCTestCase {
         XCTAssertFalse(CLIBridge.holdsTickLock, file: file, line: line)
     }
 
+    /// A lock file that names a holder; a released one is left in place, empty.
     private func lockExists(_ lock: TickLock) -> Bool {
-        FileManager.default.fileExists(atPath: lock.url.path)
+        !lock.namesNoHolder
     }
 
     private func modificationDate(_ lock: TickLock) throws -> Date {
@@ -62,7 +63,8 @@ final class ManualCollectTickLockTests: XCTestCase {
 
     /// After a hold ended, a tick takes the lock: no beat left running may touch its file.
     private func assertNoBeatOutlivesTheHold(_ lock: TickLock) async throws {
-        XCTAssertTrue(lock.acquire(pid: 4242, isAlive: { _ in true }))
+        let tick = try XCTUnwrap(lock.claimedHold(pid: 4242), "the hold's lock was freed")
+        defer { tick.release() }
         let old = Date().addingTimeInterval(-10 * 60)
         try FileManager.default.setAttributes(
             [.modificationDate: old], ofItemAtPath: lock.url.path)
