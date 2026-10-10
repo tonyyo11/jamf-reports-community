@@ -544,8 +544,8 @@ struct SchoolDashboard: Sendable {
 // MARK: - SchoolCSVDashboard
 
 /// Writes School CSV-derived sheets (Device Inventory from CSV, Stale Devices, etc.).
-/// Currently a minimal stub — CSV parsing matches the device-level columns from
-/// Jamf School CSV exports via `SchoolColumnMapper`-style logic.
+/// Currently a stub that writes nothing: the school-devices snapshot already produces the
+/// Device Inventory sheet through `SchoolDashboard`, and no School CSV column mapping exists.
 struct SchoolCSVDashboard: Sendable {
     let config: ReportConfig
     let csvData: Data
