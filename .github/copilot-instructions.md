@@ -2,9 +2,11 @@
 
 This file provides context for GitHub Copilot and other AI coding assistants working with this project.
 
+`CLAUDE.md` and `AGENTS.md` at the repo root are the canonical architecture and convention references. This file is a summary of them; when the two disagree, they win.
+
 ## Project Overview
 
-A native macOS app (`app/`) — a SwiftUI GUI (macOS 15+, Swift 6) for fleet reporting against Jamf Pro and Jamf School. It collects data from `jamf-cli` (or a Jamf Pro CSV export, or cached snapshots), generates multi-sheet Excel workbooks and self-contained HTML reports, schedules unattended runs via LaunchAgents, tracks run history, and surfaces a Historical Trends screen built on archived `summary.json` snapshots.
+A native macOS app (`app/`) — a SwiftUI GUI (macOS 15+, Swift 6) for fleet reporting against Jamf Pro and Jamf School. It collects data from `jamf-cli` (or a Jamf Pro CSV export, or cached snapshots), generates multi-sheet Excel workbooks and self-contained HTML reports, schedules unattended runs from one bundled background item, tracks run history, and surfaces a Historical Trends screen built on archived `summary.json` snapshots.
 
 All report generation is performed by a native Swift engine (`ReportEngine`); **there is no Python in the report-generation path.** The app is config-driven: users map their CSV column names to logical field names in `config.yaml` (edited through the GUI), with no code changes needed for normal use. It is a SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
 
@@ -15,12 +17,18 @@ All report generation is performed by a native Swift engine (`ReportEngine`); **
 The macOS app lives in `app/` and is a SwiftPM executable target (`JamfReports`).
 Build target: macOS Sequoia 15 or later, Swift 6 strict concurrency.
 
-### Two run paths
+### Run paths
 
-- **GUI** (`JamfReports.app`): the SwiftUI app — dashboards, config editing, report
+- **GUI** (`JamfReports.app`): the SwiftUI app: dashboards, config editing, report
   generation, scheduling, run history, Historical Trends.
-- **Headless** (`main.swift --scheduled-run --mode <mode>`): invoked by LaunchAgent
-  timers (and by the GUI "Run now" button). Collects and/or generates without a window.
+- **Bundled background item** (`main.swift --tick`): one `SMAppService` agent inside the
+  signed app bundle wakes the app every 300 s; `TickScheduler` decides which schedules
+  are due and runs them without a window. The GUI "Run now" button starts a schedule
+  through the same path (`--tick --now <label>`).
+- **External scheduler** (`main.swift --scheduled-run --mode <mode>`): the same headless
+  run, for a scheduler you manage yourself.
+- **`jamf-reports` CLI**: the same binary run from a terminal; a recognized subcommand
+  (`generate`, `html`, `collect`, `backup`, `schedules`, and others) runs headlessly.
 
 ### Key services
 
@@ -30,11 +38,11 @@ Build target: macOS Sequoia 15 or later, Swift 6 strict concurrency.
 | `ReportEngine` | Native Swift report engine. Reads cached jamf-cli JSON (and optional CSV), writes multi-sheet XLSX, self-contained HTML, and CSV. `collect` fetches/saves snapshots and emits `summary.json`; `generate` renders reports from cached snapshots. |
 | `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. |
 | `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
-| `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
+| `ProfileService` / `ProfileName` | Accept every jamf-cli profile name except an empty one, one with control characters, a leading or trailing space, or an over-long one (2.8.3). Paths and schedule labels never take the raw name; they go through `ProfileName.pathComponent` and `labelComponent`. Resolves workspace URLs, discovers local profiles. |
 | `ConfigService` | Reads and writes `config.yaml` within a profile workspace. Only rewrites managed top-level keys and re-reads the rest, so unrelated/unmanaged config is preserved verbatim. |
 | `ScaffoldService` | CSV column detection + config writing. Initial onboarding scaffold regenerates `config.yaml`; re-scaffold uses the non-destructive `mergeColumns` path so existing agents/EAs/thresholds survive. |
 | `DiagnosticBundleService` | Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/`. Powers Settings → "Generate diagnostic bundle now". Never executes any external script. |
-| `LaunchAgentService` / `LaunchAgentWriter` | Discover/parse and atomically write the app's `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist` jobs. |
+| `ScheduleStore` / `TickScheduler` / `TickerRegistrar` | `ScheduleStore` holds hand-built schedules in `~/Library/Application Support/JamfReports/schedules.json`; managed schedules are derived from the Automation policy on every tick. `TickScheduler.due` decides what runs. `TickerRegistrar` wraps `SMAppService` for the one bundled background item. The app writes no plist and no longer touches `~/Library/LaunchAgents`; `LaunchAgentService` only reads a legacy plist once for import. |
 
 The full service and view inventory lives in `CLAUDE.md` / `AGENTS.md` — read those
 before touching architecture.
@@ -175,8 +183,8 @@ The full set of parsed shapes is documented in `CLAUDE.md` ("jamf-cli JSON Shape
 
 ## Schedule modes
 
-A `Schedule.RunMode` is honored identically by the GUI "Run now" path and the headless
-LaunchAgent path:
+A `Schedule.RunMode` is honored identically by the GUI "Run now" path, the bundled
+`--tick` item and `--scheduled-run`:
 
 | Mode | Behavior |
 |------|----------|
