@@ -123,13 +123,13 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
             }
             self.continuation = continuation
 
-            // P9-A-04: harden the renderer against script execution and
-            // arbitrary subresource loads. The PDF surface only needs to
-            // rasterize static HTML/CSS — it does not need to execute any
-            // JavaScript or fetch any remote assets. Disable JS at both the
-            // legacy preferences level and the modern per-page preferences,
-            // and refuse every URL scheme except `about:` and `data:` so a
-            // malicious HTML payload cannot trigger network or filesystem reads.
+            // P9-A-04: the PDF surface only rasterizes the report's own static
+            // HTML/CSS, so JavaScript is off at the per-page preferences level
+            // and the navigation delegate below cancels every navigation other
+            // than the initial about:blank load. Subresource loads (an absolute
+            // <img src> or CSS url()) are not navigations and are not filtered;
+            // the report escapes every inserted value and loads nothing remote,
+            // which is what keeps the renderer offline.
             let prefs = WKWebpagePreferences()
             prefs.allowsContentJavaScript = false
             let config = WKWebViewConfiguration()
@@ -137,10 +137,9 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
             // The report's bars and severity pills are backgrounds, which printing leaves out
             // by default.
             config.preferences.shouldPrintBackgrounds = true
-            // Navigation delegate cancels every navigation other than the
-            // initial loadHTMLString (about:blank). Combined with JS disabled
-            // and a nil baseURL, this prevents the renderer from issuing any
-            // network or filesystem requests.
+            // The delegate allows only `about:` (the initial loadHTMLString) and
+            // cancels the rest; with JS off and a nil baseURL, nothing in the
+            // report can navigate the view anywhere.
             let frame = CGRect(origin: .zero, size: paperSize)
             let wv = WKWebView(frame: frame, configuration: config)
             wv.navigationDelegate = self
