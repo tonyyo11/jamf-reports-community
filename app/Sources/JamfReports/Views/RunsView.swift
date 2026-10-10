@@ -456,7 +456,7 @@ struct RunsView: View {
     /// `path` with a leading home folder (this Mac's, or the demo's placeholder) written as `~`.
     /// Anchored: only a whole leading component counts, so `/Volumes/x/Users/demonstrator`
     /// is left alone.
-    static func displayPath(
+    nonisolated static func displayPath(
         _ path: String,
         homes: [String] = [FileManager.default.homeDirectoryForCurrentUser.path,
                            DemoData.placeholderHome.path]
