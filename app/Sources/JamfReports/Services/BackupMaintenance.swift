@@ -23,7 +23,8 @@ enum BackupMaintenance {
     struct StorageProbe: Sendable {
         /// `URLResourceValues.volumeIsLocal`; nil when the volume cannot be asked.
         var volumeIsLocal: @Sendable (URL) -> Bool?
-        /// The profile's `shared_workspace.enabled`, true only when set to true.
+        /// The profile's `shared_workspace.enabled`: true when set to true, or when config.yaml
+        /// exists but cannot be loaded. False when there is no config.yaml.
         var sharedWorkspaceEnabled: @Sendable (String) -> Bool
 
         static let live = StorageProbe(
@@ -31,13 +32,24 @@ enum BackupMaintenance {
                 (try? url.resourceValues(forKeys: [.volumeIsLocalKey]))?.volumeIsLocal
             },
             sharedWorkspaceEnabled: { profile in
-                guard let workspace = ProfileService.workspaceURL(for: profile),
-                      let config = try? ConfigLoader.load(
-                          from: workspace.appendingPathComponent("config.yaml"))
-                else { return false }
-                // The same tri-state `ReportEngine.coordinationGate` reads; only an explicit
-                // true counts here, the auto case is the path check below.
-                return config.sharedWorkspace?.isEnabled(workspaceIsSynced: false) ?? false
+                guard let workspace = ProfileService.workspaceURL(for: profile) else {
+                    return false
+                }
+                let configURL = workspace.appendingPathComponent("config.yaml")
+                guard FileManager.default.fileExists(atPath: configURL.path) else { return false }
+                do {
+                    let config = try ConfigLoader.load(from: configURL)
+                    // The same tri-state `ReportEngine.coordinationGate` reads; only an
+                    // explicit true counts here, the auto case is the path check below.
+                    return config.sharedWorkspace?.isEnabled(workspaceIsSynced: false) ?? false
+                } catch {
+                    // A config that exists but will not load may still say the folder is
+                    // shared. Reading that as "not shared" would unscope the prune and could
+                    // delete another Mac's backups; keeping more is the safe failure.
+                    AppLogger.collect.warning(
+                        "BackupMaintenance: config.yaml unreadable, treating storage as shared")
+                    return true
+                }
             }
         )
     }

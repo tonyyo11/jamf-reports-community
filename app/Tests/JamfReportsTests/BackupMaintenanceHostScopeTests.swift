@@ -196,6 +196,22 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         try assertOnlyOwnBackupPruned()
     }
 
+    /// Unreadable bytes make `ConfigLoader.load` throw. The file may well say `enabled: true`,
+    /// so the prune stays scoped to this Mac rather than risk another Mac's backups.
+    func testAConfigThatExistsButWillNotLoadReadsAsShared() throws {
+        try seedMixedOwnerBackups()
+        try Data([0xFF, 0xFE, 0xFD, 0x00]).write(
+            to: ProfileService.workspaceURL(for: profile)!.appendingPathComponent("config.yaml"))
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0)
+        try assertOnlyOwnBackupPruned()
+    }
+
+    func testAMissingConfigIsNotShared() throws {
+        try seedMixedOwnerBackups()
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: backupsDir.path), [])
+    }
+
     func testLocalStorageNotMarkedSharedStillPrunesEverything() throws {
         try seedMixedOwnerBackups()
         let probe = BackupMaintenance.StorageProbe(
