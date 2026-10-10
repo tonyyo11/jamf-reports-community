@@ -156,7 +156,8 @@ enum SnapshotRetentionService {
         guard !raw.isEmpty else { return nil }
         return try WorkspacePaths.resolve(
             rawValue: raw, fallback: "_archive",
-            workspace: workspace.resolvingSymlinksInPath().standardizedFileURL)
+            workspace: workspace.resolvingSymlinksInPath().standardizedFileURL,
+            reportsFolder: true)
     }
 
     private static func loadRetentionConfig(workspace: URL) -> RetentionConfig? {

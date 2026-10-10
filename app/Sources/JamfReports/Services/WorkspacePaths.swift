@@ -24,7 +24,8 @@ enum WorkspacePaths {
             rawValue: try configValue(workspace: workspace, section: "output", key: "output_dir")
                 as? String,
             fallback: "Generated Reports",
-            workspace: workspace
+            workspace: workspace,
+            reportsFolder: true
         )
     }
 
@@ -67,6 +68,8 @@ enum WorkspacePaths {
         switch error {
         case PathError.disallowedAbsolutePath(let url) where isSensitiveAbsolutePath(url):
             "that folder is reserved by macOS or holds credentials"
+        case PathError.worldReadableFolder:
+            "every account on this Mac can read it"
         case PathError.disallowedAbsolutePath:
             "it is outside the workspace and output.allow_absolute_paths is not true"
         case PathError.resolutionEscaped:
@@ -99,7 +102,7 @@ enum WorkspacePaths {
             rawValue: trimmed,
             fallback: "archive",
             workspace: workspace,
-            isArchive: true
+            reportsFolder: true
         )
     }
 
@@ -188,6 +191,9 @@ enum WorkspacePaths {
         /// `~/.ssh`, `/etc`, `/var`, `/private`, `/System`). Refused even
         /// when `allow_absolute_paths: true` is set in workspace config.
         case disallowedAbsolutePath(URL)
+        /// A report or archive folder in `/Users/Shared` or `~/Public`, which every local
+        /// account can read. Refused even with the opt-in.
+        case worldReadableFolder(URL)
 
         var errorDescription: String? {
             switch self {
@@ -195,13 +201,14 @@ enum WorkspacePaths {
             case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.localizedDescription)"
             case .resolutionEscaped(let val, let root): "Path '\(val)' escapes workspace root \(root.lastPathComponent)"
             case .disallowedAbsolutePath(let u): "Disallowed absolute path: \(u.path)"
+            case .worldReadableFolder(let u): "World-readable folder: \(u.path)"
             }
         }
     }
 
     /// True when an absolute path resolves to a known-sensitive location
     /// (system directories, `/Applications`, `~/Library`, every dot-entry directly under
-    /// home, keychain config, and for output paths `/Users/Shared` and `~/Public`). Used by tests of the disallowed-absolute-path policy and by
+    /// home, keychain config). Used by tests of the disallowed-absolute-path policy and by
     /// future callers that gate `output.allow_absolute_paths` enforcement.
     ///
     /// The path need not exist: a peer-edited config.yaml can name a folder the app would
@@ -230,15 +237,6 @@ enum WorkspacePaths {
                       "/applications"]
         if denied.contains(where: { relative(path, under: $0) != nil }) { return true }
 
-        // Readable by every local account. A workspace root keeps the 2.8.3 rule: a stored
-        // root that newly failed would fall back to the default and orphan its history.
-        if !workspaceRoot {
-            if relative(path, under: "/users/shared") != nil { return true }
-            if homes.contains(where: { relative(path, under: $0 + "/public") != nil }) {
-                return true
-            }
-        }
-
         // Home dotfiles and dot-folders (.zshrc, .netrc, .gitconfig, .docker, .ssh, ...) are
         // where credentials and shell start-up files live; none is a place for reports.
         return underHome.contains { relative in
@@ -247,6 +245,17 @@ enum WorkspacePaths {
             let first = relative.split(separator: "/").first.map(String.init) ?? relative
             return !workspaceRoot || credentialFolders.contains(first)
         }
+    }
+
+    /// True for a folder every local account can read: `/Users/Shared` and `~/Public`.
+    /// Applied only to the folders the engine writes reports into (`output.output_dir`,
+    /// `output.archive_dir`, `retention.archive_dir`). A workspace root, `jamf_cli.data_dir`,
+    /// a save panel or an explicit CLI path is a deliberate choice, and refusing one that
+    /// already holds data would orphan it. Same matching as `isSensitiveAbsolutePath`.
+    static func isWorldReadableSharedFolder(_ url: URL) -> Bool {
+        let path = folded(resolvedForPolicy(url))
+        if relative(path, under: "/users/shared") != nil { return true }
+        return homeFolds().contains { relative(path, under: $0 + "/public") != nil }
     }
 
     /// Dot-folders refused even as a workspace root (the 2.8.3 list).
@@ -297,12 +306,14 @@ enum WorkspacePaths {
 
     /// Resolves a raw config value against the workspace (symlinks resolved): a relative path
     /// must stay inside it; an absolute path outside it needs `output.allow_absolute_paths`
-    /// and is never a system or credentials folder. `retention.archive_dir` follows it too.
+    /// and is never a system or credentials folder. `reportsFolder` marks a folder reports or
+    /// archives are written to, which also refuses `/Users/Shared` and `~/Public`.
+    /// `retention.archive_dir` follows it too.
     static func resolve(
         rawValue: String?,
         fallback: String,
         workspace: URL,
-        isArchive: Bool = false
+        reportsFolder: Bool = false
     ) throws -> URL {
         let trimmed = (rawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let value = trimmed.isEmpty ? fallback : trimmed
@@ -326,6 +337,9 @@ enum WorkspacePaths {
             }
             if isInside(resolved, root: workspace) {
                 return resolved
+            }
+            if reportsFolder, isWorldReadableSharedFolder(resolved) {
+                throw PathError.worldReadableFolder(resolved)
             }
             let optedIn = optIn((try? configValue(
                 workspace: workspace, section: "output", key: "allow_absolute_paths"
