@@ -425,12 +425,14 @@ only aggregate metrics, statuses, and operational names** (profile, schedule lab
 status, counts). It requires `notify.url` to be `https://`; an `http://` URL is treated as
 not usable and no send is attempted.
 
-**Scope note — the overdue digest is fleet-wide.** A headless scheduled run evaluates
-*every* schedule on the machine and posts the digest to the first profile that has a usable
-webhook. On a Mac with more than
-one profile, that card names the other profiles' slugs (and, in `full` detail, their
-schedule names). Excluded profiles are omitted. If your profiles map to different
-audiences, use `notify.detail: minimal`, which sends only a count.
+**Scope note — the overdue digest is routed per profile.** One headless tick evaluates
+*every* schedule on the machine and sends each profile's overdue schedules to that profile's
+own `notify:` webhook. A fleet-wide schedule (managed automation for all profiles) goes to
+every configured webhook. A profile with no usable webhook gets a warning in the run log and
+its schedules are never posted to another profile's channel. Profiles that share one webhook
+URL get a single card; if those profiles map to different audiences, set `notify.detail:
+minimal` on any of them and the shared card carries only counts. Excluded profiles are
+omitted. Each workspace sends at most one digest a day.
 
 - **`notify.detail: minimal`** reduces every card to event facts only — counts and
   statuses ("2 alert rules tripped", "1 schedule overdue") with no metric values, no
