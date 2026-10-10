@@ -39,7 +39,8 @@ final class SharedConfigPinTests: XCTestCase {
     private func writeConfig(
         shared: Bool = true, outputDir: String = "", allowAbsolute: Bool = false,
         retentionMode: String = "archive", retentionArchiveDir: String = "",
-        webhook: String = "https://hooks.example.com/a"
+        webhook: String = "https://hooks.example.com/a", detail: String = "full",
+        historicalDir: String = "snapshots", protectProfile: String = "protect-a"
     ) throws {
         let body = """
         shared_workspace:
@@ -55,6 +56,12 @@ final class SharedConfigPinTests: XCTestCase {
         notify:
           enabled: true
           url: "\(webhook)"
+          detail: \(detail)
+        charts:
+          historical_csv_dir: "\(historicalDir)"
+        protect:
+          enabled: true
+          profile: "\(protectProfile)"
         """
         try body.write(to: workspace.appendingPathComponent("config.yaml"),
                        atomically: true, encoding: .utf8)
@@ -64,6 +71,13 @@ final class SharedConfigPinTests: XCTestCase {
     private func confirmAll() throws {
         try SharedConfigPin.confirm(
             profile: profile, drifts: check().drifts, appSupport: appSupport)
+    }
+
+    /// The notify block as this Mac may use it, read from the workspace's config.yaml.
+    private func sendable() -> NotifyConfig? {
+        let config = try? ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        return SharedConfigPin.effectiveNotify(
+            config?.notify ?? NotifyConfig(), profile: profile, appSupport: appSupport)
     }
 
     private func check() -> SharedConfigPin.Check {
@@ -151,7 +165,7 @@ final class SharedConfigPinTests: XCTestCase {
         let safe = SharedConfigPin.effectiveRetention(config.retention, check: result)
         XCTAssertEqual(safe?.resolvedMode, .archive)
         XCTAssertEqual(safe?.isEnabled, false)
-        XCTAssertFalse(SharedConfigPin.webhookAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertNil(sendable())
         XCTAssertEqual(ConfigDoctorService.sharedConfigRows(
             profile: profile, appSupport: appSupport).count, 1)
     }
@@ -167,8 +181,9 @@ final class SharedConfigPinTests: XCTestCase {
         else { return XCTFail("an older pin should still decode") }
         XCTAssertEqual(pin.notifyURLHost, "hooks.example.com")
         XCTAssertEqual(pin.retentionArchiveDir, "")
-        XCTAssertTrue(check().drifts.map(\.key) == [.sharedEnabled],
-                      "only the key the old pin lacks reads as changed")
+        XCTAssertEqual(Set(check().drifts.map(\.key)),
+                       [.sharedEnabled, .historicalDir, .protectProfile],
+                       "only the keys the old pin lacks, and that config.yaml sets, read as changed")
     }
 
     func testAFirstSightSaveFailureIsLoggedOnTheRun() throws {
@@ -214,11 +229,47 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
+    func testAChangedNotifyDetailSendsMinimalAndAChangedHistoricalDirReadsAsDefault() throws {
+        try writeConfig(detail: "minimal", historicalDir: "snaps")
+        _ = check()
+        try writeConfig(detail: "full", historicalDir: outside)
+        SharedConfigPin.markHeadless()
+        let result = SharedConfigPin.checkpoint(
+            profile: profile, appSupport: appSupport, onLine: nil)
+        XCTAssertEqual(result.drifts.map(\.key), [.historicalDir, .notifyDetail])
+        XCTAssertEqual(sendable()?.resolvedDetail, .minimal)
+        XCTAssertEqual(try WorkspacePaths.historicalDir(for: profile).lastPathComponent,
+                       "snapshots")
+    }
+
+    func testAChangedProtectProfileSkipsProtectAndTheDashboardInclude() async throws {
+        try writeConfig(protectProfile: "protect-a")
+        _ = check()
+        try writeConfig(protectProfile: "someone-elses")
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        let lines = LineBox()
+        let protectRuns = LineBox()
+        try await CollectRouter.run(
+            profile: profile, config: config,
+            proCollect: { _, _, _, _, _, _ in .collected },
+            protectCollect: { name, _, _ in protectRuns.add(name) },
+            onLine: { lines.add($0.text) })
+        XCTAssertTrue(protectRuns.all.isEmpty)
+        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[skip] protect: protect.profile changed") })
+        XCTAssertFalse(lines.all.contains { $0.contains("[partial]") })
+        XCTAssertFalse(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertEqual(ReportEngine.dashboardArguments(
+            base: ["x"], profile: profile,
+            protect: SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport)
+                ? config.protect : nil), ["x"])
+    }
+
     func testDiffNamesEachChangedKeyInConfigYamlSpelling() {
         let base = SharedConfigPin(
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",
             retentionEnabled: true, retentionMode: "archive", retentionArchiveDir: "",
-            sharedEnabled: "true", notifyURLHost: "a.example.com")
+            sharedEnabled: "true", historicalDir: "", protectProfile: "", notifyDetail: "full",
+            notifyURLHost: "a.example.com")
         var changed = base
         changed.outputDir = "/Volumes/x"
         changed.retentionMode = "delete"
@@ -272,9 +323,9 @@ final class SharedConfigPinTests: XCTestCase {
         try writeConfig(webhook: "https://hooks.example.com/a")
         _ = check()
         try writeConfig(webhook: "https://hooks.example.com/other-path")
-        XCTAssertTrue(SharedConfigPin.webhookAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertNotNil(sendable())
         try writeConfig(webhook: "https://collector.attacker.test/a")
-        XCTAssertFalse(SharedConfigPin.webhookAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertNil(sendable())
     }
 
     func testConfirmRepinsAndPartialConfirmLeavesOtherKeysDrifted() throws {

@@ -23,6 +23,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var retentionArchiveDir: String
     /// `shared_workspace.enabled` as typed: "true", "false" or "" when absent.
     var sharedEnabled: String
+    var historicalDir: String
+    var protectProfile: String
+    /// `notify.detail` lowercased; "full" when absent.
+    var notifyDetail: String
     /// Host only. The webhook URL itself is a credential and never leaves config.yaml.
     var notifyURLHost: String
 
@@ -36,6 +40,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case retentionMode = "retention.mode"
         case retentionArchiveDir = "retention.archive_dir"
         case sharedEnabled = "shared_workspace.enabled"
+        case historicalDir = "charts.historical_csv_dir"
+        case protectProfile = "protect.profile"
+        case notifyDetail = "notify.detail"
         case notifyURL = "notify.url"
 
         fileprivate func text(of pin: SharedConfigPin) -> String {
@@ -48,6 +55,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .retentionMode: pin.retentionMode
             case .retentionArchiveDir: pin.retentionArchiveDir
             case .sharedEnabled: pin.sharedEnabled
+            case .historicalDir: pin.historicalDir
+            case .protectProfile: pin.protectProfile
+            case .notifyDetail: pin.notifyDetail
             case .notifyURL: pin.notifyURLHost
             }
         }
@@ -62,6 +72,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .retentionMode: pin.retentionMode = source.retentionMode
             case .retentionArchiveDir: pin.retentionArchiveDir = source.retentionArchiveDir
             case .sharedEnabled: pin.sharedEnabled = source.sharedEnabled
+            case .historicalDir: pin.historicalDir = source.historicalDir
+            case .protectProfile: pin.protectProfile = source.protectProfile
+            case .notifyDetail: pin.notifyDetail = source.notifyDetail
             case .notifyURL: pin.notifyURLHost = source.notifyURLHost
             }
         }
@@ -99,6 +112,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                 typed.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         let mode = ((raw("retention", "mode") as? String) ?? "").lowercased()
+        let detail = ((raw("notify", "detail") as? String) ?? "")
+            .trimmingCharacters(in: .whitespaces).lowercased()
+        let notifyDetail = detail.isEmpty ? "full" : detail
         let typedURL = ((raw("notify", "url") as? String) ?? "")
             .trimmingCharacters(in: .whitespaces)
         return SharedConfigPin(
@@ -110,6 +126,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             retentionMode: RetentionConfig.Mode(rawValue: mode)?.rawValue ?? "archive",
             retentionArchiveDir: path("retention", "archive_dir"),
             sharedEnabled: (raw("shared_workspace", "enabled") as? Bool).map { String($0) } ?? "",
+            historicalDir: path("charts", "historical_csv_dir"),
+            protectProfile: ((raw("protect", "profile") as? String) ?? "")
+                .trimmingCharacters(in: .whitespaces),
+            notifyDetail: notifyDetail,
             notifyURLHost: URL(string: typedURL)?.host?.lowercased() ?? ""
         )
     }
@@ -298,9 +318,18 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     }
 
     /// The notification keys a save changed against what config.yaml held.
-    static func changedNotifyKeys(previousURL: String, newURL: String) -> Set<Key> {
-        previousURL.trimmingCharacters(in: .whitespaces)
-            == newURL.trimmingCharacters(in: .whitespaces) ? [] : [.notifyURL]
+    static func changedNotifyKeys(
+        previousURL: String, newURL: String, previousDetail: String?, newDetail: String
+    ) -> Set<Key> {
+        var keys: Set<Key> = []
+        if previousURL.trimmingCharacters(in: .whitespaces)
+            != newURL.trimmingCharacters(in: .whitespaces) { keys.insert(.notifyURL) }
+        func level(_ value: String?) -> String {
+            let text = (value ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            return text.isEmpty ? "full" : text
+        }
+        if level(previousDetail) != level(newDetail) { keys.insert(.notifyDetail) }
+        return keys
     }
 
     // MARK: - Effective values
@@ -318,9 +347,22 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return safe
     }
 
-    /// False when the webhook host differs from the pinned one: no send.
-    static func webhookAllowed(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
-        !check(profile: profile, appSupport: appSupport).isDrifted(.notifyURL)
+    /// `notify` as this Mac may use it: nil when the webhook host differs from the pinned one
+    /// (no send), and `minimal` detail when the detail level changed.
+    static func effectiveNotify(
+        _ notify: NotifyConfig?, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> NotifyConfig? {
+        guard var safe = notify else { return nil }
+        let result = check(profile: profile, appSupport: appSupport)
+        if result.isDrifted(.notifyURL) { return nil }
+        if result.isDrifted(.notifyDetail) { safe.detail = NotifyConfig.Detail.minimal.rawValue }
+        return safe
+    }
+
+    /// False when `protect.profile` differs from the pinned one: Protect is not collected and
+    /// the dashboard does not include it.
+    static func protectAllowed(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
+        !check(profile: profile, appSupport: appSupport).isDrifted(.protectProfile)
     }
 
     // MARK: - Headless runs
@@ -330,6 +372,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         var outputDir = false
         var archiveDir = false
         var dataDir = false
+        var historicalDir = false
         var absolutePaths = false
         var isEmpty: Bool { self == PathOverrides() }
     }
@@ -367,6 +410,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             outputDir: result.isDrifted(.outputDir),
             archiveDir: result.isDrifted(.archiveDir),
             dataDir: result.isDrifted(.dataDir),
+            historicalDir: result.isDrifted(.historicalDir),
             absolutePaths: result.isDrifted(.allowAbsolutePaths))
         for note in result.notes {
             AppLogger.collect.warning("\(note, privacy: .public)")
@@ -399,6 +443,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case ("output", "output_dir") where overrides.outputDir: return ""
         case ("output", "archive_dir") where overrides.archiveDir: return ""
         case ("jamf_cli", "data_dir") where overrides.dataDir: return ""
+        case ("charts", "historical_csv_dir") where overrides.historicalDir: return ""
         case ("output", "allow_absolute_paths") where overrides.absolutePaths: return false
         default: return nil
         }
@@ -426,6 +471,9 @@ extension SharedConfigPin {
         retentionMode = try c.decodeIfPresent(String.self, forKey: .retentionMode) ?? "archive"
         retentionArchiveDir = try c.decodeIfPresent(String.self, forKey: .retentionArchiveDir) ?? ""
         sharedEnabled = try c.decodeIfPresent(String.self, forKey: .sharedEnabled) ?? ""
+        historicalDir = try c.decodeIfPresent(String.self, forKey: .historicalDir) ?? ""
+        protectProfile = try c.decodeIfPresent(String.self, forKey: .protectProfile) ?? ""
+        notifyDetail = try c.decodeIfPresent(String.self, forKey: .notifyDetail) ?? "full"
         notifyURLHost = try c.decodeIfPresent(String.self, forKey: .notifyURLHost) ?? ""
     }
 }

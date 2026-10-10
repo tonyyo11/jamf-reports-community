@@ -176,8 +176,8 @@ private func firstUsableNotify(
         let url = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: url.path),
               let config = try? ConfigLoader.load(from: url),
-              let notify = config.notify, notify.isUsable,
-              SharedConfigPin.webhookAllowed(profile: profile) else { continue }
+              let notify = SharedConfigPin.effectiveNotify(config.notify, profile: profile),
+              notify.isUsable else { continue }
         return (profile, notify, workspace)
     }
     return nil

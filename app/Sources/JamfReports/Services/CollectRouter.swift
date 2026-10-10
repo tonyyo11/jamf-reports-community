@@ -140,6 +140,12 @@ enum CollectRouter {
                 profile, workspacePaths, tiers, skipExpensive, force, onLine
             )
             guard detected.runsProtect else { return }
+            guard SharedConfigPin.protectAllowed(profile: profile) else {
+                onLine(.init(timestamp: Date(), level: .info,
+                             text: "[skip] protect: protect.profile changed in the shared "
+                                + "config.yaml and is not confirmed on this Mac — Protect not collected"))
+                return
+            }
             guard disposition == .collected else {
                 let reason = disposition == .stoodDown
                     ? "the Jamf Pro collect stood down for another Mac"

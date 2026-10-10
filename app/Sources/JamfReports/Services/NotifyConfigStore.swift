@@ -59,13 +59,15 @@ enum NotifyConfigWriter {
         enabled: Bool, provider: String, url: String, detail: String, profile: String
     ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
         guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
-        let previousURL = NotifyConfigLoader.load(profile: profile).resolvedURL
+        let previous = NotifyConfigLoader.load(profile: profile)
         let saved = try ConfigService.saveBlock(key: "notify", profile: profile) {
             apply(enabled: enabled, provider: provider, url: url, detail: detail, to: &$0)
         }
-        // A webhook typed on this Mac is the one this Mac keeps using; toggling the switch or
-        // the detail level with the URL as it was does not confirm a peer's URL.
-        let changed = SharedConfigPin.changedNotifyKeys(previousURL: previousURL, newURL: url)
+        // A webhook or detail level typed on this Mac is the one this Mac keeps using; a save
+        // that leaves a value as it was does not confirm a peer's.
+        let changed = SharedConfigPin.changedNotifyKeys(
+            previousURL: previous.resolvedURL, newURL: url,
+            previousDetail: previous.detail, newDetail: detail)
         do {
             if !changed.isEmpty { try SharedConfigPin.confirm(profile: profile, keys: changed) }
         } catch {

@@ -2088,7 +2088,9 @@ struct ReportEngine: Sendable {
                 result = try await Self.collectDashboard(
                     profile: profile,
                     arguments: Self.dashboardArguments(
-                        base: args, profile: profile, protect: loadedConfig?.protect),
+                        base: args, profile: profile,
+                        protect: SharedConfigPin.protectAllowed(profile: profile)
+                            ? loadedConfig?.protect : nil),
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
                     dataDir: dataDir, recordManifest: recordManifest,
                     useCachedData: useCachedData, stateStore: stateStore,

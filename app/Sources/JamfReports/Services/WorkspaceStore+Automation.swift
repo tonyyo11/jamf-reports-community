@@ -709,8 +709,9 @@ extension WorkspaceStore {
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
         let overdue = issues.filter { $0.kind == .overdue || $0.kind == .tickerDisabled }
         guard !overdue.isEmpty else { return }
-        guard let notify = Self.loadNotifyConfig(profile: profile), notify.isUsable,
-              SharedConfigPin.webhookAllowed(profile: profile),
+        guard let notify = SharedConfigPin.effectiveNotify(
+                Self.loadNotifyConfig(profile: profile), profile: profile),
+              notify.isUsable,
               let workspace = ProfileService.workspaceURL(for: profile) else { return }
         // Persisted day marker (not an in-memory static): survives relaunch and
         // is visible to a headless process, so the digest fires at most once per
