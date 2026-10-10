@@ -40,6 +40,7 @@ versions in this repository map to git tags.
   naming the step, instead of blocking collects for hours.
 - Onboarding gives up with a clear message if jamf-cli stops responding, and sends its answers to
   the prompts one at a time.
+- The scheduled overdue digest now goes to each profile's own webhook, so one tenant's channel no longer lists another's schedules.
 - Exporting the inventory CSV from cached data is no longer blocked by an expired or rejected
   token.
 - When a Generate run's refresh fails, the message now says how to generate from the cached
