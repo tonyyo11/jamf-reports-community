@@ -82,4 +82,22 @@ final class OnboardingFlowPTYTests: XCTestCase {
         XCTAssertEqual(lines, ["a\n", "bb\n", "c"])
         XCTAssertTrue(OnboardingFlow.ptyLines(Data()).isEmpty)
     }
+
+    func test_aChildThatIgnoresSIGTERMIsKilled() async throws {
+        let pidFile = scratch.appendingPathComponent("pid")
+        let stubborn = try stub(
+            "stubborn-stub", body: "echo $$ > '\(pidFile.path)'\ntrap '' TERM\nexec sleep 30")
+        let started = Date()
+        do {
+            _ = try await run(stubborn, input: "id\n", timeout: 1)
+            XCTFail("expected a timeout error")
+        } catch let OnboardingFlow.FlowError.processFailed(message) {
+            XCTAssertEqual(message, "jamf-cli did not finish within 1 s")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+        let pid = try XCTUnwrap(
+            Int32(try String(contentsOf: pidFile, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)))
+        XCTAssertNotEqual(kill(pid, 0), 0, "child \(pid) is still running")
+    }
 }

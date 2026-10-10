@@ -1531,11 +1531,12 @@ final class OnboardingFlow {
                     try? await Task.sleep(nanoseconds: 50_000_000)
                 }
                 guard process.isRunning, !box.didTimeOut else { break }
+                // Counted before the write, so a prompt that arrives during it still counts.
+                seenBytes = await collector.byteCount()
                 line.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
                     guard let base = bytes.baseAddress, !bytes.isEmpty else { return }
                     _ = Darwin.write(master, base, bytes.count)
                 }
-                seenBytes = await collector.byteCount()
             }
 
             process.waitUntilExit()

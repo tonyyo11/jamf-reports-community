@@ -45,6 +45,9 @@ final class JamfCLIInstaller {
     /// Seconds a brew command gets before it is stopped. `update()` holds the tick lock, so a
     /// hung `brew update` (a captive portal) would otherwise refuse every collect.
     nonisolated static let brewTimeout: TimeInterval = 300
+    /// Seconds `brew --prefix` gets. It runs on the main actor through `currentInstallation()`,
+    /// so a hung brew freezes the UI for this long.
+    nonisolated static let brewProbeTimeout: TimeInterval = 30
     /// Seconds an archive tool (tar, unzip) gets.
     nonisolated static let archiveToolTimeout: TimeInterval = 60
 
@@ -464,7 +467,7 @@ final class JamfCLIInstaller {
         #endif
         let result = runProcessSync(
             executable: brew, arguments: ["--prefix", "jamf-cli"],
-            environment: environmentForBrew(), timeout: brewTimeout
+            environment: environmentForBrew(), timeout: brewProbeTimeout
         )
         guard result.exitCode == 0 else { return nil }
         let prefix = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -475,13 +478,16 @@ final class JamfCLIInstaller {
         return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
     }
 
-    private static func checkHomebrewUpdate(for installation: Installation) async -> UpdateResult {
+    static func checkHomebrewUpdate(
+        for installation: Installation,
+        timeout: TimeInterval = brewTimeout
+    ) async -> UpdateResult {
         guard let brew = brewExecutable(for: installation) else {
             return UpdateResult(succeeded: false, message: "Homebrew install detected, but brew was not found.")
         }
         let brewEnv = environmentForBrew()
         let update = await runProcess(
-            executable: brew, arguments: ["update"], environment: brewEnv, timeout: brewTimeout
+            executable: brew, arguments: ["update"], environment: brewEnv, timeout: timeout
         )
         guard update.exitCode == 0 else {
             return UpdateResult(
@@ -492,8 +498,11 @@ final class JamfCLIInstaller {
 
         let outdated = await runProcess(
             executable: brew, arguments: ["outdated", "--quiet", "jamf-cli"], environment: brewEnv,
-            timeout: brewTimeout
+            timeout: timeout
         )
+        guard outdated.exitCode == 0, !outdated.timedOut else {
+            return UpdateResult(succeeded: false, message: failureText("brew outdated", outdated))
+        }
         let output = outdated.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         if output.isEmpty {
             return UpdateResult(

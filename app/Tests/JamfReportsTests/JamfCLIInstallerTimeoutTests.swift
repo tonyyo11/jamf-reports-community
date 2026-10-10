@@ -74,4 +74,18 @@ final class JamfCLIInstallerTimeoutTests: XCTestCase {
             JamfCLIInstaller.failureText("brew update", failed),
             "brew update failed: no network")
     }
+
+    func test_checkHomebrewUpdate_aTimedOutOutdatedIsAFailureNotCurrent() async throws {
+        let brew = try stub("brew-stub", body: """
+            if [ "$1" = update ]; then exit 0; fi
+            exec sleep 30
+            """)
+        let installation = JamfCLIInstaller.Installation(
+            path: "/usr/local/bin/jamf-cli", resolvedPath: "/usr/local/bin/jamf-cli",
+            version: "1.32.0", source: .homebrew, brewPath: brew.path,
+            codesignVerified: true, specProVersion: nil)
+        let result = await JamfCLIInstaller.checkHomebrewUpdate(for: installation, timeout: 1)
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(result.message, "brew outdated did not finish within 1 s")
+    }
 }
