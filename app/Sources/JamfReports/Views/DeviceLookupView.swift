@@ -54,10 +54,11 @@ struct DeviceLookupView: View {
         }
         .onAppear {
             searchFocused = true
-            index.load(profile: workspace.profile)
+            // Demo mode reads no workspace; a demo profile's name can match a real one.
+            if !workspace.demoMode { index.load(profile: workspace.profile) }
         }
         .onChange(of: workspace.profile) { _, newValue in
-            index.load(profile: newValue)
+            if !workspace.demoMode { index.load(profile: newValue) }
             // Profile change invalidates any in-flight lookup.
             state = .idle
             detail = nil

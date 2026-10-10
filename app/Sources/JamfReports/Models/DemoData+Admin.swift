@@ -16,6 +16,9 @@ extension DemoData {
     /// Mac's root, which may have been moved to a team folder.
     static let workspacesRootDisplay = "~/Jamf-Reports"
 
+    /// The home folder demo file URLs are built under, so none names a folder of this Mac.
+    static let placeholderHome = URL(fileURLWithPath: "/Users/demo", isDirectory: true)
+
     /// A demo profile's workspace, printed the way a live screen prints one
     /// (`WorkspaceRootStore.displayPath(profile:subpath:)`).
     static func workspaceDisplayPath(profile: String, subpath: String = "") -> String {
@@ -99,8 +102,8 @@ extension DemoData {
     private static func runLog(_ run: PlannedRun) -> RunLog {
         let label = LaunchAgentWriter.label(for: run.schedule) ?? run.schedule.name
         // Display only: demo mode never reads it. It sits where the demo's
-        // paths say the workspace is, not under this Mac's real root.
-        let logURL = FileManager.default.homeDirectoryForCurrentUser
+        // paths say the workspace is, not under this Mac's real home.
+        let logURL = placeholderHome
             .appendingPathComponent("Jamf-Reports", isDirectory: true)
             .appendingPathComponent(run.schedule.profile, isDirectory: true)
             .appendingPathComponent("automation", isDirectory: true)

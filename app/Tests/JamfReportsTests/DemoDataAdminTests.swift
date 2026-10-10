@@ -81,6 +81,16 @@ final class DemoDataAdminTests: XCTestCase {
         }
     }
 
+    /// Demo run-log URLs name no folder of this Mac's real home.
+    func testRunLogsSitUnderThePlaceholderHomeNotTheRealOne() {
+        let realHome = FileManager.default.homeDirectoryForCurrentUser.path
+        for run in DemoData.runHistory(for: DemoData.org.profile) {
+            let path = run.summary.logURL.path
+            XCTAssertTrue(path.hasPrefix(DemoData.placeholderHome.path + "/"), path)
+            XCTAssertFalse(path.hasPrefix(realHome + "/"), path)
+        }
+    }
+
     func testProfileWithoutSchedulesHasNoRunHistory() {
         XCTAssertTrue(DemoData.runHistory(for: "meridian-msp").isEmpty)
     }
