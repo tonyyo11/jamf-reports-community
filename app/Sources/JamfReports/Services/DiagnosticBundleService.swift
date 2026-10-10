@@ -84,6 +84,7 @@ final class DiagnosticRedactor {
         "hostname": "host", "host_name": "host", "host": "host",
         "collectedbyhost": "host",
         "ipaddress": "ip", "ip_address": "ip",
+        "lastipaddress": "ip", "lastreportedip": "ip", "lastreportedipv4": "ip",
         "username": "user", "user_name": "user", "user": "user",
         "realname": "user", "real_name": "user",
         // operatorUserHost is "username@hostname-first-label"; the email regex
@@ -320,6 +321,18 @@ final class DiagnosticRedactor {
         }
     }
 
+    /// A bare `name` key is not a PII key (policies and profiles have one), but a computer
+    /// record's `general.name` is the device name.
+    private func harvestGeneralName(
+        _ key: String, _ value: Any, into sets: inout [String: Set<String>]
+    ) {
+        guard key.lowercased() == "general", let general = value as? [String: Any],
+              let name = (general["name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else { return }
+        sets["device", default: []].insert(name)
+    }
+
     private func harvest(_ value: Any, into sets: inout [String: Set<String>]) {
         if let dict = value as? [String: Any] {
             for (key, val) in dict {
@@ -327,6 +340,7 @@ final class DiagnosticRedactor {
                     let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty { sets[category, default: []].insert(trimmed) }
                 }
+                harvestGeneralName(key, val, into: &sets)
                 harvest(val, into: &sets)
             }
         } else if let array = value as? [Any] {

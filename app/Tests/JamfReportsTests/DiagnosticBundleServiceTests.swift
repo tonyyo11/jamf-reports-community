@@ -251,6 +251,38 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(out.contains("device-"))
     }
 
+    func testLastReportedIPKeysBecomeIPPlaceholders() {
+        let r = DiagnosticRedactor()
+        let input: [String: Any] = [
+            "lastIpAddress": "10.20.30.40",
+            "lastReportedIp": "10.20.30.41",
+            "lastReportedIpv4": "10.20.30.42",
+        ]
+        guard let out = r.redactJSON(input) as? [String: Any] else { return XCTFail("not a dict") }
+        for (key, raw) in input {
+            let value = out[key] as? String
+            XCTAssertNotEqual(value, raw as? String, "\(key) not redacted")
+            XCTAssertTrue(value?.hasPrefix("ip-") == true, "\(key): \(value ?? "nil")")
+        }
+    }
+
+    /// `general.name` is a computer's name; a bare `name` key is not seeded because policies and
+    /// profiles carry one too.
+    func testSeedingTakesGeneralNameButNotOtherNames() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"""
+        [{"general": {"name": "Johns-MacBook-Pro"}},
+         {"name": "Install Firefox policy"}]
+        """#.write(to: dir.appendingPathComponent("computers.json"),
+                   atomically: true, encoding: .utf8)
+        let r = DiagnosticRedactor()
+        XCTAssertEqual(r.seedFromWorkspace(dir), 1)
+        let out = r.redactText("Johns-MacBook-Pro ran Install Firefox policy")
+        XCTAssertFalse(out.contains("Johns-MacBook-Pro"))
+        XCTAssertTrue(out.contains("Install Firefox policy"))
+    }
+
     func testSeedingHonorsMinLengthFloor() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
