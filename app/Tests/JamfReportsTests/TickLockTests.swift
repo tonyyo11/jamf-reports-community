@@ -115,6 +115,15 @@ final class TickLockTests: XCTestCase {
         XCTAssertTrue(lock.namesNoHolder)
     }
 
+    func testAnExistingLockFileThatIsNotWritableIsWriteFailed() throws {
+        try XCTSkipIf(geteuid() == 0, "root can write a mode 0400 file")
+        let lock = TickLock(url: lockURL())
+        try Data().write(to: lock.url)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o400], ofItemAtPath: lock.url.path)
+        XCTAssertEqual(lock.claim(pid: 7).kind, "writeFailed")
+    }
+
     func testClaimReportsALockFileItCouldNotWrite() {
         let lock = TickLock(url: FileManager.default.temporaryDirectory
             .appendingPathComponent("missing-\(UUID().uuidString)/tick.lock"))
@@ -153,6 +162,20 @@ final class TickLockTests: XCTestCase {
     }
 
     // MARK: - isHeldByAnotherLiveProcess
+
+    /// `kill(0, 0)` signals the caller's own process group and succeeds, `kill(-1, 0)` every
+    /// process, and `kill(1, 0)` reaches launchd (EPERM, which counts as alive): none of them
+    /// is a holder, so a lock file naming one must not read as held.
+    func testAHolderPidOfOneOrBelowIsGarbageNotALiveProcess() throws {
+        for text in ["0", "1", "-1", "-5"] {
+            let lock = TickLock(url: lockURL())
+            try Data(text.utf8).write(to: lock.url)
+            XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 7), "pid \(text) read as alive")
+            let hold = try XCTUnwrap(lock.claimedHold(pid: 7), "pid \(text) blocked a claim")
+            XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
+            hold.release()
+        }
+    }
 
     func testHeldCheckIsFalseForOwnPid() throws {
         let lock = TickLock(url: lockURL())

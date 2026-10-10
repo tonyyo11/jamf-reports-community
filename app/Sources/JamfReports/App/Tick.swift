@@ -74,6 +74,7 @@ func runTick(
             return await hold.keepingAlive { await runSchedule(run.schedule, verbose: false) }
         },
         recordFailure: failures.record,
+        holdsLock: { hold.isHeld },
         // Once per wake, after all runs, so a schedule that just fired is not
         // reported overdue by the same process.
         notifyOverdue: {
@@ -120,11 +121,19 @@ enum TickLoop {
         clearRunNowMarker: (String) -> Void,
         perform: (TickScheduler.DueRun) async -> ScheduleRunOutcome,
         recordFailure: (Schedule, String) -> Void,
+        holdsLock: () -> Bool = { true },
         notifyOverdue: () async -> Void
     ) async -> Int32 {
         var state = initial
         var failed = false
         for run in due {
+            guard holdsLock() else {
+                // A run that outlasted the lock's time limit gave it up: the rest wait, still
+                // due, for the next wake rather than start beside whatever took it.
+                fputs("[warn] tick: the lock was given up mid-wake — remaining schedules wait\n",
+                      stderr)
+                break
+            }
             guard let label = run.schedule.launchAgentLabel else { continue }
             // Stamped BEFORE the run so a crash mid-collect still counts as an
             // attempt and cannot re-run on every wake.

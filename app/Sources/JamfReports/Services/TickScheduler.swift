@@ -175,16 +175,20 @@ final class TickLockHold: @unchecked Sendable {
         fd = -1
     }
 
-    /// Resets the lock file's mtime, which the read-only probe judges staleness by. Best-effort.
-    func touch(now: Date = Date()) {
+    /// Still holding the lock: false once released or given up.
+    var isHeld: Bool {
+        state.lock()
+        defer { state.unlock() }
+        return fd >= 0
+    }
+
+    /// Sets the lock file's mtime to now, which the read-only probe judges staleness by.
+    /// Best-effort.
+    func touch() {
         state.lock()
         defer { state.unlock() }
         guard fd >= 0 else { return }
-        let seconds = now.timeIntervalSince1970
-        let stamp = timespec(
-            tv_sec: Int(seconds), tv_nsec: Int((seconds - seconds.rounded(.down)) * 1e9))
-        var times = [stamp, stamp]
-        _ = futimens(fd, &times)
+        _ = futimens(fd, nil)
     }
 
     /// Runs `body` while touching the lock every `interval`; beats stop after `limit`, which
@@ -204,13 +208,14 @@ final class TickLockHold: @unchecked Sendable {
     /// `keepingAlive`'s beats, for a holder whose body runs on the main actor and so cannot
     /// be handed over: touches the lock every `interval` until cancelled. At `limit` it gives
     /// up the lock instead: no real run lasts that long, and a wedged live holder must not
-    /// silence the ticker for good.
+    /// silence the ticker for good. The limit counts awake time only (`SuspendingClock`): a
+    /// Mac that slept through the run must not give the lock up while the run goes on.
     func heartbeat(
         every interval: Duration = TickLock.heartbeatInterval,
         limit: Duration = TickLock.heartbeatLimit
     ) -> Task<Void, Never> {
         Task.detached(priority: .utility) { [self] in
-            let clock = ContinuousClock()
+            let clock = SuspendingClock()
             let deadline = clock.now.advanced(by: limit)
             while true {
                 try? await Task.sleep(for: interval)
