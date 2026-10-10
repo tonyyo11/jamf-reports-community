@@ -64,6 +64,20 @@ final class DDMBlueprintServiceTests: XCTestCase {
                      "Absent `pending` must decode to nil")
     }
 
+    /// jamf-cli leaves the counts out of a blueprint that is not deployed (and scope and steps
+    /// out when its detail fetch failed); that is not the same fact as 0.
+    func testAbsentBlueprintCountsStayNil() throws {
+        let url = tempDir.appendingPathComponent("blueprints-sparse.json")
+        try Data(#"[{"name": "Gone", "state": "NOT_DEPLOYED"}]"#.utf8).write(to: url)
+        let blueprint = try XCTUnwrap(
+            DDMBlueprintService.load(blueprintsURL: url, declarationsURL: nil).blueprints.first)
+        XCTAssertNil(blueprint.scope)
+        XCTAssertNil(blueprint.steps)
+        XCTAssertNil(blueprint.succeeded)
+        XCTAssertNil(blueprint.failed)
+        XCTAssertNil(blueprint.pending)
+    }
+
     func testLoadDecodesCanonicalDeclarationsShape() throws {
         let declarationsURL = tempDir.appendingPathComponent("ddm.json")
         let json = """

@@ -453,6 +453,16 @@ struct MobileFleetView: View {
         }
     }
 
+    /// The detail header's supervision pill. A device whose state the snapshot lacks is
+    /// unknown, not unsupervised.
+    static func supervisionPill(_ supervised: Bool?) -> (text: String, tone: Pill.Tone) {
+        switch supervised {
+        case true?: ("Supervised", .teal)
+        case false?: ("Unsupervised", .warn)
+        case nil: ("Unknown", .muted)
+        }
+    }
+
     /// The devices a legend row's filter shows, for its hint.
     private static func filterNoun(for role: MobileFleetService.SupervisionRole) -> String {
         role == .unknown
@@ -712,10 +722,8 @@ struct MobileFleetView: View {
                         .textSelection(.enabled)
                     }
                     Spacer()
-                    Pill(
-                        text: device.general?.supervised == true ? "Supervised" : "Unsupervised",
-                        tone: device.general?.supervised == true ? .teal : .warn
-                    )
+                    let supervision = Self.supervisionPill(device.general?.supervised)
+                    Pill(text: supervision.text, tone: supervision.tone)
                 }
                 deviceDetailSection("Management", rows: [
                     ("Managed", boolLabel(device.general?.managed)),

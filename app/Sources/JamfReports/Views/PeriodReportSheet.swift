@@ -240,6 +240,9 @@ struct PeriodReportSheet: View {
     }
 
     private func generate() {
+        // Same refusal as the other reports: a collect in flight replaces the snapshots the
+        // summaries are read beside.
+        guard !workspace.reportMustWait() else { return }
         isGenerating = true
         errorText = nil
         resultPath = nil
