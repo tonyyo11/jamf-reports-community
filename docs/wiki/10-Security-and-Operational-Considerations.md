@@ -247,6 +247,13 @@ background runs use the safe values for them until you confirm once. The webhook
 profile and the other keys are trusted at first sight. If the Mac's own pin cannot be read, every
 key reads as changed until you confirm.
 
+While anything waits for a confirmation, an amber strip above every screen says "Shared config
+needs confirming on this Mac" and its Review button opens Config Doctor, so reports landing in
+`Generated Reports` instead of your own folder are not a silent surprise. Onboarding and
+`jamf-reports scaffold --out` confirm the keys the file they write sets on that Mac (the report
+and data folders), and nothing else. If the app gains a pinned key in an update, a Mac that
+pinned before the update pins the new key the first time it sees it.
+
 To accept a change, open Audit, then the Config tab (Config Doctor), read the "Shared config
 changed since this Mac pinned it" row, which lists each key with its pinned and current value,
 and click Confirm. Confirm re-pins only the values shown, and only while the file still holds
