@@ -169,6 +169,17 @@ final class OOXMLWriterTests: XCTestCase {
         XCTAssertEqual(family.name.count, 3, "a joined sequence is kept whole or dropped")
     }
 
+    /// Excel refuses a sheet name that starts or ends with an apostrophe, including one the
+    /// 31-unit cut leaves at the end.
+    func testAddSheetNeverEndsOrStartsWithAnApostrophe() {
+        let workbook = Workbook()
+        XCTAssertEqual(workbook.addSheet("'Quoted'").name, "Quoted")
+        let cutOnAQuote = String(repeating: "A", count: 30) + "'Tail"
+        let ws = workbook.addSheet(cutOnAQuote)
+        XCTAssertEqual(ws.name, String(repeating: "A", count: 30))
+        XCTAssertEqual(workbook.addSheet("'''").name, "Sheet")
+    }
+
     /// The numbered suffix of a repeated name also stays inside 31 UTF-16 units.
     func testAddSheetKeepsASuffixedNameInsideThirtyOneUnits() {
         let workbook = Workbook()
