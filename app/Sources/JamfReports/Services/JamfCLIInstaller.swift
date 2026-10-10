@@ -84,9 +84,10 @@ final class JamfCLIInstaller {
         URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")!
 
     /// Hosts allowed to serve a `jamf-cli` release asset. Even though the URL
-    /// comes from a GitHub API response over TLS, we re-validate the host
-    /// because a tampered API response or an MITM-altered redirect could
-    /// otherwise point the download at an attacker-controlled origin.
+    /// comes from a GitHub API response over TLS, we validate the host before
+    /// the download (`validateAsset`) and again on the URL that answered
+    /// (`isTrustedFinalURL`), because a tampered API response or a redirect
+    /// could otherwise point the download at an attacker-controlled origin.
     static let trustedAssetHosts: Set<String> = [
         "github.com",
         "objects.githubusercontent.com",
@@ -127,7 +128,8 @@ final class JamfCLIInstaller {
     ///   `jamf-cli version -o json`.
     nonisolated static let minimumSupportedVersion: String = "1.18.0"
 
-    /// Returns true when `installedVersion` is below `minimumSupportedVersion`.
+    /// Returns true when `installedVersion` is below `minimumSupportedVersion`
+    /// (a pre-release of the minimum, `1.18.0-rc1`, counts as below).
     /// Returns false if the installed version is unknown/unparseable so we
     /// don't nag users when version detection itself failed.
     nonisolated static func isBelowMinimumSupported(_ installedVersion: String?) -> Bool {
@@ -141,7 +143,8 @@ final class JamfCLIInstaller {
     nonisolated static let environmentScopeVersion: String = "1.28.0"
 
     /// True unless `installedVersion` parses and is below 1.28.0 — an unknown
-    /// version fails toward the GA default rather than the legacy flag.
+    /// version fails toward the GA default rather than the legacy flag. A parsed
+    /// pre-release of 1.28.0 (`1.28.0-rc1`) counts as below it, so it takes the legacy flag.
     nonisolated static func supportsEnvironmentScope(_ installedVersion: String?) -> Bool {
         guard let installedVersion,
               !versionParts(installedVersion).isEmpty else { return true }
@@ -156,7 +159,9 @@ final class JamfCLIInstaller {
 
     /// True only when `installedVersion` parses and is at least 1.29.0. An
     /// unknown version fails toward the old spelling — never send a name or a
-    /// flag an older binary refuses (the `supportsQuietFlags` direction).
+    /// flag an older binary refuses (the `supportsQuietFlags` direction). A
+    /// pre-release of 1.29.0 (`1.29.0-rc1`) counts as below it, so it also gets
+    /// the older behaviour.
     nonisolated static func supportsSpecDerivedNames(_ installedVersion: String?) -> Bool {
         guard let installedVersion,
               !versionParts(installedVersion).isEmpty else { return false }
@@ -168,7 +173,8 @@ final class JamfCLIInstaller {
     nonisolated static let dashboardVersion: String = "1.31.0"
 
     /// True only when `installedVersion` parses and is at least 1.31.0. An unknown
-    /// version fails toward not running it, like `supportsSpecDerivedNames`.
+    /// version fails toward not running it, like `supportsSpecDerivedNames`. A
+    /// pre-release of 1.31.0 (`1.31.0-rc1`) counts as below it, so the command is not run.
     nonisolated static func supportsDashboard(_ installedVersion: String?) -> Bool {
         guard let installedVersion,
               !versionParts(installedVersion).isEmpty else { return false }
@@ -193,6 +199,14 @@ final class JamfCLIInstaller {
             case .invalidName(let n):    "Invalid asset name: \(n)"
             }
         }
+    }
+
+    /// Whether the URL that answered a download is an https URL on the allow-list. `nil` (no
+    /// response URL) is untrusted.
+    static func isTrustedFinalURL(_ url: URL?) -> Bool {
+        guard let url, url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased() else { return false }
+        return trustedAssetHosts.contains(host)
     }
 
     /// Validates a release asset before download. Throws `AssetValidationError`
@@ -317,8 +331,16 @@ final class JamfCLIInstaller {
         return payload.specProVersion
     }
 
+    /// The probe blocks on up to two 60 s version launches and `brew --prefix`, so it runs
+    /// off the main actor.
+    private static func probeInstallation() async -> Installation? {
+        await Task.detached(priority: .userInitiated) {
+            JamfCLIInstaller.currentInstallation()
+        }.value
+    }
+
     func checkForUpdate() async -> UpdateResult {
-        guard let installation = Self.currentInstallation() else {
+        guard let installation = await Self.probeInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
         }
 
@@ -377,7 +399,7 @@ final class JamfCLIInstaller {
     }
 
     private func performUpdate() async -> UpdateResult {
-        guard let installation = Self.currentInstallation() else {
+        guard let installation = await Self.probeInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
         }
 
@@ -789,6 +811,12 @@ final class JamfCLIInstaller {
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
         let (downloaded, response) = try await URLSession.shared.download(for: request)
+        // URLSession follows redirects; the host that actually served the bytes is checked
+        // here, before the file leaves URLSession's temp location.
+        guard isTrustedFinalURL(response.url) else {
+            try? FileManager.default.removeItem(at: downloaded)
+            throw AssetValidationError.untrustedHost(response.url?.host)
+        }
         try validateHTTP(response)
 
         let destination = try safeDestination(in: directory, name: filename ?? asset.name)
@@ -1014,7 +1042,9 @@ final class JamfCLIInstaller {
         }
     }
 
-    private nonisolated static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+    /// Orders two version strings by their numeric core; on an equal core a pre-release
+    /// (`1.30.0-rc1`) ranks below the release. Build metadata after `+` is ignored.
+    nonisolated static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
         let left = versionParts(lhs)
         let right = versionParts(rhs)
         let count = max(left.count, right.count)
@@ -1024,14 +1054,29 @@ final class JamfCLIInstaller {
             if l < r { return .orderedAscending }
             if l > r { return .orderedDescending }
         }
-        return .orderedSame
+        switch (preRelease(lhs), preRelease(rhs)) {
+        case (nil, nil): return .orderedSame
+        case (.some, nil): return .orderedAscending
+        case (nil, .some): return .orderedDescending
+        case let (l?, r?): return l.compare(r, options: .numeric)
+        }
     }
 
+    /// The numeric core of a version: what precedes the first `-` or `+`.
     private nonisolated static func versionParts(_ version: String) -> [Int] {
-        version
+        let core = version.prefix { $0 != "-" && $0 != "+" }
+        return core
             .trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             .split { !$0.isNumber }
             .compactMap { Int($0) }
+    }
+
+    /// The text after the first `-` (and before any `+`), or nil for a release.
+    private nonisolated static func preRelease(_ version: String) -> String? {
+        let withoutBuild = version.prefix { $0 != "+" }
+        guard let dash = withoutBuild.firstIndex(of: "-") else { return nil }
+        let text = withoutBuild[withoutBuild.index(after: dash)...]
+        return text.isEmpty ? nil : String(text)
     }
 
     /// Minimal environment for Homebrew subprocess invocations. Pins the same

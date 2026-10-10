@@ -962,7 +962,7 @@ extension DeviceInventoryRecord {
 ///   { "token": "eyJ...", "expires_at": "2026-05-04T13:38:38Z" }
 /// `expires_at` is omitted when the profile uses a static token file (bearer-token auth).
 ///
-/// - Note: Instances decoded from persisted storage carry `raw == ""` and re-derive
+/// - Note: The token itself is never kept. Instances decoded from persisted storage re-derive
 ///   `isValid` from the stored `Bool`. Re-probe via `CLIBridge.tokenStatus(for:)`
 ///   before making any auth decisions — decoded instances are for display only.
 struct TokenStatus: Sendable, Codable {
@@ -971,8 +971,6 @@ struct TokenStatus: Sendable, Codable {
     let expiresAt: Date?
     /// True when jamf-cli returned a token without error (exit 0).
     let isValid: Bool
-    /// Raw stdout for debugging. Excluded from Codable round-trip — debug-only field.
-    let raw: String
 
     /// True when the token has a known expiry and that expiry is in the past.
     var isExpired: Bool {
@@ -982,7 +980,6 @@ struct TokenStatus: Sendable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case profile, expiresAt, isValid
-        // raw excluded intentionally — debug-only field
     }
 
     init(from decoder: any Decoder) throws {
@@ -990,26 +987,23 @@ struct TokenStatus: Sendable, Codable {
         profile = try c.decode(String.self, forKey: .profile)
         expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
         isValid = try c.decode(Bool.self, forKey: .isValid)
-        raw = ""  // not persisted; callers use make() which supplies raw at construction time
     }
 
-    private init(profile: String, expiresAt: Date?, isValid: Bool, raw: String) {
+    private init(profile: String, expiresAt: Date?, isValid: Bool) {
         self.profile = profile
         self.expiresAt = expiresAt
         self.isValid = isValid
-        self.raw = raw
     }
 
     /// Factory for constructing a `TokenStatus`. Prefer this over direct memberwise init.
-    static func make(profile: String, token: String?, expiresAt: Date?, raw: String) -> TokenStatus {
+    static func make(profile: String, token: String?, expiresAt: Date?) -> TokenStatus {
         guard !profile.isEmpty else {
-            return TokenStatus(profile: "", expiresAt: nil, isValid: false, raw: raw)
+            return TokenStatus(profile: "", expiresAt: nil, isValid: false)
         }
         return TokenStatus(
             profile: profile,
             expiresAt: expiresAt,
-            isValid: !(token ?? "").isEmpty,
-            raw: raw
+            isValid: !(token ?? "").isEmpty
         )
     }
 }
