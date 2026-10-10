@@ -269,8 +269,9 @@ final class SharedConfigPinTests: XCTestCase {
         _ = try? await ReportEngine.collect(
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
             force: true, locateJamfCLI: { nil }, onLine: { lines.add($0.text) })
-        XCTAssertEqual(lines.all.first,
-                       "[warn] shared config changed retention.mode: confirm on this Mac (Config Doctor)")
+        XCTAssertEqual(
+            lines.all.first,
+            "[warn] shared config changed retention.mode: confirm on this Mac (Config Doctor)")
     }
 
     // MARK: - Config Doctor and confirming

@@ -83,11 +83,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             ConfigLoader.rawValue(at: [section, key], in: root)
         }
         func path(_ section: String, _ key: String) -> String {
-            WorkspacePaths.expandTilde(
-                ((raw(section, key) as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+            let typed = (raw(section, key) as? String) ?? ""
+            return WorkspacePaths.expandTilde(
+                typed.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         let mode = ((raw("retention", "mode") as? String) ?? "").lowercased()
-        let typedURL = ((raw("notify", "url") as? String) ?? "").trimmingCharacters(in: .whitespaces)
+        let typedURL = ((raw("notify", "url") as? String) ?? "")
+            .trimmingCharacters(in: .whitespaces)
         return SharedConfigPin(
             allowAbsolutePaths: WorkspacePaths.optIn(raw("output", "allow_absolute_paths")) == true,
             outputDir: path("output", "output_dir"),
@@ -151,8 +153,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             do {
                 try save(current, profile: profile, appSupport: appSupport)
             } catch {
+                let reason = error.localizedDescription
                 AppLogger.collect.warning(
-                    "SharedConfigPin: could not record the pin: \(error.localizedDescription, privacy: .public)")
+                    "SharedConfigPin: could not record the pin: \(reason, privacy: .public)")
             }
             return Check(workspace: workspace, pinned: current, drifts: [])
         }
