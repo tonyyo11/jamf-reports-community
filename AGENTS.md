@@ -502,6 +502,24 @@ per-device scan addresses computers by the numeric `id` field from the inventory
 ID-based addressing is unaffected by name-resolution changes. The MCP catalog additions
 (`list_commands`, `run_command`) are not used by the app.
 
+**v1.33.0 (2026-10-09) — Bulk operations move to their resources, narrower `standard` scope,
+blueprint import rework.** Breaking changes: `pro bulk add-to-group`/`remove-from-group`/
+`enable-policies`/`disable-policies`/`send-command` are deprecated in favour of
+`classic-computer-groups`/`classic-mobile-device-groups add-members`/`remove-members` and
+`classic-policies enable`/`disable`; most `send-command` MDM commands now exit 8 and device
+actions exit 7 on a partial failure; `pro setup --scope standard` withholds privileges that grant
+privileges or logins (a role created before 1.33 keeps its old set until re-run);
+`blueprints import-profile` replaces `--legacy` with `--convert`; MCP `run_command` refuses
+login-changing writes; verbose HTTP output is reformatted (`<-- HTTP/2.0 200 OK`); Platform SDK
+1.3.0. No code change: the app runs none of these commands, passes no verbose flag, and matches
+none of the changed stderr text; `pro report *`, `--section`, `dashboard --out-file`,
+`doctor --output json`, `config add-profile --no-verify`, `pro auth token --refresh` and
+`pro audit --days` are untouched, as are exit codes 2-8 for the commands the app runs. Also from
+1.32.0, not recorded above: the response-header timeout rose from 60 s to 120 s, a timed-out
+request is never retried, and `--all` halves `--page-size` on a page that times out (stderr
+`page of N timed out; continuing at --page-size M...`), so `pro report ea-results --all` against
+a stalled on-prem server finishes more slowly instead of failing.
+
 ### notify config (v2.2.0 — opt-in webhook digest)
 
 ```yaml

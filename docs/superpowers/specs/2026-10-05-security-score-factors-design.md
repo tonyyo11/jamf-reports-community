@@ -8,24 +8,24 @@ The security score stops being eight fixed weights. An admin lists the factors t
 adds or removes one, and gives each a weight. Every configured security agent can be its own
 factor. Native Jamf Pro data comes first.
 
-## What is true today (checked 2026-10-05 on beta 1592 and prod data)
+## What is true today (checked 2026-10-05 on a 2.9.0 beta against a production Jamf Pro instance)
 
 - **Eight weights, five measured.** `security_policy.score_weights` has slots for FileVault, SIP,
   Firewall, EDR agent, mSCP, XProtect, CVE and Secure Boot. A live collect measures only the first
-  five: today's prod `summary.json` has `securityScoreBasis: fileVault,sip,firewall,crowdstrike,mscp`
+  five: a live `summary.json` has `securityScoreBasis: fileVault,sip,firewall,crowdstrike,mscp`
   and no `xprotectPct`, `cvePct`, `secureBootPct` or `bootstrapPct`. Those fields are filled only
   by summaries imported from the old Python tool. So 25 of the default 100 points do nothing, and
   an alert rule on those four figures can never fire. Gatekeeper is measured and not scored.
 - **Zero is the only way to drop a factor.** Removing a factor means typing 0, and the tab still
   lists it.
-- **One agent.** The EDR slot scores one agent, chosen on the Scoring tab. Prod has three
-  (CrowdStrike, Nessus, Splunk UF).
+- **One agent.** The EDR slot scores one agent, chosen on the Scoring tab. A fleet that runs an
+  EDR agent beside vulnerability and log-forwarding agents can score only one of them.
 - **No released build reads `score_weights`.** It was added on 2026-10-02, after the
-  v2.9.0-beta1 tag. Prod's config.yaml has no `security_policy` block.
-- **The data for native factors is there.** In prod's `computers` snapshot (664 Macs) every Mac
-  has `security.gatekeeperStatus`, `secureBootLevel` (628 full, 27 medium, 6 none, 3 not
-  supported), `bootstrapTokenEscrowedStatus` (638 escrowed), `xprotectVersion` (662; 434 on the
-  newest), `operatingSystem.version` and `general.lastContact`.
+  v2.9.0-beta1 tag. An existing config.yaml has no `security_policy` block.
+- **The data for native factors is there.** In a production `computers` snapshot every Mac has
+  `security.gatekeeperStatus`, `secureBootLevel`, `bootstrapTokenEscrowedStatus`,
+  `xprotectVersion`, `operatingSystem.version` and `general.lastContact`, and Secure Boot level,
+  bootstrap escrow and XProtect currency all vary across the fleet, so each factor carries signal.
 - **SOFA gives what the currency factors need.** The cached macOS feed lists, per major version,
   every release with its date (`OSVersions[].SecurityReleases[]`), and the newest XProtect
   (`XProtectPlistConfigData["com.apple.XProtect"]`, "5363", released 2026-09-29).
