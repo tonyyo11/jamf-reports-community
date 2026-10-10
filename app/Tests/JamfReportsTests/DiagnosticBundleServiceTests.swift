@@ -407,6 +407,37 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(log.contains("Environment 'org-"), "got: \(log)")
     }
 
+    /// The bundle's log pass matches `LogRedactor.redactedForSharing`: the log redactor
+    /// first, then the bundle redactor.
+    func testBuildBundleLogsGetBothRedactionPasses() throws {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace.root) }
+        try (#"sent {"client_secret": "abcdefgh1234", "password": "hunter2x"} to "#
+            + "https://acme.jamfcloud.com/api\n"
+            + #"{"access_token": "longvalue"}"# + "\n")
+            .write(to: workspace.sources.logsDir.appendingPathComponent("run.log"),
+                   atomically: true, encoding: .utf8)
+        let outputDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: outputDir) }
+
+        let zip = try DiagnosticBundleService.buildBundle(
+            sources: workspace.sources, outputDir: outputDir,
+            profileSlug: "both", options: .init(), now: Date())
+        let extracted = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: extracted) }
+        try unzip(zip, into: extracted)
+
+        let log = try String(
+            contentsOf: extracted.appendingPathComponent("logs/run.log"), encoding: .utf8)
+        for leaked in ["abcdefgh1234", "hunter2x", "longvalue", "acme.jamfcloud.com"] {
+            XCTAssertFalse(log.contains(leaked), "\(leaked) leaked: \(log)")
+        }
+        XCTAssertTrue(log.contains("REDACTED_CLIENT_SECRET"))
+        XCTAssertTrue(log.contains("https://host-"), "got: \(log)")
+        // A second pass has nothing left to change.
+        XCTAssertEqual(DiagnosticRedactor().redactText(LogRedactor.redact(log)), log)
+    }
+
     // MARK: - Bundle structure
 
     func testStageFilesProducesRedactedTree() throws {

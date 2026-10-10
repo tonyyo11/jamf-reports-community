@@ -649,7 +649,8 @@ enum DiagnosticBundleService {
                 continue
             }
             var content = String(decoding: data, as: UTF8.self)
-            if let redactor { content = redactor.redactText(content) }
+            // Same chain as LogRedactor.redactedForSharing, so shared and bundled logs match.
+            if let redactor { content = redactor.redactText(LogRedactor.redact(content)) }
             if (try? writeText(content, to: staging.appendingPathComponent(arcname))) == nil {
                 entries.append(.skipped(path: arcname, reason: "could not stage log"))
                 continue
