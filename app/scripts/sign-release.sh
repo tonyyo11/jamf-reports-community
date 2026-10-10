@@ -36,6 +36,7 @@ if [[ -d "$APP_PATH/Contents/Frameworks" ]]; then
       --verbose=4 \
       --force \
       --options runtime \
+      --timestamp \
       --entitlements "$(cd -- "$(dirname -- "$0")/.." && pwd -P)/JamfReports.entitlements" \
       --sign "$DEVELOPER_ID_APP" \
       "$framework"
@@ -51,6 +52,7 @@ if [[ -d "$APP_PATH/Contents/Frameworks" ]]; then
       --verbose=4 \
       --force \
       --options runtime \
+      --timestamp \
       --sign "$DEVELOPER_ID_APP" \
       "$dylib"
   done
@@ -62,6 +64,7 @@ codesign \
   --verbose=4 \
   --force \
   --options runtime \
+  --timestamp \
   --entitlements "$(cd -- "$(dirname -- "$0")/.." && pwd -P)/JamfReports.entitlements" \
   --sign "$DEVELOPER_ID_APP" \
   "$APP_PATH/Contents/MacOS/JamfReports"
