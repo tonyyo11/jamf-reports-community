@@ -7,6 +7,28 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Snapshot retention goes by the date in each file name, so a sync provider that re-stamps
+  downloaded files can no longer get newer snapshots archived or deleted. A summary whose name
+  holds a date that does not exist is aged by its modified time instead.
+- Backup pruning only touches this Mac's own backups on network volumes and shared workspaces,
+  and also when config.yaml will not load, so another Mac's backups are kept.
+- A webhook URL that cannot be parsed counts as a failed send and is retried, instead of being
+  marked as sent.
+- The background item exits with an error when its lock file cannot be written, and says so in
+  Run History, instead of reporting that another run is in progress.
+- The onboarding tip now says jamf-cli keeps the credentials in the keychain.
+
+### Security
+
+- Report and archive folders in /Users/Shared or ~/Public are refused, because every account on
+  the Mac can read them. Reports fall back to the workspace folder and the run log says why.
+- A custom workspace folder must be owned by you, not writable by its group or everyone, and have
+  no access control list. Folders under /Volumes and cloud storage are exempt. A folder you
+  already use keeps working, and Config Doctor flags it.
+- Run logs have credentials masked in the file itself, not only when you view them.
+
 ### Dependencies
 
 - Reviewed jamf-cli 1.33.0 (2026-10-09). Its bulk-operation, setup-scope, blueprint-import and
