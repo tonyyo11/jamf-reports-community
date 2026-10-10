@@ -128,7 +128,8 @@ final class JamfCLIInstaller {
     ///   `jamf-cli version -o json`.
     nonisolated static let minimumSupportedVersion: String = "1.18.0"
 
-    /// Returns true when `installedVersion` is below `minimumSupportedVersion`.
+    /// Returns true when `installedVersion` is below `minimumSupportedVersion`
+    /// (a pre-release of the minimum, `1.18.0-rc1`, counts as below).
     /// Returns false if the installed version is unknown/unparseable so we
     /// don't nag users when version detection itself failed.
     nonisolated static func isBelowMinimumSupported(_ installedVersion: String?) -> Bool {
@@ -142,7 +143,8 @@ final class JamfCLIInstaller {
     nonisolated static let environmentScopeVersion: String = "1.28.0"
 
     /// True unless `installedVersion` parses and is below 1.28.0 — an unknown
-    /// version fails toward the GA default rather than the legacy flag.
+    /// version fails toward the GA default rather than the legacy flag. A parsed
+    /// pre-release of 1.28.0 (`1.28.0-rc1`) counts as below it, so it takes the legacy flag.
     nonisolated static func supportsEnvironmentScope(_ installedVersion: String?) -> Bool {
         guard let installedVersion,
               !versionParts(installedVersion).isEmpty else { return true }
@@ -157,7 +159,9 @@ final class JamfCLIInstaller {
 
     /// True only when `installedVersion` parses and is at least 1.29.0. An
     /// unknown version fails toward the old spelling — never send a name or a
-    /// flag an older binary refuses (the `supportsQuietFlags` direction).
+    /// flag an older binary refuses (the `supportsQuietFlags` direction). A
+    /// pre-release of 1.29.0 (`1.29.0-rc1`) counts as below it, so it also gets
+    /// the older behaviour.
     nonisolated static func supportsSpecDerivedNames(_ installedVersion: String?) -> Bool {
         guard let installedVersion,
               !versionParts(installedVersion).isEmpty else { return false }
@@ -169,7 +173,8 @@ final class JamfCLIInstaller {
     nonisolated static let dashboardVersion: String = "1.31.0"
 
     /// True only when `installedVersion` parses and is at least 1.31.0. An unknown
-    /// version fails toward not running it, like `supportsSpecDerivedNames`.
+    /// version fails toward not running it, like `supportsSpecDerivedNames`. A
+    /// pre-release of 1.31.0 (`1.31.0-rc1`) counts as below it, so the command is not run.
     nonisolated static func supportsDashboard(_ installedVersion: String?) -> Bool {
         guard let installedVersion,
               !versionParts(installedVersion).isEmpty else { return false }
