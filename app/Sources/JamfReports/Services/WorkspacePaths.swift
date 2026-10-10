@@ -247,7 +247,8 @@ enum WorkspacePaths {
         }
     }
 
-    /// True for a folder every local account can read: `/Users/Shared`, `~/Public` and `/tmp`.
+    /// True for a folder every local account can read: `/Users/Shared`, `~/Public`, `/tmp` and
+    /// `/var/tmp`.
     /// Applied only to the folders the engine writes reports into (`output.output_dir`,
     /// `output.archive_dir`, `retention.archive_dir`). A workspace root, `jamf_cli.data_dir`,
     /// a save panel or an explicit CLI path is a deliberate choice, and refusing one that
@@ -255,7 +256,7 @@ enum WorkspacePaths {
     static func isWorldReadableSharedFolder(_ url: URL) -> Bool {
         let path = folded(resolvedForPolicy(url))
         // `/tmp` resolves to `/private/tmp`, which the symlink-resolved path then carries.
-        let shared = ["/users/shared", "/tmp", "/private/tmp"]
+        let shared = ["/users/shared", "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"]
         if shared.contains(where: { relative(path, under: $0) != nil }) { return true }
         return homeFolds().contains { relative(path, under: $0 + "/public") != nil }
     }
@@ -399,7 +400,8 @@ enum WorkspacePaths {
     /// twice reads as its last value. Nil only when the section/key isn't present.
     private static func configValue(workspace: URL, section: String, key: String) throws -> Any? {
         // A headless run on a shared workspace reads a drifted key as its safe value.
-        if let safe = SharedConfigPin.safePathValue(workspace: workspace, section: section, key: key) {
+        if let safe = SharedConfigPin.safePathValue(
+            workspace: workspace, section: section, key: key) {
             return safe
         }
         let configURL = workspace.appendingPathComponent("config.yaml")

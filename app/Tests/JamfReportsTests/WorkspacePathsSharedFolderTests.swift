@@ -55,7 +55,10 @@ final class WorkspacePathsSharedFolderTests: XCTestCase {
     }
 
     func testOutputDirRefusesTmpEvenWithTheOptIn() throws {
-        XCTAssertTrue(WorkspacePaths.isWorldReadableSharedFolder(URL(fileURLWithPath: "/tmp/x")))
+        for path in ["/tmp/x", "/var/tmp/x", "/private/var/tmp/x"] {
+            XCTAssertTrue(
+                WorkspacePaths.isWorldReadableSharedFolder(URL(fileURLWithPath: path)), path)
+        }
         _ = try makeWorkspace(configBody: """
         output:
           allow_absolute_paths: true
