@@ -264,6 +264,43 @@ final class SharedConfigPinTests: XCTestCase {
                 ? config.protect : nil), ["x"])
     }
 
+    func testFirstSightKeepsAnAbsoluteFolderAndDeleteUnconfirmedUntilOneConfirm() throws {
+        try writeConfig(outputDir: outside, allowAbsolute: true, retentionMode: "delete")
+        SharedConfigPin.markHeadless()
+        let lines = LineBox()
+        let result = SharedConfigPin.checkpoint(
+            profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+        XCTAssertEqual(result.drifts.map(\.key), [.outputDir, .retentionMode])
+        XCTAssertEqual(result.drifts[0].pinned, SharedConfigPin.firstSightNote)
+        XCTAssertEqual(lines.all.count, 2)
+        XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).lastPathComponent,
+                       WorkspacePaths.generatedReportsDirName)
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        XCTAssertEqual(
+            SharedConfigPin.effectiveRetention(config.retention, check: result)?.resolvedMode,
+            .archive)
+        let rows = ConfigDoctorService.sharedConfigRows(profile: profile, appSupport: appSupport)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertTrue(rows[0].detail.contains("pinned (first seen, not confirmed)"))
+
+        try confirmAll()
+        XCTAssertTrue(check().drifts.isEmpty)
+        SharedConfigPin.checkpoint(profile: profile, appSupport: appSupport, onLine: nil)
+        XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside)
+    }
+
+    func testFirstSightOfAFolderInsideTheWorkspaceOrADefaultNeedsNoConfirm() throws {
+        try writeConfig(outputDir: workspace.path + "/reports", allowAbsolute: true)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
+    func testASaveOnThisMacConfirmsAFirstSightFolderItChanged() throws {
+        try writeConfig(outputDir: outside, allowAbsolute: true)
+        XCTAssertEqual(check().drifts.map(\.key), [.outputDir])
+        try SharedConfigPin.confirm(profile: profile, keys: [.outputDir], appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
     func testDiffNamesEachChangedKeyInConfigYamlSpelling() {
         let base = SharedConfigPin(
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",

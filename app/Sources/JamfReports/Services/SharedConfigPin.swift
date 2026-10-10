@@ -27,6 +27,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var protectProfile: String
     /// `notify.detail` lowercased; "full" when absent.
     var notifyDetail: String
+    /// Keys (`Key.rawValue`) pinned at first sight that this Mac's operator has not yet
+    /// confirmed: an absolute folder outside the workspace, and `retention.mode: delete`.
+    var unconfirmed: [String] = []
     /// Host only. The webhook URL itself is a credential and never leaves config.yaml.
     var notifyURLHost: String
 
@@ -93,6 +96,31 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             let now = key.text(of: current)
             return was == now ? nil : Drift(key: key, pinned: was, current: now)
         }
+    }
+
+    static let firstSightNote = "(first seen, not confirmed)"
+
+    /// The pin for a workspace seen for the first time. What is already in the shared file may
+    /// have been written by a peer, so a folder outside the workspace and a `delete` retention
+    /// are pinned as unconfirmed: headless runs use the safe value for them until one Confirm.
+    /// The webhook host and the other keys are trust-on-first-use.
+    static func firstPin(current: SharedConfigPin, workspace: URL) -> SharedConfigPin {
+        var pin = current
+        let root = workspace.resolvingSymlinksInPath().standardizedFileURL.path
+        func outside(_ value: String) -> Bool {
+            guard value.hasPrefix("/") else { return false }
+            let path = URL(fileURLWithPath: value).standardizedFileURL.path
+            return path != root && !path.hasPrefix(root + "/")
+        }
+        let folders: [(Key, String)] = [
+            (.outputDir, current.outputDir), (.archiveDir, current.archiveDir),
+            (.dataDir, current.dataDir), (.historicalDir, current.historicalDir),
+            (.retentionArchiveDir, current.retentionArchiveDir),
+        ]
+        var keys = folders.filter { outside($0.1) }.map(\.0)
+        if current.retentionMode == RetentionConfig.Mode.delete.rawValue { keys.append(.retentionMode) }
+        pin.unconfirmed = keys.map(\.rawValue)
+        return pin
     }
 
     // MARK: - Reading config.yaml
@@ -202,13 +230,16 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         switch read(profile: profile, appSupport: appSupport) {
         case .absent:
             var notes: [String] = []
+            let first = firstPin(current: current, workspace: workspace)
             do {
-                try save(current, profile: profile, appSupport: appSupport)
+                try save(first, profile: profile, appSupport: appSupport)
             } catch {
                 notes.append("[warn] shared config could not be pinned on this Mac: "
                     + error.localizedDescription)
             }
-            return Check(workspace: workspace, pinned: current, drifts: [], notes: notes)
+            return Check(workspace: workspace, pinned: first,
+                         drifts: unconfirmedDrifts(pin: first, current: current, among: []),
+                         notes: notes)
         case .unreadable:
             // Fail closed: with no pin to compare against, every key reads as changed.
             let drifts = Key.allCases.map {
@@ -216,8 +247,21 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             }
             return Check(workspace: workspace, pinned: nil, drifts: drifts)
         case .pin(let pinned):
+            let changed = diff(pinned: pinned, current: current)
             return Check(workspace: workspace, pinned: pinned,
-                         drifts: diff(pinned: pinned, current: current))
+                         drifts: unconfirmedDrifts(pin: pinned, current: current, among: changed))
+        }
+    }
+
+    /// `changed` plus the first-sight keys still awaiting a Confirm, in `Key.allCases` order.
+    private static func unconfirmedDrifts(
+        pin: SharedConfigPin, current: SharedConfigPin, among changed: [Drift]
+    ) -> [Drift] {
+        let waiting = pin.unconfirmed.compactMap(Key.init(rawValue:))
+            .filter { key in !changed.contains { $0.key == key } }
+            .map { Drift(key: $0, pinned: firstSightNote, current: $0.text(of: current)) }
+        return (changed + waiting).sorted {
+            Key.allCases.firstIndex(of: $0.key)! < Key.allCases.firstIndex(of: $1.key)!
         }
     }
 
@@ -264,13 +308,14 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         var pin: SharedConfigPin
         var unreadable = false
         switch read(profile: profile, appSupport: appSupport) {
-        case .absent: pin = current
+        case .absent: pin = firstPin(current: current, workspace: workspace)
         case .pin(let stored): pin = stored
-        case .unreadable: pin = current; unreadable = true
+        case .unreadable: pin = firstPin(current: current, workspace: workspace); unreadable = true
         }
         var confirmed = 0
         for drift in drifts where drift.key.text(of: current) == drift.current {
             drift.key.copy(from: current, into: &pin)
+            pin.unconfirmed.removeAll { $0 == drift.key.rawValue }
             confirmed += 1
         }
         if unreadable, confirmed < Key.allCases.count { throw ConfirmError.changedSinceShown }
@@ -289,11 +334,14 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         else { return }
         var pin: SharedConfigPin
         switch read(profile: profile, appSupport: appSupport) {
-        case .absent: pin = current
+        case .absent: pin = firstPin(current: current, workspace: workspace)
         case .pin(let stored): pin = stored
         case .unreadable: return
         }
-        for key in keys { key.copy(from: current, into: &pin) }
+        for key in keys {
+            key.copy(from: current, into: &pin)
+            pin.unconfirmed.removeAll { $0 == key.rawValue }
+        }
         try save(pin, profile: profile, appSupport: appSupport)
         removeOverrides(for: workspace)
     }
@@ -493,6 +541,7 @@ extension SharedConfigPin {
         historicalDir = try c.decodeIfPresent(String.self, forKey: .historicalDir) ?? ""
         protectProfile = try c.decodeIfPresent(String.self, forKey: .protectProfile) ?? ""
         notifyDetail = try c.decodeIfPresent(String.self, forKey: .notifyDetail) ?? "full"
+        unconfirmed = try c.decodeIfPresent([String].self, forKey: .unconfirmed) ?? []
         notifyURLHost = try c.decodeIfPresent(String.self, forKey: .notifyURLHost) ?? ""
     }
 }

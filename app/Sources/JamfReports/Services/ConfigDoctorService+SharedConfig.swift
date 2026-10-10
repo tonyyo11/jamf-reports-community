@@ -11,7 +11,8 @@ extension ConfigDoctorService {
         let drifts = SharedConfigPin.check(profile: profile, appSupport: appSupport).drifts
         guard !drifts.isEmpty else { return [] }
         func shown(_ value: String) -> String {
-            value.isEmpty ? "(not set)" : "\"\(ConfigSchema.displayText(value))\""
+            if value.hasPrefix("(") { return value }
+            return value.isEmpty ? "(not set)" : "\"\(ConfigSchema.displayText(value))\""
         }
         let lines = drifts.map { drift in
             let key = drift.key == .notifyURL ? "notify.url (host)" : drift.key.rawValue
