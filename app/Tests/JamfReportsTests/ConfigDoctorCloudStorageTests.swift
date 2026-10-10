@@ -159,6 +159,17 @@ final class ConfigDoctorCloudStorageTests: XCTestCase {
         XCTAssertEqual(rows.first { $0.id == "cloud.root" }?.severity, .fail)
     }
 
+    func testRootsFailingOwnershipChecksFailLoudlyWithAFix() {
+        for validation in [WorkspaceRootStore.Validation.notOwned, .groupOrWorldWritable, .hasACL] {
+            let rows = ConfigDoctorService.evaluateCloudStorage(inputs(
+                workspace: local("prod"), rootValidation: validation, rootIsCustom: true
+            ))
+            let row = rows.first { $0.id == "cloud.root" }
+            XCTAssertEqual(row?.severity, .fail, "\(validation)")
+            XCTAssertNotNil(row?.hint, "\(validation)")
+        }
+    }
+
     func testDefaultRootIsNotAnnounced() {
         let rows = ConfigDoctorService.evaluateCloudStorage(inputs(
             workspace: local("prod"), rootIsCustom: false
