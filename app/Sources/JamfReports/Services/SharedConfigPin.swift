@@ -51,6 +51,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case notifyDetail = "notify.detail"
         case notifyURL = "notify.url"
 
+        /// Place in `allCases`, which orders the rows and warnings.
+        fileprivate var position: Int { Key.allCases.firstIndex(of: self) ?? Int.max }
+
         fileprivate func text(of pin: SharedConfigPin) -> String {
             switch self {
             case .allowAbsolutePaths: String(pin.allowAbsolutePaths)
@@ -280,9 +283,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let waiting = pin.unconfirmed.compactMap(Key.init(rawValue:))
             .filter { key in !changed.contains { $0.key == key } }
             .map { Drift(key: $0, pinned: firstSightNote, current: $0.text(of: current)) }
-        return (changed + waiting).sorted {
-            Key.allCases.firstIndex(of: $0.key)! < Key.allCases.firstIndex(of: $1.key)!
-        }
+        return (changed + waiting).sorted { $0.key.position < $1.key.position }
     }
 
     /// Whether a workspace is pinned. Unlike `SharedWorkspace.isEffectivelyShared`, which
