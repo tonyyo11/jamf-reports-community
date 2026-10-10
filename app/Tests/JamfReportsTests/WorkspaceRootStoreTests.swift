@@ -209,6 +209,9 @@ final class WorkspaceRootStoreTests: XCTestCase {
         XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks("/Volumes/Team/Jamf-Reports"))
         XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks(
             "/Users/a/Library/CloudStorage/OneDrive-Contoso/Jamf-Reports"))
+        XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks("/volumes/Team/Jamf-Reports"))
+        XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks(
+            "/Users/a/library/cloudstorage/OneDrive-Contoso/Jamf-Reports"))
         XCTAssertFalse(WorkspaceRootStore.skipsOwnershipChecks("/Users/a/Documents/Jamf-Reports"))
         XCTAssertFalse(WorkspaceRootStore.skipsOwnershipChecks("/Users/a/Volumes/x"))
     }

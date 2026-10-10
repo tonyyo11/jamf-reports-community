@@ -205,8 +205,10 @@ enum WorkspaceRootStore {
 
     /// Network and File Provider mounts map owners, modes and ACLs in ways that say nothing
     /// about who can read the folder, so the checks below would only produce false refusals.
+    /// Case-insensitive, like the deny-list: APFS is, by default.
     static func skipsOwnershipChecks(_ path: String) -> Bool {
-        path.hasPrefix("/Volumes/") || path.contains("/Library/CloudStorage/")
+        let folded = path.lowercased()
+        return folded.hasPrefix("/volumes/") || folded.contains("/library/cloudstorage/")
     }
 
     /// Why a folder's owner or permissions make it unfit to hold fleet data, or nil.
