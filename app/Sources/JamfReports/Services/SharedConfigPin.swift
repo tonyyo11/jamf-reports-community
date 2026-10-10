@@ -467,6 +467,42 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return keys
     }
 
+    /// The pinned keys a config.yaml text sets, for a write this Mac made (onboarding, scaffold).
+    static func keysSet(inYAML text: String) -> Set<Key> {
+        guard let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return [] }
+        return Set(Key.allCases.filter {
+            ConfigLoader.rawValue(at: $0.rawValue.components(separatedBy: "."), in: root) != nil
+        })
+    }
+
+    /// The profile whose workspace config.yaml `url` is, nil for any other file.
+    static func profile(forConfigAt url: URL) -> String? {
+        guard url.lastPathComponent == "config.yaml" else { return nil }
+        let folder = url.deletingLastPathComponent().standardizedFileURL
+        guard folder.deletingLastPathComponent().path
+                == ProfileService.workspacesRoot().standardizedFileURL.path else { return nil }
+        return ProfileName.name(fromPathComponent: folder.lastPathComponent)
+    }
+
+    /// After this Mac wrote `url` (onboarding or `scaffold --out`): confirm exactly the keys
+    /// that write set. Keys it left out stay as they are, so joining a peer's folder never
+    /// accepts the peer's retention, webhook or Protect profile. Best effort; a failure is logged.
+    static func confirmWrittenConfig(
+        at url: URL, profile: String? = nil, appSupport: URL = AppSupport.directory()
+    ) {
+        guard let profile = profile ?? Self.profile(forConfigAt: url),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let keys = keysSet(inYAML: text)
+        guard !keys.isEmpty else { return }
+        do {
+            try confirm(profile: profile, keys: keys, appSupport: appSupport)
+        } catch {
+            let reason = error.localizedDescription
+            AppLogger.collect.warning(
+                "SharedConfigPin: could not confirm the written config: \(reason, privacy: .public)")
+        }
+    }
+
     // MARK: - Effective values
 
     /// `retention` with the drifted keys put back to a safe value: a changed mode archives,

@@ -327,6 +327,45 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(check().drifts.map(\.key), [.outputDir])
     }
 
+    func testAWrittenConfigConfirmsExactlyTheKeysItSets() throws {
+        XCTAssertEqual(SharedConfigPin.keysSet(inYAML: """
+        jamf_cli:
+          data_dir: "jamf-cli-data"
+        output:
+          output_dir: "Generated Reports"
+        retention:
+          mode: delete
+        """), [.dataDir, .outputDir, .retentionMode])
+        XCTAssertEqual(SharedConfigPin.keysSet(inYAML: "thresholds:\n  stale_device_days: 30\n"),
+                       [])
+
+        // Onboarding on a Mac joining a shared folder: the written file sets the two folders.
+        try writeConfig(outputDir: outside, allowAbsolute: true, retentionMode: "archive")
+        _ = check()
+        try ScaffoldService.writeMinimalConfig(
+            to: workspace.appendingPathComponent("config.yaml"), profile: profile)
+        let before = Set(check().drifts.map(\.key))
+        XCTAssertTrue(before.contains(.outputDir))
+        SharedConfigPin.confirmWrittenConfig(
+            at: workspace.appendingPathComponent("config.yaml"), profile: profile,
+            appSupport: appSupport)
+        let after = Set(check().drifts.map(\.key))
+        XCTAssertFalse(after.contains(.outputDir))
+        XCTAssertFalse(after.contains(.dataDir))
+        XCTAssertEqual(after, before.subtracting([.outputDir, .dataDir]),
+                       "keys the write did not set stay as they were")
+        XCTAssertFalse(after.isEmpty, "retention, webhook and Protect are not accepted")
+    }
+
+    func testTheProfileOfAWorkspaceConfigPath() {
+        let url = ProfileService.workspaceURL(for: profile)!
+            .appendingPathComponent("config.yaml")
+        XCTAssertEqual(SharedConfigPin.profile(forConfigAt: url), profile)
+        XCTAssertNil(SharedConfigPin.profile(forConfigAt: root.appendingPathComponent("config.yaml")))
+        XCTAssertNil(SharedConfigPin.profile(
+            forConfigAt: url.deletingLastPathComponent().appendingPathComponent("other.yaml")))
+    }
+
     func testFirstSightOfAFolderInsideTheWorkspaceOrADefaultNeedsNoConfirm() throws {
         try writeConfig(outputDir: workspace.path + "/reports", allowAbsolute: true)
         XCTAssertTrue(check().drifts.isEmpty)

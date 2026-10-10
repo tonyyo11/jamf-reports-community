@@ -61,12 +61,14 @@ struct Scaffold: AsyncParsableCommand {
             // same unconditional-overwrite semantics as the CSV branch below.
             try keepCopy(of: outURL)
             try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
+            SharedConfigPin.confirmWrittenConfig(at: outURL)
             print(outURL.path)
             return
         }
         let result = try ScaffoldService.matchColumns(from: URL(fileURLWithPath: csv), profile: "")
         try keepCopy(of: outURL)
         try ScaffoldService.writeConfig(to: outURL, result: result, profile: "")
+        SharedConfigPin.confirmWrittenConfig(at: outURL)
         print(outURL.path)
     }
 
