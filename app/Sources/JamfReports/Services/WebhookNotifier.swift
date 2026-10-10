@@ -223,6 +223,26 @@ enum WebhookNotifier {
         ]
     }
 
+    enum Endpoint: Equatable {
+        case notConfigured
+        case invalidURL
+        case url(URL)
+    }
+
+    /// Splits "not configured" (a no-op) from "configured but unparseable". The callers stamp
+    /// their once-a-day marker or ledger on `true`, so an unparseable URL must report failure
+    /// or the alert is dropped for good and the day never retried.
+    static func endpoint(for config: NotifyConfig) -> Endpoint {
+        guard config.isUsable else { return .notConfigured }
+        guard let url = URL(string: config.resolvedURL) else {
+            AppLogger.webhook.error(
+                "WebhookNotifier: notify.url is not a valid URL; nothing was sent"
+            )
+            return .invalidURL
+        }
+        return .url(url)
+    }
+
     /// Post `facts` under `title` to the configured webhook. No-op when the
     /// config is not usable (off / no https URL). Never throws.
     ///
@@ -231,7 +251,12 @@ enum WebhookNotifier {
     /// network error so callers can record a warning in the run audit trail.
     @discardableResult
     static func send(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
-        guard config.isUsable, let url = URL(string: config.resolvedURL) else { return true }
+        let url: URL
+        switch endpoint(for: config) {
+        case .notConfigured: return true
+        case .invalidURL: return false
+        case .url(let resolved): url = resolved
+        }
         AppLogger.webhook.debug("posting \(config.resolvedProvider.rawValue, privacy: .public) digest")
         guard let body = payload(provider: config.resolvedProvider, title: title, facts: facts) else {
             AppLogger.webhook.warning(
@@ -264,7 +289,12 @@ enum WebhookNotifier {
     /// Never throws.
     @discardableResult
     static func sendFailed(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
-        guard config.isUsable, let url = URL(string: config.resolvedURL) else { return true }
+        let url: URL
+        switch endpoint(for: config) {
+        case .notConfigured: return true
+        case .invalidURL: return false
+        case .url(let resolved): url = resolved
+        }
         guard let body = failedPayload(provider: config.resolvedProvider, title: title, facts: facts) else {
             AppLogger.webhook.warning(
                 "WebhookNotifier: failed to encode failed-run \(config.resolvedProvider.rawValue, privacy: .public) payload"
@@ -296,7 +326,12 @@ enum WebhookNotifier {
     /// Never throws.
     @discardableResult
     static func sendAlert(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
-        guard config.isUsable, let url = URL(string: config.resolvedURL) else { return true }
+        let url: URL
+        switch endpoint(for: config) {
+        case .notConfigured: return true
+        case .invalidURL: return false
+        case .url(let resolved): url = resolved
+        }
         guard let body = alertPayload(provider: config.resolvedProvider, title: title, facts: facts) else {
             AppLogger.webhook.warning(
                 "WebhookNotifier: failed to encode alert \(config.resolvedProvider.rawValue, privacy: .public) payload"
