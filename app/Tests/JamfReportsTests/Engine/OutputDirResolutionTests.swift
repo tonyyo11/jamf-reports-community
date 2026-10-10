@@ -158,6 +158,22 @@ final class GUIReportFolderTests: XCTestCase {
         }
     }
 
+    /// One Generate run writes several formats, each resolving the folder; the refused-folder
+    /// warning is said once for the run (J9).
+    func testARefusedOutputDirWarnsOncePerRunAcrossFormats() async throws {
+        try await withPublishWorkspace { workspace, published in
+            try "output:\n  output_dir: \"\(published.path)\"\n".write(
+                to: workspace.appendingPathComponent("config.yaml"),
+                atomically: true, encoding: .utf8)
+            let lines = LineBox()
+            _ = await CLIBridge().generateAll(
+                types: [.html, .csv], outputDir: nil,
+                profile: workspace.lastPathComponent, onLine: { lines.add($0.text) })
+            XCTAssertEqual(lines.all.filter { $0.hasPrefix("[warn] output.output_dir") }.count, 1,
+                           "\(lines.all)")
+        }
+    }
+
     // MARK: - Helpers
 
     private func generateHTML(in workspace: URL, yaml: String) async throws -> [String] {

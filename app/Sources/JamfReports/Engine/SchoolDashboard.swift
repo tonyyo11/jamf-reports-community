@@ -469,16 +469,13 @@ struct SchoolDashboard: Sendable {
                 })
             }
         }
-        guard !candidates.isEmpty else {
+        func modified(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
+                .flatMap(\.contentModificationDate) ?? .distantPast
+        }
+        guard let newest = candidates.max(by: { modified($0) < modified($1) }) else {
             throw SchoolDashboardError.noCachedData(names: names)
         }
-        let newest = candidates.max {
-            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))
-                .flatMap(\.contentModificationDate) ?? .distantPast
-            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]))
-                .flatMap(\.contentModificationDate) ?? .distantPast
-            return a < b
-        }!
         let data = try Data(contentsOf: newest)
         return try JSONSerialization.jsonObject(with: data)
     }
@@ -547,8 +544,8 @@ struct SchoolDashboard: Sendable {
 // MARK: - SchoolCSVDashboard
 
 /// Writes School CSV-derived sheets (Device Inventory from CSV, Stale Devices, etc.).
-/// Currently a minimal stub — CSV parsing matches the device-level columns from
-/// Jamf School CSV exports via `SchoolColumnMapper`-style logic.
+/// Currently a stub that writes nothing: the school-devices snapshot already produces the
+/// Device Inventory sheet through `SchoolDashboard`, and no School CSV column mapping exists.
 struct SchoolCSVDashboard: Sendable {
     let config: ReportConfig
     let csvData: Data

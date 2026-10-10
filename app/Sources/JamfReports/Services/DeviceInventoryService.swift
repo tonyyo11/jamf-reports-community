@@ -479,7 +479,10 @@ private extension DeviceInventoryService {
             return
         }
         let rows = parseCSVRows(text)
-        for row in rows.prefix(10_000) {
+        if let warning = csvRowCapWarning(file: url.lastPathComponent, rowCount: rows.count) {
+            warnings.append(warning)
+        }
+        for row in rows.prefix(maxCSVRows) {
             merger.upsert(recordFromCSV(row, source: url.lastPathComponent,
                                         staleThresholdDays: staleThresholdDays))
         }
@@ -1187,6 +1190,18 @@ extension DeviceInventoryRecord {
 }
 
 extension DeviceInventoryService {
+
+    /// The most rows read from one inventory CSV.
+    static let maxCSVRows = 10_000
+
+    /// The warning for a CSV with more than `cap` rows, which are read up to the cap; nil within
+    /// it. Counts only: the warning must not carry a device name.
+    static func csvRowCapWarning(file: String, rowCount: Int, cap: Int = maxCSVRows) -> String? {
+        guard rowCount > cap else { return nil }
+        let dropped = rowCount - cap
+        return "\(file): read the first \(cap) rows and left out the other \(dropped) "
+            + "(\(dropped == 1 ? "row" : "rows") over the \(cap)-row limit)."
+    }
 
     /// One line per source whose rows could not be tied to a single Mac. Counts only: the
     /// warning must not carry a device name.

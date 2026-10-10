@@ -357,6 +357,20 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertFalse(planned.contains("ea-results"))
         XCTAssertFalse(planned.contains("patch-device-failures"))
     }
+
+    /// A collect that does not inject `refreshSOFA` must not reach sofafeed.macadmins.io under
+    /// XCTest: the default returns at once and creates nothing, where the real refresh would
+    /// create `sofa/` before fetching.
+    func testTheDefaultSOFARefreshDoesNothingUnderXCTest() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("JRC-SOFADefault-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (snapshot, warnings) = await ReportEngine.defaultSOFARefresh(dir)
+        XCTAssertTrue(snapshot.rows.isEmpty)
+        XCTAssertTrue(warnings.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("sofa").path))
+    }
 }
 
 private final class LineCollector: @unchecked Sendable {
