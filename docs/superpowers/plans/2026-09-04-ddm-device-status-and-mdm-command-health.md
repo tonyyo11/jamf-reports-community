@@ -43,7 +43,7 @@
 | `app/Sources/JamfReports/Views/DDMBlueprintView.swift` (modify) | Three-input lock, header strip, Declarations and Software updates sections. |
 | `app/Sources/JamfReports/Views/DevicesView.swift` (modify) | Two snapshot-fed sections above the live detail. |
 | `app/Sources/JamfReports/Views/AuditView.swift` (modify) | "Command health" section with two findings; `auditActionDestination` routes them to Devices. |
-| `app/Tests/JamfReportsTests/Fixtures/jamf-cli-data/{ddm-status-items-raw,classic-computer-history-raw}/` (create) | The three scrubbed prod captures. |
+| `app/Tests/JamfReportsTests/Fixtures/jamf-cli-data/{ddm-status-items-raw,classic-computer-history-raw}/` (create) | The three scrubbed production captures. |
 | Tests | `DeviceScanDecodersTests`, `DeviceScanBuildersTests`, `DDMDeviceStatusServiceTests`, `MDMCommandHealthServiceTests`, `DeviceScanCollectTests`, `DeviceScanSheetsTests`, plus edits to `CollectionTierTests`, `PlatformOnlyKindTests`, `DDMBlueprintViewTests`, `GoldenFleetTests`. |
 
 Fixture sources (already scrubbed, staged outside the repo — copy, do not re-scrub):
@@ -170,7 +170,7 @@ Expected: `cannot find 'DDMStatusItemsPayload' in scope` (and the other three ty
 import Foundation
 
 // MARK: - `jamf-cli pro ddm-status status-items <managementId> --output json`
-// Verified on prod 2026-09-04. `value` is JSON null for unset items.
+// Verified against a production instance 2026-09-04. `value` is JSON null for unset items.
 
 struct DDMStatusItemsPayload: Decodable, Sendable {
     let statusItems: [DDMStatusItem]
@@ -185,7 +185,7 @@ struct DDMStatusItem: Decodable, Sendable, Equatable {
 // MARK: - `jamf-cli pro classic-computer-history get <id> --subset commands --output json`
 // Classic API, XML→JSON: a bucket holding nothing is the STRING "", and a
 // bucket holding exactly one command has `command` as an OBJECT, not an array.
-// Verified on prod 2026-09-04 across four devices.
+// Verified against a production instance 2026-09-04 across four devices.
 
 struct ComputerHistoryCommands: Decodable, Sendable {
     let commands: Buckets

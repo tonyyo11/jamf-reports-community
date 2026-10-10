@@ -1,10 +1,8 @@
 # Epic decisions and unused-code cleanup
 
 Owner decisions (2026-10-01) on items the epics held open, plus the cleanup that followed the
-churn review. Epic item text is in `issue207-body.md`, `issue207-comments.md`,
-`issue226-body.md` and `issue226-comments.md` under
-`.superpowers/sdd/2026-10-01-epics-207-226-mechanical-items/` in the controller's worktree
-(absolute path given in each dispatch). Line numbers in the issues are stale; locate code with `rg`.
+churn review. Epic item text is in issues #207 and #226 on GitHub (bodies and comments).
+Line numbers in the issues are stale; locate code with `rg`.
 
 ## Global Constraints
 
@@ -25,7 +23,7 @@ churn review. Epic item text is in `issue207-body.md`, `issue207-comments.md`,
   functions ≤100 lines, lines ≤100 columns, no new package dependency, no new
   Service/View/Model file without a caller in the same commit.
 - Do not change SwiftUI layout primitives unless the task says so.
-- New scripts are zsh, follow `~/.claude/rules/shell.md`, and must run on a stock GitHub macOS
+- New scripts are zsh, follow the repo's existing script conventions, and must run on a stock GitHub macOS
   runner (git, grep, sed, awk, zsh only; no ripgrep, no Homebrew tools).
 - Delete files with `git rm`; never `rm -rf`.
 - Gate before each commit, from `<worktree>/app`:

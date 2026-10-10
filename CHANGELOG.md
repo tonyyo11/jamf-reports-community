@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Dependencies
+
+- Reviewed jamf-cli 1.33.0 (2026-10-09). Its bulk-operation, setup-scope, blueprint-import and
+  MCP changes do not touch the read-only commands the app runs, so nothing changed here.
+
 ## [2.9.0] - 2026-10-05
 
 You choose what the Security Score counts, your organization defines what makes a Mac stale, and
