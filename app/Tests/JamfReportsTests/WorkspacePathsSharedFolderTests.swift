@@ -54,6 +54,19 @@ final class WorkspacePathsSharedFolderTests: XCTestCase {
         }
     }
 
+    func testOutputDirRefusesTmpEvenWithTheOptIn() throws {
+        for path in ["/tmp/x", "/var/tmp/x", "/private/var/tmp/x"] {
+            XCTAssertTrue(
+                WorkspacePaths.isWorldReadableSharedFolder(URL(fileURLWithPath: path)), path)
+        }
+        _ = try makeWorkspace(configBody: """
+        output:
+          allow_absolute_paths: true
+          output_dir: "/tmp/jrc-test-reports"
+        """)
+        assertWorldReadable(try WorkspacePaths.outputDir(for: profile))
+    }
+
     func testRetentionArchiveDirRefusesTheSharedFolder() throws {
         let workspace = try makeWorkspace(configBody: """
         output:

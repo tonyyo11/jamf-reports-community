@@ -996,6 +996,7 @@ final class OnboardingFlow {
             ))
 
             try ScaffoldService.writeConfig(to: outputConfig, result: result, profile: profile)
+            SharedConfigPin.confirmWrittenConfig(at: outputConfig, profile: profile)
             csvOutput.append(.init(
                 timestamp: Date(), level: .ok,
                 text: "[ok] config.yaml written to \(outputConfig.lastPathComponent)"
@@ -1033,6 +1034,7 @@ final class OnboardingFlow {
         do {
             try keepCopy(of: outputConfig)
             try ScaffoldService.writeMinimalConfig(to: outputConfig, profile: profile)
+            SharedConfigPin.confirmWrittenConfig(at: outputConfig, profile: profile)
             csvOutput.append(.init(
                 timestamp: Date(), level: .ok,
                 text: "[ok] minimal config.yaml written — jamf-cli data is enough; add a CSV "

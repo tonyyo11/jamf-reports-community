@@ -48,6 +48,34 @@ final class GlobalHealthBannerTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(headline.detail).contains("computers"))
     }
 
+    func testSharedConfigNeedingConfirmationRanksBelowFailingAndAboveStale() throws {
+        let keys = ["output.output_dir", "retention.mode"]
+        let shown = try XCTUnwrap(GlobalHealthBanner.headline(
+            freshness: [freshness("security", .stale)], automation: [schedule("a")],
+            sharedConfig: keys))
+        XCTAssertEqual(shown.tone, .warn)
+        XCTAssertEqual(shown.text, "Shared config needs confirming on this Mac")
+        XCTAssertTrue(try XCTUnwrap(shown.detail).contains("output.output_dir, retention.mode"))
+        XCTAssertEqual(GlobalHealthBanner.primaryAction(
+            freshness: [freshness("security", .stale)], canCollect: true, sharedConfig: keys),
+            .openConfigDoctor)
+
+        let failing = try XCTUnwrap(GlobalHealthBanner.headline(
+            freshness: [freshness("computers", .failing, failures: 3)], automation: [],
+            sharedConfig: keys))
+        XCTAssertTrue(failing.text.contains("failing to collect"), failing.text)
+        XCTAssertEqual(GlobalHealthBanner.primaryAction(
+            freshness: [freshness("computers", .failing, failures: 3)], canCollect: true,
+            sharedConfig: keys), .collectNow)
+    }
+
+    func testSharedConfigNamesAtMostThreeKeys() throws {
+        let headline = try XCTUnwrap(GlobalHealthBanner.headline(
+            freshness: [], automation: [],
+            sharedConfig: ["a", "b", "c", "d", "e"]))
+        XCTAssertTrue(try XCTUnwrap(headline.detail).hasPrefix("a, b, c +2 more"))
+    }
+
     func testStaleOutranksSchedule() throws {
         let headline = try XCTUnwrap(GlobalHealthBanner.headline(
             freshness: [freshness("security", .stale)],

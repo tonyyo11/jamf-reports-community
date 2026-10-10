@@ -59,9 +59,23 @@ enum NotifyConfigWriter {
         enabled: Bool, provider: String, url: String, detail: String, profile: String
     ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
         guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
-        return try ConfigService.saveBlock(key: "notify", profile: profile) {
+        let previous = NotifyConfigLoader.load(profile: profile)
+        let saved = try ConfigService.saveBlock(key: "notify", profile: profile) {
             apply(enabled: enabled, provider: provider, url: url, detail: detail, to: &$0)
         }
+        // A webhook or detail level typed on this Mac is the one this Mac keeps using; a save
+        // that leaves a value as it was does not confirm a peer's.
+        let changed = SharedConfigPin.changedNotifyKeys(
+            previousURL: previous.resolvedURL, newURL: url,
+            previousDetail: previous.detail, newDetail: detail)
+        do {
+            if !changed.isEmpty { try SharedConfigPin.confirm(profile: profile, keys: changed) }
+        } catch {
+            let reason = error.localizedDescription
+            AppLogger.webhook.warning(
+                "SharedConfigPin: could not confirm after save: \(reason, privacy: .public)")
+        }
+        return saved
     }
 
     /// Pure predicate behind the inline "URL must start with https://" caption:

@@ -138,9 +138,11 @@ final class RefreshCoordinator {
         // user-triggered profile-switch refresh that ran after a scheduled collect.
         let exitCode: Int32
         do {
-            exitCode = try await bridge.collect(
-                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine
-            )
+            exitCode = try await SharedConfigPin.unattended(profile: profile) {
+                try await bridge.collect(
+                    profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine
+                )
+            }
         } catch let refusal as CLIBridgeError where refusal.isCollectRefusal {
             // A tick, or another collect in this app, is collecting. Nothing was attempted, so
             // nothing counts toward backoff.

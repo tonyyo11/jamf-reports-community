@@ -94,9 +94,14 @@ struct ContentView: View {
                             freshnessIssues: workspace.dataFreshnessIssues,
                             automationIssues: workspace.automationHealthIssues,
                             isRemediating: workspace.isRemediatingFreshness,
+                            sharedConfigKeys: AutomationHealthModel.shared.sharedConfigKeys,
                             onOpenAutomation: { tab = .schedules },
                             onCollectNow: {
                                 Task { await workspace.collectFailingNow() }
+                            },
+                            onOpenConfigDoctor: {
+                                AutomationHealthModel.shared.openConfigDoctorRequested = true
+                                tab = .audit
                             }
                         )
                     }

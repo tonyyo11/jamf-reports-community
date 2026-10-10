@@ -125,6 +125,9 @@ enum CollectRouter {
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
         }
+        // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
+        // collect reads them, for Jamf Pro, Protect and Jamf School alike.
+        SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
         let detected = ProfileProductType.detect(from: config)
         switch detected.type {
         case .jamfSchool:
@@ -137,6 +140,13 @@ enum CollectRouter {
                 profile, workspacePaths, tiers, skipExpensive, force, onLine
             )
             guard detected.runsProtect else { return }
+            guard SharedConfigPin.protectAllowed(profile: profile) else {
+                onLine(.init(timestamp: Date(), level: .info,
+                             text: "[skip] protect: protect.profile changed in the shared "
+                                + "config.yaml and is not confirmed on this Mac — "
+                                + "Protect not collected"))
+                return
+            }
             guard disposition == .collected else {
                 let reason = disposition == .stoodDown
                     ? "the Jamf Pro collect stood down for another Mac"

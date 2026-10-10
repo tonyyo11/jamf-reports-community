@@ -14,6 +14,14 @@ struct DoctorRow: Identifiable, Sendable, Equatable {
     let title: String
     let detail: String
     let hint: String?
+    /// A button the Config Doctor screen shows on the row; nil for every row but one.
+    var action: DoctorAction?
+}
+
+/// What a row's button does. The screen runs it for the active profile.
+enum DoctorAction: Sendable, Equatable {
+    /// Re-pin the listed values, each only while config.yaml still holds the value shown.
+    case confirmSharedConfig([SharedConfigPin.Drift])
 }
 
 /// The full result of a config-doctor run, with per-severity counts.
@@ -95,6 +103,7 @@ enum ConfigDoctorService {
             rows += csvInventoryColumnRows(
                 config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
         }
+        rows += sharedConfigRows(profile: profile)
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
             workspaceContinuityInputs(profile: profile, config: config))

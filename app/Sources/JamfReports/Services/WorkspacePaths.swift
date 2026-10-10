@@ -247,14 +247,17 @@ enum WorkspacePaths {
         }
     }
 
-    /// True for a folder every local account can read: `/Users/Shared` and `~/Public`.
+    /// True for a folder every local account can read: `/Users/Shared`, `~/Public`, `/tmp` and
+    /// `/var/tmp`.
     /// Applied only to the folders the engine writes reports into (`output.output_dir`,
     /// `output.archive_dir`, `retention.archive_dir`). A workspace root, `jamf_cli.data_dir`,
     /// a save panel or an explicit CLI path is a deliberate choice, and refusing one that
     /// already holds data would orphan it. Same matching as `isSensitiveAbsolutePath`.
     static func isWorldReadableSharedFolder(_ url: URL) -> Bool {
         let path = folded(resolvedForPolicy(url))
-        if relative(path, under: "/users/shared") != nil { return true }
+        // `/tmp` resolves to `/private/tmp`, which the symlink-resolved path then carries.
+        let shared = ["/users/shared", "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"]
+        if shared.contains(where: { relative(path, under: $0) != nil }) { return true }
         return homeFolds().contains { relative(path, under: $0 + "/public") != nil }
     }
 
@@ -378,7 +381,7 @@ enum WorkspacePaths {
         return ["no", "off", "0"].contains(word) ? false : nil
     }
 
-    private static func expandTilde(_ value: String) -> String {
+    static func expandTilde(_ value: String) -> String {
         guard value.hasPrefix("~") else { return value }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         if value == "~" { return home }
@@ -396,6 +399,11 @@ enum WorkspacePaths {
     /// type the decoder would give it (a path is a `String`, the opt-in a `Bool`) and a key set
     /// twice reads as its last value. Nil only when the section/key isn't present.
     private static func configValue(workspace: URL, section: String, key: String) throws -> Any? {
+        // A headless run on a shared workspace reads a drifted key as its safe value.
+        if let safe = SharedConfigPin.safePathValue(
+            workspace: workspace, section: section, key: key) {
+            return safe
+        }
         let configURL = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
 

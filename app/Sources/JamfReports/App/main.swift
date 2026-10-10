@@ -191,7 +191,8 @@ private func notifyTargets(
         let url = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: url.path),
               let config = try? ConfigLoader.load(from: url),
-              let notify = config.notify, notify.isUsable else { return nil }
+              let notify = SharedConfigPin.effectiveNotify(config.notify, profile: profile),
+              notify.isUsable else { return nil }
         return OverdueDigestRouting.Target(
             profile: profile, notify: notify, workspace: workspace,
             sentToday: sentToday(workspace))
@@ -217,6 +218,22 @@ private func isFlagValue(_ value: String) -> Bool { !value.hasPrefix("--") }
 
 @Sendable
 private func scheduledRunSingle(
+    profile: String,
+    mode: Schedule.RunMode,
+    tiers: Set<CollectionTier>?,
+    verbose: Bool,
+    label: String?,
+    honesty: CollectHonestyWatcher
+) async -> Int32 {
+    await SharedConfigPin.announcingOnce {
+        await scheduledRunSingleBody(
+            profile: profile, mode: mode, tiers: tiers, verbose: verbose,
+            label: label, honesty: honesty)
+    }
+}
+
+@Sendable
+private func scheduledRunSingleBody(
     profile: String,
     mode: Schedule.RunMode,
     tiers: Set<CollectionTier>?,
@@ -282,6 +299,10 @@ private func scheduledRunSingle(
             print(line.text)
         }
     }
+
+    // Shared workspace: a config.yaml value another Mac changed since this one pinned it is
+    // not followed (folders, retention, webhook); the run says which and carries on.
+    SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
 
     // Version-floor preflight (v2.2.0 Phase 3): abort loudly when an installed
     // jamf-cli is below the supported floor, before any collect/backup, so a
@@ -867,14 +888,17 @@ let cliArgs = CommandLine.arguments
 // LaunchAgentWriter's plist parser (`args[1] == "--scheduled-run"`) and the
 // routesToCLI check below (`cliArgs[1]`).
 if cliArgs.count > 1, cliArgs[1] == "--tick" {
+    SharedConfigPin.markHeadless()
     let code = Task.detached { await runTick(arguments: cliArgs) }
     exit(await code.value)
 } else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
    let profile = ProfileService.profileArgument(in: cliArgs) {
+    SharedConfigPin.markHeadless()
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)
 } else if cliArgs.count > 1, JamfReportsCLI.routesToCLI(cliArgs[1]) {
+    SharedConfigPin.markHeadless()
     // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/). Any word
     // lands here, so ArgumentParser rejects a removed or mistyped subcommand.
     await runIncludedCLI(Array(cliArgs.dropFirst()))

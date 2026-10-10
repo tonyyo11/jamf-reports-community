@@ -199,6 +199,13 @@ final class AutomationHealthModel {
     /// True while an automatic re-collect is in flight, so the banner can say
     /// so instead of repeating the problem the app is already fixing.
     var isRemediating = false
+
+    /// Shared-config keys (`SharedConfigPin.Key.rawValue`) that differ from, or have not yet
+    /// been confirmed against, this Mac's pin for the ACTIVE profile.
+    var sharedConfigKeys: [String] = []
+
+    /// Set by the banner's button; Audit opens its Config Doctor segment and clears it.
+    var openConfigDoctorRequested = false
 }
 
 // MARK: - Managed automation wiring
@@ -372,9 +379,13 @@ extension WorkspaceStore {
         let request = freshnessRequests
         guard !demoMode else {
             AutomationHealthModel.shared.freshnessIssues = []
+            AutomationHealthModel.shared.sharedConfigKeys = []
             return
         }
         let profile = self.profile
+        let sharedConfig = await Task.detached(priority: .utility) {
+            SharedConfigPin.check(profile: profile).drifts.map(\.key.rawValue)
+        }.value
         let jamfCLIVersion = self.jamfCLIVersion
         let resolveAuth = resolveAuthMethod
         let issues = await Task.detached(priority: .utility) {
@@ -385,6 +396,7 @@ extension WorkspaceStore {
         // for another profile, or one a newer request has replaced, must not land.
         guard request == freshnessRequests, profile == self.profile else { return }
         AutomationHealthModel.shared.freshnessIssues = issues
+        AutomationHealthModel.shared.sharedConfigKeys = sharedConfig
     }
 
     /// Pure-ish freshness read: state dir → states → issues. `nonisolated` so
@@ -690,14 +702,16 @@ extension WorkspaceStore {
     nonisolated static let defaultRemediationCollector: RemediationCollector = {
         profile, tiers, config in
         try await CLIBridge.holdingTickLock {
-            try await CollectRouter.run(
-                profile: profile,
-                tiers: tiers,
-                skipExpensive: false,
-                force: false,
-                config: config,
-                onLine: CLIBridge.bufferingOnLine
-            )
+            try await SharedConfigPin.unattended(profile: profile) {
+                try await CollectRouter.run(
+                    profile: profile,
+                    tiers: tiers,
+                    skipExpensive: false,
+                    force: false,
+                    config: config,
+                    onLine: CLIBridge.bufferingOnLine
+                )
+            }
         }
     }
 
@@ -727,7 +741,9 @@ extension WorkspaceStore {
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
         let overdue = issues.filter { $0.kind == .overdue || $0.kind == .tickerDisabled }
         guard !overdue.isEmpty else { return }
-        guard let notify = Self.loadNotifyConfig(profile: profile), notify.isUsable,
+        guard let notify = SharedConfigPin.effectiveNotify(
+                Self.loadNotifyConfig(profile: profile), profile: profile),
+              notify.isUsable,
               let workspace = ProfileService.workspaceURL(for: profile) else { return }
         // Persisted day marker (not an in-memory static): survives relaunch and
         // is visible to a headless process, so the digest fires at most once per
@@ -913,14 +929,16 @@ extension WorkspaceStore {
     /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
         try await CLIBridge.holdingTickLock {
-            try await CollectRouter.run(
-                profile: profile,
-                tiers: [.refresh, .inventory],
-                skipExpensive: false,
-                force: false,  // per-kind cadence filter: no-op if this kind already ran today
-                config: config,
-                onLine: CLIBridge.noOpOnLine
-            )
+            try await SharedConfigPin.unattended(profile: profile) {
+                try await CollectRouter.run(
+                    profile: profile,
+                    tiers: [.refresh, .inventory],
+                    skipExpensive: false,
+                    force: false,  // per-kind cadence filter: no-op if this kind already ran today
+                    config: config,
+                    onLine: CLIBridge.noOpOnLine
+                )
+            }
         }
     }
 

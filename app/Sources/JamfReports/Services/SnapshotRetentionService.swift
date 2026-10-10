@@ -87,7 +87,10 @@ enum SnapshotRetentionService {
     ) -> Int {
         guard ProfileService.isValid(profile),
               let workspace = ProfileService.workspaceURL(for: profile) else { return 0 }
-        let config = loadRetentionConfig(workspace: workspace)
+        // A retention change another Mac made to a shared config.yaml archives, never deletes.
+        let config = SharedConfigPin.effectiveRetention(
+            loadRetentionConfig(workspace: workspace),
+            check: SharedConfigPin.check(profile: profile))
         let pol = policy(from: config)
         guard pol.isActive else { return 0 }
 
