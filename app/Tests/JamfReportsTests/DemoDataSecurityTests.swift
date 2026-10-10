@@ -163,7 +163,8 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(baseline.failed, 12)
         XCTAssertEqual(updates.failed, 42)
         for blueprint in [baseline, updates] {
-            XCTAssertEqual(blueprint.succeeded + (blueprint.failed ?? 0), 507, blueprint.name)
+            let total = (blueprint.succeeded ?? 0) + (blueprint.failed ?? 0)
+            XCTAssertEqual(total, 507, blueprint.name)
             let source = try XCTUnwrap(
                 platform.declarations.first { $0.source == blueprint.name })
             XCTAssertEqual(source.devices, 507)

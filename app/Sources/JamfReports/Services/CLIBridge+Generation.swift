@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Errors thrown by `CLIBridge` methods for app-internal pre-spawn failures.
 ///
@@ -143,9 +144,11 @@ extension CLIBridge {
         schoolMode: Bool = false,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
-        onLine: @Sendable @escaping (LogLine) -> Void
+        onLine rawOnLine: @Sendable @escaping (LogLine) -> Void
     ) async -> GenerateAllResult {
-        await Self.runGenerateAll(
+        // Each format resolves the report folder; a refused `output_dir` is said once per run.
+        let onLine = Self.droppingRepeatedFolderWarnings(rawOnLine)
+        return await Self.runGenerateAll(
             types: types,
             onLine: onLine,
             generateXLSX: {
@@ -182,6 +185,20 @@ extension CLIBridge {
             },
             tighten: { WorkspacePermissionHardener.tighten(profile: profile) }
         )
+    }
+
+    /// `onLine` with repeats of the refused-`output_dir` warning (`WorkspacePaths.reportsDir`)
+    /// dropped, so one run that writes several formats warns once. State lives in the returned
+    /// closure, so every run starts fresh.
+    nonisolated static func droppingRepeatedFolderWarnings(
+        _ onLine: @Sendable @escaping (LogLine) -> Void
+    ) -> @Sendable (LogLine) -> Void {
+        let seen = Mutex(Set<String>())
+        return { line in
+            if line.text.hasPrefix("[warn] output.output_dir"),
+               !seen.withLock({ $0.insert(line.text).inserted }) { return }
+            onLine(line)
+        }
     }
 
     /// Orchestration core of `generateAll`, with the side-effecting operations

@@ -930,7 +930,8 @@ struct ReportEngine: Sendable {
             factors: scoreFactors,
             measures: SecurityScoreInputs.measures(
                 for: scoreFactors, fleet: fleet, sources: scoreSources, config: config))
-        // Score is only meaningful when at least one factor contributed.
+        // Score is only meaningful when at least one factor contributed. Its value is
+        // already rounded to a tenth by `SecurityScoreCalculator`.
         let securityScore: Double? = score.parts.isEmpty ? nil : score.value
         let facts = SecurityScoreInputs.measures(
             for: Self.summaryFactFactors(scoreFactors), fleet: fleet, sources: scoreSources,
@@ -970,7 +971,7 @@ struct ReportEngine: Sendable {
             xprotectPct: factPct(.xprotectCurrent),
             // Real baseline data only: the proxy is the controls above again.
             mscpScorePct: complianceIsRealData ? complianceFinalPct.map(round1) : nil,
-            securityScore: securityScore.map(round1),
+            securityScore: securityScore,
             actionItemsP0: fleet.p0,
             actionItemsP1: fleet.p1,
             complianceIsProxy: complianceIsProxy,

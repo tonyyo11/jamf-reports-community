@@ -527,6 +527,12 @@ struct DDMBlueprintView: View {
         }
     }
 
+    /// "9 ok", or a dash for a figure jamf-cli left out: a blueprint that is not deployed has
+    /// no deployment to count, and 0 would say it ran and reached nobody.
+    static func countText(_ count: Int?, _ label: String) -> String {
+        "\(count.map(String.init) ?? "\u{2014}") \(label)"
+    }
+
     private static func blueprintRow(_ blueprint: DDMBlueprintService.Snapshot.Blueprint,
                                      contrast: ColorSchemeContrast) -> some View {
         let failed = blueprint.failed ?? 0
@@ -546,17 +552,17 @@ struct DDMBlueprintView: View {
                 .font(Theme.Fonts.mono(11, weight: .semibold))
                 .foregroundStyle(stateColor)
                 .frame(width: 120, alignment: .trailing)
-            Text("\(blueprint.succeeded) ok")
+            Text(Self.countText(blueprint.succeeded, "ok"))
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Colors.ok)
                 .frame(width: 70, alignment: .trailing)
                 .monospacedDigit()
-            Text("\(failed) failed")
+            Text(Self.countText(blueprint.failed, "failed"))
                 .font(Theme.Fonts.mono(11, weight: .semibold))
                 .foregroundStyle(failColor)
                 .frame(width: 80, alignment: .trailing)
                 .monospacedDigit()
-            Text("\(pending) pending")
+            Text(Self.countText(blueprint.pending, "pending"))
                 .font(Theme.Fonts.mono(11, weight: .semibold))
                 .foregroundStyle(pendingColor)
                 .frame(width: 90, alignment: .trailing)
@@ -572,7 +578,8 @@ struct DDMBlueprintView: View {
         let state = blueprint.state.isEmpty ? "no state" : blueprint.state
         let failed = blueprint.failed.map { "\($0) failed" } ?? "no failures reported"
         let pending = blueprint.pending.map { "\($0) pending" } ?? "no pending"
-        return "\(name), \(state), \(blueprint.succeeded) succeeded, \(failed), \(pending)"
+        let succeeded = blueprint.succeeded.map { "\($0) succeeded" } ?? "no deployment counts"
+        return "\(name), \(state), \(succeeded), \(failed), \(pending)"
     }
 
     private static func declarationCounter(label: String, value: Int, color: Color) -> some View {
