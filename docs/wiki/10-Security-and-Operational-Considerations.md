@@ -262,7 +262,8 @@ tail -f ~/Jamf-Reports/<profile>/automation/logs/*.log | nc -q1 siem.example.com
 ```
 
 Logs include timestamps, profile name, command, exit status, and error details — but NOT
-credential/secret material (always redacted).
+credential/secret material. As of this version credentials are masked in the log file itself
+when each line is written, not only when Run History displays it.
 
 ## Diagnostic Bundle Redaction Scope
 
@@ -370,14 +371,14 @@ only aggregate metrics, statuses, and operational names** (profile, schedule lab
 status, counts). It requires `notify.url` to be `https://`; an `http://` URL is treated as
 not usable and no send is attempted.
 
-**Scope note — the overdue digest is routed per profile.** The dead-man switch cannot be
-scoped to one profile's own agent, because the profile whose schedule is dead is precisely
-the one that isn't running. One headless tick therefore evaluates *every* schedule on the
-machine and sends each profile's overdue schedules to that profile's own `notify:` webhook.
-A fleet-wide schedule (managed automation for all profiles) goes to every configured
-webhook. A profile with no usable webhook gets a warning in the run log and its schedules
-are never posted to another profile's channel. Profiles that share one webhook URL get a single card. Excluded profiles are omitted. Each
-workspace sends at most one digest a day.
+**Scope note — the overdue digest is routed per profile.** One headless tick evaluates
+*every* schedule on the machine and sends each profile's overdue schedules to that profile's
+own `notify:` webhook. A fleet-wide schedule (managed automation for all profiles) goes to
+every configured webhook. A profile with no usable webhook gets a warning in the run log and
+its schedules are never posted to another profile's channel. Profiles that share one webhook
+URL get a single card; if those profiles map to different audiences, set `notify.detail:
+minimal` on any of them and the shared card carries only counts. Excluded profiles are
+omitted. Each workspace sends at most one digest a day.
 
 - **`notify.detail: minimal`** reduces every card to event facts only — counts and
   statuses ("2 alert rules tripped", "1 schedule overdue") with no metric values, no

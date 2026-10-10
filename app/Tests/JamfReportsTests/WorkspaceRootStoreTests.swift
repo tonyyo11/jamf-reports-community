@@ -159,9 +159,81 @@ final class WorkspaceRootStoreTests: XCTestCase {
         XCTAssertNotEqual(WorkspaceRootStore.validate(onedrive), .sensitiveLocation)
     }
 
+    // MARK: - Ownership
+
+    private func chmod(_ url: URL, _ mode: Int) throws {
+        try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+    }
+
+    private func makeRoot(_ name: String, mode: Int) throws -> URL {
+        let url = scratch.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try chmod(url, mode)
+        return url
+    }
+
+    func testAPrivateOwnedFolderPasses() throws {
+        XCTAssertEqual(WorkspaceRootStore.validate(try makeRoot("private", mode: 0o700)), .ok)
+    }
+
+    func testAFolderOtherAccountsCanWriteIsRejected() throws {
+        for (name, mode) in [("group", 0o775), ("world", 0o707), ("both", 0o777)] {
+            let root = try makeRoot(name, mode: mode)
+            XCTAssertEqual(WorkspaceRootStore.validate(root), .groupOrWorldWritable, name)
+            XCTAssertThrowsError(try WorkspaceRootStore.set(root, defaults: defaults), name)
+        }
+    }
+
+    func testAFolderWithAnACLIsRejected() throws {
+        let root = try makeRoot("acl", mode: 0o700)
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = ["+a", "everyone allow list,search,readattr", root.path]
+        try chmod.run()
+        chmod.waitUntilExit()
+        try XCTSkipIf(chmod.terminationStatus != 0, "this volume does not take ACLs")
+        XCTAssertEqual(WorkspaceRootStore.validate(root), .hasACL)
+    }
+
+    /// A folder this test cannot make belong to someone else, so the predicate takes the uid.
+    func testAFolderAnotherAccountOwnsIsRejected() throws {
+        let root = try makeRoot("owned", mode: 0o700)
+        XCTAssertNil(WorkspaceRootStore.ownershipProblem(atPath: root.path))
+        XCTAssertEqual(
+            WorkspaceRootStore.ownershipProblem(atPath: root.path, uid: getuid() &+ 1),
+            .notOwned)
+    }
+
+    /// Network and File Provider mounts map owners and modes in ways that say nothing here.
+    func testMountedAndProviderFoldersSkipTheOwnershipChecks() {
+        XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks("/Volumes/Team/Jamf-Reports"))
+        XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks(
+            "/Users/a/Library/CloudStorage/OneDrive-Contoso/Jamf-Reports"))
+        XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks("/volumes/Team/Jamf-Reports"))
+        XCTAssertTrue(WorkspaceRootStore.skipsOwnershipChecks(
+            "/Users/a/library/cloudstorage/OneDrive-Contoso/Jamf-Reports"))
+        XCTAssertFalse(WorkspaceRootStore.skipsOwnershipChecks("/Users/a/Documents/Jamf-Reports"))
+        XCTAssertFalse(WorkspaceRootStore.skipsOwnershipChecks("/Users/a/Volumes/x"))
+    }
+
+    /// A stored root that now fails is still the root, so nothing is read from a second,
+    /// empty one; the Doctor row explains it.
+    func testAStoredRootThatFailsOwnershipIsStillReturnedOnRead() throws {
+        let root = try makeRoot("stored", mode: 0o775)
+        defaults.set(root.path, forKey: WorkspaceRootStore.defaultsKey)
+        XCTAssertEqual(
+            WorkspaceRootStore.current(defaults: defaults, environment: [:])
+                .resolvingSymlinksInPath().path,
+            root.resolvingSymlinksInPath().path)
+    }
+
     func testRejectionMessagesAreActionable() {
         XCTAssertNotNil(WorkspaceRootStore.Validation.notWritable.message)
         XCTAssertNotNil(WorkspaceRootStore.Validation.sensitiveLocation.message)
+        XCTAssertNotNil(WorkspaceRootStore.Validation.notOwned.message)
+        XCTAssertNotNil(WorkspaceRootStore.Validation.groupOrWorldWritable.message)
+        XCTAssertTrue(WorkspaceRootStore.Validation.hasACL.message?.contains("Documents") == true,
+                      "the message says a macOS home subfolder can carry the ACL")
         XCTAssertNil(WorkspaceRootStore.Validation.ok.message, "a pass has nothing to say")
     }
 

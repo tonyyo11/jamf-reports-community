@@ -32,6 +32,10 @@ enum WorkspaceRootStore {
         case notADirectory
         case notWritable
         case sensitiveLocation
+        /// Another account owns the folder, so its permissions are not ours to harden.
+        case notOwned
+        case groupOrWorldWritable
+        case hasACL
 
         var isUsable: Bool { self == .ok || self == .missing }
 
@@ -42,6 +46,16 @@ enum WorkspaceRootStore {
             case .notWritable: return "That folder is not writable by your account."
             case .sensitiveLocation:
                 return "That location is reserved by macOS or holds credentials."
+            case .notOwned:
+                return "That folder belongs to another account. Pick a folder you own."
+            case .groupOrWorldWritable:
+                return "Other accounts can write to that folder. Remove group and world write "
+                    + "access (chmod go-w) or pick another folder."
+            case .hasACL:
+                return "That folder has an access control list that can give other accounts "
+                    + "access. macOS puts one on its own home subfolders (Documents, Desktop), "
+                    + "so a folder created inside one is fine. Otherwise remove it (chmod -N) or "
+                    + "pick another folder."
             }
         }
     }
@@ -188,7 +202,36 @@ enum WorkspaceRootStore {
         }
         guard isDirectory.boolValue else { return .notADirectory }
         guard fileManager.isWritableFile(atPath: resolved.path) else { return .notWritable }
-        return .ok
+        return ownershipProblem(atPath: resolved.path) ?? .ok
+    }
+
+    /// Network and File Provider mounts map owners, modes and ACLs in ways that say nothing
+    /// about who can read the folder, so the checks below would only produce false refusals.
+    /// Case-insensitive, like the deny-list: APFS is, by default.
+    static func skipsOwnershipChecks(_ path: String) -> Bool {
+        let folded = path.lowercased()
+        return folded.hasPrefix("/volumes/") || folded.contains("/library/cloudstorage/")
+    }
+
+    /// Why a folder's owner or permissions make it unfit to hold fleet data, or nil.
+    ///
+    /// A root under another account's folder keeps that owner's mode or an inheritable ACL,
+    /// which the 0700 hardener on the workspace folders cannot override. `uid` is a parameter
+    /// so a test can stand in for a different account.
+    static func ownershipProblem(atPath path: String, uid: uid_t = getuid()) -> Validation? {
+        guard !skipsOwnershipChecks(path) else { return nil }
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        if info.st_uid != uid { return .notOwned }
+        if info.st_mode & 0o022 != 0 { return .groupOrWorldWritable }
+        return hasExtendedACL(atPath: path) ? .hasACL : nil
+    }
+
+    private static func hasExtendedACL(atPath path: String) -> Bool {
+        guard let acl = acl_get_link_np(path, ACL_TYPE_EXTENDED) else { return false }
+        defer { acl_free(UnsafeMutableRawPointer(acl)) }
+        var entry: acl_entry_t?
+        return acl_get_entry(acl, Int32(ACL_FIRST_ENTRY.rawValue), &entry) == 0
     }
 
     /// Persist a new root. Creates the folder when it does not exist yet.
