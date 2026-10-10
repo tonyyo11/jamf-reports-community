@@ -1,7 +1,7 @@
 # DDM device status and MDM command health (2.8.0) — design
 
-Status: approved in brainstorming 2026-09-04; shapes verified against the maintainer's
-prod server the same day, including a failed-command capture; awaiting spec review.
+Status: approved in brainstorming 2026-09-04; shapes verified against a production
+Jamf Pro instance the same day, including a failed-command capture. Shipped in 2.8.0.
 Inspiration: ScottEKendall/JAMF-Pro-Scripts (JAMFGetDDMInfo, JAMFClearFailedMDM).
 Read side only. The app's mutating jamf-cli surface stays at zero.
 
@@ -18,7 +18,7 @@ Both are answerable through the Jamf Pro API per device, which jamf-cli 1.24
 already wraps: `pro ddm-status status-items <managementId>` and
 `pro classic-computer-history get <id> --subset commands`. The one-call
 `pro mdm-commands list --filter status==Failed` returns HTTP 500 on both test
-tenants AND on prod (verified 2026-09-04), so the Classic per-device history call
+tenants AND on a production instance (verified 2026-09-04), so the Classic per-device history call
 is the only read path for MDM commands.
 
 ## Decisions (from brainstorming)
@@ -74,7 +74,7 @@ A run that dies mid-loop writes neither file; the prior snapshot stays current.
 Decoders in `JamfCLIDecoder.swift`, beside `DDMStatusRow`: identity-free rows,
 every field optional, tolerant scalars. Both raw shapes are decoded at collect time.
 
-Verified prod shapes (2026-09-04, macOS 27 device, Jamf Pro on-prem):
+Verified production shapes (2026-09-04, macOS 27 device, Jamf Pro on-prem):
 
 - Status items: `{statusItems: [{key: String, value: String|null, lastUpdateTime:
   String}]}`. `value` is JSON null for unset items (`softwareupdate.failure-reason`,
@@ -163,7 +163,7 @@ No HTML section in 2.8.0.
 
 ## 5. Testing
 
-- Fixtures captured from the maintainer's prod server 2026-09-04 (one
+- Fixtures captured from a production Jamf Pro instance 2026-09-04 (one
   status-items payload from a macOS 27 Mac with a pending DDM update; one history
   payload with `failed: ""` and `pending` rows; one history payload with a single
   failed command as a bare `command` object and `pending: ""`), scrubbed

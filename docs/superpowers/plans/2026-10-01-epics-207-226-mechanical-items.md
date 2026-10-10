@@ -7,9 +7,8 @@ the "Data refreshed" toast) and the chart roll-out (A3) are outside it, and so a
 (G28, the Fleet Insight inversions), which wait for the insight-seam change.
 
 No spec document: the epic issue text is the requirement. The full text of each item is in
-`issue207-comments.md` and `issue226-comments.md` in this plan's workspace
-(`.superpowers/sdd/2026-10-01-epics-207-226-mechanical-items/`); find an item with
-`rg -n "G18" <file>`. Line numbers quoted in the issues and below are stale; locate code with `rg`.
+issues #207 and #226 on GitHub (bodies and comments); find an item by its ID. Line numbers
+quoted in the issues and below are stale; locate code with `rg`.
 
 ## Global Constraints
 
