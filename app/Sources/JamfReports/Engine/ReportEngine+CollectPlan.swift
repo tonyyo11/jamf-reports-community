@@ -144,7 +144,14 @@ extension ReportEngine {
     /// Fetches the SOFA feeds into `<dataDir>/sofa`; a test passes a stub so no collect
     /// reaches the network.
     typealias SOFARefresh = @Sendable (URL) async -> (SOFAFeedService.Snapshot, [String])
-    static let defaultSOFARefresh: SOFARefresh = { await SOFAFeedService.refresh(dataDir: $0) }
+    static let defaultSOFARefresh: SOFARefresh = { dataDir in
+        #if DEBUG
+        // Same guard as the jamf-cli locator: a test that forgot to inject `refreshSOFA` must
+        // not reach sofafeed.macadmins.io.
+        if NSClassFromString("XCTestCase") != nil { return (.empty, []) }
+        #endif
+        return await SOFAFeedService.refresh(dataDir: dataDir)
+    }
 
     /// The sources `finalizeCollect` fetches once the matrix is done. They have no cadence of
     /// their own: the tier set alone decides, so every collect that includes the Refresh
