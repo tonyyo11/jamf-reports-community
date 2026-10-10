@@ -199,6 +199,13 @@ final class AutomationHealthModel {
     /// True while an automatic re-collect is in flight, so the banner can say
     /// so instead of repeating the problem the app is already fixing.
     var isRemediating = false
+
+    /// Shared-config keys (`SharedConfigPin.Key.rawValue`) that differ from, or have not yet
+    /// been confirmed against, this Mac's pin for the ACTIVE profile.
+    var sharedConfigKeys: [String] = []
+
+    /// Set by the banner's button; Audit opens its Config Doctor segment and clears it.
+    var openConfigDoctorRequested = false
 }
 
 // MARK: - Managed automation wiring
@@ -372,9 +379,13 @@ extension WorkspaceStore {
         let request = freshnessRequests
         guard !demoMode else {
             AutomationHealthModel.shared.freshnessIssues = []
+            AutomationHealthModel.shared.sharedConfigKeys = []
             return
         }
         let profile = self.profile
+        let sharedConfig = await Task.detached(priority: .utility) {
+            SharedConfigPin.check(profile: profile).drifts.map(\.key.rawValue)
+        }.value
         let jamfCLIVersion = self.jamfCLIVersion
         let resolveAuth = resolveAuthMethod
         let issues = await Task.detached(priority: .utility) {
@@ -385,6 +396,7 @@ extension WorkspaceStore {
         // for another profile, or one a newer request has replaced, must not land.
         guard request == freshnessRequests, profile == self.profile else { return }
         AutomationHealthModel.shared.freshnessIssues = issues
+        AutomationHealthModel.shared.sharedConfigKeys = sharedConfig
     }
 
     /// Pure-ish freshness read: state dir → states → issues. `nonisolated` so

@@ -219,6 +219,12 @@ struct AuditView: View {
         .task(id: doctorTaskKey) {
             loadDoctorReport()
         }
+        .onChange(of: AutomationHealthModel.shared.openConfigDoctorRequested, initial: true) {
+            // The health banner's "Review" button asks for the Config Doctor segment.
+            guard AutomationHealthModel.shared.openConfigDoctorRequested else { return }
+            AutomationHealthModel.shared.openConfigDoctorRequested = false
+            selectedTab = 2
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             switch selectedTab {
             case 0: runAudit()
@@ -370,6 +376,7 @@ struct AuditView: View {
                         style: .danger)
                 }
                 loadDoctorReport()
+                await workspace.refreshDataFreshness()
             }
         }
     }

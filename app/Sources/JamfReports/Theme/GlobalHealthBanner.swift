@@ -15,11 +15,15 @@ struct GlobalHealthBanner: View {
     let freshnessIssues: [DataFreshnessIssue]
     let automationIssues: [AutomationHealthIssue]
     let isRemediating: Bool
+    /// Shared-config keys waiting for a Confirm on this Mac (`SharedConfigPin`).
+    var sharedConfigKeys: [String] = []
     /// Opens the Automation screen, where the detail and the manual controls are.
     let onOpenAutomation: () -> Void
     /// Force-collects the tiers behind the freshness issues. Optional so a
     /// caller with no collect context keeps the informational banner.
     var onCollectNow: (() -> Void)?
+    /// Opens Audit on its Config Doctor segment, where the Confirm button is.
+    var onOpenConfigDoctor: (() -> Void)?
 
     var body: some View {
         if isRemediating {
@@ -31,7 +35,8 @@ struct GlobalHealthBanner: View {
                 action: nil
             )
         } else if let headline = Self.headline(
-            freshness: freshnessIssues, automation: automationIssues
+            freshness: freshnessIssues, automation: automationIssues,
+            sharedConfig: sharedConfigKeys
         ) {
             banner(
                 icon: headline.icon,
@@ -47,8 +52,16 @@ struct GlobalHealthBanner: View {
     /// resolves what it is complaining about rather than two competing ones.
     private func bannerAction() -> InlineBannerAction {
         switch Self.primaryAction(
-            freshness: freshnessIssues, canCollect: onCollectNow != nil
+            freshness: freshnessIssues, canCollect: onCollectNow != nil,
+            sharedConfig: sharedConfigKeys
         ) {
+        case .openConfigDoctor:
+            return InlineBannerAction(
+                label: PrimaryAction.openConfigDoctor.label,
+                icon: "stethoscope",
+                help: "Review the values another Mac changed in the shared config.yaml",
+                handler: onOpenConfigDoctor ?? onOpenAutomation
+            )
         case .collectNow:
             return InlineBannerAction(
                 label: PrimaryAction.collectNow.label,
@@ -94,9 +107,11 @@ struct GlobalHealthBanner: View {
     enum PrimaryAction: Equatable {
         case collectNow
         case openAutomation
+        case openConfigDoctor
 
         var label: String {
             switch self {
+            case .openConfigDoctor: return "Review"
             case .collectNow: return "Collect now"
             case .openAutomation: return "Open Automation"
             }
@@ -111,9 +126,14 @@ struct GlobalHealthBanner: View {
     /// `nonisolated` for the same reason as `headline`.
     nonisolated static func primaryAction(
         freshness: [DataFreshnessIssue],
-        canCollect: Bool
+        canCollect: Bool,
+        sharedConfig: [String] = []
     ) -> PrimaryAction {
-        (canCollect && !freshness.isEmpty) ? .collectNow : .openAutomation
+        // The shared-config entry ranks below failing kinds, so the button follows the headline.
+        if !sharedConfig.isEmpty, !freshness.contains(where: { $0.kind == .failing }) {
+            return .openConfigDoctor
+        }
+        return (canCollect && !freshness.isEmpty) ? .collectNow : .openAutomation
     }
 
     // MARK: - Pure headline derivation
@@ -136,7 +156,8 @@ struct GlobalHealthBanner: View {
     /// Swift 6.1, which would break nonisolated test callers.
     nonisolated static func headline(
         freshness: [DataFreshnessIssue],
-        automation: [AutomationHealthIssue]
+        automation: [AutomationHealthIssue],
+        sharedConfig: [String] = []
     ) -> Headline? {
         let failing = freshness.filter { $0.kind == .failing }
         let stale = freshness.filter { $0.kind == .stale && !$0.neverCollected }
@@ -148,6 +169,19 @@ struct GlobalHealthBanner: View {
                 tone: .danger,
                 text: countPhrase(failing.count, "data source") + " failing to collect",
                 detail: kindList(failing) + " — " + failingReason(failing)
+            )
+        }
+        // Below failing collects, above everything else: background runs on this Mac are using
+        // safe values (a default report folder, no webhook) until it is confirmed.
+        if !sharedConfig.isEmpty {
+            let named = sharedConfig.prefix(maxNamedKinds).joined(separator: ", ")
+            let extra = sharedConfig.count - min(sharedConfig.count, maxNamedKinds)
+            return Headline(
+                icon: "lock.trianglebadge.exclamationmark",
+                tone: .warn,
+                text: "Shared config needs confirming on this Mac",
+                detail: named + (extra > 0 ? " +\(extra) more" : "")
+                    + " — background runs use safe values until you confirm"
             )
         }
         if !stale.isEmpty {

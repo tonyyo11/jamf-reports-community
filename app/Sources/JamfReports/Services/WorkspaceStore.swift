@@ -464,6 +464,7 @@ final class WorkspaceStore {
             // overdue schedules stayed on screen through the whole demo.
             AutomationHealthModel.shared.issues = []
             AutomationHealthModel.shared.freshnessIssues = []
+            AutomationHealthModel.shared.sharedConfigKeys = []
             // The live config stayed loaded: its agent name and benchmark labelled
             // demo screens, and Config's Save reused the real YAML document.
             applyDemoConfig()
