@@ -302,6 +302,18 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
+    func testWithoutARunEveryCheckpointReportsAgain() throws {
+        try writeConfig()
+        _ = check()
+        try writeConfig(retentionMode: "delete")
+        let lines = LineBox()
+        for _ in 0..<2 {
+            SharedConfigPin.checkpoint(
+                profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+        }
+        XCTAssertEqual(lines.all.count, 2, "a second collect in a long-lived app warns again")
+    }
+
     func testDiffNamesEachChangedKeyInConfigYamlSpelling() {
         let base = SharedConfigPin(
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",
@@ -384,14 +396,18 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
-    func testCheckpointLogsOneWarnPerDriftedKeyAndNoPartialMarker() throws {
+    func testCheckpointLogsOneWarnPerDriftedKeyAndNoPartialMarker() async throws {
         try writeConfig()
         _ = check()
         try writeConfig(retentionMode: "delete", webhook: "https://collector.attacker.test/a")
         let lines = LineBox()
-        for _ in 0..<2 {
-            SharedConfigPin.checkpoint(
-                profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+        let appSupport = self.appSupport!
+        let profile = self.profile
+        await SharedConfigPin.announcingOnce {
+            for _ in 0..<2 {
+                SharedConfigPin.checkpoint(
+                    profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+            }
         }
         XCTAssertEqual(lines.all, [
             "[warn] shared config changed retention.mode: confirm on this Mac (Config Doctor)",
@@ -415,7 +431,7 @@ final class SharedConfigPinTests: XCTestCase {
 
     // MARK: - Headless folders
 
-    func testHeadlessChangedOutputDirFallsBackToTheWorkspaceWithOneWarn() throws {
+    func testHeadlessChangedOutputDirFallsBackToTheWorkspaceWithOneWarn() async throws {
         try writeConfig(outputDir: outside, allowAbsolute: true)
         _ = check()
         XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside)
@@ -423,9 +439,13 @@ final class SharedConfigPinTests: XCTestCase {
         try writeConfig(outputDir: outside + "-peer", allowAbsolute: true)
         SharedConfigPin.markHeadless()
         let lines = LineBox()
-        for _ in 0..<2 {
-            SharedConfigPin.checkpoint(
-                profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+        let appSupport = self.appSupport!
+        let profile = self.profile
+        await SharedConfigPin.announcingOnce {
+            for _ in 0..<2 {
+                SharedConfigPin.checkpoint(
+                    profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+            }
         }
         XCTAssertEqual(lines.all, [
             "[warn] shared config changed output.output_dir: confirm on this Mac (Config Doctor)",

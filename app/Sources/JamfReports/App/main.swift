@@ -209,6 +209,22 @@ private func scheduledRunSingle(
     label: String?,
     honesty: CollectHonestyWatcher
 ) async -> Int32 {
+    await SharedConfigPin.announcingOnce {
+        await scheduledRunSingleBody(
+            profile: profile, mode: mode, tiers: tiers, verbose: verbose,
+            label: label, honesty: honesty)
+    }
+}
+
+@Sendable
+private func scheduledRunSingleBody(
+    profile: String,
+    mode: Schedule.RunMode,
+    tiers: Set<CollectionTier>?,
+    verbose: Bool,
+    label: String?,
+    honesty: CollectHonestyWatcher
+) async -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1

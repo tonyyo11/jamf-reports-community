@@ -446,7 +446,6 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     private struct State {
         var headless = false
         var overrides: [String: PathOverrides] = [:]
-        var warned: Set<String> = []
     }
 
     private static let state = OSAllocatedUnfairLock(initialState: State())
@@ -462,6 +461,19 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     }
 
     @TaskLocal private static var inUnattendedScope = false
+
+    /// The drifts one run has already reported, so its collect and generate say each once.
+    final class RunAnnouncements: Sendable {
+        fileprivate let seen = OSAllocatedUnfairLock(initialState: Set<String>())
+    }
+
+    @TaskLocal private static var announcements: RunAnnouncements?
+
+    /// Runs one scheduled run: a checkpoint inside it reports each drifted key once. Outside
+    /// such a run (a button press in the app, one CLI command) every checkpoint reports.
+    static func announcingOnce<T>(_ body: () async -> T) async -> T {
+        await $announcements.withValue(RunAnnouncements()) { await body() }
+    }
 
     /// Runs an automatic collect (catch-up, self-remediation, the background refresh): nobody
     /// is at the keyboard, so inside `body` a checkpoint installs the safe path values as a
@@ -502,13 +514,15 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
         let id = overrideID(workspace)
         let unattendedRun = inUnattendedScope
-        let fresh: [Drift] = state.withLock { state in
+        state.withLock { state in
             if state.headless || unattendedRun {
                 state.overrides[id] = overrides.isEmpty ? nil : overrides
             }
-            return result.drifts.filter {
-                state.warned.insert("\(id)|\($0.key.rawValue)|\($0.current)").inserted
-            }
+        }
+        let fresh = result.drifts.filter { drift in
+            announcements?.seen.withLock {
+                $0.insert("\(id)|\(drift.key.rawValue)|\(drift.current)").inserted
+            } ?? true
         }
         for drift in fresh {
             let text = "[warn] shared config changed \(drift.key.rawValue): "
