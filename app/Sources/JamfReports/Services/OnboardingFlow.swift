@@ -1474,13 +1474,20 @@ final class OnboardingFlow {
 
             // Drain the master in a background task; jamf-cli writes prompts
             // before consuming stdin, so we cannot block on a single sequential
-            // read/write pairing.
+            // read/write pairing. read(2) rather than FileHandle.availableData: the
+            // loop must end on its own when the child is gone (EOF, or EIO once no
+            // slave end is open), because closing the handle under a blocked
+            // reader raises NSFileHandleOperationException on macOS 26.
             let collector = PTYOutputCollector()
             let drain = Task.detached(priority: .userInitiated) {
+                var buffer = [UInt8](repeating: 0, count: 4096)
                 while true {
-                    let chunk = masterHandle.availableData
-                    if chunk.isEmpty { break }
-                    await collector.append(chunk)
+                    let count = buffer.withUnsafeMutableBytes {
+                        Darwin.read(master, $0.baseAddress, $0.count)
+                    }
+                    if count < 0 && errno == EINTR { continue }
+                    guard count > 0 else { break }
+                    await collector.append(Data(buffer[0..<count]))
                 }
             }
 
@@ -1493,9 +1500,9 @@ final class OnboardingFlow {
             }
 
             process.waitUntilExit()
-            // Closing the master ends the read loop in the drain task.
-            try? masterHandle.close()
+            // The child's exit closes the last slave end, which ends the drain.
             await drain.value
+            try? masterHandle.close()
 
             let combined = await collector.snapshot()
             return PTYResult(exitCode: process.terminationStatus, combined: combined)
