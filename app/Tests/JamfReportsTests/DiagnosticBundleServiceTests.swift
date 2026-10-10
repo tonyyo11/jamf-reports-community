@@ -21,8 +21,6 @@ final class DiagnosticBundleServiceTests: XCTestCase {
 
     func testCredentialsRedactedEvenWithAllPIIOff() {
         let r = secretsOnlyRedactor()
-        // Config/YAML form is the `client_secret` regex's target; the JSON
-        // quoted-key form is handled by `redactJSON`'s exact-key match instead.
         let text = r.redactText(#"client_secret: "mustnotleak1234567""#)
         XCTAssertFalse(text.contains("mustnotleak1234567"))
         XCTAssertTrue(text.contains("REDACTED_CLIENT_SECRET"))
@@ -48,6 +46,45 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         ]
         for (input, expected) in cases {
             XCTAssertTrue(r.redactText(input).contains(expected), "expected \(expected) for \(input)")
+        }
+    }
+
+    /// The patterns once needed the key name followed straight by the colon, so a log line
+    /// holding JSON text (a quoted key) passed through untouched.
+    func testQuotedJSONKeysAreRedactedInFreeText() {
+        let r = secretsOnlyRedactor()
+        let cases: [(String, String, String)] = [
+            (#"{"client_secret": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+            (#"{"client_secret":"abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+            (#"{"client_id": "ABCDEF0123456789ABCD"}"#, "ABCDEF0123456789ABCD",
+             "REDACTED_CLIENT_ID"),
+            (#"{"password": "hunter2x"}"#, "hunter2x", "REDACTED_PASSWORD"),
+            (#"{"api_key": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_API_KEY"),
+            (#"{"apikey":"abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_API_KEY"),
+            (#"{"token": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_TOKEN"),
+            (#"{"session_token": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_TOKEN"),
+            (#"{"private_key": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_TOKEN"),
+            (#"{'client_secret': 'abcdefgh1234'}"#, "abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+        ]
+        for (input, secret, marker) in cases {
+            let out = r.redactText(input)
+            XCTAssertFalse(out.contains(secret), "leaked in \(input): \(out)")
+            XCTAssertTrue(out.contains(marker), "expected \(marker) for \(input): \(out)")
+        }
+    }
+
+    func testUnquotedKeyFormsAreStillRedacted() {
+        let r = secretsOnlyRedactor()
+        let cases: [(String, String)] = [
+            ("client_secret: abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+            ("client_id=ABCDEF0123456789ABCD", "REDACTED_CLIENT_ID"),
+            ("password = hunter2x", "REDACTED_PASSWORD"),
+            ("api_key: abcdefgh1234", "REDACTED_API_KEY"),
+            ("token: abcdefgh1234", "REDACTED_TOKEN"),
+            ("private_key: abcdefgh1234", "REDACTED_TOKEN"),
+        ]
+        for (input, marker) in cases {
+            XCTAssertTrue(r.redactText(input).contains(marker), "expected \(marker): \(input)")
         }
     }
 
@@ -214,6 +251,70 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(out.contains("device-"))
     }
 
+    func testLastReportedIPKeysBecomeIPPlaceholders() {
+        let r = DiagnosticRedactor()
+        let input: [String: Any] = [
+            "lastIpAddress": "10.20.30.40",
+            "lastReportedIp": "10.20.30.41",
+            "lastReportedIpv4": "10.20.30.42",
+        ]
+        guard let out = r.redactJSON(input) as? [String: Any] else { return XCTFail("not a dict") }
+        for (key, raw) in input {
+            let value = out[key] as? String
+            XCTAssertNotEqual(value, raw as? String, "\(key) not redacted")
+            XCTAssertTrue(value?.hasPrefix("ip-") == true, "\(key): \(value ?? "nil")")
+        }
+    }
+
+    /// `general.name` is a computer's name; a bare `name` key is not seeded because policies and
+    /// profiles carry one too.
+    func testSeedingTakesGeneralNameButNotOtherNames() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"""
+        [{"general": {"name": "Johns-MacBook-Pro"}},
+         {"name": "Install Firefox policy"}]
+        """#.write(to: dir.appendingPathComponent("computers.json"),
+                   atomically: true, encoding: .utf8)
+        let r = DiagnosticRedactor()
+        XCTAssertEqual(r.seedFromWorkspace(dir), 1)
+        let out = r.redactText("Johns-MacBook-Pro ran Install Firefox policy")
+        XCTAssertFalse(out.contains("Johns-MacBook-Pro"))
+        XCTAssertTrue(out.contains("Install Firefox policy"))
+    }
+
+    /// A seeded "Main" once turned "Maintenance" into "org-xxxxtenance". Matching stays
+    /// case-sensitive, as before.
+    func testSeededLiteralsMatchWholeWordsOnly() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"{"building": "Main", "computerName": "Mac-0042"}"#
+            .write(to: dir.appendingPathComponent("a.json"), atomically: true, encoding: .utf8)
+        let r = DiagnosticRedactor()
+        XCTAssertEqual(r.seedFromWorkspace(dir), 2)
+
+        let out = r.redactText("Maintenance window; Main building; main; Mac-0042x; (Mac-0042)")
+        XCTAssertTrue(out.contains("Maintenance window"), "got: \(out)")
+        XCTAssertFalse(out.contains("Main building"), "got: \(out)")
+        XCTAssertTrue(out.contains("org-"), "got: \(out)")
+        XCTAssertTrue(out.contains("; main;"), "case-sensitive match kept: \(out)")
+        XCTAssertTrue(out.contains("Mac-0042x"), "got: \(out)")
+        XCTAssertFalse(out.contains("(Mac-0042)"), "got: \(out)")
+    }
+
+    func testIPv4AddressesInFreeTextArePlaceholdered() {
+        let r = DiagnosticRedactor()
+        let out = r.redactText(
+            "client 10.20.30.40 and https://192.168.1.5:8443/api; jamf-cli v1.2.3.4; "
+            + "version 1.33.0; 999.1.1.1; 10.20.30.400; 1.2.3.4.5")
+        XCTAssertFalse(out.contains("10.20.30.40 "), "got: \(out)")
+        XCTAssertFalse(out.contains("192.168.1.5"), "got: \(out)")
+        XCTAssertTrue(out.contains("https://ip-"), "got: \(out)")
+        for kept in ["v1.2.3.4", "version 1.33.0", "999.1.1.1", "10.20.30.400", "1.2.3.4.5"] {
+            XCTAssertTrue(out.contains(kept), "\(kept) changed: \(out)")
+        }
+    }
+
     func testSeedingHonorsMinLengthFloor() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -370,6 +471,37 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(log.contains("Environment 'org-"), "got: \(log)")
     }
 
+    /// The bundle's log pass matches `LogRedactor.redactedForSharing`: the log redactor
+    /// first, then the bundle redactor.
+    func testBuildBundleLogsGetBothRedactionPasses() throws {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace.root) }
+        try (#"sent {"client_secret": "abcdefgh1234", "password": "hunter2x"} to "#
+            + "https://acme.jamfcloud.com/api\n"
+            + #"{"access_token": "longvalue"}"# + "\n")
+            .write(to: workspace.sources.logsDir.appendingPathComponent("run.log"),
+                   atomically: true, encoding: .utf8)
+        let outputDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: outputDir) }
+
+        let zip = try DiagnosticBundleService.buildBundle(
+            sources: workspace.sources, outputDir: outputDir,
+            profileSlug: "both", options: .init(), now: Date())
+        let extracted = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: extracted) }
+        try unzip(zip, into: extracted)
+
+        let log = try String(
+            contentsOf: extracted.appendingPathComponent("logs/run.log"), encoding: .utf8)
+        for leaked in ["abcdefgh1234", "hunter2x", "longvalue", "acme.jamfcloud.com"] {
+            XCTAssertFalse(log.contains(leaked), "\(leaked) leaked: \(log)")
+        }
+        XCTAssertTrue(log.contains("REDACTED_CLIENT_SECRET"))
+        XCTAssertTrue(log.contains("https://host-"), "got: \(log)")
+        // A second pass has nothing left to change.
+        XCTAssertEqual(DiagnosticRedactor().redactText(LogRedactor.redact(log)), log)
+    }
+
     // MARK: - Bundle structure
 
     func testStageFilesProducesRedactedTree() throws {
@@ -461,6 +593,53 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         let entries = DiagnosticBundleService.collectDoctor(
             cliProfile: "", into: staging, redactor: nil)
         XCTAssertTrue(entries.isEmpty)
+    }
+
+    /// A stand-in for jamf-cli, not named `jamf-cli` (the codesign gate keys on that name).
+    /// It writes more to stderr than a pipe holds before it writes stdout, which wedged the
+    /// old read-stdout-first spawn until its watchdog fired.
+    private func makeNoisyStub(stdout: String) throws -> (dir: URL, binary: URL) {
+        let dir = try makeTempDir()
+        let binary = dir.appendingPathComponent("stub-cli")
+        try """
+            #!/bin/sh
+            /usr/bin/head -c 300000 /dev/zero 1>&2
+            /bin/echo '\(stdout)'
+            """.write(to: binary, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        return (dir, binary)
+    }
+
+    func testCollectDoctorDrainsStderrWhileReadingStdout() throws {
+        let stub = try makeNoisyStub(stdout: #"{"server": "acme.jamfcloud.com"}"#)
+        defer { try? FileManager.default.removeItem(at: stub.dir) }
+        let staging = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: staging) }
+
+        let started = Date()
+        let entries = DiagnosticBundleService.collectDoctor(
+            cliProfile: "Acme", into: staging, redactor: DiagnosticRedactor(),
+            binary: stub.binary)
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8, "probe wedged on stderr")
+        XCTAssertEqual(entries.count, 1)
+        let doctor = try String(
+            contentsOf: staging.appendingPathComponent("doctor.json"), encoding: .utf8)
+        XCTAssertFalse(doctor.contains("acme.jamfcloud.com"))
+    }
+
+    func testJamfCLIVersionDrainsStderrWhileReadingStdout() throws {
+        let stub = try makeNoisyStub(stdout: "jamf-cli version 1.33.0")
+        defer { try? FileManager.default.removeItem(at: stub.dir) }
+        let started = Date()
+        let version = DiagnosticBundleService.jamfCLIVersion(binary: stub.binary)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8, "probe wedged on stderr")
+        XCTAssertEqual(version, "jamf-cli version 1.33.0")
+    }
+
+    func testJamfCLIVersionWithoutABinaryReadsNotInstalled() {
+        XCTAssertEqual(DiagnosticBundleService.jamfCLIVersion(binary: nil), "not installed")
     }
 
     func testLogLookbackExcludesOldFiles() throws {

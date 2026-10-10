@@ -7,6 +7,53 @@ import XCTest
 @MainActor
 final class JamfCLIInstallerTests: XCTestCase {
 
+    // MARK: - compareVersions
+
+    func test_compareVersions_preReleaseRanksBelowItsRelease() {
+        let cmp = JamfCLIInstaller.compareVersions
+        XCTAssertEqual(cmp("1.30.0-rc1", "1.30.0"), .orderedAscending)
+        XCTAssertEqual(cmp("1.30.0", "1.30.0-rc1"), .orderedDescending)
+        XCTAssertEqual(cmp("1.30.0-rc1", "1.30.0-rc2"), .orderedAscending)
+        XCTAssertEqual(cmp("1.30.0-rc2", "1.30.0-rc10"), .orderedAscending)
+        XCTAssertEqual(cmp("1.30.0-rc1", "1.30.0-rc1"), .orderedSame)
+        XCTAssertEqual(cmp("1.29.0", "1.30.0-rc1"), .orderedAscending)
+        XCTAssertEqual(cmp("1.31.0-rc1", "1.30.0"), .orderedDescending)
+    }
+
+    func test_compareVersions_plainVersionsAndBuildMetadataUnchanged() {
+        let cmp = JamfCLIInstaller.compareVersions
+        XCTAssertEqual(cmp("v1.29.0", "1.29.0"), .orderedSame)
+        XCTAssertEqual(cmp("1.29", "1.29.0"), .orderedSame)
+        XCTAssertEqual(cmp("1.9.0", "1.10.0"), .orderedAscending)
+        XCTAssertEqual(cmp("1.30.0+build5", "1.30.0"), .orderedSame)
+    }
+
+    func test_featureGates_treatAPreReleaseOfTheFloorAsBelowIt() {
+        XCTAssertTrue(JamfCLIInstaller.supportsSpecDerivedNames("1.29.0"))
+        XCTAssertFalse(JamfCLIInstaller.supportsSpecDerivedNames("1.29.0-rc1"))
+        XCTAssertTrue(JamfCLIInstaller.supportsSpecDerivedNames("1.30.0-rc1"))
+        XCTAssertTrue(JamfCLIInstaller.supportsDashboard("1.31.0"))
+        XCTAssertFalse(JamfCLIInstaller.supportsDashboard("1.31.0-rc1"))
+    }
+
+    // MARK: - isTrustedFinalURL
+
+    /// The download follows redirects, so the host that answered is checked after the fact.
+    func test_isTrustedFinalURL_acceptsTheGitHubAssetHosts() {
+        for host in JamfCLIInstaller.trustedAssetHosts {
+            XCTAssertTrue(JamfCLIInstaller.isTrustedFinalURL(URL(string: "https://\(host)/a.zip")))
+        }
+        XCTAssertTrue(JamfCLIInstaller.isTrustedFinalURL(URL(string: "https://GitHub.com/a.zip")))
+    }
+
+    func test_isTrustedFinalURL_rejectsRedirectsOffTheAllowList() {
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(URL(string: "https://evil.example/a.zip")))
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(
+            URL(string: "https://github.com.evil.example/a.zip")))
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(URL(string: "http://github.com/a.zip")))
+        XCTAssertFalse(JamfCLIInstaller.isTrustedFinalURL(nil))
+    }
+
     // MARK: - extractChecksum
 
     func test_extractChecksum_simpleSpaceSeparated() {

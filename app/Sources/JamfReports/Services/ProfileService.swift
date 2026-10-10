@@ -320,7 +320,8 @@ enum ProfileService {
     /// always resolves via `ExecutableLocator.locate("jamf-cli")`.
     static func discoverJamfCLIProfiles(
         scheduleCounts: [String: Int],
-        _testBinaryOverride: URL? = nil
+        _testBinaryOverride: URL? = nil,
+        _testTimeout: TimeInterval = JamfCLIProbe.defaultTimeout
     ) -> [JamfCLIProfile] {
         #if DEBUG
         // A test never reads this Mac's ~/.config/jamf-cli/config.yaml, the fallback when no
@@ -339,33 +340,18 @@ enum ProfileService {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
 
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = ["config", "list", "--output", "json"]
-        // SF-10/B-13: pin a minimal environment so DYLD_*, SSL_CERT_FILE,
-        // JAMF_CLI_* etc. inherited from the parent can't alter how jamf-cli
-        // resolves its config or validates TLS.
-        process.environment = CLIBridge.environmentForJamfCLI()
-        process.standardInput = FileHandle.nullDevice
-
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
+        // SF-10/B-13: JamfCLIProbe pins a minimal environment so DYLD_*, SSL_CERT_FILE,
+        // JAMF_CLI_* etc. inherited from the parent can't alter how jamf-cli resolves its
+        // config or validates TLS. It also drains both pipes, gives the child no stdin and
+        // stops it at the deadline; a wedged `config list` must not freeze the sidebar load.
+        guard let output = JamfCLIProbe.run(
+            executable: binary,
+            arguments: ["config", "list", "--output", "json"],
+            timeout: _testTimeout
+        ), output.exitCode == 0 else {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
-
-        // Read to EOF before waiting: a list longer than the pipe buffer blocks the child on
-        // write, and a parent already waiting for it to exit would never read.
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
-        }
+        let data = output.stdout
 
         guard let decoded = try? JSONDecoder().decode([JamfCLIConfigProfile].self, from: data) else {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)

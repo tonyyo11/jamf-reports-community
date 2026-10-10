@@ -7,6 +7,22 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Security
+
+- Secrets and IP addresses in quoted JSON are now redacted in diagnostic bundles and in logs you
+  copy or export, and names are redacted only when they match as whole words.
+- jamf-cli is checked again right before your credentials are sent to it, and again after its file
+  changes in place.
+- A jamf-cli download that is redirected off GitHub's hosts is refused.
+- The raw token JSON is no longer kept in memory.
+- The Security Score no longer trusts a macOS SOFA feed with future-dated releases: a release
+  dated more than a day ahead is ignored, a macOS version with only such releases scores as
+  unknown rather than current, and a future-dated XProtect release gives older XProtect
+  versions no grace period.
+- The issue-triage workflow can comment only on the issue that triggered it, cannot post a file
+  as the comment body, cannot read the runner's process environment, and no longer leaves the
+  checkout token on disk.
+
 ### Fixed
 
 - Exporting the inventory CSV from cached data is no longer blocked by an expired or rejected
@@ -25,16 +41,17 @@ versions in this repository map to git tags.
   worked only when the profile was called JamfReports-Notary), every release signature asks
   for a secure timestamp, and a public release build stops instead of falling back to an
   ad-hoc signature that would fail at notarization.
-
-### Security
-
-- The Security Score no longer trusts a macOS SOFA feed with future-dated releases: a release
-  dated more than a day ahead is ignored, a macOS version with only such releases scores as
-  unknown rather than current, and a future-dated XProtect release gives older XProtect
-  versions no grace period.
-- The issue-triage workflow can comment only on the issue that triggered it, cannot post a file
-  as the comment body, cannot read the runner's process environment, and no longer leaves the
-  checkout token on disk.
+- jamf-cli output lines that were split across reads, or that ended with CRLF, no longer vanish or
+  break in two, which had hidden the cause of some failures.
+- A hung `jamf-cli config list` no longer freezes a collect or the profile list.
+- The diagnostic bundle's jamf-cli checks no longer hang when jamf-cli writes a lot to stderr.
+- Check for update no longer blocks the window.
+- A pre-release jamf-cli now counts as older than its release, and the dashboard and the newer
+  command-name behaviour treat a release candidate of their minimum version as below it.
+- Release tooling: the notary profile named for the app now also reaches the DMG step (it
+  worked only when the profile was called JamfReports-Notary), every release signature asks
+  for a secure timestamp, and a public release build stops instead of falling back to an
+  ad-hoc signature that would fail at notarization.
 
 ### Dependencies
 

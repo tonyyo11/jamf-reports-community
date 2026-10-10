@@ -262,28 +262,29 @@ final class CLIBridge {
                 process.standardOutput = stdout
                 process.standardError = stderr
 
+                // One reader per pipe: a read can end mid-character or mid-line, and a
+                // pipe's handler is never called concurrently with itself.
+                let stdoutLines = PipeLineReader()
+                let stderrLines = PipeLineReader()
                 stdout.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
+                    let lines = stdoutLines.lines(from: data)
+                    for line in lines {
+                        onLine(.init(
+                            timestamp: Date(), level: LogLevel.from(line: line), text: line))
+                    }
                     if data.isEmpty {
                         handle.readabilityHandler = nil
                         completion.markStdoutEOF()
-                        return
-                    }
-                    guard let s = String(data: data, encoding: .utf8) else { return }
-                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
                     }
                 }
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
+                    let lines = stderrLines.lines(from: data)
+                    for line in lines { onLine(Self.stderrLine(line)) }
                     if data.isEmpty {
                         handle.readabilityHandler = nil
                         completion.markStderrEOF()
-                        return
-                    }
-                    guard let s = String(data: data, encoding: .utf8) else { return }
-                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(Self.stderrLine(String(line)))
                     }
                 }
 
@@ -446,19 +447,19 @@ final class CLIBridge {
                     // messages from jamf-cli arrive on stderr and are streamed below.
                     box.append(data)
                 }
+                // A marker `StderrSignalWatcher` reads can straddle two reads, so lines are
+                // rebuilt from bytes; the handler is never called concurrently with itself.
+                let stderrLines = PipeLineReader()
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
+                    let lines = stderrLines.lines(from: data)
+                    for line in lines { onLine(Self.stderrLine(line)) }
                     if data.isEmpty {
-                        // EOF: every stderr line has been through onLine. Clearing the
-                        // handler here, not in terminationHandler, is what lets a line
-                        // still in the pipe at exit arrive.
+                        // EOF: every stderr line, an unterminated last one included, has been
+                        // through onLine. Clearing the handler here, not in terminationHandler,
+                        // is what lets a line still in the pipe at exit arrive.
                         handle.readabilityHandler = nil
                         completion.markStderrEOF()
-                        return
-                    }
-                    guard let s = String(data: data, encoding: .utf8) else { return }
-                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(Self.stderrLine(String(line)))
                     }
                 }
 
@@ -471,6 +472,9 @@ final class CLIBridge {
                         // A timed-out call returns what it has; a grandchild holding a pipe
                         // open must not keep it waiting for EOF.
                         processBox.clearReadHandlers()
+                        // The stderr handler will not see EOF now; keep an unterminated last
+                        // line. stdout is captured whole, with no line reader to flush.
+                        for line in stderrLines.finish() { onLine(Self.stderrLine(line)) }
                         completion.forceResume(proc.terminationStatus)
                     } else {
                         completion.markTerminated(proc.terminationStatus)
@@ -1051,20 +1055,15 @@ final class CLIBridge {
             AppLogger.auth.warning(
                 "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
-            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: "")
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
         }
-        let raw = String(data: data, encoding: .utf8) ?? ""
         guard exitCode == 0, !data.isEmpty else {
-            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: raw)
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
         }
-        return parseTokenStatus(profile: profile, data: data, raw: raw)
+        return parseTokenStatus(profile: profile, data: data)
     }
 
-    nonisolated func parseTokenStatus(
-        profile: String,
-        data: Data,
-        raw: String
-    ) -> TokenStatus {
+    nonisolated func parseTokenStatus(profile: String, data: Data) -> TokenStatus {
         // Defensive decode struct — every field optional so malformed JSON never throws.
         struct TokenPayload: Decodable {
             let token: String?
@@ -1072,7 +1071,7 @@ final class CLIBridge {
         }
         let decoder = JSONDecoder()
         guard let payload = try? decoder.decode(TokenPayload.self, from: data) else {
-            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: raw)
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
         }
         let expiresAt: Date?
         if let rawDate = payload.expires_at {
@@ -1085,8 +1084,7 @@ final class CLIBridge {
         return TokenStatus.make(
             profile: profile,
             token: payload.token,
-            expiresAt: expiresAt,
-            raw: raw
+            expiresAt: expiresAt
         )
     }
 

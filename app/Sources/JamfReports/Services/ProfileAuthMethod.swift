@@ -27,14 +27,15 @@ enum ProfileAuthMethod {
     /// the app on "unknown" until relaunch.
     static func resolve(
         profile: String,
-        binary: URL? = ExecutableLocator.locate("jamf-cli")
+        binary: URL? = ExecutableLocator.locate("jamf-cli"),
+        timeout: TimeInterval = JamfCLIProbe.defaultTimeout
     ) -> Resolved? {
         cacheLock.lock()
         let cached = cache[profile]
         cacheLock.unlock()
         if let cached { return cached }
 
-        guard let binary, let data = configList(binary: binary),
+        guard let binary, let data = configList(binary: binary, timeout: timeout),
               let method = PlatformCapabilityService.authMethod(data: data, profile: profile)
         else { return nil }
         let resolved = Resolved(
@@ -57,27 +58,18 @@ enum ProfileAuthMethod {
         cacheLock.unlock()
     }
 
-    /// Runs `config list --output json`, returning nil on any failure. The
-    /// pinned environment and codesign gate match every other jamf-cli spawn.
-    private static func configList(binary: URL) -> Data? {
+    /// Runs `config list --output json`, returning nil on any failure, including a run that
+    /// had to be stopped at `timeout`. The pinned environment and codesign gate match every
+    /// other jamf-cli spawn; `JamfCLIProbe` drains both pipes and gives the child no stdin.
+    private static func configList(binary: URL, timeout: TimeInterval) -> Data? {
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = ["config", "list", "--output", "json"]
-        process.environment = CLIBridge.environmentForJamfCLI()
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = Pipe()
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-        return data
+        guard let output = JamfCLIProbe.run(
+            executable: binary,
+            arguments: ["config", "list", "--output", "json"],
+            timeout: timeout
+        ), output.exitCode == 0 else { return nil }
+        return output.stdout
     }
 }

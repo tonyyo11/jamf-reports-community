@@ -337,7 +337,7 @@ extension DemoData {
         for profile in profiles where profile.status != .error {
             statuses[profile.name] = TokenStatus.make(
                 profile: profile.name, token: "demo",
-                expiresAt: referenceDate.addingTimeInterval(30 * 60), raw: "")
+                expiresAt: referenceDate.addingTimeInterval(30 * 60))
         }
         return statuses
     }
