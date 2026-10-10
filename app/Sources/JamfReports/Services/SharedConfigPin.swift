@@ -120,7 +120,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let root = workspace.resolvingSymlinksInPath().standardizedFileURL.path
         func outside(_ value: String) -> Bool {
             guard value.hasPrefix("/") else { return false }
-            let path = URL(fileURLWithPath: value).standardizedFileURL.path
+            let path = URL(fileURLWithPath: value)
+                .resolvingSymlinksInPath().standardizedFileURL.path
             return path != root && !path.hasPrefix(root + "/")
         }
         let folders: [(Key, String)] = [

@@ -290,6 +290,15 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside)
     }
 
+    func testAFolderThatIsASymlinkOutOfTheWorkspaceIsUnconfirmedAtFirstSight() throws {
+        let target = root.appendingPathComponent("elsewhere", isDirectory: true)
+        try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
+        let link = workspace.appendingPathComponent("reports-link")
+        try fileManager.createSymbolicLink(at: link, withDestinationURL: target)
+        try writeConfig(outputDir: link.path, allowAbsolute: true)
+        XCTAssertEqual(check().drifts.map(\.key), [.outputDir])
+    }
+
     func testFirstSightOfAFolderInsideTheWorkspaceOrADefaultNeedsNoConfirm() throws {
         try writeConfig(outputDir: workspace.path + "/reports", allowAbsolute: true)
         XCTAssertTrue(check().drifts.isEmpty)
