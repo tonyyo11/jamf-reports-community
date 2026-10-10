@@ -71,8 +71,9 @@ extension CLIBridge {
     final class PipeLineReader: Sendable {
         private let splitter = OSAllocatedUnfairLock(initialState: UTF8LineSplitter())
 
+        /// An empty chunk is EOF, which flushes the unterminated last line.
         func lines(from chunk: Data) -> [String] {
-            splitter.withLock { $0.append(chunk) }
+            splitter.withLock { chunk.isEmpty ? $0.finish() : $0.append(chunk) }
         }
 
         func finish() -> [String] {

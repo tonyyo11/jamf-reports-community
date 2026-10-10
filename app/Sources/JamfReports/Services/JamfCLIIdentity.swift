@@ -63,10 +63,8 @@ enum JamfCLIIdentity {
     struct Fingerprint: Hashable {
         let path: String
         let size: Int64
-        let mtimeSeconds: Int64
-        let mtimeNanoseconds: Int
-        let ctimeSeconds: Int64
-        let ctimeNanoseconds: Int
+        let mtimeNanos: Int64
+        let ctimeNanos: Int64
         let inode: UInt64
     }
 
@@ -141,11 +139,13 @@ enum JamfCLIIdentity {
         guard stat(resolved, &info) == 0 else { return nil }
         return Fingerprint(
             path: resolved, size: Int64(info.st_size),
-            mtimeSeconds: Int64(info.st_mtimespec.tv_sec),
-            mtimeNanoseconds: Int(info.st_mtimespec.tv_nsec),
-            ctimeSeconds: Int64(info.st_ctimespec.tv_sec),
-            ctimeNanoseconds: Int(info.st_ctimespec.tv_nsec),
+            mtimeNanos: nanos(info.st_mtimespec),
+            ctimeNanos: nanos(info.st_ctimespec),
             inode: UInt64(info.st_ino))
+    }
+
+    private static func nanos(_ time: timespec) -> Int64 {
+        Int64(time.tv_sec) * 1_000_000_000 + Int64(time.tv_nsec)
     }
 
     private static func cacheContains(_ fp: Fingerprint) -> Bool {

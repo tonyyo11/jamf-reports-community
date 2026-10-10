@@ -507,7 +507,7 @@ final class OnboardingFlow {
 
     private func registerOAuth2Profile() async throws {
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
-        try verifyJamfCLISignatureGate(binary: binary)
+        try Self.signatureGate(binary: binary)
         guard let url = normalizedJamfURL else { throw FlowError.invalidJamfURL }
         guard isProfileNameValid else { throw FlowError.invalidProfile }
 
@@ -549,7 +549,7 @@ final class OnboardingFlow {
 
     private func registerPlatformGatewayProfile() async throws {
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
-        try verifyJamfCLISignatureGate(binary: binary)
+        try Self.signatureGate(binary: binary)
         guard isProfileNameValid else { throw FlowError.invalidProfile }
         guard isGatewayURLValid else { throw FlowError.invalidJamfURL }
 
@@ -610,7 +610,7 @@ final class OnboardingFlow {
         // The client secret goes to this binary, so it passes the same signature gate as
         // the Jamf Pro paths.
         do {
-            try verifyJamfCLISignatureGate(binary: binary)
+            try Self.signatureGate(binary: binary)
         } catch {
             protectConnectionError = error.localizedDescription
             return
@@ -685,7 +685,7 @@ final class OnboardingFlow {
         // The API key goes to this binary, so it passes the same signature gate as the
         // Jamf Pro paths.
         do {
-            try verifyJamfCLISignatureGate(binary: binary)
+            try Self.signatureGate(binary: binary)
         } catch {
             schoolConnectionError = error.localizedDescription
             return
@@ -1170,17 +1170,8 @@ final class OnboardingFlow {
     ///   - verify: Closure that performs the actual signature check. Defaults to
     ///     `CodeSignVerifier.verify(url:expectedTeamID:)`.
     /// - Throws: `FlowError.processFailed` when enforcement is on and verification fails.
-    internal func verifyJamfCLISignatureGate(
-        binary: URL,
-        enforce: Bool = JamfCLIIdentity.enforceSignatureCheck,
-        expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
-        verify: (URL, String) -> Bool = { CodeSignVerifier.verify(url: $0, expectedTeamID: $1) }
-    ) throws {
-        try Self.signatureGate(
-            binary: binary, enforce: enforce, expectedTeamID: expectedTeamID, verify: verify)
-    }
-
-    /// The gate itself, callable off the main actor so `runWithPTY` can repeat it at launch.
+    ///
+    /// `nonisolated`, so `runWithPTY` can repeat the gate at launch off the main actor.
     nonisolated static func signatureGate(
         binary: URL,
         enforce: Bool = JamfCLIIdentity.enforceSignatureCheck,

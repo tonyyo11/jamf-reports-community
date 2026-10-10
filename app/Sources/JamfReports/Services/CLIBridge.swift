@@ -268,7 +268,7 @@ final class CLIBridge {
                 let stderrLines = PipeLineReader()
                 stdout.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
-                    let lines = data.isEmpty ? stdoutLines.finish() : stdoutLines.lines(from: data)
+                    let lines = stdoutLines.lines(from: data)
                     for line in lines {
                         onLine(.init(
                             timestamp: Date(), level: LogLevel.from(line: line), text: line))
@@ -280,7 +280,7 @@ final class CLIBridge {
                 }
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
-                    let lines = data.isEmpty ? stderrLines.finish() : stderrLines.lines(from: data)
+                    let lines = stderrLines.lines(from: data)
                     for line in lines { onLine(Self.stderrLine(line)) }
                     if data.isEmpty {
                         handle.readabilityHandler = nil
@@ -452,7 +452,7 @@ final class CLIBridge {
                 let stderrLines = PipeLineReader()
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
-                    let lines = data.isEmpty ? stderrLines.finish() : stderrLines.lines(from: data)
+                    let lines = stderrLines.lines(from: data)
                     for line in lines { onLine(Self.stderrLine(line)) }
                     if data.isEmpty {
                         // EOF: every stderr line, an unterminated last one included, has been

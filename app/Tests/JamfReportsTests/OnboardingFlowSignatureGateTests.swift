@@ -8,7 +8,7 @@ import XCTest
 /// 2. enforcement-disabled: enforce=false → no throw, verifier not called
 /// 3. redacted output: failure message must not leak the team ID value
 ///
-/// Tests target `verifyJamfCLISignatureGate(binary:enforce:expectedTeamID:verify:)`
+/// Tests target `OnboardingFlow.signatureGate(binary:enforce:expectedTeamID:verify:)`
 /// directly — the seam added to make the gate testable without spawning a PTY or
 /// requiring a live signed binary.
 @MainActor
@@ -23,10 +23,8 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// When enforcement is active and the verifier returns false, the gate must
     /// throw FlowError.processFailed with a generic, non-sensitive message.
     func test_rejectUntrusted_throwsWhenVerifierReturnsFalse() throws {
-        let flow = OnboardingFlow()
-
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: "483DWKW443",
@@ -52,11 +50,10 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// rather than silently skipping — nil team ID with enforce=true is a
     /// misconfiguration, not a skip path.
     func test_rejectUntrusted_throwsWhenTeamIDIsNil() throws {
-        let flow = OnboardingFlow()
         var verifierCalled = false
 
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: nil,
@@ -73,11 +70,10 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
 
     /// When enforce=false the gate must not call the verifier and must not throw.
     func test_enforcementDisabled_doesNotCallVerifierAndDoesNotThrow() throws {
-        let flow = OnboardingFlow()
         var verifierCallCount = 0
 
         XCTAssertNoThrow(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: false,
                 expectedTeamID: "483DWKW443",
@@ -96,10 +92,8 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// When enforce=false and teamID is nil the gate must still not throw —
     /// the skip path is the same regardless of team ID presence.
     func test_enforcementDisabled_nilTeamIDDoesNotThrow() throws {
-        let flow = OnboardingFlow()
-
         XCTAssertNoThrow(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: false,
                 expectedTeamID: nil,
@@ -114,12 +108,11 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// value. The message is a hardcoded generic string; the team ID must stay
     /// internal to the gate's log output only, never leaked to the UI.
     func test_redactedOutput_errorMessageDoesNotLeakTeamID() throws {
-        let flow = OnboardingFlow()
         let sensitiveTeamID = "SENSITIVE-TEAM-ID-123"
 
         var capturedMessage: String?
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: sensitiveTeamID,
@@ -147,13 +140,11 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// verify closure must not cause that token to appear in the thrown error —
     /// confirming the gate always throws its own generic string, not verifier output.
     func test_redactedOutput_genericMessageIsIndependentOfVerifierOutput() throws {
-        let flow = OnboardingFlow()
-
         // The verifier is a black box; whatever "internal" string it might
         // associate with failure must not leak. The gate synthesizes its own message.
         var capturedMessage: String?
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: "AnyTeamID",

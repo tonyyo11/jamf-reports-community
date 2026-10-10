@@ -331,12 +331,16 @@ final class JamfCLIInstaller {
         return payload.specProVersion
     }
 
-    func checkForUpdate() async -> UpdateResult {
-        // The probe blocks on up to two 60 s version launches and `brew --prefix`.
-        let probed = await Task.detached(priority: .userInitiated) {
+    /// The probe blocks on up to two 60 s version launches and `brew --prefix`, so it runs
+    /// off the main actor.
+    private static func probeInstallation() async -> Installation? {
+        await Task.detached(priority: .userInitiated) {
             JamfCLIInstaller.currentInstallation()
         }.value
-        guard let installation = probed else {
+    }
+
+    func checkForUpdate() async -> UpdateResult {
+        guard let installation = await Self.probeInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
         }
 
@@ -395,11 +399,7 @@ final class JamfCLIInstaller {
     }
 
     private func performUpdate() async -> UpdateResult {
-        // The probe blocks on up to two 60 s version launches and `brew --prefix`.
-        let probed = await Task.detached(priority: .userInitiated) {
-            JamfCLIInstaller.currentInstallation()
-        }.value
-        guard let installation = probed else {
+        guard let installation = await Self.probeInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
         }
 
