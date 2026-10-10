@@ -6,29 +6,58 @@ import os
 /// only a complete line is decoded. Splits on bytes: Swift reads "\r\n" as one `Character`
 /// equal to neither "\r" nor "\n".
 struct UTF8LineSplitter: Sendable {
+    /// A line longer than this is emitted in chunks, so a stream with no newline cannot grow
+    /// the buffer without bound.
+    static let maxLineBytes = 1_048_576
+
     private var pending = Data()
+    /// Bytes at the front of `pending` already searched for a newline.
+    private var scanned = 0
 
     /// The non-empty lines completed by `chunk`, without line endings. A trailing CR is
     /// dropped, so CRLF output reads as LF output.
     mutating func append(_ chunk: Data) -> [String] {
         pending.append(chunk)
         var lines: [String] = []
-        while let newline = pending.firstIndex(of: 0x0A) {
-            let line = pending[pending.startIndex..<newline]
-            pending.removeSubrange(pending.startIndex...newline)
-            if let text = Self.decode(line) { lines.append(text) }
+        var lineStart = pending.startIndex
+        var scanFrom = pending.startIndex + scanned
+        while let newline = pending[scanFrom...].firstIndex(of: 0x0A) {
+            if let text = Self.decode(pending[lineStart..<newline], dropCR: true) {
+                lines.append(text)
+            }
+            lineStart = newline + 1
+            scanFrom = lineStart
         }
+        pending.removeSubrange(pending.startIndex..<lineStart)
+        while pending.count > Self.maxLineBytes {
+            let cut = Self.utf8Boundary(in: pending, atOrBefore: Self.maxLineBytes)
+            if let text = Self.decode(pending[pending.startIndex..<pending.startIndex + cut],
+                                      dropCR: false) {
+                lines.append(text)
+            }
+            pending.removeSubrange(pending.startIndex..<pending.startIndex + cut)
+        }
+        scanned = pending.count
         return lines
     }
 
     /// The final line when the stream ended without a newline. Call once, at EOF.
     mutating func finish() -> [String] {
-        defer { pending.removeAll() }
-        return Self.decode(pending).map { [$0] } ?? []
+        defer { pending.removeAll(); scanned = 0 }
+        return Self.decode(pending[...], dropCR: true).map { [$0] } ?? []
     }
 
-    private static func decode(_ bytes: Data) -> String? {
-        let trimmed = bytes.last == 0x0D ? bytes.dropLast() : bytes[...]
+    /// Moves a cut back off a UTF-8 continuation byte so a chunk does not split a character.
+    private static func utf8Boundary(in bytes: Data, atOrBefore limit: Int) -> Int {
+        var cut = limit
+        while cut > limit - 3, cut > 0, bytes[bytes.startIndex + cut] & 0xC0 == 0x80 {
+            cut -= 1
+        }
+        return cut
+    }
+
+    private static func decode(_ bytes: Data.SubSequence, dropCR: Bool) -> String? {
+        let trimmed = dropCR && bytes.last == 0x0D ? bytes.dropLast() : bytes
         guard !trimmed.isEmpty else { return nil }
         // Invalid bytes become U+FFFD; the line still arrives.
         return String(decoding: trimmed, as: UTF8.self)

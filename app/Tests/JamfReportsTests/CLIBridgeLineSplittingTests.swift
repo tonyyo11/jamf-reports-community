@@ -78,6 +78,42 @@ final class CLIBridgeLineSplittingTests: XCTestCase {
         var splitter = UTF8LineSplitter()
         XCTAssertEqual(splitter.append(Data([0x61, 0xFF, 0x62, 0x0A])), ["a\u{FFFD}b"])
     }
+
+    func testSplitterEmitsANewlineFreeStreamInChunksWithoutLoss() {
+        let limit = UTF8LineSplitter.maxLineBytes
+        let total = 3 * limit
+        var splitter = UTF8LineSplitter()
+        var emitted: [String] = []
+        let block = Data(repeating: 0x78, count: 64 * 1024)
+        var sent = 0
+        while sent < total {
+            emitted += splitter.append(block)
+            sent += block.count
+        }
+        emitted += splitter.finish()
+        XCTAssertEqual(emitted.map(\.utf8.count).reduce(0, +), sent)
+        XCTAssertTrue(emitted.allSatisfy { $0.utf8.count <= limit })
+        XCTAssertGreaterThanOrEqual(emitted.count, 3)
+    }
+
+    func testSplitterChunkingNeverSplitsACharacterOrLosesBytes() {
+        let limit = UTF8LineSplitter.maxLineBytes
+        // Three-byte characters, so the limit falls inside one.
+        let text = String(repeating: "\u{20AC}", count: limit / 3 * 2 + 5)
+        var splitter = UTF8LineSplitter()
+        var emitted = splitter.append(Data(text.utf8))
+        emitted += splitter.finish()
+        XCTAssertGreaterThan(emitted.count, 1)
+        XCTAssertFalse(emitted.contains { $0.contains("\u{FFFD}") })
+        XCTAssertEqual(emitted.joined(), text)
+    }
+
+    func testSplitterFindsNewlinesAcrossManySmallAppendsAfterAScan() {
+        var splitter = UTF8LineSplitter()
+        XCTAssertEqual(splitter.append(Data("ab".utf8)), [])
+        XCTAssertEqual(splitter.append(Data("cd".utf8)), [])
+        XCTAssertEqual(splitter.append(Data("ef\ngh\n".utf8)), ["abcdef", "gh"])
+    }
 }
 
 private final class LineSink: @unchecked Sendable {
