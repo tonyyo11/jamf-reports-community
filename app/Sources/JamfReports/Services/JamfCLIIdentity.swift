@@ -38,7 +38,7 @@ enum JamfCLIIdentity {
     // `/opt/homebrew/bin/` is user-writable; a post-onboarding swap would
     // receive credentials. The cache below lets us re-verify cheaply on
     // every spawn, short-circuiting when the binary's fingerprint (resolved
-    // path, size, mtime, inode) matches a previously-verified entry.
+    // path, size, mtime, ctime, inode) matches a previously-verified entry.
 
     /// Errors surfaced by `ensureVerifiedJamfCLI`. Distinct cases let the
     /// caller emit a precise user-facing diagnostic and let post-mortem
@@ -48,20 +48,23 @@ enum JamfCLIIdentity {
         /// unsigned, the signature is invalid, or the Team ID does not
         /// match the pinned `expectedTeamID`.
         case untrusted(path: String, teamID: String)
-        /// `FileManager.attributesOfItem` failed — the file does not
-        /// exist, is unreadable, or has no size/mtime attributes.
+        /// `stat()` failed — the file does not exist or is unreadable.
         case probeFailed(path: String)
     }
 
     /// Fingerprint stored in the verified-binary cache. Keyed on the
-    /// symlink-resolved path, size, modification time and inode so any
-    /// rewrite (homebrew upgrade, malicious swap, even a same-content
+    /// symlink-resolved path, size, modification time, change time and inode
+    /// so any rewrite (homebrew upgrade, malicious swap, even a same-content
     /// `touch`) invalidates the cached approval. A restored mtime does not
-    /// hide a replaced file: the replacement is a different inode.
+    /// hide a replaced file (the replacement is a different inode) or an
+    /// in-place overwrite followed by `utimes` (ctime cannot be set from
+    /// userland, and every write, `utimes` or `chmod` moves it; a `chmod`
+    /// therefore costs one extra verify, nothing more).
     struct Fingerprint: Hashable {
         let path: String
         let size: Int64
-        let mtime: TimeInterval
+        let mtimeNanos: Int64
+        let ctimeNanos: Int64
         let inode: UInt64
     }
 
@@ -75,7 +78,7 @@ enum JamfCLIIdentity {
     /// uses `CodeSignVerifier.verify(url:expectedTeamID:)`.
     ///
     /// Cache contract: a successful verify inserts the binary's
-    /// `(resolved path, size, mtime, inode)` fingerprint into a
+    /// `(resolved path, size, mtime, ctime, inode)` fingerprint into a
     /// process-local set. The next call with the same fingerprint
     /// short-circuits. A binary swap (different size or inode) or a
     /// homebrew upgrade (different mtime) produces a different
@@ -129,26 +132,20 @@ enum JamfCLIIdentity {
     // MARK: - Cache primitives
 
     private static func makeFingerprint(executable: URL) -> Fingerprint? {
-        // attributesOfItem on a symlink describes the link, not its target.
+        // stat() follows the symlink, but the path is resolved first so the fingerprint names
+        // the file it describes. One stat() call supplies every field, so they describe one file.
         let resolved = executable.resolvingSymlinksInPath().path
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: resolved) else {
-            return nil
-        }
-        let size: Int64
-        if let n = attrs[.size] as? Int64 {
-            size = n
-        } else if let n = attrs[.size] as? NSNumber {
-            size = n.int64Value
-        } else {
-            return nil
-        }
-        guard let mtime = attrs[.modificationDate] as? Date,
-              let inode = (attrs[.systemFileNumber] as? NSNumber)?.uint64Value else {
-            return nil
-        }
+        var info = stat()
+        guard stat(resolved, &info) == 0 else { return nil }
         return Fingerprint(
-            path: resolved, size: size,
-            mtime: mtime.timeIntervalSinceReferenceDate, inode: inode)
+            path: resolved, size: Int64(info.st_size),
+            mtimeNanos: nanos(info.st_mtimespec),
+            ctimeNanos: nanos(info.st_ctimespec),
+            inode: UInt64(info.st_ino))
+    }
+
+    private static func nanos(_ time: timespec) -> Int64 {
+        Int64(time.tv_sec) * 1_000_000_000 + Int64(time.tv_nsec)
     }
 
     private static func cacheContains(_ fp: Fingerprint) -> Bool {
