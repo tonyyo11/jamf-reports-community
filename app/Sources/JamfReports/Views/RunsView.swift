@@ -237,9 +237,7 @@ struct RunsView: View {
                     Image(systemName: "terminal").foregroundStyle(Theme.Colors.gold).font(.system(size: 13))
                         .accessibilityHidden(true)
                     if let run = selectedRun {
-                        Mono(text: run.logURL.path.replacingOccurrences(
-                            of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"
-                        ).replacingOccurrences(of: DemoData.placeholderHome.path, with: "~"),
+                        Mono(text: Self.displayPath(run.logURL.path),
                              size: 12, color: Theme.Colors.fg2)
                     } else {
                         Mono(text: "Select a run to view its log", size: 12, color: Theme.Text.tertiary(contrast))
@@ -453,6 +451,20 @@ struct RunsView: View {
                 }
             }
         }
+    }
+
+    /// `path` with a leading home folder (this Mac's, or the demo's placeholder) written as `~`.
+    /// Anchored: only a whole leading component counts, so `/Volumes/x/Users/demonstrator`
+    /// is left alone.
+    static func displayPath(
+        _ path: String,
+        homes: [String] = [FileManager.default.homeDirectoryForCurrentUser.path,
+                           DemoData.placeholderHome.path]
+    ) -> String {
+        for home in homes where path == home || path.hasPrefix(home + "/") {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
     }
 
     /// Render a log file URL as the redacted plain-text payload an export

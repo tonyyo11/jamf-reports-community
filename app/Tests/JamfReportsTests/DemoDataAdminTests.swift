@@ -174,4 +174,17 @@ final class DemoDataAdminTests: XCTestCase {
             XCTAssertGreaterThan(expiry, DemoData.referenceDate)
         }
     }
+
+    /// Only a whole leading folder becomes `~`; a path that merely contains the name does not.
+    func testLogPathLabelAnchorsTheHomeSubstitution() {
+        let homes = ["/Users/alyoung", "/Users/demo"]
+        XCTAssertEqual(RunsView.displayPath("/Users/demo/Jamf-Reports/a.log", homes: homes),
+                       "~/Jamf-Reports/a.log")
+        XCTAssertEqual(RunsView.displayPath("/Users/alyoung/x.log", homes: homes), "~/x.log")
+        XCTAssertEqual(RunsView.displayPath("/Users/demo", homes: homes), "~")
+        XCTAssertEqual(RunsView.displayPath("/Volumes/x/Users/demonstrator/a.log", homes: homes),
+                       "/Volumes/x/Users/demonstrator/a.log")
+        XCTAssertEqual(RunsView.displayPath("/Users/demonstrator/a.log", homes: homes),
+                       "/Users/demonstrator/a.log")
+    }
 }
