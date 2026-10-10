@@ -283,6 +283,25 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(out.contains("Install Firefox policy"))
     }
 
+    /// A seeded "Main" once turned "Maintenance" into "org-xxxxtenance". Matching stays
+    /// case-sensitive, as before.
+    func testSeededLiteralsMatchWholeWordsOnly() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"{"building": "Main", "computerName": "Mac-0042"}"#
+            .write(to: dir.appendingPathComponent("a.json"), atomically: true, encoding: .utf8)
+        let r = DiagnosticRedactor()
+        XCTAssertEqual(r.seedFromWorkspace(dir), 2)
+
+        let out = r.redactText("Maintenance window; Main building; main; Mac-0042x; (Mac-0042)")
+        XCTAssertTrue(out.contains("Maintenance window"), "got: \(out)")
+        XCTAssertFalse(out.contains("Main building"), "got: \(out)")
+        XCTAssertTrue(out.contains("org-"), "got: \(out)")
+        XCTAssertTrue(out.contains("; main;"), "case-sensitive match kept: \(out)")
+        XCTAssertTrue(out.contains("Mac-0042x"), "got: \(out)")
+        XCTAssertFalse(out.contains("(Mac-0042)"), "got: \(out)")
+    }
+
     func testSeedingHonorsMinLengthFloor() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

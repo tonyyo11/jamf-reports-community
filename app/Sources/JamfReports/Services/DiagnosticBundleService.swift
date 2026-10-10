@@ -267,8 +267,10 @@ final class DiagnosticRedactor {
         var chunks: [NSRegularExpression] = []
         for start in stride(from: 0, to: literals.count, by: Self.seedChunkSize) {
             let chunk = literals[start..<min(start + Self.seedChunkSize, literals.count)]
-            let pattern = chunk.map { NSRegularExpression.escapedPattern(for: $0) }
+            // Whole-word only: seeding "Main" must not cut into "Maintenance".
+            let alternation = chunk.map { NSRegularExpression.escapedPattern(for: $0) }
                 .joined(separator: "|")
+            let pattern = "(?<![A-Za-z0-9])(?:\(alternation))(?![A-Za-z0-9])"
             do {
                 let regex = try NSRegularExpression(pattern: pattern)
                 chunks.append(regex)
