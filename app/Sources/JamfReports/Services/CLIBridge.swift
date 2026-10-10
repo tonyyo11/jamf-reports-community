@@ -262,28 +262,28 @@ final class CLIBridge {
                 process.standardOutput = stdout
                 process.standardError = stderr
 
+                // One reader per pipe: a read can end mid-character or mid-line, and a
+                // pipe's handler is never called concurrently with itself.
+                let stdoutLines = PipeLineReader()
+                let stderrLines = PipeLineReader()
                 stdout.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
+                    let lines = data.isEmpty ? stdoutLines.finish() : stdoutLines.lines(from: data)
+                    for line in lines {
+                        onLine(.init(timestamp: Date(), level: LogLevel.from(line: line), text: line))
+                    }
                     if data.isEmpty {
                         handle.readabilityHandler = nil
                         completion.markStdoutEOF()
-                        return
-                    }
-                    guard let s = String(data: data, encoding: .utf8) else { return }
-                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
                     }
                 }
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
+                    let lines = data.isEmpty ? stderrLines.finish() : stderrLines.lines(from: data)
+                    for line in lines { onLine(Self.stderrLine(line)) }
                     if data.isEmpty {
                         handle.readabilityHandler = nil
                         completion.markStderrEOF()
-                        return
-                    }
-                    guard let s = String(data: data, encoding: .utf8) else { return }
-                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(Self.stderrLine(String(line)))
                     }
                 }
 
@@ -446,19 +446,19 @@ final class CLIBridge {
                     // messages from jamf-cli arrive on stderr and are streamed below.
                     box.append(data)
                 }
+                // A marker `StderrSignalWatcher` reads can straddle two reads, so lines are
+                // rebuilt from bytes; the handler is never called concurrently with itself.
+                let stderrLines = PipeLineReader()
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
+                    let lines = data.isEmpty ? stderrLines.finish() : stderrLines.lines(from: data)
+                    for line in lines { onLine(Self.stderrLine(line)) }
                     if data.isEmpty {
-                        // EOF: every stderr line has been through onLine. Clearing the
-                        // handler here, not in terminationHandler, is what lets a line
-                        // still in the pipe at exit arrive.
+                        // EOF: every stderr line, an unterminated last one included, has been
+                        // through onLine. Clearing the handler here, not in terminationHandler,
+                        // is what lets a line still in the pipe at exit arrive.
                         handle.readabilityHandler = nil
                         completion.markStderrEOF()
-                        return
-                    }
-                    guard let s = String(data: data, encoding: .utf8) else { return }
-                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(Self.stderrLine(String(line)))
                     }
                 }
 
