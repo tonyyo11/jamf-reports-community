@@ -821,17 +821,19 @@ enum DiagnosticBundleService {
     /// entry) when no profile is configured, the binary is absent, or the run
     /// fails — a diagnostic bundle should never fail on its own optional probe.
     static func collectDoctor(
-        cliProfile: String, into staging: URL, redactor: DiagnosticRedactor?
+        cliProfile: String, into staging: URL, redactor: DiagnosticRedactor?,
+        binary: URL? = ExecutableLocator.locate("jamf-cli")
     ) -> [ManifestEntry] {
         guard !cliProfile.isEmpty, ProfileService.isValid(cliProfile) else { return [] }
-        guard let binary = ExecutableLocator.locate("jamf-cli") else { return [] }
+        guard let binary else { return [] }
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return []
         }
-        let result = runProcess(
-            binary.path, ["-p", cliProfile, "doctor", "--output", "json"], timeout: 15)
-        guard result.code == 0, let data = result.stdout.data(using: .utf8) else { return [] }
-        return stageDoctorJSON(data, into: staging, redactor: redactor)
+        // The probe drains both pipes while the child runs; nil is a launch failure or timeout.
+        guard let result = JamfCLIProbe.run(
+            executable: binary, arguments: ["-p", cliProfile, "doctor", "--output", "json"],
+            timeout: 15), result.exitCode == 0 else { return [] }
+        return stageDoctorJSON(result.stdout, into: staging, redactor: redactor)
     }
 
     /// Pure: parse `doctor` JSON, redact it, and write `doctor.json`. Split from
@@ -966,11 +968,12 @@ enum DiagnosticBundleService {
         }
     }
 
-    private static func jamfCLIVersion() -> String {
-        // Use the same locator every CLIBridge spawn uses so we get the canonical
-        // binary (handles Homebrew cellar symlinks, custom PATH installs, etc.)
-        // rather than hard-coded paths that may miss the actual installation.
-        guard let binary = ExecutableLocator.locate("jamf-cli") else {
+    // The default is the locator every CLIBridge spawn uses, so the canonical binary is
+    // found (Homebrew cellar symlinks, custom PATH installs) rather than a hard-coded path.
+    static func jamfCLIVersion(
+        binary: URL? = ExecutableLocator.locate("jamf-cli")
+    ) -> String {
+        guard let binary else {
             return "not installed"
         }
         // Apply the codesign gate before running the binary, mirroring
@@ -980,9 +983,13 @@ enum DiagnosticBundleService {
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return "unavailable (codesign gate rejected binary)"
         }
-        let result = runProcess(binary.path, ["--version"], timeout: 10)
-        guard result.code == 0 else { return "unavailable (exit \(result.code))" }
-        let text = result.stdout.isEmpty ? result.stderr : result.stdout
+        guard let result = JamfCLIProbe.run(
+            executable: binary, arguments: ["--version"], timeout: 10) else {
+            return "unavailable (did not run)"
+        }
+        guard result.exitCode == 0 else { return "unavailable (exit \(result.exitCode))" }
+        let out = String(decoding: result.stdout, as: UTF8.self)
+        let text = out.isEmpty ? String(decoding: result.stderr, as: UTF8.self) : out
         if let first = text.split(separator: "\n").first {
             return first.trimmingCharacters(in: .whitespaces)
         }

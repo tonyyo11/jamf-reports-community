@@ -582,6 +582,53 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(entries.isEmpty)
     }
 
+    /// A stand-in for jamf-cli, not named `jamf-cli` (the codesign gate keys on that name).
+    /// It writes more to stderr than a pipe holds before it writes stdout, which wedged the
+    /// old read-stdout-first spawn until its watchdog fired.
+    private func makeNoisyStub(stdout: String) throws -> (dir: URL, binary: URL) {
+        let dir = try makeTempDir()
+        let binary = dir.appendingPathComponent("stub-cli")
+        try """
+            #!/bin/sh
+            /usr/bin/head -c 300000 /dev/zero 1>&2
+            /bin/echo '\(stdout)'
+            """.write(to: binary, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        return (dir, binary)
+    }
+
+    func testCollectDoctorDrainsStderrWhileReadingStdout() throws {
+        let stub = try makeNoisyStub(stdout: #"{"server": "acme.jamfcloud.com"}"#)
+        defer { try? FileManager.default.removeItem(at: stub.dir) }
+        let staging = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: staging) }
+
+        let started = Date()
+        let entries = DiagnosticBundleService.collectDoctor(
+            cliProfile: "Acme", into: staging, redactor: DiagnosticRedactor(),
+            binary: stub.binary)
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8, "probe wedged on stderr")
+        XCTAssertEqual(entries.count, 1)
+        let doctor = try String(
+            contentsOf: staging.appendingPathComponent("doctor.json"), encoding: .utf8)
+        XCTAssertFalse(doctor.contains("acme.jamfcloud.com"))
+    }
+
+    func testJamfCLIVersionDrainsStderrWhileReadingStdout() throws {
+        let stub = try makeNoisyStub(stdout: "jamf-cli version 1.33.0")
+        defer { try? FileManager.default.removeItem(at: stub.dir) }
+        let started = Date()
+        let version = DiagnosticBundleService.jamfCLIVersion(binary: stub.binary)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8, "probe wedged on stderr")
+        XCTAssertEqual(version, "jamf-cli version 1.33.0")
+    }
+
+    func testJamfCLIVersionWithoutABinaryReadsNotInstalled() {
+        XCTAssertEqual(DiagnosticBundleService.jamfCLIVersion(binary: nil), "not installed")
+    }
+
     func testLogLookbackExcludesOldFiles() throws {
         let workspace = try makeWorkspace()
         defer { try? FileManager.default.removeItem(at: workspace.root) }
