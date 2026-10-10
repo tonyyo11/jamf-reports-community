@@ -13,7 +13,7 @@ versions in this repository map to git tags.
   the Mac can read them. Reports fall back to the workspace folder and the run log says why.
 - Output folders under /tmp are refused like /Users/Shared and ~/Public.
 - On a shared workspace, each Mac now remembers the report, archive and data folders, the
-  absolute-path opt-in, the retention switch and mode, and the webhook host it was set up with.
+  absolute-path opt-in, the retention switch, mode and archive folder, and the webhook host it was set up with.
   If another Mac changes one in the shared config.yaml, background runs and the command-line
   tool on this Mac keep to safe values until you confirm it in Config Doctor: reports go to the
   workspace's Generated Reports folder, retention archives instead of deleting, and no webhook is

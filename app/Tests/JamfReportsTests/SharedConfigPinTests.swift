@@ -38,7 +38,8 @@ final class SharedConfigPinTests: XCTestCase {
 
     private func writeConfig(
         shared: Bool = true, outputDir: String = "", allowAbsolute: Bool = false,
-        retentionMode: String = "archive", webhook: String = "https://hooks.example.com/a"
+        retentionMode: String = "archive", retentionArchiveDir: String = "",
+        webhook: String = "https://hooks.example.com/a"
     ) throws {
         let body = """
         shared_workspace:
@@ -50,6 +51,7 @@ final class SharedConfigPinTests: XCTestCase {
           enabled: true
           mode: \(retentionMode)
           snapshot_keep_days: 30
+          archive_dir: "\(retentionArchiveDir)"
         notify:
           enabled: true
           url: "\(webhook)"
@@ -104,14 +106,17 @@ final class SharedConfigPinTests: XCTestCase {
     func testDiffNamesEachChangedKeyInConfigYamlSpelling() {
         let base = SharedConfigPin(
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",
-            retentionEnabled: true, retentionMode: "archive", notifyURLHost: "a.example.com")
+            retentionEnabled: true, retentionMode: "archive", retentionArchiveDir: "",
+            notifyURLHost: "a.example.com")
         var changed = base
         changed.outputDir = "/Volumes/x"
         changed.retentionMode = "delete"
+        changed.retentionArchiveDir = "/Volumes/y"
         changed.notifyURLHost = "b.example.com"
         let drifts = SharedConfigPin.diff(pinned: base, current: changed)
-        XCTAssertEqual(drifts.map(\.key.rawValue),
-                       ["output.output_dir", "retention.mode", "notify.url"])
+        XCTAssertEqual(drifts.map(\.key.rawValue), [
+            "output.output_dir", "retention.mode", "retention.archive_dir", "notify.url",
+        ])
         XCTAssertEqual(drifts[1].pinned, "archive")
         XCTAssertEqual(drifts[1].current, "delete")
         XCTAssertTrue(SharedConfigPin.diff(pinned: base, current: base).isEmpty)
@@ -128,6 +133,28 @@ final class SharedConfigPinTests: XCTestCase {
         let safe = SharedConfigPin.effectiveRetention(config.retention, check: result)
         XCTAssertEqual(safe?.resolvedMode, .archive)
         XCTAssertEqual(safe?.isEnabled, true)
+    }
+
+    func testChangedRetentionArchiveDirReadsAsTheDefaultAndWarnsOnce() throws {
+        try writeConfig(retentionArchiveDir: "old-archive")
+        _ = check()
+        try writeConfig(retentionArchiveDir: "peer-archive")
+        let lines = LineBox()
+        let result = SharedConfigPin.checkpoint(
+            profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+        XCTAssertEqual(lines.all, [
+            "[warn] shared config changed retention.archive_dir: "
+                + "confirm on this Mac (Config Doctor)",
+        ])
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        XCTAssertEqual(config.retention?.resolvedArchiveDir, "peer-archive")
+        let safe = SharedConfigPin.effectiveRetention(config.retention, check: result)
+        XCTAssertEqual(safe?.resolvedArchiveDir, "")
+        let root = SnapshotRetentionService.resolvedArchiveRoot(config: safe, workspace: workspace)
+        XCTAssertEqual(root.lastPathComponent, "_archive")
+
+        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
     }
 
     func testChangedWebhookHostBlocksTheSendButAChangedPathDoesNot() throws {

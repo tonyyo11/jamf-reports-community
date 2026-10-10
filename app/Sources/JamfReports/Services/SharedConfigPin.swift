@@ -18,6 +18,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var dataDir: String
     var retentionEnabled: Bool
     var retentionMode: String
+    var retentionArchiveDir: String
     /// Host only. The webhook URL itself is a credential and never leaves config.yaml.
     var notifyURLHost: String
 
@@ -29,6 +30,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case dataDir = "jamf_cli.data_dir"
         case retentionEnabled = "retention.enabled"
         case retentionMode = "retention.mode"
+        case retentionArchiveDir = "retention.archive_dir"
         case notifyURL = "notify.url"
 
         fileprivate func text(of pin: SharedConfigPin) -> String {
@@ -39,6 +41,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .dataDir: pin.dataDir
             case .retentionEnabled: String(pin.retentionEnabled)
             case .retentionMode: pin.retentionMode
+            case .retentionArchiveDir: pin.retentionArchiveDir
             case .notifyURL: pin.notifyURLHost
             }
         }
@@ -51,6 +54,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .dataDir: pin.dataDir = source.dataDir
             case .retentionEnabled: pin.retentionEnabled = source.retentionEnabled
             case .retentionMode: pin.retentionMode = source.retentionMode
+            case .retentionArchiveDir: pin.retentionArchiveDir = source.retentionArchiveDir
             case .notifyURL: pin.notifyURLHost = source.notifyURLHost
             }
         }
@@ -97,6 +101,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             dataDir: path("jamf_cli", "data_dir"),
             retentionEnabled: (raw("retention", "enabled") as? Bool) ?? false,
             retentionMode: RetentionConfig.Mode(rawValue: mode)?.rawValue ?? "archive",
+            retentionArchiveDir: path("retention", "archive_dir"),
             notifyURLHost: URL(string: typedURL)?.host?.lowercased() ?? ""
         )
     }
@@ -190,11 +195,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     // MARK: - Effective values
 
     /// `retention` with the drifted keys put back to a safe value: a changed mode archives,
-    /// never deletes, and a changed `enabled` keeps the pinned setting.
+    /// never deletes, a changed `enabled` keeps the pinned setting, and a changed
+    /// `archive_dir` reads as the default `_archive` in the workspace.
     static func effectiveRetention(_ config: RetentionConfig?, check: Check) -> RetentionConfig? {
         guard var safe = config, let pinned = check.pinned else { return config }
         if check.isDrifted(.retentionMode) { safe.mode = RetentionConfig.Mode.archive.rawValue }
         if check.isDrifted(.retentionEnabled) { safe.enabled = pinned.retentionEnabled }
+        if check.isDrifted(.retentionArchiveDir) { safe.archiveDir = nil }
         return safe
     }
 

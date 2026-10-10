@@ -226,7 +226,7 @@ see — each with what to do about it.
 pins what matters.** On a shared workspace (a sync-provider or `/Volumes` folder, or
 `shared_workspace.enabled: true`), every Mac reads the same `config.yaml`, and three things in
 it decide where data goes: the report, archive and data folders with
-`output.allow_absolute_paths`, the retention switch and `retention.mode` (archive or delete),
+`output.allow_absolute_paths`, the retention switch, `retention.mode` (archive or delete) and `retention.archive_dir`,
 and the host of the `notify.url` webhook. Each Mac records the values it was set up with in its
 own Application Support folder (the webhook host only, never the URL) and compares them with
 `config.yaml` at the start of every collect and report. If a value changed, a scheduled run, the
@@ -237,8 +237,8 @@ run log gets one `[warn] shared config changed <key>` line per key, and the run 
 successful. To accept the change, open Audit, then Config Doctor, read the "Shared config changed
 since this Mac pinned it" row, which lists each key with its pinned and current value, and click
 Confirm. Saving the output folders or the notification settings in the app on that Mac also
-confirms just those keys. A local workspace is never pinned. `retention.archive_dir` is not
-pinned yet.
+confirms just those keys. A local workspace is never pinned. A changed `retention.archive_dir` reads
+as the default `_archive` folder in the workspace.
 
 **`config.yaml` retention settings are honored when synced.** The `retention.mode` setting
 (archive or delete) and `retention.snapshot_keep_days` are read from `config.yaml` at
