@@ -380,7 +380,7 @@ enum WorkspacePaths {
         return ["no", "off", "0"].contains(word) ? false : nil
     }
 
-    private static func expandTilde(_ value: String) -> String {
+    static func expandTilde(_ value: String) -> String {
         guard value.hasPrefix("~") else { return value }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         if value == "~" { return home }

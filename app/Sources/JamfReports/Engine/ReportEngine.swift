@@ -2798,8 +2798,7 @@ struct ReportEngine: Sendable {
             from: workspace.appendingPathComponent("config.yaml")
         )
         let shared = config?.sharedWorkspace ?? SharedWorkspaceConfig()
-        let synced = CloudStorage.provider(for: workspace) != nil
-        guard shared.isEnabled(workspaceIsSynced: synced) else {
+        guard SharedWorkspace.isEffectivelyShared(workspace: workspace, config: shared) else {
             return .proceed(idle, notes: [])
         }
 

@@ -36,6 +36,14 @@ enum SharedWorkspace {
         return String(raw.unicodeScalars.filter { !disallowed.contains($0) })
     }
 
+    /// Whether `workspace` is shared with other Macs: `shared_workspace.enabled` when set,
+    /// else true for a sync-provider or `/Volumes` path. The one definition behind
+    /// `ReportEngine.coordinationGate` and `SharedConfigPin`.
+    static func isEffectivelyShared(workspace: URL, config: SharedWorkspaceConfig?) -> Bool {
+        (config ?? SharedWorkspaceConfig())
+            .isEnabled(workspaceIsSynced: CloudStorage.provider(for: workspace) != nil)
+    }
+
     // MARK: - Host identity
 
     /// Identifies the machine that wrote something. Hostnames alone are not
