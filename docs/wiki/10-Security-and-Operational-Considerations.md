@@ -376,7 +376,7 @@ the one that isn't running. One headless tick therefore evaluates *every* schedu
 machine and sends each profile's overdue schedules to that profile's own `notify:` webhook.
 A fleet-wide schedule (managed automation for all profiles) goes to every configured
 webhook. A profile with no usable webhook gets a warning in the run log and its schedules
-are never posted to another profile's channel. Excluded profiles are omitted. Each
+are never posted to another profile's channel. Profiles that share one webhook URL get a single card. Excluded profiles are omitted. Each
 workspace sends at most one digest a day.
 
 - **`notify.detail: minimal`** reduces every card to event facts only — counts and

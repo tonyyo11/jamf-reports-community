@@ -139,13 +139,12 @@ func notifyOverdueSchedulesHeadless(
 
     let marker = DayMarker(name: "overdue-notify")
     let today = SummaryJSONParser.dateFormatter.string(from: Date())
-    let workspaces = notifyWorkspaces(in: profiles.filter { !excluded.contains($0) })
-    let targets = workspaces.map { entry in
-        OverdueDigestRouting.Target(
-            profile: entry.profile, notify: entry.notify,
-            sentToday: marker.lastStampedDay(in: entry.workspace) == today)
+    let runProfiles = profiles.filter { !excluded.contains($0) }
+    let targets = notifyTargets(in: runProfiles) {
+        marker.lastStampedDay(in: $0) == today
     }
-    let routing = OverdueDigestRouting.route(overdue: overdue, targets: targets)
+    let routing = OverdueDigestRouting.route(
+        overdue: overdue, targets: targets, runProfiles: runProfiles)
 
     if !routing.undeliverable.isEmpty {
         // A real overdue condition with no webhook to carry it = silence.
@@ -160,32 +159,32 @@ func notifyOverdueSchedulesHeadless(
     }
 
     for batch in routing.batches {
-        guard let entry = workspaces.first(where: { $0.profile == batch.profile }) else { continue }
         // Reuse the GUI's fact builder so the two paths emit byte-identical cards
         // (and honor notify.detail minimal/full the same way).
         let facts = WorkspaceStore.overdueFacts(
-            detail: entry.notify.resolvedDetail, profile: batch.profile, overdue: batch.issues
+            detail: batch.notify.resolvedDetail, profile: batch.profiles.joined(separator: ", "),
+            overdue: batch.issues
         )
         let count = batch.issues.count
         let sent = await WebhookNotifier.sendFailed(
-            config: entry.notify,
+            config: batch.notify,
             title: "Scheduled run overdue — \(count) schedule" + (count == 1 ? "" : "s"),
             facts: facts
         )
         guard sent else { continue }
         // Stamp only on a successful send so a transient webhook failure retries next run.
-        marker.stamp(day: today, in: entry.workspace)
-        print("[info] overdue schedule digest posted headlessly for \(batch.profile) "
-            + "(\(count) overdue)")
+        for target in batch.targets { marker.stamp(day: today, in: target.workspace) }
+        print("[info] overdue schedule digest posted headlessly for "
+            + "\(batch.profiles.joined(separator: ", ")) (\(count) overdue)")
     }
 }
 
-/// Each profile in `profiles` whose `config.yaml` `notify:` block is usable, with
-/// its notify config and workspace URL, in discovery order. Best-effort per
-/// profile — an unreadable/undecodable config is left out.
-private func notifyWorkspaces(
-    in profiles: [String]
-) -> [(profile: String, notify: NotifyConfig, workspace: URL)] {
+/// A target for each profile in `profiles` whose `config.yaml` `notify:` block is
+/// usable, in discovery order. Best-effort per profile — an unreadable or
+/// undecodable config is left out.
+private func notifyTargets(
+    in profiles: [String], sentToday: (URL) -> Bool
+) -> [OverdueDigestRouting.Target] {
     profiles.compactMap { profile in
         guard ProfileService.isValid(profile),
               let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
@@ -193,7 +192,9 @@ private func notifyWorkspaces(
         guard FileManager.default.fileExists(atPath: url.path),
               let config = try? ConfigLoader.load(from: url),
               let notify = config.notify, notify.isUsable else { return nil }
-        return (profile, notify, workspace)
+        return OverdueDigestRouting.Target(
+            profile: profile, notify: notify, workspace: workspace,
+            sentToday: sentToday(workspace))
     }
 }
 

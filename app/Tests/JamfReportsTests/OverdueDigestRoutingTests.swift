@@ -2,12 +2,11 @@ import XCTest
 @testable import JamfReports
 
 /// Pure routing of the headless overdue digest: each profile's issues go to that
-/// profile's own webhook, fleet-wide issues to every usable one, and nothing is
-/// cross-posted to a channel that belongs to another profile.
+/// profile's own webhook, fleet-wide issues to every usable one, profiles that
+/// share a webhook get one card, and nothing is cross-posted.
 final class OverdueDigestRoutingTests: XCTestCase {
-    private func notify(_ url: String?, enabled: Bool = true) -> NotifyConfig {
-        NotifyConfig(enabled: enabled, provider: "teams", url: url, detail: nil)
-    }
+    private let alpha = "https://hooks.example/alpha"
+    private let beta = "https://hooks.example/beta"
 
     private func issue(_ label: String, profile: String, isMulti: Bool = false)
         -> AutomationHealthIssue {
@@ -17,28 +16,24 @@ final class OverdueDigestRoutingTests: XCTestCase {
     }
 
     private func target(
-        _ profile: String, url: String?, sentToday: Bool = false
+        _ profile: String, url: String, detail: String? = nil, sentToday: Bool = false
     ) -> OverdueDigestRouting.Target {
-        .init(profile: profile, notify: url.map { notify($0) }, sentToday: sentToday)
+        .init(
+            profile: profile,
+            notify: NotifyConfig(enabled: true, provider: "teams", url: url, detail: detail),
+            workspace: URL(fileURLWithPath: "/tmp/ws-\(profile)"), sentToday: sentToday)
     }
 
-    private let alpha = "https://hooks.example/alpha"
-    private let beta = "https://hooks.example/beta"
-
     func testEachProfileGetsOnlyItsOwnIssuesAndFleetWideReachesBoth() {
-        let issues = [
-            issue("a-run", profile: "alpha"),
-            issue("b-run", profile: "beta"),
-            issue("c-run", profile: "gamma"),
-            issue("fleet", profile: "", isMulti: true),
-        ]
         let routing = OverdueDigestRouting.route(
-            overdue: issues,
-            targets: [
-                target("alpha", url: alpha), target("beta", url: beta),
-                target("gamma", url: nil),
-            ])
-        XCTAssertEqual(routing.batches.map(\.profile), ["alpha", "beta"])
+            overdue: [
+                issue("a-run", profile: "alpha"), issue("b-run", profile: "beta"),
+                issue("c-run", profile: "gamma"),
+                issue("fleet", profile: "", isMulti: true),
+            ],
+            targets: [target("alpha", url: alpha), target("beta", url: beta)],
+            runProfiles: ["alpha", "beta", "gamma"])
+        XCTAssertEqual(routing.batches.map(\.profiles), [["alpha"], ["beta"]])
         XCTAssertEqual(routing.batches[0].issues.map(\.label), ["a-run", "fleet"])
         XCTAssertEqual(routing.batches[1].issues.map(\.label), ["b-run", "fleet"])
         XCTAssertEqual(routing.undeliverable.map(\.label), ["c-run"])
@@ -47,21 +42,10 @@ final class OverdueDigestRoutingTests: XCTestCase {
     func testNoWebhookProfileIssuesAreNeverCrossPosted() {
         let routing = OverdueDigestRouting.route(
             overdue: [issue("c-run", profile: "gamma")],
-            targets: [target("alpha", url: alpha), target("gamma", url: nil)])
+            targets: [target("alpha", url: alpha)],
+            runProfiles: ["alpha", "gamma"])
         XCTAssertTrue(routing.batches.isEmpty)
         XCTAssertEqual(routing.undeliverable.map(\.label), ["c-run"])
-    }
-
-    func testUnusableNotifyBlockCountsAsNoWebhook() {
-        let off = OverdueDigestRouting.Target(
-            profile: "alpha", notify: notify(alpha, enabled: false), sentToday: false)
-        let http = OverdueDigestRouting.Target(
-            profile: "beta", notify: notify("http://insecure.example"), sentToday: false)
-        let routing = OverdueDigestRouting.route(
-            overdue: [issue("a", profile: "alpha"), issue("b", profile: "beta")],
-            targets: [off, http])
-        XCTAssertTrue(routing.batches.isEmpty)
-        XCTAssertEqual(routing.undeliverable.map(\.label), ["a", "b"])
     }
 
     func testProfileAlreadyStampedTodayIsExcludedAndNotReported() {
@@ -70,16 +54,19 @@ final class OverdueDigestRoutingTests: XCTestCase {
                 issue("a-run", profile: "alpha"), issue("b-run", profile: "beta"),
                 issue("fleet", profile: "", isMulti: true),
             ],
-            targets: [target("alpha", url: alpha, sentToday: true), target("beta", url: beta)])
-        XCTAssertEqual(routing.batches.map(\.profile), ["beta"])
+            targets: [
+                target("alpha", url: alpha, sentToday: true), target("beta", url: beta),
+            ],
+            runProfiles: ["alpha", "beta"])
+        XCTAssertEqual(routing.batches.map(\.profiles), [["beta"]])
         XCTAssertEqual(routing.batches[0].issues.map(\.label), ["b-run", "fleet"])
         XCTAssertTrue(routing.undeliverable.isEmpty)
     }
 
-    func testZeroUsableWebhooksYieldsNoBatchesAndReportsEverything() {
+    func testZeroUsableWebhooksYieldsNoBatchesAndReportsEverythingInScope() {
         let routing = OverdueDigestRouting.route(
             overdue: [issue("a", profile: "alpha"), issue("fleet", profile: "", isMulti: true)],
-            targets: [target("alpha", url: nil), target("beta", url: nil)])
+            targets: [], runProfiles: ["alpha", "beta"])
         XCTAssertTrue(routing.batches.isEmpty)
         XCTAssertEqual(routing.undeliverable.map(\.label), ["a", "fleet"])
     }
@@ -87,15 +74,52 @@ final class OverdueDigestRoutingTests: XCTestCase {
     func testProfileWithOnlyFleetWideIssuesStillGetsABatch() {
         let routing = OverdueDigestRouting.route(
             overdue: [issue("fleet", profile: "", isMulti: true)],
-            targets: [target("alpha", url: alpha), target("beta", url: beta)])
-        XCTAssertEqual(routing.batches.map(\.profile), ["alpha", "beta"])
+            targets: [target("alpha", url: alpha), target("beta", url: beta)],
+            runProfiles: ["alpha", "beta"])
+        XCTAssertEqual(routing.batches.map(\.profiles), [["alpha"], ["beta"]])
         XCTAssertTrue(routing.undeliverable.isEmpty)
     }
 
     func testProfileWithNoIssuesGetsNoBatch() {
         let routing = OverdueDigestRouting.route(
             overdue: [issue("a-run", profile: "alpha")],
-            targets: [target("alpha", url: alpha), target("beta", url: beta)])
-        XCTAssertEqual(routing.batches.map(\.profile), ["alpha"])
+            targets: [target("alpha", url: alpha), target("beta", url: beta)],
+            runProfiles: ["alpha", "beta"])
+        XCTAssertEqual(routing.batches.map(\.profiles), [["alpha"]])
+    }
+
+    func testIssueForProfileOutsideTheRunIsNeitherRoutedNorReported() {
+        let routing = OverdueDigestRouting.route(
+            overdue: [issue("o-run", profile: "other"), issue("a-run", profile: "alpha")],
+            targets: [target("alpha", url: alpha)],
+            runProfiles: ["alpha"])
+        XCTAssertEqual(routing.batches.count, 1)
+        XCTAssertEqual(routing.batches[0].issues.map(\.label), ["a-run"])
+        XCTAssertTrue(routing.undeliverable.isEmpty)
+    }
+
+    func testProfilesSharingAWebhookGetOneCardWithTheUnion() {
+        let routing = OverdueDigestRouting.route(
+            overdue: [
+                issue("a-run", profile: "alpha"), issue("b-run", profile: "beta"),
+                issue("fleet", profile: "", isMulti: true),
+            ],
+            targets: [target("alpha", url: alpha), target("beta", url: alpha)],
+            runProfiles: ["alpha", "beta"])
+        XCTAssertEqual(routing.batches.count, 1)
+        XCTAssertEqual(routing.batches[0].issues.map(\.label), ["a-run", "b-run", "fleet"])
+        XCTAssertEqual(routing.batches[0].targets.map(\.profile), ["alpha", "beta"])
+        XCTAssertEqual(routing.batches[0].profiles.joined(separator: ", "), "alpha, beta")
+    }
+
+    func testSharedWebhookGroupUsesMinimalIfAnyMemberAsksForIt() {
+        let routing = OverdueDigestRouting.route(
+            overdue: [issue("a-run", profile: "alpha"), issue("b-run", profile: "beta")],
+            targets: [
+                target("alpha", url: alpha, detail: "full"),
+                target("beta", url: alpha, detail: "minimal"),
+            ],
+            runProfiles: ["alpha", "beta"])
+        XCTAssertEqual(routing.batches[0].notify.resolvedDetail, .minimal)
     }
 }
