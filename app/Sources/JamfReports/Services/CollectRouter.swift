@@ -125,6 +125,9 @@ enum CollectRouter {
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
         }
+        // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
+        // collect reads them, for Jamf Pro, Protect and Jamf School alike.
+        SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
         let detected = ProfileProductType.detect(from: config)
         switch detected.type {
         case .jamfSchool:

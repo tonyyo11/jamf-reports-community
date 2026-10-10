@@ -1898,10 +1898,6 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.invalidProfile(profile)
         }
 
-        // Shared workspace: say which pinned config.yaml keys changed on this Mac before
-        // anything below reads them (retention and the folders).
-        SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
-
         // Snapshot retention (v2.2.0): config-driven, OFF by default, once per
         // calendar day. Placed before the early-return guard so it runs on any
         // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its

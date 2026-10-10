@@ -399,17 +399,33 @@ final class SharedConfigPinTests: XCTestCase {
             "_archive/jamf-cli-data/computers/\(old.lastPathComponent)").path))
     }
 
-    func testCollectLogsTheDriftBeforeAnythingElse() async throws {
-        try writeConfig()
-        _ = check()
-        try writeConfig(retentionMode: "delete")
-        let lines = LineBox()
-        _ = try? await ReportEngine.collect(
-            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
-            force: true, locateJamfCLI: { nil }, onLine: { lines.add($0.text) })
-        XCTAssertEqual(
-            lines.all.first,
-            "[warn] shared config changed retention.mode: confirm on this Mac (Config Doctor)")
+    func testEveryCollectRouteLogsTheDriftFirst() async throws {
+        for school in [false, true] {
+            try writeConfig()
+            try? fileManager.removeItem(
+                at: SharedConfigPin.storeURL(profile: profile, appSupport: appSupport))
+            _ = check()
+            try writeConfig(retentionMode: school ? "archive" : "delete",
+                            retentionArchiveDir: school ? "peer" : "")
+            if school {
+                let url = workspace.appendingPathComponent("config.yaml")
+                try (String(contentsOf: url, encoding: .utf8) + "\nschool_cli:\n  enabled: true\n")
+                    .write(to: url, atomically: true, encoding: .utf8)
+            }
+            let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+            let lines = LineBox()
+            try await CollectRouter.run(
+                profile: profile, config: config,
+                proCollect: { _, _, _, _, _, _ in .collected },
+                schoolCollect: { _, _, _ in },
+                onLine: { lines.add($0.text) })
+            XCTAssertEqual(
+                lines.all.first,
+                "[warn] shared config changed "
+                    + (school ? "retention.archive_dir" : "retention.mode")
+                    + ": confirm on this Mac (Config Doctor)",
+                school ? "Jamf School route" : "Jamf Pro route")
+        }
     }
 
     // MARK: - Config Doctor and confirming
