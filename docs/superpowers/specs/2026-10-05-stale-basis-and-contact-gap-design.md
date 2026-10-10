@@ -14,17 +14,18 @@ Two changes built on the three dates Jamf Pro keeps for a Mac:
 2. **Contact gap**: a Mac whose Last Contact is current while its check-in or inventory lags far
    behind needs a person to look at it. Last Contact moving while Last Check-in does not is the
    signature of a Mac MDM reaches but whose Jamf binary is broken, removed or blocked (the
-   owner's KB-043 pattern, inverted: MDM works, the binary is silent).
+   inverse of the familiar broken-MDM-but-binary-alive case: MDM works, the binary is silent).
 
-## What is true today (prod `computers` snapshot, 2026-10-05, 664 Macs, aggregates only)
+## What is true today (a production `computers` snapshot, 2026-10-05, aggregates only)
 
-- All 664 carry `lastCheckIn` and `reportDate`; 560 carry `lastContact`. The 104 without it all
-  have a check-in older than 30 days: they have not contacted Jamf Pro since it began recording
-  Last Contact.
-- Older than 30 days: check-in 128 (127 in whole days, jamf-cli's `days_since_contact`),
-  inventory 135, either one 135.
-- Contact within 7 days but check-in more than 14 days behind it: 1 Mac. Contact within 7 days,
-  check-in current, inventory more than 14 days behind: 6 Macs.
+- Every Mac carries `lastCheckIn` and `reportDate`; about one in six has no `lastContact`, and
+  every one of those has a check-in older than 30 days: they have not contacted Jamf Pro since it
+  began recording Last Contact.
+- Older than 30 days: the inventory-based count is a few percent above the check-in-based one
+  (jamf-cli's `days_since_contact` is a whole-day count, one lower at the boundary), and the
+  union equals the inventory count.
+- Contact within 7 days but check-in more than 14 days behind it: a handful of Macs. Contact
+  within 7 days, check-in current, inventory more than 14 days behind: a handful more.
 - Stale today (PR #247): last check-in more than `thresholds.stale_device_days` days ago, through
   `DeviceComplianceRow.isStale(atDays:)` (device-compliance `days_since_contact`) and
   `DeviceInventoryRecord.isStale(atDays:)`.
@@ -102,7 +103,7 @@ A Mac without Last Contact is left out (not flagged). Surfaces:
 
 ## Decisions (settled 2026-10-05)
 
-1. `stale_basis` default `[check_in]`; the owner's workspace sets `[check_in, inventory]`.
+1. `stale_basis` default `[check_in]`; an organization that also counts inventory sets `[check_in, inventory]`.
 2. Stale when ANY listed date is older; a missing Last Contact is unknown, not stale.
 3. Contact gap: lag measured from Last Contact, default 14 days, only for Macs current by Last
    Contact.
