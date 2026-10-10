@@ -302,6 +302,19 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertFalse(out.contains("(Mac-0042)"), "got: \(out)")
     }
 
+    func testIPv4AddressesInFreeTextArePlaceholdered() {
+        let r = DiagnosticRedactor()
+        let out = r.redactText(
+            "client 10.20.30.40 and https://192.168.1.5:8443/api; jamf-cli v1.2.3.4; "
+            + "version 1.33.0; 999.1.1.1; 10.20.30.400; 1.2.3.4.5")
+        XCTAssertFalse(out.contains("10.20.30.40 "), "got: \(out)")
+        XCTAssertFalse(out.contains("192.168.1.5"), "got: \(out)")
+        XCTAssertTrue(out.contains("https://ip-"), "got: \(out)")
+        for kept in ["v1.2.3.4", "version 1.33.0", "999.1.1.1", "10.20.30.400", "1.2.3.4.5"] {
+            XCTAssertTrue(out.contains(kept), "\(kept) changed: \(out)")
+        }
+    }
+
     func testSeedingHonorsMinLengthFloor() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -57,6 +57,7 @@ final class DiagnosticRedactor {
     private let emailRE: NSRegularExpression
     private let serialRE: NSRegularExpression
     private let homePathRE: NSRegularExpression
+    private let ipv4RE: NSRegularExpression
 
     /// Literals per compiled alternation. Not a cap: a category with more is split across
     /// several regexes, since a cap dropped the shortest literals from redaction.
@@ -120,6 +121,10 @@ final class DiagnosticRedactor {
             #"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"#)
         self.serialRE = Self.mustCompile(#"\b[B-DF-HJ-NP-TV-Z0-9]{10,12}\b"#)
         self.homePathRE = Self.mustCompile(#"(/Users/)([A-Za-z0-9._-]+)"#)
+        // The lookarounds keep a version such as `v1.2.3.4` or `1.2.3.4.5` out of the match.
+        self.ipv4RE = Self.mustCompile(
+            #"(?<![\w.\-])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"#
+            + #"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w\-]|\.\d)"#)
     }
 
     // MARK: - Public API
@@ -155,6 +160,8 @@ final class DiagnosticRedactor {
                 self.placeholder("host", g[0] ?? "")
             }
         }
+        // `ip` has no keep-flag, like the key-based rule and the seeded literals.
+        out = replaceMatches(ipv4RE, in: out) { g in self.placeholder("ip", g[0] ?? "") }
         if redactEmails {
             out = replaceMatches(emailRE, in: out) { g in self.placeholder("email", g[0] ?? "") }
         }
