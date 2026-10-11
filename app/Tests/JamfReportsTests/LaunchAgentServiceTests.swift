@@ -57,6 +57,23 @@ final class LaunchAgentServiceTests: XCTestCase {
         XCTAssertEqual(schedule?.next, "—")
     }
 
+    /// `--profiles` with no usable name is still a list scope: reading it as "all" would run
+    /// the schedule against every profile.
+    func testParseMultiWithOnlyInvalidProfileNamesIsListScopedNotAll() throws {
+        let plistURL = try writePlist([
+            "Label": "\(prefix).multi.bad-list",
+            "ProgramArguments": [
+                "/usr/local/bin/jamf-cli", "multi", "--profiles", " ,\u{7}x", "--", "pro", "collect",
+            ],
+            "StartCalendarInterval": ["Hour": 6, "Minute": 0],
+            "Disabled": false,
+        ])
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
+
+        XCTAssertEqual(parsed.multiTarget?.scope, .list([]))
+    }
+
     func testParseJRCMultiLaunchAgentPreservesModeAndTarget() throws {
         let label = "\(prefix).multi.full-automation"
         let plistURL = try writePlist([
