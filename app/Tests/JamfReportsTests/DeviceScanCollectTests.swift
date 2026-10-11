@@ -40,7 +40,8 @@ final class DeviceScanCollectTests: XCTestCase {
 
     /// Writes `answers/<name>` files and a stub that maps argv to them:
     ///   classic-computer-history get <id>   → answers/hist-<id>
-    ///     (exit = first line of answers/hist-<id>.exit if present)
+    ///     (exit = first line of answers/hist-<id>.exit if present; an answers/<name>.sleep file
+    ///      makes any call sleep until it is stopped)
     ///   … status-items <mgmt>               → answers/ddm-<mgmt>  (same exit rule; either
     ///                                          resource spelling — see statusItemsArguments)
     ///   … --scan-failures (both matrix kinds) → answers/matrix, only when it or
@@ -53,7 +54,7 @@ final class DeviceScanCollectTests: XCTestCase {
         #!/bin/sh
         A="\(answers.path)"
         printf '%s\\n' "$*" >> "$A/calls.log"
-        emit() { f="$A/$1"; if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
+        emit() { f="$A/$1"; [ -f "$f.sleep" ] && exec sleep 30; if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
                  [ -f "$f.err" ] && cat "$f.err" >&2; [ -f "$f" ] && cat "$f"; exit "$code"; }
         case "$*" in
           *" classic-computer-history get "*) id=$(echo "$*" | sed -E 's/.*classic-computer-history get ([^ ]+).*/\\1/'); emit "hist-$id" ;;
@@ -132,14 +133,16 @@ final class DeviceScanCollectTests: XCTestCase {
     private func runScan(
         force: Bool = true, skipExpensive: Bool = false,
         probe: @escaping ReportEngine.AuthConfirmationProbe =
-            ReportEngine.defaultAuthConfirmationProbe
+            ReportEngine.defaultAuthConfirmationProbe,
+        deviceLimits: ReportEngine.DeviceCallLimits = ReportEngine.DeviceCallLimits()
     ) async throws -> [String] {
         let stub = try makeStub()
         let collector = LogTextCollector()
         try await ReportEngine.collect(
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.scan], skipExpensive: skipExpensive, force: force,
-            authConfirmationProbe: probe, locateJamfCLI: { stub }, onLine: collector.append)
+            authConfirmationProbe: probe, locateJamfCLI: { stub },
+            deviceLimits: deviceLimits, onLine: collector.append)
         return collector.texts
     }
 
@@ -242,6 +245,38 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertEqual(
             store.lastFailureExitCode(for: "mdm-command-health"), CLIBridge.exitCodeRateLimited
         )
+    }
+
+    /// A server that never answers costs the limit on every device; three timed-out calls in a
+    /// row stop the call type, recorded with the timeout's code so it stays retryable.
+    func testThreeTimedOutCallsInARowStopTheCallType() async throws {
+        let ids = (1...20).map { String($0) }
+        try writeComputers(ids.map { ($0, "Mac\($0)", "m\($0)", false) })
+        for id in ids {
+            try answer("hist-\(id)", cleanHistory)
+            try "".write(to: answers.appendingPathComponent("hist-\(id).sleep"),
+                         atomically: true, encoding: .utf8)
+        }
+
+        let lines = try await runScan(
+            deviceLimits: .init(timeout: 1, stopAfterTimeouts: 3))
+
+        let calls = ids.reduce(0) { $0 + historyCalls(for: $1) }
+        XCTAssertGreaterThanOrEqual(calls, 3)
+        XCTAssertLessThan(calls, 10, "the call type must stop, not time out on all 20 devices")
+        XCTAssertTrue(
+            lines.contains {
+                $0.contains("stopped mdm-command-health: 3 calls in a row timed out after 1 s")
+            }, "\(lines)")
+        XCTAssertTrue(
+            lines.contains { $0.hasPrefix("[partial] mdm-command-health: stopped after repeated") },
+            "the partial line must say timeouts, not exit -2: \(lines)")
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "mdm-command-health"), CLIBridge.exitCodeTimedOut)
+        XCTAssertFalse(WorkspaceStore.lastFailureRepeatsOnRetry("mdm-command-health", in: store),
+                       "a timeout stop is retried by the next run")
     }
 
     // MARK: - Cadence floor (a failed attempt still counts as an attempt)

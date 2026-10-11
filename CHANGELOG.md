@@ -80,6 +80,30 @@ versions in this repository map to git tags.
   token.
 - When a Generate run's refresh fails, the message now says how to generate from the cached
   snapshots instead.
+- Looking up a device no longer waits for ever on a jamf-cli that never answers: it stops after
+  three minutes and shows the cached copy.
+- A jamf-cli process left running by a command it started can no longer hold up version checks
+  and Homebrew steps after that command has finished.
+- Checking the jamf-cli version after an update or install no longer freezes the window.
+- A collect, the per-device scan or the sign-in check that gets no answer from jamf-cli is stopped
+  (after an hour for a report, three minutes for a device or a patch title, one minute for the
+  sign-in check) and logged as timed out, instead of holding the scheduled-run lock for hours.
+  The next run tries the report again.
+- The device scan and the patch release-date walk give up after three timeouts in a row instead
+  of timing out on every device or title. The automatic hourly retry leaves a report alone after
+  two timeouts in a row; Collect now still tries it.
+- A sign-in check that times out is no longer read as expired credentials. The run says the check
+  timed out and carries on.
+- Each report's collect time is logged, so the time limits can be judged against real runs.
+- A program that jamf-cli leaves running no longer holds a collect, a scan or a sign-in check open
+  after jamf-cli itself has finished.
+- The "a scheduled run is in progress" message no longer lingers when a run crashed and another
+  program reused its process number, or left a defunct process behind.
+- An old list- or filter-scoped multi-profile schedule found in ~/Library/LaunchAgents is no longer
+  imported as a schedule for every profile. The import skips it, the log names it, and you can
+  rebuild it in the app.
+- A patch snapshot with impossibly large device counts is skipped instead of crashing collects and
+  the Patch screen.
 - A refused output folder is reported once per run, not once for every file format.
 - An inventory CSV with more than 10,000 rows now says how many rows were left out.
 - The period report waits for a running refresh or report, as the other reports do.

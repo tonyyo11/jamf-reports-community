@@ -15,6 +15,13 @@ enum JamfCLIProbe {
         let stderr: Data
     }
 
+    /// How a run ended, for a caller that must tell a stopped child from one that never started.
+    enum Outcome: Sendable {
+        case completed(Output)
+        case timedOut
+        case launchFailed
+    }
+
     /// Seconds a probe gets, the same allowance as `ConnectionCheck`'s calls.
     static let defaultTimeout: TimeInterval = ConnectionCheck.timeout
 
@@ -26,6 +33,18 @@ enum JamfCLIProbe {
         arguments: [String],
         timeout: TimeInterval = defaultTimeout
     ) -> Output? {
+        guard case .completed(let output) = runOutcome(
+            executable: executable, arguments: arguments, timeout: timeout
+        ) else { return nil }
+        return output
+    }
+
+    /// `run` that says whether the child was stopped at `timeout` or never started.
+    static func runOutcome(
+        executable: URL,
+        arguments: [String],
+        timeout: TimeInterval = defaultTimeout
+    ) -> Outcome {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
@@ -47,7 +66,9 @@ enum JamfCLIProbe {
         do {
             try process.run()
         } catch {
-            return nil
+            let reason = error.localizedDescription
+            AppLogger.cli.error("JamfCLIProbe: launch failed: \(reason, privacy: .private)")
+            return .launchFailed
         }
         box.armTimeout(timeout)
 
@@ -66,12 +87,12 @@ enum JamfCLIProbe {
             AppLogger.cli.warning(
                 "JamfCLIProbe: \(name, privacy: .public) timed out at \(timeout, privacy: .public)s"
             )
-            return nil
+            return .timedOut
         }
-        return Output(
+        return .completed(Output(
             exitCode: process.terminationStatus,
             stdout: stdoutDrainer.finish(),
             stderr: stderrDrainer.finish()
-        )
+        ))
     }
 }

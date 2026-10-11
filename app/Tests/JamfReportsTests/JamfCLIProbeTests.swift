@@ -52,6 +52,23 @@ final class JamfCLIProbeTests: XCTestCase {
         XCTAssertLessThan(took, Self.slowBound)
     }
 
+    /// The install and update paths are main-actor statics; the version check must not block
+    /// them while a binary does not answer.
+    func testInstalledVersionOffMainLeavesTheMainActorFree() async throws {
+        let stub = try makeStub("exec sleep 30")
+        var ticks = 0
+        let ticker = Task {
+            while !Task.isCancelled {
+                ticks += 1
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        let version = await JamfCLIInstaller.installedVersionOffMain(at: stub, timeout: 2)
+        ticker.cancel()
+        XCTAssertNil(version)
+        XCTAssertGreaterThan(ticks, 5, "the main actor was blocked while the probe waited")
+    }
+
     func testSpecProVersionGivesUpOnAWedgedBinary() throws {
         let stub = try makeStub("exec sleep 30")
         var version: String?
@@ -78,6 +95,25 @@ final class JamfCLIProbeTests: XCTestCase {
         }
         XCTAssertNil(output)
         XCTAssertLessThan(took, 8)
+    }
+
+    /// The child answers and exits while a background process keeps the pipes open; the probe
+    /// returns the answer without waiting for that process.
+    func testProbeDoesNotWaitForAGrandchildAfterTheChildExits() throws {
+        let pidFile = dir.appendingPathComponent("grandchild.pid")
+        let stub = try makeStub("sleep 30 &\necho $! > '\(pidFile.path)'\necho answer")
+        defer {
+            if let text = try? String(contentsOf: pidFile, encoding: .utf8),
+               let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                kill(pid, SIGKILL)
+            }
+        }
+        var output: JamfCLIProbe.Output?
+        let took = elapsed {
+            output = JamfCLIProbe.run(executable: stub, arguments: [], timeout: 20)
+        }
+        XCTAssertEqual(output.map { String(decoding: $0.stdout, as: UTF8.self) }, "answer\n")
+        XCTAssertLessThan(took, 15)
     }
 
     func testProbeReturnsTheOutputOfAChildThatAnswers() throws {

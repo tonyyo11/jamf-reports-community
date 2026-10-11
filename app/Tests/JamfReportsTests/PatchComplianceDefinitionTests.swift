@@ -97,6 +97,20 @@ final class PatchComplianceDefinitionTests: XCTestCase {
                        accuracy: 0.0001)
     }
 
+    /// A planted snapshot with totals near Int.max used to trap the sum on every collect.
+    func testRowsWithCountsPastTheLimitAreSkippedNotSummed() throws {
+        let huge = [row("A", onLatest: 1, total: Int.max - 1),
+                    row("B", onLatest: 1, total: Int.max - 2)]
+        XCTAssertNil(PatchStatusService.fleetCompliancePct(huge))
+
+        let mixed = threeTitles + huge + [row("C", onLatest: Int.max, total: 50),
+                                          row("D", onLatest: 5, total: -3)]
+        XCTAssertEqual(try XCTUnwrap(PatchStatusService.fleetCompliancePct(mixed)),
+                       Self.weighted, accuracy: 0.0001)
+        let counts = try XCTUnwrap(PatchStatusService.fleetComplianceCounts(mixed))
+        XCTAssertEqual(counts.devices, 610)
+    }
+
     // MARK: - The summary writer
 
     private func writeSummary(patchRows: [[String: Any]]) throws -> (DailySummary, URL) {
@@ -266,6 +280,20 @@ final class PatchComplianceDefinitionTests: XCTestCase {
             try sheetValue(dash, sheet: "Patch Summary Dashboard",
                            labelPrefix: "Fleet Compliance (devices on latest)"),
             "\u{2014}")
+    }
+
+    /// The sheet rescales each title through Double; a total near Int.max trapped the Int
+    /// conversion before such a row was skipped.
+    func testPatchSummaryDashboardSkipsAPlantedSnapshotWithHugeTotals() throws {
+        let dash = try summaryDashboard(patchRows: threeTitleSnapshotRows + [
+            GoldenFleetWorkspace.patchRow(id: "9", title: "A", onLatest: 1, total: Int.max - 1),
+            GoldenFleetWorkspace.patchRow(id: "10", title: "B", onLatest: 1, total: Int.max - 2),
+        ])
+
+        XCTAssertEqual(
+            try sheetValue(dash, sheet: "Patch Summary Dashboard",
+                           labelPrefix: "Fleet Compliance (devices on latest)"),
+            "78.7%")
     }
 
     func testExecutiveSummaryRowReadsTheSameFigure() throws {

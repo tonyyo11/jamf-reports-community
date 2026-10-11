@@ -351,6 +351,16 @@ final class JamfCLIInstaller {
         }.value
     }
 
+    /// `installedVersion(at:)` off the main actor: it blocks for up to `timeout` on a wedged
+    /// binary, and the install and update paths are main-actor statics.
+    nonisolated static func installedVersionOffMain(
+        at binary: URL, timeout: TimeInterval = JamfCLIProbe.defaultTimeout
+    ) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            installedVersion(at: binary, timeout: timeout)
+        }.value
+    }
+
     func checkForUpdate() async -> UpdateResult {
         guard let installation = await Self.probeInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
@@ -539,7 +549,8 @@ final class JamfCLIInstaller {
             )
         }
 
-        let version = installedVersion(at: URL(fileURLWithPath: installation.path)) ?? "unknown"
+        let version = await installedVersionOffMain(at: URL(fileURLWithPath: installation.path))
+            ?? "unknown"
         return UpdateResult(succeeded: true, message: "Homebrew jamf-cli is updated to \(version).")
     }
 
@@ -663,7 +674,7 @@ final class JamfCLIInstaller {
             try ensureParentDirectoryExists(for: target)
             try replaceDirectBinary(at: target, with: unpackedBinary)
 
-            let version = installedVersion(at: target) ?? release.tagName
+            let version = await installedVersionOffMain(at: target) ?? release.tagName
             return UpdateResult(
                 succeeded: true,
                 message: "jamf-cli \(version) installed at \(target.path)."

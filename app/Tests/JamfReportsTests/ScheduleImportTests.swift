@@ -5,12 +5,14 @@ final class ScheduleImportTests: XCTestCase {
 
     private let prefix = LaunchAgentWriter.labelPrefix
 
-    private func schedule(_ label: String, profile: String, multi: Bool = false) -> Schedule {
+    private func schedule(
+        _ label: String, profile: String, multi: Bool = false, scope: MultiTarget.Scope = .all
+    ) -> Schedule {
         Schedule(
             name: label.components(separatedBy: ".").last ?? label, profile: profile,
             schedule: "Daily 06:20", cadence: "custom", mode: .jamfCLIFull, next: "—",
             last: "—", lastStatus: .ok, artifacts: [], enabled: true, launchAgentLabel: label,
-            multiTarget: multi ? MultiTarget(scope: .all) : nil)
+            multiTarget: multi ? MultiTarget(scope: scope) : nil)
     }
 
     func testPlanImportsHandBuiltSkipsManagedReportsUnparseable() {
@@ -25,6 +27,42 @@ final class ScheduleImportTests: XCTestCase {
         XCTAssertEqual(result.unparseable, ["broken.plist"])
         XCTAssertEqual(result.imported.first?.profile, "alpha")
         XCTAssertEqual(result.imported.last?.allProfiles, true)
+    }
+
+    /// The store holds only "all profiles", so importing a list-scoped plist would run it
+    /// against every profile.
+    func testPlanRefusesAListScopedLegacyMulti() {
+        let listed = schedule(
+            "\(prefix).multi.some", profile: "", multi: true, scope: .list(["alpha", "beta"]))
+        let result = ScheduleImport.plan(installed: [listed], unparseable: [])
+        XCTAssertTrue(result.imported.isEmpty)
+        XCTAssertEqual(result.refused.map(\.label), ["\(prefix).multi.some"])
+        XCTAssertTrue(result.refused.first?.reason.contains("list of profiles") == true)
+    }
+
+    func testPlanRefusesAFilterScopedLegacyMulti() {
+        let filtered = schedule(
+            "\(prefix).multi.prod", profile: "", multi: true, scope: .filter("prod*"))
+        let all = schedule("\(prefix).multi.fleet", profile: "", multi: true)
+        let result = ScheduleImport.plan(installed: [filtered, all], unparseable: [])
+        XCTAssertEqual(result.imported.map(\.label), ["\(prefix).multi.fleet"])
+        XCTAssertEqual(result.refused.map(\.label), ["\(prefix).multi.prod"])
+        XCTAssertTrue(result.refused.first?.reason.contains("filter") == true)
+    }
+
+    func testRunIfNeededLeavesARefusedScheduleOutOfTheStore() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        let store = ScheduleStore(url: dir.appendingPathComponent("schedules.json"))
+        let defaults = UserDefaults(suiteName: "ScheduleImportTests-\(UUID().uuidString)")!
+        let listed = schedule(
+            "\(prefix).multi.some", profile: "", multi: true, scope: .list(["alpha"]))
+        let result = ScheduleImport.runIfNeeded(
+            store: store, defaults: defaults, installed: { ([listed], []) })
+        XCTAssertEqual(result?.refused.count, 1)
+        XCTAssertTrue(store.load().isEmpty)
     }
 
     func testRunIfNeededImportsOnceAndSetsTheFlag() throws {

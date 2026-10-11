@@ -447,9 +447,9 @@ enum LaunchAgentService {
                         .split(separator: ",")
                         .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
                         .filter { ProfileService.isValid($0) }
-                    if !profiles.isEmpty {
-                        scope = .list(profiles)
-                    }
+                    // The flag decides the scope even when no name survives: falling back
+                    // to `.all` would widen a list-scoped schedule to every profile.
+                    scope = .list(profiles)
                     i += 1
                 }
             default:

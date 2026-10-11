@@ -138,9 +138,9 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
         private var _callCount = 0
         private var _lastProfile: String?
         private var _lastBin: URL?
-        let result: Bool
+        let result: ReportEngine.AuthProbeResult
 
-        init(result: Bool) { self.result = result }
+        init(result: ReportEngine.AuthProbeResult) { self.result = result }
 
         var callCount: Int {
             lock.lock(); defer { lock.unlock() }
@@ -167,7 +167,7 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
             lock.unlock()
         }
 
-        func probe(profile: String, bin: URL) async -> Bool {
+        func probe(profile: String, bin: URL) async -> ReportEngine.AuthProbeResult {
             record(profile: profile, bin: bin)
             return result
         }
@@ -204,6 +204,16 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
         )
         XCTAssertEqual(decision, .confirmedDead(failedCount: 2))
         XCTAssertEqual(spy.callCount, 1)
+    }
+
+    /// A probe that timed out proves nothing: it is neither confirmed alive nor dead.
+    func testProbeThatTimesOut_isUnconfirmedNotDead() async {
+        let spy = AuthProbeSpy(result: .unconfirmed)
+        let decision = await ReportEngine.evaluateAuthDead(
+            outcomes: [outcome("patch-device-failures", 3)], savedKinds: [], profile: "dummy",
+            bin: testBin, probe: { profile, bin in await spy.probe(profile: profile, bin: bin) }
+        )
+        XCTAssertEqual(decision, .unconfirmed(warnedKinds: ["patch-device-failures"]))
     }
 
     /// A healthy run (at least one success) is never auth-dead — the probe must

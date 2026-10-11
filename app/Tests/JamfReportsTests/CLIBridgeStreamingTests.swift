@@ -115,6 +115,35 @@ final class CLIBridgeStreamingTests: XCTestCase {
         ["-c", "\(preamble)exec /bin/sleep 10"]
     }
 
+    /// The child answers and exits; a process it left running keeps both pipes open. The call
+    /// returns what was read once the grace after the exit has passed, without any timeout set.
+    func testAGrandchildHoldingThePipesDoesNotHoldTheCallAfterTheChildExits() async throws {
+        let pidFile = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Grandchild-\(UUID().uuidString).pid")
+        defer {
+            if let text = try? String(contentsOf: pidFile, encoding: .utf8),
+               let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                kill(pid, SIGKILL)
+            }
+            try? FileManager.default.removeItem(at: pidFile)
+        }
+        let collector = LineCollector()
+
+        let started = Date()
+        let (exit, data) = try await CLIBridge().runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf 'ANSWER'; printf 'warn\\n' 1>&2; "
+                + "sleep 30 & echo $! > '\(pidFile.path)'"],
+            onLine: { line in collector.append(line) }
+        )
+
+        XCTAssertEqual(exit, 0)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "ANSWER")
+        XCTAssertTrue(collector.snapshot().map(\.text).contains("warn"))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 15,
+                          "returned after the grace, not when the grandchild exits")
+    }
+
     func testTimeoutTerminatesTheChildAndReturnsTheTimedOutCode() async throws {
         let bridge = CLIBridge()
         let started = Date()
