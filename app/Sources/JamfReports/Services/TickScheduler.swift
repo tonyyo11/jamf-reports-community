@@ -170,6 +170,7 @@ final class TickLockHold: @unchecked Sendable {
         state.lock()
         defer { state.unlock() }
         guard fd >= 0 else { return }
+        _ = fremovexattr(fd, TickLock.startAttribute, 0)
         _ = ftruncate(fd, 0)
         close(fd)
         fd = -1
@@ -278,19 +279,38 @@ struct TickLock: Sendable {
     /// never writes, touches or locks. A pid of 1 or below is no holder: `kill(0, 0)` and
     /// `kill(-1, 0)` signal whole process groups and succeed, and pid 1 is launchd, so a lock
     /// file naming one would read as alive until its date went stale.
+    ///
+    /// When the holder recorded its start time (see `claim`), a pid that no longer exists or
+    /// started at another time is a reused pid, not the holder. A reading that cannot be taken
+    /// keeps today's answer, and so does a file with no record (written by 2.9.0).
     func isHeldByAnotherLiveProcess(
         pid: Int32 = getpid(),
-        isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM }
+        isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM },
+        startTime: (Int32) -> ProcessStartReading = TickLock.processStart
     ) -> Bool {
-        guard let holder = holder(), holder > 1 else { return false }
-        return holder != pid && isAlive(holder) && !isStale()
+        guard let holder = holder(), holder > 1, holder != pid else { return false }
+        guard !isReusedPid(holder, startTime: startTime) else { return false }
+        return isAlive(holder) && !isStale()
+    }
+
+    /// True when the holder recorded its start time and the process now at that pid is gone
+    /// or started at another time.
+    private func isReusedPid(_ holder: Int32, startTime: (Int32) -> ProcessStartReading) -> Bool {
+        guard let recorded = recordedStart(forHolder: holder) else { return false }
+        switch startTime(holder) {
+        case .noProcess: return true
+        case .started(let actual): return actual != recorded
+        case .unreadable: return false
+        }
     }
 
     /// Takes the kernel lock and records `pid` in the file. Never follows a symlink at `url`.
     /// `protect` sets the file's mode; its failure is logged, not fatal, since the pid is
-    /// already on disk and the hold must be released.
+    /// already on disk and the hold must be released. The holder's start time goes in an
+    /// extended attribute, not the text: 2.9.0 reads the whole file as a pid.
     func claim(
         pid: Int32 = getpid(),
+        startTime: (Int32) -> ProcessStartReading = TickLock.processStart,
         protect: (Int32) throws -> Void = {
             guard fchmod($0, 0o600) == 0 else {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
@@ -304,6 +324,7 @@ struct TickLock: Sendable {
             close(fd)
             return reason == EWOULDBLOCK ? .heldElsewhere : failed("locked", reason)
         }
+        recordStart(startTime(pid), pid: pid, fd: fd)
         // Written before the length is set, so a probe never reads an empty file in between.
         let bytes = Array(String(pid).utf8)
         guard pwrite(fd, bytes, bytes.count, 0) == bytes.count,
@@ -327,6 +348,71 @@ struct TickLock: Sendable {
         AppLogger.schedule.error(
             "tick lock could not be \(what, privacy: .public): \(reason, privacy: .public)")
         return .writeFailed
+    }
+
+    /// Name of the attribute that carries the holder's `"<pid> <sec> <usec>"` start time.
+    static let startAttribute = "com.github.tonyyo11.jamf-reports-community.tick-start"
+
+    /// When a process started, to tell a pid's holder from a later process that reused it.
+    struct ProcessStart: Equatable, Sendable {
+        let sec: Int
+        let usec: Int32
+    }
+
+    enum ProcessStartReading: Equatable, Sendable {
+        case started(ProcessStart)
+        /// The kernel has no process with that pid.
+        case noProcess
+        case unreadable
+    }
+
+    /// `kp_proc.p_starttime` from `sysctl(KERN_PROC_PID)`, which works on another user's
+    /// process without privilege; `proc_pidinfo` is private API and answers 0 on EPERM. A pid
+    /// with no process is a successful call that returns no bytes.
+    static func processStart(of pid: Int32) -> ProcessStartReading {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0) == 0 else {
+            return .unreadable
+        }
+        guard size > 0 else { return .noProcess }
+        return reading(of: info)
+    }
+
+    /// A zombie keeps its pid and start time until its parent reaps it but runs nothing, and
+    /// `kill(pid, 0)` still succeeds on it, so it is no holder.
+    static func reading(of info: kinfo_proc) -> ProcessStartReading {
+        if Int32(info.kp_proc.p_stat) == SZOMB { return .noProcess }
+        let started = info.kp_proc.p_starttime
+        return .started(ProcessStart(sec: Int(started.tv_sec), usec: Int32(started.tv_usec)))
+    }
+
+    /// Through the held descriptor, before the pid is written, so a probe that sees the new
+    /// pid sees its start time too. A reading that cannot be taken clears the attribute a
+    /// previous holder left; the probe then answers as it did before the attribute existed.
+    private func recordStart(_ reading: ProcessStartReading, pid: Int32, fd: Int32) {
+        guard case .started(let started) = reading else {
+            _ = fremovexattr(fd, Self.startAttribute, 0)
+            return
+        }
+        let value = Array("\(pid) \(started.sec) \(started.usec)".utf8)
+        if fsetxattr(fd, Self.startAttribute, value, value.count, 0, 0) != 0 {
+            _ = fremovexattr(fd, Self.startAttribute, 0)
+        }
+    }
+
+    /// The start time the file's holder recorded; nil when there is none or it names another
+    /// pid than the text does (a holder that does not record one rewrote the file).
+    private func recordedStart(forHolder holder: Int32) -> ProcessStart? {
+        var buffer = [UInt8](repeating: 0, count: 128)
+        let length = getxattr(
+            url.path, Self.startAttribute, &buffer, buffer.count, 0, XATTR_NOFOLLOW)
+        guard length > 0 else { return nil }
+        let parts = String(decoding: buffer[0..<length], as: UTF8.self).split(separator: " ")
+        guard parts.count == 3, Int32(parts[0]) == holder,
+              let sec = Int(parts[1]), let usec = Int32(parts[2]) else { return nil }
+        return ProcessStart(sec: sec, usec: usec)
     }
 
     /// The pid the file names; nil when there is no file or it holds no pid.

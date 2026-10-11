@@ -219,6 +219,122 @@ final class TickLockTests: XCTestCase {
         XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 7, isAlive: { _ in true }))
     }
 
+    // MARK: - A reused pid is not the holder
+
+    private let startedAt = TickLock.ProcessStart(sec: 1_700_000_000, usec: 250)
+
+    private func claimed(
+        _ lock: TickLock, pid: Int32, recording reading: TickLock.ProcessStartReading
+    ) throws -> TickLockHold {
+        guard case .acquired(let hold) = lock.claim(pid: pid, startTime: { _ in reading })
+        else { throw XCTSkip("the lock could not be claimed") }
+        return hold
+    }
+
+    func testHeldCheckIsFalseForADeadPidWithAStartTime() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try claimed(lock, pid: 4242, recording: .started(startedAt))
+        defer { hold.release() }
+        XCTAssertFalse(lock.isHeldByAnotherLiveProcess(
+            pid: 7, isAlive: { _ in true }, startTime: { _ in .noProcess }))
+    }
+
+    func testHeldCheckIsFalseForALivePidWhoseStartTimeDiffers() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try claimed(lock, pid: 4242, recording: .started(startedAt))
+        defer { hold.release() }
+        let later = TickLock.ProcessStart(sec: startedAt.sec + 90, usec: startedAt.usec)
+        XCTAssertFalse(lock.isHeldByAnotherLiveProcess(
+            pid: 7, isAlive: { _ in true }, startTime: { _ in .started(later) }))
+    }
+
+    func testHeldCheckIsTrueForALivePidWithTheRecordedStartTime() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try claimed(lock, pid: 4242, recording: .started(startedAt))
+        defer { hold.release() }
+        XCTAssertTrue(lock.isHeldByAnotherLiveProcess(
+            pid: 7, isAlive: { _ in true }, startTime: { _ in .started(startedAt) }))
+    }
+
+    /// A file written by 2.9.0 (or rewritten by it) carries no start time.
+    func testHeldCheckKeepsTodaysAnswerWithNoStartTime() throws {
+        let lock = TickLock(url: lockURL())
+        try Data("4242".utf8).write(to: lock.url)
+        let reused: (Int32) -> TickLock.ProcessStartReading = { _ in .noProcess }
+        XCTAssertTrue(lock.isHeldByAnotherLiveProcess(
+            pid: 7, isAlive: { _ in true }, startTime: reused))
+        XCTAssertFalse(lock.isHeldByAnotherLiveProcess(
+            pid: 7, isAlive: { _ in false }, startTime: reused))
+    }
+
+    func testHeldCheckIsHeldWhenTheStartTimeCannotBeRead() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try claimed(lock, pid: 4242, recording: .started(startedAt))
+        defer { hold.release() }
+        XCTAssertTrue(lock.isHeldByAnotherLiveProcess(
+            pid: 7, isAlive: { _ in true }, startTime: { _ in .unreadable }))
+    }
+
+    /// A 2.9.0 holder rewrites the pid but leaves the attribute of the holder before it.
+    func testAStartTimeRecordedForAnotherPidIsIgnored() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try claimed(lock, pid: 4242, recording: .started(startedAt))
+        defer { hold.release() }
+        try Data("5151".utf8).write(to: lock.url)
+        XCTAssertTrue(lock.isHeldByAnotherLiveProcess(
+            pid: 7, isAlive: { _ in true }, startTime: { _ in .noProcess }))
+    }
+
+    func testClaimKeepsTheFileTextAPidAndReleaseDropsTheStartTime() throws {
+        let lock = TickLock(url: lockURL())
+        let hold = try claimed(lock, pid: 4242, recording: .started(startedAt))
+        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "4242")
+        XCTAssertGreaterThan(getxattr(lock.url.path, TickLock.startAttribute, nil, 0, 0, 0), 0)
+        hold.release()
+        XCTAssertLessThan(getxattr(lock.url.path, TickLock.startAttribute, nil, 0, 0, 0), 0)
+    }
+
+    func testAClaimThatCannotReadItsStartTimeClearsAnEarlierRecord() throws {
+        let lock = TickLock(url: lockURL())
+        try claimed(lock, pid: 4242, recording: .started(startedAt)).release()
+        try claimed(lock, pid: 7, recording: .unreadable).release()
+        XCTAssertLessThan(getxattr(lock.url.path, TickLock.startAttribute, nil, 0, 0, 0), 0)
+    }
+
+    func testTheRealStartTimeOfThisProcessIsReadable() {
+        guard case .started(let first) = TickLock.processStart(of: getpid()) else {
+            return XCTFail("sysctl could not read this process")
+        }
+        XCTAssertEqual(TickLock.processStart(of: getpid()), .started(first))
+        XCTAssertEqual(TickLock.processStart(of: Int32.max - 1), .noProcess)
+    }
+
+    func testAZombieProcessIsNoProcess() {
+        var info = kinfo_proc()
+        info.kp_proc.p_starttime.tv_sec = 1_700_000_000
+        info.kp_proc.p_stat = CChar(SRUN)
+        XCTAssertEqual(
+            TickLock.reading(of: info),
+            .started(TickLock.ProcessStart(sec: 1_700_000_000, usec: 0)))
+        info.kp_proc.p_stat = CChar(SZOMB)
+        XCTAssertEqual(TickLock.reading(of: info), .noProcess)
+    }
+
+    /// A real zombie: spawned and left unreaped until the kernel reports it.
+    func testARealUnreapedChildReadsAsNoProcess() throws {
+        var pid: pid_t = 0
+        let argv: [UnsafeMutablePointer<CChar>?] = [strdup("true"), nil]
+        defer { argv.forEach { free($0) } }
+        XCTAssertEqual(posix_spawn(&pid, "/usr/bin/true", nil, nil, argv, nil), 0)
+        defer { var status: Int32 = 0; waitpid(pid, &status, 0) }
+        var reading = TickLock.processStart(of: pid)
+        for _ in 0..<100 where reading != .noProcess {
+            Thread.sleep(forTimeInterval: 0.05)
+            reading = TickLock.processStart(of: pid)
+        }
+        XCTAssertEqual(reading, .noProcess, "the exited, unreaped child is a zombie")
+    }
+
     // MARK: - Heartbeat
 
     private func modificationDate(of url: URL) throws -> Date {
