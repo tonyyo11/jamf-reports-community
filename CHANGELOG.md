@@ -49,7 +49,8 @@ versions in this repository map to git tags.
   with a length cap and a refusal if it looks like a token, and a run that returns no comment
   fails instead of passing quietly. The model's job holds a read-only token. The model also cannot read the
   runner's process environment or credential folders, and the checkout token is no longer left
-  on disk.
+  on disk. The model reads the issue's title and body from the triggering event and has no shell
+  at all: before this, it was never told which issue to read and could not fetch it.
 - HTML reports now carry a content-security policy of their own: no network requests, no
   frames, no web fonts and no `<base>`, with images only as embedded data. The embedded jamf-cli
   dashboard gets the same policy as the very first thing in its frame, so a page cannot slip
