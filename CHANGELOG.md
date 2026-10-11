@@ -9,6 +9,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The integrity note at the foot of an HTML report now says it is a check for damage or a partial
+  copy, not a signature, and points to the `[ok] sha256:` line in the run log as the copy kept
+  outside the file.
 - Documentation refresh: the threat model is updated to 2.9.0, the architecture notes match the
   current code, and the third-party notices now list swift-argument-parser and IBM Plex Mono.
 
@@ -41,12 +44,30 @@ versions in this repository map to git tags.
   dated more than a day ahead is ignored, a macOS version with only such releases scores as
   unknown rather than current, and a future-dated XProtect release gives older XProtect
   versions no grace period.
-- The issue-triage workflow can comment only on the issue that triggered it, cannot post a file
-  as the comment body, cannot read the runner's process environment, and no longer leaves the
-  checkout token on disk.
+- The issue-triage workflow no longer lets its model post anything: the model returns its
+  comment as text, and a separate job that runs no model posts it on the triggering issue only,
+  with a length cap and a refusal if it looks like a token, and a run that returns no comment
+  fails instead of passing quietly. The model's job holds a read-only token. The model also cannot read the
+  runner's process environment or credential folders, and the checkout token is no longer left
+  on disk.
+- HTML reports now carry a content-security policy of their own: no network requests, no
+  frames, no web fonts and no `<base>`, with images only as embedded data. The embedded jamf-cli
+  dashboard gets the same policy as the very first thing in its frame, so a page cannot slip
+  content ahead of it.
+- Copy in Backups > Diff now masks passwords, tokens, recovery keys and similar values in Raw
+  mode and when a diff cannot be read as a summary. The Raw view still shows the payload as
+  received and can be selected and copied on purpose.
+- Credentials are now masked in the text a scheduled run prints to the terminal (including its
+  error lines), in what the command-line tool prints from jamf-cli, in the
+  consolidated-report failure line and in the error in a failure notification, which also
+  drops the profile's tenant and environment IDs.
 
 ### Fixed
 
+- Microsoft Teams notifications no longer format or link text inside profile and schedule names:
+  Teams reads Markdown in cards, so names such as `**x**` or `[a](https://x)` are now escaped
+  (an underscore inside a word, as in `prod_east`, is left alone).
+  Slack notifications are unchanged.
 - Two scheduled runs can no longer start together, and a Mac that slept in the middle of a run no
   longer has that run taken over when it wakes.
 - A hung Homebrew or archive step during a jamf-cli install or update now times out with a message
