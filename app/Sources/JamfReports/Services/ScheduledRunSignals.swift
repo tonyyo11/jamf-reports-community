@@ -34,14 +34,15 @@ func successFacts(
 }
 
 /// Facts for a failure digest. `full` mode scrubs the error text through the
-/// strictest egress pipeline (credential patterns + full-PII incl. hostnames)
-/// before it enters a fact. `minimal` drops the error fact entirely, leaving
-/// Profile/Run/Status: Failed with no free text.
+/// strictest egress pipeline (credential patterns + full-PII incl. hostnames, and
+/// the profile's tenant and environment IDs) before it enters a fact. `minimal`
+/// drops the error fact entirely, leaving Profile/Run/Status: Failed with no free text.
 func failureFacts(
     detail: NotifyConfig.Detail,
     profile: String,
     mode: Schedule.RunMode,
-    errorDescription: String
+    errorDescription: String,
+    scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) }
 ) -> [WebhookNotifier.Fact] {
     var facts: [WebhookNotifier.Fact] = [
         .init(label: "Profile", value: profile),
@@ -49,7 +50,8 @@ func failureFacts(
         .init(label: "Status", value: "Failed"),
     ]
     guard detail == .full else { return facts }
-    let scrubbed = DiagnosticRedactor().redactText(LogRedactor.redact(errorDescription))
+    let scrubbed = LogRedactor.redactedForSharing(
+        errorDescription, profile: profile, scopeIDs: scopeIDs)
     facts.append(.init(label: "Error", value: scrubbed))
     return facts
 }
@@ -72,6 +74,14 @@ func alertFacts(
     var facts: [WebhookNotifier.Fact] = [.init(label: "Profile", value: profile)]
     facts.append(contentsOf: hits.map { .init(label: $0.metricLabel, value: $0.message) })
     return facts
+}
+
+/// What a headless run prints to stdout for `line`, or nil when the line stays in the run
+/// log only (info lines unless `verbose`). Redacted like the log, since a scheduler may
+/// capture stdout somewhere less protected.
+func scheduledRunEcho(_ line: CLIBridge.LogLine, verbose: Bool) -> String? {
+    guard verbose || line.level != .info else { return nil }
+    return LogRedactor.redact(line.text)
 }
 
 // MARK: - Scheduled-run trust signals (webhook digests + metric alerts)

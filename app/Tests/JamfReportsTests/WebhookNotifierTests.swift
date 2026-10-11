@@ -359,6 +359,21 @@ final class WebhookNotifierTests: XCTestCase {
                       "the hostname is replaced by a redaction placeholder")
     }
 
+    func testFailureFactsFullRedactsScopeIDs() {
+        // jamf-cli repeats the tenant/environment ID in "Environment not found" lines.
+        let id = "3f2b8c1e-5d4a-4e7b-9c10-a1b2c3d4e5f6"
+        let error = "[ENVIRONMENT_NOT_FOUND] Environment '\(id)' not found."
+        var asked: [String] = []
+        let full = failureFacts(
+            detail: .full, profile: "harbor", mode: .jamfCLIFull, errorDescription: error,
+            scopeIDs: { asked.append($0); return $0 == "harbor" ? [id.uppercased()] : [] }
+        )
+        XCTAssertEqual(asked, ["harbor"])
+        let value = full.first { $0.label == "Error" }?.value ?? ""
+        XCTAssertFalse(value.lowercased().contains("3f2b8c1e"), value)
+        XCTAssertTrue(value.contains("not found."), value)
+    }
+
     func testFailureFactsFullRedactsBearerTokenFromError() {
         let token = "Bearer abcdEFGH1234567890xyzTOKEN"
         let full = failureFacts(
