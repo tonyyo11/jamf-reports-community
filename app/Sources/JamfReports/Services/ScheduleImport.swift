@@ -89,8 +89,9 @@ enum ScheduleImport {
         for refusal in result.refused {
             AppLogger.schedule.warning(
                 """
-                import refused \(refusal.label, privacy: .public): \(refusal.reason, privacy: .public); \
-                the plist is left in place, rebuild the schedule in the app
+                import refused \(refusal.label, privacy: .public): \
+                \(refusal.reason, privacy: .public); the plist is left in place, \
+                rebuild the schedule in the app
                 """
             )
         }

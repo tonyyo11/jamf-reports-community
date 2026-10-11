@@ -96,7 +96,8 @@ struct FailureCause: Codable, Equatable, Sendable {
                 : "no benchmark in platform.compliance_benchmarks can be collected: "
                     + names.joined(separator: "; ")
         case .other:
-            exitCode == CLIBridge.exitCodeTimedOut ? "timed out and was stopped" : "exit \(exitCode)"
+            exitCode == CLIBridge.exitCodeTimedOut
+                ? "timed out and was stopped" : "exit \(exitCode)"
         }
     }
 

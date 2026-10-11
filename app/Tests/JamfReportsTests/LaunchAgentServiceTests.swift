@@ -63,7 +63,8 @@ final class LaunchAgentServiceTests: XCTestCase {
         let plistURL = try writePlist([
             "Label": "\(prefix).multi.bad-list",
             "ProgramArguments": [
-                "/usr/local/bin/jamf-cli", "multi", "--profiles", " ,\u{7}x", "--", "pro", "collect",
+                "/usr/local/bin/jamf-cli", "multi", "--profiles", " ,\u{7}x",
+                "--", "pro", "collect",
             ],
             "StartCalendarInterval": ["Hour": 6, "Minute": 0],
             "Disabled": false,
