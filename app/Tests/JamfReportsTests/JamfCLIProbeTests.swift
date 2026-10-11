@@ -52,6 +52,23 @@ final class JamfCLIProbeTests: XCTestCase {
         XCTAssertLessThan(took, Self.slowBound)
     }
 
+    /// The install and update paths are main-actor statics; the version check must not block
+    /// them while a binary does not answer.
+    func testInstalledVersionOffMainLeavesTheMainActorFree() async throws {
+        let stub = try makeStub("exec sleep 30")
+        var ticks = 0
+        let ticker = Task {
+            while !Task.isCancelled {
+                ticks += 1
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        let version = await JamfCLIInstaller.installedVersionOffMain(at: stub, timeout: 2)
+        ticker.cancel()
+        XCTAssertNil(version)
+        XCTAssertGreaterThan(ticks, 5, "the main actor was blocked while the probe waited")
+    }
+
     func testSpecProVersionGivesUpOnAWedgedBinary() throws {
         let stub = try makeStub("exec sleep 30")
         var version: String?
