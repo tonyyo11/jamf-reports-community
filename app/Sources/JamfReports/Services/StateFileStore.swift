@@ -120,6 +120,19 @@ struct StateFileStore: Sendable {
         return Int32(parts[2])
     }
 
+    /// How many failures in a row ended in `CLIBridge.exitCodeTimedOut`, newest included; 0 for
+    /// a kind whose last failure was anything else, and for a record that predates the count.
+    /// Kept in `<report>.timeouts`, beside the `.fail` file rather than in it: an older build
+    /// reads only the two- and three-field forms of `.fail` and would see a longer one as no
+    /// record at all.
+    func consecutiveTimeouts(for report: String) -> Int {
+        guard lastFailureExitCode(for: report) == CLIBridge.exitCodeTimedOut,
+              let text = try? String(contentsOf: timeoutsURL(for: report), encoding: .utf8),
+              let count = Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        else { return 0 }
+        return max(count, 0)
+    }
+
     /// Whitespace-split fields of `<report>.fail` when the record is
     /// structurally sound: a positive count, a parseable timestamp, and either
     /// the legacy two-field form or the three-field form carrying an exit code.
@@ -163,6 +176,24 @@ struct StateFileStore: Sendable {
             throw StateFileError.encodingFailed(report: report)
         }
         try atomicWrite(data: data, to: failureURL(for: report))
+        try recordTimeoutStreak(report: report, exitCode: exitCode)
+    }
+
+    /// Counts a timeout on top of the previous failure's streak; any other failure ends it.
+    private func recordTimeoutStreak(report: String, exitCode: Int32?) throws {
+        guard exitCode == CLIBridge.exitCodeTimedOut else {
+            try? FileManager.default.removeItem(at: timeoutsURL(for: report))
+            return
+        }
+        let next = readTimeoutStreak(report: report) + 1
+        try atomicWrite(data: Data(String(next).utf8), to: timeoutsURL(for: report))
+    }
+
+    /// The stored streak regardless of the `.fail` file, which this write has just replaced.
+    private func readTimeoutStreak(report: String) -> Int {
+        guard let text = try? String(contentsOf: timeoutsURL(for: report), encoding: .utf8)
+        else { return 0 }
+        return max(Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0, 0)
     }
 
     /// Drop the failure record and its cause for `report` — called on every success so the
@@ -170,6 +201,7 @@ struct StateFileStore: Sendable {
     func clearFailures(report: String) {
         try? FileManager.default.removeItem(at: failureURL(for: report))
         try? FileManager.default.removeItem(at: causeURL(for: report))
+        try? FileManager.default.removeItem(at: timeoutsURL(for: report))
     }
 
     /// The result of one collect attempt for a single report kind.
@@ -353,6 +385,11 @@ struct StateFileStore: Sendable {
     /// `.last` files — is unaffected by failure bookkeeping.
     private func failureURL(for report: String) -> URL {
         directory.appendingPathComponent("\(report).fail", isDirectory: false)
+    }
+
+    /// `<report>.timeouts`: the consecutive-timeout count (see `consecutiveTimeouts`).
+    private func timeoutsURL(for report: String) -> URL {
+        directory.appendingPathComponent("\(report).timeouts", isDirectory: false)
     }
 
     /// `<report>.cause.json`; outside the manifest, which hashes `.last` files only.

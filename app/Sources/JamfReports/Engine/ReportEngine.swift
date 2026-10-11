@@ -1559,8 +1559,28 @@ struct ReportEngine: Sendable {
     /// Deliberately excluded: 2 (usage — deterministic, a caller bug), 3 (401)
     /// and 5 (403) (credential/privilege state won't change in 3 seconds, and
     /// hammering an auth endpoint risks lockout), 4 (404 — the resource does
-    /// not exist), 7 (partial success, already saved).
+    /// not exist), 7 (partial success, already saved), and `exitCodeTimedOut`: a call that
+    /// stalled for the whole limit is not a blip, and a second wait would hold the tick lock
+    /// for another `collectKindTimeout`. The next run retries it like any other failed kind.
     static let retryableExitCodes: Set<Int32> = [1, CLIBridge.exitCodeRateLimited]
+
+    /// Seconds one collect kind's jamf-cli call gets before it is stopped and recorded failed
+    /// (`exitCodeTimedOut`). A stalled on-prem `ea-results --all` is slow but legitimate well
+    /// inside this; the limit only keeps a wedged call from holding the tick lock for good.
+    static let collectKindTimeout: TimeInterval = 60 * 60
+
+    /// Seconds one patch-definition call gets (one title; it makes a few requests).
+    static let patchDefinitionTimeout: TimeInterval = 180
+
+    /// Seconds the auth confirmation probe gets, the allowance of `ConnectionCheck`'s calls.
+    static let authProbeTimeout: TimeInterval = JamfCLIProbe.defaultTimeout
+
+    /// How a failed attempt's exit code reads in a log line.
+    static func exitText(_ code: Int32) -> String {
+        code == CLIBridge.exitCodeTimedOut
+            ? "timed out (jamf-cli did not answer and was stopped)"
+            : "exit \(code)"
+    }
 
     /// Delay before the single in-run retry. Long enough for a transient
     /// server-side blip to clear, short enough not to stretch a 30-kind
@@ -1814,26 +1834,45 @@ struct ReportEngine: Sendable {
     typealias AuthConfirmationProbe = @Sendable (
         _ profile: String,
         _ bin: URL
-    ) async -> Bool
+    ) async -> AuthProbeResult
+
+    /// What the confirmation probe found. `unconfirmed` is a probe that gave no answer (it
+    /// timed out): neither proof that the credentials work nor proof that they are dead.
+    /// A Bool literal reads as `alive` or `rejected`.
+    enum AuthProbeResult: Equatable, Sendable, ExpressibleByBooleanLiteral {
+        case alive
+        case rejected
+        case unconfirmed
+
+        init(booleanLiteral value: Bool) { self = value ? .alive : .rejected }
+    }
 
     /// Production `AuthConfirmationProbe`: runs `pro auth token` and treats exit 0
-    /// as confirmed-alive. A launch failure or non-zero exit is treated as
-    /// "could not confirm" (false), which preserves today's throw behavior.
-    static let defaultAuthConfirmationProbe: AuthConfirmationProbe = { profile, bin in
-        let probeBridge = CLIBridge()
-        guard let (exitCode, _) = try? await probeBridge.runAndCapture(
-            executable: bin,
-            // --refresh forces an exchange; plain `auth token` echoes the cached token file.
-            arguments: [
-                "-p", profile, "pro", "auth", "token", "--refresh",
-                "--output", "json", "--no-input",
-            ],
-            environment: CLIBridge.environmentForJamfCLI(),
-            onLine: { _ in }
-        ) else {
-            return false
+    /// as alive. A launch failure or non-zero exit is `rejected`, which preserves today's
+    /// throw behavior; a call that timed out is `unconfirmed`, which does not.
+    static let defaultAuthConfirmationProbe: AuthConfirmationProbe =
+        authConfirmationProbe(timeout: authProbeTimeout)
+
+    /// The real probe with a limit; a call that gets no answer in time is `unconfirmed`.
+    static func authConfirmationProbe(timeout: TimeInterval) -> AuthConfirmationProbe {
+        { profile, bin in
+            let probeBridge = CLIBridge()
+            guard let (exitCode, _) = try? await probeBridge.runAndCapture(
+                executable: bin,
+                // --refresh forces an exchange; plain `auth token` echoes the cached token file.
+                arguments: [
+                    "-p", profile, "pro", "auth", "token", "--refresh",
+                    "--output", "json", "--no-input",
+                ],
+                environment: CLIBridge.environmentForJamfCLI(),
+                timeout: timeout,
+                onLine: { _ in }
+            ) else {
+                return .rejected
+            }
+            if exitCode == CLIBridge.exitCodeTimedOut { return .unconfirmed }
+            return exitCode == 0 ? .alive : .rejected
         }
-        return exitCode == 0
     }
 
     /// What `collect` must do once an `isCollectAuthDead(outcomes, savedKinds:)`
@@ -1844,6 +1883,9 @@ struct ReportEngine: Sendable {
         case confirmedAlive(warnedKinds: [String])
         /// The probe could not confirm auth is alive — abort as before.
         case confirmedDead(failedCount: Int)
+        /// The probe timed out: nothing is known about the credentials. Not auth-dead, so the
+        /// run goes on to the outage guard and the kinds keep the result they got.
+        case unconfirmed(warnedKinds: [String])
     }
 
     /// Resolves the auth-dead branch: runs the confirmation `probe` ONLY when
@@ -1862,10 +1904,11 @@ struct ReportEngine: Sendable {
         let authFailedKinds = outcomes
             .filter { $0.exitCode == CLIBridge.exitCodeUnauthorized }
             .map(\.kind)
-        if await probe(profile, bin) {
-            return .confirmedAlive(warnedKinds: authFailedKinds)
+        switch await probe(profile, bin) {
+        case .alive: return .confirmedAlive(warnedKinds: authFailedKinds)
+        case .rejected: return .confirmedDead(failedCount: authFailedKinds.count)
+        case .unconfirmed: return .unconfirmed(warnedKinds: authFailedKinds)
         }
-        return .confirmedDead(failedCount: authFailedKinds.count)
     }
 
     /// Whether a `collect` call that returned normally actually ran its loop.
@@ -1893,6 +1936,10 @@ struct ReportEngine: Sendable {
         authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         refreshSOFA: @escaping SOFARefresh = defaultSOFARefresh,
+        kindTimeout: TimeInterval = collectKindTimeout,
+        deviceLimits: DeviceCallLimits = DeviceCallLimits(),
+        patchDefinitionLimits: DeviceCallLimits = DeviceCallLimits(
+            timeout: patchDefinitionTimeout),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> CollectDisposition {
         guard ProfileService.isValid(profile) else {
@@ -2103,7 +2150,7 @@ struct ReportEngine: Sendable {
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
                     dataDir: dataDir, recordManifest: recordManifest,
                     useCachedData: useCachedData, stateStore: stateStore,
-                    collectStart: collectStart, onLine: onLine
+                    collectStart: collectStart, kindTimeout: kindTimeout, onLine: onLine
                 )
             }
             outcomes.append(result.outcome)
@@ -2128,7 +2175,7 @@ struct ReportEngine: Sendable {
             profile: profile, bin: bin, specNames: specNames, dataDir: dataDir, plan: scanPlan,
             recordManifest: recordManifest,
             stateStore: stateStore, collectStart: collectStart,
-            authConfirmationProbe: authConfirmationProbe, onLine: onLine
+            authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
@@ -2137,7 +2184,8 @@ struct ReportEngine: Sendable {
             profile: profile, afterMatrix: afterMatrix, bin: bin, dataDir: dataDir,
             savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
-            workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
+            workspacePaths: workspacePaths, stateStore: stateStore,
+            patchDefinitionLimits: patchDefinitionLimits, onLine: onLine
         )
 
         // Stamp this machine's activity so other Macs sharing the folder can
@@ -2189,6 +2237,13 @@ struct ReportEngine: Sendable {
                     "reads as endpoint-specific (a mid-command token expiry or a " +
                     "server-side token quirk on that command) rather than dead " +
                     "credentials. Updating jamf-cli may resolve it. Continuing."
+                AppLogger.collect.warning("\(msg, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            case .unconfirmed(let warnedKinds):
+                let msg = "[warn] auth check timed out for '\(profile)'; could not confirm "
+                    + "whether the credentials are valid. \(warnedKinds.joined(separator: ", ")) "
+                    + "returned 401. Not treated as expired credentials; each source keeps "
+                    + "the result it got."
                 AppLogger.collect.warning("\(msg, privacy: .public)")
                 onLine(.init(timestamp: Date(), level: .warn, text: msg))
             case .confirmedDead(let failedCount):
@@ -2259,6 +2314,7 @@ struct ReportEngine: Sendable {
         refreshSOFA: SOFARefresh,
         workspacePaths: WorkspacePaths.Type,
         stateStore: StateFileStore?,
+        patchDefinitionLimits: DeviceCallLimits,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async {
         // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
@@ -2294,13 +2350,17 @@ struct ReportEngine: Sendable {
         if afterMatrix.contains(Self.patchReleaseDatesKind) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting patch-release-dates for \(profile)"))
-            if let landed = await collectPatchReleaseDates(
-                profile: profile, bin: bin, dataDir: dataDir, onLine: onLine
+            if let result = await collectPatchReleaseDates(
+                profile: profile, bin: bin, dataDir: dataDir,
+                limits: patchDefinitionLimits, onLine: onLine
             ) {
-                stateStore?.record(
-                    landed ? .landed : .failed(exitCode: nil),
-                    report: "patch-release-dates", at: Date()
-                )
+                switch result {
+                case .landed:
+                    stateStore?.record(.landed, report: "patch-release-dates", at: Date())
+                case .failed(let exitCode):
+                    stateStore?.record(
+                        .failed(exitCode: exitCode), report: "patch-release-dates", at: Date())
+                }
             }
         }
 
@@ -2519,6 +2579,7 @@ struct ReportEngine: Sendable {
         useCachedData: Bool,
         stateStore: StateFileStore?,
         collectStart: Date,
+        kindTimeout: TimeInterval,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> KindCollectResult {
         AppLogger.collect.debug("collect kind=\(kind, privacy: .public)")
@@ -2527,11 +2588,16 @@ struct ReportEngine: Sendable {
             text: "[info] collecting \(kind) for \(profile)"
         ))
         let stderrWatcher = StderrSignalWatcher()
+        let attemptStart = Date()
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
-            bin: bin, bridge: bridge, onLine: stderrWatcher.forwarding(to: onLine),
+            bin: bin, bridge: bridge, timeout: kindTimeout,
+            onLine: stderrWatcher.forwarding(to: onLine),
             beforeRetry: { stderrWatcher.reset() }
         )
+
+        let seconds = Int(Date().timeIntervalSince(attemptStart).rounded())
+        onLine(.init(timestamp: Date(), level: .info, text: "[info] \(kind) took \(seconds)s"))
 
         guard let (exitCode, data) = captureResult else {
             // Both launches failed. The failure counter carries the fact into
@@ -2600,7 +2666,7 @@ struct ReportEngine: Sendable {
         guard useCachedData else {
             onLine(.init(
                 timestamp: Date(), level: .fail,
-                text: "[error] \(kind): exit \(exitCode)\(Self.causeSuffix(cause)) "
+                text: "[error] \(kind): \(Self.exitText(exitCode))\(Self.causeSuffix(cause)) "
                     + "— failing (use_cached_data=false)"
             ))
             throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
@@ -2617,7 +2683,7 @@ struct ReportEngine: Sendable {
         // jamf-cli's own reason beats a bare exit code in Run History.
         let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
         onLine(.init(timestamp: Date(), level: .warn,
-                     text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"
+                     text: "[warn] \(kind): \(Self.exitText(exitCode))\(reason) — \(cacheNote)"
                         + Self.causeSuffix(cause)))
         return KindCollectResult(outcome: outcome, saved: false)
     }
@@ -2632,6 +2698,7 @@ struct ReportEngine: Sendable {
         supportsQuietFlags: Bool,
         bin: URL,
         bridge: CLIBridge,
+        timeout: TimeInterval? = collectKindTimeout,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void,
         beforeRetry: @Sendable () -> Void = {}
     ) async -> (Int32, Data)? {
@@ -2648,7 +2715,7 @@ struct ReportEngine: Sendable {
                 return try await bridge.runAndCapture(
                     executable: bin, arguments: invokeArgs,
                     environment: CLIBridge.environmentForJamfCLI(),
-                    onLine: onLine
+                    timeout: timeout, onLine: onLine
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
@@ -2886,15 +2953,17 @@ struct ReportEngine: Sendable {
     /// Reads the current patch-status snapshot for the title list, then runs
     /// `pro patch-software-title-configurations definitions <id>` for each title.
     /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
-    /// Non-fatal: warn and skip titles that fail rather than aborting the run.
+    /// Non-fatal: warn and skip titles that fail rather than aborting the run. Calls that time
+    /// out `limits.stopAfterTimeouts` times in a row end the loop, as in the device scan.
     private static func collectPatchReleaseDates(
         profile: String,
         bin: URL,
         dataDir: URL,
+        limits: DeviceCallLimits = DeviceCallLimits(timeout: patchDefinitionTimeout),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async -> Bool? {
+    ) async -> PatchReleaseResult? {
         // Returns nil when nothing was attempted (no patch-status to walk),
-        // true when the merged snapshot was written, false when it was not.
+        // `.landed` when the merged snapshot was written, `.failed` when it was not.
         // Read patch-status snapshot to get title list.
         guard let patchData = try? loadLatestSnapshotData(kind: "patch-status", dataDir: dataDir),
               let patchItems = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData)
@@ -2910,6 +2979,7 @@ struct ReportEngine: Sendable {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd'T'HHmmss"
         let ts = formatter.string(from: Date())
+        var timeoutStreak = 0
 
         for patchItem in patchItems {
             let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2934,10 +3004,21 @@ struct ReportEngine: Sendable {
                         "definitions", titleId, "--page-size", "100", "--output", "json"]
             let captureResult = try? await bridge.runAndCapture(
                 executable: bin, arguments: args,
-                environment: CLIBridge.environmentForJamfCLI(), onLine: { _ in })
+                environment: CLIBridge.environmentForJamfCLI(),
+                timeout: limits.timeout, onLine: { _ in })
+            let timedOut = captureResult?.0 == CLIBridge.exitCodeTimedOut
+            timeoutStreak = timedOut ? timeoutStreak + 1 : 0
             guard let (exitCode, data) = captureResult, exitCode == 0, !data.isEmpty else {
+                let what = timedOut ? "timed out" : "failed"
                 onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] patch-definitions: title \(titleId) failed — skipping"))
+                             text: "[warn] patch-definitions: title \(titleId) \(what) — skipping"))
+                if timeoutStreak >= limits.stopAfterTimeouts {
+                    onLine(.init(
+                        timestamp: Date(), level: .warn,
+                        text: "[warn] stopped \(patchReleaseDatesKind): \(timeoutStreak) calls in "
+                            + "a row timed out after \(Int(limits.timeout)) s"))
+                    return .failed(exitCode: CLIBridge.exitCodeTimedOut)
+                }
                 continue
             }
 
@@ -2974,13 +3055,19 @@ struct ReportEngine: Sendable {
             try payload.write(to: outFile)
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] patch-release-dates: \(merged.count) title(s)"))
-            return true
+            return .landed
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] patch-release-dates: could not write snapshot — " +
                                error.localizedDescription))
-            return false
+            return .failed(exitCode: nil)
         }
+    }
+
+    /// How `collectPatchReleaseDates` ended when it attempted the walk.
+    private enum PatchReleaseResult {
+        case landed
+        case failed(exitCode: Int32?)
     }
 
     // MARK: - Public API: inventoryCSV
@@ -3291,7 +3378,7 @@ struct ReportEngine: Sendable {
                 schoolResult = try await bridge.runAndCapture(
                     executable: bin, arguments: args,
                     environment: CLIBridge.environmentForJamfCLI(),
-                    onLine: onLine
+                    timeout: collectKindTimeout, onLine: onLine
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
@@ -3381,7 +3468,7 @@ struct ReportEngine: Sendable {
                 protectResult = try await bridge.runAndCapture(
                     executable: bin, arguments: args,
                     environment: CLIBridge.environmentForJamfCLI(),
-                    onLine: onLine
+                    timeout: collectKindTimeout, onLine: onLine
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,

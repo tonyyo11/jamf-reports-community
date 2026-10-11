@@ -16,6 +16,21 @@ extension DDMDeviceStatusRecord: DeviceIdentified {}
 extension ReportEngine {
 
     static let deviceScanConcurrency = 4
+
+    /// Seconds one per-device jamf-cli call gets. `pro classic-computer-history` and
+    /// `status-items` make a few requests, and one request may wait 120 s; past this the call
+    /// is stopped and counts as a failed device, like exit 1.
+    static let deviceCallTimeout: TimeInterval = 180
+
+    /// Consecutive timed-out calls of one call type after which the scan stops that call type
+    /// for the run: a server that never answers would otherwise cost the limit on every device.
+    static let deviceTimeoutStopThreshold = 3
+
+    /// The per-call limit and the timeout stop rule; tests inject smaller ones.
+    struct DeviceCallLimits: Sendable {
+        var timeout: TimeInterval = ReportEngine.deviceCallTimeout
+        var stopAfterTimeouts: Int = ReportEngine.deviceTimeoutStopThreshold
+    }
     static let ddmDeviceStatusKind = DDMDeviceStatusService.kind
     static let mdmCommandHealthKind = MDMCommandHealthService.kind
     private static let progressEvery = 100
@@ -122,6 +137,7 @@ extension ReportEngine {
         recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
         authConfirmationProbe: @escaping AuthConfirmationProbe,
+        limits: DeviceCallLimits = DeviceCallLimits(),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> Set<String> {
         guard plan == .due else {
@@ -169,7 +185,7 @@ extension ReportEngine {
 
         let (results, stops) = await scanDevices(
             targets, profile: profile, bin: bin, specNames: specNames,
-            probe: authConfirmationProbe, onLine: onLine
+            probe: authConfirmationProbe, limits: limits, onLine: onLine
         )
         return reduceAndSave(
             results: results, stops: stops, dataDir: dataDir,
@@ -198,14 +214,15 @@ extension ReportEngine {
     /// Bounded task group: at most `deviceScanConcurrency` jamf-cli processes.
     /// Exit 5 or 8 on ANY device abandons that call type for the remaining
     /// devices (an actor-guarded flag read before each launch); exit 3 abandons
-    /// both — a credential that died mid-scan will not come back for device 400.
+    /// both — a credential that died mid-scan will not come back for device 400. Timed-out
+    /// calls stop their call type after `limits.stopAfterTimeouts` in a row (exit -2).
     private static func scanDevices(
         _ targets: [DeviceScanTarget], profile: String, bin: URL, specNames: Bool,
-        probe: @escaping AuthConfirmationProbe,
+        probe: @escaping AuthConfirmationProbe, limits: DeviceCallLimits,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> (results: [DeviceResult], stops: [CallType: Int32]) {
         let bridge = CLIBridge()
-        let gate = StopGate(probe: probe, profile: profile, bin: bin)
+        let gate = StopGate(probe: probe, profile: profile, bin: bin, limits: limits)
         var results: [DeviceResult] = []
         results.reserveCapacity(targets.count)
         var done = 0
@@ -230,7 +247,7 @@ extension ReportEngine {
                 group.addTask {
                     await scanOne(
                         target, profile: profile, bin: bin, bridge: bridge,
-                        gate: gate, specNames: specNames, onLine: onLine
+                        gate: gate, specNames: specNames, limits: limits, onLine: onLine
                     )
                 }
             }
@@ -250,7 +267,7 @@ extension ReportEngine {
 
     private static func scanOne(
         _ t: DeviceScanTarget, profile: String, bin: URL, bridge: CLIBridge, gate: StopGate,
-        specNames: Bool,
+        specNames: Bool, limits: DeviceCallLimits,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> DeviceResult {
         var history: CallOutcome = .notMade
@@ -260,7 +277,7 @@ extension ReportEngine {
             history = await call(.history, [
                 "-p", profile, "pro", "classic-computer-history", "get", t.id,
                 "--subset", "commands", "--output", "json",
-            ], bridge: bridge, bin: bin, gate: gate, onLine: onLine)
+            ], bridge: bridge, bin: bin, gate: gate, timeout: limits.timeout, onLine: onLine)
         }
 
         if t.ddmEnabled {
@@ -271,7 +288,8 @@ extension ReportEngine {
                         statusItemsArguments(
                             profile: profile, managementId: mgmt, specNames: specNames
                         ),
-                        bridge: bridge, bin: bin, gate: gate, onLine: onLine
+                        bridge: bridge, bin: bin, gate: gate, timeout: limits.timeout,
+                        onLine: onLine
                     )
                 }
             } else if t.managementId != nil {
@@ -293,15 +311,16 @@ extension ReportEngine {
     /// call is retried once in a new jamf-cli process, which reads the new token.
     private static func call(
         _ type: CallType, _ args: [String], bridge: CLIBridge, bin: URL, gate: StopGate,
+        timeout: TimeInterval,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> CallOutcome {
-        guard var result = await run(bridge, bin, args) else {
+        guard var result = await run(bridge, bin, args, timeout: timeout) else {
             await gate.noteLaunchFailure(type, onLine: onLine)
             return .launchFailed
         }
         if result.0 == CLIBridge.exitCodeUnauthorized,
            await gate.credentialsConfirmed(onLine: onLine) {
-            guard let retry = await run(bridge, bin, args) else {
+            guard let retry = await run(bridge, bin, args, timeout: timeout) else {
                 await gate.noteLaunchFailure(type, onLine: onLine)
                 return .launchFailed
             }
@@ -312,11 +331,12 @@ extension ReportEngine {
     }
 
     private static func run(
-        _ bridge: CLIBridge, _ bin: URL, _ args: [String]
+        _ bridge: CLIBridge, _ bin: URL, _ args: [String], timeout: TimeInterval
     ) async -> (Int32, Data)? {
         try? await bridge.runAndCapture(
             executable: bin, arguments: args,
-            environment: CLIBridge.environmentForJamfCLI(), onLine: { _ in }
+            environment: CLIBridge.environmentForJamfCLI(),
+            timeout: timeout, onLine: { _ in }
         )
     }
 
@@ -331,11 +351,17 @@ extension ReportEngine {
         private var launchFailureLogged: Set<CallType> = []
         private var tokenCheck: Task<Bool, Never>?
         private var tokenCheckLogged = false
+        private let limits: DeviceCallLimits
+        private var timeoutStreak: [CallType: Int] = [:]
 
-        init(probe: @escaping AuthConfirmationProbe, profile: String, bin: URL) {
+        init(
+            probe: @escaping AuthConfirmationProbe, profile: String, bin: URL,
+            limits: DeviceCallLimits
+        ) {
             self.probe = probe
             self.profile = profile
             self.bin = bin
+            self.limits = limits
         }
 
         func allows(_ type: CallType) -> Bool { stopped[type] == nil }
@@ -354,7 +380,7 @@ extension ReportEngine {
             if let tokenCheck {
                 check = tokenCheck
             } else {
-                check = Task { [probe, profile, bin] in await probe(profile, bin) }
+                check = Task { [probe, profile, bin] in await probe(profile, bin) == .alive }
                 tokenCheck = check
             }
             let valid = await check.value
@@ -378,6 +404,8 @@ extension ReportEngine {
         ) {
             guard stopped[type] == nil else { return }
             let kind = type.kind
+            noteTimeouts(exit, for: type, onLine: onLine)
+            guard stopped[type] == nil else { return }
             switch exit {
             case CLIBridge.exitCodePermissionDenied:
                 stopped[type] = exit
@@ -418,6 +446,26 @@ extension ReportEngine {
                 ))
             default: break
             }
+        }
+
+        /// Counts consecutive timed-out calls of a call type; any other result resets the count.
+        /// The last of `limits.stopAfterTimeouts` stops the call type with the timeout's code.
+        private func noteTimeouts(
+            _ exit: Int32, for type: CallType, onLine: @Sendable (CLIBridge.LogLine) -> Void
+        ) {
+            guard exit == CLIBridge.exitCodeTimedOut else {
+                timeoutStreak[type] = 0
+                return
+            }
+            let streak = (timeoutStreak[type] ?? 0) + 1
+            timeoutStreak[type] = streak
+            guard streak >= limits.stopAfterTimeouts else { return }
+            stopped[type] = exit
+            onLine(.init(
+                timestamp: Date(), level: .warn,
+                text: "[warn] stopped \(type.kind): \(streak) calls in a row timed out after "
+                    + "\(Int(limits.timeout)) s"
+            ))
         }
 
         /// Logs once per call type — a launch failure is a per-device event
@@ -500,6 +548,12 @@ extension ReportEngine {
         }
     }
 
+    /// Why a call type stopped, as the `[partial]` line says it.
+    private static func stoppedText(_ stopExit: Int32) -> String {
+        stopExit == CLIBridge.exitCodeTimedOut
+            ? "stopped after repeated timeouts" : "stopped after exit \(stopExit)"
+    }
+
     private static func reduceAndSave(
         results: [DeviceResult], stops: [CallType: Int32], dataDir: URL, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
@@ -512,8 +566,8 @@ extension ReportEngine {
         if let stopExit = stops[.history] {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[partial] \(mdmCommandHealthKind): stopped after exit "
-                    + "\(stopExit) \(deviceScanNotWrittenMarkerSuffix)"
+                text: "[partial] \(mdmCommandHealthKind): \(stoppedText(stopExit)) "
+                    + deviceScanNotWrittenMarkerSuffix
             ))
             stateStore?.record(
                 .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart
@@ -541,8 +595,8 @@ extension ReportEngine {
         if let stopExit = stops[.statusItems] {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[partial] \(ddmDeviceStatusKind): stopped after exit "
-                    + "\(stopExit) \(deviceScanNotWrittenMarkerSuffix)"
+                text: "[partial] \(ddmDeviceStatusKind): \(stoppedText(stopExit)) "
+                    + deviceScanNotWrittenMarkerSuffix
             ))
             stateStore?.record(
                 .failed(exitCode: stopExit), report: ddmDeviceStatusKind, at: collectStart

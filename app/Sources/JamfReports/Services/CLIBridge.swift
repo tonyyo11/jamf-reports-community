@@ -392,13 +392,15 @@ final class CLIBridge {
             /// Timeout path only: the child has exited but a grandchild may still hold the
             /// pipes, so do not wait for their EOF. Shares the single-resume flag with
             /// `finish`, so whichever arrives first is the only resume.
-            func forceResume(_ code: Int32) {
+            @discardableResult
+            func forceResume(_ code: Int32) -> Bool {
                 let shouldResume: Bool
                 lock.lock()
                 shouldResume = !resumed
                 if shouldResume { resumed = true }
                 lock.unlock()
                 if shouldResume { continuation.resume(returning: code) }
+                return shouldResume
             }
 
             private func finish(_ mutate: (CaptureCompletion) -> Void) {
@@ -478,6 +480,17 @@ final class CLIBridge {
                         completion.forceResume(proc.terminationStatus)
                     } else {
                         completion.markTerminated(proc.terminationStatus)
+                        // A grandchild that inherited a pipe keeps it open after the child is
+                        // gone. EOF normally lands within milliseconds of the exit; give up
+                        // waiting for it after the kill grace and return what was read.
+                        let status = proc.terminationStatus
+                        DispatchQueue.global().asyncAfter(
+                            deadline: .now() + CLIBridge.eofGraceAfterExit
+                        ) {
+                            guard completion.forceResume(status) else { return }
+                            processBox.clearReadHandlers()
+                            for line in stderrLines.finish() { onLine(Self.stderrLine(line)) }
+                        }
                     }
                 }
 
@@ -868,6 +881,9 @@ final class CLIBridge {
     nonisolated static let exitCodeTimedOut: Int32 = -2
     /// Seconds a child gets to act on the timeout's SIGTERM before `runAndCapture` sends SIGKILL.
     nonisolated static let timeoutKillGrace: TimeInterval = 3
+    /// Seconds `runAndCapture` waits for pipe EOF after the child exits normally, before it
+    /// stops reading: a process the child left running can hold the pipes open indefinitely.
+    nonisolated static let eofGraceAfterExit: TimeInterval = timeoutKillGrace
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"
@@ -909,6 +925,10 @@ final class CLIBridge {
             detail = "partial failure (exit 7) — some sub-operations failed but partial data "
                 + "was returned and saved. Review this run's log output for the specific "
                 + "failures."
+        case exitCodeTimedOut:
+            detail = "timed out: jamf-cli did not answer within its time limit and was "
+                + "stopped. The server may be overloaded or unreachable; the next run tries "
+                + "again."
         case exitCodeUsage:
             detail = "internal argument error (exit 2) — please report this along with this "
                 + "run's log output. On a Platform API profile, exit 2 is also the retired "

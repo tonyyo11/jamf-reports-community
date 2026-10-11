@@ -602,6 +602,9 @@ extension WorkspaceStore {
         return false
     }
 
+    /// Consecutive timed-out attempts after which self-remediation leaves a kind alone.
+    nonisolated static let repeatedTimeoutsBeforeBackoff = 2
+
     /// Drop issues whose last failure makes retry pointless until someone changes the
     /// credential: `exitCodeUsage` (2, a usage or credentials gate), `exitCodeUnauthorized`
     /// (3, credentials the server rejected — an hourly retry only repeats the 401 until someone
@@ -616,7 +619,9 @@ extension WorkspaceStore {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return issues }
         let store = StateFileStore(directory: stateDir)
-        let permanent = issues.filter { lastFailureRepeatsOnRetry($0.snapshotKind, in: store) }
+        let permanent = issues.filter {
+            lastFailureRepeatsOnRetry($0.snapshotKind, in: store, countingRepeatedTimeouts: true)
+        }
         guard !permanent.isEmpty else { return issues }
         AppLogger.collect.notice(
             """
@@ -633,11 +638,18 @@ extension WorkspaceStore {
     /// The rule above for one kind: its last failure was exit 2, 3 or 8, or carries a
     /// permanent cause. The background item's same-day retry shares it with
     /// `countingUnauthorized: false`, so it still reaches an exit-3 kind once someone
-    /// re-authenticates.
+    /// re-authenticates. Self-remediation also passes `countingRepeatedTimeouts`: a kind whose
+    /// last `repeatedTimeoutsBeforeBackoff` failures all timed out would otherwise hold the tick
+    /// lock for its whole limit every hour. Collect now and the same-day retry keep trying it.
     nonisolated static func lastFailureRepeatsOnRetry(
-        _ kind: String, in store: StateFileStore, countingUnauthorized: Bool = true
+        _ kind: String, in store: StateFileStore, countingUnauthorized: Bool = true,
+        countingRepeatedTimeouts: Bool = false
     ) -> Bool {
         let code = store.lastFailureExitCode(for: kind)
+        if countingRepeatedTimeouts,
+           store.consecutiveTimeouts(for: kind) >= repeatedTimeoutsBeforeBackoff {
+            return true
+        }
         return code == CLIBridge.exitCodeUsage
             || (countingUnauthorized && code == CLIBridge.exitCodeUnauthorized)
             || code == CLIBridge.exitCodeRefusedByPolicy
