@@ -399,3 +399,86 @@ extension BackupDiffModelTests {
             ["5.3>5.4", "12.3>12.4"])
     }
 }
+
+// MARK: - Raw text redaction
+
+extension BackupDiffModelTests {
+
+    private func entries(_ text: String) throws -> [[String: Any]] {
+        let data = try XCTUnwrap(text.data(using: .utf8))
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    }
+
+    /// jamf-cli puts the changed object in `old_value`/`new_value` as a JSON string.
+    func testRawRedactionMasksCredentialKeysInsideEmbeddedJSON() throws {
+        let raw = try String(data: JSONSerialization.data(withJSONObject: [[
+            "change": "modified", "field": "settings", "name": "Account", "resource": "accounts",
+            "old_value": #"{"password_sha256":"aaaa1111","user":"admin","x":{"api_key":"k1"}}"#,
+            "new_value": #"{"password_sha256":"bbbb2222","user":"admin","x":{"api_key":"k2"}}"#,
+        ]]), encoding: .utf8) ?? ""
+        let out = BackupDiffModel.redactedRawText(raw, profile: nil)
+        for secret in ["aaaa1111", "bbbb2222", "k1", "k2"] {
+            XCTAssertFalse(out.contains(secret), "\(secret) leaked\n\(out)")
+        }
+        let entry = try XCTUnwrap(entries(out).first)
+        XCTAssertEqual(entry["name"] as? String, "Account")
+        let embedded = try XCTUnwrap(entry["new_value"] as? String)
+        XCTAssertTrue(embedded.contains(#""password_sha256":"<redacted>""#), embedded)
+        XCTAssertTrue(embedded.contains(#""user":"admin""#), embedded)
+    }
+
+    func testRawRedactionMasksKeysAtAnyDepthAndInsideArrays() throws {
+        let raw = #"""
+        [{"resource":"r","items":[{"institutional_recovery_key":"IRK-123","keep":"yes"},
+            [{"wifi_password":"hunter2"}]],"token":{"nested":"t0k"}}]
+        """#
+        let out = BackupDiffModel.redactedRawText(raw, profile: nil)
+        for secret in ["IRK-123", "hunter2", "t0k"] {
+            XCTAssertFalse(out.contains(secret), "\(secret) leaked\n\(out)")
+        }
+        XCTAssertTrue(out.contains("\"keep\" : \"yes\""), out)
+        XCTAssertEqual(out.components(separatedBy: "<redacted>").count - 1, 3, out)
+    }
+
+    func testRawRedactionMasksTheValuesOfACredentialShapedField() throws {
+        let raw = #"""
+        [{"field":"client_secret","name":"SSO","old_value":"s3cret-a","new_value":"s3cret-b"}]
+        """#
+        let out = BackupDiffModel.redactedRawText(raw, profile: nil)
+        XCTAssertFalse(out.contains("s3cret"), out)
+        XCTAssertTrue(out.contains("SSO"), out)
+    }
+
+    func testRawRedactionKeepsAnOrdinaryPayloadsStringsAsTheyWere() throws {
+        let raw = #"""
+        [{"field":"version","name":"App","old_value":"{\"version\":\"5.3\"}",
+          "product_key":"PK-1","key":"plain"}]
+        """#
+        let out = BackupDiffModel.redactedRawText(raw, profile: nil)
+        XCTAssertEqual(out, raw, "nothing to mask: the text comes back byte for byte")
+        let entry = try XCTUnwrap(entries(out).first)
+        XCTAssertEqual(entry["old_value"] as? String, #"{"version":"5.3"}"#)
+        XCTAssertEqual(entry["product_key"] as? String, "PK-1")
+        XCTAssertEqual(entry["key"] as? String, "plain")
+    }
+
+    func testRawRedactionFallsBackToTextRedactionForNonJSON() {
+        let out = BackupDiffModel.redactedRawText(
+            "jamf-cli failed: Authorization: Bearer abcdef1234567890abcdef1234567890",
+            profile: nil)
+        XCTAssertFalse(out.contains("abcdef1234567890"), out)
+        XCTAssertTrue(out.hasPrefix("jamf-cli failed"), out)
+        XCTAssertEqual(BackupDiffModel.redactedRawText("", profile: nil), "")
+    }
+
+    func testRawRedactionFallbackDropsTheProfilesScopeIDs() {
+        let id = "3f2b8c1e-5d4a-4e7b-9c10-a1b2c3d4e5f6"
+        var asked: [String] = []
+        let out = BackupDiffModel.redactedRawText(
+            "[ENVIRONMENT_NOT_FOUND] Environment '\(id)' not found.", profile: "harbor",
+            scopeIDs: { asked.append($0); return [id] })
+        XCTAssertEqual(asked, ["harbor"])
+        XCTAssertFalse(out.contains("3f2b8c1e"), out)
+        XCTAssertTrue(out.contains("not found."), out)
+    }
+}
