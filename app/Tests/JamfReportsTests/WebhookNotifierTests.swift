@@ -253,6 +253,71 @@ final class WebhookNotifierTests: XCTestCase {
         XCTAssertTrue(titleText.contains("&lt;!here&gt;"))
     }
 
+    // MARK: - Teams Markdown
+
+    func testTeamsEscapesInlineMarkdown() {
+        let cases: [(String, String)] = [
+            ("**x**", "\\*\\*x\\*\\*"),
+            ("_x_", "\\_x\\_"),
+            ("[a](https://x)", "\\[a\\](https://x)"),
+            ("`code`", "\\`code\\`"),
+            ("a\\b", "a\\\\b"),
+            ("Tom & <b>", "Tom &amp; &lt;b&gt;"),
+            ("prod 92%", "prod 92%"),
+            ("prod_east", "prod_east"),
+            ("a_b_c", "a_b_c"),
+            ("a_", "a\\_"),
+            ("_a", "\\_a"),
+            ("__a__", "\\_\\_a\\_\\_"),
+            ("_prod_east_", "\\_prod_east\\_"),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(WebhookNotifier.sanitizeForTeams(input), expected, input)
+        }
+    }
+
+    func testTeamsEscapesALineLeadingListOrHeadingMarker() {
+        XCTAssertEqual(WebhookNotifier.sanitizeForTeams("- item"), "\\- item")
+        XCTAssertEqual(WebhookNotifier.sanitizeForTeams("+ item"), "\\+ item")
+        XCTAssertEqual(WebhookNotifier.sanitizeForTeams("# head"), "\\# head")
+        XCTAssertEqual(WebhookNotifier.sanitizeForTeams("1. item"), "1\\. item")
+        XCTAssertEqual(WebhookNotifier.sanitizeForTeams("> quote"), "&gt; quote")
+        XCTAssertEqual(WebhookNotifier.sanitizeForTeams("ok\n- item\n12. two"),
+                       "ok\n\\- item\n12\\. two")
+        XCTAssertEqual(WebhookNotifier.sanitizeForTeams("a - b # c 1. d"), "a - b # c 1. d")
+        // Values that only look like markers at the line start are left as typed.
+        for value in ["92.4%", "26.7.1", "-2", "#3", "+5", "1.", "-"] {
+            let expected = value == "1." ? "1\\." : (value == "-" ? "\\-" : value)
+            XCTAssertEqual(WebhookNotifier.sanitizeForTeams(value), expected, value)
+        }
+    }
+
+    func testEveryTeamsCardEscapesTitleAndFactsButSlackDoesNot() throws {
+        let hostile = [WebhookNotifier.Fact(label: "**L**", value: "[a](https://x)")]
+        let teams: [Data?] = [
+            WebhookNotifier.payload(provider: .teams, title: "_T_", facts: hostile),
+            WebhookNotifier.failedPayload(provider: .teams, title: "_T_", facts: hostile),
+            WebhookNotifier.alertPayload(provider: .teams, title: "_T_", facts: hostile),
+        ]
+        for build in teams {
+            let obj = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: try XCTUnwrap(build)) as? [String: Any])
+            let attachments = try XCTUnwrap(obj["attachments"] as? [[String: Any]])
+            let content = try XCTUnwrap(attachments.first?["content"] as? [String: Any])
+            let body = try XCTUnwrap(content["body"] as? [[String: Any]])
+            let title = try XCTUnwrap(body.first?["text"] as? String)
+            XCTAssertTrue(title.contains("\\_T\\_"), title)
+            let set = try XCTUnwrap(body.first { $0["type"] as? String == "FactSet" })
+            let fact = try XCTUnwrap((set["facts"] as? [[String: String]])?.first)
+            XCTAssertEqual(fact["title"], "\\*\\*L\\*\\*")
+            XCTAssertEqual(fact["value"], "\\[a\\](https://x)")
+        }
+        let slack = try XCTUnwrap(String(data: try XCTUnwrap(WebhookNotifier.payload(
+            provider: .slack, title: "_T_", facts: hostile)), encoding: .utf8))
+        XCTAssertTrue(slack.contains("**L**"), slack)
+        XCTAssertFalse(slack.contains("\\\\"), slack)
+    }
+
     // MARK: - Minimal-detail fact reduction (main.swift assembly helpers)
 
     func testSuccessFactsFullKeepsRichFacts() {
@@ -292,6 +357,21 @@ final class WebhookNotifierTests: XCTestCase {
                        "the raw server hostname must not survive redaction")
         XCTAssertTrue(errorFact?.value.contains("host-") == true,
                       "the hostname is replaced by a redaction placeholder")
+    }
+
+    func testFailureFactsFullRedactsScopeIDs() {
+        // jamf-cli repeats the tenant/environment ID in "Environment not found" lines.
+        let id = "3f2b8c1e-5d4a-4e7b-9c10-a1b2c3d4e5f6"
+        let error = "[ENVIRONMENT_NOT_FOUND] Environment '\(id)' not found."
+        var asked: [String] = []
+        let full = failureFacts(
+            detail: .full, profile: "harbor", mode: .jamfCLIFull, errorDescription: error,
+            scopeIDs: { asked.append($0); return $0 == "harbor" ? [id.uppercased()] : [] }
+        )
+        XCTAssertEqual(asked, ["harbor"])
+        let value = full.first { $0.label == "Error" }?.value ?? ""
+        XCTAssertFalse(value.lowercased().contains("3f2b8c1e"), value)
+        XCTAssertTrue(value.contains("not found."), value)
     }
 
     func testFailureFactsFullRedactsBearerTokenFromError() {

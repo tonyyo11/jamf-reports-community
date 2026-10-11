@@ -43,14 +43,20 @@ extension HtmlReport {
     /// stops an unusual page from swelling every report generated from the workspace.
     static let maxEmbeddedDashboardBytes = 4_000_000
 
-    /// The frame's page runs scripts, so this keeps it from reaching anything outside
-    /// itself: no requests, no frames, no fonts, images only as `data:` URIs. jamf-cli's
-    /// page is one inline `<style>` and `<script>` with inline handlers and no resources.
-    /// `default-src` does not cover `base-uri` or `form-action`, so a `<base>` or a form
-    /// could still redirect relative URLs or submit data out of the frame.
-    static let dashboardContentSecurityPolicy =
+    /// The report's policy, which the dashboard frame inherits and also carries itself. The
+    /// frame's page runs scripts, so this keeps it from reaching anything outside itself: no
+    /// requests, no frames, no fonts, images only as `data:` URIs. jamf-cli's page is one
+    /// inline `<style>` and `<script>` with inline handlers and no resources. `default-src`
+    /// does not cover `base-uri` or `form-action`, so a `<base>` or a form could still
+    /// redirect relative URLs or submit data out of the report.
+    static let reportContentSecurityPolicy =
         "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
         + "img-src data:; base-uri 'none'; form-action 'none'"
+
+    /// The policy as a meta tag. It only governs what follows it, so it comes first.
+    static let reportContentSecurityPolicyMeta =
+        "<meta http-equiv=\"Content-Security-Policy\" "
+        + "content=\"\(reportContentSecurityPolicy)\">"
 
     /// Shows the cards and rings without their animation (jamf-cli's
     /// `dashboard_html.go`: `.section` starts at opacity 0 and `.ring` at `--rv: 0`),
@@ -160,27 +166,27 @@ extension HtmlReport {
         """)
     }
 
-    /// `page` with the content-security policy right after its opening `<head>` tag (a
-    /// meta policy only governs what follows it) and the embed style and the height and
-    /// theme scripts at the end of the head. A page with no head gets one first.
+    /// `page` behind the content-security policy and the embed style and the height and
+    /// theme scripts at the end of its head. The policy is a prefix at byte 0, since a meta
+    /// policy ignores what precedes it and a regex for the head can be fooled by `<head>`
+    /// inside a comment or after a script; `<!DOCTYPE html>` keeps `document.doctype`, as
+    /// the page's own is dropped once the prefix opens the head. A page with no head gets
+    /// one first.
     static func dashboardPageForEmbedding(_ page: String) -> String {
-        let policy = "<meta http-equiv=\"Content-Security-Policy\" "
-            + "content=\"\(dashboardContentSecurityPolicy)\">"
         let addition = "<style id=\"jrc-embed\">\(dashboardEmbedStyle)</style>"
             + "<script id=\"jrc-embed-height\">\(dashboardHeightScript)</script>"
             + "<script id=\"jrc-embed-theme\">\(dashboardThemeScript)</script>"
+        let prefix = "<!DOCTYPE html>" + reportContentSecurityPolicyMeta
         // `(?=[\s/>])` keeps `<header>` from passing for the head.
         guard let open = page.range(
             of: "<head(?=[\\s/>])[^>]*>", options: [.regularExpression, .caseInsensitive]
         ) else {
-            return "<head>" + policy + addition + "</head>" + page
+            return prefix + "<head>" + addition + "</head>" + page
         }
         let close = page.range(
             of: "</head>", options: .caseInsensitive, range: open.upperBound..<page.endIndex)
         let insideEnd = close?.lowerBound ?? open.upperBound
-        return String(page[..<open.upperBound]) + policy
-            + String(page[open.upperBound..<insideEnd]) + addition
-            + String(page[insideEnd...])
+        return prefix + String(page[..<insideEnd]) + addition + String(page[insideEnd...])
     }
 
     private static func dashboardNoteSection(_ note: String) -> String {

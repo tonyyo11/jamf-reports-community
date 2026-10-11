@@ -48,7 +48,10 @@ private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in
                 print("[ok] consolidated fleet workbook: \(xlsxURL.lastPathComponent)")
             }
         } catch {
-            let message = "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)"
+            // LogRedactor masks credentials, not paths or hosts; redact once for all three sinks.
+            let message = LogRedactor.redact(
+                "[warn] consolidated report for '\(group.name)' failed: "
+                    + error.localizedDescription)
             fputs(message + "\n", stderr)
             appendFleetLog(message)
             record(message)
@@ -265,7 +268,9 @@ private func scheduledRunSingleBody(
                 try LaunchAgentLogRotator.rotateIfNeeded(logURL: entry)
             } catch {
                 fputs(
-                    "[warn] could not rotate \(entry.lastPathComponent): \(error.localizedDescription)\n",
+                    LogRedactor.redact(
+                        "[warn] could not rotate \(entry.lastPathComponent): "
+                            + error.localizedDescription) + "\n",
                     stderr
                 )
             }
@@ -295,9 +300,7 @@ private func scheduledRunSingleBody(
     let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
         honesty.observe(line.text)
         recorder?.record(line.text)
-        if verbose || line.level != .info {
-            print(line.text)
-        }
+        if let echo = scheduledRunEcho(line, verbose: verbose) { print(echo) }
     }
 
     // Shared workspace: a config.yaml value another Mac changed since this one pinned it is
@@ -394,7 +397,8 @@ private func scheduledRunSingleBody(
             return exit
         } catch {
             let errorDesc = error.localizedDescription
-            let message = "[error] scheduled backup failed for '\(profile)': \(errorDesc)"
+            let message = LogRedactor.redact(
+                "[error] scheduled backup failed for '\(profile)': \(errorDesc)")
             fputs(message + "\n", stderr)
             recorder?.record(message)
             recorder?.finish(exitCode: 1)
@@ -568,7 +572,7 @@ private func scheduledRunSingleBody(
         return 0
     } catch {
         let errorDesc = error.localizedDescription
-        let message = "[error] '\(profile)': \(errorDesc)"
+        let message = LogRedactor.redact("[error] '\(profile)': \(errorDesc)")
         fputs(message + "\n", stderr)
         recorder?.record(message)
         recorder?.finish(exitCode: 1)
@@ -748,7 +752,8 @@ func runCheck(profile: String) -> Int32 {
                 let snapshotCount = try FileManager.default.contentsOfDirectory(atPath: dataDir.path).count
                 print("[ok] cached snapshots in data_dir: \(snapshotCount)")
             } catch {
-                fputs("[warn] could not read data_dir: \(error.localizedDescription)\n", stderr)
+                fputs(LogRedactor.redact(
+                    "[warn] could not read data_dir: \(error.localizedDescription)") + "\n", stderr)
             }
         }
 
@@ -760,7 +765,7 @@ func runCheck(profile: String) -> Int32 {
         // report, same rules, one implementation.
         return printDoctorReport(ConfigDoctorService.run(profile: profile))
     } catch {
-        fputs("[error] \(error.localizedDescription)\n", stderr)
+        fputs(LogRedactor.redact("[error] \(error.localizedDescription)") + "\n", stderr)
         return 1
     }
 }
@@ -851,7 +856,7 @@ func runSchoolCheck(profile: String) -> Int32 {
         }
         return 0
     } catch {
-        fputs("[error] \(error.localizedDescription)\n", stderr)
+        fputs(LogRedactor.redact("[error] \(error.localizedDescription)") + "\n", stderr)
         return 1
     }
 }

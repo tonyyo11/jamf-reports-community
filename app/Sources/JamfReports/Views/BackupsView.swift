@@ -437,10 +437,9 @@ struct BackupsView: View {
             }
             if !diffParseFailed {
                 // The quotes inside new_value are jamf-cli's: it sends each changed field as
-                // a JSON string. Raw shows its output as received, so Copy hands a script
-                // the same text.
+                // a JSON string. Raw shows its output as received; Copy masks secrets.
                 Text("jamf-cli sends each changed field as a JSON string, so quotes inside it "
-                     + "show escaped. Raw is its output unchanged; Summary reads the values.")
+                     + "show escaped. Raw is its output unchanged; Copy masks secrets.")
                     .font(Theme.Fonts.mono(10.5))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(.horizontal, 6)
@@ -471,12 +470,14 @@ struct BackupsView: View {
         diffMode = .summary
     }
 
-    /// Copies whatever the operator is looking at: the collapsed summary is
-    /// what goes in a ticket, the raw payload is what goes to a script.
+    /// Copies whatever the operator is looking at: the collapsed summary is what goes in a
+    /// ticket, the raw payload is what goes to a script. Both leave with credential-shaped
+    /// values masked, since the pasteboard can sync to other devices; the raw view itself
+    /// stays selectable for a deliberate copy of the payload as received.
     private func copyDiffToPasteboard() {
         let text = diffMode == .summary && !diffParseFailed
             ? BackupDiffModel.plainText(diffGroups)
-            : diffRawText
+            : BackupDiffModel.redactedRawText(diffRawText, profile: workspace.profile)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }

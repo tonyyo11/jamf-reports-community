@@ -25,13 +25,10 @@ enum WebhookNotifier {
     /// (`<!channel>`, `<!here>`, `<@U123>`, `<https://evil|click>`), so untrusted
     /// fact text can never inject a broadcast ping or a disguised link.
     ///
-    /// Teams adaptive-card `FactSet` titles/values are inert plain text (the
-    /// schema does not parse markdown or mention tokens in FactSet fields, and
-    /// the digest TextBlocks use plain literal titles, not `TextBlock.markdown`),
-    /// so Teams has no structural injection surface. The same escape is applied
-    /// there anyway for a single uniform code path — fact values are operational
-    /// strings (profiles, statuses, counts) that never legitimately contain
-    /// `<`, `>`, or `&`, so the escaped form is not user-visible in practice.
+    /// Teams renders Markdown in `TextBlock` text and in `FactSet` titles and values
+    /// (bold, italic, links, lists), so a name like `**x**` or `[a](https://x)` would
+    /// format or link. `sanitizeForTeams` adds that escaping on top of this one; the
+    /// `&`/`<`/`>` escape still applies there.
     ///
     /// `&` is escaped first so an already-`<`/`>`-escaped entity is never
     /// double-escaped (facts arrive as plain strings, escaped exactly once).
@@ -45,6 +42,29 @@ enum WebhookNotifier {
     /// Sanitize a fact's label and value in one step.
     private static func sanitize(_ fact: Fact) -> Fact {
         Fact(label: sanitize(fact.label), value: sanitize(fact.value))
+    }
+
+    /// `sanitize`, then a backslash before each backslash, asterisk, bracket and backtick,
+    /// before an underscore that is not between two letters or digits (`prod_east` cannot
+    /// open emphasis and stays as typed), and before a line-leading `#`, `-`, `+` or `N.`
+    /// marker followed by a space (so `92.4%` or `-2` stay as typed; a leading `>` is
+    /// already `&gt;`). Slack uses `sanitize` alone.
+    static func sanitizeForTeams(_ text: String) -> String {
+        let marked = sanitize(text)
+            .replacingOccurrences(of: "([\\\\*\\[\\]`])", with: "\\\\$1",
+                                  options: .regularExpression)
+            .replacingOccurrences(
+                of: "(?<![\\p{L}\\p{N}])_|_(?![\\p{L}\\p{N}])", with: "\\\\_",
+                options: .regularExpression)
+        return marked
+            .replacingOccurrences(of: "(?m)^([ \t]*)([#\\-+])(?=[ \t]|$)", with: "$1\\\\$2",
+                                  options: .regularExpression)
+            .replacingOccurrences(of: "(?m)^([ \t]*)([0-9]+)\\.(?=[ \t]|$)", with: "$1$2\\\\.",
+                                  options: .regularExpression)
+    }
+
+    private static func sanitizeForTeams(_ fact: Fact) -> Fact {
+        Fact(label: sanitizeForTeams(fact.label), value: sanitizeForTeams(fact.value))
     }
 
     /// JSON body for `provider`. Pure — no network. Returns nil only if
@@ -90,8 +110,8 @@ enum WebhookNotifier {
     /// Microsoft Teams Adaptive Card (mirrors the Python `_post_webhook` Teams
     /// shape so both engines render identically).
     static func teamsCard(title rawTitle: String, facts rawFacts: [Fact]) -> [String: Any] {
-        let title = sanitize(rawTitle)
-        let facts = rawFacts.map(sanitize)
+        let title = sanitizeForTeams(rawTitle)
+        let facts = rawFacts.map(sanitizeForTeams)
         return [
             "type": "message",
             "attachments": [[
@@ -114,8 +134,8 @@ enum WebhookNotifier {
     /// Microsoft Teams Adaptive Card for a failed run. Uses "Attention" color
     /// so failures are visually distinct from success digests.
     static func teamsFailedCard(title rawTitle: String, facts rawFacts: [Fact]) -> [String: Any] {
-        let title = sanitize(rawTitle)
-        let facts = rawFacts.map(sanitize)
+        let title = sanitizeForTeams(rawTitle)
+        let facts = rawFacts.map(sanitizeForTeams)
         return [
             "type": "message",
             "attachments": [[
@@ -145,8 +165,8 @@ enum WebhookNotifier {
     /// color + a ⚠️ prefix so tripped thresholds are visually distinct from
     /// both success and failure digests.
     static func teamsAlertCard(title rawTitle: String, facts rawFacts: [Fact]) -> [String: Any] {
-        let title = sanitize(rawTitle)
-        let facts = rawFacts.map(sanitize)
+        let title = sanitizeForTeams(rawTitle)
+        let facts = rawFacts.map(sanitizeForTeams)
         return [
             "type": "message",
             "attachments": [[

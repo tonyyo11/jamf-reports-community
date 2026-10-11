@@ -19,6 +19,33 @@ final class ScheduledRunSignalsTests: XCTestCase {
         )
     }
 
+    // MARK: - scheduledRunEcho
+
+    private func line(_ level: CLIBridge.LogLevel, _ text: String) -> CLIBridge.LogLine {
+        CLIBridge.LogLine(timestamp: Date(timeIntervalSince1970: 0), level: level, text: text)
+    }
+
+    func testEchoRedactsCredentialsBeforeTheyReachStdout() throws {
+        let secret = "Authorization: Bearer abcdef1234567890abcdef1234567890"
+        let echo = try XCTUnwrap(scheduledRunEcho(line(.fail, "[error] \(secret)"), verbose: false))
+        XCTAssertFalse(echo.contains("abcdef1234567890"), echo)
+        XCTAssertTrue(echo.hasPrefix("[error]"), echo)
+    }
+
+    func testEchoSkipsInfoLinesUnlessVerbose() {
+        XCTAssertNil(scheduledRunEcho(line(.info, "collecting"), verbose: false))
+        XCTAssertEqual(scheduledRunEcho(line(.info, "collecting"), verbose: true), "collecting")
+        XCTAssertEqual(scheduledRunEcho(line(.warn, "[warn] x"), verbose: false), "[warn] x")
+    }
+
+    func testCLILogLinesAreRedactedBeforeTheyAreWritten() {
+        let out = CLIRun.renderedLogLine(
+            line(.fail, "[error] Authorization: Bearer abcdef1234567890abcdef1234567890"))
+        XCTAssertFalse(out.contains("abcdef1234567890"), out)
+        XCTAssertTrue(out.hasPrefix("[error]") && out.hasSuffix("\n"), out)
+        XCTAssertEqual(CLIRun.renderedLogLine(line(.ok, "[ok] done")), "[ok] done\n")
+    }
+
     // MARK: - strictPrior
 
     func testStrictPriorPrefersOlderSummaryCarryingTheMetric() throws {

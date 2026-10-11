@@ -28,6 +28,7 @@ extension HtmlReport {
         <html lang="en" data-theme="light">
         <head>
         <meta charset="UTF-8">
+        \(Self.reportContentSecurityPolicyMeta)
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="report-sha256" content="\(placeholder)">
         <title>\(titleEscaped) — Jamf Instance Report</title>
@@ -46,10 +47,13 @@ extension HtmlReport {
             <a href="https://github.com/tonyyo11/jamf-reports-community"
             >tonyyo11/jamf-reports-community</a></p>
           <p class="verify-footer" style="margin-top:8px;font-size:11px;opacity:0.7">
-            Source fingerprint: <code>\(placeholder)</code>
-            &middot; verify with <code>shasum -a 256 \(verifyFilename)</code>
-            (see <code>report-sha256</code> meta tag; replace the hash field with 64 zeros
-            to reproduce)
+            Integrity check, not a signature. SHA-256 <code>\(placeholder)</code> is stored in
+            this file, so it detects damage or a partial copy, not a deliberate edit (anyone
+            who edits the file can recompute it). To check: replace the hash here and in the
+            <code>report-sha256</code> meta tag with 64 zeros, then run
+            <code>shasum -a 256 \(verifyFilename)</code>. To show the file is unchanged since
+            it was generated, compare with the <code>[ok] sha256:</code> line in the run log,
+            kept outside this file.
           </p>
         </footer>
         \(buildScript())

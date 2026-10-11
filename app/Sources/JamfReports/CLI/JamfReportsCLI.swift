@@ -61,7 +61,13 @@ enum CLIRun {
     static func printLogLine(_ line: CLIBridge.LogLine) {
         let stream: FileHandle = (line.level == .fail || line.level == .warn)
             ? .standardError : .standardOutput
-        stream.write(Data((line.text + "\n").utf8))
+        stream.write(Data(renderedLogLine(line).utf8))
+    }
+
+    /// The bytes written for `line`: credentials masked, since jamf-cli echoes its own errors
+    /// and a terminal or a scheduler's capture keeps them.
+    static func renderedLogLine(_ line: CLIBridge.LogLine) -> String {
+        LogRedactor.redact(line.text) + "\n"
     }
 
     /// Runs `body` holding the tick lock, as a GUI collect, a report and the tick do, so this

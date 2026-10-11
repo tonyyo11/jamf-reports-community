@@ -122,46 +122,66 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertTrue(html.contains("attributeFilter: [\"data-theme\"]"))
     }
 
-    func testAPageWithoutAHeadGetsOneWithThePolicyAndTheAdditions() {
-        let page = HtmlReport.dashboardPageForEmbedding("<p>x</p>")
-        XCTAssertTrue(page.hasPrefix("<head>" + Self.policyMeta + "<style id=\"jrc-embed\">"), page)
-        XCTAssertTrue(page.hasSuffix("</head><p>x</p>"))
-    }
-
     private static let policy = "default-src 'none'; style-src 'unsafe-inline'; "
         + "script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
     private static let policyMeta =
         "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">"
+    private static let framePrefix = "<!DOCTYPE html>" + policyMeta
+
+    func testAPageWithoutAHeadGetsOneWithThePolicyAndTheAdditions() {
+        let page = HtmlReport.dashboardPageForEmbedding("<p>x</p>")
+        XCTAssertTrue(
+            page.hasPrefix(Self.framePrefix + "<head><style id=\"jrc-embed\">"), page)
+        XCTAssertTrue(page.hasSuffix("</head><p>x</p>"))
+    }
 
     /// The frame is scripted, so without a policy the page could fetch or post anywhere.
-    /// A meta policy only governs what follows it, so it sits first in the head.
-    func testThePolicyFollowsTheOpeningHeadTagAheadOfEverythingElse() throws {
-        XCTAssertEqual(HtmlReport.dashboardContentSecurityPolicy, Self.policy)
-        let heads = ["<head>", "<HEAD>", "<head lang=\"en\">", "<Head\n  data-x='1'\n>"]
-        for head in heads {
-            let page = HtmlReport.dashboardPageForEmbedding(
-                "<!DOCTYPE html><html>\(head)<title>t</title><script>var a;</script></head>"
-                    + "<body></body></html>")
-            XCTAssertTrue(page.contains(head + Self.policyMeta + "<title>"),
-                          "\(head): the policy is the first thing in the head\n\(page)")
-            let meta = try XCTUnwrap(page.range(of: "Content-Security-Policy"))
-            let firstScript = try XCTUnwrap(page.range(of: "<script"))
-            XCTAssertLessThan(meta.lowerBound, firstScript.lowerBound, head)
-            XCTAssertEqual(page.components(separatedBy: "Content-Security-Policy").count, 2, head)
+    /// A meta policy ignores what precedes it, so it is the first thing in the frame
+    /// whatever the page holds, not the first thing a regex finds in it.
+    func testThePolicyIsAPrefixAtByteZeroWhateverThePageHolds() throws {
+        XCTAssertEqual(HtmlReport.reportContentSecurityPolicy, Self.policy)
+        let pages = [
+            "<!DOCTYPE html><html><head><title>t</title></head><body></body></html>",
+            "<html><HEAD lang=\"en\"><title>t</title></HEAD><body></body></html>",
+            "<html><Head\n  data-x='1'\n><title>t</title></head><body></body></html>",
+            "<!--<head>--><!DOCTYPE html><html><head></head><body></body></html>",
+            "<script>var a;</script><html><head></head><body></body></html>",
+            "<html><head><title>t</title><body>",
+            "<header>x</header><body></body>",
+            "<p>no head at all</p>",
+            "",
+        ]
+        for source in pages {
+            let page = HtmlReport.dashboardPageForEmbedding(source)
+            XCTAssertTrue(page.hasPrefix(Self.framePrefix), "\(source)\n\(page)")
+            XCTAssertEqual(
+                page.components(separatedBy: "Content-Security-Policy").count, 2, source)
         }
+    }
+
+    func testAPageStartingWithACommentedHeadStillStartsWithThePolicy() {
+        let page = HtmlReport.dashboardPageForEmbedding(
+            "<!--<head>--><html><head></head><body></body></html>")
+        XCTAssertTrue(page.hasPrefix(Self.framePrefix + "<!--<head>-->"), page)
+    }
+
+    func testAPageStartingWithAScriptStillStartsWithThePolicy() {
+        let page = HtmlReport.dashboardPageForEmbedding(
+            "<script>fetch('http://x')</script><html><head></head></html>")
+        XCTAssertTrue(page.hasPrefix(Self.framePrefix + "<script>fetch("), page)
     }
 
     /// `<header>` and `<head-x>` start with `<head` but are not the head.
     func testAHeaderElementIsNotTakenForTheHead() {
         let page = HtmlReport.dashboardPageForEmbedding("<header>x</header><body></body>")
-        XCTAssertTrue(page.hasPrefix("<head>" + Self.policyMeta), page)
+        XCTAssertTrue(page.hasPrefix(Self.framePrefix + "<head>"), page)
         XCTAssertTrue(page.hasSuffix("</head><header>x</header><body></body>"), page)
     }
 
-    func testAHeadWithoutAClosingTagStillGetsThePolicyAndTheAdditionsInside() {
+    func testAHeadWithoutAClosingTagStillGetsTheAdditionsInside() {
         let page = HtmlReport.dashboardPageForEmbedding("<html><head><title>t</title><body>")
-        XCTAssertTrue(page.hasPrefix("<html><head>" + Self.policyMeta), page)
-        XCTAssertTrue(page.contains("<style id=\"jrc-embed\">"))
+        XCTAssertTrue(page.hasPrefix(Self.framePrefix + "<html><head><style id=\"jrc-embed\">"),
+                      page)
         XCTAssertTrue(page.hasSuffix("<title>t</title><body>"), page)
     }
 
@@ -170,8 +190,26 @@ final class HtmlReportDashboardTests: XCTestCase {
                       stamp: "20260925T060000")
         let html = section().html
         XCTAssertTrue(html.contains(
-            "srcdoc=\"&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;"
-                + "&lt;meta http-equiv=&quot;Content-Security-Policy&quot;"), html)
+            "srcdoc=\"&lt;!DOCTYPE html&gt;&lt;meta http-equiv=&quot;Content-Security-Policy&quot;"),
+            html)
+    }
+
+    /// The frame inherits the report's policy, so the report carries one: a single meta
+    /// in the head, ahead of the first style or script.
+    func testTheReportCarriesOneContentSecurityPolicyAheadOfStylesAndScripts() async throws {
+        let out = dataDir.appendingPathComponent("report.html")
+        _ = try await report().generate(outputURL: out)
+        let text = try String(contentsOf: out, encoding: .utf8)
+        XCTAssertEqual(text.components(separatedBy: "Content-Security-Policy").count, 2)
+        XCTAssertTrue(text.contains(HtmlReport.reportContentSecurityPolicyMeta))
+        let head = try XCTUnwrap(text.range(of: "<head>"))
+        let headEnd = try XCTUnwrap(text.range(of: "</head>"))
+        let meta = try XCTUnwrap(text.range(of: "Content-Security-Policy"))
+        XCTAssertTrue(head.upperBound <= meta.lowerBound && meta.upperBound <= headEnd.lowerBound)
+        for tag in ["<style", "<script"] {
+            let first = try XCTUnwrap(text.range(of: tag))
+            XCTAssertLessThan(meta.lowerBound, first.lowerBound, tag)
+        }
     }
 
     func testAnOversizedPageIsNamedNotEmbedded() throws {

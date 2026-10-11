@@ -277,6 +277,77 @@ enum BackupDiffModel {
         return normalized.hasSuffix("_key")
     }
 
+    // MARK: - Raw text redaction
+
+    /// `text` (a raw `pro diff` payload) with the value of every credential-shaped key
+    /// replaced, by the key rule the Summary view uses. jamf-cli puts each changed object in
+    /// `old_value`/`new_value` as a JSON string, so those are read as JSON too; a value
+    /// under a credential-shaped `field` is masked as well. JSON with nothing to mask comes
+    /// back byte for byte. Text that is not JSON goes through `LogRedactor.redactedForSharing`
+    /// (credential patterns, hosts, and `profile`'s tenant and environment IDs).
+    static func redactedRawText(
+        _ text: String,
+        profile: String?,
+        scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) }
+    ) -> String {
+        guard let data = text.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data),
+              let (redacted, changed) = redactingSecrets(in: root)
+        else { return LogRedactor.redactedForSharing(text, profile: profile, scopeIDs: scopeIDs) }
+        guard changed else { return text }
+        // Failing to re-encode must not fall back to the unmasked text.
+        guard let out = try? JSONSerialization.data(
+                withJSONObject: redacted,
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
+              let result = String(data: out, encoding: .utf8)
+        else { return redactedPlaceholder }
+        return result
+    }
+
+    private static func redactingSecrets(in value: Any) -> (Any, Bool)? {
+        switch value {
+        case let dict as [String: Any]:
+            let maskValues = (dict["field"] as? String).map(isSensitiveLeafKey) ?? false
+            var out: [String: Any] = [:]
+            var changed = false
+            for (key, child) in dict {
+                let mask = isSensitiveLeafKey(key)
+                    || (maskValues && (key == "old_value" || key == "new_value"))
+                if mask, !(child is NSNull) {
+                    out[key] = redactedPlaceholder
+                    changed = true
+                } else if let (inner, innerChanged) = redactingSecrets(in: child) {
+                    out[key] = inner
+                    changed = changed || innerChanged
+                } else {
+                    out[key] = child
+                }
+            }
+            return (out, changed)
+        case let array as [Any]:
+            let parts = array.map { redactingSecrets(in: $0) ?? ($0, false) }
+            return (parts.map(\.0), parts.contains { $0.1 })
+        case let string as String:
+            return redactingEmbeddedJSON(string)
+        default:
+            return nil
+        }
+    }
+
+    /// A string that holds a JSON object or array, with its secrets masked and re-encoded;
+    /// the string itself when it holds none or is not JSON.
+    private static func redactingEmbeddedJSON(_ string: String) -> (Any, Bool)? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{") || trimmed.hasPrefix("["),
+              let object = jsonObject(trimmed),
+              let (inner, changed) = redactingSecrets(in: object), changed,
+              let data = try? JSONSerialization.data(
+                withJSONObject: inner, options: [.sortedKeys, .withoutEscapingSlashes]),
+              let text = String(data: data, encoding: .utf8)
+        else { return nil }
+        return (text, true)
+    }
+
     /// Elements of `lhs` not matched by `rhs`, preserving duplicates.
     private static func multisetSubtract(_ lhs: [String], _ rhs: [String]) -> [String] {
         var remaining: [String: Int] = [:]
