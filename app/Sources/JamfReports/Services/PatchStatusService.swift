@@ -177,11 +177,20 @@ struct PatchStatusService: Sendable {
     static func fleetComplianceCounts(
         _ titles: [PatchStatusRow]
     ) -> (onLatest: Int, devices: Int)? {
-        let counted = titles.filter { $0.total > 0 }
+        let counted = titles.filter { $0.total > 0 && hasUsableCounts($0) }
         let devices = counted.reduce(0) { $0 + $1.total }
         guard devices > 0 else { return nil }
         let onLatest = counted.reduce(0) { $0 + min(max($1.onLatest, 0), $1.total) }
         return (onLatest, devices)
+    }
+
+    /// False for a row whose total is negative or either count is past
+    /// `SummaryJSONParser.maxSummaryNumber`. A planted snapshot with totals near `Int.max`
+    /// would otherwise trap the sum, and the newest snapshot is read by every collect and by
+    /// the Patch screen. A negative `onLatest` stays usable: the sums clamp it to none.
+    static func hasUsableCounts(_ row: PatchStatusRow) -> Bool {
+        let limit = SummaryJSONParser.maxSummaryNumber
+        return (0...limit).contains(row.total) && row.onLatest <= limit
     }
 
     // MARK: - Internals

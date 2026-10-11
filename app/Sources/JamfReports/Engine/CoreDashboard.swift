@@ -2334,6 +2334,8 @@ struct CoreDashboard: Sendable {
         }
 
         let patchRows: [PatchRow] = patchItems.compactMap { item in
+            // Totals are rescaled through Double below, which traps on a value near Int.max.
+            guard PatchStatusService.hasUsableCounts(item) else { return nil }
             let total = item.total
             let primary = item.onLatest
             let adjTotal = total > 0 ? Int((Double(total) * activeRatio).rounded()) : 0
