@@ -1159,6 +1159,7 @@ final class CLIBridge {
         cacheSubdir: String,
         jamfCLIArgs: @Sendable (String) -> [String],
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        timeout: TimeInterval = deviceDetailTimeout,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1190,6 +1191,7 @@ final class CLIBridge {
                 ],
                 outputDirectory: devicesDir,
                 stdoutFallbackFile: staging,
+                timeout: timeout,
                 onLine: onLine
             )
             if exit == 0 {
@@ -2286,6 +2288,7 @@ func runDeviceDetailProcess(
     arguments: [String],
     outputDirectory: URL,
     stdoutFallbackFile: URL? = nil,
+    timeout: TimeInterval = deviceDetailTimeout,
     onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 ) async -> Int32 {
     await Task.detached(priority: .userInitiated) {
@@ -2317,54 +2320,67 @@ func runDeviceDetailProcess(
                 at: outputDirectory,
                 withIntermediateDirectories: true
             )
-            let process = Process()
-            process.executableURL = executable
-            process.arguments = arguments
-            process.environment = CLIBridge.environmentForJamfCLI()
-            process.standardInput = FileHandle.nullDevice
-            let stdoutPipe = Pipe()
-            process.standardOutput = stdoutPipe
-            let stderrPipe = Pipe()
-            process.standardError = stderrPipe
-            try process.run()
-            // Drain both pipes while the child runs, so output past the pipe buffer cannot block
-            // it, and read each to EOF after the exit: clearing the handlers right after
-            // waitUntilExit dropped whatever the handler had not yet delivered.
-            let stdoutDrainer = ProcessPipeDrainer(pipe: stdoutPipe)
-            let stderrDrainer = ProcessPipeDrainer(pipe: stderrPipe)
-            stdoutDrainer.start()
-            stderrDrainer.start()
-            process.waitUntilExit()
-            let capturedOut = stdoutDrainer.finish()
-            let capturedErr = stderrDrainer.finish()
-            let code = process.terminationStatus
-            if code != 0 {
-                if let msg = String(data: capturedErr, encoding: .utf8),
-                   !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    AppLogger.cli.warning(
-                        "runDeviceDetailProcess exit \(code): \(msg, privacy: .private)"
-                    )
-                }
+            // One lookup may wait on several slow API calls; the limit only backstops a wedged
+            // jamf-cli, and the caller falls back to the cached copy on any non-zero exit.
+            switch JamfCLIProbe.runOutcome(
+                executable: executable, arguments: arguments, timeout: timeout
+            ) {
+            case .launchFailed:
+                // -1 as for the cases above: the Int32 signature is a test seam.
+                onLine?(deviceLaunchFailureLine())
+                return -1
+            case .timedOut:
+                onLine?(.init(
+                    timestamp: Date(), level: .fail,
+                    text: "jamf-cli did not answer within \(Int(timeout)) s - stopped"
+                ))
+                return CLIBridge.exitCodeTimedOut
+            case .completed(let output):
+                return finishDeviceDetail(
+                    output, stdoutFallbackFile: stdoutFallbackFile
+                )
             }
-            if code == 0, let dest = stdoutFallbackFile {
-                let cliWroteFile = ((try? Data(contentsOf: dest))?.isEmpty == false)
-                if !cliWroteFile && !capturedOut.isEmpty {
-                    try? capturedOut.write(to: dest, options: .atomic)
-                }
-            }
-            return code
         } catch {
             AppLogger.cli.error(
                 "runDeviceDetailProcess launch failed: \(error.localizedDescription, privacy: .private)"
             )
-            onLine?(.init(
-                timestamp: Date(), level: .fail,
-                text: "jamf-cli could not be launched — check that jamf-cli is installed and the executable is intact."
-            ))
+            onLine?(deviceLaunchFailureLine())
             // Launch failure: -1 is used for the same reason as above (Int32 signature, fire-and-forget).
             return -1
         }
     }.value
+}
+
+/// Seconds `pro device` gets: one lookup resolves the device, then reads its detail and several
+/// history subsets in turn, and a single jamf-cli request may itself wait 120 s.
+let deviceDetailTimeout: TimeInterval = 180
+
+private func deviceLaunchFailureLine() -> CLIBridge.LogLine {
+    CLIBridge.LogLine(
+        timestamp: Date(), level: .fail,
+        text: "jamf-cli could not be launched — check that jamf-cli is installed and the executable is intact."
+    )
+}
+
+/// Logs a failed exit and, on a clean one, writes captured stdout to `stdoutFallbackFile` when
+/// jamf-cli did not create it (see `runDeviceDetailProcess`). Returns the exit code.
+private func finishDeviceDetail(
+    _ output: JamfCLIProbe.Output, stdoutFallbackFile: URL?
+) -> Int32 {
+    let code = output.exitCode
+    if code != 0 {
+        if let msg = String(data: output.stderr, encoding: .utf8),
+           !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            AppLogger.cli.warning("runDeviceDetailProcess exit \(code): \(msg, privacy: .private)")
+        }
+    }
+    if code == 0, let dest = stdoutFallbackFile {
+        let cliWroteFile = ((try? Data(contentsOf: dest))?.isEmpty == false)
+        if !cliWroteFile && !output.stdout.isEmpty {
+            try? output.stdout.write(to: dest, options: .atomic)
+        }
+    }
+    return code
 }
 
 private func deviceCacheFilename(_ raw: String) -> String {
