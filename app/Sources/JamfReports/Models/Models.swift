@@ -66,6 +66,12 @@ struct JamfCLIProfile: Identifiable, Sendable {
     let status: Status
     var authMethod: String = ""
     var isDefault: Bool = false
+    var product: JamfCLIProduct = .unknown
+    /// For an `auth-method: platform` profile; nil for every other.
+    var platformLevel: PlatformScopeLevel?
+
+    /// An organization-level integration reaches only Jamf Account, so it cannot report.
+    var isOrganizationLevel: Bool { platformLevel == .organization }
 }
 
 // MARK: - Schedules

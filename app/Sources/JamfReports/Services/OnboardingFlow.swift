@@ -1371,7 +1371,7 @@ final class OnboardingFlow {
         try Self.writeProductBlock("school_cli", profile: schoolProfileName, for: profileSlug)
     }
 
-    private static func writeProductBlock(
+    static func writeProductBlock(
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
         try ConfigService.saveBlock(key: key, profile: profileSlug) { root in

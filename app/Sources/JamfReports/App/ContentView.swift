@@ -56,7 +56,7 @@ struct ContentView: View {
             // onboarding never runs) but no profile has a workspace yet —
             // walk through automation setup + the first collection instead of
             // dropping into an empty shell (#181).
-            ExistingCLISetupView(profileNames: workspace.profiles.map(\.name))
+            ExistingCLISetupView(profiles: workspace.profiles)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.Colors.winBG.ignoresSafeArea())
         } else {

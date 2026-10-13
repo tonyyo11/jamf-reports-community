@@ -21,8 +21,8 @@ struct ExistingCLISetupView: View {
 
     private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-    init(profileNames: [String]) {
-        _flow = State(initialValue: ExistingCLISetupFlow(profileNames: profileNames))
+    init(profiles: [JamfCLIProfile]) {
+        _flow = State(initialValue: ExistingCLISetupFlow(profiles: profiles))
     }
 
     var body: some View {
@@ -135,14 +135,15 @@ struct ExistingCLISetupView: View {
             VStack(alignment: .leading, spacing: 10) {
                 stepTitle(number: 1, title: "Profiles to set up")
                 ForEach(flow.profileNames, id: \.self) { name in
-                    Toggle(name, isOn: selectionBinding(name))
+                    Toggle(profileTitle(name), isOn: selectionBinding(name))
                         .toggleStyle(.checkbox)
-                        .disabled(isLocked || flow.unusable[name] != nil)
+                        .disabled(isLocked || flow.unusable[name] != nil
+                            || flow.refusals[name] != nil)
                     if let reason = flow.unusable[name] {
-                        Text("\(name) can't be used. \(reason.explanation)")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.warnSoft)
-                            .fixedSize(horizontal: false, vertical: true)
+                        profileNote("\(name) can't be used. \(reason.explanation)")
+                    }
+                    if let reason = flow.refusals[name] {
+                        profileNote(reason)
                     }
                 }
                 Text(
@@ -154,6 +155,17 @@ struct ExistingCLISetupView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
         }
+    }
+
+    private func profileTitle(_ name: String) -> String {
+        flow.products[name] == .school ? "\(name) (Jamf School)" : name
+    }
+
+    private func profileNote(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(Theme.Colors.warnSoft)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Automation
@@ -428,7 +440,9 @@ private extension ExistingCLISetupFlow.CollectKindStatus.Outcome {
 }
 
 #Preview {
-    ExistingCLISetupView(profileNames: ["acme-prod", "acme-dev"])
+    ExistingCLISetupView(profiles: ["acme-prod", "acme-dev"].map {
+        JamfCLIProfile(name: $0, url: "acme.jamfcloud.com", schedules: 0, status: .idle)
+    })
         .environment(WorkspaceStore(demoMode: false))
         .frame(width: 960, height: 860)
 }

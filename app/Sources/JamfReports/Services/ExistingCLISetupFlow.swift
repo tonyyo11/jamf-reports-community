@@ -96,6 +96,14 @@ final class ExistingCLISetupFlow {
     /// jamf-cli profiles discovered at launch, in discovery order.
     let profileNames: [String]
 
+    /// Each profile's product, for the rows that are not Jamf Pro.
+    let products: [String: JamfCLIProduct]
+
+    /// Profiles that are never a workspace here, with the reason the screen shows. A Protect or
+    /// Security Cloud login holds no Jamf Pro data; Protect is added from the Jamf Pro
+    /// workspace that uses it.
+    let refusals: [String: String]
+
     /// Profiles the app can't set up, with the reason the screen shows. They are
     /// never selected or run: initializing one used to fail as "Workspace not found".
     let unusable: [String: ProfileService.UnusableReason]
@@ -127,11 +135,27 @@ final class ExistingCLISetupFlow {
     /// Lookup used to implement last-wins without a linear scan.
     private var kindStatusIndex: [String: Int] = [:]
 
-    init(profileNames: [String]) {
+    convenience init(profileNames: [String]) {
+        self.init(profiles: profileNames.map {
+            JamfCLIProfile(name: $0, url: "", schedules: 0, status: .idle)
+        })
+    }
+
+    init(profiles: [JamfCLIProfile]) {
+        let profileNames = profiles.map(\.name)
         self.profileNames = profileNames
+        self.products = Dictionary(
+            profiles.map { ($0.name, $0.product) }, uniquingKeysWith: { first, _ in first })
+        var refusals: [String: String] = [:]
+        for profile in profiles where profile.product.isNeverAWorkspace {
+            refusals[profile.name] = "A \(profile.product.displayName) login holds no Jamf Pro "
+                + "data, so it is not a workspace. Add Jamf Protect from the Jamf Pro workspace "
+                + "that uses it."
+        }
+        self.refusals = refusals
         let unusable = ProfileService.unusableProfiles(in: profileNames)
         self.unusable = unusable
-        self.selected = Set(profileNames.filter { unusable[$0] == nil })
+        self.selected = Set(profileNames.filter { unusable[$0] == nil && refusals[$0] == nil })
         let defaults = AutomationPolicy()
         self.scanWeekday = defaults.scanWeekday
         self.reportsCadence = defaults.reportsCadence
@@ -204,12 +228,18 @@ final class ExistingCLISetupFlow {
     /// Pro). One profile's failure never blocks the others; failures carry an
     /// actionable message into the status row.
     ///
+    /// A Jamf School profile gets a Jamf School workspace: `configureSchool` records
+    /// `school_cli` in it, which is what routes its collect to Jamf School.
+    ///
     /// `initialize` / `collect` default to the real `CLIBridge` calls; tests
     /// inject spies. The collect closure receives an onLine sink — the engine's
     /// per-kind log stream — which feeds `progress` for the live UI.
     func run(
         initialize: @escaping (String) async throws -> Int32 = { profile in
             try await CLIBridge().initializeWorkspace(profile: profile, onLine: CLIBridge.noOpOnLine)
+        },
+        configureSchool: @escaping (String) throws -> Void = { profile in
+            try OnboardingFlow.writeProductBlock("school_cli", profile: profile, for: profile)
         },
         collect: @escaping (String, @escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32 = {
             profile, onLine in
@@ -244,7 +274,7 @@ final class ExistingCLISetupFlow {
         didComplete = false
         defer { isRunning = false }
 
-        for name in profileNames where selected.contains(name) && unusable[name] == nil {
+        for name in profileNames where isRunnable(name) {
             statuses[name] = .initializing
             failureStages[name] = nil
             initializedWorkspaces.remove(name)
@@ -255,6 +285,7 @@ final class ExistingCLISetupFlow {
                     fail(name, "workspace init exited \(initExit)", at: stage)
                     continue
                 }
+                if products[name] == .school { try configureSchool(name) }
                 initializedWorkspaces.insert(name)
                 stage = .collect
                 statuses[name] = .collecting
@@ -281,6 +312,11 @@ final class ExistingCLISetupFlow {
             }
         }
         didComplete = true
+    }
+
+    /// Selected, usable and not refused: the profiles a run sets up.
+    private func isRunnable(_ name: String) -> Bool {
+        selected.contains(name) && unusable[name] == nil && refusals[name] == nil
     }
 
     private func fail(_ name: String, _ reason: String, at stage: FailureStage) {

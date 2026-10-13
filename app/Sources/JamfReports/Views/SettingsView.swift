@@ -675,8 +675,9 @@ struct SettingsView: View {
     }
 
     private func profileType(_ profile: JamfCLIProfile) -> String {
-        if profile.authMethod.isEmpty { return "Jamf Pro profile" }
-        return "Jamf Pro · \(profile.authMethod)"
+        let product = profile.product.displayName
+        if profile.authMethod.isEmpty { return "\(product) profile" }
+        return "\(product) · \(profile.authMethod)"
     }
 
     private func dotColor(for profile: JamfCLIProfile) -> Color {

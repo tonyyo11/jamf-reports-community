@@ -1208,14 +1208,17 @@ final class WorkspaceStore {
     }
 
     /// The profile a reload keeps active: the current one while it is still
-    /// listed and usable, else `initialProfile(in:)`.
+    /// listed and usable. When it is gone because it is a Protect login (discovery no longer
+    /// lists one), the workspace whose `protect.profile` names it; else `initialProfile(in:)`.
     nonisolated static func activeProfile(
-        keeping current: String, in profiles: [JamfCLIProfile]
+        keeping current: String, in profiles: [JamfCLIProfile],
+        protectProfile: (String) -> String? = { ConnectedProducts.read(profile: $0).protectProfile }
     ) -> String? {
         if profiles.contains(where: { $0.name == current && $0.status != .error }) {
             return current
         }
-        return initialProfile(in: profiles)?.name
+        let owner = profiles.first { $0.status != .error && protectProfile($0.name) == current }
+        return (owner ?? initialProfile(in: profiles))?.name
     }
 
     private static func org(for profile: JamfCLIProfile?) -> Org {
