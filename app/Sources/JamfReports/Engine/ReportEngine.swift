@@ -3384,7 +3384,9 @@ struct ReportEngine: Sendable {
         case .sectionPerPage:
             let style = """
             <style>
-            main > section.group-section:has(> details.group) { page-break-before: always; }
+            main > section.group-section:has(> details.group:not(.dashboard)) {
+              page-break-before: always;
+            }
             </style>
             """
             return html.replacingOccurrences(of: "</head>", with: "\(style)\n</head>")

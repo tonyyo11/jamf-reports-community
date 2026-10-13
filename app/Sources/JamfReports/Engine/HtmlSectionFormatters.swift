@@ -59,20 +59,29 @@ enum HtmlSectionFormatters {
             .replacingOccurrences(of: "'", with: "&#39;")
     }
 
-    /// `raw` escaped, with a line-break opportunity after each `.`, `_` and `/` that has more
-    /// text after it, so a long reverse-DNS or file-style name wraps at a separator instead of
-    /// running out of its box or breaking mid-word.
+    /// `raw` escaped, with a line-break opportunity after each `.`, `_`, `/` and `@` that has
+    /// a letter or digit after it, so a long reverse-DNS name, path or email address wraps at
+    /// a separator instead of running out of its box, or widening a table past a printed page.
     nonisolated static func escapeHTMLBreakable(_ raw: String) -> String {
         let characters = Array(escapeHTML(raw))
         var out = ""
         for (index, character) in characters.enumerated() {
             out.append(character)
-            guard "._/".contains(character), index + 1 < characters.count,
+            guard "._/@".contains(character), index + 1 < characters.count,
                   characters[index + 1].isLetter || characters[index + 1].isNumber
             else { continue }
             out += "<wbr>"
         }
         return out
+    }
+
+    /// `raw` escaped, with `escapeHTMLBreakable`'s break points only inside words longer than
+    /// 20 characters: a table cell's email address or path wraps instead of widening the
+    /// table past a printed page, while numbers, codes and serial numbers stay whole.
+    nonisolated static func escapeHTMLLongWords(_ raw: String) -> String {
+        raw.split(separator: " ", omittingEmptySubsequences: false).map { word in
+            word.count > 20 ? escapeHTMLBreakable(String(word)) : escapeHTML(String(word))
+        }.joined(separator: " ")
     }
 
     // MARK: - Counts
@@ -93,7 +102,7 @@ enum HtmlSectionFormatters {
     ) -> String {
         let thCells = headers.map { "<th>\(escapeHTML($0))</th>" }.joined()
         let bodyRows = rows.enumerated().map { index, cells -> String in
-            let tds = cells.map { "<td>\(escapeHTML($0))</td>" }.joined()
+            let tds = cells.map { "<td>\(escapeHTMLLongWords($0))</td>" }.joined()
             let cls = rowClasses.flatMap { index < $0.count ? $0[index] : nil }
                 .map { " class=\"\(escapeHTML($0))\"" } ?? ""
             return "<tr\(cls)>\(tds)</tr>"
@@ -137,7 +146,8 @@ enum HtmlSectionFormatters {
         let omitted = rows.count - kept.count
         let more = omitted > 0
             ? "<p class=\"empty\">\(omitted) more rows are in the workbook.</p>" : ""
-        guard kept.count > limit else {
+        // Expanded (the PDF) prints one table: two would size their columns apart.
+        guard kept.count > limit, !expanded else {
             return renderTable(headers: headers, rows: kept, rowClasses: classes) + more
         }
         let head = renderTable(
@@ -160,15 +170,16 @@ enum HtmlSectionFormatters {
             return "<table class=\"data-table\"><thead><tr>\(th)</tr></thead>"
                 + "<tbody>\(rows.joined(separator: "\n"))</tbody></table>"
         }
-        guard rowHTML.count > limit else { return table(rowHTML[...]) }
+        guard rowHTML.count > limit, !expanded else { return table(rowHTML[...]) }
         return table(rowHTML.prefix(limit))
             + showAll(count: rowHTML.count, body: table(rowHTML.dropFirst(limit)),
                       expanded: expanded)
     }
 
     /// The nested block that holds a list's remaining rows.
+    /// Expanded (the PDF) prints the rest with no label: "Show all" does nothing on paper.
     nonisolated static func showAll(count: Int, body: String, expanded: Bool) -> String {
-        disclosure(label: "Show all \(count)", body: body, expanded: expanded)
+        expanded ? body : disclosure(label: "Show all \(count)", body: body, expanded: false)
     }
 
     /// A collapsed block inside a detail group, opened by its label. `expanded` renders it

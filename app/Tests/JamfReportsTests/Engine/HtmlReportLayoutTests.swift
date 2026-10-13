@@ -770,7 +770,8 @@ final class HtmlReportLayoutTests: XCTestCase {
           stale_device_days: 45
         """))
         let appendix = try XCTUnwrap(html.range(of: "id=\"audit-appendix\""))
-        let text = String(html[appendix.lowerBound...])
+        // A long cell carries invisible break points (`escapeHTMLLongWords`).
+        let text = String(html[appendix.lowerBound...]).replacingOccurrences(of: "<wbr>", with: "")
         XCTAssertTrue(text.contains("Security report (security)"))
         XCTAssertTrue(text.contains("Patch status (patch-status)"))
         XCTAssertTrue(text.contains("Daily summaries (snapshots/summaries)"))

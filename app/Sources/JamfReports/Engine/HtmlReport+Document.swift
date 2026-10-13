@@ -331,6 +331,19 @@ extension HtmlReport {
           /* A heading stays with what it introduces, and a box shorter than a page is not
              cut by a page break. The engine leaves a longer one to break where it must. */
           h2, h3, h4, details > summary { break-after: avoid; page-break-after: avoid; }
+          /* WebKit's print ignores break-after: avoid. A heading's box takes in room for a
+             few lines below it (padding), which the next element then overlaps (negative
+             margin), and the box is never split: when those lines do not fit, the heading
+             moves to the next page with them. */
+          h2, h3, details.group > summary {
+            break-inside: avoid; page-break-inside: avoid;
+            padding-bottom: 9rem; margin-bottom: -8.4rem;
+          }
+          /* A table never runs past the page: print cannot scroll it, so it was cut off.
+             Long values wrap where the table renderer marks them (`breakable`). */
+          .block { overflow: visible; }
+          .block table { font-size: 0.8rem; }
+          .block td { overflow-wrap: break-word; }
           .glance-tile, .tile, .count-card, .compliance-hero, .attention-list li, .block {
             break-inside: avoid; page-break-inside: avoid;
           }
