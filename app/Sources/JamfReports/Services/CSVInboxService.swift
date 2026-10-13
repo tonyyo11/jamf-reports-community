@@ -18,6 +18,12 @@ struct InboxFile: Identifiable, Sendable {
 }
 
 struct CSVInboxService {
+    /// Under the Data Sources inbox list: what moves a file out of Pending.
+    static let statusCaption =
+        "A file stays Pending until a scheduled CSV-assisted run uses it and marks it "
+        + "Consumed. Archive moves a file out of the inbox. Generating a report from the app "
+        + "does not read the inbox."
+
     enum ClearError: Error, LocalizedError, Equatable {
         case invalidProfile
         case invalidPath
