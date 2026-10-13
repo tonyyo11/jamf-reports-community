@@ -48,7 +48,7 @@ struct DevicesView: View {
     }
 
     enum DeviceFilter: String, CaseIterable, Identifiable {
-        case all, stale, contactGap, patch, security, priorityAction
+        case all, stale, contactGap, binaryMissing, patch, security, priorityAction
         var id: String { rawValue }
 
         var label: String {
@@ -56,6 +56,7 @@ struct DevicesView: View {
             case .all:            "All"
             case .stale:          "Stale"
             case .contactGap:     "Contact gap"
+            case .binaryMissing:  "Binary missing"
             case .patch:          "Patch"
             case .security:       "Security"
             case .priorityAction: "Priority"
@@ -67,6 +68,7 @@ struct DevicesView: View {
             case .all:            "list.bullet"
             case .stale:          "clock.badge.exclamationmark"
             case .contactGap:     "wifi.exclamationmark"
+            case .binaryMissing:  "shippingbox"
             case .patch:          "square.and.arrow.down.badge.clock"
             case .security:       "lock.shield"
             case .priorityAction: "exclamationmark.triangle.fill"
@@ -134,6 +136,8 @@ struct DevicesView: View {
                 return isStale(device)
             case .contactGap:
                 return contactGap(of: device) != nil
+            case .binaryMissing:
+                return device.isBinaryMissing
             case .patch:
                 return device.patchFailureCount > 0
             case .security:
@@ -447,13 +451,21 @@ struct DevicesView: View {
             StatTile(label: "Devices", value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
             StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(staleRule))",
-                     sub: ">\(staleDays) days since \(staleRule.basisPhrase)")
+                     sub: staleTileSub)
             StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
             StatTile(label: "FileVault",
                      value: Self.fileVaultTileValue(activeSnapshot.fileVaultPercent),
                      sub: fileVaultTileSub)
         }
+    }
+
+    /// The stale rule in words, plus the Macs it leaves out because their Jamf binary is
+    /// missing (`BinaryMissing`).
+    private var staleTileSub: String {
+        let rule = ">\(staleDays) days since \(staleRule.basisPhrase)"
+        let missing = activeSnapshot.binaryMissingCount
+        return missing == 0 ? rule : rule + " · \(missing) with no Jamf binary not counted"
     }
 
     /// "—" when no Mac's FileVault value reads as on or off.
@@ -636,6 +648,8 @@ struct DevicesView: View {
                         ("Department", device.department),
                         ("Site", device.site),
                     ])
+
+                    binaryMissingSection(for: device)
 
                     securitySection(for: device)
 
@@ -940,6 +954,25 @@ struct DevicesView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    /// What to do for a Mac enrolled without the Jamf binary; absent for every other Mac.
+    @ViewBuilder
+    private func binaryMissingSection(for device: DeviceInventoryRecord) -> some View {
+        if device.isBinaryMissing {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: BinaryMissing.title)
+                Text("Jamf Pro lists this Mac as not managed and it has never checked in. "
+                    + "It needs manual intervention. Any one of these gets the binary on:")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                ForEach(Array(BinaryMissing.remediation.enumerated()), id: \.offset) { step in
+                    Text("\(step.offset + 1). \(step.element)")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.fg2)
                 }
             }
         }

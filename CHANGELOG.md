@@ -28,6 +28,18 @@ versions in this repository map to git tags.
 - The per-title patch definition files the patch release-date lookup used to save under
   `jamf-cli-data/patch-definitions/` are no longer written; nothing read them.
 
+### Fixed
+
+- A Mac that enrolled through Automated Device Enrollment but never received the Jamf binary (the
+  "DEP - <serial>" records) is no longer counted as stale. Jamf lists it as not managed and it has
+  never checked in, so Devices, Offline Outreach and the HTML report now show it as "Not managed:
+  Jamf binary missing" instead: a Binary missing filter on Devices, a line in the Mac's detail
+  panel, and a "Needs attention" line in the report that links to its row in the follow-up list.
+  It is found from Jamf's data, not its name. To fix one, mark the computer as managed in Jamf
+  Pro, deploy the binary through the API or another tool, or run
+  `sudo profiles renew -type enrollment` on the Mac. Totals that come from Jamf's own summaries
+  still include these Macs. (#274)
+
 ### Security
 
 - A report run for one profile now reads and writes only that profile's folders. If the shared

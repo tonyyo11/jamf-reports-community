@@ -311,6 +311,9 @@ extension HtmlReport {
                 + "over \(days) days")
             let gaps = inputs.contactGapCounts.values.reduce(0, +)
             if gaps > 0 { parts.append("\(gaps) with a contact gap") }
+            if inputs.binaryMissingCount > 0 {
+                parts.append("\(inputs.binaryMissingCount) without the Jamf binary")
+            }
         case .policies:
             if shown.contains(.policyTable) {
                 let n = (inputs.policyStatus.first?["config_findings"] as? [Any])?.count ?? 0

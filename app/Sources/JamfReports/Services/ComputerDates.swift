@@ -74,6 +74,17 @@ struct ComputerDates: Sendable, Equatable {
     }
 }
 
+extension BinaryMissing {
+    /// The rule for one element of a `computers` snapshot, which dates every Mac: the managed
+    /// flag the Devices screen reads (`general.remoteManagement.managed`, `general.managed`,
+    /// `isManaged`, `managed`) and no check-in date.
+    static func isMissing(computer item: [String: Any]) -> Bool {
+        isMissing(
+            managedState: DeviceInventoryService.managedFlag(ofComputer: item),
+            neverCheckedIn: ComputerDates(item: item).checkIn == nil)
+    }
+}
+
 /// Finds a Mac's dates from a row that carries a Jamf ID, a serial or both, by the identifiers
 /// the Devices merge uses (`DeviceRecordMerger`): the Jamf ID first, then the serial. An
 /// identifier two Macs share finds neither (a logic-board swap leaves two records on one

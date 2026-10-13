@@ -134,6 +134,16 @@ enum DeviceInventoryService {
         return record
     }
 
+    /// The managed flag of one `computers` element as text, read from the first of
+    /// `general.remoteManagement.managed`, `general.managed`, `isManaged` and `managed` that
+    /// is set; blank when none is. The one reader, for the Devices record and the HTML report.
+    static func managedFlag(ofComputer item: [String: Any]) -> String {
+        let general = item["general"] as? [String: Any] ?? [:]
+        let remote = general["remoteManagement"] as? [String: Any] ?? [:]
+        return [remote["managed"], general["managed"], item["isManaged"], item["managed"]]
+            .lazy.compactMap { clean($0) }.first ?? ""
+    }
+
     private static func emptySnapshot(warning: String) -> DeviceInventorySnapshot {
         DeviceInventorySnapshot(
             devices: [],
@@ -606,7 +616,7 @@ extension DeviceInventoryService {
         record.site = first(flat, ["general.site.name", "site.name", "site"])
         record.ipAddress = first(flat, ["general.lastIpAddress", "general.lastReportedIpV4", "general.lastReportedIp", "general.ipAddress", "ipAddress"])
         record.assetTag = first(flat, ["general.assetTag", "assetTag"])
-        record.managedState = managedLabel(first(flat, ["general.remoteManagement.managed", "general.managed", "isManaged", "managed"]))
+        record.managedState = managedLabel(managedFlag(ofComputer: item))
         // Jamf Pro's v4 inventory renamed lastContactTime to lastCheckIn. Its general.lastContact
         // is a separate field, null on most Macs, so it is not a substitute.
         record.lastContact = first(flat, ["general.lastCheckIn", "general.lastContactTime", "general.lastContactDate", "lastContactDate"])

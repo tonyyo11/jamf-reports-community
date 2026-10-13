@@ -26,7 +26,7 @@ struct OutreachView: View {
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
-            if snapshot.totalDevices == 0 {
+            if snapshot.totalDevices == 0 && snapshot.binaryMissingCount == 0 {
                 emptyState
             } else {
                 tierKPIGrid
@@ -44,10 +44,14 @@ struct OutreachView: View {
     }
 
     private var subtitle: String? {
-        guard snapshot.totalDevices > 0 else { return nil }
+        guard snapshot.totalDevices > 0 || snapshot.binaryMissingCount > 0 else { return nil }
         let count = snapshot.totalDevices
-        return "\(count) device\(count == 1 ? "" : "s") bucketed by "
+        let bucketed = "\(count) device\(count == 1 ? "" : "s") bucketed by "
             + "days since \(staleRule.basisPhrase)."
+        let missing = snapshot.binaryMissingCount
+        guard missing > 0 else { return bucketed }
+        return bucketed + " \(missing) more \(missing == 1 ? "has" : "have") no Jamf binary "
+            + "and \(missing == 1 ? "is" : "are") listed on Devices under Binary missing."
     }
 
     /// The stale rule the tiers follow: the configured window over the dates `stale_basis` lists.

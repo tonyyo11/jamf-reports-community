@@ -165,6 +165,7 @@ extension HtmlReport {
     /// One sentence per rule, each only while its count is above zero:
     /// - Macs stale under the stale rule (`thresholds.stale_device_days`, `stale_basis`),
     /// - Macs MDM reaches whose Jamf binary or inventory is more than `contact_gap_days` behind,
+    /// - Macs enrolled but never given the Jamf binary (unmanaged, never checked in),
     /// - P0 security gaps (FileVault, SIP or Firewall off at the `fail` level),
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
@@ -191,6 +192,10 @@ extension HtmlReport {
             guard count > 0 else { continue }
             add(.interventionList, .devices,
                 Self.contactGapSentence(gap, count: count, gapDays: config.contactGapDays))
+        }
+        if inputs.binaryMissingCount > 0 {
+            add(.interventionList, .devices,
+                BinaryMissing.attentionSentence(count: inputs.binaryMissingCount))
         }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {

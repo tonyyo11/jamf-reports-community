@@ -53,6 +53,8 @@ extension HtmlReport {
         var totalDevices: Int = 0
         /// Macs in `computers` that are stale under the stale rule.
         var staleMacCount: Int = 0
+        /// Macs in `computers` that are unmanaged and have never checked in (`BinaryMissing`).
+        var binaryMissingCount: Int = 0
         /// Macs in `computers` that MDM reaches while their check-in or inventory lags.
         var contactGapCounts: [ContactGap: Int] = [:]
         /// P0 gaps as the newest daily summary counts them, else from the security snapshot.
@@ -114,6 +116,7 @@ extension HtmlReport {
         inputs.totalDevices = asInt(secData["total_devices"])
             ?? overviewDeviceCount(inputs.overview)
         inputs.staleMacCount = staleComputers(inputs.computers).count
+        inputs.binaryMissingCount = binaryMissingComputers(inputs.computers).count
         inputs.contactGapCounts = contactGapCounts(inputs.computers)
         (inputs.fleet, inputs.p0Gaps) = securityCounts()
         if !(config.securityAgents ?? []).isEmpty,

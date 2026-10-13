@@ -76,6 +76,9 @@ struct StaleDeviceService: Sendable {
         let dataCollectedDate: Date?
         /// `thresholds.stale_basis`, the dates the tiers' stale age counts.
         var staleBasis: [StaleBasis] = StaleBasis.default
+        /// Macs enrolled but without the Jamf binary (`BinaryMissing`). They are in no tier
+        /// and not in `totalDevices`: nothing here, a wait or an email, gets the binary on.
+        var binaryMissingCount = 0
 
         /// Freshness signal for `StaleDataBanner`. Uses the 36-hour window shared
         /// with other dashboard services (aligns with the standard daily cadence).
@@ -126,6 +129,8 @@ struct StaleDeviceService: Sendable {
         dataCollectedDate: Date? = nil,
         now: Date = Date()
     ) -> Snapshot {
+        let binaryMissing = records.filter(\.isBinaryMissing).count
+        let records = records.filter { !$0.isBinaryMissing }
         guard !records.isEmpty else {
             // Preserve dataCollectedDate so cacheSource reflects collection time
             // even when no devices have been inventoried yet.
@@ -138,7 +143,8 @@ struct StaleDeviceService: Sendable {
                 sourceFile: nil,
                 snapshotDate: nil,
                 dataCollectedDate: collected,
-                staleBasis: staleBasis
+                staleBasis: staleBasis,
+                binaryMissingCount: binaryMissing
             )
         }
 
@@ -184,7 +190,8 @@ struct StaleDeviceService: Sendable {
             sourceFile: nil,
             snapshotDate: mostRecentContact,
             dataCollectedDate: dataCollectedDate,
-            staleBasis: staleBasis
+            staleBasis: staleBasis,
+            binaryMissingCount: binaryMissing
         )
     }
 

@@ -135,12 +135,14 @@ extension HtmlReport {
 
     /// The Macs that are stale under the stale rule (`thresholds.stale_device_days` and
     /// `stale_basis`), oldest first, each with its stale age. A Mac without a date the rule
-    /// counts has never had it, so it is the oldest of all.
+    /// counts has never had it, so it is the oldest of all, unless it is unmanaged and has
+    /// never checked in: that is `binaryMissingComputers`, not stale.
     func staleComputers(
         _ computers: [[String: Any]], now: Date = Date()
     ) -> [(item: [String: Any], age: StaleAge)] {
         computers.compactMap { item -> (item: [String: Any], age: StaleAge)? in
-            guard let age = staleRuleAge(of: item, now: now), isStale(age) else { return nil }
+            guard !BinaryMissing.isMissing(computer: item),
+                  let age = staleRuleAge(of: item, now: now), isStale(age) else { return nil }
             return (item, age)
         }.sorted { $0.age > $1.age }
     }
@@ -160,6 +162,7 @@ extension HtmlReport {
     /// The gap a Mac shows (`ContactGap`), nil when none: the one place the report reads it, so
     /// the attention sentences, the group headline and the intervention list agree.
     func contactGap(of item: [String: Any], now: Date = Date()) -> ContactGap? {
+        guard !BinaryMissing.isMissing(computer: item) else { return nil }
         let dates = ComputerDates(item: item)
         return ContactGap.of(
             checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
@@ -177,8 +180,13 @@ extension HtmlReport {
         return counts
     }
 
+    /// The Macs enrolled but without the Jamf binary (`BinaryMissing`), in snapshot order.
+    func binaryMissingComputers(_ computers: [[String: Any]]) -> [[String: Any]] {
+        computers.filter { BinaryMissing.isMissing(computer: $0) }
+    }
+
     /// One row of the intervention list: a Mac that is stale under the stale rule, shows a
-    /// contact gap, or both.
+    /// contact gap, or both; or one whose Jamf binary is missing, which is neither.
     struct InterventionMac {
         let item: [String: Any]
         /// The stale rule's age; nil only for a Mac the rule has no date for.
@@ -186,6 +194,10 @@ extension HtmlReport {
         let isStale: Bool
         let gap: ContactGap?
         let contact: Date?
+        var binaryMissing = false
+
+        /// The row's reason cell.
+        var reason: String { binaryMissing ? BinaryMissing.shortLabel : gap?.label ?? "—" }
     }
 
     /// The stale Macs, oldest first, then the Macs that only show a contact gap (Jamf binary
@@ -195,6 +207,11 @@ extension HtmlReport {
     ) -> [InterventionMac] {
         let rows = computers.compactMap { item -> InterventionMac? in
             let age = staleRuleAge(of: item, now: now)
+            if BinaryMissing.isMissing(computer: item) {
+                return InterventionMac(
+                    item: item, age: age, isStale: false, gap: nil,
+                    contact: ComputerDates(item: item).contact, binaryMissing: true)
+            }
             let isStale = age.map(isStale) ?? false
             let gap = contactGap(of: item, now: now)
             guard isStale || gap != nil else { return nil }
@@ -206,18 +223,21 @@ extension HtmlReport {
             gap.flatMap(ContactGap.allCases.firstIndex(of:)) ?? 0
         }
         let stale = rows.filter(\.isStale).sorted { ($0.age ?? .days(0)) > ($1.age ?? .days(0)) }
-        let gapOnly = rows.filter { !$0.isStale }.sorted {
+        let missing = rows.filter(\.binaryMissing)
+        let gapOnly = rows.filter { !$0.isStale && !$0.binaryMissing }.sorted {
             rank($0.gap) != rank($1.gap)
                 ? rank($0.gap) < rank($1.gap)
                 : ($0.age ?? .days(0)) > ($1.age ?? .days(0))
         }
-        return stale + gapOnly
+        return stale + gapOnly + missing
     }
 
-    /// The Macs the "Needs attention" stale and contact-gap lines count: stale under the stale
-    /// rule, with the oldest counted date's age and the primary user, and the Macs MDM reaches
-    /// whose Jamf binary or inventory lags, with their Last Contact and which gap. A Mac that is
-    /// both has one row with both. Titled by the stale rule alone when no Mac shows a gap.
+    /// The Macs the "Needs attention" stale, contact-gap and Jamf-binary lines count: stale
+    /// under the stale rule, with the oldest counted date's age and the primary user; the Macs
+    /// MDM reaches whose Jamf binary or inventory lags, with their Last Contact and which gap;
+    /// and the Macs enrolled without the Jamf binary (`BinaryMissing`). A Mac that is both
+    /// stale and a gap has one row with both. Titled by the stale rule alone when no other
+    /// reason applies.
     func buildInterventionList(
         computersInventory: [[String: Any]], now: Date = Date()
     ) -> HtmlBlock {
@@ -232,23 +252,38 @@ extension HtmlReport {
         let tableRows = macs.map { mac -> [String] in
             [inventoryName(mac.item), inventorySerial(mac.item), inventoryUsername(mac.item),
              mac.age.map { $0.days.map(String.init) ?? "never" } ?? "—",
-             mac.contact.map { CoreDashboard.dayText($0) } ?? "—", mac.gap?.label ?? "—"]
+             mac.contact.map { CoreDashboard.dayText($0) } ?? "—", mac.reason]
         }
         let staleTitle = "Macs with no \(rule.basisPhrase) for more than \(rule.days) days"
-        let gaps = macs.filter { $0.gap != nil }.count
-        let title = gaps == 0
+        let plain = macs.allSatisfy { $0.gap == nil && !$0.binaryMissing }
+        let title = plain
             ? "\(staleTitle) (\(macs.count))" : "Macs to follow up (\(macs.count))"
-        let note = gaps == 0 ? "" : "\n<p class=\"block-note\">"
-            + f.escapeHTML(
-                "\(macs.filter(\.isStale).count) with no \(rule.basisPhrase) for more than "
-                + "\(rule.days) days, \(gaps) with a contact gap. A Mac that is both has one row.")
-            + "</p>"
         return .shown(f.block(
             id: "intervention-list", title: title,
-            body: note + f.renderCappedTable(
+            body: interventionNote(macs, rule: rule) + f.renderCappedTable(
                 headers: ["Device", "Serial", "Primary User", "Days Since \(rule.basisHeading)",
-                          "Last Contact", "Contact gap"],
+                          "Last Contact", "Reason"],
                 rows: tableRows, maxRows: f.maxInterventionRows, expanded: expandAll)))
+    }
+
+    /// The paragraph above the intervention list that splits its rows by reason; empty when
+    /// every row is stale alone.
+    private func interventionNote(_ macs: [InterventionMac], rule: StaleRule) -> String {
+        let gaps = macs.filter { $0.gap != nil }.count
+        let missing = macs.filter(\.binaryMissing).count
+        guard gaps > 0 || missing > 0 else { return "" }
+        var parts = ["\(macs.filter(\.isStale).count) with no \(rule.basisPhrase) for more "
+                     + "than \(rule.days) days"]
+        if gaps > 0 { parts.append("\(gaps) with a contact gap") }
+        if missing > 0 { parts.append("\(missing) enrolled without the Jamf binary") }
+        var text = parts.joined(separator: ", ") + "."
+        if gaps > 0 { text += " A Mac that is both has one row." }
+        if missing > 0 {
+            text += " Macs without the binary are not counted as stale. The fleet totals and "
+                + "percentages in this report come from Jamf's own summaries and may still "
+                + "include them."
+        }
+        return "\n<p class=\"block-note\">" + HtmlSectionFormatters.escapeHTML(text) + "</p>"
     }
 
     // MARK: - patchQueue
