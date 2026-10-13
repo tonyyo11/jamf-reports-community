@@ -206,6 +206,7 @@ extension HtmlReport {
         .glance-change.worse { color: var(--red); }
         .glance-change.flat, .glance-change.none { color: var(--subtext); }
         .glance-was { margin-left: 0.5rem; color: var(--subtext); }
+        .glance-sub { font-size: 0.75rem; color: var(--subtext); margin-top: 0.15rem; }
         .attention-list { list-style: none; }
         .attention-list li { background: var(--card); border: 1px solid var(--border);
                              border-left: 4px solid var(--yellow); border-radius: 6px;

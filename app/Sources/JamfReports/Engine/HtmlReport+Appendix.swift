@@ -86,7 +86,9 @@ extension HtmlReport {
         let entries: [(String, String)] = [
             ("Stale", "A Mac with no \(rule.basisPhrase) for more than \(rule.days) days "
                 + "(thresholds.stale_device_days and stale_basis). At a glance counts from the "
-                + "daily summary; the lists count from the computers snapshot."),
+                + "daily summary, which includes Macs enrolled without the Jamf binary; the "
+                + "lists count from the computers snapshot and show those Macs under their own "
+                + "reason."),
             ("P0 security gap", "A Mac measured off for FileVault, SIP or Firewall at the Fail "
                 + "level, counted once per control."),
             ("P1 security gap", "A Mac measured off for Gatekeeper at the Fail level."),
