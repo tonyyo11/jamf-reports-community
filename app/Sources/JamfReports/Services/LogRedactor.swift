@@ -32,7 +32,11 @@ enum LogRedactor {
         #"hooks\.slack\.com/services"#,
         #"[A-Za-z0-9.\-]+\.webhook\.office\.com/"#,
         #"[A-Za-z0-9.\-]+\.logic\.azure\.(?:com|us)(?::\d+)?/"#,
+        // Power Platform trigger hosts: commercial, GCC (`api.gov.powerplatform.microsoft.us`),
+        // GCC High (`api.high.…`) and DoD (`api.appsplatform.us`).
         #"[A-Za-z0-9.\-]+\.api\.powerplatform\.(?:com|us)(?::\d+)?/"#,
+        #"[A-Za-z0-9.\-]+\.api\.(?:gov|high)\.powerplatform\.microsoft\.us(?::\d+)?/"#,
+        #"[A-Za-z0-9.\-]+\.api\.appsplatform\.us(?::\d+)?/"#,
         #"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#,
     ].map { #"https?://"# + $0 + #"[^\s"',}]*"# }
 

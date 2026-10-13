@@ -266,6 +266,16 @@ final class LogRedactorTests: XCTestCase {
         ("api.powerplatform.us",
          "https://env0123.4.environment.api.powerplatform.us/powerautomate/automations/direct/"
          + "workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9vYmFyU0lH"),
+        ("api.gov.powerplatform.microsoft.us",
+         "https://default0123abcd.4.environment.api.gov.powerplatform.microsoft.us:443/"
+         + "powerautomate/automations/direct/workflows/abc123/triggers/manual/paths/invoke"
+         + "?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=Zm9vYmFyU0lH"),
+        ("api.high.powerplatform.microsoft.us",
+         "https://env0123.4.environment.api.high.powerplatform.microsoft.us/powerautomate/"
+         + "automations/direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1"),
+        ("api.appsplatform.us",
+         "https://env0123.4.environment.api.appsplatform.us/powerautomate/automations/direct/"
+         + "workflows/abc123/triggers/manual/paths/invoke?api-version=1"),
     ]
 
     func testRedactsWorkflowWebhookHostsInAnyContext() {

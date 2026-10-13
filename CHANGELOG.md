@@ -50,6 +50,9 @@ versions in this repository map to git tags.
 
 ### Security
 
+- Power Automate webhook URLs on the government clouds (GCC `api.gov.powerplatform.microsoft.us`,
+  GCC High and DoD hosts) are now masked whole in shared logs, diagnostic bundles and config
+  backups, as commercial ones already were; before, only their `sig=` value was masked.
 - A report run for one profile now reads and writes only that profile's folders. If the shared
   config.yaml names a different `jamf_cli.profile`, the run stops with an error naming both
   instead of using the other profile's summaries, chart history and archive.
