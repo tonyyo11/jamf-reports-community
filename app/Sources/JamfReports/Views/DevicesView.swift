@@ -465,7 +465,7 @@ struct DevicesView: View {
     private var staleTileSub: String {
         let rule = ">\(staleDays) days since \(staleRule.basisPhrase)"
         let missing = activeSnapshot.binaryMissingCount
-        return missing == 0 ? rule : rule + " · \(missing) with no Jamf binary not counted"
+        return missing == 0 ? rule : rule + " · \(missing) without the Jamf binary not counted"
     }
 
     /// "—" when no Mac's FileVault value reads as on or off.

@@ -1299,6 +1299,9 @@ struct CoreDashboard: Sendable {
             let dates: ComputerDates
             let gap: ContactGap?
             let age: StaleAge?
+            /// Unmanaged and never checked in (`BinaryMissing`): listed with that reason, never
+            /// as a contact gap.
+            let binaryMissing: Bool
         }
         let entries: [Entry] = computers.compactMap { item in
             let dates = ComputerDates(item: item)
@@ -1306,16 +1309,17 @@ struct CoreDashboard: Sendable {
                 checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
                 carriesDates: true)
             let age = overdueRule.age(of: inputs, now: now)
-            let gap = ContactGap.of(
+            let binaryMissing = BinaryMissing.isMissing(computer: item)
+            let gap = binaryMissing ? nil : ContactGap.of(
                 checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
                 staleDays: config.staleRule.days, gapDays: gapDays, now: now)
             let overdue = age.map { $0 > .days(overdueRule.days) } ?? false
-            guard gap != nil || overdue else { return nil }
+            guard gap != nil || overdue || binaryMissing else { return nil }
             let general = item["general"] as? [String: Any]
             let hardware = item["hardware"] as? [String: Any]
             return Entry(name: general?["name"] as? String ?? item["name"] as? String ?? "",
                          serial: hardware?["serialNumber"] as? String ?? "",
-                         dates: dates, gap: gap, age: age)
+                         dates: dates, gap: gap, age: age, binaryMissing: binaryMissing)
         }.sorted { lhs, rhs in
             if (lhs.gap != nil) != (rhs.gap != nil) { return lhs.gap != nil }
             return (lhs.age ?? .days(0)) > (rhs.age ?? .days(0))
@@ -1323,16 +1327,16 @@ struct CoreDashboard: Sendable {
         guard !entries.isEmpty else { return }
         var row = startRow
         let headers = ["Name", "Serial", "Last Contact", "Last Check-in", "Last Inventory",
-                       "Contact gap"]
+                       "Reason"]
         for (col, header) in headers.enumerated() {
             ws.write(header, row: row, col: col, format: .header)
         }
         row += 1
         for entry in entries {
-            let fmt: CellFormat = entry.gap != nil ? .yellow : .cell
+            let fmt: CellFormat = entry.gap != nil || entry.binaryMissing ? .yellow : .cell
             let cells = [entry.name, entry.serial, Self.dayText(entry.dates.contact),
                          Self.dayText(entry.dates.checkIn), Self.dayText(entry.dates.inventory),
-                         entry.gap?.label ?? ""]
+                         entry.gap?.label ?? (entry.binaryMissing ? BinaryMissing.shortLabel : "")]
             for (col, cell) in cells.enumerated() {
                 ws.write(cell, row: row, col: col, format: fmt)
             }

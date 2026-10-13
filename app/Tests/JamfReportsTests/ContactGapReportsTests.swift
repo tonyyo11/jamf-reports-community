@@ -103,7 +103,7 @@ final class ContactGapReportsTests: XCTestCase {
     // MARK: - Check-in Health
 
     private static let detailTitles = ["Name", "Serial", "Last Contact", "Last Check-in",
-                                       "Last Inventory", "Contact gap"]
+                                       "Last Inventory", "Reason"]
 
     /// The detail table under the summary: one dictionary per Mac, keyed by column title.
     private func detail(_ dash: CoreDashboard) throws -> [[String: String]] {
@@ -124,6 +124,20 @@ final class ContactGapReportsTests: XCTestCase {
         return rows
     }
 
+    /// A Mac Jamf lists as unmanaged that never checked in is listed as missing its binary,
+    /// never as "Jamf binary silent", even when MDM reaches it (#274).
+    func testCheckInHealthNamesAMacWithoutTheJamfBinary() throws {
+        var placeholder = computer(5, checkIn: nil, inventory: 3, contact: 1)
+        var general = placeholder["general"] as? [String: Any] ?? [:]
+        general["remoteManagement"] = ["managed": false]
+        placeholder["general"] = general
+        let dash = try dashboard("", computers: computers + [placeholder])
+        try dash.writeCheckinHealth()
+
+        let row = try XCTUnwrap(try detail(dash).first { $0["Name"] == "Mac-5" })
+        XCTAssertEqual(row["Reason"], "Jamf binary missing")
+    }
+
     func testCheckInHealthListsTheMacsWithTheirThreeDatesAndTheGap() throws {
         let dash = try dashboard("", computers: computers)
         try dash.writeCheckinHealth()
@@ -137,7 +151,7 @@ final class ContactGapReportsTests: XCTestCase {
         let rows = try detail(dash)
         XCTAssertEqual(rows.compactMap { $0["Name"] }, ["Mac-2", "Mac-3", "Mac-4"],
                        "the gaps first, then the Mac that is only overdue; M1 is left out")
-        XCTAssertEqual(rows.compactMap { $0["Contact gap"] },
+        XCTAssertEqual(rows.compactMap { $0["Reason"] },
                        ["Jamf binary silent", "Inventory not updating", ""])
         let silent = try XCTUnwrap(rows.first { $0["Name"] == "Mac-2" })
         XCTAssertEqual(silent["Serial"], "SER2")
