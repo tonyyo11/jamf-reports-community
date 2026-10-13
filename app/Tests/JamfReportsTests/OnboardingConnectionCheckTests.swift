@@ -32,10 +32,11 @@ final class OnboardingConnectionCheckTests: XCTestCase {
         XCTAssertTrue(flow.offersContinueWithoutValidating)
     }
 
-    func testNoJamfProValidatesWithAWarning() {
+    func testNoJamfProDoesNotValidateAndOffersNoWayOn() {
         let flow = flowAtValidate(.platformGateway, exit: 0)
         flow.applyConnectionCheck(.noJamfPro)
-        XCTAssertTrue(flow.connectionValidated)
+        XCTAssertFalse(flow.connectionValidated)
+        XCTAssertFalse(flow.offersContinueWithoutValidating)
         XCTAssertEqual(flow.connectionCheck, .noJamfPro)
     }
 

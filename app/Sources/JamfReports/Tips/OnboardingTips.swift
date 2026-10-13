@@ -7,13 +7,13 @@ enum OnboardingTips {
     static let secretField = SecretFieldTip()
 }
 
-/// Anchored to the OAuth2 / Platform Gateway connection-type picker.
+/// Anchored to the Jamf Account / OAuth2 connection-type picker.
 struct ConnectionTypeTip: Tip {
     var title: Text { Text("Pick your connection") }
 
     var message: Text? {
-        Text("Use OAuth2 for a standard Jamf Pro server, or Platform Gateway for "
-            + "platform API-client auth. You can add Protect or School later.")
+        Text("Use a Jamf Account integration (Platform API) for Jamf Cloud, or OAuth2 "
+            + "for an on-prem, GovCloud or other Jamf Pro server. You can add Protect later.")
     }
 
     var image: Image? { Image(systemName: "point.3.connected.trianglepath.dotted") }
