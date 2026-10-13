@@ -24,8 +24,12 @@ final class RunHistoryRunningTests: XCTestCase {
         return try XCTUnwrap(ProfileService.workspaceURL(for: profile))
     }
 
+    /// One clock per test: two reads of `Date()` that straddle a second gave the recorder's
+    /// stamp and the expectation different seconds on CI.
+    private let now = Date()
+
     private func hoursAgo(_ hours: Double) -> Date {
-        let whole = Date().addingTimeInterval(-hours * 3600).timeIntervalSince1970.rounded()
+        let whole = now.addingTimeInterval(-hours * 3600).timeIntervalSince1970.rounded()
         return Date(timeIntervalSince1970: whole)
     }
 
