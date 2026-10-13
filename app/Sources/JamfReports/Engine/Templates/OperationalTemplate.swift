@@ -45,6 +45,7 @@ struct OperationalTemplate: ReportTemplate {
             .profileTable,
             .appTable,
             .agentHealth,
+            .mobileFleet,
             .auditAppendix,
         ]
     }

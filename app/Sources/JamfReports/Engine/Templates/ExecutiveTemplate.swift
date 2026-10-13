@@ -35,6 +35,7 @@ struct ExecutiveTemplate: ReportTemplate {
             .atAGlance,
             .needsAttention,
             .jamfDashboard,
+            .mobileFleet,
             .auditAppendix,
         ]
     }

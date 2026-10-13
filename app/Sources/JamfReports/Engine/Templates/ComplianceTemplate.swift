@@ -48,6 +48,7 @@ struct ComplianceTemplate: ReportTemplate {
             .exceptionList,
             .osAdoptionChart,
             .profileTable,
+            .mobileFleet,
             .auditAppendix,
         ]
     }

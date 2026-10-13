@@ -227,14 +227,15 @@ final class ReportTemplateTests: XCTestCase {
         }
     }
 
-    /// The Executive report is the framing only: no detail group can be built from its list.
-    func testExecutiveTemplateListsNoDetailSection() {
+    /// The Executive report is the framing plus the one detail group a fleet with no Macs
+    /// still has: Mobile devices.
+    func testExecutiveTemplateListsOnlyTheMobileDetailSection() {
         let framing: Set<SectionID> = [
             .aiNarrative, .atAGlance, .needsAttention, .jamfDashboard, .auditAppendix,
         ]
-        XCTAssertEqual(Set(ExecutiveTemplate().htmlSections), framing)
+        XCTAssertEqual(Set(ExecutiveTemplate().htmlSections), framing.union([.mobileFleet]))
         let detail = Set(HtmlDetailGroup.allCases.flatMap(\.members))
-        XCTAssertTrue(Set(ExecutiveTemplate().htmlSections).isDisjoint(with: detail))
+        XCTAssertEqual(Set(ExecutiveTemplate().htmlSections).intersection(detail), [.mobileFleet])
     }
 
     func testOperationalOpensTheActionLists() {

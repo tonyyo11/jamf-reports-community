@@ -334,12 +334,41 @@ final class HtmlReportFollowupsTests: XCTestCase {
         XCTAssertTrue(html.contains("Mobile devices (mobile-devices-list)"), html)
     }
 
-    func testOnlyTheTemplatesWhoseWorkbookHasMobileSheetsListTheSection() {
+    func testEachNewlyListedTemplateRendersMobileDevicesAndListsAnAbsentOneAsNotIncluded() throws {
+        let withMobile = try workspace(snapshots: [(MobileFleetService.deviceKind, mobileFleet)])
+        let macOnly = try workspace()
+        for template in [
+            ExecutiveTemplate(), OperationalTemplate(), ComplianceTemplate(),
+            SecurityPostureTemplate(),
+        ] as [any ReportTemplate] {
+            let url = URL(fileURLWithPath: "/tmp/unused.html")
+            let shown = withMobile.buildTemplatedHTML(
+                outputURL: url, profileName: "p", sections: template.htmlSections)
+            XCTAssertTrue(shown.contains("id=\"grp-mobile\""), template.identifier)
+            XCTAssertTrue(shown.contains("4 devices"), template.identifier)
+
+            // Same listing as every other section with nothing to show (Protect, patch
+            // titles...): one line in the appendix, no group.
+            let absent = macOnly.buildTemplatedHTML(
+                outputURL: url, profileName: "p", sections: template.htmlSections)
+            XCTAssertFalse(absent.contains("id=\"grp-mobile\""), template.identifier)
+            XCTAssertTrue(
+                absent.contains("Mobile devices — No mobile device data collected"),
+                template.identifier)
+        }
+    }
+
+    /// The five shipped templates with an HTML report list the section, so a fleet of iPads
+    /// and iPhones with no Macs gets its devices whichever template it picks; School has no
+    /// HTML report, and a Custom selection follows its sheets.
+    func testEveryHTMLTemplateListsTheSection() {
         let withMobile = TemplateResolver.allTemplates.filter {
             $0.htmlSections.contains(.mobileFleet)
         }.map(\.identifier)
-        XCTAssertEqual(Set(withMobile), ["full-instance", "asset"])
-        // School's "mobile" sheets are its device sheets, and it has no HTML report.
+        XCTAssertEqual(
+            Set(withMobile),
+            ["full-instance", "asset", "executive", "operational", "compliance",
+             "security-posture"])
         for template in TemplateResolver.allTemplates
         where template.identifier != "school"
             && (template.includedSheets.contains(.mobileFleetSummary)
