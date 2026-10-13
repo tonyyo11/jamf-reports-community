@@ -2,9 +2,8 @@ import SwiftUI
 import Charts
 
 /// Browse view for Platform API DDM blueprint and declaration snapshots.
-/// Renders a locked empty state until both the experimental Platform API
-/// flag is on AND the configured jamf-cli profile reports
-/// ``auth-method: platform``. When unlocked and data exists, surfaces
+/// Renders a locked empty state until the configured jamf-cli profile
+/// reports ``auth-method: platform``. When unlocked and data exists, surfaces
 /// blueprint adoption rate, deployment status breakdown, and a
 /// per-source declaration table.
 struct DDMBlueprintView: View {
@@ -13,7 +12,6 @@ struct DDMBlueprintView: View {
     @State private var snapshot: DDMBlueprintService.Snapshot = .empty
     @State private var deviceSnapshot: DDMDeviceStatusService.Snapshot = .empty
     @State private var fleetCounts: (enabled: Int, total: Int) = (0, 0)
-    @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var platformCapability: PlatformCapabilityService?
     @State private var platformAvailable = false
     @State private var bridge = CLIBridge()
@@ -28,7 +26,7 @@ struct DDMBlueprintView: View {
     var body: some View {
         PageScaffold {
             DDMBlueprintView.header(kicker: showsPlatformSections
-                ? "Experimental — Platform API" : "Declarative Device Management")
+                ? "Platform API" : "Declarative Device Management")
             if !workspace.demoMode && lockState == .unlockedWithData {
                 CollectNowBanner(source: bannerSource, tiers: [.inventory, .scan])
                 if deviceSnapshot.isDetected {
@@ -55,7 +53,6 @@ struct DDMBlueprintView: View {
     var lockState: LockState {
         DDMBlueprintView.decideLockState(
             isDemoMode: workspace.demoMode,
-            experimentalOn: experimentalFeatures.isEnabled(.platformAPI),
             platformAvailable: platformAvailable,
             hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0,
             hasDeviceData: !deviceSnapshot.records.isEmpty,
@@ -64,19 +61,19 @@ struct DDMBlueprintView: View {
     }
 
     /// Four inputs can unlock the screen: the Platform blueprint snapshot
-    /// (still behind the experimental gate + capability probe), the per-device
+    /// (behind the capability probe), the per-device
     /// scan snapshot (any profile), inventory saying DDM is enabled on at
     /// least one Mac (any profile — "the scan has not run yet" is empty, not
     /// locked), and a per-device scan snapshot that ran and found nothing to
     /// report (an empty result is still a result). Locked only when none of
     /// them exists.
     nonisolated static func decideLockState(
-        isDemoMode: Bool, experimentalOn: Bool, platformAvailable: Bool,
+        isDemoMode: Bool, platformAvailable: Bool,
         hasPlatformData: Bool, hasDeviceData: Bool, ddmEnabledCount: Int,
         hasDeviceSnapshot: Bool
     ) -> LockState {
         if isDemoMode { return hasPlatformData ? .unlockedWithData : .unlockedNoData }
-        let platformPath = experimentalOn && platformAvailable
+        let platformPath = platformAvailable
         if hasDeviceData || (platformPath && hasPlatformData) { return .unlockedWithData }
         if platformPath || ddmEnabledCount > 0 || hasDeviceSnapshot { return .unlockedNoData }
         return .locked
@@ -106,15 +103,15 @@ struct DDMBlueprintView: View {
     }
 
     /// Whether the Platform data path is reachable at all — demo mode, or
-    /// the experimental flag AND the capability probe both hold. Mirrors the
-    /// `platformPath` local `decideLockState` uses to gate `hasPlatformData`.
+    /// the capability probe holds. Mirrors the `platformPath` local
+    /// `decideLockState` uses to gate `hasPlatformData`.
     private var platformPath: Bool {
-        workspace.demoMode || (experimentalFeatures.isEnabled(.platformAPI) && platformAvailable)
+        workspace.demoMode || platformAvailable
     }
 
-    /// On-prem profiles (or a profile with the experimental flag off) never
-    /// see the Blueprints sections — a snapshot left over from when the flag
-    /// was on must not render once it's off.
+    /// On-prem profiles never see the Blueprints sections — a snapshot left
+    /// over from an earlier Platform profile must not render once the
+    /// active profile is not one.
     private var showsPlatformSections: Bool {
         DDMBlueprintView.showsPlatformSections(
             platformPath: platformPath,
@@ -146,21 +143,12 @@ struct DDMBlueprintView: View {
     private var lockedCard: some View {
         Card(padding: 24) {
             VStack(alignment: .leading, spacing: 16) {
-                DDMBlueprintView.experimentalBadge()
                 EmptyStateView(
                     systemImage: "lock.shield",
-                    title: "Experimental — Platform API required",
-                    message: DDMBlueprintView.lockReason(
-                        experimentalOn: experimentalFeatures.isEnabled(.platformAPI),
-                        platformAvailable: platformAvailable
-                    ),
+                    title: "Platform API profile required",
+                    message: DDMBlueprintView.lockReason(),
                     commands: DDMBlueprintView.setupCommands
                 )
-                if let url = ExperimentalFeatureService.Feature.platformAPI.discussionURL {
-                    Link("Learn more on GitHub Discussions \u{2192}", destination: url)
-                        .font(.callout)
-                        .foregroundStyle(Theme.Colors.gold)
-                }
             }
         }
     }
@@ -168,7 +156,6 @@ struct DDMBlueprintView: View {
     private var unlockedEmptyCard: some View {
         Card(padding: 24) {
             VStack(alignment: .leading, spacing: 14) {
-                if platformPath { DDMBlueprintView.experimentalBadge() }
                 if deviceSnapshot.isDetected && fleetCounts.enabled == 0 {
                     EmptyStateView(
                         systemImage: "checkmark.circle",
@@ -197,12 +184,8 @@ struct DDMBlueprintView: View {
         let agg = snapshot.blueprintAggregate
         return Card {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    SectionHeader(title: "Blueprint Adoption",
-                                  trailing: "\(snapshot.totalBlueprints) blueprints")
-                    Spacer()
-                    DDMBlueprintView.experimentalBadge()
-                }
+                SectionHeader(title: "Blueprint Adoption",
+                              trailing: "\(snapshot.totalBlueprints) blueprints")
                 HStack(alignment: .top, spacing: 28) {
                     DDMBlueprintView.adoptionDonut(deployed: agg.deployed,
                                                    notDeployed: agg.notDeployed)
@@ -410,36 +393,13 @@ struct DDMBlueprintView: View {
 
     private static let setupCommands: [String] = [
         "jamf-cli config add-profile <name> --auth-method platform \\",
-        "  --url <gateway-url> --environment-id <id>",
-        "Then turn on Platform API in Settings → Experimental Features.",
+        "  --url https://<us|eu|apac>.api.jamfcloud.com --environment-id <id>",
     ]
 
-    private static func lockReason(experimentalOn: Bool, platformAvailable: Bool) -> String {
-        if !experimentalOn {
-            return "Turn on Platform API in Settings → Experimental Features to enable this screen."
-        }
-        if !platformAvailable {
-            return "Your active jamf-cli profile does not use auth-method: platform. Add a platform-auth profile and switch this workspace to it."
-        }
-        // Unreachable: decideLockState only returns .locked when one of the two
-        // conditions above fails. If both are true the caller renders the
-        // unlockedNoData state, not lockedCard. Keep a safe fallback in case
-        // future state-machine changes route a new .locked path here.
-        assertionFailure("lockReason called with both gates open — caller should render unlockedNoData")
-        return "Platform API is enabled but no DDM data is available yet."
-    }
-
-    private static func experimentalBadge() -> some View {
-        Text("Experimental")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(Theme.Colors.goldBright)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Theme.Colors.goldBright.opacity(0.4), lineWidth: 1)
-            )
-            .accessibilityLabel("Experimental feature")
+    private static func lockReason() -> String {
+        "Your active jamf-cli profile does not use auth-method: platform. Connect with a Jamf "
+            + "Account integration (Add workspace, then Platform Gateway) or switch this "
+            + "workspace to a Platform profile."
     }
 
     private static func adoptionDonut(deployed: Int, notDeployed: Int) -> some View {

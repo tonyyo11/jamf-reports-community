@@ -15,8 +15,6 @@ struct SettingsView: View {
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
     @State private var bridge = CLIBridge()
     @State private var experimentalFeatures = ExperimentalFeatureService()
-    @State private var platformCapability: PlatformCapabilityService? = nil
-    @State private var platformCapabilityAvailable = false
     @State private var experimentalExpanded = false
     @State private var testingProfile: String? = nil
     @State private var testResults: [String: Bool] = [:]
@@ -94,7 +92,6 @@ struct SettingsView: View {
                 // Demo mode runs no jamf-cli and reloads nothing: a reload here
                 // put a demo profile chosen in the sidebar back to meridian-prod.
                 tokenStatuses = DemoData.tokenStatuses(for: workspace.profiles)
-                platformCapabilityAvailable = false
                 return
             }
             workspace.refreshToolStatus()
@@ -102,28 +99,11 @@ struct SettingsView: View {
             workspace.reloadFromDisk()
             await loadTokenStatuses()
             guard !Task.isCancelled else { return }
-            await probePlatformCapability()
+            // Collect and the health strip read the auth method through `ProfileAuthMethod`,
+            // so a profile that just gained platform auth must not stay excluded for the
+            // rest of the session.
+            ProfileAuthMethod.invalidateCache()
         }
-    }
-
-    /// Refresh the platform-auth capability flag for the active profile.
-    /// Drives whether the Platform API toggle in `experimentalFeaturesCard`
-    /// can be enabled. Skipped in demo mode (no real CLI to probe).
-    private func probePlatformCapability() async {
-        guard !workspace.demoMode, !workspace.profile.isEmpty else {
-            platformCapabilityAvailable = false
-            return
-        }
-        let service = platformCapability ?? PlatformCapabilityService(
-            executor: DefaultCLIExecutor(bridge: bridge)
-        )
-        if platformCapability == nil { platformCapability = service }
-        service.refresh()
-        // Same fact, second cache: collect and the health strip read the auth
-        // method through `ProfileAuthMethod`, so a profile that just gained
-        // platform auth must not stay excluded for the rest of the session.
-        ProfileAuthMethod.invalidateCache()
-        platformCapabilityAvailable = await service.isAvailable(for: workspace.profile)
     }
 
     private var cliCard: some View {
@@ -1095,11 +1075,8 @@ struct SettingsView: View {
 
     // MARK: - Experimental features
 
-    /// Collapsible section listing v2.1.0 opt-in preview features. Each
-    /// feature has a toggle, a description, a capability note (if relevant),
-    /// and a discussion link. Disabled by default so an admin can't enable a
-    /// feature they don't have the prerequisites for (e.g. Platform API
-    /// without a `platform` auth-method profile).
+    /// Collapsible section listing opt-in preview features. Each feature has a
+    /// toggle, a description and a discussion link; all are off by default.
     private var experimentalFeaturesCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
@@ -1116,7 +1093,7 @@ struct SettingsView: View {
                 } label: {
                     SectionHeader(title: "Experimental Features")
                 }
-                .accessibilityHint("Opt-in toggles for v2.1.0 preview features")
+                .accessibilityHint("Opt-in toggles for preview features")
             }
         }
         .accessibilityElement(children: .contain)
@@ -1126,10 +1103,6 @@ struct SettingsView: View {
     private func experimentalFeatureRow(
         _ feature: ExperimentalFeatureService.Feature
     ) -> some View {
-        let isPlatform = (feature == .platformAPI)
-        let isDisabled = isPlatform && !platformCapabilityAvailable
-        let disabledTooltip = "Requires a jamf-cli profile with auth-method: platform. "
-            + "Run `jamf-cli config list` to see your current profile's auth method."
         let toggleBinding = Binding<Bool>(
             get: { experimentalFeatures.isEnabled(feature) },
             set: { experimentalFeatures.setEnabled(feature, $0) }
@@ -1142,18 +1115,11 @@ struct SettingsView: View {
                 experimentalBadge
                 Spacer()
                 PNPToggle(isOn: toggleBinding, label: "\(feature.displayName) toggle")
-                    .disabled(isDisabled)
-                    .help(isDisabled ? disabledTooltip : "")
             }
             Text(feature.description)
                 .font(.caption.monospaced())
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
-            if isPlatform {
-                Text("Requires a jamf-cli profile with auth-method: platform.")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-            }
             if let url = feature.discussionURL {
                 Link("Learn more \u{2192}", destination: url)
                     .font(.caption)

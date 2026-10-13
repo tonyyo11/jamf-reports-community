@@ -45,22 +45,11 @@ final class ExperimentalFeatureServiceTests: XCTestCase {
     func testEnableThenDisableRoundTrip() {
         let service = ExperimentalFeatureService(defaults: makeDefaults())
 
-        service.setEnabled(.platformAPI, true)
-        XCTAssertTrue(service.isEnabled(.platformAPI))
-        XCTAssertFalse(service.isEnabled(.protect))
-
-        service.setEnabled(.platformAPI, false)
-        XCTAssertFalse(service.isEnabled(.platformAPI))
-    }
-
-    func testEnablingMultipleFeaturesStoresBoth() {
-        let service = ExperimentalFeatureService(defaults: makeDefaults())
-
-        service.setEnabled(.platformAPI, true)
         service.setEnabled(.protect, true)
-
-        XCTAssertTrue(service.isEnabled(.platformAPI))
         XCTAssertTrue(service.isEnabled(.protect))
+
+        service.setEnabled(.protect, false)
+        XCTAssertFalse(service.isEnabled(.protect))
     }
 
     // MARK: - Persistence across instances
@@ -71,43 +60,57 @@ final class ExperimentalFeatureServiceTests: XCTestCase {
 
         let reader = ExperimentalFeatureService(defaults: makeDefaults())
         XCTAssertTrue(reader.isEnabled(.protect))
-        XCTAssertFalse(reader.isEnabled(.platformAPI))
     }
 
     func testRemovingLastFeatureClearsStorageKey() {
         let defaults = makeDefaults()
         let service = ExperimentalFeatureService(defaults: defaults)
 
-        service.setEnabled(.platformAPI, true)
+        service.setEnabled(.protect, true)
         XCTAssertNotNil(defaults.string(forKey: ExperimentalFeatureService.storageKey))
 
-        service.setEnabled(.platformAPI, false)
+        service.setEnabled(.protect, false)
         XCTAssertNil(
             defaults.string(forKey: ExperimentalFeatureService.storageKey),
             "empty set should remove the storage key rather than store an empty string"
         )
     }
 
-    func testStorageFormatIsCommaSeparatedAndSorted() {
+    func testStorageFormatIsTheRawValue() {
         let defaults = makeDefaults()
         let service = ExperimentalFeatureService(defaults: defaults)
 
         service.setEnabled(.protect, true)
-        service.setEnabled(.platformAPI, true)
 
-        let stored = defaults.string(forKey: ExperimentalFeatureService.storageKey)
-        XCTAssertEqual(stored, "platform-api,protect-deep-dive")
+        XCTAssertEqual(
+            defaults.string(forKey: ExperimentalFeatureService.storageKey), "protect-deep-dive")
     }
 
     // MARK: - Unknown tokens in storage
 
     func testUnknownTokensInStorageAreIgnored() {
         let defaults = makeDefaults()
-        defaults.set("platform-api,bogus-feature", forKey: ExperimentalFeatureService.storageKey)
+        defaults.set("bogus-feature", forKey: ExperimentalFeatureService.storageKey)
 
         let service = ExperimentalFeatureService(defaults: defaults)
-        XCTAssertTrue(service.isEnabled(.platformAPI))
         XCTAssertFalse(service.isEnabled(.protect))
+    }
+
+    /// The Platform API left the list; installs that stored its token keep working, and the
+    /// token does not turn anything else on or survive the next save.
+    func testTheGraduatedPlatformTokenIsIgnoredAndDroppedOnNextSave() {
+        let defaults = makeDefaults()
+        defaults.set("platform-api,protect-deep-dive", forKey: ExperimentalFeatureService.storageKey)
+
+        let service = ExperimentalFeatureService(defaults: defaults)
+        XCTAssertEqual(service.enabled, [.protect])
+
+        service.setEnabled(.protect, false)
+        XCTAssertNil(defaults.string(forKey: ExperimentalFeatureService.storageKey))
+    }
+
+    func testOnlyPreviewFeaturesRemainListed() {
+        XCTAssertEqual(ExperimentalFeatureService.Feature.allCases, [.protect])
     }
 
     // MARK: - Feature metadata

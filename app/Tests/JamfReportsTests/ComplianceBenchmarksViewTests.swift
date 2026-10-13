@@ -24,15 +24,13 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
 
     // MARK: - decideLockState semantics
 
-    func testLockedWhenExperimentalFlagOff() {
+    /// The Platform API graduated: the capability probe is the only gate, so there is no
+    /// setting that locks a Platform profile out.
+    func testPlatformProfileUnlocksWithNoSettingInvolved() {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
-                isDemoMode: false,
-                experimentalOn: false,
-                platformAvailable: true,
-                hasData: true
-            ),
-            .locked
+                isDemoMode: false, platformAvailable: true, hasData: true),
+            .unlockedWithData
         )
     }
 
@@ -40,7 +38,6 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
                 isDemoMode: false,
-                experimentalOn: true,
                 platformAvailable: false,
                 hasData: true
             ),
@@ -52,7 +49,6 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
                 isDemoMode: false,
-                experimentalOn: true,
                 platformAvailable: true,
                 hasData: false
             ),
@@ -64,7 +60,6 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
                 isDemoMode: false,
-                experimentalOn: true,
                 platformAvailable: true,
                 hasData: true
             ),
@@ -76,7 +71,6 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
                 isDemoMode: true,
-                experimentalOn: false,
                 platformAvailable: false,
                 hasData: true
             ),
@@ -88,7 +82,6 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
                 isDemoMode: true,
-                experimentalOn: false,
                 platformAvailable: false,
                 hasData: false
             ),
@@ -101,7 +94,7 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
     func testATenantLevelProfileWithoutDataNeedsAnEnvironmentIntegration() {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
-                isDemoMode: false, experimentalOn: true, platformAvailable: true,
+                isDemoMode: false, platformAvailable: true,
                 hasData: false, tenantLevel: true),
             .needsEnvironmentLevel
         )
@@ -110,7 +103,7 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
     func testSnapshotsCollectedBeforeASwitchToTenantLevelStillShow() {
         XCTAssertEqual(
             ComplianceBenchmarksView.decideLockState(
-                isDemoMode: false, experimentalOn: true, platformAvailable: true,
+                isDemoMode: false, platformAvailable: true,
                 hasData: true, tenantLevel: true),
             .unlockedWithData
         )
