@@ -170,8 +170,9 @@ credentials, and the app never keeps the secret.
 ### The Jamf School path
 
 Choosing **Connect Jamf School** on the Welcome chooser runs a shorter sequence — Welcome,
-Install CLI, Workspace, CSV mapping, **Connect School**, First report — skipping the Jamf
-Pro Authenticate, Validate, and Add-products steps. The Connect School step registers a
+Install CLI, Workspace, Workspace config, **Connect School**, First report — skipping the Jamf
+Pro Authenticate, Validate, and Add-products steps. Workspace config writes config.yaml and
+maps no CSV: Jamf School reports come from jamf-cli. The Connect School step registers a
 `jamf-cli school` profile (School URL + Network ID + API key, passed over stdin and cleared)
 and wires `school_cli.enabled`/`profile` into the workspace config, so the first report and
 every later collect route to the Jamf School engine. jamf-cli must still be installed to get

@@ -78,6 +78,9 @@ versions in this repository map to git tags.
   and never touches a folder or profile that was already there. The Authenticate step no longer
   repeats the connection-type choice on this path, and several setup screens are worded more
   plainly (the Jamf Account heading, the jamf-cli installer package, the Jamf School step).
+- Jamf School setup no longer offers to map a CSV. That step read a Jamf Pro export's column
+  names, which a Jamf School workspace does not use; it now only writes the workspace's
+  config.yaml, since Jamf School reports come from jamf-cli.
 - A fleet with iPads and iPhones but no Macs now gets its daily summary. Before, the summary was
   written only when at least one Mac was counted, so every collect on such a fleet logged
   "summary not written", Run History showed each run as Partial and the background item retried

@@ -30,7 +30,7 @@ School snapshots are stored under `jamf_cli.data_dir` with the rest of the works
 ## Setting up a School-only workspace
 
 On the app's first-launch **Welcome chooser**, click **Connect Jamf School**. This runs a
-dedicated Jamf School onboarding path — Welcome, Install CLI, Workspace, CSV mapping,
+dedicated Jamf School onboarding path — Welcome, Install CLI, Workspace, Workspace config,
 **Connect School**, First report — that skips the Jamf Pro Authenticate, Validate, and
 Add-products steps entirely. The Connect School step registers a `jamf-cli school` profile
 (School URL + Network ID + API key, passed over stdin and cleared) and wires

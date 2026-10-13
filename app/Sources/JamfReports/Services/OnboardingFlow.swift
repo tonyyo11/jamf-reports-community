@@ -105,6 +105,7 @@ final class OnboardingFlow {
         case missingJamfCLI
         case missingWorkspace
         case csvOutsideAllowedZones
+        case csvMappingNotOffered
         case processFailed(String)
 
         var errorDescription: String? {
@@ -123,6 +124,8 @@ final class OnboardingFlow {
                 "Create the workspace before running this step."
             case .csvOutsideAllowedZones:
                 "Choose a CSV from ~/Documents, ~/Downloads, or ~/Desktop."
+            case .csvMappingNotOffered:
+                "A Jamf School workspace has no CSV to map: its reports come from jamf-cli."
             case .processFailed(let message):
                 message
             }
@@ -318,6 +321,15 @@ final class OnboardingFlow {
         case .school:
             [.welcome, .installCLI, .workspace, .csvMapping, .schoolConnect, .firstReport]
         }
+    }
+
+    /// Only the Jamf Pro path maps a CSV: the scaffold reads Jamf Pro column names, and Jamf School
+    /// reports come from jamf-cli. On the School path the CSV step only writes config.yaml.
+    var offersCSVMapping: Bool { productPath == .pro }
+
+    /// A step's name on this path.
+    func label(for step: Step) -> String {
+        step == .csvMapping && !offersCSVMapping ? "Workspace config" : step.label
     }
 
     /// 1-based position of `currentStep` within `stepSequence`.
@@ -1026,6 +1038,7 @@ final class OnboardingFlow {
         lastError = nil
 
         do {
+            guard offersCSVMapping else { throw FlowError.csvMappingNotOffered }
             let csvURL = try validatedCSVURL(url)
             guard let workspace = workspaceURL else { throw FlowError.missingWorkspace }
             let profile = profileName.trimmed
@@ -1105,8 +1118,10 @@ final class OnboardingFlow {
             SharedConfigPin.confirmWrittenConfig(at: outputConfig, profile: profile)
             csvOutput.append(.init(
                 timestamp: Date(), level: .ok,
-                text: "[ok] minimal config.yaml written — jamf-cli data is enough; add a CSV "
-                    + "later from Data Sources for per-device sheets"
+                text: offersCSVMapping
+                    ? "[ok] minimal config.yaml written — jamf-cli data is enough; add a CSV "
+                        + "later from Data Sources for per-device sheets"
+                    : "[ok] config.yaml written — Jamf School reports come from jamf-cli"
             ))
             csvMappingSkipped = true
         } catch {
