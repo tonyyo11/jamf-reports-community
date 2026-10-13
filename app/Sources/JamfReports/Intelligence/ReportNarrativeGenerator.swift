@@ -120,7 +120,7 @@ enum ReportNarrative {
     ) async -> String? {
         guard ProfileService.isValid(profile) else { return nil }
         let ai = AIConfigLoader.load(profile: profile)
-        guard ai.isUsable else { return nil }
+        guard ai.writesReportSummary else { return nil }
         let availability = ModelAvailability.current(for: ai)
         guard availability.isReady else { return nil }
         guard let workspace = ProfileService.workspaceURL(for: profile),

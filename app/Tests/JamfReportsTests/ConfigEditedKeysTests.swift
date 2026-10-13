@@ -21,6 +21,7 @@ final class ConfigEditedKeysTests: XCTestCase {
             ["html", "with_workbook"],
             ["notify", "enabled"], ["notify", "url"], ["notify", "detail"],
             ["ai", "enabled"], ["ai", "tier"], ["ai", "reasoning_level"],
+            ["ai", "include_in_reports"],
             ["security_policy", "controls", "sip"], ["security_policy", "controls", "filevault"],
             ["security_policy", "filevault_off_hardware_encrypted"],
             ["security_policy", "score_factors", "factor"],

@@ -1132,10 +1132,14 @@ struct AIConfig: Decodable, Sendable {
     var enabled: Bool?
     var tier: String?
     var reasoningLevel: String?
+    /// `include_in_reports` (2.10): the model-written summary in reports generated from the
+    /// app. Off when absent, so turning on the insight cards keeps reports statistical.
+    var includeInReports: Bool?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, tier
         case reasoningLevel = "reasoning_level"
+        case includeInReports = "include_in_reports"
     }
 
     var isEnabled: Bool { enabled ?? false }
@@ -1149,6 +1153,8 @@ struct AIConfig: Decodable, Sendable {
     /// site checks so a disabled block never spins up any model. On-device needs
     /// no URL/key, so `isEnabled` is the whole test.
     var isUsable: Bool { isEnabled }
+    /// Whether a report generated from the app gets the AI summary: AI on, and asked for.
+    var writesReportSummary: Bool { isUsable && (includeInReports ?? false) }
 }
 
 // MARK: - retention (snapshot archive/cleanup)

@@ -50,6 +50,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The AI summary is no longer added to reports just because AI insights are on. Reports keep to
+  the figures unless you also turn on **Include the AI summary in reports** in Settings › AI
+  Insights (`ai.include_in_reports`). The model can misstate a figure, and a report is often
+  forwarded.
 - The Platform API is no longer experimental. Compliance Benchmarks and DDM Blueprints unlock for
   any profile that uses a Jamf Account integration, with no setting to turn on, and Settings →
   Experimental Features lists only the Jamf Protect deep dive.

@@ -634,6 +634,7 @@ ai:
   enabled: false            # opt-in; inert on macOS < 27
   tier: "on_device"         # on_device (the only tier)
   reasoning_level: "light"  # light | moderate | deep
+  include_in_reports: false # add the model-written summary to reports generated in the app
 
 # =============================================================================
 # JAMF PLATFORM API

@@ -40,10 +40,12 @@ final class AIConfigPersistenceTests: XCTestCase {
         config.enabled = true
         config.tier = "on_device"
         config.reasoningLevel = "deep"
+        config.includeInReports = true
 
         try AIConfigWriter.save(config, profile: profile)
 
         let reloaded = AIConfigLoader.load(profile: profile)
+        XCTAssertTrue(reloaded.writesReportSummary)
         XCTAssertTrue(reloaded.isEnabled)
         XCTAssertEqual(reloaded.resolvedTier, .onDevice)
         XCTAssertEqual(reloaded.resolvedReasoningLevel, .deep)

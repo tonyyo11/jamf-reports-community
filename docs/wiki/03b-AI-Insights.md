@@ -57,6 +57,11 @@ profile.
 - **The report narrative is built only from the same aggregate metrics the Executive
   Summary sheet already shows** (device counts, percentages, a security grade) — no
   device identifiers, usernames, or free-text fields reach the model.
+- **The report narrative is off unless you ask for it** (2.10). Turning on AI insights
+  turns on the cards only; a report carries the narrative only with **Include the AI
+  summary in reports** on as well (`ai.include_in_reports`), so a report you forward keeps
+  to the figures by default. The model can misstate a figure; the report's numbers come
+  from Jamf either way.
 - **The report narrative only runs during GUI-initiated report generation.** Headless
   runs — scheduled runs, the included `jamf-reports` command-line tool, and the
   Schedules "Run now" dispatcher — never call it, so scheduled/CLI reports never carry an
@@ -70,6 +75,8 @@ profile.
 Settings → **AI Insights** (only visible on a macOS Golden Gate 27 or later host):
 
 - **Enable AI insights** — the master toggle; off by default.
+- **Include the AI summary in reports** — shown once AI insights are on; off by default.
+  Adds the model-written paragraph to HTML and PDF reports generated from the app.
 - **On-Device Foundation Model (Apple Intelligence)** — a statement, not a control. The
   model runs entirely on this Mac. Each insight card's corner reads "On-Device · Apple
   Intelligence".
@@ -85,6 +92,7 @@ ai:
   enabled: false            # opt-in; inert on macOS < 27
   tier: "on_device"         # on_device (the only tier)
   reasoning_level: "light"  # light | moderate | deep
+  include_in_reports: false # add the model-written summary to reports generated in the app
 ```
 
 `reasoning_level` has no dedicated Settings control today — set it directly in

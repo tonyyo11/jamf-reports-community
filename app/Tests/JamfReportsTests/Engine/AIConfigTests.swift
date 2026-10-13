@@ -48,6 +48,21 @@ final class AIConfigTests: XCTestCase {
         XCTAssertTrue(AIConfig(enabled: true).isUsable, "on-device needs no URL/key")
     }
 
+    /// Reports keep to the figures unless asked: the insight cards being on is not enough.
+    func testTheReportSummaryNeedsAIOnAndIncludeInReports() {
+        XCTAssertFalse(AIConfig(enabled: true).writesReportSummary, "absent reads as off")
+        XCTAssertFalse(AIConfig(enabled: true, includeInReports: false).writesReportSummary)
+        XCTAssertFalse(AIConfig(enabled: false, includeInReports: true).writesReportSummary)
+        XCTAssertTrue(AIConfig(enabled: true, includeInReports: true).writesReportSummary)
+    }
+
+    func testIncludeInReportsDecodesFromYAML() throws {
+        let on = try ConfigLoader.loadFromString("ai:\n  enabled: true\n  include_in_reports: true\n")
+        XCTAssertEqual(on.ai?.writesReportSummary, true)
+        let absent = try ConfigLoader.loadFromString("ai:\n  enabled: true\n")
+        XCTAssertEqual(absent.ai?.writesReportSummary, false)
+    }
+
     // MARK: - YAML decode
 
     func testDecodesFromYAML() throws {

@@ -38,6 +38,6 @@ final class ConfigWriterKeysTests: XCTestCase {
         config.enabled = true
         AIConfigWriter.apply(config, to: &mapping)
         let ai = try XCTUnwrap(mapping.value(for: "ai")?.mapping)
-        XCTAssertEqual(ai.entries.map(\.key), ["note", "enabled", "tier", "reasoning_level"])
+        XCTAssertEqual(ai.entries.map(\.key), ["note", "enabled", "tier", "reasoning_level", "include_in_reports"])
     }
 }

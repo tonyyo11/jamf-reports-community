@@ -17,7 +17,7 @@ enum AIConfigWriter {
         }
     }
 
-    /// Sets the three keys Settings models on `root`'s `ai:` block and keeps any other key
+    /// Sets the four keys Settings models on `root`'s `ai:` block and keeps any other key
     /// typed in it, but drops the retired `lock_on_device` and `external:`, which nothing
     /// reads any more.
     static func apply(_ config: AIConfig, to root: inout YAMLCodec.YAMLMapping) {
@@ -28,6 +28,7 @@ enum AIConfigWriter {
         ai.set(
             "reasoning_level",
             value: .scalar(.string(config.resolvedReasoningLevel.rawValue)))
+        ai.set("include_in_reports", value: .scalar(.bool(config.includeInReports ?? false)))
         root.set("ai", value: .mapping(ai))
     }
 

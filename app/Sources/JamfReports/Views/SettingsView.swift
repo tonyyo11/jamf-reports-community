@@ -988,6 +988,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
+                    reportSummaryToggle
                 }
 
                 Text(ModelAvailability.current(for: aiConfig).message)
@@ -1005,6 +1006,21 @@ struct SettingsView: View {
                 ? AIConfig() : AIConfigLoader.load(profile: workspace.profile)
             aiSaveMessage = nil
             aiSaveNote = nil
+        }
+    }
+
+    /// `ai.include_in_reports`: off, the insight cards stay on and reports keep to the figures.
+    private var reportSummaryToggle: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle("Include the AI summary in reports", isOn: Binding(
+                get: { aiConfig.includeInReports ?? false },
+                set: { aiConfig.includeInReports = $0; saveAIConfig() }))
+                .disabled(workspace.demoMode)
+            Text("Adds a model-written paragraph to the HTML and PDF reports you generate "
+                + "here. It can misstate a figure; scheduled reports never include it.")
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
