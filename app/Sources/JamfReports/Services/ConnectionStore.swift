@@ -77,6 +77,32 @@ struct ConnectionStore: Sendable {
         })
     }
 
+    /// Appends a registered, validated profile to a connection. A profile already in any
+    /// connection is left where it is.
+    func addMember(_ member: Connection.Member, toConnection id: UUID) throws {
+        var all = load()
+        guard let index = all.firstIndex(where: { $0.id == id }),
+              !all.contains(where: { $0.members.contains { $0.profile == member.profile } })
+        else { return }
+        all[index].members.append(member)
+        try save(all)
+    }
+
+    /// Renames a connection and relabels members (by profile name). This changes display only:
+    /// the jamf-cli profiles and workspaces keep their names. Blank names and labels are ignored.
+    func rename(id: UUID, name: String, labels: [String: String]) throws {
+        var all = load()
+        guard let index = all.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { all[index].name = trimmed }
+        for slot in all[index].members.indices {
+            let label = labels[all[index].members[slot].profile]?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !label.isEmpty { all[index].members[slot].label = label }
+        }
+        try save(all)
+    }
+
     /// Records a profile that registered and validated. A profile already in a connection keeps
     /// it and its label, with its scope ID and product refreshed; any other starts a connection
     /// named after the profile.

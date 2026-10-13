@@ -15,6 +15,14 @@ versions in this repository map to git tags.
   Onboarding and Update credentials pick a region (United States, Europe or Asia-Pacific) instead
   of asking for the gateway URL, and the setup text explains that a profile holds one environment.
 - Jamf Platform API connections are grouped on this Mac. A Platform profile that validates during setup is recorded under a connection, and the sidebar workspace menu and Fleet Overview list the profiles of one connection together under its name; profiles in no connection list as before. The grouping is kept in the app's own Application Support folder, holds no credentials, and its IDs are removed from diagnostic bundles.
+- Data Sources has a **Connection** card for a Jamf Account integration. It lists the connection's
+  environments with their product and whether each has a workspace, and **Add environments**
+  takes one or more environment IDs (one per line, each with an optional label) and the client ID
+  and secret once. Each ID gets its own jamf-cli profile, is checked, and joins the connection with
+  a workspace; an ID with no Jamf Pro behind it (probably Jamf School) is not added and points to
+  a Jamf School workspace. **Update credentials for all** re-registers every environment with a new
+  secret, **Rename** changes display names, and **Remove** takes a profile out of the connection
+  without deleting its jamf-cli profile or workspace. The app does not keep the secret.
 - The Devices table now sorts by Last Check-in, Patch, Security and Risk as well as Device,
   Serial, macOS and User. Click a header to sort and again to reverse: Last Check-in starts with
   the most recent Mac and puts a Mac with no check-in date last, and the other three start with

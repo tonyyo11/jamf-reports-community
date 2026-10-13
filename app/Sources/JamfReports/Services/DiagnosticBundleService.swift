@@ -560,6 +560,23 @@ enum DiagnosticBundleService {
 
     /// Pure: the `tenant-id` and `environment-id` values under `profile` in config text.
     static func scopeIDs(profile: String, inConfig text: String) -> [String] {
+        scopeValues(profile: profile, inConfig: text).map(\.value)
+    }
+
+    /// Pure: the profile's environment ID (preferred) or tenant ID, with the level it names.
+    static func platformScope(
+        profile: String, inConfig text: String
+    ) -> (id: String, level: Connection.Level)? {
+        let values = scopeValues(profile: profile, inConfig: text)
+        if let environment = values.first(where: { $0.key == "environment-id" }) {
+            return (environment.value, .environment)
+        }
+        return values.first.map { ($0.value, .tenant) }
+    }
+
+    private static func scopeValues(
+        profile: String, inConfig text: String
+    ) -> [(key: String, value: String)] {
         let rows: [(indent: Int, text: String)] = text.components(separatedBy: .newlines)
             .compactMap { raw in
                 let line = raw.trimmingCharacters(in: .whitespaces)
@@ -571,16 +588,16 @@ enum DiagnosticBundleService {
         let body = rows[(start + 1)...].prefix { $0.indent > 0 }
         guard let nameIndent = body.first?.indent else { return [] }
         var inProfile = false
-        var ids: [String] = []
+        var found: [(key: String, value: String)] = []
         for row in body {
             if row.indent == nameIndent, row.text.hasSuffix(":") {
                 inProfile = ProfileService.unquotedYAMLKey(String(row.text.dropLast())) == profile
             } else if inProfile, let (key, value) = yamlPair(row.text),
                       scopeIDKeys.contains(key), !value.isEmpty {
-                ids.append(value)
+                found.append((key, value))
             }
         }
-        return ids
+        return found
     }
 
     /// `key: value` with the value's quotes or trailing ` # comment` removed.
