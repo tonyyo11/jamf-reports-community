@@ -43,7 +43,7 @@ struct ContentView: View {
     var body: some View {
         if workspace.profiles.isEmpty && !workspace.demoMode {
             if userPickedOnboarding {
-                OnboardingView()
+                OnboardingView(onStartOver: { userPickedOnboarding = false })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Theme.Colors.winBG.ignoresSafeArea())
             } else {

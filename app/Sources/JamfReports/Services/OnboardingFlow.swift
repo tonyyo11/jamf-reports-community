@@ -89,6 +89,15 @@ final class OnboardingFlow {
     /// so the flow only calls it off the main actor, never during a SwiftUI update.
     typealias InstallationProbe = @Sendable () -> JamfCLIInstaller.Installation?
 
+    /// The jamf-cli profile names that exist now. Launches jamf-cli, so it runs off the main actor.
+    typealias ProfileLister = @Sendable () -> Set<String>
+
+    /// Removes one jamf-cli profile: nil when it is gone, else what went wrong.
+    typealias ProfileRemover = @Sendable (String) async -> String?
+
+    /// Moves a profile's workspace folder to the Trash.
+    typealias WorkspaceTrasher = (String) throws -> Void
+
     enum FlowError: LocalizedError {
         case invalidProfile
         case profileCaseConflict(existing: String)
@@ -224,6 +233,10 @@ final class OnboardingFlow {
     var isRunningFirstReport = false
 
     var lastError: String?
+    /// Workspace folders this run created (by profile name) and jamf-cli profiles it added, so
+    /// Start over removes exactly those: a folder or profile that existed before is never listed.
+    var createdWorkspaces: [String] = []
+    var createdProfiles: [String] = []
     var validationOutput: [CLIBridge.LogLine] = []
     var validationExitCode: Int32?
     /// The gateway's answer about a Platform API profile's scope ID; nil for OAuth2 profiles
@@ -236,6 +249,9 @@ final class OnboardingFlow {
     /// Where a validated Platform API profile is recorded under its connection.
     @ObservationIgnored var connectionStore = ConnectionStore()
     private let installationProbe: InstallationProbe
+    @ObservationIgnored let profileLister: ProfileLister
+    @ObservationIgnored let profileRemover: ProfileRemover
+    @ObservationIgnored let workspaceTrasher: WorkspaceTrasher
 
     // User data zones accepted by policy for the first CSV export.
     private var allowedCSVRoots: [URL] {
@@ -251,9 +267,17 @@ final class OnboardingFlow {
     /// there spins the main run loop into a nested layout that aborts AttributeGraph. The
     /// jamf-cli probe is `refreshJamfCLIStatus()`, which a view starts from `.task`.
     init(
-        installationProbe: @escaping InstallationProbe = { JamfCLIInstaller.currentInstallation() }
+        installationProbe: @escaping InstallationProbe = { JamfCLIInstaller.currentInstallation() },
+        profileLister: @escaping ProfileLister = OnboardingFlow.listJamfCLIProfiles,
+        profileRemover: @escaping ProfileRemover = OnboardingFlow.removeJamfCLIProfile,
+        workspaceTrasher: @escaping WorkspaceTrasher = {
+            try ProfileService.trashLocalWorkspace(profile: $0)
+        }
     ) {
         self.installationProbe = installationProbe
+        self.profileLister = profileLister
+        self.profileRemover = profileRemover
+        self.workspaceTrasher = workspaceTrasher
         if let pending = Self.pendingProductPath {
             productPath = pending
             Self.pendingProductPath = nil
@@ -438,7 +462,11 @@ final class OnboardingFlow {
     }
 
     func createWorkspace() throws {
-        try Self.createWorkspaceFolders(for: profileName.trimmed)
+        let profile = profileName.trimmed
+        let existed = ProfileService.workspaceURL(for: profile)
+            .map { FileManager.default.fileExists(atPath: $0.path) } ?? true
+        try Self.createWorkspaceFolders(for: profile)
+        if !existed, !createdWorkspaces.contains(profile) { createdWorkspaces.append(profile) }
         // config.yaml is intentionally not written here. The CSV mapping step
         // produces it via ScaffoldService.writeConfig; the skip path produces it via
         // ScaffoldService.writeMinimalConfig. Writing a placeholder here would block
@@ -544,6 +572,7 @@ final class OnboardingFlow {
         }
 
         let noVerify = await noVerifyFlag(binary: binary)
+        let isNew = await isNewProfile(profileName.trimmed)
         let result = try await Self.runWithPTY(
             executable: binary,
             arguments: Self.proOAuth2Arguments(
@@ -558,6 +587,7 @@ final class OnboardingFlow {
             throw FlowError.processFailed(message)
         }
 
+        if isNew { noteCreatedProfile(profileName.trimmed) }
         profileRegistered = true
         connectionValidated = false
         validationExitCode = nil
@@ -578,6 +608,7 @@ final class OnboardingFlow {
         defer { clearPlatformSecrets() }
 
         let noVerify = await noVerifyFlag(binary: binary)
+        let isNew = await isNewProfile(profileName.trimmed)
         try await Self.registerPlatformProfile(
             binary: binary,
             profile: profileName.trimmed,
@@ -589,6 +620,7 @@ final class OnboardingFlow {
             noVerify: noVerify
         )
 
+        if isNew { noteCreatedProfile(profileName.trimmed) }
         profileRegistered = true
         connectionValidated = false
         validationExitCode = nil
@@ -639,6 +671,7 @@ final class OnboardingFlow {
             clearProtectSecret()
         }
 
+        let isNew = await isNewProfile(name)
         do {
             let result = try await Self.runWithPTY(
                 executable: binary,
@@ -653,6 +686,7 @@ final class OnboardingFlow {
                 protectConnectionError = msg
                 return
             }
+            if isNew { noteCreatedProfile(name) }
         } catch {
             protectConnectionError = error.localizedDescription
             return
@@ -714,6 +748,7 @@ final class OnboardingFlow {
             clearSchoolAPIKey()
         }
 
+        let isNew = await isNewProfile(name)
         do {
             let result = try await Self.runWithPTY(
                 executable: binary,
@@ -728,6 +763,7 @@ final class OnboardingFlow {
                 schoolConnectionError = msg
                 return
             }
+            if isNew { noteCreatedProfile(name) }
         } catch {
             schoolConnectionError = error.localizedDescription
             return

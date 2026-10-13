@@ -364,6 +364,32 @@ enum ProfileService {
     /// app's local workspace directory after path-boundary validation.
     @discardableResult
     static func removeLocalWorkspace(profile: String) throws -> Bool {
+        let url = try confinedWorkspaceFolder(profile: profile)
+        do {
+            try FileManager.default.removeItem(at: url)
+            return true
+        } catch let error as NSError where error.code == NSFileNoSuchFileError {
+            return false
+        }
+    }
+
+    /// Moves one local workspace folder to the Trash, under the same path checks as
+    /// `removeLocalWorkspace`. False when there is no folder.
+    @discardableResult
+    static func trashLocalWorkspace(
+        profile: String,
+        trash: (URL) throws -> Void = {
+            try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+        }
+    ) throws -> Bool {
+        let url = try confinedWorkspaceFolder(profile: profile)
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        try trash(url)
+        return true
+    }
+
+    /// `profile`'s workspace folder, refused unless it resolves to a direct child of the root.
+    private static func confinedWorkspaceFolder(profile: String) throws -> URL {
         guard isValid(profile), let url = workspaceURL(for: profile) else {
             throw CleanupError.invalidProfile(profile)
         }
@@ -378,12 +404,7 @@ enum ProfileService {
         guard resolved.deletingLastPathComponent().standardizedFileURL.path == root.path else {
             throw CleanupError.outsideWorkspaceRoot(url)
         }
-        do {
-            try FileManager.default.removeItem(at: url)
-            return true
-        } catch let error as NSError where error.code == NSFileNoSuchFileError {
-            return false
-        }
+        return url
     }
 
     /// Lists profiles from `jamf-cli config list`. The

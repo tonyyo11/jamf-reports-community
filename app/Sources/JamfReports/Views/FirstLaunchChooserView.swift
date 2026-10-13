@@ -103,7 +103,7 @@ struct FirstLaunchChooserView: View {
             chooserCard(
                 icon: "network.badge.shield.half.filled",
                 title: "Connect a Jamf Pro server",
-                body: "For on-prem, GovCloud or any Jamf Pro instance, with an API client (OAuth2). Walks you through jamf-cli auth, workspace setup, and your first CSV mapping.",
+                body: "For on-prem, GovCloud or any Jamf Pro instance, with an API client (OAuth2). Walks you through jamf-cli auth, workspace setup and an optional CSV mapping.",
                 pills: [
                     ("OAuth2", "key.fill", Pill.Tone.teal),
                     ("Local workspace", "folder", Pill.Tone.muted),

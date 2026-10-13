@@ -23,7 +23,15 @@ four cards:
   every screen before connecting anything. Demo mode is not a real workspace; switch back
   to a real connection anytime from **Settings → jamf-cli → Demo mode**.
 
-After the initial choice the chooser does not reappear. To set up additional tenants
+Until setup finishes, **Start over** (and **Back** on the first step) returns to the chooser
+so you can pick another card. If setup has already created the workspace folder or a jamf-cli
+profile, it asks first, then moves that folder to the Trash and removes that profile with
+`jamf-cli config remove-profile`, which also deletes its saved credentials. A folder or profile
+that existed before setup is never touched. When the profile cannot be removed, setup stays
+open and names the command to run. The cards already chose the connection type, so the
+Authenticate step does not ask for it again on this path.
+
+After setup finishes the chooser does not reappear. To set up additional tenants
 later, open the **workspace switcher** at the bottom of the sidebar and choose **Add
 workspace…**, or click **Settings → jamf-cli → Connections → Add connection**. Both
 routes start the same onboarding flow.

@@ -72,6 +72,12 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- First-launch setup has a way back. **Start over** returns to the welcome screen, so you no
+  longer quit and reopen the app to try another connection. It asks before removing what setup
+  created so far (the new workspace folder goes to the Trash, the new jamf-cli profile is removed)
+  and never touches a folder or profile that was already there. The Authenticate step no longer
+  repeats the connection-type choice on this path, and several setup screens are worded more
+  plainly (the Jamf Account heading, the jamf-cli installer package, the Jamf School step).
 - A fleet with iPads and iPhones but no Macs now gets its daily summary. Before, the summary was
   written only when at least one Mac was counted, so every collect on such a fleet logged
   "summary not written", Run History showed each run as Partial and the background item retried

@@ -8,6 +8,10 @@ struct OnboardingView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var flow = OnboardingFlow()
     @State private var showingCSVImporter = false
+    @State private var confirmingStartOver = false
+    @State private var isStartingOver = false
+    /// Set on first launch only: returns to the chooser, where the path was picked.
+    var onStartOver: (() -> Void)?
 
     /// The profile name as the commands on this screen show it.
     private var shellProfile: String { ProfileName.shellWord(flow.profileName.trimmedForView) }
@@ -17,8 +21,9 @@ struct OnboardingView: View {
     /// each, with the same client ID and secret.
     static let platformProfileNote = "A profile holds one environment. To report on more "
         + "environments from the same integration, use Add environments in Data Sources after "
-        + "setup; they reuse this client ID and secret. Keep a Jamf Pro OAuth profile for the "
-        + "Jamf Pro and Classic commands the gateway refuses; Jamf Reports does not need them."
+        + "setup; they reuse this client ID and secret. jamf-cli's Jamf Pro and Classic "
+        + "commands that the gateway refuses need a separate Jamf Pro OAuth profile; Jamf "
+        + "Reports runs none of them."
 
     private let privileges = [
         "Computers: Read", "Mobile Devices: Read", "Mobile Profiles: Read",
@@ -43,6 +48,14 @@ struct OnboardingView: View {
         // The jamf-cli probe waits on child processes, so it starts here and runs off the main
         // actor, never from `OnboardingFlow.init()` while this view is being built.
         .task { await flow.refreshJamfCLIStatus() }
+        .confirmationDialog(
+            "Start over?", isPresented: $confirmingStartOver, titleVisibility: .visible
+        ) {
+            Button("Start over", role: .destructive) { performStartOver() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(flow.startOverMessage)
+        }
         .fileImporter(isPresented: $showingCSVImporter, allowedContentTypes: csvTypes) { result in
             switch result {
             case .success(let url):
@@ -168,7 +181,7 @@ struct OnboardingView: View {
         case .workspace: "Name the workspace."
         case .authenticate:
             flow.proConnectionType == .platformGateway
-                ? "Connect via Platform Gateway."
+                ? "Connect with Jamf Account."
                 : "Connect to Jamf Pro."
         case .validate: "Validate the profile."
         case .addProducts: "Add more products."
@@ -184,7 +197,7 @@ struct OnboardingView: View {
     private var headerSubtitle: String {
         switch flow.currentStep {
         case .welcome:
-            "This wizard creates the local folder structure, registers a jamf-cli profile, scaffolds config.yaml from your export, and runs the first workbook."
+            "This wizard creates the workspace folders, registers a jamf-cli profile, writes config.yaml and runs the first report."
         case .installCLI:
             "The app detects jamf-cli locally. Installation stays under your control; copy the Homebrew command if it is missing."
         case .workspace:
@@ -193,20 +206,20 @@ struct OnboardingView: View {
         case .authenticate:
             flow.proConnectionType == .platformGateway
                 ? "Registers a jamf-cli profile with Platform API auth. Secrets are passed over stdin and cleared immediately."
-                : "Jamf Reports passes the API client secret to jamf-cli over stdin and clears the field after the profile add command returns."
+                : "Jamf Reports passes the client secret to jamf-cli over stdin and clears it as soon as jamf-cli has saved the profile."
         case .validate:
             "jamf-cli validates the saved profile before report setup continues."
         case .addProducts:
             "Optionally connect Jamf Protect. It is skippable — you can add it later from Data Sources. Jamf School uses its own workspace."
         case .csvMapping:
-            "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop. The app's scaffold tool reads the CSV headers and writes the workspace config."
+"CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop. The app's scaffold tool reads the CSV headers and writes the workspace config."
         case .firstReport:
             flow.productPath == .school
                 ? "The final step runs generate for the new profile and streams output here."
                 : "Collects a snapshot, then generates the first report. The per-device scans "
                     + "run later on their schedule, or via Collect now on Overview."
         case .schoolConnect:
-            "Registers a jamf-cli Jamf School profile with your Network ID and API key over stdin, then wires school_cli into this workspace's config so reports route to the Jamf School engine."
+            "Registers a jamf-cli Jamf School profile with your Network ID and API key over stdin, then sets this workspace to report on Jamf School."
         }
     }
 
@@ -353,8 +366,8 @@ struct OnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("No Homebrew? Download the binary from the jamf-cli GitHub releases "
-                    + "page, place it in /usr/local/bin, then click Re-check above.")
+                Text("No Homebrew? Download the installer package (.pkg) from the jamf-cli "
+                    + "GitHub releases page, run it, then click Re-check above.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -423,28 +436,34 @@ struct OnboardingView: View {
 
     private var authenticateStep: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Connection-type picker
-            Card(padding: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    FieldLabel(label: "Connection type")
-                    Picker("", selection: Binding(
-                        get: { flow.proConnectionType },
-                        set: { flow.proConnectionType = $0 }
-                    )) {
-                        ForEach(OnboardingFlow.ProConnectionType.allCases) { kind in
-                            Text(kind.label).tag(kind)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.radioGroup)
-                    TipView(OnboardingTips.connectionType)
-                }
+            // The first-launch chooser already picked the connection; Start over changes it.
+            if onStartOver == nil {
+                connectionTypePicker
             }
 
             if flow.proConnectionType == .oauth2 {
                 oauth2Form
             } else {
                 platformGatewayForm
+            }
+        }
+    }
+
+    private var connectionTypePicker: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                FieldLabel(label: "Connection type")
+                Picker("", selection: Binding(
+                    get: { flow.proConnectionType },
+                    set: { flow.proConnectionType = $0 }
+                )) {
+                    ForEach(OnboardingFlow.ProConnectionType.allCases) { kind in
+                        Text(kind.label).tag(kind)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+                TipView(OnboardingTips.connectionType)
             }
         }
     }
@@ -464,7 +483,8 @@ struct OnboardingView: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Client ID")
-                        PNPTextField(value: binding(\.clientID), mono: true)
+                        PNPTextField(
+                            value: binding(\.clientID), placeholder: "OAuth client ID", mono: true)
                     }
                     .frame(maxWidth: .infinity)
 
@@ -556,7 +576,9 @@ struct OnboardingView: View {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 5) {
                             FieldLabel(label: "Client ID")
-                            PNPTextField(value: binding(\.platformClientID), mono: true)
+                            PNPTextField(
+                                value: binding(\.platformClientID),
+                                placeholder: "Platform client ID", mono: true)
                         }
                         .frame(maxWidth: .infinity)
 
@@ -772,7 +794,9 @@ struct OnboardingView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 5) {
                                 FieldLabel(label: "Network ID")
-                                PNPTextField(value: binding(\.schoolNetworkID), mono: true)
+                                PNPTextField(
+                                    value: binding(\.schoolNetworkID), placeholder: "Network ID",
+                                    mono: true)
                             }
                             .frame(maxWidth: .infinity)
 
@@ -1008,14 +1032,20 @@ struct OnboardingView: View {
     private var navigationButtons: some View {
         HStack {
             PNPButton(title: "Back") {
-                flow.previousStep()
+                if flow.currentStep == .welcome { requestStartOver() } else { flow.previousStep() }
             }
-            .disabled(flow.currentStep == .welcome || flow.isRegisteringProfile ||
-                      flow.isValidatingConnection || flow.isScaffoldingCSV ||
-                      flow.isSkippingCSVMapping || flow.isRunningFirstReport ||
-                      flow.isConnectingProtect || flow.isConnectingSchool)
-            .opacity(flow.currentStep == .welcome ? 0.45 : 1)
-            .accessibilityLabel("Back to step \(max(1, flow.stepPosition - 1))")
+            .disabled(!backEnabled)
+            .opacity(backEnabled ? 1 : 0.45)
+            .accessibilityLabel(flow.currentStep == .welcome
+                ? "Back to the first screen" : "Back to step \(max(1, flow.stepPosition - 1))")
+
+            if onStartOver != nil && flow.currentStep != .welcome {
+                PNPButton(title: "Start over", icon: "arrow.uturn.backward") {
+                    requestStartOver()
+                }
+                .disabled(flow.isBusy || isStartingOver)
+                .help("Go back to the first screen and choose another way to connect")
+            }
 
             Spacer()
 
@@ -1029,6 +1059,35 @@ struct OnboardingView: View {
             }
             .disabled(!flow.canAdvance)
             .opacity(flow.canAdvance ? 1 : 0.55)
+        }
+    }
+
+    private var backEnabled: Bool {
+        guard !flow.isBusy, !isStartingOver else { return false }
+        return flow.currentStep != .welcome || onStartOver != nil
+    }
+
+    /// Asks first when setup has created a folder or a jamf-cli profile, else goes straight back.
+    private func requestStartOver() {
+        if flow.startOverRemovesSomething {
+            confirmingStartOver = true
+        } else {
+            performStartOver()
+        }
+    }
+
+    /// Leaves for the chooser only when everything setup created is gone; otherwise the error
+    /// banner names what is left and how to remove it.
+    private func performStartOver() {
+        isStartingOver = true
+        Task {
+            let problems = await flow.startOver()
+            isStartingOver = false
+            if problems.isEmpty {
+                onStartOver?()
+            } else {
+                flow.lastError = problems.joined(separator: "\n")
+            }
         }
     }
 
