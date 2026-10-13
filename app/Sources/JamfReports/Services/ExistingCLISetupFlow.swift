@@ -100,8 +100,8 @@ final class ExistingCLISetupFlow {
     let products: [String: JamfCLIProduct]
 
     /// Profiles that are never a workspace here, with the reason the screen shows. A Protect or
-    /// Security Cloud login holds no Jamf Pro data; Protect is added from the Jamf Pro
-    /// workspace that uses it.
+    /// Security Cloud login holds no Jamf Pro data (Protect is added from the Jamf Pro workspace
+    /// that uses it), and an organization-level Platform integration reaches only Jamf Account.
     let refusals: [String: String]
 
     /// Profiles the app can't set up, with the reason the screen shows. They are
@@ -151,6 +151,9 @@ final class ExistingCLISetupFlow {
             refusals[profile.name] = "A \(profile.product.displayName) login holds no Jamf Pro "
                 + "data, so it is not a workspace. Add Jamf Protect from the Jamf Pro workspace "
                 + "that uses it."
+        }
+        for profile in profiles where profile.isOrganizationLevel {
+            refusals[profile.name] = PlatformScopeLevel.organizationLevelReason
         }
         self.refusals = refusals
         let unusable = ProfileService.unusableProfiles(in: profileNames)

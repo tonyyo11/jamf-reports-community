@@ -37,4 +37,26 @@ extension ConfigDoctorService {
             profile: profile, config: config,
             discovered: { ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]) })
     }
+
+    /// One `.fail` row for a workspace whose profile is an organization-level Platform
+    /// integration: it reaches Jamf Account only, and `collect` stops at one `[error]` line.
+    static func organizationLevelRows(
+        profile: String, auth: ProfileAuthMethod.Resolved?
+    ) -> [DoctorRow] {
+        guard auth?.isOrganizationLevel == true else { return [] }
+        return [DoctorRow(
+            id: "platform.organization_level",
+            severity: .fail,
+            title: "This profile is an organization-level Platform integration",
+            detail: "'\(ConfigSchema.displayText(profile))' names no environment ID or tenant "
+                + "ID, so its credential reaches only Jamf Account. No Jamf Pro report can be "
+                + "collected with it, and collecting stops at once.",
+            hint: PlatformScopeLevel.organizationLevelReason
+        )]
+    }
+
+    /// `organizationLevelRows` for the live profile; nil unless jamf-cli answers `config list`.
+    static func organizationLevelRows(profile: String) -> [DoctorRow] {
+        organizationLevelRows(profile: profile, auth: ProfileAuthMethod.resolve(profile: profile))
+    }
 }

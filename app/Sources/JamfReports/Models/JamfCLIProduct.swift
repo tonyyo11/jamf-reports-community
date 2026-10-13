@@ -41,3 +41,11 @@ enum PlatformScopeLevel: String, Sendable, Equatable {
         return present(tenantID) ? .tenant : .organization
     }
 }
+
+extension PlatformScopeLevel {
+    /// Why an organization-level profile cannot be a workspace, in the words every screen, log
+    /// line and Config Doctor row uses.
+    static let organizationLevelReason = "An organization-level integration reaches only Jamf "
+        + "Account. Create an environment-level integration in Jamf Account and add that "
+        + "profile instead."
+}

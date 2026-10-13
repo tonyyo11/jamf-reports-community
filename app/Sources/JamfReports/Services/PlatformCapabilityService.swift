@@ -79,6 +79,17 @@ final class PlatformCapabilityService {
         return !tenant.isEmpty && field("environment-id", in: entry).isEmpty
     }
 
+    /// The level of a Platform API profile: environment, tenant, or organization when it names
+    /// neither ID (a Jamf Account-only integration, which reaches no Jamf Pro data). nil when
+    /// the response is unreadable, the profile is absent, or it is not a platform profile.
+    nonisolated static func scopeLevel(data: Data, profile: String) -> PlatformScopeLevel? {
+        guard let entry = entry(data: data, profile: profile),
+              field("auth-method", in: entry).lowercased() == "platform" else { return nil }
+        return PlatformScopeLevel.level(
+            environmentID: field("environment-id", in: entry),
+            tenantID: field("tenant-id", in: entry))
+    }
+
     /// The `config list` row for `profile`, or the `default: true` row when `profile` is empty.
     private nonisolated static func entry(data: Data, profile: String) -> [String: Any]? {
         guard let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]

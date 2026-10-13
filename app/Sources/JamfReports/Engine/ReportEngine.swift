@@ -2107,6 +2107,13 @@ struct ReportEngine: Sendable {
 
         // Resolved once per run, not per kind — it spawns `config list`.
         let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        // One line instead of a failure per kind: no Jamf Pro command can work at this level.
+        if profileAuth?.isOrganizationLevel == true {
+            let refusal = ReportEngineError.organizationLevelProfile(profile)
+            onLine(.init(
+                timestamp: Date(), level: .fail, text: "[error] \(refusal.localizedDescription)"))
+            throw refusal
+        }
         let nonPlatformAuth = Self.nonPlatformAuthMethod(profileAuth?.authMethod)
         let tenantLevel = profileAuth?.isTenantLevel == true
         let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
@@ -4266,6 +4273,8 @@ enum ReportEngineError: Error, LocalizedError {
     case invalidProfile(String)
     /// config.yaml's `jamf_cli.profile` names a profile other than the one the run is for.
     case profileMismatch(named: String, run: String)
+    /// `profile` is an organization-level Platform integration, which reaches no report data.
+    case organizationLevelProfile(String)
     case snapshotParseError(String)
     /// Raised during collect when `use_cached_data=false` and a live call fails.
     case collectFailed(kind: String, exitCode: Int32)
@@ -4313,6 +4322,9 @@ enum ReportEngineError: Error, LocalizedError {
                 + "'\(ConfigSchema.displayText(named))' but this run is for "
                 + "'\(ConfigSchema.displayText(run))'; nothing was generated. Set "
                 + "jamf_cli.profile back to '\(ConfigSchema.displayText(run))'."
+        case .organizationLevelProfile(let profile):
+            return "Nothing was collected for profile '\(ConfigSchema.displayText(profile))'. "
+                + PlatformScopeLevel.organizationLevelReason
         case .snapshotParseError(let kind):
             return "No cached snapshot found for '\(kind)'. Run collect first."
         case .collectFailed(let kind, let code):
