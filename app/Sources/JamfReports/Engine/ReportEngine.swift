@@ -1604,6 +1604,15 @@ struct ReportEngine: Sendable {
     static let authProbeTimeout: TimeInterval = JamfCLIProbe.defaultTimeout
 
     /// How a failed attempt's exit code reads in a log line.
+    /// Why one title's definitions did not land, for its `[warn]` line: a run that never
+    /// started, an exit code (worded by `exitText`), or exit 0 with nothing on stdout.
+    static func patchDefinitionFailureText(_ result: (Int32, Data)?) -> String {
+        guard let (code, data) = result else { return "failed (jamf-cli did not start)" }
+        if code == CLIBridge.exitCodeTimedOut { return "timed out" }
+        if code == 0 && data.isEmpty { return "failed (no data returned)" }
+        return "failed (\(exitText(code)))"
+    }
+
     static func exitText(_ code: Int32) -> String {
         code == CLIBridge.exitCodeTimedOut
             ? "timed out (jamf-cli did not answer and was stopped)"
@@ -3028,7 +3037,7 @@ struct ReportEngine: Sendable {
             let timedOut = captureResult?.0 == CLIBridge.exitCodeTimedOut
             timeoutStreak = timedOut ? timeoutStreak + 1 : 0
             guard let (exitCode, data) = captureResult, exitCode == 0, !data.isEmpty else {
-                let what = timedOut ? "timed out" : "failed"
+                let what = Self.patchDefinitionFailureText(captureResult.map { ($0.0, $0.1) })
                 onLine(.init(timestamp: Date(), level: .warn,
                              text: "[warn] patch-definitions: title \(titleId) \(what) — skipping"))
                 if timeoutStreak >= limits.stopAfterTimeouts {
