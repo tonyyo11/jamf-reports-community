@@ -139,9 +139,13 @@ final class FirstLaunchChooserBehaviorTests: XCTestCase {
 @MainActor
 final class FirstLaunchChooserHandoffTests: XCTestCase {
 
+    // XCTest calls tearDown on the main thread; Swift 6.1 still treats the override as
+    // nonisolated, so the main-actor statics are cleared through assumeIsolated.
     override func tearDown() {
-        OnboardingFlow.pendingProductPath = nil
-        OnboardingFlow.pendingProConnectionType = nil
+        MainActor.assumeIsolated {
+            OnboardingFlow.pendingProductPath = nil
+            OnboardingFlow.pendingProConnectionType = nil
+        }
         super.tearDown()
     }
 
