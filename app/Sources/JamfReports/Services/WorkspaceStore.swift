@@ -195,6 +195,11 @@ final class WorkspaceStore {
     /// The connections screens group by: the demo's own in demo mode, else this Mac's store.
     var activeConnections: [Connection] { demoMode ? DemoData.connections : connections }
 
+    /// Re-reads this Mac's connections after the Connection card changed them.
+    func reloadConnections() {
+        connections = demoMode ? [] : connectionStore.load()
+    }
+
     /// All profiles under their connections, for the sidebar menu.
     var connectionGrouping: ConnectionGrouping {
         ProfileService.connectionGrouping(profiles: profiles, connections: activeConnections)
