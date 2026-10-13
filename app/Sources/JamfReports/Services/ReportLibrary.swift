@@ -332,8 +332,10 @@ struct ReportLibrary {
 
         // JSON numbers may deserialize as Int or Double depending on the serializer. A Double
         // outside Int's range gives no count; `Int(_:)` would trap.
-        return (json["totalDevices"] as? Int)
+        let count = (json["totalDevices"] as? Int)
             ?? (json["totalDevices"] as? Double).flatMap { Int(exactly: $0.rounded(.towardZero)) }
+        // A day with no Macs (a mobile-only fleet) has no Mac count to show, not "0 devices".
+        return count == 0 ? nil : count
     }
 
     private func hasZipMagic(_ url: URL) -> Bool {

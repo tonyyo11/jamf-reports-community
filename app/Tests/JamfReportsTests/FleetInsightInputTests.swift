@@ -40,7 +40,7 @@ final class FleetInsightInputTests: XCTestCase {
             "Fleet snapshot for 2026-06-06",
             "Focus: overall fleet health, the largest gaps, and what changed since the "
                 + "prior period.",
-            "- Total managed devices: 100",
+            "- Managed Macs: 100",
             "- OS current on 0.0% of devices; not on the newest release of its macOS version, "
                 + "or version not listed, on 100.0%",
             FleetInsightInput.noEarlierDataNote,
@@ -231,7 +231,7 @@ final class FleetInsightInputTests: XCTestCase {
 
         let notEnabled = "not enabled"
         XCTAssertEqual(input.facts, [
-            Fact(label: "Total managed devices", value: .count(524), prior: nil,
+            Fact(label: "Managed Macs", value: .count(524), prior: nil,
                  polarity: .neutral),
             Fact(label: "FileVault encrypted", value: .percent(97.5), prior: .percent(96),
                  polarity: .higherIsBetter, complement: "not encrypted"),
@@ -266,7 +266,7 @@ final class FleetInsightInputTests: XCTestCase {
     func testFleetFactoryLeavesAbsentMetricsOut() {
         let input = FleetInsightInput.fleet(
             current: summary(date: "2026-06-06", fileVault: 98), previous: nil)
-        XCTAssertEqual(input.facts.map(\.label), ["Total managed devices", "FileVault encrypted"])
+        XCTAssertEqual(input.facts.map(\.label), ["Managed Macs", "FileVault encrypted"])
         XCTAssertNil(input.facts[1].prior, "no previous summary, no change")
         XCTAssertEqual(input.notes, [FleetInsightInput.noEarlierDataNote])
     }

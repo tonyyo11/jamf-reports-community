@@ -485,7 +485,10 @@ for that run. When today's summary is not written for any reason,
 Trends advanced. A collect that attempted sources but landed none
 (`nothingLanded`, judged before the device scan adds its kinds) writes no summary
 at all, with the reason "no source landed this run", rather than dating cached
-numbers today. A later same-day collect
+numbers today. A fleet with mobile devices and no Macs still gets a summary
+(`ReportEngine.mobileOnlySummary`: `totalDevices` 0, `mobileDeviceCount` set, every Mac figure nil),
+so a mobile-only fleet is not Partial; a fleet with neither writes none, and a run that read no Macs
+never replaces a same-day summary that counted them (`freshSummaryIsBetter`). A later same-day collect
 that lands at least one of the digest's input sources (`collectionSources` has a `live`
 entry) rebuilds today's summary from the newest snapshots (`freshSummaryIsBetter`); one that
 lands none leaves the file untouched unless it offers a data upgrade (real mSCP for the proxy,

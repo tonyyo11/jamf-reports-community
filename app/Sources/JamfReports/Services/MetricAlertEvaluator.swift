@@ -43,7 +43,7 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .securityScore: return "Security score"
         case .staleCount: return "Stale devices"
         case .actionItemsP0: return "P0 action items"
-        case .totalDevices: return "Total devices"
+        case .totalDevices: return "Total Macs"
         }
     }
 
@@ -74,7 +74,9 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .securityScore: return summary.securityScore
         case .staleCount: return summary.staleCount.map(Double.init)
         case .actionItemsP0: return summary.actionItemsP0.map(Double.init)
-        case .totalDevices: return Double(summary.totalDevices)
+        // A day with no Macs (a mobile-only fleet, or a collect that read none) measured no
+        // count, so a `below` or `drops_more_than` rule on it never fires.
+        case .totalDevices: return summary.totalDevices > 0 ? Double(summary.totalDevices) : nil
         }
     }
 }

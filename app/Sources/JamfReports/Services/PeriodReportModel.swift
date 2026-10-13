@@ -133,7 +133,8 @@ struct PeriodReportModel: Sendable {
 
     static func fleetValue(_ id: String, _ s: DailySummary) -> Double? {
         switch id {
-        case "totalDevices":   return Double(s.totalDevices)
+        // A day with no Macs measured none, whatever else the summary holds.
+        case "totalDevices":   return s.totalDevices > 0 ? Double(s.totalDevices) : nil
         case "fileVaultPct":   return s.fileVaultPct
         case "compliancePct":  return s.compliancePct
         case "osCurrentPct":   return s.osCurrentPct

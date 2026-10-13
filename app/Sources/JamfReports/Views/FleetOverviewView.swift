@@ -144,7 +144,7 @@ struct FleetOverviewView: View {
                         .padding(8)
                     }
                 }
-            StatTile(label: "Devices", value: "\(totalDevices)", sub: "Latest successful summaries",
+            StatTile(label: "Macs", value: "\(totalDevices)", sub: "Latest successful summaries",
                      fillsHeight: true)
             StatTile(
                 label: "Stability",
@@ -340,7 +340,7 @@ struct FleetOverviewView: View {
 
                 HStack(spacing: 12) {
                     StatTile(
-                        label: "Devices",
+                        label: "Macs",
                         value: row.summary.map { "\($0.totalDevices)" } ?? "--",
                         sub: "Latest successful summary"
                     )
@@ -736,7 +736,7 @@ private struct FleetProfileCard: View {
 
                 HStack(alignment: .firstTextBaseline, spacing: 18) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Kicker(text: "Devices")
+                        Kicker(text: "Macs")
                         Text(row.summary.map { "\($0.totalDevices)" } ?? "--")
                             .font(Theme.Fonts.serif(percentSize, weight: .bold))
                             .foregroundStyle(Theme.Colors.fg)

@@ -240,7 +240,7 @@ enum ScheduledRunSignals {
         let summaries = TrendStore.readSummaries(profile: profile)
         guard let current = summaries.last else { return }
         // Only evaluate a summary this run actually wrote today. A day that
-        // produced no fresh summary (e.g. totalDevices == 0) leaves an older
+        // produced no fresh summary (e.g. no source landed) leaves an older
         // newest-summary that would be carded as if it were today's — skip it.
         let today = SummaryJSONParser.dateFormatter.string(from: Date())
         guard current.date == today else {

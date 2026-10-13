@@ -195,8 +195,8 @@ final class FleetRollupTests: XCTestCase {
         XCTAssertEqual(lines.first, "Metric,Current,Previous,Delta")
         let fileVault = try? XCTUnwrap(lines.first { $0.hasPrefix("FileVault %,") })
         XCTAssertEqual(fileVault, "FileVault %,92.0%,88.0%,+4.0pp")
-        let stale = try? XCTUnwrap(lines.first { $0.hasPrefix("Stale Devices,") })
-        XCTAssertEqual(stale, "Stale Devices,8,12,-4")
+        let stale = try? XCTUnwrap(lines.first { $0.hasPrefix("Stale Macs,") })
+        XCTAssertEqual(stale, "Stale Macs,8,12,-4")
     }
 
     func testRollupNilWhenNoProfileHasSummaries() {
@@ -227,7 +227,7 @@ final class FleetRollupTests: XCTestCase {
         XCTAssertEqual(written.lastPathComponent, "fleet-Production-Fleet-2026-06-06_120000.csv")
         let text = try String(contentsOf: written, encoding: .utf8)
         XCTAssertTrue(text.contains("Metric,Current,Previous,Delta"))
-        XCTAssertTrue(text.contains("Devices,120,"))
+        XCTAssertTrue(text.contains("Macs,120,"))
     }
 
     func testEmitReturnsNilWhenGroupHasNoData() throws {

@@ -40,7 +40,7 @@ enum PeriodMetricCatalog {
     /// `totalDevices` is non-optional in the schema, so it is always offered.
     static func fleetMetrics(in summaries: [DailySummary]) -> [PeriodMetric] {
         var out: [PeriodMetric] = [
-            PeriodMetric(id: "totalDevices", label: "Managed devices", unit: .count, source: .fleet)
+            PeriodMetric(id: "totalDevices", label: "Managed Macs", unit: .count, source: .fleet)
         ]
         func addPercent(_ id: String, _ label: String, _ value: (DailySummary) -> Double?) {
             guard summaries.contains(where: { value($0) != nil }) else { return }

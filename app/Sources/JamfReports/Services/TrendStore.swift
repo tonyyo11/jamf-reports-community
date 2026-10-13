@@ -482,12 +482,15 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     func managedDeviceSeries() -> [ChartSeries] {
         guard !filteredSummaries.isEmpty else { return [] }
 
-        let computerPoints = filteredSummaries.map {
+        // A day with no Macs is a gap in the Computers line, not a drop to 0.
+        let computerPoints = filteredSummaries.filter { $0.totalDevices > 0 }.map {
             (date: $0.parsedDate, value: Double($0.totalDevices))
         }
-        var series = [
-            ChartSeries(label: "Computers", color: ChartPalette.seriesColors[0], points: computerPoints),
-        ]
+        var series: [ChartSeries] = []
+        if !computerPoints.isEmpty {
+            series.append(ChartSeries(
+                label: "Computers", color: ChartPalette.seriesColors[0], points: computerPoints))
+        }
 
         let mobilePoints: [(date: Date, value: Double)] = filteredSummaries.compactMap { summary in
             // A recorded count always wins; the backfill only fills older days.

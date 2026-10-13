@@ -30,7 +30,7 @@ versions in this repository map to git tags.
 - The HTML report has a **Mobile devices** group: iPad, iPhone and Apple TV counts, how many are
   managed and supervised, passcode and Activation Lock counts (shown as Unknown when no device
   reports the field, never 0) and the iOS and iPadOS version spread. It lists no individual
-  device. Full Instance and Asset reports include it, as does a Custom report that picks a mobile
+  device. Every HTML report template includes it, as does a Custom report that picks a mobile
   sheet. When no mobile data was collected, the audit appendix says so, with the recorded cause
   when the last attempt failed. (#275)
 - Under Security agent health, the HTML report lists the Macs missing each agent with their
@@ -72,6 +72,16 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A fleet with iPads and iPhones but no Macs now gets its daily summary. Before, the summary was
+  written only when at least one Mac was counted, so every collect on such a fleet logged
+  "summary not written", Run History showed each run as Partial and the background item retried
+  it three times a day. The summary now records the mobile device count with every Mac figure
+  left unmeasured (shown as "--" or "Not reported", never 0%), and a fleet with neither Macs nor
+  mobile devices still writes nothing. Where a figure counts Macs only, the Fleet Overview, the
+  fleet rollup and workbook, the period report, metric alerts and the Overview insight now say
+  "Macs" instead of "devices", and a day with no Macs is a gap in those figures, not a 0. The
+  Executive, Operational, Compliance and Security Posture HTML reports also list the Mobile
+  devices group.
 - A tenant-level (legacy) Jamf Account integration whose tenant is not Jamf Pro is no longer
   assumed to be Jamf School: setup says it may be Jamf School, Jamf Protect or Jamf Security
   Cloud and what Jamf Reports can do with each. The first-launch screen also says that Jamf

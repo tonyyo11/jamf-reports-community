@@ -182,8 +182,16 @@ extension FleetInsightInput {
         }
         let proxy = current.complianceIsProxy == true ? " [proxy metric]" : ""
         let candidates: [Fact?] = [
-            Fact(label: "Total managed devices", value: .count(current.totalDevices),
-                 prior: nil, polarity: .neutral),
+            // The Mac count only: a fleet with no Macs has no Mac fact, and its mobile count
+            // stands in so the digest is never empty.
+            current.totalDevices > 0
+                ? Fact(label: "Managed Macs", value: .count(current.totalDevices),
+                       prior: nil, polarity: .neutral)
+                : current.mobileDeviceCount.map {
+                    Fact(label: "Managed mobile devices (no Macs in this fleet)",
+                         value: .count($0), prior: previous?.mobileDeviceCount.map(Value.count),
+                         polarity: .neutral)
+                },
             share("FileVault encrypted", \.fileVaultPct, "not encrypted"),
             // osCurrentPct counts a Mac on a major the feed does not list as not current.
             share("OS current", \.osCurrentPct, "not on the newest release of its "
