@@ -19,6 +19,15 @@ versions in this repository map to git tags.
   Serial, macOS and User. Click a header to sort and again to reverse: Last Check-in starts with
   the most recent Mac and puts a Mac with no check-in date last, and the other three start with
   the lowest count or score. (#272)
+- The HTML report has a **Mobile devices** group: iPad, iPhone and Apple TV counts, how many are
+  managed and supervised, passcode and Activation Lock counts (shown as Unknown when no device
+  reports the field, never 0) and the iOS and iPadOS version spread. It lists no individual
+  device. Full Instance and Asset reports include it, as does a Custom report that picks a mobile
+  sheet. When no mobile data was collected, the audit appendix says so, with the recorded cause
+  when the last attempt failed. (#275)
+- Under Security agent health, the HTML report lists the Macs missing each agent with their
+  serial and the value seen, or "no value". A row that carries only a device name is marked
+  "name only". (#276)
 
 ### Changed
 
@@ -61,6 +70,10 @@ versions in this repository map to git tags.
   Pro, deploy the binary through the API or another tool, or run
   `sudo profiles renew -type enrollment` on the Mac. Totals that come from Jamf's own summaries
   still include these Macs. (#274)
+- The Stale figure at the top of the HTML report and its first Needs attention line now say how
+  many of those Macs have no Jamf binary and are listed apart ("includes 2 without the Jamf
+  binary, listed apart"), so they agree with the follow-up table. The appendix definition says
+  the same. (#274)
 
 ### Security
 

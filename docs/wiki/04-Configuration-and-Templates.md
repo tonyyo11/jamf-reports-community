@@ -530,13 +530,18 @@ enough. From the top it has:
    reaches whose Jamf binary or inventory lags (the contact gap), P0 gaps, patch titles under 50%, failing configuration
    profiles and apps, failed patch or update runs, and security agents not on every Mac. A
    sentence appears only while its count is above zero and links to the part of the report
-   that lists it; opening a link opens the group around it.
+   that lists it; opening a link opens the group around it. The stale figure and its sentence
+   come from the daily summary, which includes Macs enrolled without the Jamf binary; they say
+   how many ("includes 2 without the Jamf binary, listed apart"). The security agents line
+   links to Security agent health, which lists the Macs missing each agent.
 4. **The jamf-cli dashboard**, open, when one was collected (jamf-cli 1.31.0 or later). With it
    in the report, the report leaves out the three sections it repeats: the OS version
    distribution, the audit findings and the catalog counts. Without it, those are in the
    report.
 5. **Detail groups, collapsed**: Security and compliance, Patching, Devices needing
-   intervention, Policies and profiles, Trends, Recent failures and Breakdowns. Each group's
+   intervention, Policies and profiles, Trends, Recent failures, Breakdowns and Mobile
+   devices (counts, management, passcode and Activation Lock, iOS and iPadOS versions; no
+   device list; in the Full Instance and Asset templates). Each group's
    one-line heading carries its numbers ("Patching — 118 titles behind · 12 under 50%").
    Lists show ten rows; the rest are behind "Show all". Healthy profiles are counted, not
    listed. **Expand all** and **Collapse all** (top right) open and close everything. A
