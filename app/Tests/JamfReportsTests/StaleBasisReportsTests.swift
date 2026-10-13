@@ -284,14 +284,21 @@ final class StaleBasisReportsTests: XCTestCase {
         XCTAssertEqual(stale.map { name($0.item) }, ["Mac-3"], "M3: inventory 40 days old")
         XCTAssertEqual(stale.map(\.age), [.days(40)])
         let block = widened.buildInterventionList(computersInventory: computers)
+        // Mac-3 is stale on the inventory date and shows a gap; Mac-2 only shows a gap.
+        XCTAssertTrue(block.html.contains("Macs to follow up (2)"), block.html)
         XCTAssertTrue(block.html.contains(
-            "Macs with no check-in or inventory update for more than 30 days (1)"), block.html)
+            "1 with no check-in or inventory update for more than 30 days, 2 with a contact gap"),
+            block.html)
         XCTAssertTrue(block.html.contains("Days Since Check-in or Inventory Update"))
 
         let plain = try htmlReport("", computers: computers)
         XCTAssertTrue(plain.staleComputers(computers).isEmpty)
-        XCTAssertEqual(plain.buildInterventionList(computersInventory: computers).omission,
+        let quiet = [computer(4, checkIn: 20, inventory: 20, contact: nil)]
+        XCTAssertEqual(plain.buildInterventionList(computersInventory: quiet).omission,
                        "no Mac has gone more than 30 days without a check-in")
+        let idle = [computer(5, checkIn: 40, inventory: 40, contact: nil)]
+        XCTAssertTrue(plain.buildInterventionList(computersInventory: idle).html.contains(
+            "Macs with no check-in for more than 30 days (1)"))
     }
 
     func testAMacWithNoInventoryDateIsOldestInTheList() throws {

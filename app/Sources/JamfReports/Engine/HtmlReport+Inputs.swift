@@ -59,6 +59,8 @@ extension HtmlReport {
         /// One figure for the tile, the attention list and the group headline, so a summary
         /// written by an older build cannot make the top of the report disagree with itself.
         var p0: Int?
+        /// The Macs whose device rows fail FileVault, SIP or Firewall, behind the P0 figure.
+        var p0Gaps = P0Gaps()
     }
 
     /// Loads what the sections in `sections` and the figures at the top need.
@@ -113,7 +115,7 @@ extension HtmlReport {
             ?? overviewDeviceCount(inputs.overview)
         inputs.staleMacCount = staleComputers(inputs.computers).count
         inputs.contactGapCounts = contactGapCounts(inputs.computers)
-        inputs.fleet = securityFleet()
+        (inputs.fleet, inputs.p0Gaps) = securityCounts()
         if !(config.securityAgents ?? []).isEmpty,
            let url = track("Extension attribute results", "ea-results"),
            let data = try? Data(contentsOf: url) {

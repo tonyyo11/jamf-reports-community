@@ -1341,7 +1341,7 @@ struct CoreDashboard: Sendable {
     }
 
     /// A date as `yyyy-MM-dd`, empty when the Mac has none.
-    private static func dayText(_ date: Date?) -> String {
+    static func dayText(_ date: Date?) -> String {
         guard let date else { return "" }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

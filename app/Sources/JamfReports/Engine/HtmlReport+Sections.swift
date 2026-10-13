@@ -139,58 +139,116 @@ extension HtmlReport {
     func staleComputers(
         _ computers: [[String: Any]], now: Date = Date()
     ) -> [(item: [String: Any], age: StaleAge)] {
-        let rule = config.staleRule
-        return computers.compactMap { item -> (item: [String: Any], age: StaleAge)? in
-            let dates = ComputerDates(item: item)
-            let inputs = StaleInputs(
-                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
-                carriesDates: true)
-            guard let age = rule.age(of: inputs, now: now), age > .days(rule.days)
-            else { return nil }
+        computers.compactMap { item -> (item: [String: Any], age: StaleAge)? in
+            guard let age = staleRuleAge(of: item, now: now), isStale(age) else { return nil }
             return (item, age)
         }.sorted { $0.age > $1.age }
+    }
+
+    /// The stale rule's age of a Mac, whether or not it is past the threshold.
+    private func staleRuleAge(of item: [String: Any], now: Date) -> StaleAge? {
+        let dates = ComputerDates(item: item)
+        return config.staleRule.age(
+            of: StaleInputs(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                carriesDates: true),
+            now: now)
+    }
+
+    private func isStale(_ age: StaleAge) -> Bool { age > .days(config.staleRule.days) }
+
+    /// The gap a Mac shows (`ContactGap`), nil when none: the one place the report reads it, so
+    /// the attention sentences, the group headline and the intervention list agree.
+    func contactGap(of item: [String: Any], now: Date = Date()) -> ContactGap? {
+        let dates = ComputerDates(item: item)
+        return ContactGap.of(
+            checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+            staleDays: config.staleRule.days, gapDays: config.contactGapDays, now: now)
     }
 
     /// The Macs MDM reaches whose check-in or inventory lags (`ContactGap`), counted by kind.
     func contactGapCounts(
         _ computers: [[String: Any]], now: Date = Date()
     ) -> [ContactGap: Int] {
-        let staleDays = config.staleRule.days
-        let gapDays = config.contactGapDays
         var counts: [ContactGap: Int] = [:]
         for item in computers {
-            let dates = ComputerDates(item: item)
-            if let gap = ContactGap.of(
-                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
-                staleDays: staleDays, gapDays: gapDays, now: now) {
-                counts[gap, default: 0] += 1
-            }
+            if let gap = contactGap(of: item, now: now) { counts[gap, default: 0] += 1 }
         }
         return counts
     }
 
-    /// Macs that are stale under the stale rule, with the oldest counted date's age and the
-    /// primary user.
-    func buildInterventionList(computersInventory: [[String: Any]]) -> HtmlBlock {
+    /// One row of the intervention list: a Mac that is stale under the stale rule, shows a
+    /// contact gap, or both.
+    struct InterventionMac {
+        let item: [String: Any]
+        /// The stale rule's age; nil only for a Mac the rule has no date for.
+        let age: StaleAge?
+        let isStale: Bool
+        let gap: ContactGap?
+        let contact: Date?
+    }
+
+    /// The stale Macs, oldest first, then the Macs that only show a contact gap (Jamf binary
+    /// silent before inventory not updating, the longest silence first). Each Mac once.
+    func interventionMacs(
+        _ computers: [[String: Any]], now: Date = Date()
+    ) -> [InterventionMac] {
+        let rows = computers.compactMap { item -> InterventionMac? in
+            let age = staleRuleAge(of: item, now: now)
+            let isStale = age.map(isStale) ?? false
+            let gap = contactGap(of: item, now: now)
+            guard isStale || gap != nil else { return nil }
+            return InterventionMac(
+                item: item, age: age, isStale: isStale, gap: gap,
+                contact: ComputerDates(item: item).contact)
+        }
+        func rank(_ gap: ContactGap?) -> Int {
+            gap.flatMap(ContactGap.allCases.firstIndex(of:)) ?? 0
+        }
+        let stale = rows.filter(\.isStale).sorted { ($0.age ?? .days(0)) > ($1.age ?? .days(0)) }
+        let gapOnly = rows.filter { !$0.isStale }.sorted {
+            rank($0.gap) != rank($1.gap)
+                ? rank($0.gap) < rank($1.gap)
+                : ($0.age ?? .days(0)) > ($1.age ?? .days(0))
+        }
+        return stale + gapOnly
+    }
+
+    /// The Macs the "Needs attention" stale and contact-gap lines count: stale under the stale
+    /// rule, with the oldest counted date's age and the primary user, and the Macs MDM reaches
+    /// whose Jamf binary or inventory lags, with their Last Contact and which gap. A Mac that is
+    /// both has one row with both. Titled by the stale rule alone when no Mac shows a gap.
+    func buildInterventionList(
+        computersInventory: [[String: Any]], now: Date = Date()
+    ) -> HtmlBlock {
+        let f = HtmlSectionFormatters.self
         let rule = config.staleRule
         guard !computersInventory.isEmpty else { return .omitted("no computers snapshot") }
-        let stale = staleComputers(computersInventory)
-        guard !stale.isEmpty else {
+        let macs = interventionMacs(computersInventory, now: now)
+        guard !macs.isEmpty else {
             return .omitted(
                 "no Mac has gone more than \(rule.days) days without a \(rule.basisPhrase)")
         }
-        let tableRows = stale.map { entry -> [String] in
-            [inventoryName(entry.item), inventorySerial(entry.item),
-             inventoryUsername(entry.item), entry.age.days.map(String.init) ?? "never"]
+        let tableRows = macs.map { mac -> [String] in
+            [inventoryName(mac.item), inventorySerial(mac.item), inventoryUsername(mac.item),
+             mac.age.map { $0.days.map(String.init) ?? "never" } ?? "—",
+             mac.contact.map { CoreDashboard.dayText($0) } ?? "—", mac.gap?.label ?? "—"]
         }
-        return .shown(HtmlSectionFormatters.block(
-            id: "intervention-list",
-            title: "Macs with no \(rule.basisPhrase) for more than \(rule.days) days "
-                + "(\(stale.count))",
-            body: HtmlSectionFormatters.renderCappedTable(
-                headers: ["Device", "Serial", "Primary User", "Days Since \(rule.basisHeading)"],
-                rows: tableRows, maxRows: HtmlSectionFormatters.maxInterventionRows,
-                expanded: expandAll)))
+        let staleTitle = "Macs with no \(rule.basisPhrase) for more than \(rule.days) days"
+        let gaps = macs.filter { $0.gap != nil }.count
+        let title = gaps == 0
+            ? "\(staleTitle) (\(macs.count))" : "Macs to follow up (\(macs.count))"
+        let note = gaps == 0 ? "" : "\n<p class=\"block-note\">"
+            + f.escapeHTML(
+                "\(macs.filter(\.isStale).count) with no \(rule.basisPhrase) for more than "
+                + "\(rule.days) days, \(gaps) with a contact gap. A Mac that is both has one row.")
+            + "</p>"
+        return .shown(f.block(
+            id: "intervention-list", title: title,
+            body: note + f.renderCappedTable(
+                headers: ["Device", "Serial", "Primary User", "Days Since \(rule.basisHeading)",
+                          "Last Contact", "Contact gap"],
+                rows: tableRows, maxRows: f.maxInterventionRows, expanded: expandAll)))
     }
 
     // MARK: - patchQueue

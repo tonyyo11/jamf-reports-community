@@ -309,6 +309,8 @@ extension HtmlReport {
             let days = config.thresholds?.resolvedStaleDays ?? 30
             parts.append("\(f.plural(staleComputers(inputs.computers).count, "Mac")) idle "
                 + "over \(days) days")
+            let gaps = inputs.contactGapCounts.values.reduce(0, +)
+            if gaps > 0 { parts.append("\(gaps) with a contact gap") }
         case .policies:
             if shown.contains(.policyTable) {
                 let n = (inputs.policyStatus.first?["config_findings"] as? [Any])?.count ?? 0
