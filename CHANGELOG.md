@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Jamf Platform API connections are grouped on this Mac. A Platform profile that validates during setup is recorded under a connection, and the sidebar workspace menu and Fleet Overview list the profiles of one connection together under its name; profiles in no connection list as before. The grouping is kept in the app's own Application Support folder, holds no credentials, and its IDs are removed from diagnostic bundles.
 - The Devices table now sorts by Last Check-in, Patch, Security and Risk as well as Device,
   Serial, macOS and User. Click a header to sort and again to reverse: Last Check-in starts with
   the most recent Mac and puts a Mac with no check-in date last, and the other three start with
