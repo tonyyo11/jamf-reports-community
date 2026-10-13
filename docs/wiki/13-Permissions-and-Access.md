@@ -52,7 +52,8 @@ guide.
    Account can list test, production, beta and other environments, and one integration can
    apply to several of them. A jamf-cli profile holds one environment ID, so reporting on
    several takes one profile per environment, each with the same client ID and secret
-   (**Data Sources → Add environments**). Every extra environment widens what a leaked
+   (**Data Sources → Connection → Add environments**, which registers each profile and
+   checks its ID). Every extra environment widens what a leaked
    secret could reach, so select only the ones you report on.
 5. Grant **Read** for the report areas you want, from
    [Permissions by report area](#permissions-by-report-area). Nothing else.
@@ -63,7 +64,10 @@ guide.
 8. Note the date. Integrations are valid for six months.
 
 Then connect it in the app, at onboarding's **Authenticate** step or with **Data Sources →
-Connection health → Update credentials…** for an existing profile:
+Connection health → Update credentials…** for an existing profile. When the integration
+covers several environments, **Data Sources → Connection → Add environments** adds the others
+with the same client ID and secret, and **Update credentials for all** applies a rotated secret
+to every profile in one step:
 
 - **Region:** United States, Europe or Asia-Pacific, which is the gateway
   `https://us.api.jamfcloud.com`, `https://eu.api.jamfcloud.com` or

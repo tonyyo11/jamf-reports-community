@@ -90,7 +90,8 @@ profile has a workspace, for example after the workspace folder is emptied.
    **Tenant (legacy)** with the tenant ID, which cannot reach Compliance Benchmarks or
    Blueprints. A profile holds one environment; an integration scoped to several needs one
    profile per environment, with the same client ID and secret, and more environments from
-   the same integration are added from **Data Sources → Add environments** after setup. Keep
+   the same integration are added from **Data Sources → Connection → Add environments** after
+   setup (see [Adding more environments](#adding-more-environments-from-the-same-integration)). Keep
    a Jamf Pro OAuth profile for the Jamf Pro and Classic commands the gateway refuses
    (device actions among them); Jamf Reports itself does not need them. The secret is passed to `jamf-cli` over a controlling TTY and
    cleared immediately; the app never persists it. `jamf-cli` stores the resulting token
@@ -121,6 +122,36 @@ profile has a workspace, for example after the workspace folder is emptied.
    Collect now on Overview. For Jamf School, this step only generates. If the output
    looks off you can **Skip & finish setup** — the workspace is fully configured at this
    point and you can run reports later from the Reports tab.
+
+### Adding more environments from the same integration
+
+A jamf-cli profile holds one environment, so each extra environment of a Jamf Account
+integration is its own profile with the same client ID and secret. Once a Platform API
+profile is set up, **Data Sources → Connection** lists the connection it belongs to (a
+profile in none offers **Start a connection**).
+
+1. Choose **Add environments…**.
+2. Paste the environment IDs, one per line, each with an optional label after it
+   (`<id> Production`). The label names the new profile and its sidebar entry: the profile
+   is `<connection>-<label>` in lowercase letters, digits and hyphens. A name that already
+   exists, or differs from an existing profile or workspace only by letter case, is refused
+   and shown before anything runs.
+3. Type the client ID and secret once, then choose **Register & check**. The app registers
+   each profile the way onboarding does (the secret goes over a controlling TTY and is
+   cleared when the run ends or the sheet closes) and runs the connection check for each ID.
+4. The list shows one result per ID. An environment where Jamf Pro answers gets a workspace
+   (the same minimal config.yaml as skipping CSV mapping) and joins the connection. An
+   environment where no Jamf Pro answers is not added: its MDM is probably Jamf School, which
+   is read with a School API key in a Jamf School workspace (the result offers **Add Jamf
+   School workspace…**). A rejected or unconfirmed ID is not added either.
+
+The app has no way to remove a jamf-cli profile, so a profile registered for an ID that was
+not added stays in jamf-cli; the result names the `jamf-cli config remove-profile` command to
+remove it. **Update credentials for all…** re-registers every profile in the connection with
+a new secret (each with its own ID) and checks each one. **Rename…** changes the connection
+name and member labels, and **Remove** on a member takes it out of the connection without
+deleting its jamf-cli profile or workspace. The grouping is kept per Mac, holds no
+credentials, and the app never keeps the secret.
 
 ### The Jamf School path
 
