@@ -22,6 +22,9 @@ struct CSVInboxService {
         case invalidProfile
         case invalidPath
         case missingFile(String)
+        case alreadyArchived(String)
+        case archiveNameTaken(String)
+        case sentinelNotWritten(String, reason: String)
 
         var errorDescription: String? {
             switch self {
@@ -31,6 +34,12 @@ struct CSVInboxService {
                 return "The selected CSV is not inside the workspace inbox."
             case .missingFile(let name):
                 return "\(name) no longer exists in the CSV inbox."
+            case .alreadyArchived(let name):
+                return "\(name) is already in the inbox archive."
+            case .archiveNameTaken(let name):
+                return "The inbox archive already holds a file named \(name)."
+            case .sentinelNotWritten(let name, let reason):
+                return "could not mark \(name) consumed: \(reason)"
             }
         }
     }
@@ -84,6 +93,73 @@ struct CSVInboxService {
 
         try fileManager.removeItem(at: url)
         try? fileManager.removeItem(at: url.appendingPathExtension("consumed"))
+    }
+
+    /// Moves an inbox CSV and its `.consumed` sentinel into `csv-inbox/archive/`.
+    func archive(_ file: InboxFile, profile: String) throws {
+        guard let root = WorkspacePathGuard.root(for: profile) else {
+            throw ClearError.invalidProfile
+        }
+        guard file.status != .archived, !file.relativePath.contains("/") else {
+            throw ClearError.alreadyArchived(file.name)
+        }
+        guard let inbox = try? WorkspacePaths.confinedFolder(["csv-inbox"], under: root),
+              let source = url(for: file, inbox: inbox, root: root) else {
+            throw ClearError.invalidPath
+        }
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw ClearError.missingFile(file.name)
+        }
+        guard let archive = try? WorkspacePaths.confinedFolder(
+            ["csv-inbox", "archive"], under: root) else {
+            throw ClearError.invalidPath
+        }
+
+        let destination = archive.appendingPathComponent(file.name, isDirectory: false)
+        guard !fileManager.fileExists(atPath: destination.path) else {
+            throw ClearError.archiveNameTaken(file.name)
+        }
+        try fileManager.createDirectory(at: archive, withIntermediateDirectories: true)
+        try fileManager.moveItem(at: source, to: destination)
+
+        let sentinel = source.appendingPathExtension("consumed")
+        if fileManager.fileExists(atPath: sentinel.path) {
+            let archivedSentinel = destination.appendingPathExtension("consumed")
+            try? fileManager.removeItem(at: archivedSentinel)
+            try fileManager.moveItem(at: sentinel, to: archivedSentinel)
+        }
+    }
+
+    /// Writes the empty `<name>.csv.consumed` sentinel beside a CSV a report was generated
+    /// from. The file stays where it is: csv-assisted runs reuse the newest CSV every time.
+    /// Returns false, writing nothing, for a CSV outside `csv-inbox/`.
+    @discardableResult
+    static func markConsumed(_ csv: URL, profile: String) throws -> Bool {
+        guard let root = WorkspacePathGuard.root(for: profile),
+              let inbox = try? WorkspacePaths.confinedFolder(["csv-inbox"], under: root),
+              csv.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path
+                == inbox.resolvingSymlinksInPath().standardizedFileURL.path else {
+            return false
+        }
+        let name = csv.lastPathComponent
+        let sentinel = inbox.appendingPathComponent(name).appendingPathExtension("consumed")
+        // O_EXCL|O_NOFOLLOW: create it once, and never write through a link at that name.
+        let descriptor = Darwin.open(
+            sentinel.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        if descriptor >= 0 {
+            Darwin.close(descriptor)
+            return true
+        }
+        let code = errno
+        if code == EEXIST {
+            var info = stat()
+            if lstat(sentinel.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG {
+                return true
+            }
+            throw ClearError.sentinelNotWritten(
+                name, reason: "\(sentinel.lastPathComponent) is not a regular file")
+        }
+        throw ClearError.sentinelNotWritten(name, reason: String(cString: strerror(code)))
     }
 
     private func files(

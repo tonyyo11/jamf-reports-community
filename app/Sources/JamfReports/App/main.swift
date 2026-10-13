@@ -497,6 +497,15 @@ private func scheduledRunSingleBody(
             template: template,
             onLine: onLine
         )
+        if let csv = resolvedCSV {
+            do {
+                try CSVInboxService.markConsumed(csv, profile: profile)
+            } catch {
+                let warning = "[warn] \(error.localizedDescription)"
+                print(warning)
+                recorder?.record(warning)
+            }
+        }
         if !failures.isEmpty {
             let partialMsg = partialRunMarker(sheetFailures: failures.count)
             recorder?.record(partialMsg)

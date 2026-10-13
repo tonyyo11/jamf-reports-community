@@ -126,6 +126,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The CSV Inbox on Sources no longer shows every file as Pending for good. A scheduled
+  csv-assisted run now marks the CSV it built a report from as consumed (the file stays in place,
+  so the next run can reuse it), and each file's menu has an Archive action that moves it, with
+  its marker, into `csv-inbox/archive/`. (#270)
 - A workbook sheet left out because its data was never collected, such as the mobile device
   sheets, is now named in the run log the app shows, with the snapshot it needed, instead of
   only in the terminal output (#275).

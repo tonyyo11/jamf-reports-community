@@ -145,7 +145,7 @@ struct SourcesView: View {
         } message: {
             Text("This removes the CSV file from disk.")
         }
-        .alert("Clear Inbox Error", isPresented: $showClearError) {
+        .alert("CSV Inbox Error", isPresented: $showClearError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(clearError ?? "Unknown error")
@@ -330,6 +330,13 @@ struct SourcesView: View {
                                 Spacer(minLength: 8)
                                 Pill(text: f.status.rawValue, tone: tone(for: f.status))
                                 Menu {
+                                    if f.status != .archived {
+                                        Button {
+                                            archiveInboxFile(f)
+                                        } label: {
+                                            Label("Archive", systemImage: "archivebox")
+                                        }
+                                    }
                                     Button(role: .destructive) {
                                         pendingClearFile = f
                                         pendingClearProfile = workspace.profile
@@ -770,6 +777,18 @@ struct SourcesView: View {
         } catch {
             clearError = "Couldn't remove the inbox file: \(error.localizedDescription). "
                 + "It may be open in another app or read-only."
+            showClearError = true
+        }
+    }
+
+    private func archiveInboxFile(_ file: InboxFile) {
+        guard !workspace.demoMode else { return }
+        let profile = workspace.profile
+        do {
+            try CSVInboxService().archive(file, profile: profile)
+            reload()
+        } catch {
+            clearError = "Couldn't archive the inbox file: \(error.localizedDescription)"
             showClearError = true
         }
     }
