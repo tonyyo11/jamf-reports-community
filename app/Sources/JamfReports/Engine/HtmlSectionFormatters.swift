@@ -118,6 +118,7 @@ enum HtmlSectionFormatters {
     nonisolated static let maxInterventionRows = 100
     nonisolated static let maxFailureRows = 25
     nonisolated static let maxNonCompliantRows = 10
+    nonisolated static let maxAgentGapRows = 100
 
     /// A table of the first `limit` rows and, when there are more, the rest inside a nested
     /// `<details>` headed "Show all N" (N is the full count). Every row up to `maxRows`

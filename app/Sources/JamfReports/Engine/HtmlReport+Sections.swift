@@ -702,7 +702,34 @@ extension HtmlReport {
                 headers: ["Agent", "Installed", "Missing", "Unknown", "Coverage"],
                 rows: tableRows
             ))
+            \(agentGapTable(SecurityAgentCoverage.missing(
+                rows: eaRows,
+                agents: agents.filter { agent in
+                    coverage.contains { $0.name == agent.name && $0.reporting > 0 }
+                })))
             """))
+    }
+
+    /// The Macs the "Security agents are not on every Mac" line counts: one row per Mac and
+    /// agent without a connected value, as the extension attribute results name them. A row
+    /// with no serial or computer ID is marked "name only", since a name can repeat.
+    private func agentGapTable(_ macs: [SecurityAgentCoverage.MissingMac]) -> String {
+        let f = HtmlSectionFormatters.self
+        guard !macs.isEmpty else { return "" }
+        let rows = macs.map { mac -> [String] in
+            let identity = mac.serial.isEmpty
+                ? (mac.computerId.isEmpty ? "name only" : "ID \(mac.computerId)") : mac.serial
+            return [mac.device.isEmpty ? "—" : mac.device, identity, mac.agent,
+                    mac.value ?? "no value"]
+        }
+        var note = "\(f.plural(macs.count, "Mac")) without a connected agent, from the "
+            + "extension attribute results."
+        if macs.contains(where: \.nameOnly) {
+            note += " A row marked name only carries no serial or ID; it is listed as reported."
+        }
+        return "<p class=\"block-note\">\(f.escapeHTML(note))</p>\n" + f.renderCappedTable(
+            headers: ["Device", "Serial", "Agent", "Value seen"], rows: rows,
+            maxRows: f.maxAgentGapRows, expanded: expandAll)
     }
 
     // MARK: - Protect helpers
