@@ -255,7 +255,9 @@ struct OnboardingView: View {
             }
 
             if let check = flow.connectionCheck {
-                ConnectionCheckBanner(verdict: check, onSetUpSchool: startSchoolWorkspace)
+                ConnectionCheckBanner(
+                    verdict: check, onSetUpSchool: startSchoolWorkspace,
+                    tenantLevel: flow.platformScope == .tenant)
             }
 
             if flow.offersContinueWithoutValidating {

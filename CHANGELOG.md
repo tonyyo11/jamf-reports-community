@@ -72,6 +72,11 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A tenant-level (legacy) Jamf Account integration whose tenant is not Jamf Pro is no longer
+  assumed to be Jamf School: setup says it may be Jamf School, Jamf Protect or Jamf Security
+  Cloud and what Jamf Reports can do with each. The first-launch screen also says that Jamf
+  Reports reports on a Jamf Pro or Jamf School fleet, that Jamf Protect is added to a Jamf Pro
+  workspace, and that Jamf Security Cloud is not supported yet.
 - A Jamf Protect, Jamf Security Cloud or Jamf School login in jamf-cli is no longer treated as a
   Jamf Pro workspace. The app now reads which product a profile logs in to (the `product:` key in
   jamf-cli's config file, then its auth method, then its host) and no longer lists or collects a

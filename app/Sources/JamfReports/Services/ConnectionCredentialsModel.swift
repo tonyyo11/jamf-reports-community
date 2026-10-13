@@ -317,7 +317,9 @@ final class ConnectionCredentialsModel {
 extension ConnectionCredentialsModel.Row {
     /// Plain words for the results list. Names the profile where jamf-cli still holds one the
     /// connection does not use, with the command that removes it.
-    var message: String {
+    var message: String { message(tenantLevel: false) }
+
+    func message(tenantLevel: Bool) -> String {
         switch outcome {
         case .refused(let refusal):
             return "Not registered. \(refusal.message)"
@@ -330,10 +332,11 @@ extension ConnectionCredentialsModel.Row {
         case .updated(let version):
             return "Credentials updated. Jamf Pro " + (version.map { "\($0) " } ?? "") + "answered."
         case .notJamfPro:
-            return (isNew ? "Not added to the connection. " : "")
-                + "No Jamf Pro answers for this ID, so its MDM is probably Jamf School: Jamf "
-                + "School is read with a School API key, in its own Jamf School workspace. "
-                + removalHint
+            let reason = tenantLevel
+                ? ConnectionCheck.Verdict.notJamfProTenantText + " "
+                : "No Jamf Pro answers for this ID, so its MDM is probably Jamf School: Jamf "
+                    + "School is read with a School API key, in its own Jamf School workspace. "
+            return (isNew ? "Not added to the connection. " : "") + reason + removalHint
         case .rejected(let kind):
             return ConnectionCheck.Verdict.rejectedID(kind).message + " " + removalHint
         case .notConfirmed(let exitCode):

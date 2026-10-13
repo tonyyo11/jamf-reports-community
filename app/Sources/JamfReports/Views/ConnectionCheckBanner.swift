@@ -6,12 +6,14 @@ struct ConnectionCheckBanner: View {
     let verdict: ConnectionCheck.Verdict
     /// Starts a Jamf School workspace; offered only for a verdict that suggests one.
     var onSetUpSchool: (() -> Void)?
+    /// A tenant-level (legacy) integration, whose non-Jamf Pro tenant may not be Jamf School.
+    var tenantLevel = false
 
     var body: some View {
         InlineBanner(
             icon: Self.icon(for: verdict), tone: Self.tone(for: verdict), action: schoolAction
         ) {
-            Text(verbatim: verdict.message)
+            Text(verbatim: verdict.message(tenantLevel: tenantLevel))
                 .font(.footnote)
                 .foregroundStyle(Theme.Colors.fg2)
                 .fixedSize(horizontal: false, vertical: true)

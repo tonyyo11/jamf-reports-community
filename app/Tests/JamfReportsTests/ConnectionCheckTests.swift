@@ -90,6 +90,35 @@ final class ConnectionCheckTests: XCTestCase {
         XCTAssertFalse(ConnectionCheck.Verdict.noJamfPro.message.contains("accepted"))
     }
 
+    /// A tenant-level integration's tenant that is not Jamf Pro may be Jamf School, Jamf Protect or
+    /// Jamf Security Cloud, so the message names all three instead of assuming School.
+    func testNoJamfProAtTenantLevelNamesProtectAndSecurityCloud() {
+        let text = ConnectionCheck.Verdict.noJamfPro.message(tenantLevel: true)
+        XCTAssertFalse(text.contains("probably Jamf School"))
+        for phrase in ["Jamf School workspace", "Jamf Protect is added to a Jamf Pro workspace",
+                       "Jamf Security Cloud is not supported yet"] {
+            XCTAssertTrue(text.contains(phrase), phrase)
+        }
+        XCTAssertEqual(ConnectionCheck.Verdict.noJamfPro.message(tenantLevel: false),
+                       ConnectionCheck.Verdict.noJamfPro.message)
+        for other: ConnectionCheck.Verdict in [
+            .accepted(jamfProVersion: "11.31.0"), .rejectedID(.unknownEnvironment),
+            .undecided(exitCode: 1),
+        ] {
+            XCTAssertEqual(other.message(tenantLevel: true), other.message)
+        }
+    }
+
+    func testConnectionCardRowWordsNoJamfProByLevel() {
+        let row = ConnectionCredentialsModel.Row(label: "east", profile: "acme-east",
+                                                 outcome: .notJamfPro)
+        XCTAssertTrue(row.message(tenantLevel: false).contains("probably Jamf School"))
+        let tenant = row.message(tenantLevel: true)
+        XCTAssertFalse(tenant.contains("probably Jamf School"))
+        XCTAssertTrue(tenant.contains("Jamf Security Cloud is not supported yet"))
+        XCTAssertTrue(tenant.contains("acme-east"), "the removal hint still names the profile")
+    }
+
     /// An environment the gateway knows with no Jamf Pro is probably a Jamf School tenant, read
     /// with a School API key; the message says so and the verdict is not a way to continue.
     func testNoJamfProPointsToAJamfSchoolWorkspace() {

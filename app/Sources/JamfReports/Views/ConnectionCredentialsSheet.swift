@@ -187,7 +187,7 @@ struct ConnectionCredentialsSheet: View {
                 Mono(text: row.profile, size: 11, color: Theme.Colors.fg2)
                 Spacer()
             }
-            Text(row.message)
+            Text(row.message(tenantLevel: model.scope == .tenant))
                 .font(.footnote)
                 .foregroundStyle(Theme.Colors.fg2)
                 .fixedSize(horizontal: false, vertical: true)

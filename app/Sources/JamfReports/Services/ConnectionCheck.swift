@@ -131,7 +131,19 @@ extension ConnectionCheck.Verdict {
         return false
     }
 
-    var message: String {
+    /// At tenant level (legacy) a tenant that is not Jamf Pro can be Jamf School, Jamf Protect
+    /// or Jamf Security Cloud; an environment's MDM is Jamf Pro or Jamf School, so it is School.
+    static let notJamfProTenantText = "The gateway recognises this tenant ID, but it is not a "
+        + "Jamf Pro tenant. If it is Jamf School, set it up as a Jamf School workspace (Add Jamf "
+        + "School workspace in the sidebar's workspace menu). If it is Jamf Protect or Jamf "
+        + "Security Cloud, Jamf Reports cannot report from it on its own: Jamf Protect is added "
+        + "to a Jamf Pro workspace (Data Sources › Add Jamf Protect), and Jamf Security Cloud is "
+        + "not supported yet."
+
+    var message: String { message(tenantLevel: false) }
+
+    func message(tenantLevel: Bool) -> String {
+        if tenantLevel, case .noJamfPro = self { return Self.notJamfProTenantText }
         switch self {
         case .accepted(let version):
             return "Jamf Pro " + (version.map { "\($0) " } ?? "")

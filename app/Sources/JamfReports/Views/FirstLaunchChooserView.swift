@@ -39,6 +39,7 @@ struct FirstLaunchChooserView: View {
             VStack(alignment: .leading, spacing: 28) {
                 header
                 cardGrid
+                productsFootnote
                 footnote
             }
             .padding(EdgeInsets(top: 56, leading: 60, bottom: 40, trailing: 60))
@@ -183,6 +184,20 @@ struct FirstLaunchChooserView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// What the cards cannot set up, said before someone picks the closest one.
+    private var productsFootnote: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "questionmark.circle")
+                .foregroundStyle(Theme.Colors.fgMuted)
+            Text("Only Jamf Protect or Jamf Security Cloud? Jamf Reports reports on a Jamf Pro or "
+                + "Jamf School fleet. Jamf Protect is added to a Jamf Pro workspace, and Jamf "
+                + "Security Cloud is not supported yet.")
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

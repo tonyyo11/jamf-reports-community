@@ -260,7 +260,7 @@ struct ReauthenticateSheet: View {
         }
 
         if let check = flow.connectionCheck {
-            ConnectionCheckBanner(verdict: check)
+            ConnectionCheckBanner(verdict: check, tenantLevel: flow.platformScope == .tenant)
         }
 
         if flow.connectionValidated {
