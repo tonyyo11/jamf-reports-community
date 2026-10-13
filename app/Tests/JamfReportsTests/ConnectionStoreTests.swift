@@ -280,13 +280,22 @@ final class OnboardingConnectionRecordTests: XCTestCase {
         ])
     }
 
-    func testNoJamfProIsRecordedWithAnUnknownProduct() throws {
+    /// An environment with no Jamf Pro does not validate: onboarding sends it to the Jamf
+    /// School path instead, so it is not recorded as a member of the connection.
+    func testNoJamfProRecordsNothing() throws {
+        let store = try store()
+        let flow = flow(store: store)
+        flow.applyConnectionCheck(.noJamfPro)
+        XCTAssertEqual(store.load(), [])
+    }
+
+    func testTenantLevelIsRecordedOnTheConnection() throws {
         let store = try store()
         let flow = flow(store: store)
         flow.platformScope = .tenant
-        flow.applyConnectionCheck(.noJamfPro)
+        flow.applyConnectionCheck(.accepted(jamfProVersion: "11.31.0"))
         let saved = try XCTUnwrap(store.load().first)
-        XCTAssertEqual(saved.members.first?.product, .unknown)
+        XCTAssertEqual(saved.members.first?.product, .pro)
         XCTAssertEqual(saved.level, .tenant)
     }
 
