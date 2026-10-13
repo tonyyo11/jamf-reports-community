@@ -7,6 +7,13 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- The Devices table now sorts by Last Check-in, Patch, Security and Risk as well as Device,
+  Serial, macOS and User. Click a header to sort and again to reverse: Last Check-in starts with
+  the most recent Mac and puts a Mac with no check-in date last, and the other three start with
+  the lowest count or score. (#272)
+
 ### Changed
 
 - The integrity note at the foot of an HTML report now says it is a check for damage or a partial

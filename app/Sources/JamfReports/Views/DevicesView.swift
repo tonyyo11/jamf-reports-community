@@ -21,7 +21,7 @@ struct DevicesView: View {
     @State private var deviceDetail: DeviceDetail?
     @State private var deviceDetailState: DeviceDetailState = .idle
     @State private var deviceDetailRequestKey = ""
-    @State private var sortOrder = [KeyPathComparator(\DeviceInventoryRecord.displayName)]
+    @State private var sortOrder = [KeyPathComparator(\DeviceSortRow.device.displayName)]
     @State private var isExportingCSV = false
     @State private var exportError: String?
     /// Per-device EA values for the configured security agent's column, keyed
@@ -91,7 +91,16 @@ struct DevicesView: View {
     /// past the others.
     static let detailLabelWidth: CGFloat = 112
 
-    private var filteredDevices: [DeviceInventoryRecord] {
+    private var filteredDevices: [DeviceInventoryRecord] { sortedRows.map(\.device) }
+
+    private var sortedRows: [DeviceSortRow] {
+        DeviceSortRow.sorted(
+            matchingDevices, using: sortOrder,
+            securityGaps: { $0.securityGapCount(policy: activeSnapshot.securityPolicy) },
+            riskScore: { priorityRisk(for: $0).score })
+    }
+
+    private var matchingDevices: [DeviceInventoryRecord] {
         activeSnapshot.devices.filter { device in
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                !device.searchableText.contains(query.lowercased()) {
@@ -114,7 +123,7 @@ struct DevicesView: View {
                 // The Critical or High band of the same score the Risk pill shows.
                 return priorityRisk(for: device).level >= .high
             }
-        }.sorted(using: sortOrder)
+        }
     }
 
     /// The one rating of a Mac, from `RiskScoringService`: the Risk pill, the detail panel,
@@ -452,12 +461,13 @@ struct DevicesView: View {
                 .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
                 Divider().background(Theme.Colors.hairlineStrong)
 
-                Table(filteredDevices, selection: $selectedID, sortOrder: $sortOrder) {
+                Table(sortedRows, selection: $selectedID, sortOrder: $sortOrder) {
                     // Device collapses to single line under 1200pt; full name + model
                     // line is preserved on roomier windows where it earns the height.
                     // The model string remains accessible via the detail panel and the
                     // row's textSelection — no popover added to keep table scroll perf.
-                    TableColumn("Device", value: \.displayName) { device in
+                    TableColumn("Device", value: \.device.displayName) { row in
+                        let device = row.device
                         if isCompact {
                             Text(device.displayName)
                                 .font(.footnote.weight(.semibold))
@@ -479,19 +489,19 @@ struct DevicesView: View {
                         }
                     }
                     .width(min: 140, ideal: 200)
-                    TableColumn("Serial", value: \.serial) { device in
-                        Mono(text: device.displaySerial)
+                    TableColumn("Serial", value: \.device.serial) { row in
+                        Mono(text: row.device.displaySerial)
                             .textSelection(.enabled)
                     }
                     .width(min: 100, ideal: 112, max: 140)
-                    TableColumn("macOS", value: \.osVersion) { device in
-                        Mono(text: device.osVersion.isEmpty ? "Unknown" : device.osVersion)
+                    TableColumn("macOS", value: \.device.osVersion) { row in
+                        Mono(text: row.device.osVersion.isEmpty ? "Unknown" : row.device.osVersion)
                     }
                     .width(min: 64, ideal: 72, max: 96)
                     // Empty when compact, so it keeps a sliver rather than a share of the row.
-                    TableColumn(isCompact ? "" : "User", value: \.user) { device in
+                    TableColumn(isCompact ? "" : "User", value: \.device.user) { row in
                         if !isCompact {
-                            Text(device.user.isEmpty ? "Unassigned" : device.user)
+                            Text(row.device.user.isEmpty ? "Unassigned" : row.device.user)
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .lineLimit(1)
@@ -500,7 +510,8 @@ struct DevicesView: View {
                     .width(
                         min: userColumnWidth.min, ideal: userColumnWidth.ideal,
                         max: userColumnWidth.max)
-                    TableColumn("Last Check-in") { device in
+                    TableColumn("Last Check-in", value: \.contactDays) { row in
+                        let device = row.device
                         HStack(spacing: 4) {
                             if isStale(device) {
                                 Image(systemName: "clock.badge.exclamationmark")
@@ -513,13 +524,15 @@ struct DevicesView: View {
                         }
                     }
                     .width(min: 90, ideal: 110, max: 160)
-                    TableColumn("Patch") { device in patchPill(device) }
+                    TableColumn("Patch", value: \.patchFailures) { row in patchPill(row.device) }
                         .width(min: 60, ideal: 66, max: 90)
-                    TableColumn("Security") { device in securityIndicators(for: device) }
+                    TableColumn("Security", value: \.securityGaps) { row in
+                        securityIndicators(for: row.device)
+                    }
                         .width(min: 70, ideal: 78, max: 90)
                     // Wide enough for the longest band, Critical.
-                    TableColumn("Risk") { device in
-                        riskPill(priorityRisk(for: device).level)
+                    TableColumn("Risk", value: \.riskScore) { row in
+                        riskPill(priorityRisk(for: row.device).level)
                     }
                     .width(min: 84, ideal: 92, max: 110)
                 }
