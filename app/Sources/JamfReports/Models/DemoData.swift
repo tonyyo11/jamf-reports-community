@@ -226,6 +226,21 @@ enum DemoData {
               status: .idle),
     ]
 
+    /// One demo Platform API connection over two of `cliProfiles`, so the sidebar menu and Fleet
+    /// Overview show a grouped section in demo mode. The IDs are placeholders.
+    static let connections: [Connection] = [
+        Connection(
+            id: UUID(uuidString: "00000000-0000-0000-0000-00000000DE01") ?? UUID(),
+            name: "Meridian Platform", region: .us, level: .environment,
+            members: [
+                .init(profile: "meridian-prod", scopeID: "demo-environment-prod",
+                      label: "Production", product: .pro),
+                .init(profile: "meridian-sandbox", scopeID: "demo-environment-sandbox",
+                      label: "Sandbox", product: .pro),
+            ],
+            createdAt: Date(timeIntervalSince1970: 0)),
+    ]
+
     /// Macs in the demo profile at `index` of `cliProfiles`: meridian-prod is the
     /// 524-Mac fleet every demo screen describes, and each later profile is 37
     /// smaller. Fleet Overview's cards and the profile menu both read this.

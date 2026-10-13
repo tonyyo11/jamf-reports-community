@@ -539,18 +539,23 @@ enum DiagnosticBundleService {
     /// The tenant and environment IDs jamf-cli's config file holds for `profile`. The bundle runs
     /// no `config list`, so it reads the file the way `ProfileService.fallbackConfigProfiles`
     /// does. No file, or a profile without those keys (an instance profile), gives no IDs.
+    ///
+    /// The IDs of the profile's sibling environments (`ConnectionStore`, same credential) are
+    /// added: they identify the same organisation. connections.json itself is never bundled.
     static func scopeIDs(
         profile: String,
         configURL: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml")
+            .appendingPathComponent(".config/jamf-cli/config.yaml"),
+        connections: ConnectionStore = ConnectionStore()
     ) -> [String] {
-        guard FileManager.default.fileExists(atPath: configURL.path) else { return [] }
+        let siblings = connections.scopeIDs(sharingConnectionWith: profile)
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return siblings }
         guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
             AppLogger.collect.warning(
                 "DiagnosticBundle: could not read the jamf-cli config; scope IDs not redacted")
-            return []
+            return siblings
         }
-        return scopeIDs(profile: profile, inConfig: text)
+        return scopeIDs(profile: profile, inConfig: text) + siblings
     }
 
     /// Pure: the `tenant-id` and `environment-id` values under `profile` in config text.

@@ -9,6 +9,10 @@ final class WorkspaceStore {
     var org: Org
     var profile: String
     var profiles: [JamfCLIProfile]
+    /// This Mac's Platform API connections (`ConnectionStore`), loaded at launch and on every
+    /// reload from disk. Demo mode never reads them; `activeConnections` is what screens use.
+    private(set) var connections: [Connection] = []
+    @ObservationIgnored let connectionStore: ConnectionStore
     var schedules: [Schedule]
     var customEAs: [CustomEA]
     var columnMappings: [ColumnMapping]
@@ -188,6 +192,20 @@ final class WorkspaceStore {
         return metric.isOffered(under: securityPolicy)
     }
 
+    /// The connections screens group by: the demo's own in demo mode, else this Mac's store.
+    var activeConnections: [Connection] { demoMode ? DemoData.connections : connections }
+
+    /// All profiles under their connections, for the sidebar menu.
+    var connectionGrouping: ConnectionGrouping {
+        ProfileService.connectionGrouping(profiles: profiles, connections: activeConnections)
+    }
+
+    /// Initialized workspaces under their connections, for Fleet Overview.
+    var initializedConnectionGrouping: ConnectionGrouping {
+        ProfileService.connectionGrouping(
+            profiles: initializedProfiles, connections: activeConnections)
+    }
+
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
     /// they don't have an on-disk workspace to initialize.
@@ -306,8 +324,10 @@ final class WorkspaceStore {
         discoverProfiles: @escaping @MainActor () -> [JamfCLIProfile]
             = { ProfileService.discoverLocal() },
         jamfCLIInstallation: @escaping @MainActor () -> JamfCLIInstaller.Installation?
-            = { JamfCLIInstaller.currentInstallation() }
+            = { JamfCLIInstaller.currentInstallation() },
+        connectionStore: ConnectionStore = ConnectionStore()
     ) {
+        self.connectionStore = connectionStore
         self.tickerRegistrar = tickerRegistrar
         self.jamfCLIProfileNames = jamfCLIProfileNames
         self.discoverProfiles = discoverProfiles
@@ -335,6 +355,7 @@ final class WorkspaceStore {
         self.org = isDemo ? DemoData.org : Self.org(for: start)
         self.profile = isDemo ? DemoData.org.profile : (start?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
+        self.connections = isDemo ? [] : connectionStore.load()
         self.schedules = isDemo ? DemoData.scheduledRuns
             : Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
                 profiles: realProfiles, policy: AutomationPolicy.current()))
@@ -424,6 +445,7 @@ final class WorkspaceStore {
             demoMode = false
             refreshToolStatus()
             profiles = real
+            connections = connectionStore.load()
             schedules = Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
                 profiles: real, policy: AutomationPolicy.current()))
             if let next = Self.activeProfile(keeping: profile, in: real), next != profile {

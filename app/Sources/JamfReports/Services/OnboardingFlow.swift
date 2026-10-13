@@ -223,6 +223,8 @@ final class OnboardingFlow {
     var firstReportOutput: [CLIBridge.LogLine] = []
 
     private let installer = JamfCLIInstaller()
+    /// Where a validated Platform API profile is recorded under its connection.
+    @ObservationIgnored var connectionStore = ConnectionStore()
     private let installationProbe: InstallationProbe
 
     // User data zones accepted by policy for the first CSV export.
@@ -936,6 +938,32 @@ final class OnboardingFlow {
         switch verdict {
         case .accepted, .noJamfPro: connectionValidated = true
         case .rejectedID, .undecided: connectionValidated = false
+        }
+        if connectionValidated { recordConnectionMember(for: verdict) }
+    }
+
+    /// Records the validated profile under a Connection on this Mac (`ConnectionStore`). A write
+    /// failure is logged without the scope ID and does not fail setup: the profile works
+    /// without the grouping.
+    private func recordConnectionMember(for verdict: ConnectionCheck.Verdict) {
+        let profile = profileName.trimmed
+        let scopeID = platformScopeID.trimmed
+        guard proConnectionType == .platformGateway,
+              ProfileService.isValid(profile), !scopeID.isEmpty else { return }
+        let product: Connection.Member.Product
+        if case .accepted = verdict { product = .pro } else { product = .unknown }
+        do {
+            try connectionStore.recordMember(
+                profile: profile, scopeID: scopeID, product: product,
+                region: .region(forGatewayURL: gatewayURL.trimmed),
+                level: platformScope == .tenant ? .tenant : .environment)
+        } catch {
+            AppLogger.auth.warning(
+                """
+                OnboardingFlow: could not record the connection: \
+                \(error.localizedDescription, privacy: .private)
+                """
+            )
         }
     }
 
