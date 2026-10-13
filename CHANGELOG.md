@@ -85,7 +85,8 @@ versions in this repository map to git tags.
 - The PDF report prints cleanly. Each section starts on a new page, a heading is no longer left at
   the foot of a page with its content on the next, long values such as email addresses wrap
   inside the page instead of cutting off the last columns, and a long list prints as one table
-  without a "Show all" link that does nothing on paper.
+  without a "Show all" link that does nothing on paper. Its integrity note now names the PDF and
+  the manifest beside it; it used to describe checking a temporary HTML file the reader never had.
 - Jamf School setup no longer offers to map a CSV. That step read a Jamf Pro export's column
   names, which a Jamf School workspace does not use; it now only writes the workspace's
   config.yaml, since Jamf School reports come from jamf-cli.

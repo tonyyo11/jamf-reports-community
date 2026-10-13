@@ -42,6 +42,24 @@ final class HtmlPrintLayoutTests: XCTestCase {
                        "&lt;script&gt;alert(1)&lt;/<wbr>script&gt;-padding")
     }
 
+    /// The PDF's note names the PDF and its manifest; it used to tell the reader to hash a
+    /// temporary HTML file they never had.
+    func testThePDFIntegrityNoteNamesThePDFAndItsManifest() {
+        var report = HtmlReport(
+            config: ReportConfig().withDefaults(), dataDir: URL(fileURLWithPath: "/tmp/none"))
+        let html = report.integrityNote(placeholder: "HASH", htmlFileName: "r.html")
+        XCTAssertTrue(html.contains("shasum -a 256 r.html"))
+        XCTAssertTrue(html.contains("64 zeros"))
+
+        report.pdfFileName = "jamf_report_prod_2026-10-13_163717.pdf"
+        let pdf = report.integrityNote(placeholder: "HASH", htmlFileName: "jamf_report_pdf_X.html")
+        XCTAssertTrue(pdf.contains("jamf_report_prod_2026-10-13_163717.pdf.manifest.txt"))
+        XCTAssertTrue(pdf.contains("shasum -a 256 jamf_report_prod_2026-10-13_163717.pdf"))
+        XCTAssertFalse(pdf.contains("jamf_report_pdf_X.html"))
+        XCTAssertFalse(pdf.contains("64 zeros"))
+        XCTAssertFalse(pdf.contains("HASH"))
+    }
+
     func testTheFullInstancePDFStartsEachGroupOnANewPageButNotTheDashboardNote() {
         XCTAssertEqual(FullInstanceTemplate().pdfPagination, .sectionPerPage)
         let css = ReportEngine.applyPagination(

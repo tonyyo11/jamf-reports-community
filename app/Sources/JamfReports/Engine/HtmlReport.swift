@@ -44,6 +44,9 @@ struct HtmlReport: Sendable {
     /// Renders every `<details>` open and leaves out the expand and collapse buttons, for
     /// the PDF export, whose renderer runs no script.
     var expandAll: Bool = false
+    /// The PDF's file name when this page is rendered into one; its footer then says how to
+    /// check that file (its manifest and the run log), not the temporary HTML it came from.
+    var pdfFileName: String? = nil
 
     // MARK: - HTML local config
 

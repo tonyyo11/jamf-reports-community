@@ -3329,9 +3329,10 @@ struct ReportEngine: Sendable {
         )
         // The PDF renderer runs no script, so every group is rendered open rather than
         // left for a print handler, and the expand and collapse buttons are left out.
-        let report = htmlReport(
+        var report = htmlReport(
             config: config, dataDir: dataDir, profile: profileName.isEmpty ? nil : profileName,
             template: template, expandAll: true, locateJamfCLI: locateJamfCLI)
+        report.pdfFileName = outputURL.lastPathComponent
         try await report.generate(
             outputURL: tmpHTML,
             profileName: profileName,
@@ -3366,8 +3367,9 @@ struct ReportEngine: Sendable {
     /// - `.compact` — No modifications; minimal page count.
     /// - `.standard` — Adds a `<style>` block with `main > section { page-break-after: auto; }`
     ///   so the browser engine places natural breaks between major sections.
-    /// - `.sectionPerPage` — Adds `page-break-before: always` to each detail group (and the
-    ///   audit appendix), so At a glance and Needs attention share the first page.
+    /// - `.sectionPerPage` — Adds `page-break-before: always` to each detail group except the
+    ///   jamf-cli dashboard note, so At a glance, Needs attention and that note share the
+    ///   first pages.
     ///   This produces one section per page regardless of content height, suitable for formal
     ///   auditor deliverables.
     ///

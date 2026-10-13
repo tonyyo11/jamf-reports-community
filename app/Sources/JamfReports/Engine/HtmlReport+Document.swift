@@ -47,18 +47,35 @@ extension HtmlReport {
             <a href="https://github.com/tonyyo11/jamf-reports-community"
             >tonyyo11/jamf-reports-community</a></p>
           <p class="verify-footer" style="margin-top:8px;font-size:11px;opacity:0.7">
-            Integrity check, not a signature. SHA-256 <code>\(placeholder)</code> is stored in
-            this file, so it detects damage or a partial copy, not a deliberate edit (anyone
-            who edits the file can recompute it). To check: replace the hash here and in the
-            <code>report-sha256</code> meta tag with 64 zeros, then run
-            <code>shasum -a 256 \(verifyFilename)</code>. To show the file is unchanged since
-            it was generated, compare with the <code>[ok] sha256:</code> line in the run log,
-            kept outside this file.
+            \(integrityNote(placeholder: placeholder, htmlFileName: verifyFilename))
           </p>
         </footer>
         \(buildScript())
         </body>
         </html>
+        """
+    }
+
+    /// The footer's integrity note. The HTML page carries its own hash; a PDF cannot (its
+    /// text is the page's), so it points to the PDF's manifest and the run log instead.
+    func integrityNote(placeholder: String, htmlFileName: String) -> String {
+        if let pdf = pdfFileName.map(HtmlSectionFormatters.escapeHTML) {
+            return """
+            Integrity check, not a signature. This PDF's SHA-256 is in \
+            <code>\(pdf).manifest.txt</code> beside it and in the <code>[ok] sha256:</code> line \
+            of the run log that generated it. To check, run <code>shasum -a 256 \(pdf)</code> \
+            and compare. A match shows the file is unchanged since it was generated; the run \
+            log, kept outside the report folder, is the reference to trust.
+            """
+        }
+        return """
+        Integrity check, not a signature. SHA-256 <code>\(placeholder)</code> is stored in \
+        this file, so it detects damage or a partial copy, not a deliberate edit (anyone \
+        who edits the file can recompute it). To check: replace the hash here and in the \
+        <code>report-sha256</code> meta tag with 64 zeros, then run \
+        <code>shasum -a 256 \(htmlFileName)</code>. To show the file is unchanged since \
+        it was generated, compare with the <code>[ok] sha256:</code> line in the run log, \
+        kept outside this file.
         """
     }
 
