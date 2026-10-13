@@ -1071,7 +1071,7 @@ private struct RunLogConsoleEmbed: View {
     // `[ok]` lines red (#273).
     private func lineColor(_ line: CLIBridge.LogLine) -> Color {
         if line.level == .fail || line.isBareError { return Theme.Colors.dangerSoft }
-        if line.level == .warn { return Theme.Colors.warnSoft }
+        if line.level == .warn || line.isPartialMarker { return Theme.Colors.warnSoft }
         if line.level == .ok { return Theme.Colors.ok }
         return Theme.Text.secondary
     }

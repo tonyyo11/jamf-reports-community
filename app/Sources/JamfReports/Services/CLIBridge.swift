@@ -69,6 +69,12 @@ final class CLIBridge {
         var isBareError: Bool {
             text.drop(while: \.isWhitespace).lowercased().hasPrefix("error:")
         }
+
+        /// A `[partial]` line streamed from another process arrives at info level
+        /// (`LogLevel.from` keeps it there for Run History); the live logs still show it amber.
+        var isPartialMarker: Bool {
+            text.drop(while: \.isWhitespace).lowercased().hasPrefix("[partial]")
+        }
     }
 
     /// A no-op `onLine` handler for call sites that do not need log streaming.

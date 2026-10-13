@@ -183,7 +183,7 @@ versions in this repository map to git tags.
   only in the terminal output (#275).
 - The Generate sheet's and Schedules' live logs no longer show a line in red because it mentions
   a report such as `patch-device-failures`: lines are coloured by their `[ok]`, `[warn]` or
-  `[error]` marker, and jamf-cli's own `Error:` lines stay red (#273).
+  `[error]` marker, and jamf-cli's own `Error:` lines stay red; `[partial]` lines stay amber (#273).
 - Microsoft Teams notifications no longer format or link text inside profile and schedule names:
   Teams reads Markdown in cards, so names such as `**x**` or `[a](https://x)` are now escaped
   (an underscore inside a word, as in `prod_east`, is left alone).

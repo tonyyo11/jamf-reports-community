@@ -20,6 +20,13 @@ final class CLIBridgeLogLineTests: XCTestCase {
         XCTAssertFalse(plan.isBareError)
     }
 
+    func testPartialLineIsMarkedWhateverItsLevel() {
+        let partial = line("[partial] patch-device-failures: 3 of 40 devices did not respond")
+        XCTAssertEqual(partial.level, .info, "Run History's verdict is unchanged")
+        XCTAssertTrue(partial.isPartialMarker)
+        XCTAssertFalse(line("[info] no partial results").isPartialMarker)
+    }
+
     func testJamfCLIErrorLineIsBareError() {
         XCTAssertTrue(line("Error: permission denied (HTTP 403)").isBareError)
         XCTAssertTrue(line("  error: unknown flag --foo").isBareError)

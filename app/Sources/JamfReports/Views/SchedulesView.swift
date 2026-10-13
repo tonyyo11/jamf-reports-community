@@ -764,7 +764,7 @@ private struct RunLogConsole: View {
 
     private func color(for line: CLIBridge.LogLine) -> Color {
         if line.level == .fail || line.isBareError { return Theme.Colors.dangerSoft }
-        if line.level == .warn { return Theme.Colors.warnSoft }
+        if line.level == .warn || line.isPartialMarker { return Theme.Colors.warnSoft }
         if line.level == .ok { return Theme.Colors.ok }
         return Theme.Colors.fg2
     }
