@@ -134,14 +134,17 @@ notice.
 
 **`401 Unauthorized` / token expired.** The OAuth token jamf-cli stored has
 expired or been revoked. Re-authenticate from **Data Sources → Connection
-health → Update credentials…**, or in Terminal:
+health → Update credentials…**, or in Terminal, naming the profile (without
+`--profile-name` jamf-cli creates a profile called `default` rather than renewing yours):
 
 ```bash
-jamf-cli pro setup --url https://your-instance.jamfcloud.com
+jamf-cli pro setup --url https://your-instance.jamfcloud.com --profile-name <your profile>
 ```
 
 For a Jamf Platform API profile, use **Update credentials…**, which also checks
-the environment or tenant ID. A Jamf Account integration is valid for six
+the environment or tenant ID, or run `jamf-cli platform setup --profile-name <your profile>`.
+A profile on the retired `apigw.jamf.com` host is refused by jamf-cli before any request;
+re-run setup with your `us`, `eu` or `apac` `api.jamfcloud.com` host. A Jamf Account integration is valid for six
 months; an expired one needs a replacement in Jamf Account first.
 
 **Profile name rejected.** The app uses any name jamf-cli accepts (spaces, dots, accented
