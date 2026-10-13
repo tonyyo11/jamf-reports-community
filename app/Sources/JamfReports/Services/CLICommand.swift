@@ -23,8 +23,8 @@ enum CLICommand: Sendable, Equatable {
     /// `jamf-cli config list --output json --no-input`.
     ///
     /// Profile-less by design — the command enumerates every configured
-    /// profile so we can read the `auth-method` field for capability probes
-    /// (e.g. PlatformCapabilityService).
+    /// profile, which is where each profile's `auth-method` comes from
+    /// (`JamfCLIConfigList`).
     case configList
 
     /// `jamf-cli pro --help`.

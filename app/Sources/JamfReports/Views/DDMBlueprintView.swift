@@ -12,9 +12,10 @@ struct DDMBlueprintView: View {
     @State private var snapshot: DDMBlueprintService.Snapshot = .empty
     @State private var deviceSnapshot: DDMDeviceStatusService.Snapshot = .empty
     @State private var fleetCounts: (enabled: Int, total: Int) = (0, 0)
-    @State private var platformCapability: PlatformCapabilityService?
-    @State private var platformAvailable = false
-    @State private var bridge = CLIBridge()
+    /// A Platform API profile, as profile discovery read it from jamf-cli.
+    private var platformAvailable: Bool {
+        !workspace.demoMode && workspace.activeCLIProfile?.auth?.isPlatform == true
+    }
 
     /// Tri-state lock decision the view's body switches on.
     enum LockState: Equatable {
@@ -38,7 +39,6 @@ struct DDMBlueprintView: View {
         }
         .tint(Theme.Colors.goldBright)
         .task(id: workspace.profile) {
-            await probePlatformAvailability()
             reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
@@ -375,18 +375,6 @@ struct DDMBlueprintView: View {
         snapshot = DDMBlueprintService.load(profile: workspace.profile)
         deviceSnapshot = DDMDeviceStatusService.load(profile: workspace.profile)
         fleetCounts = DDMDeviceStatusService.fleetDDMCounts(profile: workspace.profile)
-    }
-
-    private func probePlatformAvailability() async {
-        guard !workspace.demoMode, !workspace.profile.isEmpty else {
-            platformAvailable = false
-            return
-        }
-        let service = platformCapability ?? PlatformCapabilityService(
-            executor: DefaultCLIExecutor(bridge: bridge)
-        )
-        if platformCapability == nil { platformCapability = service }
-        platformAvailable = await service.isAvailable(for: workspace.profile)
     }
 
     // MARK: - Static rendering helpers (kept static to keep view body type-check cheap)

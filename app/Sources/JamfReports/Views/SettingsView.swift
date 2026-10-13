@@ -675,6 +675,7 @@ struct SettingsView: View {
     }
 
     private func profileType(_ profile: JamfCLIProfile) -> String {
+        if let reason = profile.unusableReason { return reason }
         let product = profile.product.displayName
         if profile.authMethod.isEmpty { return "\(product) profile" }
         return "\(product) · \(profile.authMethod)"

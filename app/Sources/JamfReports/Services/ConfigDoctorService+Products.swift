@@ -75,7 +75,7 @@ extension ConfigDoctorService {
         guard let me = discovered.first(where: { $0.name == profile }) else { return [] }
         let withFolder = discovered.filter { hasWorkspace($0.name) && $0.status != .error }
         let pairs: [(platform: JamfCLIProfile, twin: JamfCLIProfile)]
-        if me.authMethod.lowercased() == "platform" {
+        if me.auth?.isPlatform == true {
             let found = PlatformTwin.twins(ofPlatformProfile: me, among: withFolder, learn: learn)
             pairs = (found?.twins ?? []).map { (me, $0) }
         } else {

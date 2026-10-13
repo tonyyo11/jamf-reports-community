@@ -37,7 +37,7 @@ final class OrganizationLevelProfileTests: XCTestCase {
         {"name":"p","auth-method":"oauth2"}
         """)
         func level(_ name: String) -> PlatformScopeLevel? {
-            PlatformCapabilityService.scopeLevel(data: data, profile: name)
+            JamfCLIConfigList.scopeLevel(data: data, profile: name)
         }
         XCTAssertEqual(level("e"), .environment)
         XCTAssertEqual(level("t"), .tenant)

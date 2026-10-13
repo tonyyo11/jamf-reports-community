@@ -37,7 +37,7 @@ struct CLICapabilitySnapshot: Sendable, Equatable {
 /// Results are cached for the service lifetime. Call `refresh()` after a
 /// jamf-cli install or update.
 ///
-/// Mirror of `PlatformCapabilityService`: `@MainActor`, injected executor,
+/// `@MainActor`, injected executor,
 /// pure `nonisolated static` parser, testable without a live binary.
 @MainActor
 @Observable

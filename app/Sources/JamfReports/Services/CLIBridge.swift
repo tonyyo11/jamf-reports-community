@@ -1044,7 +1044,7 @@ final class CLIBridge {
         AppLogger.auth.debug("auth probe profile=\(profile, privacy: .public)")
         let authMethod = ProfileService.discoverLocal()
             .first(where: { $0.name == profile })?
-            .authMethod ?? ""
+            .auth?.rawValue ?? ""
         guard !CLIBridge.shouldSkipAuthProbe(for: authMethod) else { return true }
         let probe = await probeToken(
             for: profile, executable: _testExecutable, timeout: probeTimeout
@@ -1082,7 +1082,7 @@ final class CLIBridge {
     /// API-key auth (Jamf School) uses key-based authentication with no bearer token
     /// to inspect, so the `pro auth token` probe must be skipped for those profiles.
     nonisolated static func shouldSkipAuthProbe(for authMethod: String) -> Bool {
-        authMethod == "apikey"
+        JamfCLIAuthMethod(raw: authMethod) == .apiKey
     }
 
     nonisolated func validateConnection(

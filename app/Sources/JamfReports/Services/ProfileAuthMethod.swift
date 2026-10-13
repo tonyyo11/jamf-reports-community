@@ -3,16 +3,18 @@ import Foundation
 /// Resolves a jamf-cli profile's `auth-method` — the fact that decides whether
 /// the Platform API kinds can ever succeed for that profile.
 ///
-/// Tri-state on purpose: `nil` means "unknown", never "not platform".
-/// `PlatformCapabilityService` collapses the same probe to a Bool because it
-/// only gates a Settings toggle; collect and the health strip need the
-/// difference between "this profile is oauth2" and "we could not ask", since
-/// only the first justifies skipping a kind.
+/// Tri-state on purpose: `nil` means "unknown", never "not platform": collect and the health
+/// strip need the difference between "this profile is oauth2" and "we could not ask", since
+/// only the first justifies skipping a kind. The GUI reads the same fact from
+/// `WorkspaceStore.profiles` (`JamfCLIProfile.auth`); both parse `config list` through
+/// `JamfCLIConfigList` and type it as `JamfCLIAuthMethod`.
 enum ProfileAuthMethod {
 
     struct Resolved: Equatable, Sendable {
-        /// Lowercased, for example `platform` or `oauth2`.
+        /// As jamf-cli reports it, for example `platform` or `oauth2`, as `[skip]` lines word it.
         let authMethod: String
+        /// The typed value; compare this, never `authMethod`.
+        var method: JamfCLIAuthMethod? { JamfCLIAuthMethod(raw: authMethod) }
         /// A Platform API profile whose integration is tenant level.
         let isTenantLevel: Bool
         /// A Platform API profile that names neither an environment nor a tenant: it reaches
@@ -40,11 +42,11 @@ enum ProfileAuthMethod {
         if let cached { return cached }
 
         guard let binary, let data = configList(binary: binary, timeout: timeout),
-              let method = PlatformCapabilityService.authMethod(data: data, profile: profile)
+              let method = JamfCLIConfigList.authMethod(data: data, profile: profile)
         else { return nil }
         let resolved = Resolved(
             authMethod: method,
-            isTenantLevel: PlatformCapabilityService.isTenantLevel(data: data, profile: profile)
+            isTenantLevel: JamfCLIConfigList.isTenantLevel(data: data, profile: profile)
                 ?? false,
             isOrganizationLevel: isOrganizationLevel(
                 data: data, profile: profile, configFile: configFile)
@@ -61,14 +63,14 @@ enum ProfileAuthMethod {
     /// that leaves the ID out of `config list` must not make every platform profile organization
     /// level.
     private static func isOrganizationLevel(data: Data, profile: String, configFile: URL?) -> Bool {
-        guard PlatformCapabilityService.scopeLevel(data: data, profile: profile) == .organization
+        guard JamfCLIConfigList.scopeLevel(data: data, profile: profile) == .organization
         else { return false }
         let entry = ProfileService.readConfigFile(at: configFile)?.first { $0.name == profile }
         return entry?.platformLevel.map { $0 == .organization } ?? true
     }
 
     /// Drops the cache. Called when profile configuration changes (and by
-    /// tests), mirroring `PlatformCapabilityService.refresh()`.
+    /// tests), mirroring `JamfCLIConfigList.refresh()`.
     static func invalidateCache() {
         cacheLock.lock()
         cache.removeAll()

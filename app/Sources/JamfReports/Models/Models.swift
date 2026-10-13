@@ -64,11 +64,19 @@ struct JamfCLIProfile: Identifiable, Sendable {
     let url: String
     let schedules: Int
     let status: Status
+    /// What jamf-cli reports, for display; compare through `auth`.
     var authMethod: String = ""
     var isDefault: Bool = false
     var product: JamfCLIProduct = .unknown
     /// For an `auth-method: platform` profile; nil for every other.
     var platformLevel: PlatformScopeLevel?
+    /// Why the app cannot use this profile (`status == .error`); nil for a usable one.
+    var unusableReason: String?
+
+    /// The typed auth method; nil for an unusable profile or when jamf-cli reported none.
+    var auth: JamfCLIAuthMethod? {
+        unusableReason == nil ? JamfCLIAuthMethod(raw: authMethod) : nil
+    }
 
     /// An organization-level integration reaches only Jamf Account, so it cannot report.
     var isOrganizationLevel: Bool { platformLevel == .organization }

@@ -1185,13 +1185,26 @@ final class WorkspaceStore {
         return components.url
     }
 
+    /// The active profile as profile discovery read it from jamf-cli; nil in demo mode. Screens
+    /// read its `auth` and `platformLevel` here rather than asking jamf-cli again.
+    var activeCLIProfile: JamfCLIProfile? {
+        demoMode ? nil : profiles.first { $0.name == profile }
+    }
+
+    /// After credentials are saved: a profile's auth method or scope level may have changed, so
+    /// the headless cache (`ProfileAuthMethod`) is cleared and the profile list read again.
+    func credentialsChanged() {
+        ProfileAuthMethod.invalidateCache()
+        reloadFromDisk()
+    }
+
     /// Server URL for the currently active profile; empty for a Platform API profile, whose URL
     /// is the gateway, not a Jamf Pro console.
     private func activeProfileURL() -> String {
         if demoMode { return org.jamfURL }
         guard let active = profiles.first(where: { $0.name == profile }) else { return "" }
         return Self.consoleServer(
-            forProfileURL: active.url, authMethod: active.authMethod,
+            forProfileURL: active.url, authMethod: active.auth?.rawValue ?? "",
             learnedJamfProURL: connections.lazy.flatMap(\.members)
                 .first { $0.profile == active.name }?.jamfProURL)
     }
@@ -1204,7 +1217,7 @@ final class WorkspaceStore {
     nonisolated static func consoleServer(
         forProfileURL url: String, authMethod: String, learnedJamfProURL: String? = nil
     ) -> String {
-        if authMethod.lowercased().contains("platform") {
+        if JamfCLIAuthMethod(raw: authMethod)?.isPlatform == true {
             return learnedJamfProURL.flatMap { learned in
                 let host = URL(string: learned)?.host?.lowercased() ?? ""
                 return host.isEmpty || host.hasSuffix(".api.jamfcloud.com")

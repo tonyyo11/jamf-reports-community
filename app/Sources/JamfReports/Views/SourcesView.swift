@@ -86,7 +86,10 @@ struct SourcesView: View {
                 profileSlug: workspace.profile,
                 prefillURL: activeProfileServerURL,
                 prefillAuthMethod: activeProfileAuthMethod,
-                onSaved: { runDoctor() }
+                onSaved: {
+                    workspace.credentialsChanged()
+                    runDoctor()
+                }
             )
         }
         .onAppear {
@@ -575,7 +578,7 @@ struct SourcesView: View {
 
     /// The active profile's recorded auth method, for selecting the reauth form.
     private var activeProfileAuthMethod: String {
-        workspace.profiles.first(where: { $0.name == workspace.profile })?.authMethod ?? ""
+        workspace.activeCLIProfile?.auth?.rawValue ?? ""
     }
 
     @ViewBuilder

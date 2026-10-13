@@ -9,10 +9,15 @@ struct ComplianceBenchmarksView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ComplianceBenchmarksService.Snapshot = .empty
-    @State private var platformCapability: PlatformCapabilityService?
-    @State private var platformAvailable = false
-    @State private var platformTenantLevel = false
-    @State private var bridge = CLIBridge()
+    /// A Platform API profile, as profile discovery read it from jamf-cli.
+    private var platformAvailable: Bool {
+        !workspace.demoMode && workspace.activeCLIProfile?.auth?.isPlatform == true
+    }
+
+    /// A tenant-level integration, which collect skips benchmarks for.
+    private var platformTenantLevel: Bool {
+        !workspace.demoMode && workspace.activeCLIProfile?.platformLevel == .tenant
+    }
     @State private var selectedBenchmark = ""
 
     /// Tri-state lock decision the view's body switches on.
@@ -34,7 +39,6 @@ struct ComplianceBenchmarksView: View {
         }
         .tint(Theme.Colors.goldBright)
         .task(id: workspace.profile) {
-            await probePlatformAvailability()
             reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
@@ -58,7 +62,7 @@ struct ComplianceBenchmarksView: View {
     /// Pure state-machine function. Inputs:
     /// - ``isDemoMode``: in demo mode the gate is bypassed entirely and
     ///   the demo dataset always renders.
-    /// - ``platformAvailable``: result of ``PlatformCapabilityService``
+    /// - ``platformAvailable``: the active profile's auth method is `platform`
     ///   probe for the active profile.
     /// - ``hasData``: any cached rule or device data on disk.
     /// - ``tenantLevel``: the profile's integration is tenant level, so collect skips benchmarks.
@@ -284,23 +288,6 @@ struct ComplianceBenchmarksView: View {
         snapshot = workspace.demoMode
             ? DemoData.complianceBenchmarksSnapshot
             : ComplianceBenchmarksService.load(profile: workspace.profile)
-    }
-
-    private func probePlatformAvailability() async {
-        guard !workspace.demoMode, !workspace.profile.isEmpty else {
-            platformAvailable = false
-            platformTenantLevel = false
-            return
-        }
-        let service = platformCapability ?? PlatformCapabilityService(
-            executor: DefaultCLIExecutor(bridge: bridge)
-        )
-        if platformCapability == nil { platformCapability = service }
-        platformAvailable = await service.isAvailable(for: workspace.profile)
-        let profile = workspace.profile
-        platformTenantLevel = await Task.detached {
-            ProfileAuthMethod.resolve(profile: profile)?.isTenantLevel == true
-        }.value
     }
 
     // MARK: - Static rendering helpers (kept static to keep view body type-check cheap)

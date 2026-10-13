@@ -48,7 +48,7 @@ extension ConnectionCredentialsModel {
     static func isLeftoverPlatformProfile(
         _ profile: JamfCLIProfile, connections: [Connection], workspaceExists: Bool
     ) -> Bool {
-        !workspaceExists && profile.authMethod.lowercased().contains("platform")
+        !workspaceExists && profile.auth?.isPlatform == true
             && !connections.contains { $0.members.contains { $0.profile == profile.name } }
     }
 }

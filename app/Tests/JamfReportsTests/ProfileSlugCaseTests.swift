@@ -130,10 +130,11 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertEqual(byName["Acme"]?.url, "acme.example.invalid")
         XCTAssertEqual(byName["acme-dev"]?.status, .idle)
         XCTAssertEqual(byName["Acme-Dev"]?.status, .error)
-        XCTAssertEqual(byName["Acme-Dev"]?.authMethod, "(same folder as acme-dev)")
+        XCTAssertEqual(byName["Acme-Dev"]?.unusableReason, "(same folder as acme-dev)")
+        XCTAssertNil(byName["Acme-Dev"]?.auth, "an unusable profile has no auth method to act on")
         XCTAssertEqual(byName["Acme Prod"]?.status, .idle, "a space is fine from 2.8.3")
         XCTAssertEqual(byName["Old Tenant "]?.status, .error)
-        XCTAssertEqual(byName["Old Tenant "]?.authMethod, "(unsupported name)")
+        XCTAssertEqual(byName["Old Tenant "]?.unusableReason, "(unsupported name)")
     }
 
     /// The config-file fallback (jamf-cli missing or failing) reads the same
@@ -163,8 +164,8 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertEqual(rows.count, 5, "unusable profiles stay listed so Settings can say why")
         XCTAssertEqual(byName["Acme"]?.status, .ok)
         XCTAssertEqual(byName["acme-dev"]?.status, .idle)
-        XCTAssertEqual(byName["Acme-Dev"]?.authMethod, "(same folder as acme-dev)")
-        XCTAssertEqual(byName["Old Tenant "]?.authMethod, "(unsupported name)",
+        XCTAssertEqual(byName["Acme-Dev"]?.unusableReason, "(same folder as acme-dev)")
+        XCTAssertEqual(byName["Old Tenant "]?.unusableReason, "(unsupported name)",
                        "a quoted key is read without its quotes")
         XCTAssertEqual(byName["Acme Prod"]?.status, .idle)
     }

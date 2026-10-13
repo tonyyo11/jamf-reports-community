@@ -1187,7 +1187,7 @@ private struct PlatformTab: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     private var isPlatformProfile: Bool {
-        workspace.profiles.first(where: { $0.name == workspace.profile })?.authMethod == "platform"
+        workspace.profiles.first(where: { $0.name == workspace.profile })?.auth?.isPlatform == true
     }
 
     var body: some View {

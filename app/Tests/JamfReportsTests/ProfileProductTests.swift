@@ -46,7 +46,13 @@ final class ProfileProductTests: XCTestCase {
         XCTAssertEqual(product(auth: "security"), .securityCloud)
         XCTAssertEqual(product(auth: "platform", url: "https://x.protect.jamfcloud.com"), .pro,
                        "the auth method is consulted before the host")
-        XCTAssertEqual(product(auth: "APIKEY"), .school)
+    }
+
+    /// jamf-cli matches auth methods exactly (`config validate`), so a mis-cased value says
+    /// nothing about the product and the next rule decides (2.10, `JamfCLIAuthMethod`).
+    func testAMiscasedAuthMethodSaysNothing() {
+        XCTAssertNotEqual(product(auth: "APIKEY"), .school)
+        XCTAssertEqual(product(auth: "APIKEY", url: "https://acme.jamfschool.com"), .school)
     }
 
     func testTheHostDecidesAnOAuth2ProfileWithNoKey() {

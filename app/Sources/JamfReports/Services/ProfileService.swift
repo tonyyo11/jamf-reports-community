@@ -71,8 +71,7 @@ enum ProfileService {
         static func level(
             authMethod: String?, environmentID: String?, tenantID: String?
         ) -> PlatformScopeLevel? {
-            guard authMethod?.trimmingCharacters(in: .whitespaces).lowercased() == "platform"
-            else { return nil }
+            guard JamfCLIAuthMethod(raw: authMethod)?.isPlatform == true else { return nil }
             return PlatformScopeLevel.level(environmentID: environmentID, tenantID: tenantID)
         }
     }
@@ -477,8 +476,9 @@ enum ProfileService {
                     url: displayURL(item.url),
                     schedules: 0,
                     status: .error,
-                    authMethod: reason.label,
-                    isDefault: false
+                    authMethod: item.authMethod ?? "",
+                    isDefault: false,
+                    unusableReason: reason.label
                 )
             }
             return JamfCLIProfile(
@@ -517,10 +517,10 @@ enum ProfileService {
         case "security": return .securityCloud
         default: return .unknown
         }
-        switch authMethod?.trimmingCharacters(in: .whitespaces).lowercased() ?? "" {
-        case "apikey": return .school
-        case "security": return .securityCloud
-        case "platform": return .pro
+        switch JamfCLIAuthMethod(raw: authMethod) {
+        case .apiKey: return .school
+        case .security: return .securityCloud
+        case .platform: return .pro
         default: break
         }
         if let host = url.flatMap({ URL(string: $0)?.host?.lowercased() }) {

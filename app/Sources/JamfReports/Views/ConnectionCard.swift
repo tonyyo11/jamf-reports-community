@@ -194,7 +194,7 @@ struct ConnectionCard: View {
                     profiles: { [workspace] in workspace.profiles },
                     store: workspace.connectionStore)),
             onFinished: { changed in
-                if changed { workspace.reloadFromDisk() }
+                if changed { workspace.credentialsChanged() }
                 workspace.reloadConnections()
             },
             onSetUpSchool: {

@@ -29,7 +29,13 @@ final class PlatformOnlyKindTests: XCTestCase {
 
     func testPlatformProfileKeepsThem() {
         XCTAssertNil(ReportEngine.nonPlatformAuthMethod("platform"))
-        XCTAssertNil(ReportEngine.nonPlatformAuthMethod("PLATFORM"))
+        XCTAssertNil(ReportEngine.nonPlatformAuthMethod(" platform "))
+    }
+
+    /// jamf-cli matches `platform` exactly, so `PLATFORM` never reaches the gateway and the
+    /// Platform-only kinds are skipped, naming the value as typed (2.10, `JamfCLIAuthMethod`).
+    func testAMiscasedPlatformValueIsNotAPlatformProfile() {
+        XCTAssertEqual(ReportEngine.nonPlatformAuthMethod("PLATFORM"), "PLATFORM")
     }
 
     /// The load-bearing case: an unresolvable auth method must never be read
@@ -81,10 +87,10 @@ final class PlatformOnlyKindTests: XCTestCase {
 
     func testAuthMethodParseReturnsTheMethodNotABool() {
         let json = """
-        [{"name": "prod", "url": "https://x", "auth-method": "OAuth2", "default": true}]
+        [{"name": "prod", "url": "https://x", "auth-method": " oauth2 ", "default": true}]
         """
         XCTAssertEqual(
-            PlatformCapabilityService.authMethod(data: Data(json.utf8), profile: "prod"),
+            JamfCLIConfigList.authMethod(data: Data(json.utf8), profile: "prod"),
             "oauth2"
         )
     }
@@ -94,9 +100,9 @@ final class PlatformOnlyKindTests: XCTestCase {
         [{"name": "other", "url": "https://x", "auth-method": "oauth2", "default": true}]
         """
         XCTAssertNil(
-            PlatformCapabilityService.authMethod(data: Data(json.utf8), profile: "missing")
+            JamfCLIConfigList.authMethod(data: Data(json.utf8), profile: "missing")
         )
-        XCTAssertNil(PlatformCapabilityService.authMethod(data: Data("nope".utf8), profile: "p"))
+        XCTAssertNil(JamfCLIConfigList.authMethod(data: Data("nope".utf8), profile: "p"))
     }
 
     // MARK: - Tenant-level integrations (2.8.1)
@@ -125,14 +131,14 @@ final class PlatformOnlyKindTests: XCTestCase {
             var row: [String: Any] = ["name": "prod", "auth-method": "platform"]
             for (key, value) in keys { row[key] = value }
             let data = (try? JSONSerialization.data(withJSONObject: [row])) ?? Data()
-            return PlatformCapabilityService.isTenantLevel(data: data, profile: "prod")
+            return JamfCLIConfigList.isTenantLevel(data: data, profile: "prod")
         }
         XCTAssertEqual(level(["tenant-id": "t1"]), true)
         XCTAssertEqual(level(["environment-id": "e1"]), false)
         XCTAssertEqual(level([:]), false, "organization level names neither")
         XCTAssertEqual(level(["tenant-id": "t1", "environment-id": "e1"]), false,
                        "an environment ID wins, as it does on the wire")
-        XCTAssertNil(PlatformCapabilityService.isTenantLevel(data: Data("nope".utf8), profile: "p"))
+        XCTAssertNil(JamfCLIConfigList.isTenantLevel(data: Data("nope".utf8), profile: "p"))
     }
 
     // MARK: - Manual collect tiers

@@ -654,10 +654,11 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
     let discovered = ProfileService.discoverLocal()
     let profiles = ProfileService.runnableProfiles(discovered, excluding: excluded)
     for p in discovered where p.status == .error && !excluded.contains(p.name) {
-        fputs("[info] skipping \(p.name): \(p.authMethod)\n", stderr)
+        let reason = p.unusableReason ?? "not usable"
+        fputs("[info] skipping \(p.name): \(reason)\n", stderr)
         // The background item's stderr goes nowhere; the log keeps the reason.
         AppLogger.schedule.notice(
-            "skipping \(p.name, privacy: .public): \(p.authMethod, privacy: .public)"
+            "skipping \(p.name, privacy: .public): \(reason, privacy: .public)"
         )
     }
     guard !profiles.isEmpty else {

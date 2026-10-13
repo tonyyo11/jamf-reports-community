@@ -10,7 +10,7 @@ import XCTest
 final class ProfileAuthMethodProbeTests: XCTestCase {
 
     private static let deadline: TimeInterval = 30
-    private static let listJSON = #"[{"name":"prod","auth-method":"Platform","default":true}]"#
+    private static let listJSON = #"[{"name":"prod","auth-method":"platform","default":true}]"#
 
     nonisolated(unsafe) private var tempDir: URL!
 

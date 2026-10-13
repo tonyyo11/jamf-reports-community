@@ -1662,7 +1662,7 @@ struct ReportEngine: Sendable {
     /// profile (`auth-method: oauth2`) these four fail on every run forever —
     /// silently before 2.7.0, and as a permanently red health strip plus an
     /// hourly retry loop after it. The views that render them are already
-    /// gated on `PlatformCapabilityService`; collect now agrees.
+    /// gated on the profile's auth method (`JamfCLIProfile.auth`); collect agrees.
     static let platformOnlyKinds: Set<String> = [
         "compliance-devices",
         "compliance-rules",
@@ -1683,9 +1683,10 @@ struct ReportEngine: Sendable {
     /// for an unknown method. Unknown fails toward collecting: never skip a
     /// kind because we could not ask.
     static func nonPlatformAuthMethod(_ authMethod: String?) -> String? {
-        guard let method = authMethod?.trimmingCharacters(in: .whitespaces).lowercased(),
-              !method.isEmpty, method != "platform" else { return nil }
-        return method
+        guard let method = JamfCLIAuthMethod(raw: authMethod), !method.isPlatform else {
+            return nil
+        }
+        return method.rawValue
     }
 
     /// Every snapshot kind `collect` produces, in the order the engine

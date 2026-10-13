@@ -15,8 +15,10 @@ final class ReauthenticateTests: XCTestCase {
 
     func testPrefersPlatformGatewayForPlatformAuthMethod() {
         XCTAssertTrue(ReauthenticateSheet.prefersPlatformGateway(authMethod: "platform"))
-        XCTAssertTrue(ReauthenticateSheet.prefersPlatformGateway(authMethod: "Platform"))
-        XCTAssertTrue(ReauthenticateSheet.prefersPlatformGateway(authMethod: "platform-gateway"))
+        // jamf-cli matches `platform` exactly (2.10, `JamfCLIAuthMethod`): neither of these is a
+        // gateway profile to it.
+        XCTAssertFalse(ReauthenticateSheet.prefersPlatformGateway(authMethod: "Platform"))
+        XCTAssertFalse(ReauthenticateSheet.prefersPlatformGateway(authMethod: "platform-gateway"))
     }
 
     func testDefaultsToOAuth2ForOtherAuthMethods() {

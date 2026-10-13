@@ -21,9 +21,9 @@ enum PlatformTwin {
 
     /// A profile that could be the oauth2 side of a pair.
     private static func isCandidate(_ profile: JamfCLIProfile) -> Bool {
-        let method = profile.authMethod.lowercased()
+        let method = profile.auth
         return profile.status != .error && profile.product.canBeProWorkspace
-            && (method == "oauth2" || method == "token")
+            && (method == .oauth2 || method == .other("token"))
     }
 
     /// The lowercase host of a profile URL, which may be a bare host as discovery shows it.
@@ -90,7 +90,7 @@ enum PlatformTwin {
     ) -> (url: String, twins: [JamfCLIProfile])? {
         let others = profiles.filter { $0.name != platform.name }
         // Jamf Pro is asked only when there is an oauth2 profile it could match.
-        guard platform.authMethod.lowercased() == "platform", !platform.isOrganizationLevel,
+        guard platform.auth?.isPlatform == true, !platform.isOrganizationLevel,
               others.contains(where: isCandidate),
               let url = learn(platform.name), let host = host(of: url) else { return nil }
         let found = twins(reaching: host, among: others)

@@ -40,10 +40,10 @@ struct ReauthenticateSheet: View {
     // MARK: - Pure gating / prefill helpers (unit-tested)
 
     /// Chooses the form to prefill from the profile's recorded auth method.
-    /// Anything containing "platform" (jamf-cli's Platform Gateway auth method)
-    /// selects the gateway form; everything else defaults to OAuth2.
+    /// `platform` (jamf-cli's Platform Gateway auth method, `JamfCLIAuthMethod`) selects the
+    /// gateway form; everything else defaults to OAuth2.
     nonisolated static func prefersPlatformGateway(authMethod: String) -> Bool {
-        authMethod.lowercased().contains("platform")
+        JamfCLIAuthMethod(raw: authMethod)?.isPlatform == true
     }
 
     /// Whether the OAuth2 "Verify & save" action may run. Mirrors

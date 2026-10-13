@@ -86,6 +86,11 @@ versions in this repository map to git tags.
   then a contact gap), then the Macs that are only stale. With more than 100 stale Macs, the table
   used to show stale Macs only, so the contact-gap lines in "Needs attention" led to rows that
   were not there.
+- Every screen now reads a profile's sign-in method the way jamf-cli does, from one place, so
+  Config, Compliance Benchmarks, DDM Blueprints, the console links and collect agree. A profile
+  the app cannot use is no longer taken for a Platform API profile because its name contains
+  "platform", and changing a profile's credentials in Data Sources takes effect without a
+  relaunch.
 - Data Sources lists what a collect runs for the workspace you are on. It used to show the same
   Jamf Pro commands everywhere, including on a Jamf School workspace and on one without Jamf
   Protect. Now each product has its own group (Jamf Pro, Platform API, Jamf Protect when it is

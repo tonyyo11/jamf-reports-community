@@ -233,9 +233,8 @@ final class ExistingCLISetupFlow {
         }
     ) async {
         let usable = profiles.filter { unusable[$0.name] == nil && refusals[$0.name] == nil }
-        let platforms = usable.filter { $0.authMethod.lowercased() == "platform" }
-        guard !platforms.isEmpty,
-              usable.contains(where: { $0.authMethod.lowercased() == "oauth2" }) else { return }
+        let platforms = usable.filter { $0.auth?.isPlatform == true }
+        guard !platforms.isEmpty, usable.contains(where: { $0.auth == .oauth2 }) else { return }
         for platform in platforms {
             guard let url = await learn(platform.name),
                   let found = PlatformTwin.twins(
