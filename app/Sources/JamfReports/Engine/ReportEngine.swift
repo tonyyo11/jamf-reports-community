@@ -2510,6 +2510,35 @@ struct ReportEngine: Sendable {
         return args
     }
 
+    /// The commands a Jamf School collect runs, in order (`schoolCollect`; Data Sources lists
+    /// them through `CollectSourcesPlan`).
+    static func schoolCommandMatrix(profile: String) -> [(args: [String], kind: String)] {
+        [
+            (["-p", profile, "school", "overview", "--output", "json"], "school-overview"),
+            (["-p", profile, "school", "devices", "list", "--output", "json"], "school-devices"),
+            (["-p", profile, "school", "device-groups", "list", "--output", "json"],
+             "school-device-groups"),
+            (["-p", profile, "school", "users", "list", "--output", "json"], "school-users"),
+            (["-p", profile, "school", "classes", "list", "--output", "json"], "school-classes"),
+            (["-p", profile, "school", "apps", "list", "--output", "json"], "school-apps"),
+            (["-p", profile, "school", "profiles", "list", "--output", "json"], "school-profiles"),
+            (["-p", profile, "school", "locations", "list", "--output", "json"], "school-locations"),
+            (["-p", profile, "school", "ibeacons", "list", "--output", "json"], "school-ibeacons"),
+            (["-p", profile, "school", "dep-devices", "list", "--output", "json"], "school-dep-devices"),
+        ]
+    }
+
+    /// The commands a Jamf Protect collect runs, in order (`protectCollect`).
+    static func protectCommandMatrix(profile: String) -> [(args: [String], kind: String)] {
+        [
+            (["-p", profile, "protect", "overview", "--output", "json"], "protect-overview"),
+            (["-p", profile, "protect", "alerts", "list", "--output", "json"], "protect-alerts"),
+            (["-p", profile, "protect", "computers", "list", "--output", "json"], "protect-computers"),
+            (["-p", profile, "protect", "insights", "list", "--output", "json"], "protect-insights"),
+            (["-p", profile, "protect", "plans", "list", "--output", "json"], "protect-plans"),
+        ]
+    }
+
     /// The jamf-cli commands `collect` fetches and the snapshot kind each
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
@@ -3418,19 +3447,7 @@ struct ReportEngine: Sendable {
         }
         let dataDir = try workspacePaths.dataDir(for: profile)
 
-        let commands: [(args: [String], kind: String)] = [
-            (["-p", profile, "school", "overview", "--output", "json"], "school-overview"),
-            (["-p", profile, "school", "devices", "list", "--output", "json"], "school-devices"),
-            (["-p", profile, "school", "device-groups", "list", "--output", "json"],
-             "school-device-groups"),
-            (["-p", profile, "school", "users", "list", "--output", "json"], "school-users"),
-            (["-p", profile, "school", "classes", "list", "--output", "json"], "school-classes"),
-            (["-p", profile, "school", "apps", "list", "--output", "json"], "school-apps"),
-            (["-p", profile, "school", "profiles", "list", "--output", "json"], "school-profiles"),
-            (["-p", profile, "school", "locations", "list", "--output", "json"], "school-locations"),
-            (["-p", profile, "school", "ibeacons", "list", "--output", "json"], "school-ibeacons"),
-            (["-p", profile, "school", "dep-devices", "list", "--output", "json"], "school-dep-devices"),
-        ]
+        let commands = schoolCommandMatrix(profile: profile)
 
         for line in collectPlanLines(profile: profile, running: commands.map(\.kind)) {
             onLine(.init(timestamp: Date(), level: .info, text: line))
@@ -3516,13 +3533,7 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.invalidProfile(profile)
         }
 
-        let commands: [(args: [String], kind: String)] = [
-            (["-p", profile, "protect", "overview", "--output", "json"], "protect-overview"),
-            (["-p", profile, "protect", "alerts", "list", "--output", "json"], "protect-alerts"),
-            (["-p", profile, "protect", "computers", "list", "--output", "json"], "protect-computers"),
-            (["-p", profile, "protect", "insights", "list", "--output", "json"], "protect-insights"),
-            (["-p", profile, "protect", "plans", "list", "--output", "json"], "protect-plans"),
-        ]
+        let commands = protectCommandMatrix(profile: profile)
 
         for line in collectPlanLines(profile: profile, running: commands.map(\.kind)) {
             onLine(.init(timestamp: Date(), level: .info, text: line))

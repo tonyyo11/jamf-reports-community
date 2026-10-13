@@ -86,6 +86,12 @@ versions in this repository map to git tags.
   then a contact gap), then the Macs that are only stale. With more than 100 stale Macs, the table
   used to show stale Macs only, so the contact-gap lines in "Needs attention" led to rows that
   were not there.
+- Data Sources lists what a collect runs for the workspace you are on. It used to show the same
+  Jamf Pro commands everywhere, including on a Jamf School workspace and on one without Jamf
+  Protect. Now each product has its own group (Jamf Pro, Platform API, Jamf Protect when it is
+  connected, Jamf School), with when each was last cached, and a command a collect leaves out
+  says why (for example, the Platform API reports on a Jamf Pro OAuth profile). A Jamf School
+  workspace no longer shows the Jamf Pro command list or the Connect Jamf Protect card.
 - The PDF report prints cleanly. Each section starts on a new page, a heading is no longer left at
   the foot of a page with its content on the next, long values such as email addresses wrap
   inside the page instead of cutting off the last columns, and a long list prints as one table
