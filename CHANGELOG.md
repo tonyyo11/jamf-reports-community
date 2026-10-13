@@ -126,6 +126,9 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A workbook sheet left out because its data was never collected, such as the mobile device
+  sheets, is now named in the run log the app shows, with the snapshot it needed, instead of
+  only in the terminal output (#275).
 - The Generate sheet's and Schedules' live logs no longer show a line in red because it mentions
   a report such as `patch-device-failures`: lines are coloured by their `[ok]`, `[warn]` or
   `[error]` marker, and jamf-cli's own `Error:` lines stay red (#273).

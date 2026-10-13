@@ -87,7 +87,8 @@ struct SheetRegistry: @unchecked Sendable {
     /// For each `SheetID` in `template.includedSheets`:
     /// - If the registry contains a matching write action, it is called.
     /// - If the action throws a `SheetSkippable` error (e.g. `noCachedData`),
-    ///   the sheet is silently skipped — expected-absent data is not a failure.
+    ///   the sheet is left out with an `[skip]` line naming the missing snapshot (to `onLine`
+    ///   too, so the app's run log shows it) — expected-absent data is not a failure.
     /// - If the action throws any other error, the sheet is recorded in `failures`
     ///   and a `[fail]` line is printed — unexpected errors surface as partial-success.
     /// - If the `SheetID.rawValue` has no entry in the registry, a warning is
@@ -97,7 +98,8 @@ struct SheetRegistry: @unchecked Sendable {
     /// unexpectedly, and any `SheetID`s with no registered writer.
     @discardableResult
     func writeSelected(
-        template: any ReportTemplate, sheets: SheetsConfig = SheetsConfig()
+        template: any ReportTemplate, sheets: SheetsConfig = SheetsConfig(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> (written: [String], failures: [SheetFailure], unimplemented: [SheetID]) {
         var written: [String] = []
         var failures: [SheetFailure] = []
@@ -116,7 +118,10 @@ struct SheetRegistry: @unchecked Sendable {
                 written.append(name)
             } catch let skippable as SheetSkippable {
                 // Data absent or expected-missing — omit sheet, not a failure.
-                print("  [skip] \(name): \(skippable)")
+                let reason = (skippable as? LocalizedError)?.errorDescription ?? "\(skippable)"
+                let msg = "[skip] \(name): \(reason)"
+                print("  " + msg)
+                onLine?(.init(timestamp: Date(), level: .info, text: msg))
             } catch {
                 let label = "\(type(of: error)): \(error)"
                 failures.append(SheetFailure(sheet: name, error: label))

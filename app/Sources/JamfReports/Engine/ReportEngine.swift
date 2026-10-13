@@ -99,7 +99,7 @@ struct ReportEngine: Sendable {
                 + (config.charts?.isEnabled == true ? [Self.chartsSheetName] : []),
             onLine: onLine)
         let (writtenCore, coreFailures, unimplementedSheets) =
-            registry.writeSelected(template: template, sheets: sheets)
+            registry.writeSelected(template: template, sheets: sheets, onLine: onLine)
         for sheetID in unimplementedSheets {
             let msg = "[warn] template '\(template.identifier)': SheetID '\(sheetID.rawValue)' " +
                       "has no writer in CoreDashboard — skipped (engine follow-up required)"

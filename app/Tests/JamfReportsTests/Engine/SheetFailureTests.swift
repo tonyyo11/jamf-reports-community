@@ -77,6 +77,23 @@ final class SheetRegistryFailureTests: XCTestCase {
         XCTAssertTrue(unimplemented.isEmpty)
     }
 
+    /// A left-out sheet is named in the app's run log, not only on stdout (#275).
+    func testSkippedSheetIsNamedInRunLog() {
+        let template = SingleSheetTemplate(sheetIDs: [.mobileInventory])
+        let plan: [(name: String, write: () throws -> Void)] = [
+            (SheetID.mobileInventory.rawValue,
+             { throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"]) }),
+        ]
+        let sink = SkipLineSink()
+        _ = SheetRegistry(plan: plan).writeSelected(template: template, onLine: sink.append)
+
+        XCTAssertEqual(sink.lines.map(\.text), [
+            "[skip] \(SheetID.mobileInventory.rawValue): "
+                + "No cached jamf-cli snapshot found for: mobile-devices-list",
+        ])
+        XCTAssertEqual(sink.lines.first?.level, .info)
+    }
+
     // MARK: - Unexpected error → failure entry
 
     func testUnexpectedErrorProducesFailureEntry() {
@@ -156,4 +173,13 @@ final class SchoolDashboardWriteAllFailureTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty,
                       "noCachedData for school sheets must be treated as skips, not failures")
     }
+}
+
+private final class SkipLineSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [CLIBridge.LogLine] = []
+    var append: @Sendable (CLIBridge.LogLine) -> Void {
+        { line in self.lock.lock(); defer { self.lock.unlock() }; self.stored.append(line) }
+    }
+    var lines: [CLIBridge.LogLine] { lock.lock(); defer { lock.unlock() }; return stored }
 }
