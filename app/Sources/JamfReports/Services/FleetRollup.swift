@@ -42,10 +42,10 @@ struct FleetRollup: Sendable, Equatable {
         previous: [DailySummary]
     ) -> FleetRollup {
         let metrics: [Metric] = [
-            sumMetric("devices", "Devices", current, previous) { Double($0.totalDevices) },
+            sumMetric("devices", "Macs", current, previous) { Double($0.totalDevices) },
             // Unknown stale counts are skipped, not coerced to 0 — a nil→measured
             // flip between periods must not fabricate a delta from a phantom 0.
-            sumMetric("stale", "Stale Devices", current, previous) { $0.staleCount.map(Double.init) },
+            sumMetric("stale", "Stale Macs", current, previous) { $0.staleCount.map(Double.init) },
             weightedMetric("fileVault", "FileVault %", current, previous, \.fileVaultPct),
             weightedMetric("sip", "SIP %", current, previous, \.sipPct),
             weightedMetric("firewall", "Firewall %", current, previous, \.firewallPct),

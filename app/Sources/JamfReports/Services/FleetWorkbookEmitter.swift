@@ -80,7 +80,7 @@ enum FleetWorkbookEmitter {
     // MARK: - Per-Profile Breakdown
 
     private static func perProfileSheet(_ ws: Worksheet, _ model: FleetWorkbookModel) {
-        let headers = ["Profile", "Devices", "FileVault %", "SIP %", "Firewall %",
+        let headers = ["Profile", "Macs", "FileVault %", "SIP %", "Firewall %",
                        "Gatekeeper %", "Patch %", "OS Current %", "Security Score",
                        "Stale", "Baseline(s)", "Compliance %"]
         for (c, h) in headers.enumerated() { ws.write(h, row: 0, col: c, format: .header) }
@@ -198,7 +198,7 @@ enum FleetWorkbookEmitter {
     // MARK: - Fleet Trend
 
     private static func fleetTrendSheet(_ ws: Worksheet, _ model: FleetWorkbookModel) {
-        let headers = ["Date", "Devices", "FileVault %", "SIP %", "Firewall %",
+        let headers = ["Date", "Macs", "FileVault %", "SIP %", "Firewall %",
                        "Gatekeeper %", "Patch %", "OS Current %", "Security Score"]
         for (c, h) in headers.enumerated() { ws.write(h, row: 0, col: c, format: .header) }
         ws.freezePane(row: 1, col: 0)
