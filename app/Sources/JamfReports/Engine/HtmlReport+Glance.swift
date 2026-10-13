@@ -105,7 +105,9 @@ extension HtmlReport {
         """
         return Glance(
             html: tiles.isEmpty ? "" : html,
-            omission: tiles.isEmpty ? "the daily summary has none of the six figures" : nil,
+            omission: tiles.isEmpty ? (current.totalDevices == 0
+                ? "the fleet has no Macs, and the six figures are Mac figures"
+                : "the daily summary has none of the six figures") : nil,
             asOf: current.date, since: prior?.date, missing: missing)
     }
 

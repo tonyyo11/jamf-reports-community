@@ -1087,12 +1087,13 @@ extension HtmlReport {
             let fvStr = s.fileVaultPct.map { String(format: "%.1f%%", $0) } ?? "—"
             let sipStr = s.sipPct.map { String(format: "%.1f%%", $0) } ?? "—"
             let compStr = s.compliancePct.map { String(format: "%.1f%%", $0) } ?? "—"
-            return [s.date, "\(s.totalDevices)", fvStr, sipStr, compStr]
+            let macs = s.totalDevices > 0 ? "\(s.totalDevices)" : "—"
+            return [s.date, macs, fvStr, sipStr, compStr]
         }
         let daily = f.disclosure(
             label: "Daily values (\(summaries.count))",
             body: f.renderTable(
-                headers: ["Date", "Total Devices", "FileVault", "SIP", "Compliance"],
+                headers: ["Date", "Macs", "FileVault", "SIP", "Compliance"],
                 rows: tableRows),
             expanded: expandAll)
 
