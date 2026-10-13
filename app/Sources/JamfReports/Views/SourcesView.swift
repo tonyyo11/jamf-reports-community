@@ -24,6 +24,7 @@ struct SourcesView: View {
     @State private var cliBridge = CLIBridge()
     @State private var showingProtectConnect = false
     @State private var connectedProducts = ConnectedProducts.none
+    @State private var cliProfileNames: [String]?
     @State private var showingEAWalkthrough = false
     @State private var showingReauth = false
 
@@ -353,6 +354,13 @@ struct SourcesView: View {
                             }
                         }
                     }
+                }
+
+                if !csvFiles.isEmpty {
+                    Text(CSVInboxService.statusCaption)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 HStack(spacing: 8) {
@@ -757,6 +765,21 @@ struct SourcesView: View {
     private func reloadConnectedProducts() {
         connectedProducts = workspace.demoMode
             ? .none : ConnectedProducts.read(profile: workspace.profile)
+        guard let named = connectedProducts.protectProfile else {
+            cliProfileNames = nil
+            return
+        }
+        // `workspace.profiles` leaves out a profile that only serves as Protect's login, so
+        // jamf-cli's own list is the answer. Read off the main actor: it runs `config list`.
+        let profile = workspace.profile
+        Task {
+            let names = await Task.detached {
+                ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]).map(\.name)
+            }.value
+            guard profile == workspace.profile,
+                  connectedProducts.protectProfile == named else { return }
+            cliProfileNames = names
+        }
     }
 
     private func clearPendingFile() {
@@ -941,7 +964,14 @@ struct SourcesView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 // Sets up a real jamf-cli connection and writes config.yaml.
-                protectControl
+                ProtectProductControl(
+                    workspace: workspace.profile,
+                    state: ProtectConnection.state(
+                        configured: connectedProducts.protectProfile,
+                        cliProfiles: cliProfileNames),
+                    demoMode: workspace.demoMode,
+                    onConnect: { showingProtectConnect = true },
+                    onDisconnected: reloadConnectedProducts)
 
                 Text("Jamf School uses its own workspace: choose Add Jamf School workspace in "
                     + "the sidebar's workspace menu.")
@@ -951,36 +981,6 @@ struct SourcesView: View {
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    /// "Add Jamf Protect" until config.yaml records the connection, then CONNECTED with the
-    /// jamf-cli profile it uses and a Reconnect action (same sheet, new credentials).
-    @ViewBuilder
-    private var protectControl: some View {
-        let connect = {
-            guard !workspace.demoMode else { return }
-            showingProtectConnect = true
-        }
-        if let connectedProfile = connectedProducts.protectProfile {
-            HStack(spacing: 8) {
-                Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
-                Text("Jamf Protect · \(connectedProfile)")
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                PNPButton(
-                    title: "Reconnect", icon: "arrow.triangle.2.circlepath", size: .sm, action: connect
-                )
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-            }
-        } else {
-            PNPButton(title: "Add Jamf Protect", icon: "shield.lefthalf.filled", size: .sm,
-                      action: connect)
-                .disabled(workspace.demoMode)
-                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-        }
     }
 
     private func cacheDates(for cacheName: String, dataDir: URL, root: URL) -> [Date] {
