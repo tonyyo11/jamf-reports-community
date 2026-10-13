@@ -531,6 +531,9 @@ struct ReportEngine: Sendable {
     /// measured value replaced by nil), preserving the PR-18 protection against a partial
     /// collect clobbering a good summary.
     static func freshSummaryIsBetter(existing: DailySummary, fresh: DailySummary) -> Bool {
+        // A run that read no Macs (their sources absent or past max_cache_age_hours) must not
+        // replace a day that counted them with a mobile-only point.
+        if fresh.totalDevices == 0, existing.totalDevices > 0 { return false }
         if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
         let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
@@ -791,14 +794,22 @@ struct ReportEngine: Sendable {
             totalDevices = rows.reduce(0) { $0 + $1.count }
         }
 
-        guard totalDevices > 0 else { return nil }
-
         // Mobile device count for the "Managed Devices" trend/tile — nil (not
         // 0) when the mobile-devices-list snapshot is absent or undecodable;
         // most tenants that only manage Macs will never populate this.
         var mobileDeviceCount: Int? = nil
         if let mobileData = cachedData(kind: "mobile-devices-list") {
             mobileDeviceCount = MobileFleetService.deviceCount(fromMobileDevicesListData: mobileData)
+        }
+
+        // A fleet with no Macs still gets a point when it manages mobile devices. A Mac
+        // figure computed over 0 Macs would be 0 or NaN, never "unmeasured", so none is taken.
+        guard totalDevices > 0 else {
+            guard let mobile = mobileDeviceCount, mobile > 0 else { return nil }
+            return Self.mobileOnlySummary(
+                date: date, mobileDeviceCount: mobile,
+                collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil,
+                collectedByHost: Self.collectingHostLabel(dataDir: dataDir))
         }
 
         // Stale count from device-compliance under the stale rule (`StaleRule`): the row's
@@ -1013,6 +1024,19 @@ struct ReportEngine: Sendable {
             securityScoreBasis: score.basis,
             securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct
         )
+    }
+
+    /// The day's summary for a fleet with no Macs and some mobile devices: `totalDevices` is
+    /// 0 and every Mac figure is nil, which every reader treats as unmeasured (never 0%).
+    static func mobileOnlySummary(
+        date: String, mobileDeviceCount: Int,
+        collectionSources: [String: String]?, collectedByHost: String?
+    ) -> DailySummary {
+        DailySummary(
+            date: date, totalDevices: 0, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", collectionSources: collectionSources,
+            mobileDeviceCount: mobileDeviceCount, collectedByHost: collectedByHost)
     }
 
     /// The score's sources from what the summary writer already read, plus the `computers`
