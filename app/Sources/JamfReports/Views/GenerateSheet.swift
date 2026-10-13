@@ -1067,13 +1067,12 @@ private struct RunLogConsoleEmbed: View {
             .padding(.leading, 2)
     }
 
+    // By level, not by words in the text: kind names such as `patch-device-failures` turned
+    // `[ok]` lines red (#273).
     private func lineColor(_ line: CLIBridge.LogLine) -> Color {
-        let l = line.text.lowercased()
-        if l.contains("error") || l.contains("fail") || line.level == .fail { return Theme.Colors.dangerSoft }
-        if l.contains("warn") || line.level == .warn { return Theme.Colors.warnSoft }
-        if l.contains("[ok]") || l.contains("success") || l.contains("done") || line.level == .ok {
-            return Theme.Colors.ok
-        }
+        if line.level == .fail || line.isBareError { return Theme.Colors.dangerSoft }
+        if line.level == .warn { return Theme.Colors.warnSoft }
+        if line.level == .ok { return Theme.Colors.ok }
         return Theme.Text.secondary
     }
 }

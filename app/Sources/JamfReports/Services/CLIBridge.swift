@@ -63,6 +63,12 @@ final class CLIBridge {
         let timestamp: Date
         let level: LogLevel
         let text: String
+
+        /// jamf-cli's own `Error: …` stderr line, which carries no level marker. Colour only:
+        /// `LogLevel` and Run History's failure verdict do not read it.
+        var isBareError: Bool {
+            text.drop(while: \.isWhitespace).lowercased().hasPrefix("error:")
+        }
     }
 
     /// A no-op `onLine` handler for call sites that do not need log streaming.
