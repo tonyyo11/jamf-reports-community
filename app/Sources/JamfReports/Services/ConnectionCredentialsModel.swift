@@ -34,6 +34,9 @@ final class ConnectionCredentialsModel {
         /// Creates the profile's workspace; true when it wrote a config.yaml.
         var provisionWorkspace: @MainActor (String) throws -> Bool
         var store: ConnectionStore
+        /// An existing jamf-cli profile an earlier Add environments attempt left behind: in no
+        /// connection and with no workspace folder, so registering it again loses nothing.
+        var canReRegister: @MainActor (String) -> Bool = { _ in false }
     }
 
     enum Outcome: Equatable {
@@ -55,6 +58,9 @@ final class ConnectionCredentialsModel {
         let outcome: Outcome
         /// True for a profile this run registered for a new ID, false for a member's own.
         var isNew = true
+        /// The profile was already in jamf-cli from an earlier attempt, and this run registered
+        /// it again.
+        var reRegistered = false
 
         /// A profile Add environments registered for an ID it did not add. The app has no
         /// remove-profile call, so it stays in jamf-cli.
@@ -142,7 +148,8 @@ final class ConnectionCredentialsModel {
     var plan: [ConnectionEnvironments.Planned] {
         ConnectionEnvironments.plan(
             entries: entries, connection: connection,
-            existingProfiles: deps.existingProfiles(), workspaceConflict: deps.workspaceConflict)
+            existingProfiles: deps.existingProfiles(), workspaceConflict: deps.workspaceConflict,
+            canReRegister: deps.canReRegister)
     }
 
     var canRun: Bool {
@@ -196,7 +203,9 @@ final class ConnectionCredentialsModel {
             let outcome = await registerAndCheck(context, request) { verdict in
                 self.outcomeForNew(planned, verdict: verdict)
             }
-            rows.append(Row(label: label, profile: planned.profile, outcome: outcome))
+            rows.append(Row(
+                label: label, profile: planned.profile, outcome: outcome,
+                reRegistered: planned.reRegisters))
         }
     }
 
@@ -315,7 +324,8 @@ extension ConnectionCredentialsModel.Row {
         case .registrationFailed(let text):
             return "jamf-cli could not register \(profile): \(text)"
         case .added(let version, let note):
-            let base = "Added. Jamf Pro " + (version.map { "\($0) " } ?? "") + "answered."
+            let base = (reRegistered ? "Added (registered the earlier jamf-cli profile again). "
+                : "Added. ") + "Jamf Pro " + (version.map { "\($0) " } ?? "") + "answered."
             return note.map { "\(base) \($0)" } ?? base
         case .updated(let version):
             return "Credentials updated. Jamf Pro " + (version.map { "\($0) " } ?? "") + "answered."
@@ -339,8 +349,8 @@ extension ConnectionCredentialsModel.Row {
 
     private var removalHint: String {
         guard leavesProfileRegistered else { return "" }
-        return "The jamf-cli profile \(profile) stays registered; remove it with "
-            + "jamf-cli config remove-profile \(ProfileName.shellWord(profile)) if you do not "
-            + "need it."
+        return "The jamf-cli profile \(profile) stays registered. Add the same label again to "
+            + "register it with new credentials, or remove it with "
+            + "jamf-cli config remove-profile \(ProfileName.shellWord(profile))."
     }
 }
