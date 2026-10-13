@@ -63,6 +63,8 @@ extension HtmlReport {
         var p0: Int?
         /// The Macs whose device rows fail FileVault, SIP or Firewall, behind the P0 figure.
         var p0Gaps = P0Gaps()
+        /// The mobile device snapshot, read only for a report that lists `.mobileFleet`.
+        var mobile: MobileFleetService.Snapshot?
     }
 
     /// Loads what the sections in `sections` and the figures at the top need.
@@ -131,6 +133,16 @@ extension HtmlReport {
                 label: "Daily summaries", kind: "snapshots/summaries", date: latest.parsedDate))
         }
         if sections.contains(.orgInfo) { inputs.catalogCounts = catalogCounts() }
+        if sections.contains(.mobileFleet) {
+            let mobile = MobileFleetService.load(dataDir: dataDir)
+            inputs.mobile = mobile
+            if mobile.totalDevices > 0 {
+                sources.append(.init(
+                    label: "Mobile devices", kind: MobileFleetService.deviceKind,
+                    date: mobile.sourceDates[MobileFleetService.deviceKind]
+                        ?? mobile.snapshotDate))
+            }
+        }
         inputs.sources = sources
         return inputs
     }

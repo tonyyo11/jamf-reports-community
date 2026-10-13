@@ -48,6 +48,8 @@ struct CustomTemplate: ReportTemplate {
             case .inventorySummary, .hardwareModels:
                 for id in [SectionID.purchaseCohorts, .buildingBreakdown, .departmentBreakdown]
                 where !sections.contains(id) { sections.append(id) }
+            case .mobileFleetSummary, .mobileInventory, .mobileSupervisionStatus:
+                if !sections.contains(.mobileFleet) { sections.append(.mobileFleet) }
             case .osCurrency:
                 if !sections.contains(.osAdoptionChart) { sections.append(.osAdoptionChart) }
                 if !sections.contains(.osCurrency) { sections.append(.osCurrency) }
