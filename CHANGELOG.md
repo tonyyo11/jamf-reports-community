@@ -28,6 +28,17 @@ versions in this repository map to git tags.
   the most recent Mac and puts a Mac with no check-in date last, and the other three start with
   the lowest count or score. (#272)
 
+- Data Sources can disconnect Jamf Protect. **Disconnect** sits beside Reconnect on the Additional
+  Products card; after a confirmation it sets `protect.enabled: false` and removes
+  `protect.profile` in the workspace's config.yaml (a copy is kept when the block held a comment),
+  and tells you the jamf-cli profile stays until `jamf-cli config remove-profile <name>` removes
+  it. A line under the Protect control says Jamf Protect uses its own API client from Jamf
+  Protect, not your Jamf Account integration. (#271)
+- Add environments can try an ID again with the same label. A jamf-cli profile left behind by an
+  attempt that could not confirm the ID (or was refused) is registered again when it is in no
+  connection and has no workspace; a name that is a member, has a workspace or is not a Platform
+  profile is still refused. (#271)
+
 ### Changed
 
 - The Platform API is no longer experimental. Compliance Benchmarks and DDM Blueprints unlock for
@@ -52,6 +63,12 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The Additional Products card no longer shows Jamf Protect as CONNECTED when the jamf-cli
+  profile named in `protect.profile` is no longer in jamf-cli: it reads "Profile <name> not found
+  in jamf-cli" with Reconnect and Disconnect. (#271)
+- The CSV Inbox card now says what leaves a file in Pending: a scheduled CSV-assisted run marks
+  the CSV it used as Consumed, Archive moves a file out of the inbox, and generating a report
+  from the app does not read the inbox. (#270)
 - Connecting Jamf School from a Jamf Pro workspace no longer stops that workspace collecting. It
   is not offered there any more: Jamf School uses its own workspace, which the sidebar's workspace
   menu now adds (Add Jamf School workspace), and onboarding's Add products step and Data Sources

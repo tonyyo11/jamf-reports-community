@@ -112,7 +112,8 @@ profile has a workspace, for example after the workspace folder is emptied.
    alone (see [Running without a CSV](#running-without-a-csv)).
 7. **Add products (optional)** — if you use Jamf Protect, connect it here
    (`protect setup`); it augments the Jamf Pro reports. You can also add
-   it later from the **Data Sources** screen. (Jamf School is never added to a Jamf Pro
+   it later from the **Data Sources** screen, where **Disconnect** turns it off again (it
+   leaves the jamf-cli profile in jamf-cli). (Jamf School is never added to a Jamf Pro
    workspace; a Jamf School district should instead
    pick **Connect Jamf School** on the Welcome chooser, which runs the dedicated School path
    below — no Jamf Pro placeholder credentials.)
