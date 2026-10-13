@@ -174,7 +174,10 @@ credential produces a partial backup rather than none.
 assign it the most restrictive role that can read computers, alerts, insights and plans.
 Jamf's current documentation and the app's form place the page at **Administrative > API
 Clients**, with the **Read Only** role or a custom role; jamf-cli's setup guide still says
-**Settings > API Clients**. Connect it with the Protect URL, client ID and client secret.
+**Settings > API Clients**. Connect it with the Protect URL, client ID and client secret. It
+is not covered by your Jamf Account integration. **Data Sources > Additional Products >
+Disconnect** turns Protect off in the workspace and leaves the jamf-cli profile, which
+`jamf-cli config remove-profile <name>` removes.
 
 **Jamf School.** Generate an API key at **Organization > Settings > API**, and find the
 Network ID at **Devices > Enroll Device(s)**. Each School API key is limited to the API

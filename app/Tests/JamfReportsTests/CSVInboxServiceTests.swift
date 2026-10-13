@@ -170,4 +170,12 @@ final class CSVInboxServiceTests: XCTestCase {
     private func writeCSV(to url: URL) throws {
         try "name,serial\nMac,ABC123\n".write(to: url, atomically: true, encoding: .utf8)
     }
+
+    func testTheInboxCaptionSaysWhatMovesAFileOutOfPending() {
+        let caption = CSVInboxService.statusCaption
+        XCTAssertTrue(caption.contains("scheduled CSV-assisted run"))
+        XCTAssertTrue(caption.contains("Consumed"))
+        XCTAssertTrue(caption.contains("Archive moves a file out of the inbox"))
+        XCTAssertTrue(caption.contains("does not read the inbox"))
+    }
 }

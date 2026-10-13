@@ -191,7 +191,7 @@ struct ConnectionCard: View {
             model: ConnectionCredentialsModel(
                 connection: connection, mode: mode,
                 dependencies: ConnectionCredentialsModel.liveDependencies(
-                    profiles: { [workspace] in workspace.profiles.map(\.name) },
+                    profiles: { [workspace] in workspace.profiles },
                     store: workspace.connectionStore)),
             onFinished: { changed in
                 if changed { workspace.reloadFromDisk() }

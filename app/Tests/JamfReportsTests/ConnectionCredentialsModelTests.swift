@@ -38,6 +38,7 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         verdicts: [String: ConnectionCheck.Verdict] = [:],
         failRegistration: Set<String> = [],
         existingProfiles: [String] = ["acme-prod"],
+        reRegistrable: Set<String> = [],
         region: Connection.Region = .eu
     ) throws -> Harness {
         let dir = FileManager.default.temporaryDirectory
@@ -66,7 +67,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
             existingProfiles: { existingProfiles },
             workspaceConflict: { _ in nil },
             provisionWorkspace: { provisioned.profiles.append($0); return true },
-            store: store)
+            store: store,
+            canReRegister: { reRegistrable.contains($0) })
         let model = ConnectionCredentialsModel(
             connection: connection, mode: mode, dependencies: dependencies)
         return Harness(
@@ -166,6 +168,51 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         XCTAssertEqual(h.model.rows.map(\.outcome), [.refused(.profileExists("acme-staging"))])
         let registrations = await h.recorder.registrations
         XCTAssertTrue(registrations.isEmpty)
+    }
+
+    func testALeftoverProfileFromAnEarlierAttemptIsRegisteredAgain() async throws {
+        let h = try harness(
+            mode: .addEnvironments, existingProfiles: ["acme-prod", "acme-staging"],
+            reRegistrable: ["acme-staging"])
+        fill(h.model, ids: "env-stage Staging")
+        await h.model.run()
+
+        let row = try XCTUnwrap(h.model.rows.first)
+        XCTAssertEqual(row.outcome, .added(jamfProVersion: "11.25.0", workspaceNote: nil))
+        XCTAssertTrue(row.reRegistered)
+        XCTAssertTrue(row.message.contains("registered the earlier jamf-cli profile again"))
+        let registrations = await h.recorder.registrations
+        XCTAssertEqual(registrations.map(\.profile), ["acme-staging"])
+        XCTAssertEqual(members(h).map(\.profile).sorted(), ["acme-prod", "acme-staging"])
+    }
+
+    func testAProfileThatIsNotALeftoverIsStillRefused() async throws {
+        let h = try harness(
+            mode: .addEnvironments, existingProfiles: ["acme-prod", "acme-staging"],
+            reRegistrable: ["somebody-else"])
+        fill(h.model, ids: "env-stage Staging")
+        await h.model.run()
+
+        XCTAssertEqual(h.model.rows.map(\.outcome), [.refused(.profileExists("acme-staging"))])
+        let registrations = await h.recorder.registrations
+        XCTAssertTrue(registrations.isEmpty)
+    }
+
+    func testAMemberOrAWorkspaceProfileIsNotALeftover() {
+        let member = Connection(
+            name: "Acme", region: .eu, level: .environment,
+            members: [.init(profile: "acme-prod", scopeID: "e", label: "Prod", product: .pro)])
+        func isLeftover(
+            _ name: String, auth: String = "platform", workspace: Bool = false
+        ) -> Bool {
+            ConnectionCredentialsModel.isLeftoverPlatformProfile(
+                JamfCLIProfile(name: name, url: "", schedules: 0, status: .idle, authMethod: auth),
+                connections: [member], workspaceExists: workspace)
+        }
+        XCTAssertTrue(isLeftover("acme-staging"))
+        XCTAssertFalse(isLeftover("acme-prod"), "a member")
+        XCTAssertFalse(isLeftover("acme-staging", workspace: true), "has a workspace folder")
+        XCTAssertFalse(isLeftover("acme-staging", auth: "oauth2"), "not a Platform profile")
     }
 
     func testEachIDGetsItsOwnOutcome() async throws {

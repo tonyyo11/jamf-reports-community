@@ -4,7 +4,7 @@ extension ConnectionCredentialsModel {
     /// The real jamf-cli, file system and store. `profiles` is the app's list of jamf-cli
     /// profiles, read when the sheet plans a run.
     static func liveDependencies(
-        profiles: @escaping @MainActor () -> [String], store: ConnectionStore
+        profiles: @escaping @MainActor () -> [JamfCLIProfile], store: ConnectionStore
     ) -> Dependencies {
         Dependencies(
             jamfCLI: {
@@ -27,9 +27,28 @@ extension ConnectionCredentialsModel {
                     specNames: JamfCLIInstaller.supportsSpecDerivedNames(context.version),
                     runner: ConnectionCheck.runner(binary: context.binary))
             },
-            existingProfiles: profiles,
+            existingProfiles: { profiles().map(\.name) },
             workspaceConflict: { ProfileService.caseVariantWorkspace(of: $0) },
             provisionWorkspace: { try OnboardingFlow.createJamfCLIOnlyWorkspace(for: $0) },
-            store: store)
+            store: store,
+            canReRegister: { name in
+                guard let profile = profiles().first(where: { $0.name == name }) else {
+                    return false
+                }
+                return isLeftoverPlatformProfile(
+                    profile, connections: store.load(),
+                    workspaceExists: ProfileService.workspaceURL(for: name).map {
+                        FileManager.default.fileExists(atPath: $0.path)
+                    } ?? true)
+            })
+    }
+
+    /// A Platform profile that an earlier attempt registered and never made a member: not in
+    /// any connection and with no workspace folder. Anything else may be in use.
+    static func isLeftoverPlatformProfile(
+        _ profile: JamfCLIProfile, connections: [Connection], workspaceExists: Bool
+    ) -> Bool {
+        !workspaceExists && profile.authMethod.lowercased().contains("platform")
+            && !connections.contains { $0.members.contains { $0.profile == profile.name } }
     }
 }

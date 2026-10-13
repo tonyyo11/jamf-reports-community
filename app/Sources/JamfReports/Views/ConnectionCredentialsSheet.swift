@@ -134,7 +134,7 @@ struct ConnectionCredentialsSheet: View {
                 .foregroundStyle(item.refusal == nil
                     ? Theme.Text.tertiary(contrast) : Theme.Colors.danger)
                 .font(.caption)
-            Text(item.refusal?.message ?? "Profile \(item.profile)")
+            Text(item.previewText)
                 .font(.caption)
                 .foregroundStyle(item.refusal == nil
                     ? Theme.Colors.fg2 : Theme.Colors.danger)

@@ -56,6 +56,24 @@ final class ConnectionEnvironmentsTests: XCTestCase {
         XCTAssertEqual(planned[0].refusal, .profileExists("acme-platform-production"))
     }
 
+    func testALeftoverProfileMayBeRegisteredAgain() {
+        let planned = ConnectionEnvironments.plan(
+            entries: [.init(scopeID: "env-1", label: "Production")], connection: connection(),
+            existingProfiles: ["acme-platform-production"],
+            canReRegister: { $0 == "acme-platform-production" })
+        XCTAssertNil(planned[0].refusal)
+        XCTAssertTrue(planned[0].reRegisters)
+        XCTAssertTrue(planned[0].previewText.contains("registered again"))
+    }
+
+    func testAReRegisteredNameStillRefusesADifferentCaseVariant() {
+        let planned = ConnectionEnvironments.plan(
+            entries: [.init(scopeID: "env-1", label: "Production")], connection: connection(),
+            existingProfiles: ["acme-platform-production", "Acme-Platform-Production"],
+            canReRegister: { _ in true })
+        XCTAssertEqual(planned[0].refusal, .caseVariant(of: "Acme-Platform-Production"))
+    }
+
     func testACaseVariantOfAProfileIsRefused() {
         let planned = ConnectionEnvironments.plan(
             entries: [.init(scopeID: "env-1", label: "Production")], connection: connection(),
