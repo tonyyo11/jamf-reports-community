@@ -438,7 +438,18 @@ final class OnboardingFlow {
     }
 
     func createWorkspace() throws {
-        let profile = profileName.trimmed
+        try Self.createWorkspaceFolders(for: profileName.trimmed)
+        // config.yaml is intentionally not written here. The CSV mapping step
+        // produces it via ScaffoldService.writeConfig; the skip path produces it via
+        // ScaffoldService.writeMinimalConfig. Writing a placeholder here would block
+        // scaffold (which refuses to overwrite an existing file).
+        workspaceCreated = true
+        lastError = nil
+    }
+
+    /// The folders of `profile`'s workspace, private to this user and kept out of Spotlight.
+    /// Add environments creates its workspaces through this too.
+    static func createWorkspaceFolders(for profile: String) throws {
         guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile
@@ -498,13 +509,6 @@ final class OnboardingFlow {
         // C-03 documented an inflection on 2026-05-01 where some writers got
         // the chmod and others didn't).
         WorkspacePermissionHardener.tighten(profile: profile)
-
-        // config.yaml is intentionally not written here. The CSV mapping step
-        // produces it via ScaffoldService.writeConfig; the skip path produces it via
-        // ScaffoldService.writeMinimalConfig. Writing a placeholder here would block
-        // scaffold (which refuses to overwrite an existing file).
-        workspaceCreated = true
-        lastError = nil
     }
 
     func registerJamfCLIProfile() async throws {
@@ -571,32 +575,19 @@ final class OnboardingFlow {
         isRegisteringProfile = true
         defer { isRegisteringProfile = false }
 
-        var stdinData = Self.platformGatewayStdin(
-            clientID: platformClientID.trimmed, clientSecret: platformClientSecret
-        )
-        defer {
-            stdinData.resetBytes(in: 0..<stdinData.count)
-            clearPlatformSecrets()
-        }
+        defer { clearPlatformSecrets() }
 
         let noVerify = await noVerifyFlag(binary: binary)
-        let result = try await Self.runWithPTY(
-            executable: binary,
-            arguments: Self.platformGatewayArguments(
-                profile: profileName.trimmed,
-                gatewayURL: gatewayURL.trimmed,
-                scope: platformScope,
-                scopeID: platformScopeID.trimmed,
-                noVerify: noVerify
-            ),
-            stdin: stdinData
+        try await Self.registerPlatformProfile(
+            binary: binary,
+            profile: profileName.trimmed,
+            gatewayURL: gatewayURL.trimmed,
+            scope: platformScope,
+            scopeID: platformScopeID.trimmed,
+            clientID: platformClientID.trimmed,
+            clientSecret: platformClientSecret,
+            noVerify: noVerify
         )
-
-        guard result.exitCode == 0 else {
-            let redacted = platformRedactedOutput(result.combined.trimmed)
-            let message = redacted.isEmpty ? "jamf-cli exited \(result.exitCode)." : redacted
-            throw FlowError.processFailed(message)
-        }
 
         profileRegistered = true
         connectionValidated = false
@@ -1383,18 +1374,6 @@ final class OnboardingFlow {
     }
 
     // MARK: - Per-product redaction helpers
-
-    private func platformRedactedOutput(_ text: String) -> String {
-        var redacted = text
-        if !platformClientSecret.isEmpty {
-            redacted = redacted.replacingOccurrences(of: platformClientSecret, with: "[redacted]")
-        }
-        let id = platformClientID.trimmed
-        if id.count >= 8 {
-            redacted = redacted.replacingOccurrences(of: id, with: "[redacted]")
-        }
-        return redacted
-    }
 
     private func protectRedactedOutput(_ text: String) -> String {
         var redacted = text
