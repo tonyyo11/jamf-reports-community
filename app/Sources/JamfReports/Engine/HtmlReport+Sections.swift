@@ -200,8 +200,10 @@ extension HtmlReport {
         var reason: String { binaryMissing ? BinaryMissing.shortLabel : gap?.label ?? "—" }
     }
 
-    /// The stale Macs, oldest first, then the Macs that only show a contact gap (Jamf binary
-    /// silent before inventory not updating, the longest silence first). Each Mac once.
+    /// The Macs with a reason first, so the row cap never hides the Macs the binary and
+    /// contact-gap lines lead to: without the Jamf binary, then a contact gap (Jamf binary
+    /// silent before inventory not updating, the longest silence first, stale or not), then
+    /// the Macs that are only stale, oldest first. Each Mac once.
     func interventionMacs(
         _ computers: [[String: Any]], now: Date = Date()
     ) -> [InterventionMac] {
@@ -222,14 +224,15 @@ extension HtmlReport {
         func rank(_ gap: ContactGap?) -> Int {
             gap.flatMap(ContactGap.allCases.firstIndex(of:)) ?? 0
         }
-        let stale = rows.filter(\.isStale).sorted { ($0.age ?? .days(0)) > ($1.age ?? .days(0)) }
         let missing = rows.filter(\.binaryMissing)
-        let gapOnly = rows.filter { !$0.isStale && !$0.binaryMissing }.sorted {
+        let gaps = rows.filter { $0.gap != nil }.sorted {
             rank($0.gap) != rank($1.gap)
                 ? rank($0.gap) < rank($1.gap)
                 : ($0.age ?? .days(0)) > ($1.age ?? .days(0))
         }
-        return stale + gapOnly + missing
+        let staleOnly = rows.filter { $0.isStale && $0.gap == nil }
+            .sorted { ($0.age ?? .days(0)) > ($1.age ?? .days(0)) }
+        return missing + gaps + staleOnly
     }
 
     /// The Macs the "Needs attention" stale, contact-gap and Jamf-binary lines count: stale

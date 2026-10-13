@@ -166,8 +166,8 @@ final class BinaryMissingTests: XCTestCase {
         let html = report.buildInterventionList(computersInventory: fleet).html
         let rows = try tableRows(html)
 
-        XCTAssertEqual(rows.map { $0[0] }, ["StaleOnly", "DEP - C02AAA", "Renamed"],
-                       "stale first, the binary-missing Macs after")
+        XCTAssertEqual(rows.map { $0[0] }, ["DEP - C02AAA", "Renamed", "StaleOnly"],
+                       "the binary-missing Macs first, so the row cap never hides them")
         let byName = Dictionary(uniqueKeysWithValues: rows.map { ($0[0], $0) })
         XCTAssertEqual(byName["StaleOnly"]?[5], "—")
         XCTAssertEqual(byName["DEP - C02AAA"]?[5], "Jamf binary missing")

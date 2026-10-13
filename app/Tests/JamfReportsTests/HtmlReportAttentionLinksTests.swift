@@ -71,8 +71,8 @@ final class HtmlReportAttentionLinksTests: XCTestCase {
         let html = report.buildInterventionList(computersInventory: computers).html
         let rows = try tableRows(html)
 
-        XCTAssertEqual(rows.map { $0[0] }, ["StaleOnly", "Both", "GapOnly", "InventoryGap"],
-                       "stale Macs oldest first, then the Macs that only show a gap")
+        XCTAssertEqual(rows.map { $0[0] }, ["Both", "GapOnly", "InventoryGap", "StaleOnly"],
+                       "gap Macs first (binary silent before inventory), then stale-only")
         let byName = Dictionary(uniqueKeysWithValues: rows.map { ($0[0], $0) })
         XCTAssertEqual(byName["StaleOnly"]?[5], "—", "stale only: no gap")
         XCTAssertEqual(byName["StaleOnly"]?[4], "—", "no Last Contact")
@@ -108,6 +108,17 @@ final class HtmlReportAttentionLinksTests: XCTestCase {
         let gapLines = items.filter { $0.text.contains("MDM") || $0.text.contains("inventory") }
         XCTAssertEqual(gapLines.count, 2)
         XCTAssertTrue(gapLines.allSatisfy { $0.anchor == "intervention-list" })
+    }
+
+    /// On a fleet with more stale Macs than the table shows, the gap Macs the attention lines
+    /// lead to come first, so the cap cuts stale-only rows instead (prod, beta 4: 121 stale
+    /// filled all 100 rows and every Reason cell read "—").
+    func testMacsWithAReasonComeBeforeStaleOnlyMacs() throws {
+        let report = try report(write: [("computers", computers)])
+        let order = report.interventionMacs(computers).map { report.inventoryName($0.item) }
+        let reasons = report.interventionMacs(computers).map(\.reason)
+        XCTAssertEqual(reasons.prefix(3).filter { $0 != "—" }.count, 3, "\(order)")
+        XCTAssertEqual(reasons.last, "—", "the stale-only Mac is last: \(order)")
     }
 
     func testAMacShowingNeitherIsNotListedAndAStaleOnlyListKeepsItsTitle() throws {
