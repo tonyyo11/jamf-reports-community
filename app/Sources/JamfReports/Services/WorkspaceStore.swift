@@ -1158,10 +1158,25 @@ final class WorkspaceStore {
         return components.url
     }
 
-    /// Server URL for the currently active profile.
+    /// Server URL for the currently active profile; empty for a Platform API profile, whose URL
+    /// is the gateway, not a Jamf Pro console.
     private func activeProfileURL() -> String {
         if demoMode { return org.jamfURL }
-        return profiles.first(where: { $0.name == profile })?.url ?? ""
+        guard let active = profiles.first(where: { $0.name == profile }) else { return "" }
+        return Self.consoleServer(forProfileURL: active.url, authMethod: active.authMethod)
+    }
+
+    /// The host a console link may be built from. A Platform profile (auth method `platform`, or a
+    /// Platform gateway host whatever the method says) has none: `*.api.jamfcloud.com` serves
+    /// APIs only, so a link there would open nothing.
+    nonisolated static func consoleServer(forProfileURL url: String, authMethod: String) -> String {
+        if authMethod.lowercased().contains("platform") { return "" }
+        let host = url.contains("://") ? (URL(string: url)?.host ?? url) : url
+        let lowered = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if lowered.hasSuffix(".api.jamfcloud.com") || lowered.hasSuffix(".apigw.jamf.com") {
+            return ""
+        }
+        return url
     }
 
     /// The profile a launch or reload opens on: the first one the app can use,
