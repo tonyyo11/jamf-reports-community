@@ -254,23 +254,63 @@ struct FleetOverviewView: View {
                     Spacer()
                 }
             } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 270), spacing: 12, alignment: .top)],
-                    alignment: .leading,
-                    spacing: 12
-                ) {
-                    ForEach(visibleRows) { row in
-                        Button {
-                            drilledProfile = row.profile
-                        } label: {
-                            FleetProfileCard(row: row)
-                                .fleetDrillDownChrome()
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(rowGroups) { group in
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let title = group.title { SectionHeader(title: title) }
+                            profileCards(group.rows)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open \(row.profile) fleet details")
-                        .help("Open \(row.profile) fleet details")
                     }
                 }
+            }
+        }
+    }
+
+    private struct RowGroup: Identifiable {
+        let id: String
+        /// Nil when no connection exists, so the grid keeps its one headerless list.
+        let title: String?
+        let rows: [FleetProfileOverview]
+    }
+
+    /// The visible rows under their connections, then the profiles in none. With no
+    /// connection there is a single group with no header.
+    private var rowGroups: [RowGroup] {
+        let grouping = workspace.initializedConnectionGrouping
+        guard grouping.hasConnections else {
+            return [RowGroup(id: "all", title: nil, rows: visibleRows)]
+        }
+        let byProfile = Dictionary(
+            visibleRows.map { ($0.profile, $0) }, uniquingKeysWith: { first, _ in first })
+        var groups = grouping.sections.map { section in
+            RowGroup(
+                id: section.id.uuidString, title: section.connection.name,
+                rows: section.entries.compactMap { byProfile[$0.profile.name] })
+        }
+        if !grouping.ungrouped.isEmpty {
+            groups.append(RowGroup(
+                id: "ungrouped", title: "Other workspaces",
+                rows: grouping.ungrouped.compactMap { byProfile[$0.name] }))
+        }
+        return groups.filter { !$0.rows.isEmpty }
+    }
+
+    private func profileCards(_ rows: [FleetProfileOverview]) -> some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 270), spacing: 12, alignment: .top)],
+            alignment: .leading,
+            spacing: 12
+        ) {
+            ForEach(rows) { row in
+                Button {
+                    drilledProfile = row.profile
+                } label: {
+                    FleetProfileCard(row: row)
+                        .fleetDrillDownChrome()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(row.profile) fleet details")
+                .help("Open \(row.profile) fleet details")
             }
         }
     }

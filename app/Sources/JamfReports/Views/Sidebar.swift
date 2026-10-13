@@ -246,18 +246,7 @@ struct Sidebar: View {
     private var workspaceChip: some View {
         let engaged = chipHovered || chipFocused
         Menu {
-            ForEach(workspace.profiles) { p in
-                Button {
-                    workspace.setProfile(p.name)
-                } label: {
-                    let count = workspace.deviceCount(for: p.name)
-                    HStack {
-                        Text(p.name)
-                        if count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
-                        if p.name == workspace.profile { Image(systemName: "checkmark") }
-                    }
-                }
-            }
+            workspaceMenuItems
             Divider()
             // The first-launch chooser's handoff: the onboarding flow built next takes it. Both
             // set it, so a click that builds no new flow cannot leave the other path queued.
@@ -329,6 +318,36 @@ struct Sidebar: View {
         .onHover { chipHovered = $0 }
         .animation(.easeOut(duration: 0.18), value: engaged)
         .accessibilityLabel("Workspace: \(workspace.profile). \(workspaceSubtitle). Activate to switch workspace.")
+    }
+
+    /// Profiles that belong to a connection sit under a section titled with its name and show
+    /// the member's label; the rest list as before, after the sections.
+    @ViewBuilder
+    private var workspaceMenuItems: some View {
+        let grouping = workspace.connectionGrouping
+        ForEach(grouping.sections) { section in
+            Section(section.connection.name) {
+                ForEach(section.entries) { entry in
+                    workspaceMenuButton(entry.profile, title: entry.label)
+                }
+            }
+        }
+        ForEach(grouping.ungrouped) { profile in
+            workspaceMenuButton(profile, title: profile.name)
+        }
+    }
+
+    private func workspaceMenuButton(_ p: JamfCLIProfile, title: String) -> some View {
+        Button {
+            workspace.setProfile(p.name)
+        } label: {
+            let count = workspace.deviceCount(for: p.name)
+            HStack {
+                Text(title)
+                if count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
+                if p.name == workspace.profile { Image(systemName: "checkmark") }
+            }
+        }
     }
 
     /// Subtitle under the workspace name. Shows the initialized-workspace count when
