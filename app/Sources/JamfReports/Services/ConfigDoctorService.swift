@@ -115,6 +115,7 @@ enum ConfigDoctorService {
                 config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
         }
         rows += organizationLevelRows(profile: profile)
+        rows += platformTwinRows(profile: profile)
         rows += sharedConfigRows(profile: profile)
         rows += automationFolderRows(
             workspace: (try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot))?

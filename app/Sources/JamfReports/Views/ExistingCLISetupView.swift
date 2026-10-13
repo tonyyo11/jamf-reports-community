@@ -42,6 +42,7 @@ struct ExistingCLISetupView: View {
         }
         .background(Theme.Colors.winBG)
         .sharedFolderConsent(pending: $pendingSharedRoot) { applyExistingRoot($0) }
+        .task { await flow.resolveTwins() }
     }
 
     // MARK: - Existing workspace
@@ -144,6 +145,12 @@ struct ExistingCLISetupView: View {
                     }
                     if let reason = flow.refusals[name] {
                         profileNote(reason)
+                    }
+                    if let note = flow.twinNote(for: name) {
+                        Text(note)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Text(
@@ -378,9 +385,7 @@ struct ExistingCLISetupView: View {
     private func selectionBinding(_ name: String) -> Binding<Bool> {
         Binding(
             get: { flow.selected.contains(name) },
-            set: { on in
-                if on { flow.selected.insert(name) } else { flow.selected.remove(name) }
-            }
+            set: { flow.setSelected(name, $0) }
         )
     }
 
@@ -400,10 +405,14 @@ struct ExistingCLISetupView: View {
         guard flow.canContinue, !isFinishing else { return }
         isFinishing = true
         Task {
-            if flow.enableAutomation {
+            flow.recordLearnedURLs()
+            // A twin left unticked is excluded from all-profiles runs even without automation.
+            if flow.enableAutomation || !flow.twinsLeftOut.isEmpty {
                 UserDefaults.standard.set(
                     flow.configuredPolicy().serialize(), forKey: AutomationPolicy.storageKey
                 )
+            }
+            if flow.enableAutomation {
                 // The user just opted into automation — a ticker Login Items
                 // won't run must not be silently absorbed into "setup complete".
                 // Only the two states an operator can act on: `.unavailable` is

@@ -59,4 +59,56 @@ extension ConfigDoctorService {
     static func organizationLevelRows(profile: String) -> [DoctorRow] {
         organizationLevelRows(profile: profile, auth: ProfileAuthMethod.resolve(profile: profile))
     }
+
+    /// One `.suggest` row on a workspace that has a twin: a platform profile and an oauth2
+    /// profile for the same Jamf Pro, each with a workspace of its own. jamf-cli's wiki
+    /// recommends keeping the oauth2 profile for commands the gateway refuses, but Jamf Reports
+    /// collects one profile per fleet, so collecting both splits history and doubles the
+    /// consolidated totals. Nothing is changed for a user who already has both. `learn` gives a
+    /// platform profile's Jamf Pro URL (a stored one, else the read-only probe).
+    static func platformTwinRows(
+        profile: String,
+        discovered: [JamfCLIProfile],
+        hasWorkspace: (String) -> Bool,
+        learn: (String) -> String?
+    ) -> [DoctorRow] {
+        guard let me = discovered.first(where: { $0.name == profile }) else { return [] }
+        let withFolder = discovered.filter { hasWorkspace($0.name) && $0.status != .error }
+        let pairs: [(platform: JamfCLIProfile, twin: JamfCLIProfile)]
+        if me.authMethod.lowercased() == "platform" {
+            let found = PlatformTwin.twins(ofPlatformProfile: me, among: withFolder, learn: learn)
+            pairs = (found?.twins ?? []).map { (me, $0) }
+        } else {
+            pairs = withFolder.compactMap { platform in
+                PlatformTwin.twins(ofPlatformProfile: platform, among: [me], learn: learn)
+                    .map { _ in (platform, me) }
+            }
+        }
+        guard let pair = pairs.first else { return [] }
+        let platform = ConfigSchema.displayText(pair.platform.name)
+        let twin = ConfigSchema.displayText(pair.twin.name)
+        return [DoctorRow(
+            id: "platform.twin",
+            severity: .suggest,
+            title: "Two workspaces collect the same Jamf Pro",
+            detail: "'\(platform)' (Platform API) and '\(twin)' (oauth2) reach the same Jamf Pro "
+                + "server, and both have a workspace. Jamf Reports collects one profile per "
+                + "fleet, so history is split across two folders and a consolidated report "
+                + "counts the fleet twice.",
+            hint: "Keep '\(platform)' as the workspace and exclude '\(twin)' under Automation > "
+                + "Excluded profiles. Keep the oauth2 profile in jamf-cli for the commands the "
+                + "gateway refuses. Nothing is changed for you."
+        )]
+    }
+
+    /// `platformTwinRows` for the live profiles. jamf-cli is asked only when this workspace and
+    /// another both have a folder, one profile is platform and another is oauth2.
+    static func platformTwinRows(profile: String) -> [DoctorRow] {
+        let discovered = ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:])
+        let store = ConnectionStore()
+        return platformTwinRows(
+            profile: profile, discovered: discovered,
+            hasWorkspace: { ProfileService.hasWorkspace($0) },
+            learn: { store.jamfProURL(profile: $0) ?? PlatformTwin.learnJamfProURL(profile: $0) })
+    }
 }

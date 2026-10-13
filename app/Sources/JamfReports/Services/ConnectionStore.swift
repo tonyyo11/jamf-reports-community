@@ -102,6 +102,26 @@ struct ConnectionStore: Sendable {
         return connection
     }
 
+    /// Keeps the Jamf Pro URL learned for `profile` on its member. False, and nothing written,
+    /// when the profile is in no connection.
+    @discardableResult
+    func recordJamfProURL(profile: String, url: String) throws -> Bool {
+        var all = load()
+        for index in all.indices {
+            guard let slot = all[index].members.firstIndex(where: { $0.profile == profile })
+            else { continue }
+            all[index].members[slot].jamfProURL = url
+            try save(all)
+            return true
+        }
+        return false
+    }
+
+    /// The Jamf Pro URL learned for `profile`, if any.
+    func jamfProURL(profile: String) -> String? {
+        load().lazy.flatMap(\.members).first { $0.profile == profile }?.jamfProURL
+    }
+
     /// The scope IDs of every profile in the same connection as `profile`, `profile` included,
     /// for seeding a redactor. Empty when the profile is in no connection.
     func scopeIDs(sharingConnectionWith profile: String) -> [String] {

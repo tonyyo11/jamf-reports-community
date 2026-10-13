@@ -35,15 +35,23 @@ struct Connection: Codable, Sendable, Equatable, Identifiable {
         var scopeID: String
         var label: String
         var product: Product
+        /// The Jamf Pro server this profile reaches through the gateway, once learned
+        /// (`pro jamf-pro-server-url get`). A platform profile's own URL is the gateway, so this
+        /// is what links it to an oauth2 profile for the same instance. Nil until learned.
+        var jamfProURL: String?
 
-        init(profile: String, scopeID: String, label: String? = nil, product: Product = .unknown) {
+        init(
+            profile: String, scopeID: String, label: String? = nil, product: Product = .unknown,
+            jamfProURL: String? = nil
+        ) {
             self.profile = profile
             self.scopeID = scopeID
             self.label = label ?? profile
             self.product = product
+            self.jamfProURL = jamfProURL
         }
 
-        enum CodingKeys: String, CodingKey { case profile, scopeID, label, product }
+        enum CodingKeys: String, CodingKey { case profile, scopeID, label, product, jamfProURL }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -51,6 +59,7 @@ struct Connection: Codable, Sendable, Equatable, Identifiable {
             scopeID = try c.decodeIfPresent(String.self, forKey: .scopeID) ?? ""
             label = try c.decodeIfPresent(String.self, forKey: .label) ?? profile
             product = (try? c.decodeIfPresent(Product.self, forKey: .product)) ?? .unknown
+            jamfProURL = (try? c.decodeIfPresent(String.self, forKey: .jamfProURL)) ?? nil
         }
     }
 
