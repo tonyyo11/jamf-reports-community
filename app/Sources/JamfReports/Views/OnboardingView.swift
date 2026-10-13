@@ -588,8 +588,8 @@ struct OnboardingView: View {
     private var addProductsStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             protectProductCard
-            Text("Jamf School uses its own workspace. Run onboarding with a new workspace name "
-                + "to set one up.")
+            Text("Jamf School uses its own workspace. Add one later from the workspace menu "
+                + "in the sidebar: Add Jamf School workspace.")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)

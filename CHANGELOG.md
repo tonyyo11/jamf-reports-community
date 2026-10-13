@@ -31,8 +31,9 @@ versions in this repository map to git tags.
 ### Fixed
 
 - Connecting Jamf School from a Jamf Pro workspace no longer stops that workspace collecting. It
-  is not offered there any more: Jamf School uses its own workspace, and onboarding's Add
-  products step and Data Sources now say so. A Jamf Pro workspace that already holds a School
+  is not offered there any more: Jamf School uses its own workspace, which the sidebar's workspace
+  menu now adds (Add Jamf School workspace), and onboarding's Add products step and Data Sources
+  point there. A Jamf Pro workspace that already holds a School
   login in `school_cli.profile` collects Jamf Pro again, and Config Doctor warns that the School
   profile is not used there; set `school_cli.enabled: false` to clear it. That School login no
   longer shows up as a Jamf Pro workspace of its own. Config Doctor's note that School and Protect

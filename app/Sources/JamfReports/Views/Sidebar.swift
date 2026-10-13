@@ -259,7 +259,16 @@ struct Sidebar: View {
                 }
             }
             Divider()
-            Button("Add workspace…") { activeTab = .onboarding }
+            // The first-launch chooser's handoff: the onboarding flow built next takes it. Both
+            // set it, so a click that builds no new flow cannot leave the other path queued.
+            Button("Add workspace…") {
+                OnboardingFlow.pendingProductPath = .pro
+                activeTab = .onboarding
+            }
+            Button("Add Jamf School workspace…") {
+                OnboardingFlow.pendingProductPath = .school
+                activeTab = .onboarding
+            }
         } label: {
             HStack(spacing: 10) {
                 let activeProfile = workspace.profiles.first(where: { $0.name == workspace.profile })

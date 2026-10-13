@@ -942,8 +942,8 @@ struct SourcesView: View {
                 // Sets up a real jamf-cli connection and writes config.yaml.
                 protectControl
 
-                Text("Jamf School uses its own workspace. Run onboarding with a new workspace "
-                    + "name to set one up.")
+                Text("Jamf School uses its own workspace: choose Add Jamf School workspace in "
+                    + "the sidebar's workspace menu.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
