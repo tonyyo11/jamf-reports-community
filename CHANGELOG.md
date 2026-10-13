@@ -72,6 +72,30 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A Jamf Protect, Jamf Security Cloud or Jamf School login in jamf-cli is no longer treated as a
+  Jamf Pro workspace. The app now reads which product a profile logs in to (the `product:` key in
+  jamf-cli's config file, then its auth method, then its host) and no longer lists or collects a
+  Protect or Security Cloud login, even if an earlier version made a folder for it; the folder is
+  left alone and Config Doctor says it can be removed. A Jamf School login is set up as a Jamf
+  School workspace. If the open workspace was a Protect login, the app opens the workspace that
+  uses it.
+- A Jamf Account integration at organization level, which reaches only Jamf Account, is no
+  longer set up or collected as if it could report. Setup lists it with the reason, a collect
+  stops at one clear error line instead of failing every source, and Config Doctor fails a
+  workspace that uses one. The fix is an environment-level integration.
+- A gateway profile and an OAuth profile for the same Jamf Pro are no longer both set up and
+  collected, which split history and counted the fleet twice in consolidated reports. Setup asks
+  Jamf Pro for its address through the gateway profile, keeps that profile and leaves the OAuth
+  one out unless you tick it; if the lookup fails nothing changes. Config Doctor suggests
+  excluding the twin where both workspaces already exist. A Platform API profile can link to its
+  Jamf Pro console once the address is known.
+- A profile still pointing at the retired `apigw.jamf.com` gateway is now named as the cause in
+  Run History with the fix (use your `api.jamfcloud.com` host) and is no longer retried every
+  hour. A request sent at a scope level the endpoint does not accept is reported as a scope
+  problem with a hint.
+- The setup guides now recommend `jamf-cli platform setup` for Jamf Cloud at environment level,
+  give the re-authenticate commands with `--profile-name`, and say jamf-cli keeps credentials in
+  the keychain and caches tokens on disk.
 - The Additional Products card no longer shows Jamf Protect as CONNECTED when the jamf-cli
   profile named in `protect.profile` is no longer in jamf-cli: it reads "Profile <name> not found
   in jamf-cli" with Reconnect and Disconnect. (#271)

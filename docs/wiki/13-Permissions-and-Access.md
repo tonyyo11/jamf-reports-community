@@ -13,13 +13,20 @@ that.
 | Jamf Protect | Protect overview, alerts, computers, insights and plans | Jamf Protect console: **API Clients** | The role assigned to the API client |
 | Jamf School | School overview, devices, device groups, users, classes, apps, profiles, locations, iBeacons and DEP devices | Jamf School console: **Organization > Settings > API** | The API methods allowed for the key |
 
+Create the Jamf Account integration at the **environment** level. A tenant-level integration
+is legacy, and an organization-level one reaches only Jamf Account, so Jamf Reports will not
+set it up and a collect on one stops with a message saying so.
+
 A Platform API profile does not need a second, direct Jamf Pro connection when its
 environment includes your Jamf Pro tenant: the gateway serves the Jamf Pro API itself. This
 is [jamf-cli's own recommendation](https://github.com/Jamf-Concepts/jamf-cli/wiki#getting-started) for Jamf Cloud. The gateway is
 Jamf Cloud only, so an on-premises or GovCloud server keeps the direct connection. jamf-cli
 refuses a few dozen Jamf Pro and Classic commands on a gateway profile (device actions among
 them, exit 8); Jamf Reports runs none of them, but keep a direct profile for your own use of
-those commands.
+those commands. Jamf Reports collects one profile per fleet: when the direct profile reaches
+the same Jamf Pro as the gateway profile, setup keeps the gateway profile as the workspace
+and leaves the direct one out of collects and consolidated reports (tick it to collect it
+anyway; Config Doctor names a pair that already has two workspaces).
 Jamf Protect is a separate connection with its own credentials, added at onboarding's
 **Add products** step or later from **Data Sources**. Jamf School has its own workspace and
 credentials.
@@ -124,7 +131,7 @@ level alone.
 |---|---|---|
 | **Platform environment** (use this; jamf-cli recommends it) | Scope: Environment, with the environment ID | The Jamf Pro and Classic API sources of the environment's Jamf Pro tenant, plus Compliance Benchmarks, blueprint status and DDM status |
 | **Tenant** (legacy) | Scope: Tenant (legacy), with the tenant ID | The Jamf Pro and Classic API sources of that one tenant, plus DDM status. Jamf Account does not let a tenant-level integration read Compliance Benchmarks or blueprint status, so the app skips both on such a profile and says so in Run History and on the Compliance Benchmarks screen. |
-| **Organization** | Not offered | Nothing. This level reaches Jamf Account administration only, so the app does not offer it. A profile set up this way before 2.8.1 reports that the gateway rejected its scope level. |
+| **Organization** | Not offered | Nothing. This level reaches Jamf Account administration only, so the app does not offer it. A profile that names neither an environment nor a tenant ID is listed at setup with that reason and not selected, Config Doctor fails its workspace, and a collect stops at one `[error]` line. Create an environment-level integration instead. |
 
 ## Permissions by report area
 

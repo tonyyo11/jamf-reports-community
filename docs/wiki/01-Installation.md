@@ -46,29 +46,40 @@ brew install Jamf-Concepts/tap/jamf-cli
 Pre-built binaries are also available from the
 [jamf-cli releases](https://github.com/Jamf-Concepts/jamf-cli/releases).
 
-Authenticate against your Jamf Pro instance:
+Authenticate against your Jamf Pro instance. For Jamf Cloud, jamf-cli recommends the
+Jamf Platform API, and `jamf-cli platform setup` is its setup command:
 
 ```bash
-jamf-cli pro setup --url https://your-instance.jamfcloud.com
+jamf-cli platform setup --profile-name <your profile>
 ```
 
-Follow the prompts. `jamf-cli pro setup` can create an API client for you — choose the
-**read-only** scope when offered, since this project only reads data. Credentials are
-stored in the macOS keychain, not in shell history.
+Create the integration in Jamf Account first, at the **environment** level (tenant level is
+the legacy choice; an organization-level integration reaches only Jamf Account and cannot
+report). The setup creates a Platform Gateway profile that enables both the Pro and Platform
+API command sets. Credentials are stored in the macOS keychain, not in shell history.
+
+For an on-premises or GovCloud server, or when you have no Jamf Account integration, use a
+direct Jamf Pro profile:
+
+```bash
+jamf-cli pro setup --url https://your-instance.jamfcloud.com --profile-name <your profile>
+```
 
 On jamf-cli 1.29.0 and later, `pro setup` first asks whether to use an API client you
 already hold (the default) or to create one from a Jamf Pro account. Prefer an existing
-client: Jamf plans to remove local, SAML and LDAP administrator sign-in on cloud-hosted
-instances (estimated for the second half of 2027), and the create path depends on it.
+client with a read-only API role you made: the create path depends on local, SAML and LDAP
+administrator sign-in, which Jamf plans to remove on cloud-hosted instances (estimated for
+the second half of 2027), and only the create path offers a scope choice.
 
-If you use the Jamf Platform API, jamf-cli also offers `jamf-cli platform setup`, which
-creates a Platform Gateway profile that enables both the Pro and Platform API command
-sets. When you run multiple Jamf Pro instances, give each its own profile and select it
-with `jamf-cli -p <profile>`.
+When you run multiple Jamf Pro instances, give each its own profile and select it with
+`jamf-cli -p <profile>`. jamf-cli suggests keeping a direct (oauth2) profile beside a gateway
+profile, for the commands the gateway refuses. Jamf Reports collects one profile per fleet:
+when both reach the same Jamf Pro, setup keeps the Platform API profile and leaves the
+direct one out.
 
 ## Jamf Pro API permissions
 
-If you create the API role yourself rather than letting `jamf-cli pro setup` do it, the
+If you create the API role yourself rather than letting `jamf-cli pro setup` create it, the
 client needs read access only. [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access#permissions-by-report-area)
 lists the privileges each report area needs, both for a direct Jamf Pro connection and for a
 Jamf Platform API integration. Grant the areas you report on. Jamf's

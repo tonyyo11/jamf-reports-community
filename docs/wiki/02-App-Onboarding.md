@@ -91,11 +91,16 @@ profile has a workspace, for example after the workspace folder is emptied.
    Blueprints. A profile holds one environment; an integration scoped to several needs one
    profile per environment, with the same client ID and secret, and more environments from
    the same integration are added from **Data Sources → Connection → Add environments** after
-   setup (see [Adding more environments](#adding-more-environments-from-the-same-integration)). Keep
-   a Jamf Pro OAuth profile for the Jamf Pro and Classic commands the gateway refuses
-   (device actions among them); Jamf Reports itself does not need them. The secret is passed to `jamf-cli` over a controlling TTY and
-   cleared immediately; the app never persists it. `jamf-cli` stores the resulting token
-   in the macOS keychain. For a Platform API connection, create the integration in Jamf
+   setup (see [Adding more environments](#adding-more-environments-from-the-same-integration)).
+   jamf-cli suggests keeping a Jamf Pro OAuth profile beside the gateway profile for the
+   commands the gateway refuses (device actions among them). Jamf Reports does not run them and
+   collects one profile per fleet: when both reach the same Jamf Pro, setup keeps the Platform
+   API profile, notes the OAuth one as "same Jamf Pro as ...", and leaves it out unless you tick
+   it. The secret is passed to `jamf-cli` over a controlling TTY and cleared immediately; the
+   app never persists it. `jamf-cli` keeps the credentials in the macOS keychain and caches
+   tokens on disk. An organization-level integration is not accepted: it reaches only Jamf
+   Account, so create an environment-level one. For a Platform API connection, create the
+   integration in Jamf
    Account first — at the platform environment level, scoped to one environment, with
    read permissions only.
    [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)
@@ -191,7 +196,9 @@ whatever folder **Settings → Workspace location** points at, if you have moved
 ```
 
 Everything for one tenant is under one folder. To move a profile to another Mac, copy the
-folder and re-authenticate with `jamf-cli pro setup` for that profile. Changing the
+folder and re-authenticate that profile with `jamf-cli platform setup --profile-name <profile>`
+(a gateway profile) or `jamf-cli pro setup --url <url> --profile-name <profile>` (an OAuth
+profile). Changing the
 workspace location does **not** move existing data — copy `config.yaml` and `snapshots/`
 across yourself; Run check on the Config screen says when more history for a profile is
 sitting in the folder you left behind.
@@ -245,11 +252,14 @@ credentials…** — it re-registers the profile's jamf-cli credentials (URL, cl
 and secret) and runs the same connection check onboarding does, without leaving the app.
 The same button also appears when the connection-health probe reports an unauthorized or
 credentials-unresolved profile. As a Terminal alternative, run this for the same profile
-name:
+name. Without `--profile-name`, jamf-cli writes a profile called `default` instead of
+renewing yours:
 
 ```bash
-jamf-cli pro setup --url https://your-instance.jamfcloud.com
+jamf-cli pro setup --url https://your-instance.jamfcloud.com --profile-name <your profile>
 ```
+
+For a Platform API profile, use `jamf-cli platform setup --profile-name <your profile>`.
 
 This only writes to jamf-cli's own credential store — the app's `config.yaml` and the
 rest of the workspace are untouched, so nothing else needs to be redone.

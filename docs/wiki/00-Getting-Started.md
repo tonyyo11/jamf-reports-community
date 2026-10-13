@@ -53,9 +53,10 @@ are a manual export-CSV-then-Generate cycle.
 
 ## 3. Create a read-only API role
 
-`jamf-cli pro setup` (used in the next step) can create the API client for you, or you
-can create one yourself in Jamf Pro first (on jamf-cli 1.29 and later, supplying an
-existing client is the default). Either way, use a **read-only** role — this
+A direct Jamf Pro profile (`jamf-cli pro setup`, used in the next step) takes an API client
+you create yourself in Jamf Pro first, which jamf-cli 1.29 and later ask for by default. On
+Jamf Cloud, jamf-cli recommends a Jamf Account integration at the environment level instead
+(`jamf-cli platform setup`). Either way, use a **read-only** role — this
 project only reads data. See [Installation → Jamf Pro API permissions](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation)
 for the exact privilege table.
 
@@ -82,7 +83,8 @@ full detail on each:
 4. **Authenticate** — connect with a Jamf Account integration (Platform API, recommended
    for Jamf Cloud; pick a region and enter the environment ID) or with your Jamf Pro API
    client credentials (OAuth2, for on-prem, GovCloud or any instance). The secret is
-   never persisted by the app; `jamf-cli` stores the resulting token in the macOS keychain.
+   never persisted by the app; `jamf-cli` keeps the credentials in the macOS keychain and
+   caches tokens on disk.
 5. **Validate** — the app confirms the connection works.
 6. **CSV mapping** — optionally add a Jamf Pro CSV export for the sheets that need
    per-device export columns (Stale Devices, Security Agents, custom Extension

@@ -21,8 +21,8 @@ struct ExistingCLISetupView: View {
 
     private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-    init(profileNames: [String]) {
-        _flow = State(initialValue: ExistingCLISetupFlow(profileNames: profileNames))
+    init(profiles: [JamfCLIProfile]) {
+        _flow = State(initialValue: ExistingCLISetupFlow(profiles: profiles))
     }
 
     var body: some View {
@@ -42,6 +42,7 @@ struct ExistingCLISetupView: View {
         }
         .background(Theme.Colors.winBG)
         .sharedFolderConsent(pending: $pendingSharedRoot) { applyExistingRoot($0) }
+        .task { await flow.resolveTwins() }
     }
 
     // MARK: - Existing workspace
@@ -135,13 +136,20 @@ struct ExistingCLISetupView: View {
             VStack(alignment: .leading, spacing: 10) {
                 stepTitle(number: 1, title: "Profiles to set up")
                 ForEach(flow.profileNames, id: \.self) { name in
-                    Toggle(name, isOn: selectionBinding(name))
+                    Toggle(profileTitle(name), isOn: selectionBinding(name))
                         .toggleStyle(.checkbox)
-                        .disabled(isLocked || flow.unusable[name] != nil)
+                        .disabled(isLocked || flow.unusable[name] != nil
+                            || flow.refusals[name] != nil)
                     if let reason = flow.unusable[name] {
-                        Text("\(name) can't be used. \(reason.explanation)")
+                        profileNote("\(name) can't be used. \(reason.explanation)")
+                    }
+                    if let reason = flow.refusals[name] {
+                        profileNote(reason)
+                    }
+                    if let note = flow.twinNote(for: name) {
+                        Text(note)
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.warnSoft)
+                            .foregroundStyle(Theme.Colors.fgMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -154,6 +162,17 @@ struct ExistingCLISetupView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
         }
+    }
+
+    private func profileTitle(_ name: String) -> String {
+        flow.products[name] == .school ? "\(name) (Jamf School)" : name
+    }
+
+    private func profileNote(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(Theme.Colors.warnSoft)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Automation
@@ -366,9 +385,7 @@ struct ExistingCLISetupView: View {
     private func selectionBinding(_ name: String) -> Binding<Bool> {
         Binding(
             get: { flow.selected.contains(name) },
-            set: { on in
-                if on { flow.selected.insert(name) } else { flow.selected.remove(name) }
-            }
+            set: { flow.setSelected(name, $0) }
         )
     }
 
@@ -388,10 +405,14 @@ struct ExistingCLISetupView: View {
         guard flow.canContinue, !isFinishing else { return }
         isFinishing = true
         Task {
-            if flow.enableAutomation {
+            flow.recordLearnedURLs()
+            // A twin left unticked is excluded from all-profiles runs even without automation.
+            if flow.enableAutomation || !flow.twinsLeftOut.isEmpty {
                 UserDefaults.standard.set(
                     flow.configuredPolicy().serialize(), forKey: AutomationPolicy.storageKey
                 )
+            }
+            if flow.enableAutomation {
                 // The user just opted into automation — a ticker Login Items
                 // won't run must not be silently absorbed into "setup complete".
                 // Only the two states an operator can act on: `.unavailable` is
@@ -428,7 +449,9 @@ private extension ExistingCLISetupFlow.CollectKindStatus.Outcome {
 }
 
 #Preview {
-    ExistingCLISetupView(profileNames: ["acme-prod", "acme-dev"])
+    ExistingCLISetupView(profiles: ["acme-prod", "acme-dev"].map {
+        JamfCLIProfile(name: $0, url: "acme.jamfcloud.com", schedules: 0, status: .idle)
+    })
         .environment(WorkspaceStore(demoMode: false))
         .frame(width: 960, height: 860)
 }

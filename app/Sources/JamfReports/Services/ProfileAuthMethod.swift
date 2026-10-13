@@ -15,6 +15,9 @@ enum ProfileAuthMethod {
         let authMethod: String
         /// A Platform API profile whose integration is tenant level.
         let isTenantLevel: Bool
+        /// A Platform API profile that names neither an environment nor a tenant: it reaches
+        /// Jamf Account only, so no Jamf Pro report can come back.
+        var isOrganizationLevel = false
     }
 
     nonisolated(unsafe) private static var cache: [String: Resolved] = [:]
@@ -28,7 +31,8 @@ enum ProfileAuthMethod {
     static func resolve(
         profile: String,
         binary: URL? = ExecutableLocator.locate("jamf-cli"),
-        timeout: TimeInterval = JamfCLIProbe.defaultTimeout
+        timeout: TimeInterval = JamfCLIProbe.defaultTimeout,
+        configFile: URL? = ProfileService.defaultConfigFileURL
     ) -> Resolved? {
         cacheLock.lock()
         let cached = cache[profile]
@@ -41,13 +45,26 @@ enum ProfileAuthMethod {
         let resolved = Resolved(
             authMethod: method,
             isTenantLevel: PlatformCapabilityService.isTenantLevel(data: data, profile: profile)
-                ?? false
+                ?? false,
+            isOrganizationLevel: isOrganizationLevel(
+                data: data, profile: profile, configFile: configFile)
         )
 
         cacheLock.lock()
         cache[profile] = resolved
         cacheLock.unlock()
         return resolved
+    }
+
+    /// `config list` shows no ID for the profile, and the config file, when it holds the profile,
+    /// agrees. The file is the second look because this answer blocks the profile: a jamf-cli
+    /// that leaves the ID out of `config list` must not make every platform profile organization
+    /// level.
+    private static func isOrganizationLevel(data: Data, profile: String, configFile: URL?) -> Bool {
+        guard PlatformCapabilityService.scopeLevel(data: data, profile: profile) == .organization
+        else { return false }
+        let entry = ProfileService.readConfigFile(at: configFile)?.first { $0.name == profile }
+        return entry?.platformLevel.map { $0 == .organization } ?? true
     }
 
     /// Drops the cache. Called when profile configuration changes (and by

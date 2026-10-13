@@ -96,9 +96,28 @@ final class ExistingCLISetupFlow {
     /// jamf-cli profiles discovered at launch, in discovery order.
     let profileNames: [String]
 
+    private let profiles: [JamfCLIProfile]
+
+    /// Each profile's product, for the rows that are not Jamf Pro.
+    let products: [String: JamfCLIProduct]
+
+    /// Profiles that are never a workspace here, with the reason the screen shows. A Protect or
+    /// Security Cloud login holds no Jamf Pro data (Protect is added from the Jamf Pro workspace
+    /// that uses it), and an organization-level Platform integration reaches only Jamf Account.
+    let refusals: [String: String]
+
     /// Profiles the app can't set up, with the reason the screen shows. They are
     /// never selected or run: initializing one used to fail as "Workspace not found".
     let unusable: [String: ProfileService.UnusableReason]
+
+    /// An oauth2 profile for the same Jamf Pro instance as a platform profile, keyed by its name:
+    /// the platform profile that reaches it, learned by `resolveTwins`. The oauth2 profile stays
+    /// ticked only if the user ticks it: one fleet is one workspace.
+    private(set) var twinOf: [String: String] = [:]
+    /// The Jamf Pro URL learned for each platform profile, for its connection.
+    private(set) var learnedJamfProURLs: [String: String] = [:]
+    /// Profiles the user ticked or unticked by hand; `resolveTwins` never overrides them.
+    private var touched: Set<String> = []
 
     /// Profiles the user wants set up. Defaults to every usable one — the common
     /// case is one tenant, and excluding is the exception.
@@ -127,11 +146,31 @@ final class ExistingCLISetupFlow {
     /// Lookup used to implement last-wins without a linear scan.
     private var kindStatusIndex: [String: Int] = [:]
 
-    init(profileNames: [String]) {
+    convenience init(profileNames: [String]) {
+        self.init(profiles: profileNames.map {
+            JamfCLIProfile(name: $0, url: "", schedules: 0, status: .idle)
+        })
+    }
+
+    init(profiles: [JamfCLIProfile]) {
+        self.profiles = profiles
+        let profileNames = profiles.map(\.name)
         self.profileNames = profileNames
+        self.products = Dictionary(
+            profiles.map { ($0.name, $0.product) }, uniquingKeysWith: { first, _ in first })
+        var refusals: [String: String] = [:]
+        for profile in profiles where profile.product.isNeverAWorkspace {
+            refusals[profile.name] = "A \(profile.product.displayName) login holds no Jamf Pro "
+                + "data, so it is not a workspace. Add Jamf Protect from the Jamf Pro workspace "
+                + "that uses it."
+        }
+        for profile in profiles where profile.isOrganizationLevel {
+            refusals[profile.name] = PlatformScopeLevel.organizationLevelReason
+        }
+        self.refusals = refusals
         let unusable = ProfileService.unusableProfiles(in: profileNames)
         self.unusable = unusable
-        self.selected = Set(profileNames.filter { unusable[$0] == nil })
+        self.selected = Set(profileNames.filter { unusable[$0] == nil && refusals[$0] == nil })
         let defaults = AutomationPolicy()
         self.scanWeekday = defaults.scanWeekday
         self.reportsCadence = defaults.reportsCadence
@@ -168,6 +207,67 @@ final class ExistingCLISetupFlow {
             + "or initialize a new workspace below."
     }
 
+    // MARK: - Same Jamf Pro, two profiles
+
+    /// Ticks or unticks a profile as the user did, so `resolveTwins` leaves the choice alone.
+    func setSelected(_ name: String, _ on: Bool) {
+        touched.insert(name)
+        if on { selected.insert(name) } else { selected.remove(name) }
+    }
+
+    /// The line under an oauth2 profile that reaches the same Jamf Pro as a platform one.
+    func twinNote(for name: String) -> String? {
+        twinOf[name].map {
+            "Same Jamf Pro as \($0). Kept for commands the gateway refuses; not collected, so "
+                + "history and fleet totals count the fleet once. Tick it to collect it anyway."
+        }
+    }
+
+    /// Looks for an oauth2 profile that reaches the same Jamf Pro as each platform profile and
+    /// unticks it. `learn` asks one platform profile for its Jamf Pro URL (default: the
+    /// read-only `pro jamf-pro-server-url get` through the bounded probe, off the main actor);
+    /// a failed ask finds no twin and changes nothing.
+    func resolveTwins(
+        learn: @escaping @Sendable (String) async -> String? = { profile in
+            await Task.detached { PlatformTwin.learnJamfProURL(profile: profile) }.value
+        }
+    ) async {
+        let usable = profiles.filter { unusable[$0.name] == nil && refusals[$0.name] == nil }
+        let platforms = usable.filter { $0.authMethod.lowercased() == "platform" }
+        guard !platforms.isEmpty,
+              usable.contains(where: { $0.authMethod.lowercased() == "oauth2" }) else { return }
+        for platform in platforms {
+            guard let url = await learn(platform.name),
+                  let found = PlatformTwin.twins(
+                    ofPlatformProfile: platform, among: usable, learn: { _ in url })
+            else { continue }
+            guard !isRunning, !didComplete else { return }
+            learnedJamfProURLs[platform.name] = found.url
+            for twin in found.twins where twinOf[twin.name] == nil {
+                twinOf[twin.name] = platform.name
+                if !touched.contains(twin.name) { selected.remove(twin.name) }
+            }
+        }
+    }
+
+    /// Twins left unticked: kept out of all-profiles runs so none creates the workspace.
+    var twinsLeftOut: [String] {
+        profileNames.filter { twinOf[$0] != nil && !selected.contains($0) }
+    }
+
+    /// Keeps each learned Jamf Pro URL on its profile's connection, where one exists.
+    func recordLearnedURLs(in store: ConnectionStore = ConnectionStore()) {
+        for (profile, url) in learnedJamfProURLs.sorted(by: { $0.key < $1.key }) {
+            do {
+                try store.recordJamfProURL(profile: profile, url: url)
+            } catch {
+                let reason = error.localizedDescription
+                AppLogger.auth.warning(
+                    "could not keep a learned Jamf Pro URL: \(reason, privacy: .private)")
+            }
+        }
+    }
+
     // MARK: - Automation policy
 
     /// The policy completing the setup writes. Starts from the currently
@@ -176,6 +276,9 @@ final class ExistingCLISetupFlow {
     /// only when the user kept automation enabled.
     func configuredPolicy(basedOn base: AutomationPolicy = .current()) -> AutomationPolicy {
         var policy = base
+        for name in twinsLeftOut where !policy.excludedProfiles.contains(name) {
+            policy.excludedProfiles.append(name)
+        }
         guard enableAutomation else { return policy }
         policy.isManaged = true
         policy.scanWeekday = scanWeekday
@@ -204,12 +307,18 @@ final class ExistingCLISetupFlow {
     /// Pro). One profile's failure never blocks the others; failures carry an
     /// actionable message into the status row.
     ///
+    /// A Jamf School profile gets a Jamf School workspace: `configureSchool` records
+    /// `school_cli` in it, which is what routes its collect to Jamf School.
+    ///
     /// `initialize` / `collect` default to the real `CLIBridge` calls; tests
     /// inject spies. The collect closure receives an onLine sink — the engine's
     /// per-kind log stream — which feeds `progress` for the live UI.
     func run(
         initialize: @escaping (String) async throws -> Int32 = { profile in
             try await CLIBridge().initializeWorkspace(profile: profile, onLine: CLIBridge.noOpOnLine)
+        },
+        configureSchool: @escaping (String) throws -> Void = { profile in
+            try OnboardingFlow.writeProductBlock("school_cli", profile: profile, for: profile)
         },
         collect: @escaping (String, @escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32 = {
             profile, onLine in
@@ -244,7 +353,7 @@ final class ExistingCLISetupFlow {
         didComplete = false
         defer { isRunning = false }
 
-        for name in profileNames where selected.contains(name) && unusable[name] == nil {
+        for name in profileNames where isRunnable(name) {
             statuses[name] = .initializing
             failureStages[name] = nil
             initializedWorkspaces.remove(name)
@@ -255,6 +364,7 @@ final class ExistingCLISetupFlow {
                     fail(name, "workspace init exited \(initExit)", at: stage)
                     continue
                 }
+                if products[name] == .school { try configureSchool(name) }
                 initializedWorkspaces.insert(name)
                 stage = .collect
                 statuses[name] = .collecting
@@ -281,6 +391,11 @@ final class ExistingCLISetupFlow {
             }
         }
         didComplete = true
+    }
+
+    /// Selected, usable and not refused: the profiles a run sets up.
+    private func isRunnable(_ name: String) -> Bool {
+        selected.contains(name) && unusable[name] == nil && refusals[name] == nil
     }
 
     private func fail(_ name: String, _ reason: String, at stage: FailureStage) {

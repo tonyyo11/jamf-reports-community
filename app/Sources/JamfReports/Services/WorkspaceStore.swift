@@ -1190,14 +1190,27 @@ final class WorkspaceStore {
     private func activeProfileURL() -> String {
         if demoMode { return org.jamfURL }
         guard let active = profiles.first(where: { $0.name == profile }) else { return "" }
-        return Self.consoleServer(forProfileURL: active.url, authMethod: active.authMethod)
+        return Self.consoleServer(
+            forProfileURL: active.url, authMethod: active.authMethod,
+            learnedJamfProURL: connections.lazy.flatMap(\.members)
+                .first { $0.profile == active.name }?.jamfProURL)
     }
 
     /// The host a console link may be built from. A Platform profile (auth method `platform`, or a
     /// Platform gateway host whatever the method says) has none: `*.api.jamfcloud.com` serves
     /// APIs only, so a link there would open nothing.
-    nonisolated static func consoleServer(forProfileURL url: String, authMethod: String) -> String {
-        if authMethod.lowercased().contains("platform") { return "" }
+    /// A platform profile has the Jamf Pro URL its connection learned (`pro
+    /// jamf-pro-server-url get`), when it did.
+    nonisolated static func consoleServer(
+        forProfileURL url: String, authMethod: String, learnedJamfProURL: String? = nil
+    ) -> String {
+        if authMethod.lowercased().contains("platform") {
+            return learnedJamfProURL.flatMap { learned in
+                let host = URL(string: learned)?.host?.lowercased() ?? ""
+                return host.isEmpty || host.hasSuffix(".api.jamfcloud.com")
+                    || host.hasSuffix(".apigw.jamf.com") ? nil : learned
+            } ?? ""
+        }
         let host = url.contains("://") ? (URL(string: url)?.host ?? url) : url
         let lowered = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if lowered.hasSuffix(".api.jamfcloud.com") || lowered.hasSuffix(".apigw.jamf.com") {
@@ -1213,14 +1226,17 @@ final class WorkspaceStore {
     }
 
     /// The profile a reload keeps active: the current one while it is still
-    /// listed and usable, else `initialProfile(in:)`.
+    /// listed and usable. When it is gone because it is a Protect login (discovery no longer
+    /// lists one), the workspace whose `protect.profile` names it; else `initialProfile(in:)`.
     nonisolated static func activeProfile(
-        keeping current: String, in profiles: [JamfCLIProfile]
+        keeping current: String, in profiles: [JamfCLIProfile],
+        protectProfile: (String) -> String? = { ConnectedProducts.read(profile: $0).protectProfile }
     ) -> String? {
         if profiles.contains(where: { $0.name == current && $0.status != .error }) {
             return current
         }
-        return initialProfile(in: profiles)?.name
+        let owner = profiles.first { $0.status != .error && protectProfile($0.name) == current }
+        return (owner ?? initialProfile(in: profiles))?.name
     }
 
     private static func org(for profile: JamfCLIProfile?) -> Org {

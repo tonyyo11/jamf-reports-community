@@ -17,8 +17,9 @@ struct JamfCLIErrorEnvelope: Decodable, Equatable, Sendable {
 struct FailureCause: Codable, Equatable, Sendable {
 
     enum Kind: String, Codable, Sendable {
-        /// Rule 1: the integration's scope level or ID does not match what was sent, or no scope
-        /// ID was sent.
+        /// Rule 1: the integration's scope level or ID does not match what was sent, no scope
+        /// ID was sent, or the endpoint accepts another level than the one sent
+        /// (`INVALID_REQUEST_CONTEXT_TYPE`).
         case scopeRejected
         /// Rule 2: the gateway does not know the environment ID.
         case unknownEnvironment
@@ -38,6 +39,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// tenant lists none of them, or each one is shared by two benchmarks or starts with
         /// "-". `names` holds the configured titles. Recorded by collect, never classified.
         case noConfiguredBenchmark
+        /// The profile's URL is the retired `apigw.jamf.com` gateway, which jamf-cli refuses by
+        /// name (exit 2) before sending a request.
+        case retiredGateway
         /// Rule 8: anything else; the exit-code handling that existed before applies.
         case other
     }
@@ -61,6 +65,17 @@ struct FailureCause: Codable, Equatable, Sendable {
     /// Jamf Pro's 503 body, which `pro report update-status` prints in a warning before it
     /// exits 0 with no data.
     static let softwareUpdatePlansOffStderrMarker = "Managed Software Update Plans toggle is off"
+    /// jamf-cli's refusal of `apigw.jamf.com` (`refuseRetiredGatewayURL`, exit 2), which it makes
+    /// before any request: "<url> is the retired Jamf Platform gateway and does not serve ...".
+    static let retiredGatewayMarker = "is the retired Jamf Platform gateway"
+    static let retiredGatewayHint = "Re-run setup with the us, eu or apac api.jamfcloud.com host "
+        + "(jamf-cli platform setup --profile-name <profile>), or set url: in the profile."
+    /// The gateway's 400 when a command is sent at a scope level it does not accept; its message
+    /// names both levels.
+    static let invalidContextTypeMarker = "INVALID_REQUEST_CONTEXT_TYPE"
+    static let invalidContextTypeHint = "This command accepts a different scope level than this "
+        + "profile's integration; the error names both. An environment-level integration is the "
+        + "level Jamf recommends, and a tenant-level one cannot reach every command."
 
     /// Retrying within the hour cannot help (spec §9.5): the credential, its scope ID, its
     /// permissions, the environment's data or the config has to change first. Edge blocks stay
@@ -68,7 +83,8 @@ struct FailureCause: Codable, Equatable, Sendable {
     var isPermanent: Bool {
         switch kind {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
-             .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark: true
+             .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark,
+             .retiredGateway: true
         case .edgeBlocked, .other: false
         }
     }
@@ -79,6 +95,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .scopeRejected: "the gateway rejected the integration's scope level or ID"
         case .unknownEnvironment: "the gateway does not recognise the environment ID"
         case .edgeBlocked: "blocked at the Jamf gateway edge"
+        case .retiredGateway: "the profile uses the retired apigw.jamf.com gateway host"
         case .notServed: "not served through this connection"
         case .missingPermission:
             names.isEmpty
@@ -111,8 +128,17 @@ struct FailureCause: Codable, Equatable, Sendable {
         let cappedHint = hint.isEmpty
             ? nil
             : String(decoding: hint.utf8.prefix(hintByteLimit), as: UTF8.self)
-        func cause(_ kind: Kind, _ names: [String] = []) -> FailureCause {
-            FailureCause(kind: kind, names: names, hint: cappedHint, exitCode: exitCode)
+        func cause(
+            _ kind: Kind, _ names: [String] = [], hintOverride: String? = nil
+        ) -> FailureCause {
+            FailureCause(
+                kind: kind, names: names, hint: cappedHint ?? hintOverride, exitCode: exitCode)
+        }
+        if message.contains(retiredGatewayMarker) {
+            return cause(.retiredGateway, hintOverride: retiredGatewayHint)
+        }
+        if message.contains(invalidContextTypeMarker) {
+            return cause(.scopeRejected, hintOverride: invalidContextTypeHint)
         }
         if message.contains("OWNERSHIP_FORBIDDEN")
             || message.contains("REQUEST_CONTEXT_NOT_PROVIDED")
