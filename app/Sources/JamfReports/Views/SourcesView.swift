@@ -23,6 +23,7 @@ struct SourcesView: View {
     @State private var doctorRunning = false
     @State private var cliBridge = CLIBridge()
     @State private var showingProductConnect: ProductConnectSheet? = nil
+    @State private var connectedProducts = ConnectedProducts.none
     @State private var showingEAWalkthrough = false
     @State private var showingReauth = false
 
@@ -98,7 +99,7 @@ struct SourcesView: View {
             familiesCard
             additionalProductsCard
         }
-        .sheet(item: $showingProductConnect) { kind in
+        .sheet(item: $showingProductConnect, onDismiss: reloadConnectedProducts) { kind in
             ProductConnectSheetView(
                 product: kind,
                 profileSlug: workspace.profile
@@ -741,9 +742,11 @@ struct SourcesView: View {
             // The demo workspace, never this Mac's: no folder is read.
             csvFiles = DemoData.inboxFiles(for: workspace.profile)
             families = DemoData.snapshotFamilies(for: workspace.profile)
+            connectedProducts = .none
             resolutionError = nil
             return
         }
+        reloadConnectedProducts()
         csvFiles = CSVInboxService().list(profile: workspace.profile)
         families = SnapshotArchiveService().families(profile: workspace.profile)
 
@@ -758,6 +761,11 @@ struct SourcesView: View {
                 + "\(error.localizedDescription). Check the profile name and that "
                 + "\(rootPath) exists and is writable."
         }
+    }
+
+    private func reloadConnectedProducts() {
+        connectedProducts = workspace.demoMode
+            ? .none : ConnectedProducts.read(profile: workspace.profile)
     }
 
     private func clearPendingFile() {
@@ -943,30 +951,47 @@ struct SourcesView: View {
 
                 // Both set up a real jamf-cli connection and write config.yaml.
                 HStack(spacing: 10) {
-                    PNPButton(
-                        title: "Add Jamf Protect",
-                        icon: "shield.lefthalf.filled",
-                        size: .sm
-                    ) {
-                        guard !workspace.demoMode else { return }
-                        showingProductConnect = .protect
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-                    PNPButton(
-                        title: "Add Jamf School",
-                        icon: "graduationcap.fill",
-                        size: .sm
-                    ) {
-                        guard !workspace.demoMode else { return }
-                        showingProductConnect = .school
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                    productControl(
+                        .protect, title: "Jamf Protect", icon: "shield.lefthalf.filled",
+                        connectedProfile: connectedProducts.protectProfile)
+                    productControl(
+                        .school, title: "Jamf School", icon: "graduationcap.fill",
+                        connectedProfile: connectedProducts.schoolProfile)
                 }
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// "Add <product>" until config.yaml records the connection, then CONNECTED with the
+    /// jamf-cli profile it uses and a Reconnect action (same sheet, new credentials).
+    @ViewBuilder
+    private func productControl(
+        _ kind: ProductConnectSheet, title: String, icon: String, connectedProfile: String?
+    ) -> some View {
+        let connect = {
+            guard !workspace.demoMode else { return }
+            showingProductConnect = kind
+        }
+        if let connectedProfile {
+            HStack(spacing: 8) {
+                Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+                Text("\(title) · \(connectedProfile)")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                PNPButton(
+                    title: "Reconnect", icon: "arrow.triangle.2.circlepath", size: .sm, action: connect
+                )
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            }
+        } else {
+            PNPButton(title: "Add \(title)", icon: icon, size: .sm, action: connect)
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+        }
     }
 
     private func cacheDates(for cacheName: String, dataDir: URL, root: URL) -> [Date] {

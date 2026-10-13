@@ -186,7 +186,7 @@ enum ProfileService {
     /// local `~/Jamf-Reports/<profile>/config.yaml` workspaces. Returns sorted by
     /// default profile first, then by name. In demo mode, the caller falls back
     /// to `DemoData.cliProfiles`.
-    static func discoverLocal() -> [JamfCLIProfile] {
+    static func discoverLocal(keeping active: Set<String> = []) -> [JamfCLIProfile] {
         let scheduleCounts = Dictionary(
             grouping: ScheduleStore().load().filter { !$0.allProfiles }, by: \.profile
         ).mapValues(\.count)
@@ -204,7 +204,39 @@ enum ProfileService {
             )
         }
         profiles.append(contentsOf: workspaceProfiles)
-        return profiles.sorted(by: profileSort)
+        return droppingPairedProtectProfiles(profiles.sorted(by: profileSort), keeping: active)
+    }
+
+    /// Drops a jamf-cli profile that only serves as another workspace's Protect connection.
+    /// Connecting Protect creates a second jamf-cli profile and names it in the workspace's
+    /// `protect.profile`; it has no workspace of its own, so listing it as one offers an empty
+    /// workspace and makes `--all-profiles` runs collect Jamf Pro data against a Protect login.
+    /// A profile with its own `config.yaml` stays, as does any in `keeping` (the active one).
+    /// Jamf School is not filtered: `school_cli` turns the workspace that records it into the
+    /// School workspace, so its profile is a workspace of its own.
+    static func droppingPairedProtectProfiles(
+        _ profiles: [JamfCLIProfile],
+        under root: URL = workspacesRoot(),
+        keeping active: Set<String> = []
+    ) -> [JamfCLIProfile] {
+        func configURL(_ name: String) -> URL {
+            root.appendingPathComponent(ProfileName.pathComponent(name), isDirectory: true)
+                .appendingPathComponent("config.yaml")
+        }
+        func hasWorkspace(_ name: String) -> Bool {
+            FileManager.default.fileExists(atPath: configURL(name).path)
+        }
+        var paired = Set<String>()
+        for profile in profiles where hasWorkspace(profile.name) {
+            if let name = ConnectedProducts.read(configURL: configURL(profile.name)).protectProfile,
+               name != profile.name {
+                paired.insert(name)
+            }
+        }
+        return profiles.filter { profile in
+            !paired.contains(profile.name) || active.contains(profile.name)
+                || hasWorkspace(profile.name)
+        }
     }
 
     /// Profiles of the workspace folders under `root` (holding a `config.yaml`) that no

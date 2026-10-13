@@ -133,6 +133,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Once Jamf Protect or Jamf School is connected, Data Sources shows it as connected with its
+  profile name and a Reconnect button instead of "Add" again. The jamf-cli profile Protect creates
+  is no longer listed as a workspace in the sidebar, in schedules or in all-profiles runs, unless
+  it has a workspace of its own (#271).
 - The CSV Inbox on Sources no longer shows every file as Pending for good. A scheduled
   csv-assisted run now marks the CSV it built a report from as consumed (the file stays in place,
   so the next run can reuse it), and each file's menu has an Archive action that moves it, with
