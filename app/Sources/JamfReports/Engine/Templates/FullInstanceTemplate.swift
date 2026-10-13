@@ -109,6 +109,8 @@ struct FullInstanceTemplate: ReportTemplate {
             .buildingBreakdown,
             .departmentBreakdown,
             .orgInfo,
+            // Mobile
+            .mobileFleet,
             .auditAppendix,
         ]
     }

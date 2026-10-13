@@ -31,6 +31,9 @@ extension HtmlReport {
         /// False when two summaries measured the figure differently, so a difference between
         /// them would be the definition changing, not the fleet.
         let comparable: (DailySummary, DailySummary) -> Bool
+        /// True for the figure the daily summary counts with the Macs whose Jamf binary is
+        /// missing in it (#274), so the tile says how many that is.
+        var countsBinaryMissing = false
     }
 
     private func figureSpecs(current: DailySummary) -> [FigureSpec] {
@@ -51,7 +54,8 @@ extension HtmlReport {
                        read: { $0.osCurrentPct }, format: percent, comparable: always),
             FigureSpec(label: "Stale Macs (>\(staleDays) days)", unit: "",
                        polarity: .lowerIsBetter, read: { $0.staleCount.map(Double.init) },
-                       format: { String(format: "%.0f", $0) }, comparable: always),
+                       format: { String(format: "%.0f", $0) }, comparable: always,
+                       countsBinaryMissing: true),
             FigureSpec(label: complianceLabel(isProxy: current.complianceIsProxy), unit: "%",
                        polarity: .higherIsBetter, read: { $0.compliancePct }, format: percent,
                        comparable: { $0.complianceIsProxy == $1.complianceIsProxy }),
@@ -83,7 +87,9 @@ extension HtmlReport {
                 missing.append(spec.label)
                 continue
             }
-            tiles.append(glanceTile(spec, value: value, current: current, prior: prior))
+            tiles.append(glanceTile(
+                spec, value: value, current: current, prior: prior,
+                note: spec.countsBinaryMissing ? Self.binaryMissingNote(inputs) : nil))
         }
         let f = HtmlSectionFormatters.self
         let caption = prior.map { "As of \(current.date). Changes compare with \($0.date)." }
@@ -103,8 +109,17 @@ extension HtmlReport {
             asOf: current.date, since: prior?.date, missing: missing)
     }
 
+    /// "includes 2 without the Jamf binary, listed apart": the daily summary's stale count
+    /// still holds the Macs the intervention list shows under their own reason. Nil when the
+    /// computers snapshot names none, or is absent.
+    static func binaryMissingNote(_ inputs: Inputs) -> String? {
+        let count = inputs.binaryMissingCount
+        return count > 0 ? "includes \(count) without the Jamf binary, listed apart" : nil
+    }
+
     private func glanceTile(
-        _ spec: FigureSpec, value: Double, current: DailySummary, prior: DailySummary?
+        _ spec: FigureSpec, value: Double, current: DailySummary, prior: DailySummary?,
+        note: String?
     ) -> String {
         let f = HtmlSectionFormatters.self
         var changeClass = "none"
@@ -134,11 +149,13 @@ extension HtmlReport {
             }
         }
         let wasHTML = was.isEmpty ? "" : "<span class=\"glance-was\">\(f.escapeHTML(was))</span>"
+        let noteHTML = note.map { "\n      <div class=\"glance-sub\">\(f.escapeHTML($0))</div>" }
+            ?? ""
         return """
             <div class="glance-tile">
               <div class="glance-label">\(f.escapeHTMLBreakable(spec.label))</div>
               <div class="glance-value">\(f.escapeHTML(spec.format(value)))</div>
-              <div class="glance-change \(changeClass)">\(f.escapeHTML(changeText))\(wasHTML)</div>
+              <div class="glance-change \(changeClass)">\(f.escapeHTML(changeText))\(wasHTML)</div>\(noteHTML)
             </div>
         """
     }
@@ -185,7 +202,11 @@ extension HtmlReport {
         // computers snapshot stands in when the summary has no count.
         let stale = latest?.staleCount ?? (inputs.computers.isEmpty ? 0 : inputs.staleMacCount)
         if stale > 0 {
-            add(.interventionList, .devices, Self.staleSentence(stale, rule: rule))
+            // The summary's count still holds the Macs without the binary (#274), which the
+            // table lists under their own reason; the sentence says so.
+            let missing = latest?.staleCount != nil ? inputs.binaryMissingCount : 0
+            add(.interventionList, .devices,
+                Self.staleSentence(stale, rule: rule, includingBinaryMissing: missing))
         }
         for gap in ContactGap.allCases {
             let count = inputs.contactGapCounts[gap] ?? 0
@@ -238,10 +259,18 @@ extension HtmlReport {
 
     /// "3 Macs have not checked in for more than 30 days." On the default basis, the check-in
     /// alone; otherwise the dates the rule counts.
-    static func staleSentence(_ count: Int, rule: StaleRule) -> String {
+    /// `includingBinaryMissing` is how many of them lack the Jamf binary (the count comes
+    /// from the daily summary, which keeps them in); it adds the clause that ties the line to
+    /// the table, which lists those Macs apart.
+    static func staleSentence(
+        _ count: Int, rule: StaleRule, includingBinaryMissing missing: Int = 0
+    ) -> String {
         let mac = count == 1 ? "1 Mac has" : "\(count) Macs have"
-        if rule.usesDefaultBasis { return "\(mac) not checked in for more than \(rule.days) days." }
-        return "\(mac) gone more than \(rule.days) days without a \(rule.basisPhrase)."
+        var text = rule.usesDefaultBasis
+            ? "\(mac) not checked in for more than \(rule.days) days"
+            : "\(mac) gone more than \(rule.days) days without a \(rule.basisPhrase)"
+        if missing > 0 { text += " (includes \(missing) without the Jamf binary, listed apart)" }
+        return text + "."
     }
 
     /// "2 Macs are reached by MDM, but their Jamf binary has not checked in for more than 14

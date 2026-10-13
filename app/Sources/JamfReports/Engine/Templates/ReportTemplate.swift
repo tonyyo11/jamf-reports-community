@@ -100,6 +100,9 @@ enum SectionID: String, Sendable, CaseIterable {
     case purchaseCohorts = "purchase_cohorts"
     case buildingBreakdown = "building_breakdown"
     case departmentBreakdown = "department_breakdown"
+    /// iPad, iPhone and Apple TV counts, management and posture, and OS versions, from
+    /// `mobile-devices-list`; no per-device table.
+    case mobileFleet     = "mobile_fleet"
     // AI executive narrative (F3) — renders only when a narrative was passed
     // into the engine (GUI-generate only); omitted entirely otherwise.
     case aiNarrative     = "ai_narrative"

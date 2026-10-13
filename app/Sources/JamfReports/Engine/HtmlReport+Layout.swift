@@ -48,6 +48,7 @@ extension SectionID {
         case .purchaseCohorts: "Purchase cohorts"
         case .buildingBreakdown: "Buildings"
         case .departmentBreakdown: "Departments"
+        case .mobileFleet: "Mobile devices"
         case .orgInfo: "Catalog overview"
         }
     }
@@ -57,7 +58,7 @@ extension SectionID {
 /// whose summary carries the group's name and its headline numbers; the sections a template
 /// lists decide which groups a report has.
 enum HtmlDetailGroup: String, CaseIterable {
-    case security, patching, devices, policies, trends, failures, breakdowns
+    case security, patching, devices, policies, trends, failures, breakdowns, mobile
 
     var title: String {
         switch self {
@@ -68,6 +69,7 @@ enum HtmlDetailGroup: String, CaseIterable {
         case .trends: "Trends"
         case .failures: "Recent failures"
         case .breakdowns: "Breakdowns"
+        case .mobile: "Mobile devices"
         }
     }
 
@@ -83,6 +85,7 @@ enum HtmlDetailGroup: String, CaseIterable {
         case .trends: [.timeline]
         case .failures: [.recentFailures]
         case .breakdowns: [.purchaseCohorts, .buildingBreakdown, .departmentBreakdown, .orgInfo]
+        case .mobile: [.mobileFleet]
         }
     }
 
@@ -267,6 +270,7 @@ extension HtmlReport {
         case .departmentBreakdown:
             return buildDepartmentBreakdown(computersInventory: inputs.computers)
         case .orgInfo: return buildCatalogSection(counts: inputs.catalogCounts)
+        case .mobileFleet: return buildMobileFleet(inputs.mobile)
         case .aiNarrative, .atAGlance, .needsAttention, .jamfDashboard, .auditAppendix:
             return .omitted("drawn outside the detail groups")
         }
@@ -336,6 +340,8 @@ extension HtmlReport {
                 + "\(f.plural(inputs.updateFailures.count, "update failure"))")
         case .breakdowns:
             parts = group.members.filter { shown.contains($0) }.map { $0.title.lowercased() }
+        case .mobile:
+            if let mobile = inputs.mobile { parts = mobileHeadline(mobile) }
         }
         return parts.joined(separator: " · ")
     }

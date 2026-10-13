@@ -41,6 +41,7 @@ struct AssetTemplate: ReportTemplate {
             .departmentBreakdown,
             .osAdoptionChart,
             .orgInfo,
+            .mobileFleet,
             .auditAppendix,
         ]
     }
