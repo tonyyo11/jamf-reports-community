@@ -300,6 +300,22 @@ struct SecurityPostureView: View {
                                    notReported: snapshot.fleetCounts.p1NotReported),
                                tone: .warn)
                 }
+                openDevicesRow
+            }
+        }
+    }
+
+    /// Takes the reader from the P0 and P1 counts to the Macs with a security gap.
+    private var openDevicesRow: some View {
+        HStack {
+            Text("Open Devices to see which Macs have a security gap.")
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+            Spacer()
+            PNPButton(title: "Open Devices", icon: Tab.devices.sfSymbol, size: .sm) {
+                NotificationCenter.default.post(
+                    name: .navigateToTab, object: nil,
+                    userInfo: DevicesView.DeviceFilter.security.navigationUserInfo())
             }
         }
     }

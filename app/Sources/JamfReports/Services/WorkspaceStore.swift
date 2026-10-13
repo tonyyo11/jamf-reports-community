@@ -74,6 +74,10 @@ final class WorkspaceStore {
     private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
+    /// A Devices filter another screen asked for (`DevicesView.DeviceFilter` raw value),
+    /// held until Devices appears and applies it, since the view does not exist when the
+    /// navigation is posted.
+    var pendingDevicesFilter: String? = nil
     /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
     /// which any screen sets and clears for its own work, so another screen finishing cannot
     /// wipe the line a collect still owns.

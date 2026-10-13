@@ -139,6 +139,8 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToTab)) { note in
             if let raw = note.userInfo?["tab"] as? String, let newTab = Tab(rawValue: raw) {
+                workspace.pendingDevicesFilter = DevicesView.DeviceFilter.pending(
+                    from: note.userInfo, destination: newTab)
                 tab = newTab
             }
         }

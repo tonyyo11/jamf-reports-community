@@ -47,7 +47,7 @@ struct DevicesView: View {
         workspace.demoMode ? DemoData.deviceSnapshot : snapshot
     }
 
-    private enum DeviceFilter: String, CaseIterable, Identifiable {
+    enum DeviceFilter: String, CaseIterable, Identifiable {
         case all, stale, contactGap, patch, security, priorityAction
         var id: String { rawValue }
 
@@ -71,6 +71,26 @@ struct DevicesView: View {
             case .security:       "lock.shield"
             case .priorityAction: "exclamationmark.triangle.fill"
             }
+        }
+
+        /// The `.navigateToTab` userInfo key that carries a filter's raw value.
+        static let userInfoKey = "devicesFilter"
+
+        /// The post that opens Devices with this filter applied.
+        func navigationUserInfo() -> [String: String] {
+            ["tab": Tab.devices.rawValue, Self.userInfoKey: rawValue]
+        }
+
+        /// The filter a navigation asks Devices to open with: only a post to Devices carries
+        /// one, so a request meant for another tab cannot wait for a later visit.
+        static func pending(from userInfo: [AnyHashable: Any]?, destination: Tab) -> String? {
+            guard destination == .devices else { return nil }
+            return userInfo?[userInfoKey] as? String
+        }
+
+        init?(deepLink raw: String?) {
+            guard let raw, let filter = Self(rawValue: raw) else { return nil }
+            self = filter
         }
     }
 
@@ -124,6 +144,14 @@ struct DevicesView: View {
                 return priorityRisk(for: device).level >= .high
             }
         }
+    }
+
+    /// Applies the filter another screen asked for (`DeviceFilter.pending`) once, on appear or
+    /// when a post arrives while Devices is already showing.
+    private func applyPendingFilter() {
+        guard let raw = workspace.pendingDevicesFilter else { return }
+        workspace.pendingDevicesFilter = nil
+        if let requested = DeviceFilter(deepLink: raw) { filter = requested }
     }
 
     /// The one rating of a Mac, from `RiskScoringService`: the Risk pill, the detail panel,
@@ -229,6 +257,7 @@ struct DevicesView: View {
             let configured = Int(workspace.configState.staleDeviceDays) ?? 30
             staleDays = min(max(configured, AppConstants.staleDaysMin), AppConstants.staleDaysMax)
         }
+        .onChange(of: workspace.pendingDevicesFilter, initial: true) { applyPendingFilter() }
         .task(id: "\(workspace.profile)-\(workspace.demoMode)") {
             await reload()
         }

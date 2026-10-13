@@ -236,6 +236,11 @@ versions in this repository map to git tags.
   hours. A sign-in check that times out logs a warning and the command carries on. A backup that
   times out fails, is logged with its limit, and leaves no folder behind for the Backups screen
   to list.
+- The HTML report's "Needs attention" links now land on the Macs they count. The Macs list also
+  holds the Macs MDM reaches whose Jamf binary or inventory has fallen behind, with their Last
+  Contact and the kind of gap, and the security controls block lists the Macs behind the P0 count
+  (and says how many of those gaps the device rows name). The Security Posture screen's Action
+  Items card has an Open Devices button that opens Devices on the security-gap filter. (#276)
 
 ### Dependencies
 
