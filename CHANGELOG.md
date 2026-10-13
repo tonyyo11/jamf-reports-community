@@ -30,6 +30,13 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Connecting Jamf School from a Jamf Pro workspace no longer stops that workspace collecting. It
+  is not offered there any more: Jamf School uses its own workspace, and onboarding's Add
+  products step and Data Sources now say so. A Jamf Pro workspace that already holds a School
+  login in `school_cli.profile` collects Jamf Pro again, and Config Doctor warns that the School
+  profile is not used there; set `school_cli.enabled: false` to clear it. That School login no
+  longer shows up as a Jamf Pro workspace of its own. Config Doctor's note that School and Protect
+  are both on now appears only when School is the workspace's own product. (#278)
 - A Mac that enrolled through Automated Device Enrollment but never received the Jamf binary (the
   "DEP - <serial>" records) is no longer counted as stale. Jamf lists it as not managed and it has
   never checked in, so Devices, Offline Outreach and the HTML report now show it as "Not managed:

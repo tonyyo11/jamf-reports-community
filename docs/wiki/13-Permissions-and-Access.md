@@ -15,8 +15,9 @@ that.
 
 A Platform API profile does not need a second, direct Jamf Pro connection when its
 environment includes your Jamf Pro tenant: the gateway serves the Jamf Pro API itself.
-Jamf Protect and Jamf School are always separate connections with their own credentials,
-added at onboarding's **Add products** step or later from **Data Sources**.
+Jamf Protect is a separate connection with its own credentials, added at onboarding's
+**Add products** step or later from **Data Sources**. Jamf School has its own workspace and
+credentials.
 
 ## Rules for every connection
 
@@ -161,8 +162,7 @@ Clients**, with the **Read Only** role or a custom role; jamf-cli's setup guide 
 **Jamf School.** Generate an API key at **Organization > Settings > API**, and find the
 Network ID at **Devices > Enroll Device(s)**. Each School API key is limited to the API
 methods chosen for it: allow only what the School data sources above need, and nothing that
-changes data. Connect it from **Connect Jamf School** on the Welcome screen, from **Add
-products**, or from **Data Sources**.
+changes data. Connect it from **Connect Jamf School** on the Welcome screen.
 
 ## Reading a permission error
 

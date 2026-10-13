@@ -14,23 +14,24 @@ extension ConfigDoctorService {
         let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot)
         let raw = url.flatMap { try? ConfigLoader.readText(at: $0) }
             .flatMap { try? ConfigLoader.rawMapping(fromYAML: $0) } ?? [:]
-        return valueRows(config, raw: raw, workspace: url?.deletingLastPathComponent())
+        return valueRows(
+            config, raw: raw, workspace: url?.deletingLastPathComponent(), profile: profile)
     }
 
     static func valueRows(
-        _ config: ReportConfig, raw: [String: Any], workspace: URL? = nil
+        _ config: ReportConfig, raw: [String: Any], workspace: URL? = nil, profile: String
     ) -> [DoctorRow] {
         var rows = notifyValueRows(config.notify)
         rows += retentionValueRows(config.retention, workspace: workspace)
         rows += sharedWorkspaceValueRows(config.sharedWorkspace)
         rows += limitValueRows(config)
         rows += colourValueRows(config)
-        rows += sheetValueRows(config)
+        rows += sheetValueRows(config, profile: profile)
         rows += exceptionValueRows(config)
         rows += thresholdValueRows(config)
         rows += customEAValueRows(config)
         rows += alertValueRows(config.alerts, raw: raw)
-        rows += productValueRows(config)
+        rows += productValueRows(config, profile: profile)
         return rows
     }
 
@@ -185,10 +186,10 @@ extension ConfigDoctorService {
 
     // MARK: - Values the app ignored
 
-    private static func sheetValueRows(_ config: ReportConfig) -> [DoctorRow] {
+    private static func sheetValueRows(_ config: ReportConfig, profile: String) -> [DoctorRow] {
         guard let sheets = config.sheets else { return [] }
         let lists = [("only", sheets.only), ("skip", sheets.skip), ("order", sheets.order)]
-        let tabs = ProfileProductType.detect(from: config).type == .jamfSchool
+        let tabs = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
             ? schoolSheetNames
             : SheetID.allCases.map(\.rawValue) + csvSheetNames + [ReportEngine.chartsSheetName]
                 + (config.customEas ?? []).map(\.name)
@@ -350,10 +351,18 @@ extension ConfigDoctorService {
         return rows
     }
 
-    private static func productValueRows(_ config: ReportConfig) -> [DoctorRow] {
-        guard config.schoolCli?.isEnabled == true, config.protect?.isEnabled == true else {
-            return []
+    private static func productValueRows(_ config: ReportConfig, profile: String) -> [DoctorRow] {
+        guard let school = config.schoolCli, school.isEnabled else { return [] }
+        if school.isForeign(toWorkspace: profile) {
+            return [valueRow(
+                "school_cli.profile",
+                "school_cli.profile names \(shown(school.resolvedProfile)), not this workspace's "
+                    + "profile. The app collects Jamf Pro for this workspace and does not use that "
+                    + "Jamf School profile here. Jamf School needs its own workspace.",
+                "Set school_cli.enabled to false here, and add Jamf School as a separate "
+                    + "workspace.")]
         }
+        guard config.protect?.isEnabled == true else { return [] }
         return [valueRow(
             "school_cli.enabled",
             "school_cli.enabled and protect.enabled are both true. The app collects Jamf School "

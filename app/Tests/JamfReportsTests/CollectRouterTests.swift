@@ -53,21 +53,49 @@ final class CollectRouterTests: XCTestCase {
 
     /// A nil config (load failure) must degrade to .jamfPro with no Protect.
     func test_detect_nilConfig_returnsPro() {
-        let result = ProfileProductType.detect(from: nil)
+        let result = ProfileProductType.detect(from: nil, profile: "ws")
         XCTAssertEqual(result.type, .jamfPro)
         XCTAssertFalse(result.runsProtect)
     }
 
-    /// school_cli.enabled == true → .jamfSchool, no Protect.
+    /// school_cli.enabled == true with the workspace's own profile → .jamfSchool, no Protect.
     func test_detect_schoolEnabled_returnsSchool() throws {
         let config = try ConfigLoader.loadFromString("""
         school_cli:
           enabled: true
-          profile: school
+          profile: ws
         """)
-        let result = ProfileProductType.detect(from: config)
+        let result = ProfileProductType.detect(from: config, profile: "ws")
         XCTAssertEqual(result.type, .jamfSchool)
         XCTAssertFalse(result.runsProtect, "School profiles never run Protect")
+    }
+
+    /// A blank or absent school_cli.profile means the workspace's own profile → .jamfSchool.
+    func test_detect_schoolEnabledBlankProfile_returnsSchool() throws {
+        for yaml in ["school_cli:\n  enabled: true\n",
+                     "school_cli:\n  enabled: true\n  profile: \"  \"\n"] {
+            let config = try ConfigLoader.loadFromString(yaml)
+            XCTAssertEqual(ProfileProductType.detect(from: config, profile: "ws").type,
+                           .jamfSchool, yaml)
+        }
+    }
+
+    /// A School login recorded in a Jamf Pro workspace (another jamf-cli profile) is not used:
+    /// the workspace is Jamf Pro, with Protect when enabled. A case variant is another profile.
+    func test_detect_schoolForeignProfile_returnsPro() throws {
+        for name in ["school", "WS"] {
+            let config = try ConfigLoader.loadFromString("""
+            school_cli:
+              enabled: true
+              profile: \(name)
+            protect:
+              enabled: true
+              profile: protect
+            """)
+            let result = ProfileProductType.detect(from: config, profile: "ws")
+            XCTAssertEqual(result.type, .jamfPro, name)
+            XCTAssertTrue(result.runsProtect, name)
+        }
     }
 
     /// school_cli.enabled == false → .jamfPro (disabled School key is not enough).
@@ -77,14 +105,14 @@ final class CollectRouterTests: XCTestCase {
           enabled: false
           profile: school
         """)
-        let result = ProfileProductType.detect(from: config)
+        let result = ProfileProductType.detect(from: config, profile: "ws")
         XCTAssertEqual(result.type, .jamfPro)
     }
 
     /// Absent school_cli → .jamfPro.
     func test_detect_noSchoolKey_returnsPro() throws {
         let config = try ConfigLoader.loadFromString("jamf_cli:\n  data_dir: data\n")
-        let result = ProfileProductType.detect(from: config)
+        let result = ProfileProductType.detect(from: config, profile: "ws")
         XCTAssertEqual(result.type, .jamfPro)
     }
 
@@ -95,7 +123,7 @@ final class CollectRouterTests: XCTestCase {
           enabled: true
           profile: protect-profile
         """)
-        let result = ProfileProductType.detect(from: config)
+        let result = ProfileProductType.detect(from: config, profile: "ws")
         XCTAssertEqual(result.type, .jamfPro)
         XCTAssertTrue(result.runsProtect)
     }
@@ -103,7 +131,7 @@ final class CollectRouterTests: XCTestCase {
     /// Jamf Pro without protect key → .jamfPro, runsProtect == false.
     func test_detect_proNoProtect_returnsProNoProtect() throws {
         let config = try ConfigLoader.loadFromString("jamf_cli:\n  data_dir: data\n")
-        let result = ProfileProductType.detect(from: config)
+        let result = ProfileProductType.detect(from: config, profile: "ws")
         XCTAssertEqual(result.type, .jamfPro)
         XCTAssertFalse(result.runsProtect)
     }
@@ -113,12 +141,12 @@ final class CollectRouterTests: XCTestCase {
         let config = try ConfigLoader.loadFromString("""
         school_cli:
           enabled: true
-          profile: school
+          profile: ws
         protect:
           enabled: true
           profile: protect
         """)
-        let result = ProfileProductType.detect(from: config)
+        let result = ProfileProductType.detect(from: config, profile: "ws")
         XCTAssertEqual(result.type, .jamfSchool)
         XCTAssertFalse(result.runsProtect, "School profiles never augment with Protect")
     }
@@ -150,7 +178,7 @@ final class CollectRouterTests: XCTestCase {
         let config = try ConfigLoader.loadFromString("""
         school_cli:
           enabled: true
-          profile: school
+          profile: testschool
         """)
         let spy = RouterSpy()
 
@@ -167,6 +195,34 @@ final class CollectRouterTests: XCTestCase {
         XCTAssertEqual(spy.schoolCallCount, 1, "School collect must be called exactly once")
         XCTAssertEqual(spy.proCallCount, 0, "Pro collect must not be called for a School profile")
         XCTAssertEqual(spy.protectCallCount, 0, "Protect collect must not be called for a School profile")
+    }
+
+    /// A Jamf Pro workspace holding a foreign school_cli.profile (written by earlier builds)
+    /// collects Jamf Pro again, and Protect when enabled; School collect is never called.
+    func test_router_foreignSchoolProfile_collectsProNotSchool() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("router-foreign-school-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = try ConfigLoader.loadFromString("""
+        school_cli:
+          enabled: true
+          profile: school
+        """)
+        let spy = RouterSpy()
+
+        try await CollectRouter.run(
+            profile: "testpro",
+            config: config,
+            workspacePaths: WorkspacePaths.self,
+            proCollect: spy.proCollect,
+            schoolCollect: spy.schoolCollect,
+            protectCollect: spy.protectCollect,
+            onLine: { _ in }
+        )
+
+        XCTAssertEqual(spy.proCallCount, 1, "Pro collect must run for the Pro workspace")
+        XCTAssertEqual(spy.schoolCallCount, 0, "a foreign School login must not route to School")
     }
 
     /// For a Pro profile with protect.enabled, proCollect then protectCollect are both called.

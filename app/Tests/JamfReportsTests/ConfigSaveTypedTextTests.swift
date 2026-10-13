@@ -284,7 +284,8 @@ final class ConfigSaveTypedTextTests: XCTestCase {
         XCTAssertEqual(config.notify?.isEnabled, true)
         XCTAssertEqual(config.notify?.isUsable, false)
         let rows = ConfigDoctorService.valueRows(
-            config, raw: try ConfigLoader.rawMapping(fromYAML: String(contentsOf: restored)))
+            config, raw: try ConfigLoader.rawMapping(fromYAML: String(contentsOf: restored)),
+            profile: "ws")
         XCTAssertTrue(rows.contains { $0.id.contains("notify.url") }, "\(rows.map(\.id))")
     }
 

@@ -909,7 +909,8 @@ struct ProtectConfig: Decodable, Sendable {
 /// Configuration for Jamf School integration.
 /// School uses API-key auth (no bearer token), managed by jamf-cli via a named `--profile`.
 /// When `enabled` is false (or absent), all school commands are skipped and the profile
-/// is treated as Jamf Pro for collect routing. Written by `OnboardingFlow.writeSchoolConfig`.
+/// is treated as Jamf Pro for collect routing. Written by `OnboardingFlow.writeSchoolConfig`
+/// on the Jamf School onboarding path, where `profile` is the workspace's own profile.
 struct SchoolCLIConfig: Decodable, Sendable {
     var enabled: Bool?
     var profile: String?
@@ -920,6 +921,18 @@ struct SchoolCLIConfig: Decodable, Sendable {
 
     var isEnabled: Bool { enabled ?? false }
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
+
+    /// School is this workspace's product: enabled, and the profile is blank or the
+    /// workspace's own.
+    func isPrimary(forWorkspace workspace: String) -> Bool {
+        isEnabled && (resolvedProfile.isEmpty || resolvedProfile == workspace)
+    }
+
+    /// Enabled, but naming a jamf-cli profile other than the workspace's own: a School login
+    /// recorded in a Jamf Pro workspace, which the app does not use there.
+    func isForeign(toWorkspace workspace: String) -> Bool {
+        isEnabled && !isPrimary(forWorkspace: workspace)
+    }
 }
 
 // MARK: - notify (opt-in webhook digest)

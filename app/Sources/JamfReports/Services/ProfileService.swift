@@ -204,17 +204,17 @@ enum ProfileService {
             )
         }
         profiles.append(contentsOf: workspaceProfiles)
-        return droppingPairedProtectProfiles(profiles.sorted(by: profileSort), keeping: active)
+        return droppingPairedProductProfiles(profiles.sorted(by: profileSort), keeping: active)
     }
 
-    /// Drops a jamf-cli profile that only serves as another workspace's Protect connection.
-    /// Connecting Protect creates a second jamf-cli profile and names it in the workspace's
-    /// `protect.profile`; it has no workspace of its own, so listing it as one offers an empty
-    /// workspace and makes `--all-profiles` runs collect Jamf Pro data against a Protect login.
-    /// A profile with its own `config.yaml` stays, as does any in `keeping` (the active one).
-    /// Jamf School is not filtered: `school_cli` turns the workspace that records it into the
-    /// School workspace, so its profile is a workspace of its own.
-    static func droppingPairedProtectProfiles(
+    /// Drops a jamf-cli profile that only serves as another workspace's Protect connection or
+    /// foreign School login. Connecting Protect creates a second jamf-cli profile and names it
+    /// in the workspace's `protect.profile`; earlier builds did the same for Jamf School in
+    /// `school_cli.profile`. Neither has a workspace of its own, so listing it as one offers an
+    /// empty workspace and makes `--all-profiles` runs collect Jamf Pro data against a Protect
+    /// or School login. A profile with its own `config.yaml` stays, as does any in `keeping`
+    /// (the active one).
+    static func droppingPairedProductProfiles(
         _ profiles: [JamfCLIProfile],
         under root: URL = workspacesRoot(),
         keeping active: Set<String> = []
@@ -228,8 +228,10 @@ enum ProfileService {
         }
         var paired = Set<String>()
         for profile in profiles where hasWorkspace(profile.name) {
-            if let name = ConnectedProducts.read(configURL: configURL(profile.name)).protectProfile,
-               name != profile.name {
+            let products = ConnectedProducts.read(
+                configURL: configURL(profile.name), workspace: profile.name)
+            for name in [products.protectProfile, products.foreignSchoolProfile].compactMap({ $0 })
+            where name != profile.name {
                 paired.insert(name)
             }
         }

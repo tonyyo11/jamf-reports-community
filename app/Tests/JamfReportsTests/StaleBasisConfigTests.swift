@@ -11,7 +11,7 @@ final class StaleBasisConfigTests: XCTestCase {
 
     private func doctorRows(_ yaml: String) throws -> [DoctorRow] {
         ConfigDoctorService.valueRows(
-            try config(yaml), raw: try ConfigLoader.rawMapping(fromYAML: yaml))
+            try config(yaml), raw: try ConfigLoader.rawMapping(fromYAML: yaml), profile: "ws")
     }
 
     // MARK: - Decoding

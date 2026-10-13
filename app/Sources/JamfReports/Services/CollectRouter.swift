@@ -5,8 +5,11 @@ import Foundation
 /// The product type a jamf-cli profile serves, derived from config.yaml.
 ///
 /// Routing rules:
-/// - `school_cli.enabled == true` → `.jamfSchool` (school collect only, never pro).
+/// - `school_cli.enabled == true` and `school_cli.profile` blank or the workspace's own
+///   profile → `.jamfSchool` (school collect only, never pro).
 /// - Otherwise → `.jamfPro`, and `protect?.enabled == true` means Protect augments the Pro run.
+///   That includes a `school_cli.profile` naming some other jamf-cli profile: a School login
+///   recorded in a Jamf Pro workspace (written by builds before 2.10) is not used there.
 ///
 /// Protect is an ADD-ON to a Jamf Pro profile, not a standalone product type.
 /// A School profile cannot also run Protect (school setup uses API-key auth, not OAuth2).
@@ -17,7 +20,7 @@ enum ProfileProductType: Equatable, Sendable {
 
 // MARK: - DetectedProduct
 
-/// Result of `ProfileProductType.detect(from:)`.
+/// Result of `ProfileProductType.detect(from:profile:)`.
 struct DetectedProduct: Sendable {
     let type: ProfileProductType
     /// True when a Jamf Pro profile also has `protect.enabled == true`.
@@ -29,14 +32,17 @@ extension ProfileProductType {
 
     /// Detect the product type from a decoded `ReportConfig`.
     ///
-    /// - Parameter config: The loaded config for the profile. When nil (load failure),
-    ///   defaults to `.jamfPro` with `runsProtect: false` — same behaviour as before
-    ///   the router existed, and loud: callers log the nil case before calling this.
-    static func detect(from config: ReportConfig?) -> DetectedProduct {
+    /// - Parameters:
+    ///   - config: The loaded config for the profile. When nil (load failure),
+    ///     defaults to `.jamfPro` with `runsProtect: false` — same behaviour as before
+    ///     the router existed, and loud: callers log the nil case before calling this.
+    ///   - profile: The workspace's own profile, which `school_cli.profile` must equal
+    ///     (exactly, as jamf-cli names are case-sensitive) or leave blank for School.
+    static func detect(from config: ReportConfig?, profile: String) -> DetectedProduct {
         guard let config else {
             return DetectedProduct(type: .jamfPro, runsProtect: false)
         }
-        if config.schoolCli?.isEnabled == true {
+        if config.schoolCli?.isPrimary(forWorkspace: profile) == true {
             return DetectedProduct(type: .jamfSchool, runsProtect: false)
         }
         return DetectedProduct(type: .jamfPro, runsProtect: config.protect?.isEnabled == true)
@@ -128,7 +134,7 @@ enum CollectRouter {
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
         SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
-        let detected = ProfileProductType.detect(from: config)
+        let detected = ProfileProductType.detect(from: config, profile: profile)
         switch detected.type {
         case .jamfSchool:
             onLine(.init(timestamp: Date(), level: .info,

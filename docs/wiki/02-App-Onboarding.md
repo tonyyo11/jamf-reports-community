@@ -94,9 +94,10 @@ profile has a workspace, for example after the workspace folder is emptied.
    `config.yaml` with best-guess column mappings from the export's headers. You can also
    **Skip for now** — the app writes a minimal config and works from `jamf-cli` data
    alone (see [Running without a CSV](#running-without-a-csv)).
-7. **Add products (optional)** — if you use Jamf Protect or Jamf School, connect them here
-   (`protect setup` / `school setup`); they augment the Jamf Pro reports. You can also add
-   them later from the **Data Sources** screen. (A Jamf School-*only* district should instead
+7. **Add products (optional)** — if you use Jamf Protect, connect it here
+   (`protect setup`); it augments the Jamf Pro reports. You can also add
+   it later from the **Data Sources** screen. (Jamf School is never added to a Jamf Pro
+   workspace; a Jamf School district should instead
    pick **Connect Jamf School** on the Welcome chooser, which runs the dedicated School path
    below — no Jamf Pro placeholder credentials.)
 8. **First report** — for Jamf Pro, the app collects a snapshot (refresh and inventory
@@ -190,9 +191,7 @@ runs a real connection check and will report failure against placeholder values 
 advancing past it only requires that the profile registered, not that the check passed. So
 a CSV-only admin can complete onboarding with placeholder Jamf Pro values and map a CSV at
 the CSV-mapping step. (A Jamf School-only admin can skip this placeholder workaround
-entirely by choosing **Connect Jamf School** on the Welcome chooser; the older route —
-placeholder Jamf Pro values, then connect Jamf School at **Add products** — still works
-for existing installs.)
+entirely by choosing **Connect Jamf School** on the Welcome chooser.)
 
 To add real credentials later, open **Data Sources → Connection health → Update
 credentials…** — it re-registers the profile's jamf-cli credentials (URL, client ID,

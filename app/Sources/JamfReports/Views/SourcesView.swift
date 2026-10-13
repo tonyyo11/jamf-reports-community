@@ -22,17 +22,10 @@ struct SourcesView: View {
     @State private var doctorOutcome: CLIDoctorService.Outcome?
     @State private var doctorRunning = false
     @State private var cliBridge = CLIBridge()
-    @State private var showingProductConnect: ProductConnectSheet? = nil
+    @State private var showingProtectConnect = false
     @State private var connectedProducts = ConnectedProducts.none
     @State private var showingEAWalkthrough = false
     @State private var showingReauth = false
-
-    enum ProductConnectSheet: Identifiable {
-        case protect, school
-        var id: String {
-            switch self { case .protect: "protect"; case .school: "school" }
-        }
-    }
 
     private struct CLICommand: Identifiable {
         let id = UUID()
@@ -99,11 +92,8 @@ struct SourcesView: View {
             familiesCard
             additionalProductsCard
         }
-        .sheet(item: $showingProductConnect, onDismiss: reloadConnectedProducts) { kind in
-            ProductConnectSheetView(
-                product: kind,
-                profileSlug: workspace.profile
-            )
+        .sheet(isPresented: $showingProtectConnect, onDismiss: reloadConnectedProducts) {
+            ProductConnectSheetView(profileSlug: workspace.profile)
         }
         .sheet(isPresented: $showingEAWalkthrough) {
             CSVEAWalkthroughSheet(profile: workspace.profile)
@@ -944,39 +934,36 @@ struct SourcesView: View {
                         .font(.system(size: 16))
                     SectionHeader(title: "Additional Products")
                 }
-                Text("Connect Jamf Protect or Jamf School to extend report coverage for the active workspace.")
+                Text("Connect Jamf Protect to extend report coverage for the active workspace.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
 
-                // Both set up a real jamf-cli connection and write config.yaml.
-                HStack(spacing: 10) {
-                    productControl(
-                        .protect, title: "Jamf Protect", icon: "shield.lefthalf.filled",
-                        connectedProfile: connectedProducts.protectProfile)
-                    productControl(
-                        .school, title: "Jamf School", icon: "graduationcap.fill",
-                        connectedProfile: connectedProducts.schoolProfile)
-                }
+                // Sets up a real jamf-cli connection and writes config.yaml.
+                protectControl
+
+                Text("Jamf School uses its own workspace. Run onboarding with a new workspace "
+                    + "name to set one up.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity)
     }
 
-    /// "Add <product>" until config.yaml records the connection, then CONNECTED with the
+    /// "Add Jamf Protect" until config.yaml records the connection, then CONNECTED with the
     /// jamf-cli profile it uses and a Reconnect action (same sheet, new credentials).
     @ViewBuilder
-    private func productControl(
-        _ kind: ProductConnectSheet, title: String, icon: String, connectedProfile: String?
-    ) -> some View {
+    private var protectControl: some View {
         let connect = {
             guard !workspace.demoMode else { return }
-            showingProductConnect = kind
+            showingProtectConnect = true
         }
-        if let connectedProfile {
+        if let connectedProfile = connectedProducts.protectProfile {
             HStack(spacing: 8) {
                 Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
-                Text("\(title) · \(connectedProfile)")
+                Text("Jamf Protect · \(connectedProfile)")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .lineLimit(1)
@@ -988,7 +975,8 @@ struct SourcesView: View {
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
             }
         } else {
-            PNPButton(title: "Add \(title)", icon: icon, size: .sm, action: connect)
+            PNPButton(title: "Add Jamf Protect", icon: "shield.lefthalf.filled", size: .sm,
+                      action: connect)
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
         }

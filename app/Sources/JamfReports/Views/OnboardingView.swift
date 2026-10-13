@@ -190,7 +190,7 @@ struct OnboardingView: View {
         case .validate:
             "jamf-cli validates the saved profile before report setup continues."
         case .addProducts:
-            "Optionally connect Jamf Protect and Jamf School. Both products are skippable — you can add them later from Settings."
+            "Optionally connect Jamf Protect. It is skippable — you can add it later from Data Sources. Jamf School uses its own workspace."
         case .csvMapping:
             "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop. The app's scaffold tool reads the CSV headers and writes the workspace config."
         case .firstReport:
@@ -588,7 +588,11 @@ struct OnboardingView: View {
     private var addProductsStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             protectProductCard
-            schoolProductCard
+            Text("Jamf School uses its own workspace. Run onboarding with a new workspace name "
+                + "to set one up.")
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -707,111 +711,9 @@ struct OnboardingView: View {
         }
     }
 
-    private var schoolProductCard: some View {
-        Card(padding: 22) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    Image(systemName: "graduationcap.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.goldBright)
-                        .frame(width: 38, height: 38)
-                        .background(
-                            Theme.Colors.gold.opacity(0.14),
-                            in: RoundedRectangle(cornerRadius: 8)
-                        )
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Jamf School")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(Theme.Colors.fg)
-                        Text("Device and user management for K-12 and education environments.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    Spacer()
-                    if flow.schoolConnected {
-                        Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
-                    }
-                }
-
-                configNote(flow.schoolConfigNote)
-
-                if !flow.schoolConnected {
-                    Divider().background(Theme.Colors.hairline)
-
-                    Text("Find your Network ID at Devices → Enroll Device(s). Generate an API key at Organization → Settings → API.")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "School URL")
-                        PNPTextField(
-                            value: binding(\.schoolURL),
-                            placeholder: "https://yourorg.jamfcloud.com"
-                        )
-                    }
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Profile name")
-                        PNPTextField(value: binding(\.schoolProfileName), placeholder: "school", mono: true)
-                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
-                    }
-
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Network ID")
-                            PNPTextField(value: binding(\.schoolNetworkID), mono: true)
-                        }
-                        .frame(maxWidth: .infinity)
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "API Key")
-                            SecureSecretField(
-                                placeholder: "School API key",
-                                onTextChange: { flow.schoolAPIKeyFieldHasText = $0 }
-                            ) { data in
-                                flow.setSchoolAPIKey(data)
-                            }
-                            .frame(height: 28)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    if let err = flow.schoolConnectionError {
-                        Text(err)
-                            .font(.caption)
-                            .foregroundStyle(Theme.Colors.danger)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    HStack(spacing: 10) {
-                        PNPButton(
-                            title: flow.isConnectingSchool ? "Connecting…" : "Connect School",
-                            icon: "graduationcap.fill",
-                            style: .gold,
-                            size: .sm
-                        ) {
-                            NSApp.keyWindow?.makeFirstResponder(nil)
-                            Task { await flow.registerSchoolProfile() }
-                        }
-                        .disabled(
-                            flow.isConnectingSchool
-                            || flow.schoolURL.trimmedForView.isEmpty
-                            || flow.schoolProfileName.trimmedForView.isEmpty
-                            || flow.schoolNetworkID.trimmedForView.isEmpty
-                            || (!flow.schoolConnected && flow.schoolAPIKey.isEmpty
-                                && !flow.schoolAPIKeyFieldHasText)
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     /// Jamf School-only connect step (School product path).
     ///
-    /// Reuses the exact Connect School machinery from the Add-products step —
-    /// same `school setup` PTY call, same fields, same redaction — but connects
-    /// School as the workspace's primary product via `connectSchoolAsPrimary`
+    /// Connects School as the workspace's primary product via `connectSchoolAsPrimary`
     /// (the workspace profile name is the School jamf-cli profile; there is no
     /// separate profile-name field here).
     private var schoolConnectStep: some View {

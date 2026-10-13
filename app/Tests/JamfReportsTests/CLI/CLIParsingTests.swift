@@ -130,11 +130,11 @@ final class CLIParsingTests: XCTestCase {
         let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: slug))
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: workspace) }
-        let yaml = "school_cli:\n  enabled: true\n  profile: \"school\"\n"
+        let yaml = "school_cli:\n  enabled: true\n  profile: \"\(slug)\"\n"
         try yaml.write(
             to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
         let config = try XCTUnwrap(collectRoutingConfig(profile: slug))
-        XCTAssertEqual(ProfileProductType.detect(from: config).type, .jamfSchool,
+        XCTAssertEqual(ProfileProductType.detect(from: config, profile: slug).type, .jamfSchool,
                         "a real config must route School — not the nil-degrades-to-Pro default")
     }
 

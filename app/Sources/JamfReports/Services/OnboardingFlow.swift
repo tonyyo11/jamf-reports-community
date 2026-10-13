@@ -185,7 +185,6 @@ final class OnboardingFlow {
 
     // MARK: - Jamf School fields
 
-    var schoolEnabled = false
     var schoolURL = ""
     var schoolNetworkID = ""
     var schoolAPIKey = ""
@@ -310,8 +309,8 @@ final class OnboardingFlow {
         case .validate:
             profileRegistered && !isValidatingConnection
         case .addProducts:
-            // Both products are optional — always advanceable.
-            !isConnectingProtect && !isConnectingSchool
+            // Protect is optional — always advanceable.
+            !isConnectingProtect
         case .schoolConnect:
             // A School-only workspace needs a real, successful School
             // connection: only then is `school_cli` written and detection
@@ -591,7 +590,7 @@ final class OnboardingFlow {
         lastError = nil
     }
 
-    // MARK: - Add-products registration (Protect / School)
+    // MARK: - Registration (Protect on the Pro path, School on the School path)
 
     func registerProtectProfile() async {
         protectConnected = false
@@ -740,7 +739,6 @@ final class OnboardingFlow {
         schoolConfigNote = try writeSchoolConfig(
             profileSlug: profileSlug, schoolProfileName: schoolProfileName).statusLine
         schoolConnected = true
-        schoolEnabled = true
     }
 
     /// Connect Jamf School as the workspace's PRIMARY product (School-only path).
@@ -750,8 +748,8 @@ final class OnboardingFlow {
     /// setup uses `profileName` and `writeSchoolConfig` wires
     /// `school_cli.enabled/profile = <profileName>` into that workspace's
     /// config.yaml, which is exactly what `ProfileProductType.detect` reads to
-    /// route the workspace to Jamf School. Reuses the same PTY machinery,
-    /// fields, and redaction as the Add-products Connect School button.
+    /// route the workspace to Jamf School. A Jamf Pro workspace never records a
+    /// School connection: a profile other than its own would route nothing to School.
     func connectSchoolAsPrimary() async {
         schoolProfileName = profileName.trimmed
         await registerSchoolProfile()

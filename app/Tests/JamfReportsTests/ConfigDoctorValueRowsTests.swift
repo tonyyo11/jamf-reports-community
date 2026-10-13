@@ -8,10 +8,12 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func rows(_ yaml: String, workspace: URL? = nil) throws -> [DoctorRow] {
+    private func rows(
+        _ yaml: String, workspace: URL? = nil, profile: String = "ws"
+    ) throws -> [DoctorRow] {
         let config = try ConfigLoader.loadFromString(yaml)
         let raw = try ConfigLoader.rawMapping(fromYAML: yaml)
-        return ConfigDoctorService.valueRows(config, raw: raw, workspace: workspace)
+        return ConfigDoctorService.valueRows(config, raw: raw, workspace: workspace, profile: profile)
     }
 
     private func detail(_ rows: [DoctorRow], _ title: String) -> String? {
@@ -265,7 +267,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         var config = ReportConfig()
         config.notify = NotifyConfig(
             provider: "x\u{1B}[2J" + String(repeating: "y", count: 200))
-        let found = ConfigDoctorService.valueRows(config, raw: [:])
+        let found = ConfigDoctorService.valueRows(config, raw: [:], profile: "ws")
         let text = found.map { $0.title + $0.detail + ($0.hint ?? "") }.joined()
         XCTAssertFalse(text.contains("\u{1B}"))
         XCTAssertLessThan(try XCTUnwrap(found.first).detail.count, 140)
@@ -489,6 +491,29 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        + "Jamf School only and never runs Protect for this profile.")
         XCTAssertEqual(try rows("school_cli: {enabled: true}\nprotect: {enabled: false}\n"), [])
         XCTAssertEqual(try rows("protect: {enabled: true}\n"), [])
+    }
+
+    func testSchoolAndProtectRowIsQuietWhenSchoolIsAnotherProfile() throws {
+        let found = try rows(
+            "school_cli: {enabled: true, profile: school}\nprotect: {enabled: true}\n")
+        XCTAssertEqual(titles(found), ["school_cli.profile"])
+    }
+
+    func testForeignSchoolProfileWarnsThatTheWorkspaceCollectsJamfPro() throws {
+        let found = try rows("school_cli: {enabled: true, profile: school}\n")
+        XCTAssertEqual(titles(found), ["school_cli.profile"])
+        let row = try XCTUnwrap(found.first)
+        XCTAssertEqual(row.severity, .warn)
+        XCTAssertEqual(row.detail,
+                       "school_cli.profile names \"school\", not this workspace's profile. The app "
+                       + "collects Jamf Pro for this workspace and does not use that Jamf School "
+                       + "profile here. Jamf School needs its own workspace.")
+        XCTAssertEqual(row.hint, "Set school_cli.enabled to false here, and add Jamf School as a "
+                       + "separate workspace.")
+        // The workspace's own profile, a blank profile and a disabled block are School or off.
+        XCTAssertEqual(try rows("school_cli: {enabled: true, profile: ws}\n"), [])
+        XCTAssertEqual(try rows("school_cli: {enabled: true}\n"), [])
+        XCTAssertEqual(try rows("school_cli: {enabled: false, profile: school}\n"), [])
     }
 
     func testNoRowIsAFailAndEveryIdIsUnique() throws {

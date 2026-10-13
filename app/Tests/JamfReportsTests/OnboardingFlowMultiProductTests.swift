@@ -88,7 +88,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         flow.currentStep = .addProducts
         XCTAssertTrue(
             flow.canAdvance,
-            "addProducts step must always allow advance (both products are optional)"
+            "addProducts step must always allow advance (Protect is optional)"
         )
     }
 
@@ -99,16 +99,6 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertFalse(
             flow.canAdvance,
             "addProducts step must block advance while Protect connection is in progress"
-        )
-    }
-
-    func test_addProducts_blocksDuringSchoolConnect() {
-        let flow = OnboardingFlow()
-        flow.currentStep = .addProducts
-        flow.isConnectingSchool = true
-        XCTAssertFalse(
-            flow.canAdvance,
-            "addProducts step must block advance while School connection is in progress"
         )
     }
 
@@ -725,7 +715,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
 
         let configURL = try ConfigService.configURL(for: profile)
         let config = try ConfigLoader.load(from: configURL)
-        let detected = ProfileProductType.detect(from: config)
+        let detected = ProfileProductType.detect(from: config, profile: profile)
         XCTAssertEqual(detected.type, .jamfSchool,
                        "school_cli.enabled written by writeSchoolConfig must route detection to Jamf School")
         XCTAssertFalse(detected.runsProtect, "a School profile never runs Protect")

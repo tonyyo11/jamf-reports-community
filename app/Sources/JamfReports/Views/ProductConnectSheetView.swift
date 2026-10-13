@@ -4,15 +4,16 @@ import SwiftUI
 // MARK: - ProductConnectSheetView
 
 /// Sheet presented from SourcesView (and any other post-onboarding entry point) to
-/// connect Jamf Protect or Jamf School to the active workspace.
+/// connect Jamf Protect to the active workspace. Jamf School is not offered here: it gets
+/// its own workspace, because `school_cli` turns the whole workspace that records it into a
+/// School one.
 ///
-/// Uses the same `OnboardingFlow` methods (`registerProtectProfile` /
-/// `registerSchoolProfile`) and applies the same security model:
+/// Uses the same `OnboardingFlow` method (`registerProtectProfile`) and applies the same
+/// security model:
 /// secrets are delivered via `SecureSecretField.onTextChange` + `onFinalize`,
 /// finalization is forced by `NSApp.keyWindow?.makeFirstResponder(nil)` before any
 /// async credential read, and credentials are cleared via `defer` in the flow.
 struct ProductConnectSheetView: View {
-    let product: SourcesView.ProductConnectSheet
     let profileSlug: String
 
     @Environment(\.dismiss) private var dismiss
@@ -24,10 +25,10 @@ struct ProductConnectSheetView: View {
             // Header
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
-                    Image(systemName: productIcon)
+                    Image(systemName: "shield.lefthalf.filled")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(Theme.Colors.goldBright)
-                    Text(productTitle)
+                    Text("Connect Jamf Protect")
                         .font(Theme.Fonts.serif(22, weight: .bold))
                         .foregroundStyle(Theme.Colors.fg)
                     Spacer()
@@ -42,7 +43,7 @@ struct ProductConnectSheetView: View {
                     .buttonStyle(.plain)
                     .help("Dismiss")
                 }
-                Text(productSubtitle)
+                Text("Extend the active workspace with Protect alert and analytics data.")
                     .font(.callout)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -51,11 +52,7 @@ struct ProductConnectSheetView: View {
             Divider().background(Theme.Colors.hairlineStrong)
 
             ScrollView {
-                if product == .protect {
-                    protectForm
-                } else {
-                    schoolForm
-                }
+                protectForm
             }
         }
         .frame(minWidth: 520, minHeight: 480)
@@ -70,11 +67,8 @@ struct ProductConnectSheetView: View {
                 .accessibilityHidden(true)
         }
         .onAppear {
-            // Pre-fill profile name default based on product type.
-            if product == .protect, flow.protectProfileName.isEmpty {
+            if flow.protectProfileName.isEmpty {
                 flow.protectProfileName = "protect"
-            } else if product == .school, flow.schoolProfileName.isEmpty {
-                flow.schoolProfileName = "school"
             }
             // Set the main profile so config writes target the right workspace.
             flow.profileName = profileSlug
@@ -181,102 +175,6 @@ struct ProductConnectSheetView: View {
         .padding(20)
     }
 
-    // MARK: - School form
-
-    private var schoolForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Card(padding: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundStyle(Theme.Colors.goldBright)
-                        Text("Before continuing:")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Theme.Colors.fg)
-                    }
-                    Text("Find your Network ID at Devices → Enroll Device(s). Generate an API key at Organization → Settings → API.")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fg2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Card(padding: 20) {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "School URL")
-                        PNPTextField(
-                            value: schoolURLBinding,
-                            placeholder: "https://yourorg.jamfcloud.com"
-                        )
-                    }
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Profile name")
-                        PNPTextField(value: schoolProfileNameBinding, placeholder: "school", mono: true)
-                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
-                    }
-
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Network ID")
-                            PNPTextField(value: schoolNetworkIDBinding, mono: true)
-                        }
-                        .frame(maxWidth: .infinity)
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "API Key")
-                            SecureSecretField(
-                                placeholder: "School API key",
-                                onTextChange: { flow.schoolAPIKeyFieldHasText = $0 }
-                            ) { data in
-                                flow.setSchoolAPIKey(data)
-                            }
-                            .frame(height: 28)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    if let err = flow.schoolConnectionError {
-                        Text(err)
-                            .font(.caption)
-                            .foregroundStyle(Theme.Colors.danger)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    HStack(spacing: 10) {
-                        PNPButton(
-                            title: flow.isConnectingSchool ? "Connecting…" : "Connect",
-                            icon: "graduationcap.fill",
-                            style: .gold,
-                            size: .md
-                        ) {
-                            NSApp.keyWindow?.makeFirstResponder(nil)
-                            Task {
-                                await flow.registerSchoolProfile()
-                                if flow.schoolConnected, flow.schoolConfigNote == nil {
-                                    dismiss()
-                                }
-                            }
-                        }
-                        .disabled(!schoolCanConnect)
-
-                        PNPButton(
-                            title: flow.schoolConnected ? "Done" : "Cancel",
-                            style: .neutral, size: .md
-                        ) {
-                            flow.clearAllSecrets()
-                            dismiss()
-                        }
-                    }
-
-                    connectedStatus(flow.schoolConnected, note: flow.schoolConfigNote)
-                }
-            }
-        }
-        .padding(20)
-    }
-
     // MARK: - Helpers
 
     /// CONNECTED, and under it what recording the connection in config.yaml did not keep.
@@ -293,34 +191,12 @@ struct ProductConnectSheetView: View {
         }
     }
 
-    private var productIcon: String {
-        product == .protect ? "shield.lefthalf.filled" : "graduationcap.fill"
-    }
-
-    private var productTitle: String {
-        product == .protect ? "Connect Jamf Protect" : "Connect Jamf School"
-    }
-
-    private var productSubtitle: String {
-        product == .protect
-            ? "Extend the active workspace with Protect alert and analytics data."
-            : "Extend the active workspace with School device and user data."
-    }
-
     private var protectCanConnect: Bool {
         !flow.isConnectingProtect
         && !flow.protectURL.trimmed.isEmpty
         && !flow.protectProfileName.trimmed.isEmpty
         && !flow.protectClientID.trimmed.isEmpty
         && (!flow.protectClientSecret.isEmpty || flow.protectSecretFieldHasText)
-    }
-
-    private var schoolCanConnect: Bool {
-        !flow.isConnectingSchool
-        && !flow.schoolURL.trimmed.isEmpty
-        && !flow.schoolProfileName.trimmed.isEmpty
-        && !flow.schoolNetworkID.trimmed.isEmpty
-        && (!flow.schoolAPIKey.isEmpty || flow.schoolAPIKeyFieldHasText)
     }
 
     // Bindings into the flow's observable properties.
@@ -332,15 +208,6 @@ struct ProductConnectSheetView: View {
     }
     private var protectClientIDBinding: Binding<String> {
         Binding(get: { flow.protectClientID }, set: { flow.protectClientID = $0 })
-    }
-    private var schoolURLBinding: Binding<String> {
-        Binding(get: { flow.schoolURL }, set: { flow.schoolURL = $0 })
-    }
-    private var schoolProfileNameBinding: Binding<String> {
-        Binding(get: { flow.schoolProfileName }, set: { flow.schoolProfileName = $0 })
-    }
-    private var schoolNetworkIDBinding: Binding<String> {
-        Binding(get: { flow.schoolNetworkID }, set: { flow.schoolNetworkID = $0 })
     }
 }
 

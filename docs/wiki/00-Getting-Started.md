@@ -45,9 +45,8 @@ CLI step — Next stays disabled until the app detects it on `PATH` — even if 
 connect it to a real Jamf Pro tenant. The Authenticate step accepts a URL plus placeholder
 client ID/secret without contacting the server, and Validate lets you continue even when
 the connection check reports failure, so you can complete onboarding with placeholder Jamf
-Pro credentials and map a CSV at the CSV step. (Installs set up before the Connect Jamf
-School card can still use this same placeholder workaround, then connect Jamf School at
-**Add products**.)
+Pro credentials and map a CSV at the CSV step. (Jamf School is not
+connected from a Jamf Pro workspace: it gets its own workspace.)
 One honest caveat: scheduling and automation always collect via jamf-cli, so a CSV-only
 workspace can't use managed automation, alerts, or the dead-man switch — reports there
 are a manual export-CSV-then-Generate cycle.
@@ -87,8 +86,8 @@ full detail on each:
 6. **CSV mapping** — optionally add a Jamf Pro CSV export for the sheets that need
    per-device export columns (Stale Devices, Security Agents, custom Extension
    Attributes). You can **Skip for now** and add one later.
-7. **Add products (optional)** — connect Jamf Protect or Jamf School here if you use
-   them, or skip and add them later from the Data Sources screen.
+7. **Add products (optional)** — connect Jamf Protect here if you use it, or skip and add it
+   later from the Data Sources screen. Jamf School uses its own workspace.
 8. **First report** — for Jamf Pro, the app collects a snapshot (refresh and inventory
    data, not the per-device scans) and then generates a first report, so the dashboards
    have data to show. For Jamf School, this step only generates.
