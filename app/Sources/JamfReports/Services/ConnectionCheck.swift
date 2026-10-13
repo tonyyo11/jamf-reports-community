@@ -66,7 +66,7 @@ enum ConnectionCheck {
         case .scopeRejected, .unknownEnvironment: return .rejectedID(second.kind)
         case .missingPermission: return .noJamfPro
         case .edgeBlocked, .notServed, .noDeclarationData, .softwareUpdatePlansOff,
-             .noConfiguredBenchmark, .other:
+             .noConfiguredBenchmark, .retiredGateway, .other:
             return namesNoTenant(probe.stdout) ? .noJamfPro : .undecided(exitCode: probe.exitCode)
         }
     }
