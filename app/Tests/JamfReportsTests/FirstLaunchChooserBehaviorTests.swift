@@ -131,3 +131,42 @@ final class FirstLaunchChooserBehaviorTests: XCTestCase {
         _ = FirstLaunchChooserView(onStartOnboarding: {}).environment(workspace)
     }
 }
+
+// MARK: - Onboarding handoff
+
+/// The chooser's cards queue the Jamf Pro connection type for the flow built next; the flow
+/// consumes it once.
+@MainActor
+final class FirstLaunchChooserHandoffTests: XCTestCase {
+
+    override func tearDown() {
+        OnboardingFlow.pendingProductPath = nil
+        OnboardingFlow.pendingProConnectionType = nil
+        super.tearDown()
+    }
+
+    func testConnectWithJamfAccountOpensOnTheGatewayForm() {
+        FirstLaunchChooserView.queueOnboarding(.pro, connection: .platformGateway)
+
+        let flow = OnboardingFlow()
+        XCTAssertEqual(flow.productPath, .pro)
+        XCTAssertEqual(flow.proConnectionType, .platformGateway)
+        XCTAssertNil(OnboardingFlow.pendingProConnectionType, "one-shot")
+        XCTAssertEqual(OnboardingFlow().proConnectionType, .oauth2, "the next flow is not affected")
+    }
+
+    func testConnectAJamfProServerKeepsOAuth2() {
+        FirstLaunchChooserView.queueOnboarding(.pro, connection: nil)
+
+        XCTAssertEqual(OnboardingFlow().proConnectionType, .oauth2)
+    }
+
+    func testAnotherCardClearsTheJamfAccountChoice() {
+        FirstLaunchChooserView.queueOnboarding(.pro, connection: .platformGateway)
+        FirstLaunchChooserView.queueOnboarding(.school, connection: nil)
+
+        let flow = OnboardingFlow()
+        XCTAssertEqual(flow.productPath, .school)
+        XCTAssertEqual(flow.proConnectionType, .oauth2)
+    }
+}

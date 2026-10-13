@@ -7,8 +7,7 @@ import Foundation
 /// This service only reports on what is on disk — it never invokes jamf-cli.
 /// Whether the snapshots exist is the collect path's job: `ReportEngine.collect`
 /// runs the Platform-only kinds when the profile's auth method is `platform`, and
-/// skips the environment-level ones on a tenant-level profile. The screen is also
-/// behind Settings → Experimental Features → Platform API.
+/// skips the environment-level ones on a tenant-level profile.
 ///
 /// Rows decode through the private `RawRule` and `RawDevice` structs below.
 struct ComplianceBenchmarksService: Sendable {

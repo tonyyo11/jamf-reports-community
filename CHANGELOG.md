@@ -9,6 +9,11 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Connect Jamf Cloud with a Jamf Account integration. The first-launch screen now leads with
+  **Connect with Jamf Account** (the Jamf Platform API, which jamf-cli recommends for Jamf Cloud),
+  and the older card is now **Connect a Jamf Pro server**, for on-prem, GovCloud or any instance.
+  Onboarding and Update credentials pick a region (United States, Europe or Asia-Pacific) instead
+  of asking for the gateway URL, and the setup text explains that a profile holds one environment.
 - Jamf Platform API connections are grouped on this Mac. A Platform profile that validates during setup is recorded under a connection, and the sidebar workspace menu and Fleet Overview list the profiles of one connection together under its name; profiles in no connection list as before. The grouping is kept in the app's own Application Support folder, holds no credentials, and its IDs are removed from diagnostic bundles.
 - The Devices table now sorts by Last Check-in, Patch, Security and Risk as well as Device,
   Serial, macOS and User. Click a header to sort and again to reverse: Last Check-in starts with
@@ -17,6 +22,14 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Platform API is no longer experimental. Compliance Benchmarks and DDM Blueprints unlock for
+  any profile that uses a Jamf Account integration, with no setting to turn on, and Settings →
+  Experimental Features lists only the Jamf Protect deep dive.
+- When a Jamf Account environment answers but holds no Jamf Pro, setup now says its MDM is probably
+  Jamf School, offers to set up a Jamf School workspace, and no longer lets you continue with that
+  profile.
+- Device and group links to Jamf Pro are no longer shown for a Jamf Account profile, whose address
+  is the API gateway and not a Jamf Pro console.
 - The integrity note at the foot of an HTML report now says it is a check for damage or a partial
   copy, not a signature, and points to the `[ok] sha256:` line in the run log as the copy kept
   outside the file.

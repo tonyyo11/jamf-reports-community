@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// Persists per-feature opt-ins for v2.1.0 experimental flags. Backed by
+/// Persists per-feature opt-ins for experimental flags. Backed by
 /// `UserDefaults` under the `experimentalFeatures` key — a comma-separated
 /// list of raw values.
 ///
@@ -16,22 +16,19 @@ final class ExperimentalFeatureService {
     /// Per-feature identifiers. Raw values are stable (used as
     /// `UserDefaults` storage tokens) — do not rename without a migration.
     /// Raw values must not contain commas — the storage format is comma-delimited.
+    /// The Platform API graduated and its `platform-api` token is gone; a stored
+    /// copy is skipped on load and dropped on the next save.
     enum Feature: String, CaseIterable, Sendable {
-        case platformAPI = "platform-api"
         case protect = "protect-deep-dive"
 
         var displayName: String {
             switch self {
-            case .platformAPI: return "Platform API"
-            case .protect:     return "Jamf Protect deep dive"
+            case .protect: return "Jamf Protect deep dive"
             }
         }
 
         var description: String {
             switch self {
-            case .platformAPI:
-                return "Compliance benchmarks and DDM blueprint dashboards. "
-                    + "Built on jamf-cli's Platform API integration."
             case .protect:
                 return "Per-device alert timeline and kill-chain stage breakdown "
                     + "for tenants with Jamf Protect configured in jamf-cli."
@@ -43,10 +40,6 @@ final class ExperimentalFeatureService {
         /// at the path admins should land on once they do.
         var discussionURL: URL? {
             switch self {
-            case .platformAPI:
-                return URL(
-                    string: "https://github.com/tonyyo11/jamf-reports-community/discussions/categories/platform-api"
-                )
             case .protect:
                 return URL(
                     string: "https://github.com/tonyyo11/jamf-reports-community/discussions/categories/jamf-protect"

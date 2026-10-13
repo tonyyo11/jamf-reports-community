@@ -13,6 +13,13 @@ struct OnboardingView: View {
     private var shellProfile: String { ProfileName.shellWord(flow.profileName.trimmedForView) }
     private var profileOption: String { ProfileName.profileOption(flow.profileName.trimmedForView) }
 
+    /// One profile holds one environment ID; an integration scoped to several needs one profile
+    /// each, with the same client ID and secret.
+    static let platformProfileNote = "A profile holds one environment. To report on more "
+        + "environments from the same integration, use Add environments in Data Sources after "
+        + "setup; they reuse this client ID and secret. Keep a Jamf Pro OAuth profile for the "
+        + "Jamf Pro and Classic commands the gateway refuses; Jamf Reports does not need them."
+
     private let privileges = [
         "Computers: Read", "Mobile Devices: Read", "Mobile Profiles: Read",
         "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
@@ -248,7 +255,7 @@ struct OnboardingView: View {
             }
 
             if let check = flow.connectionCheck {
-                ConnectionCheckBanner(verdict: check)
+                ConnectionCheckBanner(verdict: check, onSetUpSchool: startSchoolWorkspace)
             }
 
             if flow.offersContinueWithoutValidating {
@@ -498,8 +505,9 @@ struct OnboardingView: View {
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("1. In account.jamf.com, open Integrations → Create integration")
-                        Text("2. Scope level: Platform environment, choosing only the "
-                            + "environment that holds your Jamf Pro tenant")
+                        Text("2. Scope level: Platform environment (recommended), choosing "
+                            + "the environment that holds your Jamf Pro tenant. Tenant level "
+                            + "is legacy and cannot reach Compliance Benchmarks or Blueprints")
                         Text("3. Permissions: Read only, for the report areas you want")
                         Text("4. Copy the client ID and the client secret (shown only once)")
                         Text("5. Copy the environment ID: open the integration and click the "
@@ -508,24 +516,17 @@ struct OnboardingView: View {
                     }
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
+                    Text(OnboardingView.platformProfileNote)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Card(padding: 22) {
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Gateway URL")
-                        PNPTextField(
-                            value: binding(\.gatewayURL),
-                            placeholder: "https://us.api.jamfcloud.com",
-                            mono: true
-                        )
-                        validationLine(
-                            value: flow.gatewayURL, ok: flow.isGatewayURLValid,
-                            text: "Must use https:// and include a host"
-                        )
-                    }
+                    GatewayRegionPicker(flow: flow)
 
                     VStack(alignment: .leading, spacing: 8) {
                         FieldLabel(label: "Platform API scope")
@@ -538,12 +539,7 @@ struct OnboardingView: View {
                                 ($0, $0.label, nil)
                             }
                         )
-                        Text(
-                            "Environment is where a GA integration is usually created "
-                                + "(needs jamf-cli 1.28 or later). Tenant is the legacy "
-                                + "single-tenant level and cannot reach Compliance Benchmarks "
-                                + "or blueprint status."
-                        )
+                        Text(OnboardingFlow.PlatformScope.caption)
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.fg2)
                         FieldLabel(label: flow.platformScope.idFieldLabel)
@@ -950,6 +946,15 @@ struct OnboardingView: View {
     ///     is `.onboarding`; the `.navigateToTab(.overview)` post lands the
     ///     user back on Overview where progress is visible.
     ///   - Sidebar "Add workspace…" → same as Settings path above.
+    /// Restarts this screen on the Jamf School steps, as the sidebar's "Add Jamf School
+    /// workspace…" does. The profile saved for the Platform ID stays in jamf-cli.
+    private func startSchoolWorkspace() {
+        flow.clearAllSecrets()
+        OnboardingFlow.pendingProductPath = .school
+        flow = OnboardingFlow()
+        Task { await flow.refreshJamfCLIStatus() }
+    }
+
     private func skipAndFinishOnboarding() {
         // Leave demo mode, through its cleanup, so the newly created real
         // profile replaces the demo; otherwise reload to pick it up.

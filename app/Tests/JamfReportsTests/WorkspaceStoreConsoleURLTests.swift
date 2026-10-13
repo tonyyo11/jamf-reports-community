@@ -59,6 +59,31 @@ final class WorkspaceStoreConsoleURLTests: XCTestCase {
         XCTAssertNil(store.consoleURL(forComputerID: 1))
     }
 
+    // MARK: - Platform API profiles
+
+    /// `us.api.jamfcloud.com` serves APIs only; a link built from it would open nothing.
+    func test_consoleURL_platformProfile_hasNoLink() {
+        let store = WorkspaceStore(demoMode: false)
+        store.profiles = [JamfCLIProfile(
+            name: "test", url: "us.api.jamfcloud.com", schedules: 0, status: .ok,
+            authMethod: "platform")]
+        store.profile = "test"
+
+        XCTAssertNil(store.consoleURL(forComputerID: 1))
+        XCTAssertNil(store.consoleURL(forMobileDeviceID: 1))
+        XCTAssertNil(store.consoleURL(forComputerGroupID: 1, isStatic: false))
+    }
+
+    func test_consoleURL_gatewayHostHasNoLinkWhateverTheAuthMethodSays() {
+        for host in ["eu.api.jamfcloud.com", "https://APAC.api.jamfcloud.com/", "x.apigw.jamf.com"] {
+            XCTAssertEqual(
+                WorkspaceStore.consoleServer(forProfileURL: host, authMethod: ""), "", host)
+        }
+        XCTAssertEqual(
+            WorkspaceStore.consoleServer(forProfileURL: "https://acme.jamfcloud.com", authMethod: "oauth2"),
+            "https://acme.jamfcloud.com")
+    }
+
     // MARK: - Mobile device URLs
 
     func test_consoleURL_mobileDevice_validServer_returnsExpectedURL() {

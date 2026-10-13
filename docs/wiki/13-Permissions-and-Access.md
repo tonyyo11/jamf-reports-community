@@ -9,12 +9,17 @@ that.
 | Connection | Reaches | Credential comes from | Access is limited by |
 |---|---|---|---|
 | Jamf Pro, direct | One Jamf Pro instance's Jamf Pro API and Classic API. The only choice for an on-premises server. | Jamf Pro: **Settings > System > API roles and clients** | The privileges on the client's API role |
-| Jamf Platform API | Through Jamf's gateway: the Jamf Pro and Classic APIs of the Jamf Pro tenant in the integration's environment, plus Compliance Benchmarks, blueprint status and DDM status | Jamf Account: **Integrations** | The integration's scope level and permissions |
+| Jamf Platform API (recommended for Jamf Cloud) | Through Jamf's gateway: the Jamf Pro and Classic APIs of the Jamf Pro tenant in the integration's environment, plus Compliance Benchmarks, blueprint status and DDM status | Jamf Account: **Integrations** | The integration's scope level and permissions |
 | Jamf Protect | Protect overview, alerts, computers, insights and plans | Jamf Protect console: **API Clients** | The role assigned to the API client |
 | Jamf School | School overview, devices, device groups, users, classes, apps, profiles, locations, iBeacons and DEP devices | Jamf School console: **Organization > Settings > API** | The API methods allowed for the key |
 
 A Platform API profile does not need a second, direct Jamf Pro connection when its
-environment includes your Jamf Pro tenant: the gateway serves the Jamf Pro API itself.
+environment includes your Jamf Pro tenant: the gateway serves the Jamf Pro API itself. This
+is [jamf-cli's own recommendation](https://github.com/Jamf-Concepts/jamf-cli/wiki#getting-started) for Jamf Cloud. The gateway is
+Jamf Cloud only, so an on-premises or GovCloud server keeps the direct connection. jamf-cli
+refuses a few dozen Jamf Pro and Classic commands on a gateway profile (device actions among
+them, exit 8); Jamf Reports runs none of them, but keep a direct profile for your own use of
+those commands.
 Jamf Protect is a separate connection with its own credentials, added at onboarding's
 **Add products** step or later from **Data Sources**. Jamf School has its own workspace and
 credentials.
@@ -43,10 +48,12 @@ guide.
 2. Choose **Integrations**, then **Create integration**. Name it for its purpose, for
    example "JamfReports — production (read only)".
 3. Set the scope level to **Platform environment**. See [Scope levels](#scope-levels).
-4. Select **only** the environment that holds the Jamf Pro instance this profile reports on.
-   A Jamf Account can list test, production, beta and other environments, and one
-   integration can apply to several of them. Each JamfReports profile reports on one
-   environment, so every extra one only widens what a leaked secret could reach.
+4. Select the environment that holds the Jamf Pro instance this profile reports on. A Jamf
+   Account can list test, production, beta and other environments, and one integration can
+   apply to several of them. A jamf-cli profile holds one environment ID, so reporting on
+   several takes one profile per environment, each with the same client ID and secret
+   (**Data Sources → Add environments**). Every extra environment widens what a leaked
+   secret could reach, so select only the ones you report on.
 5. Grant **Read** for the report areas you want, from
    [Permissions by report area](#permissions-by-report-area). Nothing else.
 6. Save, then copy the client ID and client secret. Jamf shows the secret once;
@@ -58,8 +65,10 @@ guide.
 Then connect it in the app, at onboarding's **Authenticate** step or with **Data Sources →
 Connection health → Update credentials…** for an existing profile:
 
-- **Gateway URL:** `https://us.api.jamfcloud.com`, `https://eu.api.jamfcloud.com` or
-  `https://apac.api.jamfcloud.com`, matching your region.
+- **Region:** United States, Europe or Asia-Pacific, which is the gateway
+  `https://us.api.jamfcloud.com`, `https://eu.api.jamfcloud.com` or
+  `https://apac.api.jamfcloud.com`. Update credentials shows a stored gateway URL that is
+  none of the three as **Other** and keeps it until you pick a region.
 - **Scope:** Environment, with the environment ID from step 7.
 - **Client ID** and **client secret** from step 6.
 
@@ -76,7 +85,11 @@ permission:
 - **Rejected:** the gateway does not know the ID, or it is the wrong kind for the
   integration's scope level. Setup stops and says where the right ID is.
 - **No Jamf Pro:** the ID is valid but no Jamf Pro tenant answers behind it, including an
-  environment that holds no tenant. Setup warns.
+  environment that holds no tenant. That environment's MDM is probably Jamf School, which
+  Jamf Reports reads with a School API key, so setup offers **Set up Jamf School** (or
+  **Add Jamf School workspace** in the sidebar's workspace menu) and no way to continue with
+  this profile. If it should be Jamf Pro, check that the ID is for the environment that
+  holds your Jamf Pro tenant.
 - **Undecided:** the answer was not conclusive, and setup offers **Continue without
   validating**.
 
@@ -105,7 +118,7 @@ level alone.
 
 | Level | In the app | What JamfReports can collect |
 |---|---|---|
-| **Platform environment** (use this) | Scope: Environment, with the environment ID | The Jamf Pro and Classic API sources of the environment's Jamf Pro tenant, plus Compliance Benchmarks, blueprint status and DDM status |
+| **Platform environment** (use this; jamf-cli recommends it) | Scope: Environment, with the environment ID | The Jamf Pro and Classic API sources of the environment's Jamf Pro tenant, plus Compliance Benchmarks, blueprint status and DDM status |
 | **Tenant** (legacy) | Scope: Tenant (legacy), with the tenant ID | The Jamf Pro and Classic API sources of that one tenant, plus DDM status. Jamf Account does not let a tenant-level integration read Compliance Benchmarks or blueprint status, so the app skips both on such a profile and says so in Run History and on the Compliance Benchmarks screen. |
 | **Organization** | Not offered | Nothing. This level reaches Jamf Account administration only, so the app does not offer it. A profile set up this way before 2.8.1 reports that the gateway rejected its scope level. |
 

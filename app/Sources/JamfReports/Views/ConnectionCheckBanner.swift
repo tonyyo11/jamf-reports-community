@@ -4,14 +4,25 @@ import SwiftUI
 /// credentials sheet.
 struct ConnectionCheckBanner: View {
     let verdict: ConnectionCheck.Verdict
+    /// Starts a Jamf School workspace; offered only for a verdict that suggests one.
+    var onSetUpSchool: (() -> Void)?
 
     var body: some View {
-        InlineBanner(icon: Self.icon(for: verdict), tone: Self.tone(for: verdict)) {
+        InlineBanner(
+            icon: Self.icon(for: verdict), tone: Self.tone(for: verdict), action: schoolAction
+        ) {
             Text(verbatim: verdict.message)
                 .font(.footnote)
                 .foregroundStyle(Theme.Colors.fg2)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var schoolAction: InlineBannerAction? {
+        guard verdict.suggestsJamfSchool, let onSetUpSchool else { return nil }
+        return InlineBannerAction(
+            label: "Set up Jamf School", icon: "graduationcap.fill", handler: onSetUpSchool
+        )
     }
 
     nonisolated static func tone(for verdict: ConnectionCheck.Verdict) -> InlineBannerTone {

@@ -90,6 +90,22 @@ final class ConnectionCheckTests: XCTestCase {
         XCTAssertFalse(ConnectionCheck.Verdict.noJamfPro.message.contains("accepted"))
     }
 
+    /// An environment the gateway knows with no Jamf Pro is probably a Jamf School tenant, read
+    /// with a School API key; the message says so and the verdict is not a way to continue.
+    func testNoJamfProPointsToAJamfSchoolWorkspace() {
+        let verdict = ConnectionCheck.Verdict.noJamfPro
+        XCTAssertTrue(verdict.message.contains("probably Jamf School"))
+        XCTAssertTrue(verdict.message.contains("School API key"))
+        XCTAssertTrue(verdict.message.contains("Add Jamf School workspace"))
+        XCTAssertTrue(verdict.suggestsJamfSchool)
+        XCTAssertTrue(verdict.blocksContinue)
+        for other: ConnectionCheck.Verdict in [
+            .accepted(jamfProVersion: nil), .rejectedID(.unknownEnvironment), .undecided(exitCode: 1),
+        ] {
+            XCTAssertFalse(other.suggestsJamfSchool)
+        }
+    }
+
     func testAnythingElseIsUndecided() {
         XCTAssertEqual(ConnectionCheck.verdict(version: nil, probe: nil),
                        .undecided(exitCode: nil))

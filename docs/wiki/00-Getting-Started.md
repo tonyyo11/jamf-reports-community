@@ -79,8 +79,9 @@ full detail on each:
    the default, not a fixed one: **Settings → Workspace location** can move it to a
    shared team folder so several Macs build one pooled history — see
    [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
-4. **Authenticate** — connect Jamf Pro with your API client credentials (or a Platform
-   API scope — environment ID, or tenant ID for a legacy integration). The secret is
+4. **Authenticate** — connect with a Jamf Account integration (Platform API, recommended
+   for Jamf Cloud; pick a region and enter the environment ID) or with your Jamf Pro API
+   client credentials (OAuth2, for on-prem, GovCloud or any instance). The secret is
    never persisted by the app; `jamf-cli` stores the resulting token in the macOS keychain.
 5. **Validate** — the app confirms the connection works.
 6. **CSV mapping** — optionally add a Jamf Pro CSV export for the sheets that need

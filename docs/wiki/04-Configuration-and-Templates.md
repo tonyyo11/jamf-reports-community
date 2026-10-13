@@ -569,8 +569,9 @@ method is `platform`; a tenant-level profile (`--tenant-id`) skips Compliance Be
 and blueprint status, which Jamf Account does not grant at that level. The workbook adds
 the sheets whenever those snapshots exist.
 
-The Compliance Benchmarks and DDM Blueprints screens are also behind **Settings →
-Experimental Features → Platform API**.
+The Compliance Benchmarks and DDM Blueprints screens unlock on the same profile test. The
+Platform API left Settings → Experimental Features when it became a supported connection;
+a leftover stored opt-in is ignored.
 
 Those are the only gates. There is no `platform.enabled` setting (a Config screen switch of
 that name changed nothing and was removed in 2.9), and

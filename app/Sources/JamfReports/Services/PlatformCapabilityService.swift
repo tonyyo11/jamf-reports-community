@@ -1,8 +1,8 @@
 import Foundation
 
 /// Probes `jamf-cli config list --output json` to determine whether a configured
-/// profile is using `auth-method: platform` — the prerequisite for v2.1.0's
-/// Platform API features (compliance benchmarks, DDM blueprints).
+/// profile is using `auth-method: platform` — the prerequisite for the
+/// Platform API screens (compliance benchmarks, DDM blueprints).
 ///
 /// Results are cached per-profile for the service lifetime. Profile state is
 /// invalidated by calling `refresh()`; SettingsView calls that whenever the user
@@ -10,9 +10,7 @@ import Foundation
 /// re-probed rather than stuck on a stale `false`.
 ///
 /// All failure modes return `false` rather than throwing — the probe is a UX
-/// hint that gates a toggle in Settings, not a security check. Callers that
-/// need a hard "the feature is allowed" decision combine this with the
-/// `ExperimentalFeatureService.platformAPI` flag.
+/// hint that gates the Platform API screens, not a security check.
 @MainActor
 @Observable
 final class PlatformCapabilityService {

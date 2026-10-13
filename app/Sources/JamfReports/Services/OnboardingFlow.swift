@@ -56,6 +56,11 @@ final class OnboardingFlow {
     /// the Jamf Pro path, so nothing existing changes.
     static var pendingProductPath: ProductPath?
 
+    /// The same one-shot handoff for the Jamf Pro connection type: the chooser's "Connect with
+    /// Jamf Account" card sets `.platformGateway` so the Authenticate step opens on it. Nil keeps
+    /// the default, `.oauth2`.
+    static var pendingProConnectionType: ProConnectionType?
+
     // MARK: - Connection types
 
     enum ProConnectionType: String, CaseIterable, Identifiable {
@@ -65,8 +70,8 @@ final class OnboardingFlow {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .oauth2: "Standard (OAuth2)"
-            case .platformGateway: "Platform Gateway"
+            case .oauth2: "Jamf Pro server (OAuth2)"
+            case .platformGateway: "Jamf Account (Platform API, recommended for Jamf Cloud)"
             }
         }
     }
@@ -144,6 +149,11 @@ final class OnboardingFlow {
             case .tenant: "Tenant (legacy)"
             }
         }
+
+        /// Shown under the scope picker in onboarding and Update credentials.
+        static let caption = "Environment is the level to use: it reaches Jamf Pro, Blueprints, "
+            + "Compliance Benchmarks and DDM (needs jamf-cli 1.28 or later). Tenant is legacy: "
+            + "direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints."
 
         var idFieldLabel: String {
             switch self {
@@ -247,6 +257,10 @@ final class OnboardingFlow {
         if let pending = Self.pendingProductPath {
             productPath = pending
             Self.pendingProductPath = nil
+        }
+        if let pending = Self.pendingProConnectionType {
+            proConnectionType = pending
+            Self.pendingProConnectionType = nil
         }
     }
 
@@ -931,13 +945,14 @@ final class OnboardingFlow {
         return await ConnectionCheck.run(profile: profile, specNames: specNames, runner: runner)
     }
 
-    /// A rejected or unconfirmed ID stays unvalidated; an ID the gateway recognised validates even
-    /// when no Jamf Pro answered, which the banner reports as a warning.
+    /// Only an answering Jamf Pro validates. A rejected ID stays unvalidated, an unconfirmed one
+    /// offers Continue without validating, and an environment with no Jamf Pro is probably Jamf
+    /// School: the banner points to a School workspace and offers no way on with this profile.
     func applyConnectionCheck(_ verdict: ConnectionCheck.Verdict) {
         connectionCheck = verdict
         switch verdict {
-        case .accepted, .noJamfPro: connectionValidated = true
-        case .rejectedID, .undecided: connectionValidated = false
+        case .accepted: connectionValidated = true
+        case .rejectedID, .noJamfPro, .undecided: connectionValidated = false
         }
         if connectionValidated { recordConnectionMember(for: verdict) }
     }

@@ -7,8 +7,11 @@ import SwiftUI
 /// only shown when both `workspace.profiles.isEmpty` and `workspace.demoMode`
 /// is false — i.e. a fresh install where the user has not yet picked a path.
 ///
-/// Three cards:
-/// - "Connect Jamf Pro" hands off to `OnboardingView` via the existing
+/// Four cards:
+/// - "Connect with Jamf Account" (Platform API, recommended for Jamf Cloud) hands off to
+///   `OnboardingView` the same way, first setting `OnboardingFlow.pendingProConnectionType` so
+///   the Authenticate step opens on the Platform gateway form.
+/// - "Connect a Jamf Pro server" (OAuth2) hands off to `OnboardingView` via the existing
 ///   `.navigateToTab(.onboarding)` notification path.
 /// - "Connect Jamf School" hands off to the SAME `OnboardingView`, but first
 ///   sets `OnboardingFlow.pendingProductPath = .school` so the flow runs the
@@ -51,11 +54,27 @@ struct FirstLaunchChooserView: View {
             Text("Welcome to Jamf Reports.")
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
-            Text("Connect a Jamf Pro or Jamf School tenant to build your first workspace, or open the app with demo data to see every screen first.")
+            Text("Connect Jamf Cloud, a Jamf Pro server or Jamf School to build your first workspace, or open the app with demo data to see every screen first.")
                 .font(.body)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .frame(maxWidth: 700, alignment: .leading)
         }
+    }
+
+    /// Sets the one-shot handoffs the onboarding flow built next consumes. Each card sets both, so
+    /// a card that builds no flow cannot leave another card's choice queued.
+    static func queueOnboarding(
+        _ path: OnboardingFlow.ProductPath, connection: OnboardingFlow.ProConnectionType?
+    ) {
+        OnboardingFlow.pendingProductPath = path
+        OnboardingFlow.pendingProConnectionType = connection
+    }
+
+    private func startOnboarding(
+        _ path: OnboardingFlow.ProductPath, connection: OnboardingFlow.ProConnectionType?
+    ) {
+        Self.queueOnboarding(path, connection: connection)
+        onStartOnboarding()
     }
 
     private var cardGrid: some View {
@@ -67,20 +86,31 @@ struct FirstLaunchChooserView: View {
             spacing: 18
         ) {
             chooserCard(
+                icon: "person.badge.key.fill",
+                title: "Connect with Jamf Account",
+                body: "The recommended way to connect Jamf Cloud: a Jamf Account integration scoped to your environment, through the Jamf Platform API. Reaches Jamf Pro, Compliance Benchmarks and Blueprints.",
+                pills: [
+                    ("Platform API", "key.fill", Pill.Tone.teal),
+                    ("Recommended", "star.fill", Pill.Tone.muted),
+                ],
+                cta: "Connect with Jamf Account",
+                ctaIcon: "arrow.right",
+                ctaStyle: .gold,
+                action: { startOnboarding(.pro, connection: .platformGateway) }
+            )
+
+            chooserCard(
                 icon: "network.badge.shield.half.filled",
-                title: "Connect Jamf Pro",
-                body: "Walks you through jamf-cli auth, workspace setup, and your first CSV mapping. About 3 minutes.",
+                title: "Connect a Jamf Pro server",
+                body: "For on-prem, GovCloud or any Jamf Pro instance, with an API client (OAuth2). Walks you through jamf-cli auth, workspace setup, and your first CSV mapping.",
                 pills: [
                     ("OAuth2", "key.fill", Pill.Tone.teal),
                     ("Local workspace", "folder", Pill.Tone.muted),
                 ],
                 cta: "Get started",
                 ctaIcon: "arrow.right",
-                ctaStyle: .gold,
-                action: {
-                    OnboardingFlow.pendingProductPath = .pro
-                    onStartOnboarding()
-                }
+                ctaStyle: .neutral,
+                action: { startOnboarding(.pro, connection: nil) }
             )
 
             chooserCard(
@@ -94,10 +124,7 @@ struct FirstLaunchChooserView: View {
                 cta: "Set up School",
                 ctaIcon: "arrow.right",
                 ctaStyle: .neutral,
-                action: {
-                    OnboardingFlow.pendingProductPath = .school
-                    onStartOnboarding()
-                }
+                action: { startOnboarding(.school, connection: nil) }
             )
 
             chooserCard(

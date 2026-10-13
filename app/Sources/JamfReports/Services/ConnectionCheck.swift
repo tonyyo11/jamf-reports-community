@@ -119,7 +119,15 @@ enum ConnectionCheck {
 
 extension ConnectionCheck.Verdict {
     var blocksContinue: Bool {
-        if case .rejectedID = self { return true }
+        switch self {
+        case .rejectedID, .noJamfPro: true
+        case .accepted, .undecided: false
+        }
+    }
+
+    /// The verdict that points the user at a Jamf School workspace instead.
+    var suggestsJamfSchool: Bool {
+        if case .noJamfPro = self { return true }
         return false
     }
 
@@ -138,9 +146,11 @@ extension ConnectionCheck.Verdict {
                 + "integration needs its environment ID, and a tenant-level (legacy) integration "
                 + "its tenant ID. Correct the scope level or the ID, then save again."
         case .noJamfPro:
-            return "The gateway recognises this ID, but no Jamf Pro server answered for it. Jamf "
-                + "Pro screens stay empty unless the ID is for the environment that holds your "
-                + "Jamf Pro tenant."
+            return "The gateway recognises this ID, but no Jamf Pro server answers for it. This "
+                + "environment's MDM is probably Jamf School. Jamf Reports reads Jamf School with "
+                + "a School API key, so set it up as a Jamf School workspace (Add Jamf School "
+                + "workspace in the sidebar's workspace menu). If it should be Jamf Pro, check "
+                + "that the ID is for the environment that holds your Jamf Pro tenant."
         case .undecided(let exitCode):
             let cause = exitCode == CLIBridge.exitCodeTimedOut
                 ? " (no answer within \(Int(ConnectionCheck.timeout)) seconds)"

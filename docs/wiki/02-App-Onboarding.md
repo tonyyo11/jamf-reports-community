@@ -6,9 +6,15 @@ report. This page walks through it and the workspace it creates.
 ## Reaching onboarding
 
 On first launch, when jamf-cli has no profiles yet, the app opens a **Welcome chooser** with
-three cards:
+four cards:
 
-- **Connect Jamf Pro** — starts the Jamf Pro onboarding flow.
+- **Connect with Jamf Account** — the way
+  [jamf-cli's wiki recommends](https://github.com/Jamf-Concepts/jamf-cli/wiki#getting-started)
+  to connect Jamf Cloud: a Jamf Account integration scoped to one platform environment,
+  through the Jamf Platform API. It starts the Jamf Pro onboarding flow
+  with the Authenticate step already on the Jamf Account form.
+- **Connect a Jamf Pro server** — the same flow with an OAuth2 API client, for an on-premises
+  server, GovCloud or any Jamf Pro instance. The Jamf Platform API gateway is Jamf Cloud only.
 - **Connect Jamf School** — starts a Jamf School-only onboarding flow (see
   [Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School)): the
   same wizard, minus the Jamf Pro Authenticate / Validate / Add-products steps, with a
@@ -77,9 +83,16 @@ profile has a workspace, for example after the workspace folder is emptied.
    folder so several Macs build one pooled history; see
    [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)
    before you do, because everyone with access to that folder can read raw device data.
-4. **Authenticate** — connect Jamf Pro with either OAuth2 API client credentials (URL,
-   client ID, client secret) or a Platform API scope (environment ID, or tenant ID for
-   a legacy integration). The secret is passed to `jamf-cli` over a controlling TTY and
+4. **Authenticate** — connect with a Jamf Account integration (Platform API, recommended
+   for Jamf Cloud) or with OAuth2 API client credentials (URL, client ID, client secret).
+   For a Jamf Account integration, pick your **Region** (United States, Europe or
+   Asia-Pacific) and a scope: **Environment** with the environment ID (use this), or
+   **Tenant (legacy)** with the tenant ID, which cannot reach Compliance Benchmarks or
+   Blueprints. A profile holds one environment; an integration scoped to several needs one
+   profile per environment, with the same client ID and secret, and more environments from
+   the same integration are added from **Data Sources → Add environments** after setup. Keep
+   a Jamf Pro OAuth profile for the Jamf Pro and Classic commands the gateway refuses
+   (device actions among them); Jamf Reports itself does not need them. The secret is passed to `jamf-cli` over a controlling TTY and
    cleared immediately; the app never persists it. `jamf-cli` stores the resulting token
    in the macOS keychain. For a Platform API connection, create the integration in Jamf
    Account first — at the platform environment level, scoped to one environment, with
@@ -88,7 +101,9 @@ profile has a workspace, for example after the workspace folder is emptied.
    has the steps.
 5. **Validate** — the app runs `jamf-cli config validate` against the new profile and
    reports success or a redacted error. For a Platform API profile it also checks the
-   environment or tenant ID, and setup stops on an ID the gateway rejects; see
+   environment or tenant ID, and setup stops on an ID the gateway rejects or an environment
+   with no Jamf Pro (probably a Jamf School tenant; the banner offers **Set up Jamf
+   School**); see
    [Check the scope ID](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access#check-the-scope-id).
 6. **CSV mapping** — optionally pick a Jamf Pro CSV export. The app scaffolds a
    `config.yaml` with best-guess column mappings from the export's headers. You can also

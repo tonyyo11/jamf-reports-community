@@ -197,15 +197,8 @@ struct ReauthenticateSheet: View {
     private var platformGatewayForm: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Gateway URL")
-                    PNPTextField(
-                        value: binding(\.gatewayURL),
-                        placeholder: "https://us.api.jamfcloud.com",
-                        mono: true
-                    )
-                    validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")
-                }
+                GatewayRegionPicker(flow: flow)
+                    .disabled(isBusy)
 
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Platform API scope")
@@ -218,12 +211,7 @@ struct ReauthenticateSheet: View {
                             ($0, $0.label, nil)
                         }
                     )
-                    Text(
-                        "Environment is where a GA integration is usually created "
-                            + "(needs jamf-cli 1.28 or later). Tenant is the legacy "
-                            + "single-tenant level and cannot reach Compliance Benchmarks "
-                            + "or blueprint status."
-                    )
+                    Text(OnboardingFlow.PlatformScope.caption)
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.fg2)
                     FieldLabel(label: flow.platformScope.idFieldLabel)
@@ -385,8 +373,9 @@ struct ReauthenticateSheet: View {
         flow.profileName = profileSlug
         if Self.prefersPlatformGateway(authMethod: prefillAuthMethod) {
             flow.proConnectionType = .platformGateway
-            let trimmed = prefillURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { flow.gatewayURL = trimmed }
+            if let url = GatewayRegion.startingURL(fromStored: prefillURL) {
+                flow.gatewayURL = url
+            }
         } else {
             flow.proConnectionType = .oauth2
             flow.jamfURL = prefillURL.trimmingCharacters(in: .whitespacesAndNewlines)
