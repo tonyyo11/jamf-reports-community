@@ -88,6 +88,7 @@ struct SourcesView: View {
                 csvCard
             }
             doctorCard
+            ConnectionCard()
             capabilityCard
             familiesCard
             additionalProductsCard
