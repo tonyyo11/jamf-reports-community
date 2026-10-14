@@ -407,10 +407,16 @@ final class TickLockTests: XCTestCase {
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         _ = await hold.keepingAlive(every: .milliseconds(20), limit: .milliseconds(100)) {
             () async -> Bool in
-            try? await Task.sleep(for: .milliseconds(200))
+            // Wait for the give-up itself, not a fixed time: a beat descheduled between its
+            // deadline check and its touch would otherwise land after the mtime is set.
+            // `release` empties the file under the lock `touch` takes, so no touch follows.
+            let giveUp = ContinuousClock.now.advanced(by: .seconds(5))
+            while !lock.namesNoHolder, ContinuousClock.now < giveUp {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
             try? FileManager.default.setAttributes(
                 [.modificationDate: old], ofItemAtPath: lock.url.path)
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .milliseconds(100))
             return true
         }
         let modified = try modificationDate(of: lock.url)
