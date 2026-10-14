@@ -50,8 +50,22 @@ These steps follow Jamf's
 [Getting started with Platform API](https://developer.jamf.com/platform-api/reference/getting-started-with-platform-api)
 guide.
 
+### Before you start
+
+- **Your Jamf Pro is hosted by Jamf Cloud.** The gateway does not reach an on-premises or
+  GovCloud server; use a direct Jamf Pro connection for those.
+- **Your Jamf Pro tenant is in a platform environment.** An environment is a group of
+  tenants (Jamf Pro or Jamf School, and optionally Jamf Protect and Jamf Security Cloud) in
+  Jamf Account. If your tenant is in no environment, contact Jamf Support.
+- **The environment can be picked.** An environment you created yourself appears in the
+  integration's scope picker only when Jamf can tell its region:
+  - It must hold an MDM, Jamf Pro or Jamf School.
+  - Every tenant in it except Jamf Security Cloud must be in the same region.
+  - After creating or editing an environment, allow up to 15 minutes before it appears.
+
 1. Sign in to [Jamf Account](https://account.jamf.com) with the **Administrator** role, or a
-   custom role with **Integrations** privileges.
+   custom role with **Integrations** privileges. After a custom role is assigned, sign out
+   of Jamf Account and back in before it takes effect.
 2. Choose **Integrations**, then **Create integration**. Name it for its purpose, for
    example "JamfReports — production (read only)".
 3. Set the scope level to **Platform environment**. See [Scope levels](#scope-levels).
@@ -79,7 +93,8 @@ to every profile in one step:
 - **Region:** United States, Europe or Asia-Pacific, which is the gateway
   `https://us.api.jamfcloud.com`, `https://eu.api.jamfcloud.com` or
   `https://apac.api.jamfcloud.com`. Update credentials shows a stored gateway URL that is
-  none of the three as **Other** and keeps it until you pick a region.
+  none of the three as **Other** and keeps it until you pick a region. Pick the region your
+  environment is in: a gateway token works only in the region that issued it.
 - **Scope:** Environment, with the environment ID from step 7.
 - **Client ID** and **client secret** from step 6.
 
@@ -230,6 +245,34 @@ jamf-cli -p <profile> pro scripts list --output json | head -c 1500
 Every Mac collecting into a shared workspace must have a jamf-cli profile with the name the
 workspace's `config.yaml` uses, connected the same way. See
 [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations#shared-workspace-several-macs-one-history).
+
+## Moving an existing integration
+
+If scripts or other tools already reach Jamf Pro with an API client, Jamf recommends moving
+them to the gateway; its
+[Getting started](https://developer.jamf.com/platform-api/reference/getting-started-with-platform-api)
+guide links the steps. The Jamf Pro and Classic APIs keep working without it. An integration
+made during the Platform API beta does not move: the beta gateway is retired and its
+credentials are revoked, so create a new integration. To change an integration's
+environments or permissions later, see Jamf Account's
+[Creating or Editing Integrations](https://learn.jamf.com/r/en-US/jamf-account-documentation/Creating_or_Editing_Integrations);
+the secret is not shown again after an edit. Jamf Account names permissions by capability;
+Jamf's permissions map lists the Jamf Pro privilege each one replaces, and [Permissions by report area](#permissions-by-report-area)
+gives both for every source the app collects.
+
+## Further reading
+
+- [Getting started with Platform API](https://developer.jamf.com/platform-api/reference/getting-started-with-platform-api):
+  integrations, scope levels, regions and tokens.
+- [Platform API reference](https://developer.jamf.com/platform-api/): every endpoint and the
+  permission it needs.
+- [Jamf Pro 11.32.0 release notes: Platform APIs and Platform API Gateway general availability](https://learn.jamf.com/r/en-US/jamf-pro-release-notes-11.32.0/Platform_APIs_and_Platform_API_Gateway_General_Availability).
+- [Jamf Platform services and capabilities](https://learn.jamf.com/r/en-US/jamf-pro-documentation-current/Jamf_Platform_Services_and_Capabilities):
+  Blueprints, Compliance Benchmarks, AI Governance and the Platform APIs.
+- [Jamf Pro API developer resources](https://developer.jamf.com/jamf-pro/docs/jamf-pro-api-developer-resources):
+  API clients and roles, privileges, Swagger and Postman.
+- [jamf-cli wiki](https://github.com/Jamf-Concepts/jamf-cli/wiki#getting-started): profiles,
+  scope levels and commands.
 
 ## Known gaps
 

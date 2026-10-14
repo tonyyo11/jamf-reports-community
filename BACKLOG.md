@@ -10,6 +10,8 @@ nothing is tracked in two places.
 ## Open epics
 
 - [Epic: Deferred findings — chart filter rollout, summary basis changes, 2.9 follow-ups](https://github.com/tonyyo11/jamf-reports-community/issues/207)
+- [Epic: Jamf Security Cloud and cross-product device correlation (2.11)](https://github.com/tonyyo11/jamf-reports-community/issues/283)
+- [Epic: More of the Platform API, Protect in backups, several Platform connections (2.11)](https://github.com/tonyyo11/jamf-reports-community/issues/284)
 - [Epic: Retire CSV-assisted reporting — import EAs once, report from jamf-cli](https://github.com/tonyyo11/jamf-reports-community/issues/281)
 - [Epic: jamf-cli 1.29.0 follow-ups — catalog-driven exit-8 filter, gate removal at floor 1.29](https://github.com/tonyyo11/jamf-reports-community/issues/226)
 
