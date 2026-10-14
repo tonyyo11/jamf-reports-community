@@ -853,24 +853,6 @@ private func stabilityTone(_ value: Double?) -> Pill.Tone {
     return .danger
 }
 
-/// Returns true when the profile summary indicates an actionable issue:
-/// - No summary yet (workspace needs a first run)
-/// - Stability index below the warn threshold (< 70%)
-/// - Any stale devices in the fleet
-/// - FileVault below 90% (material encryption gap)
-/// - Patch compliance below 80%
-///
-/// Stability already captures compliance + patch + stale in one composite score;
-/// the individual thresholds catch cases where one metric is bad but others
-/// keep stability above 70.
-func fleetProfileHasIssue(_ summary: DailySummary?) -> Bool {
-    !fleetProfileIssues(summary).isEmpty
-}
-
-func fleetProfileIssueReasons(_ summary: DailySummary?) -> [String] {
-    fleetProfileIssues(summary).map(\.reason)
-}
-
 /// One flagged condition with the context the badge alone can't carry:
 /// what tripped, why it matters, and the screen where the operator can act.
 struct FleetProfileIssue: Identifiable {

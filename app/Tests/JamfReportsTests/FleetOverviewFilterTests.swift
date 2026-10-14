@@ -3,7 +3,7 @@ import XCTest
 
 final class FleetOverviewFilterTests: XCTestCase {
 
-    // MARK: - hasIssue via fleetProfileHasIssue
+    // MARK: - hasIssue via fleetProfileIssues
 
     func testCleanSummaryHasNoIssue() {
         let summary = DailySummary(
@@ -16,7 +16,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertFalse(fleetProfileHasIssue(summary))
+        XCTAssertTrue(fleetProfileIssues(summary).isEmpty)
     }
 
     func testStaleSummaryHasIssue() {
@@ -30,7 +30,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertTrue(fleetProfileHasIssue(summary))
+        XCTAssertFalse(fleetProfileIssues(summary).isEmpty)
     }
 
     func testLowFileVaultHasIssue() {
@@ -44,7 +44,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertTrue(fleetProfileHasIssue(summary))
+        XCTAssertFalse(fleetProfileIssues(summary).isEmpty)
     }
 
     func testLowPatchComplianceHasIssue() {
@@ -58,7 +58,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 72
         )
-        XCTAssertTrue(fleetProfileHasIssue(summary))
+        XCTAssertFalse(fleetProfileIssues(summary).isEmpty)
     }
 
     /// The daily summary's patch figure is a share of devices, not of titles; the
@@ -104,12 +104,12 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertTrue(fleetProfileHasIssue(summary2))
+        XCTAssertFalse(fleetProfileIssues(summary2).isEmpty)
         _ = summary  // silence unused warning
     }
 
     func testMissingSummaryHasIssue() {
-        XCTAssertTrue(fleetProfileHasIssue(nil))
+        XCTAssertFalse(fleetProfileIssues(nil).isEmpty)
     }
 
     // MARK: - Filter helper
@@ -144,8 +144,8 @@ final class FleetOverviewFilterTests: XCTestCase {
             ),
         ]
 
-        let issueCount = summaries.filter { fleetProfileHasIssue($0) }.count
-        let cleanCount = summaries.filter { !fleetProfileHasIssue($0) }.count
+        let issueCount = summaries.filter { !fleetProfileIssues($0).isEmpty }.count
+        let cleanCount = summaries.filter { fleetProfileIssues($0).isEmpty }.count
 
         XCTAssertEqual(issueCount, 3)
         XCTAssertEqual(cleanCount, 2)
@@ -164,7 +164,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 60
         )
-        let reasons = fleetProfileIssueReasons(summary)
+        let reasons = fleetProfileIssues(summary).map(\.reason)
         XCTAssertEqual(reasons.count, 3)
         XCTAssertTrue(reasons.contains { $0.contains("5 stale devices") })
         XCTAssertTrue(reasons.contains { $0.contains("FileVault 82.0%") })
@@ -182,11 +182,11 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertTrue(fleetProfileIssueReasons(summary).isEmpty)
+        XCTAssertTrue(fleetProfileIssues(summary).map(\.reason).isEmpty)
     }
 
     func testIssueReasonsForMissingSummary() {
-        XCTAssertEqual(fleetProfileIssueReasons(nil), ["No summary collected yet"])
+        XCTAssertEqual(fleetProfileIssues(nil).map(\.reason), ["No summary collected yet"])
     }
 
     func testIssueDestinationsRouteToActionableTabs() {
