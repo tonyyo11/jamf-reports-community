@@ -21,7 +21,7 @@ struct FleetOverviewView: View {
     }
 
     private var visibleRows: [FleetProfileOverview] {
-        issuesOnly ? rows.filter { fleetProfileHasIssue($0.summary) } : rows
+        issuesOnly ? rows.filter(\.hasIssue) : rows
     }
 
     private var profileKey: String {
@@ -113,7 +113,7 @@ struct FleetOverviewView: View {
     }
 
     private var issueCount: Int {
-        rows.filter { fleetProfileHasIssue($0.summary) }.count
+        rows.filter(\.hasIssue).count
     }
 
     private var stabilitySpark: [Double] {
@@ -205,7 +205,7 @@ struct FleetOverviewView: View {
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(Theme.Colors.goldBright)
                         }
-                        Text(fleetProfileIssueReasons(row.summary).joined(separator: " · "))
+                        Text(row.issues.map(\.reason).joined(separator: " · "))
                             .font(.caption)
                             .foregroundStyle(Theme.Colors.warn)
                             .fixedSize(horizontal: false, vertical: true)
@@ -214,7 +214,7 @@ struct FleetOverviewView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(
-                    "\(row.profile): \(fleetProfileIssueReasons(row.summary).joined(separator: ", "))"
+                    "\(row.profile): \(row.issues.map(\.reason).joined(separator: ", "))"
                 )
             }
         }
@@ -569,7 +569,7 @@ struct FleetOverviewView: View {
                         .accessibilityHidden(true)
                     SectionHeader(title: "Issues on This Profile")
                 }
-                ForEach(fleetProfileIssues(row.summary)) { issue in
+                ForEach(row.issues) { issue in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(issue.reason)
                             .font(.callout.weight(.semibold))
@@ -616,7 +616,8 @@ struct FleetOverviewView: View {
                 return FleetProfileOverview(
                     profile: profile.name,
                     summary: summaries.last,
-                    summaries: summaries
+                    summaries: summaries,
+                    isSchool: profile.product == .school
                 )
             }
         }.value
@@ -666,8 +667,11 @@ private struct FleetProfileOverview: Identifiable, Sendable {
     let profile: String
     let summary: DailySummary?
     var summaries: [DailySummary] = []
+    /// A Jamf School workspace writes no daily summary, so none of the summary issues applies.
+    var isSchool = false
 
-    var hasIssue: Bool { fleetProfileHasIssue(summary) }
+    var issues: [FleetProfileIssue] { isSchool ? [] : fleetProfileIssues(summary) }
+    var hasIssue: Bool { !issues.isEmpty }
 }
 
 private struct StabilityTrendPoint: Identifiable, Sendable {
@@ -685,7 +689,7 @@ private struct FleetProfileCard: View {
         row.summary?.stabilityIndex
     }
 
-    private var hasIssue: Bool { fleetProfileHasIssue(row.summary) }
+    private var hasIssue: Bool { row.hasIssue }
     private var hasNoSummary: Bool { row.summary == nil }
 
     var body: some View {
@@ -778,14 +782,14 @@ private struct FleetProfileCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .accessibilityLabel(
-                        "Issues: \(fleetProfileIssueReasons(row.summary).joined(separator: ", "))"
+                        "Issues: \(row.issues.map(\.reason).joined(separator: ", "))"
                     )
                 }
         }
     }
 
     private var issueCaption: String {
-        let reasons = fleetProfileIssueReasons(row.summary)
+        let reasons = row.issues.map(\.reason)
         let label = reasons.count == 1 ? "Issue" : "Issues"
         return "\(label): \(reasons.joined(separator: " · "))"
     }

@@ -6,9 +6,10 @@ import Foundation
 /// discovery fills from the same command (2.10: this replaced `PlatformCapabilityService`, a
 /// second probe of the command that DDM and Compliance Benchmarks ran).
 enum JamfCLIConfigList {
-    /// The matching profile's `auth-method` (`JamfCLIAuthMethod.rawValue`), or nil when the response is
-    /// unreadable, the profile is absent, or the field is empty. `ProfileAuthMethod` needs that
-    /// nil: unknown is not the same answer as oauth2, and only the second may be acted on.
+    /// The matching profile's `auth-method` (`JamfCLIAuthMethod.rawValue`), or nil when the
+    /// response is unreadable, the profile is absent, or the field is empty. `ProfileAuthMethod`
+    /// needs that nil: unknown is not the same answer as oauth2, and only the second may be
+    /// acted on.
     nonisolated static func authMethod(data: Data, profile: String) -> String? {
         guard let entry = entry(data: data, profile: profile) else { return nil }
         return JamfCLIAuthMethod(raw: field("auth-method", in: entry))?.rawValue

@@ -21,7 +21,7 @@ struct Sidebar: View {
 
     /// Groups filtered by user visibility. Empty groups are dropped entirely.
     private var visibleGroups: [Tab.NavGroup] {
-        let visibility = TabVisibility.parse(hiddenTabsRaw)
+        let visibility = workspace.tabVisibility(hiddenRaw: hiddenTabsRaw)
         return Tab.navGroups.compactMap { group in
             let visible = group.items.filter { visibility.isVisible($0) }
             guard !visible.isEmpty else { return nil }

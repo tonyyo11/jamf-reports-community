@@ -86,6 +86,13 @@ versions in this repository map to git tags.
   then a contact gap), then the Macs that are only stale. With more than 100 stale Macs, the table
   used to show stale Macs only, so the contact-gap lines in "Needs attention" led to rows that
   were not there.
+- A Jamf School workspace shows only the screens that apply to it. The Jamf Pro screens, which
+  could never fill from School data, leave the sidebar while it is active; Generate opens on the
+  School template with the workbook only; the Reports PDF and CSV exports and the Fleet Overview
+  "No summary" issue no longer appear for it; and the app stops running a Jamf Pro audit and
+  judging its data health by Jamf Pro reports at launch.
+- The Jamf Protect screen offers **Connect Jamf Protect** when Protect is not connected, instead
+  of a list of jamf-cli commands that put nothing into the workspace.
 - Every screen now reads a profile's sign-in method the way jamf-cli does, from one place, so
   Config, Compliance Benchmarks, DDM Blueprints, the console links and collect agree. A profile
   the app cannot use is no longer taken for a Platform API profile because its name contains

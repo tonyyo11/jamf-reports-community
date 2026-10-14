@@ -144,12 +144,17 @@ struct ContentView: View {
                 tab = newTab
             }
         }
+        // Switching to a Jamf School workspace removes the Jamf Pro tabs; do not leave the
+        // detail pane on one.
+        .onChange(of: workspace.isSchoolWorkspace) { _, _ in
+            if !workspace.tabVisibility(hiddenRaw: hiddenTabsRaw).isVisible(tab) { tab = .overview }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToPreviousTab)) { _ in
-            let visibility = TabVisibility.parse(hiddenTabsRaw)
+            let visibility = workspace.tabVisibility(hiddenRaw: hiddenTabsRaw)
             if let dest = previousVisibleTab(from: tab, in: visibility) { tab = dest }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToNextTab)) { _ in
-            let visibility = TabVisibility.parse(hiddenTabsRaw)
+            let visibility = workspace.tabVisibility(hiddenRaw: hiddenTabsRaw)
             if let dest = nextVisibleTab(from: tab, in: visibility) { tab = dest }
         }
         .task {

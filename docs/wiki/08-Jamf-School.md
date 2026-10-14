@@ -53,6 +53,13 @@ Jamf School data feeds the standalone workbook described above — it does not a
 the interactive dashboards (Overview, Devices, Security Posture, and the rest), which are
 Jamf Pro/jamf-cli surfaces; see [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards).
 
+From 2.10, a Jamf School workspace shows only the screens that apply to it: Overview, Fleet
+Overview, Generated reports, Automation, Run History, Config, Data Sources and Settings. The
+Jamf Pro screens leave the sidebar while it is the active workspace (your own hidden-tab
+choices are kept for the others). Generate opens on the School template and offers the
+workbook only, Data Sources lists the `jamf-cli school` commands a collect runs, and the
+health banner and launch checks no longer judge it by Jamf Pro reports.
+
 ## CSV export format
 
 Jamf School device exports use a semicolon (`;`) delimiter, not a comma. Export from

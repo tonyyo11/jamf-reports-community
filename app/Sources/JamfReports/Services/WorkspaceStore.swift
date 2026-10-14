@@ -1191,6 +1191,17 @@ final class WorkspaceStore {
         demoMode ? nil : profiles.first { $0.name == profile }
     }
 
+    /// The active workspace is a Jamf School one: its profile logs in to Jamf School
+    /// (`school setup`, discovered as `JamfCLIProduct.school`), which is also the profile
+    /// `ProfileProductType.detect` routes to School collect.
+    var isSchoolWorkspace: Bool { activeCLIProfile?.product == .school }
+
+    /// The sidebar's visibility for the active workspace: the user's hidden tabs, and the tabs
+    /// its product cannot fill.
+    func tabVisibility(hiddenRaw: String) -> TabVisibility {
+        TabVisibility.parse(hiddenRaw).limited(toSchool: isSchoolWorkspace)
+    }
+
     /// After credentials are saved: a profile's auth method or scope level may have changed, so
     /// the headless cache (`ProfileAuthMethod`) is cleared and the profile list read again.
     func credentialsChanged() {
@@ -1397,6 +1408,13 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
 
     var badgeIsGold: Bool { self == .trends }
 
+    /// The tabs a Jamf School workspace keeps (2.10): it collects only School data, which no
+    /// Jamf Pro screen reads, so it keeps the screens about the workspace, its reports and its
+    /// automation. Applied by `TabVisibility.limited(toSchool:)`, never stored.
+    static let schoolTabs: Set<Tab> = [
+        .overview, .fleet, .reports, .schedules, .runs, .config, .sources, .settings, .onboarding,
+    ]
+
     /// Tabs the user cannot hide. These are the bones of the app — hiding
     /// them would break navigation or leave the user without a way back to
     /// configuration. Everything else is toggleable via `TabVisibility`.
@@ -1457,6 +1475,9 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
 /// re-show tabs the user has hidden.
 struct TabVisibility: Sendable, Equatable {
     private var hidden: Set<Tab>
+    /// Tabs the workspace's product cannot fill (a Jamf School workspace's Jamf Pro tabs).
+    /// Not the user's choice: never serialized, and it overrides the core-tab rule.
+    private var unavailable: Set<Tab> = []
 
     init(hidden: Set<Tab> = []) {
         // Core tabs can never be hidden — strip them on construction so
@@ -1466,7 +1487,15 @@ struct TabVisibility: Sendable, Equatable {
 
     /// True when this tab should appear in the sidebar.
     func isVisible(_ tab: Tab) -> Bool {
-        tab.isCoreTab || !hidden.contains(tab)
+        !unavailable.contains(tab) && (tab.isCoreTab || !hidden.contains(tab))
+    }
+
+    /// This visibility for the active workspace: a Jamf School workspace also leaves out every
+    /// tab outside `Tab.schoolTabs`.
+    func limited(toSchool isSchool: Bool) -> TabVisibility {
+        var copy = self
+        copy.unavailable = isSchool ? Set(Tab.allCases).subtracting(Tab.schoolTabs) : []
+        return copy
     }
 
     /// Toggle a tab's visibility. Core tabs are no-ops.

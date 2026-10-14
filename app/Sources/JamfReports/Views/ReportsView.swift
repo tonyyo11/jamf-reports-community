@@ -174,7 +174,7 @@ struct ReportsView: View {
         .sheet(isPresented: $showGenerate) {
             GenerateSheet(
                 profile: workspace.profile, bridge: bridge, freshness: generateFreshness,
-                onGenerated: reload)
+                schoolWorkspace: workspace.isSchoolWorkspace, onGenerated: reload)
         }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
@@ -255,32 +255,35 @@ struct ReportsView: View {
                             ? DemoData.liveOnlyHelp
                             : "Choose a template or sheets and the formats, then generate"
                         )
-                        PNPButton(
-                            title: isGeneratingPDF ? "Generating..." : "Export PDF",
-                            icon: "doc.richtext",
-                            style: .neutral
-                        ) {
-                            generatePDFReport()
+                        // Both render Jamf Pro data; a Jamf School workspace has a workbook only.
+                        if !workspace.isSchoolWorkspace {
+                            PNPButton(
+                                title: isGeneratingPDF ? "Generating..." : "Export PDF",
+                                icon: "doc.richtext",
+                                style: .neutral
+                            ) {
+                                generatePDFReport()
+                            }
+                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                            .help(
+                                workspace.demoMode
+                                ? DemoData.liveOnlyHelp
+                                : "Render the HTML report to PDF via WKWebView"
+                            )
+                            PNPButton(
+                                title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
+                                icon: "doc.text",
+                                style: .neutral
+                            ) {
+                                runExportInventoryCSV()
+                            }
+                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                            .help(
+                                workspace.demoMode
+                                ? DemoData.liveOnlyHelp
+                                : "Export a wide CSV of all computer inventory"
+                            )
                         }
-                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
-                        .help(
-                            workspace.demoMode
-                            ? DemoData.liveOnlyHelp
-                            : "Render the HTML report to PDF via WKWebView"
-                        )
-                        PNPButton(
-                            title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
-                            icon: "doc.text",
-                            style: .neutral
-                        ) {
-                            runExportInventoryCSV()
-                        }
-                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
-                        .help(
-                            workspace.demoMode
-                            ? DemoData.liveOnlyHelp
-                            : "Export a wide CSV of all computer inventory"
-                        )
                     }
                 )
             }

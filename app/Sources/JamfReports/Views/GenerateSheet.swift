@@ -43,8 +43,26 @@ final class GenerateSheetState {
     var generatedHashes: [String: String] = [:]
 
     /// Identifier of the currently selected report template.
-    /// Kept for the sheet's lifetime; each open starts on Full Instance.
+    /// Kept for the sheet's lifetime; each open starts on Full Instance, or School.
     var selectedTemplateID: String = FullInstanceTemplate().identifier
+
+    /// A Jamf School workspace (2.10): the School template is the only one with data there,
+    /// and it writes a workbook only (there is no School HTML, PDF or CSV report).
+    var schoolWorkspace = false {
+        didSet {
+            guard schoolWorkspace else { return }
+            selectedTemplateID = SchoolTemplate().identifier
+            selectedTypes = [.xlsx]
+        }
+    }
+
+    var offeredTypes: [GenerateOutputType] {
+        schoolWorkspace ? [.xlsx] : Array(GenerateOutputType.allCases)
+    }
+
+    var offeredTemplates: [any ReportTemplate] {
+        schoolWorkspace ? [SchoolTemplate()] : TemplateResolver.allTemplates
+    }
 
     /// Custom sheet selection for the "custom" template, persisted across app launches
     /// via UserDefaults. Stored, not computed over UserDefaults, so `@Observable` sees a
@@ -309,12 +327,13 @@ struct GenerateSheet: View {
     /// first frame; nil (demo mode) leaves it on.
     init(
         profile: String, bridge: CLIBridge, freshness: SnapshotFreshness.Decision?,
-        onGenerated: @escaping @MainActor () -> Void
+        schoolWorkspace: Bool = false, onGenerated: @escaping @MainActor () -> Void
     ) {
         self.profile = profile
         self.bridge = bridge
         self.onGenerated = onGenerated
         let state = GenerateSheetState()
+        state.schoolWorkspace = schoolWorkspace
         if let freshness { state.applySnapshotFreshness(freshness) }
         _state = State(initialValue: state)
     }
@@ -417,7 +436,7 @@ struct GenerateSheet: View {
     private var formatsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             FieldLabel(label: "Output formats")
-            ForEach(GenerateOutputType.allCases, id: \.self) { type in
+            ForEach(state.offeredTypes, id: \.self) { type in
                 formatRow(type)
             }
 
@@ -460,7 +479,7 @@ struct GenerateSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             FieldLabel(label: "Template")
             Picker("Template", selection: $state.selectedTemplateID) {
-                ForEach(TemplateResolver.allTemplates, id: \.identifier) { template in
+                ForEach(state.offeredTemplates, id: \.identifier) { template in
                     Text(template.displayName).tag(template.identifier)
                 }
             }

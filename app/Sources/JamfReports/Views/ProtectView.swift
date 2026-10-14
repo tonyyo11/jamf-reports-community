@@ -11,6 +11,15 @@ struct ProtectView: View {
     @State private var hasLoaded = false
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var selectedTimelineDevice: String?
+    @State private var connectedProducts = ConnectedProducts.none
+    @State private var showingConnect = false
+
+    /// Protect is connected to this workspace (`protect.enabled` with a profile). Before 2.10
+    /// the screen decided from snapshots on disk alone, so an unconnected workspace was told
+    /// to run jamf-cli commands that write nothing into it.
+    private var protectConnected: Bool {
+        workspace.demoMode || connectedProducts.protectProfile != nil
+    }
 
     /// The demo shows the deep dive: its data is populated, and a locked card on
     /// top of it read as a feature the demo tenant could not have.
@@ -33,7 +42,7 @@ struct ProtectView: View {
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
+            if !workspace.demoMode && protectConnected {
                 StaleDataBanner(source: snapshot.cacheSource)
                 // A tenant that doesn't run Protect at all has no expected
                 // kinds — every one of them would render a false-alarm "never"
@@ -48,38 +57,11 @@ struct ProtectView: View {
                 )
             }
 
-            if !deepDiveEnabled {
-                lockedDeepDiveState
-            }
-            if !snapshot.isDetected {
-                emptyState
+            if !protectConnected && !snapshot.isDetected {
+                notConnectedState
             } else {
-                if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty
-                    || !snapshot.insights.isEmpty {
-                    kpiGrid
-                }
-                if !snapshot.alerts.isEmpty {
-                    alertsBySeverityCard
-                    recentAlertsCard
-                }
-                if deepDiveEnabled {
-                    if !snapshot.alerts.isEmpty {
-                        killChainStageCard
-                        deviceTimelineCard
-                    }
-                    if !snapshot.computers.isEmpty {
-                        agentVersionCard
-                    }
-                }
-                if !snapshot.computers.isEmpty {
-                    computersCard
-                }
-                if !snapshot.insights.isEmpty {
-                    insightsCard
-                }
-                if !snapshot.plans.isEmpty {
-                    plansCard
-                }
+                if !deepDiveEnabled { lockedDeepDiveState }
+                if snapshot.isDetected { dataSections } else { emptyState }
             }
         }
         .tint(Theme.Colors.goldBright)
@@ -131,23 +113,71 @@ struct ProtectView: View {
         snapshot = workspace.demoMode
             ? DemoData.protectSnapshot
             : ProtectDashboardService.load(profile: workspace.profile)
+        connectedProducts = workspace.demoMode
+            ? .none : ConnectedProducts.read(profile: workspace.profile)
     }
 
     // MARK: - Sections
 
+    @ViewBuilder
+    private var dataSections: some View {
+        if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty
+            || !snapshot.insights.isEmpty {
+            kpiGrid
+        }
+        if !snapshot.alerts.isEmpty {
+            alertsBySeverityCard
+            recentAlertsCard
+        }
+        if deepDiveEnabled {
+            if !snapshot.alerts.isEmpty {
+                killChainStageCard
+                deviceTimelineCard
+            }
+            if !snapshot.computers.isEmpty {
+                agentVersionCard
+            }
+        }
+        if !snapshot.computers.isEmpty {
+            computersCard
+        }
+        if !snapshot.insights.isEmpty {
+            insightsCard
+        }
+        if !snapshot.plans.isEmpty {
+            plansCard
+        }
+    }
+
+    /// Connected, nothing collected yet: Protect follows each Jamf Pro collect.
     private var emptyState: some View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "shield.lefthalf.filled",
-                title: "No Jamf Protect data detected",
-                message: "No Jamf Protect data detected in this workspace. Run the following commands to collect Protect telemetry:",
-                commands: [
-                    "`jamf-cli protect overview`",
-                    "`jamf-cli protect alerts list`",
-                    "`jamf-cli protect computers list`",
-                    "`jamf-cli protect insights list`"
-                ]
+                title: "No Jamf Protect data yet",
+                message: "Jamf Protect is connected. Its data arrives with the next collect: "
+                    + "Refresh on the Overview, or the next scheduled run."
             )
+        }
+    }
+
+    private var notConnectedState: some View {
+        Card(padding: 24) {
+            VStack(alignment: .leading, spacing: 12) {
+                EmptyStateView(
+                    systemImage: "shield.lefthalf.filled",
+                    title: "Jamf Protect is not connected",
+                    message: "Connect Jamf Protect to this workspace with an API client from "
+                        + "the Protect console. Its alerts, computers and insights are then "
+                        + "collected with the workspace's data."
+                )
+                PNPButton(title: "Connect Jamf Protect", icon: "link", style: .gold) {
+                    showingConnect = true
+                }
+            }
+        }
+        .sheet(isPresented: $showingConnect, onDismiss: reload) {
+            ProductConnectSheetView(profileSlug: workspace.profile)
         }
     }
 
