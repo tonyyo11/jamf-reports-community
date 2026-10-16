@@ -165,27 +165,41 @@ lists them in Jamf Pro 11.32; Jamf's
 [Classic API privilege reference](https://developer.jamf.com/jamf-pro/docs/classic-api-minimum-required-privileges-and-endpoint-mapping)
 uses older names for a few (for example *Mobile Device Configuration Profiles* for *iOS
 Configuration Profiles*). Jamf Account permissions are written as *Section > Permission*,
-the way its permission picker shows them. The data source names are the ones Run History
-and the health strip use.
+the names Jamf's
+[permissions map](https://developer.jamf.com/platform-api/reference/jamf-pro-permissions-map)
+uses (updated 2026-09-03), which the permission picker follows; the map also gives each one's
+slug, such as `devices:read`, which jamf-cli's 403 hint shows in parentheses. The data source
+names are the ones Run History and the health strip use.
 
 | Report area | Data sources | Jamf Pro API role (direct) | Jamf Account integration (Platform API) |
 |---|---|---|---|
 | Fleet inventory and security | `security`, `inventory-summary`, `device-compliance`, `computers`, `software-installs`, `duplicate-serials` | Read Computers | Inventory > Devices |
 | Mobile devices | `mobile-devices-list` | Read Mobile Devices | Inventory > Devices |
-| Patch management | `patch-status`, `patch-device-failures`, `patch-release-dates` | Read Patch Management Software Titles; Read Patch Policies | App lifecycle management > Patch titles; App lifecycle management > Patch policies |
+| Patch management | `patch-status`, `patch-device-failures`, `patch-release-dates` | Read Patch Management Software Titles; Read Patch Policies; Read Computers; Read Mobile Devices | App lifecycle management > Patch titles; App lifecycle management > Patch policies; Inventory > Devices |
 | Software updates | `update-status`, `update-device-failures` | Read Managed Software Updates; Read Computers; Read Mobile Devices | Deployment > Software updates; Inventory > Devices |
-| Policies | `policy-status`, `policies` | Read Policies; Read Computers | Deployment > Policies; Inventory > Device history; Inventory > Devices |
+| Policies | `policy-status`, `policies` | Read Policies | Deployment > Policies |
 | Configuration profiles and apps | `profile-status`, `app-status`, `classic-macos-profiles`, `classic-ios-profiles` | Read macOS Configuration Profiles; Read iOS Configuration Profiles; Read Mac Applications; Read Mobile Device Applications; View MDM command information in Jamf Pro API; Read Computers; Read Mobile Devices | Deployment > Configuration profiles; App lifecycle management > Apps; Device actions > Device actions; Inventory > Devices |
 | Extension attributes and mSCP compliance bands | `computer-extension-attributes`, `ea-results` | Read Computer Extension Attributes; Read Computers | Inventory > Device extension attributes; Inventory > Devices |
 | Groups, searches and organization | `groups`, `smart-computer-groups`, `classic-computer-groups`, `classic-mobile-device-groups`, `advanced-mobile-device-searches`, `sites`, `buildings`, `departments`, `categories`, `scripts`, `packages`, `device-enrollment-instances` | Read Smart Computer Groups; Read Static Computer Groups; Read Smart Mobile Device Groups; Read Static Mobile Device Groups; Read Advanced Mobile Device Searches; Read Sites; Read Buildings; Read Departments; Read Categories; Read Self Service; Read Scripts; Read Packages; Read Device Enrollment Program Instances | Inventory > Device groups; Inventory > Advanced device searches; Organizational context > Sites; Organizational context > Buildings; Organizational context > Departments; Organizational context > Categories; Global settings > Self Service configuration; Deployment > Scripts; Deployment > Packages; Infrastructure > Automated Device Enrollment connection |
 | DDM and MDM command health (weekly device scan) | `ddm-device-status`, `mdm-command-health` | Read Computers; Read Mobile Devices | Inventory > Devices; Inventory > Device history |
-| Health Audit | `audit` | Read Policies; Read Categories; Read Self Service; Read Smart Computer Groups; Read Static Computer Groups; Read Device Enrollment Program Instances; Read Computer PreStage Enrollments; View MDM command information in Jamf Pro API; Read Computers | Deployment > Policies; Organizational context > Categories; Global settings > Self Service configuration; Inventory > Device groups; Infrastructure > Automated Device Enrollment connection; Enrollment > PreStage enrollments; Device actions > Device actions; Inventory > Devices |
-| Group hygiene (Health Audit, on demand) | `group-tools-analyze` | Read Smart Computer Groups; Read Static Computer Groups; Read Policies; Read macOS Configuration Profiles; Read Patch Policies; Read Patch Management Software Titles; Read Restricted Software; Read eBooks; Read Computer PreStage Enrollments | Inventory > Device groups; Deployment > Policies; Deployment > Configuration profiles; App lifecycle management > Patch policies; App lifecycle management > Restricted software; App lifecycle management > eBooks; Enrollment > PreStage enrollments |
+| Health Audit | `audit` | Read Policies; Read Categories; Read Self Service; Read Smart Computer Groups; Read Static Computer Groups; Read Device Enrollment Program Instances; Read Computer PreStage Enrollments; View MDM command information in Jamf Pro API; Read Computers | Deployment > Policies; Organizational context > Categories; Global settings > Self Service configuration; Inventory > Device groups; Infrastructure > Automated Device Enrollment connection; Enrollment > PreStage enrollments; Device actions > Device actions; Inventory > Devices; for its platform checks, Deployment > Blueprints; Compliance > Compliance Benchmarks; Deployment > Declarations reporting |
+| Group hygiene (Health Audit, on demand) | `group-tools-analyze` | Read Smart Computer Groups; Read Static Computer Groups; Read Policies; Read macOS Configuration Profiles; Read Patch Policies; Read Patch Management Software Titles; Read Restricted Software; Read eBooks; Read Computer PreStage Enrollments | Inventory > Device groups; Deployment > Policies; Deployment > Configuration profiles; App lifecycle management > Patch policies; App lifecycle management > Patch titles; App lifecycle management > Restricted software; App lifecycle management > eBooks; Enrollment > PreStage enrollments |
 | Device lookup (live, not stored) | — | Read Computers; View MDM command information in Jamf Pro API | Inventory > Devices; Inventory > Device history; Device actions > Device actions |
-| Compliance Benchmarks, blueprint status, DDM status | `compliance-devices`, `compliance-rules`, `blueprint-status`, `ddm-status` | Not available on a direct connection | Compliance > Compliance Benchmarks; Deployment > Blueprints; Deployment > Declarations reporting; Inventory > Devices — environment level (DDM status also answers at tenant level) |
+| Compliance Benchmarks, blueprint status, DDM status | `compliance-devices`, `compliance-rules`, `blueprint-status`, `ddm-status` | Not available on a direct connection | Compliance > Compliance Benchmarks (`compliance-benchmarks:read`); Deployment > Blueprints (`blueprints:read`, see below); Deployment > Declarations reporting (`declarations:read`); Inventory > Devices (`devices:read`) — environment level (DDM status also answers at tenant level) |
 
 Why *Read Self Service* is on the list: Jamf Pro requires it, alongside *Read Categories*,
-to list categories.
+to list categories. Patch management reads computers and mobile devices only to fill the
+serial, OS and user columns of failing devices; without them those columns are blank.
+
+**Blueprints.** The Blueprints API reference requires `blueprints:read` for blueprint status,
+and Jamf's permissions map files it as *Deployment > Blueprints*. In October 2026 a user found
+no Blueprints entry in an environment-level integration's picker
+([#288](https://github.com/tonyyo11/jamf-reports-community/issues/288)). If yours has none,
+leave it out: only the `blueprint-status` source fails, Run History names `blueprints:read`,
+and every other source still collects. The Health Audit skips its blueprint checks, and DDM
+status and Group hygiene read blueprints only to name them or to count a group a blueprint
+uses, so they carry on without it. Group hygiene can then list a group that only a blueprint
+or benchmark uses as unused.
 
 **The `overview` source** checks about 40 settings and inventory objects in one pass. It
 shows N/A for any line the credential cannot read and keeps the rest. The areas above cover
@@ -239,6 +253,11 @@ Some 403s are not about permissions:
   if it persists.
 - **A note that the gateway does not serve the endpoint, or exit 8** — the command is
   outside what a Platform API profile can reach. Use a direct Jamf Pro profile for it.
+- **A 403 on one Jamf Pro source that stays after you grant the permission it names** — Jamf's
+  [Platform API fundamentals](https://developer.jamf.com/platform-api/reference/platform-api-fundamentals#scope-levels)
+  says an environment-level token carries no tenant ID, so a Jamf Pro endpoint that reads its
+  context from one answers 403 and needs a tenant-level integration. Jamf does not list which
+  endpoints those are.
 
 In the app, the health strip and Run History's warning line name the cause and carry
 jamf-cli's hint, and the explanation of exit 5 names both the Jamf Pro API role and the Jamf
@@ -274,6 +293,10 @@ gives both for every source the app collects.
 
 - [Getting started with Platform API](https://developer.jamf.com/platform-api/reference/getting-started-with-platform-api):
   integrations, scope levels, regions and tokens.
+- [Platform API fundamentals](https://developer.jamf.com/platform-api/reference/platform-api-fundamentals):
+  scope levels, capability permissions and how to read a 403.
+- [Jamf Pro permissions map](https://developer.jamf.com/platform-api/reference/jamf-pro-permissions-map):
+  every capability, its section in Jamf Account, and the Jamf Pro privilege it replaces.
 - [Platform API reference](https://developer.jamf.com/platform-api/): every endpoint and the
   permission it needs.
 - [Jamf Pro 11.32.0 release notes: Platform APIs and Platform API Gateway general availability](https://learn.jamf.com/r/en-US/jamf-pro-release-notes-11.32.0/Platform_APIs_and_Platform_API_Gateway_General_Availability).
