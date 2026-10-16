@@ -959,8 +959,17 @@ private func minKnown(_ lhs: Int?, _ rhs: Int?) -> Int? {
     }
 }
 
+/// The label whose date is later; a readable date beats text that is not one.
 private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
-    firstNonEmpty(lhs, rhs)
+    let parse = { (label: String) in
+        DeviceInventoryService.parseDate(label.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    switch (parse(lhs), parse(rhs)) {
+    case let (mine?, theirs?): return theirs > mine ? rhs : lhs
+    case (nil, .some): return rhs
+    case (.some, nil): return lhs
+    case (nil, nil): return firstNonEmpty(lhs, rhs)
+    }
 }
 
 extension DeviceInventoryRecord {

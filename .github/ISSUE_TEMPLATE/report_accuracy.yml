@@ -1,0 +1,116 @@
+name: Report Accuracy
+description: A number in a screen, workbook, HTML report, or notification does not match what you expect
+title: "[Accuracy]: "
+labels: ["bug", "area: reports"]
+assignees:
+  - tonyyo11
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when a figure looks wrong: a count that disagrees with the Jamf Pro console, two screens that disagree with each other, or a trend that jumps without a fleet change.
+
+        Many figures follow your workspace settings, so please include the ones that apply:
+        - **Stale devices:** `thresholds.stale_device_days` and `thresholds.stale_basis`
+        - **Security gaps, P0/P1 and the Security Score:** `security_policy` (control levels, `on_values` / `off_values`, `score_factors`)
+        - **Compliance:** `compliance.baselines` (proxy vs mSCP/STIG benchmark)
+        - **Agent coverage:** the `security_agents` entry and its `connected_value`
+
+        [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) explains where each figure comes from.
+
+        > [!IMPORTANT]
+        > **Redact before you paste.** Remove hostnames, tenant and environment IDs, serial numbers, device names, usernames, and webhook URLs.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Jamf Reports version
+      placeholder: "e.g. 2.10.0"
+    validations:
+      required: true
+
+  - type: input
+    id: jamf-cli-version
+    attributes:
+      label: jamf-cli version
+      description: From `jamf-cli --version`.
+      placeholder: "e.g. 1.33.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where-shown
+    attributes:
+      label: Where does the number appear?
+      multiple: true
+      options:
+        - Overview / score cards
+        - Fleet Overview
+        - Devices
+        - Security Posture or Compliance Posture
+        - Patch, Updates, or Policies & Profiles
+        - Historical Trends
+        - Period report
+        - Excel workbook
+        - HTML or PDF report
+        - Teams or Slack notification / metric alert
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: metric
+    attributes:
+      label: Metric, sheet, or section name
+      description: As labeled in the app or report.
+      placeholder: "e.g. FileVault on, Stale devices, Patch compliance, Executive Summary sheet"
+    validations:
+      required: true
+
+  - type: textarea
+    id: shown-vs-expected
+    attributes:
+      label: Value shown vs value expected
+      description: Include where the expected value comes from (Jamf Pro console page, an advanced search, another screen in the app).
+      placeholder: |
+        Shown: 412 stale Macs (Overview)
+        Expected: about 40, from the Jamf Pro "Last Check-in more than 30 days ago" smart group
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data-source
+    attributes:
+      label: Where does the workspace get its data?
+      options:
+        - jamf-cli only
+        - jamf-cli plus a Jamf Pro CSV export (CSV-assisted)
+        - Cached snapshots only (no fresh collect)
+        - Jamf School
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: data-date
+    attributes:
+      label: When was the data collected?
+      description: The newest collect or snapshot date the screen or report shows.
+      placeholder: "e.g. 2026-10-15 06:20"
+
+  - type: textarea
+    id: config-excerpt
+    attributes:
+      label: Relevant config.yaml settings
+      description: Paste only the keys that affect this figure, redacted.
+      render: yaml
+      placeholder: |
+        thresholds:
+          stale_device_days: 30
+          stale_basis: [check_in]
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Anything else
+      description: Screenshots (redacted), when the number changed, or recent changes to your config or Jamf Pro.

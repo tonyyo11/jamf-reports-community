@@ -1,0 +1,98 @@
+name: Feature Request
+description: Suggest an improvement for Jamf Reports
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees:
+  - tonyyo11
+body:
+  - type: markdown
+    attributes:
+      value: |
+        All requests are welcome. Before filing, please check:
+        - [BACKLOG.md](https://github.com/tonyyo11/jamf-reports-community/blob/main/BACKLOG.md), which indexes the epics where planned and deferred work is tracked
+        - [Discussions](https://github.com/tonyyo11/jamf-reports-community/discussions), for ideas that need shaping first
+
+        Jamf Reports is used by many organizations, so features stay config-driven: describe your need in terms another Jamf admin could reuse, without values specific to your organization.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the admin, security, or reporting pain in concrete terms.
+      placeholder: |
+        Example: Leadership asks every month how many Macs are more than one macOS major behind, and I build that by hand from the workbook.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe what Jamf Reports should do. Mention the screen, sheet, or report section where you would expect it.
+      placeholder: |
+        Example: Add a "Majors behind" breakdown to the OS Currency sheet and the HTML report's Breakdowns group.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Workarounds, custom EAs, smart groups, or other tools you already tried.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which part of the project would this affect most?
+      options:
+        - Onboarding / connecting a profile
+        - Data collection (jamf-cli sources)
+        - Dashboards and screens
+        - Devices
+        - Historical Trends / period reports
+        - Excel workbook
+        - HTML or PDF report
+        - New report, sheet, or section
+        - Automation / schedules
+        - Notifications (Teams or Slack)
+        - Configuration (config.yaml / Config screen)
+        - Included command-line tool
+        - Jamf School
+        - Jamf Protect
+        - Jamf Platform API
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: jamf-product
+    attributes:
+      label: Which Jamf product(s) does this involve?
+      multiple: true
+      options:
+        - Jamf Pro
+        - Jamf School
+        - Jamf Protect
+        - Jamf Platform API (Jamf Account)
+        - Not product-specific
+    validations:
+      required: true
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Who benefits most?
+      options:
+        - Jamf admins running the app
+        - Security or compliance teams
+        - Leadership or other report readers
+        - Everyone
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Anything else
+      description: Mockups, sample report layouts, jamf-cli commands that would supply the data, or constraints in your environment (on-prem, government, shared workspace).

@@ -9,6 +9,11 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Devices and the Overview show what jamf-cli last collected when an imported inventory CSV
+  still counts as current. Before, the CSV won: a Mac imported as an unenrolled "DEP - serial"
+  record kept that name, its old security state and a 1970 check-in after it enrolled. The CSV
+  now only fills in what the collected data leaves blank, such as department names, and the
+  check-in and inventory dates show the later of the two. (#290)
 - **Help → Jamf Reports Help** (⌘?) opens the project wiki in your browser. It used to say help
   was not available. (#292)
 - Every folder picker for the workspace location, including first-launch setup and the

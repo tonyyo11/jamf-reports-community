@@ -1,0 +1,86 @@
+name: Documentation
+description: Report missing, unclear, or outdated documentation for Jamf Reports
+title: "[Docs]: "
+labels: ["documentation"]
+assignees:
+  - tonyyo11
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for documentation-only issues: README or wiki gaps, `config.example.yaml` comments, wording in the app, screenshots, or examples.
+
+        If the app itself misbehaves, use the **Bug Report** form instead. If a number looks wrong, use **Report Accuracy**.
+
+  - type: dropdown
+    id: docs-area
+    attributes:
+      label: Which documentation area needs attention?
+      options:
+        - README.md
+        - CHANGELOG.md or release notes
+        - "Wiki: Getting Started, Installation, or App Onboarding"
+        - "Wiki: Dashboards or AI Insights"
+        - "Wiki: Configuration & Templates or Custom EA Examples"
+        - "Wiki: Scheduling, Automation, or Automation Trust"
+        - "Wiki: Historical Trends, Patch Velocity, or Period Reports"
+        - "Wiki: Command Line"
+        - "Wiki: Jamf School"
+        - "Wiki: Diagnostics & Troubleshooting"
+        - "Wiki: Security & Operational Considerations or Data Provenance"
+        - "Wiki: Permissions & Access"
+        - "Wiki: Glossary"
+        - config.example.yaml comments
+        - Text or help inside the app
+        - Screenshots or images
+        - Issue templates
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: What kind of documentation problem is this?
+      options:
+        - Incorrect or outdated information
+        - Missing instructions or example
+        - Confusing wording or structure
+        - Broken link or bad reference
+        - Screenshot drift
+        - Typo or grammar issue
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-docs
+    attributes:
+      label: What is wrong today?
+      description: Describe the current documentation problem.
+      placeholder: |
+        Example: Permissions & Access lists a Jamf Account permission that the Jamf Account console does not offer.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-update
+    attributes:
+      label: What should it say instead?
+      description: Suggest corrected wording, structure, or content when possible.
+      placeholder: |
+        Example: Replace the permission with the one Jamf Account shows today, and note which jamf-cli command needs it.
+    validations:
+      required: true
+
+  - type: input
+    id: affected-links
+    attributes:
+      label: Affected file, section, or URL
+      placeholder: "e.g. docs/wiki/13-Permissions-and-Access.md, \"Platform API\" section"
+
+  - type: textarea
+    id: supporting-context
+    attributes:
+      label: Supporting context
+      description: Screenshots, references, the app or jamf-cli version you tested against, or related issues.
