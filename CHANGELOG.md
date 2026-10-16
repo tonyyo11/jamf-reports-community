@@ -7,6 +7,14 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Devices and the Overview show what jamf-cli last collected when an imported inventory CSV
+  still counts as current. Before, the CSV won: a Mac imported as an unenrolled "DEP - serial"
+  record kept that name, its old security state and a 1970 check-in after it enrolled. The CSV
+  now only fills in what the collected data leaves blank, such as department names, and the
+  check-in and inventory dates show the later of the two. (#290)
+
 ## [2.10.0] - 2026-10-15
 
 2.10 connects Jamf Cloud through a Jamf Account integration (the Jamf Platform API) and makes

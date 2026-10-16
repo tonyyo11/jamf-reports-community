@@ -35,6 +35,20 @@ enum DeviceInventoryService {
         var sourceFiles: [String] = []
         var newestSourceDate: Date?
 
+        // A merge keeps the first non-empty value, so the collected snapshot goes ahead of the
+        // CSV, which only fills what the snapshot lacks (#290: an imported "DEP - <serial>" row
+        // kept its name and security values after the Mac enrolled).
+        if let computers = latestCachedJSON(
+            dataDir: config.jamfCLIDataDir,
+            names: ["computers-list", "computers_list", "computers"],
+            root: root
+        ) {
+            loadComputersList(computers, root: root, into: &merger, warnings: &warnings,
+                              staleThresholdDays: config.staleDeviceDays)
+            sourceFiles.append(displayPath(computers, root: root))
+            newestSourceDate = maxDate(newestSourceDate, modificationDate(computers))
+        }
+
         if let csv = resolveInventoryCSV(
             config: config, root: root, now: Date(), warnings: &warnings
         ) {
@@ -46,17 +60,6 @@ enum DeviceInventoryService {
             } else {
                 warnings.append(agedInventoryCSVWarning(csv, root: root, config: config))
             }
-        }
-
-        if let computers = latestCachedJSON(
-            dataDir: config.jamfCLIDataDir,
-            names: ["computers-list", "computers_list", "computers"],
-            root: root
-        ) {
-            loadComputersList(computers, root: root, into: &merger, warnings: &warnings,
-                              staleThresholdDays: config.staleDeviceDays)
-            sourceFiles.append(displayPath(computers, root: root))
-            newestSourceDate = maxDate(newestSourceDate, modificationDate(computers))
         }
 
         if let compliance = latestCachedJSON(
