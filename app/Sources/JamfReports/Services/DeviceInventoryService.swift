@@ -221,24 +221,35 @@ fileprivate extension DeviceInventoryService {
         return isInside(resolved, root: standardized) ? resolved : nil
     }
 
+    /// A folder inside the workspace, refused when the entry itself is a link: another Mac on a
+    /// shared workspace can plant one, and resolving it first hid that (#207 M4).
     static func validatedDirectory(_ url: URL, root: URL) -> URL? {
-        guard let resolved = secureURL(url, root: root),
-              let values = try? resolved.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
-              values.isDirectory == true,
-              values.isSymbolicLink != true else {
+        guard !isLink(url),
+              let resolved = secureURL(url, root: root),
+              let values = try? resolved.resourceValues(forKeys: [.isDirectoryKey]),
+              values.isDirectory == true else {
             return nil
         }
         return resolved
     }
 
-    static func validatedFile(_ url: URL, root: URL) -> URL? {
-        guard let resolved = secureURL(url, root: root),
-              let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-              values.isRegularFile == true,
-              values.isSymbolicLink != true else {
+    /// A regular file inside the workspace, refused when the entry itself is a link unless
+    /// `followingLink` (config.yaml, which `ConfigLoader` also reads through a link).
+    static func validatedFile(_ url: URL, root: URL, followingLink: Bool = false) -> URL? {
+        guard followingLink || !isLink(url),
+              let resolved = secureURL(url, root: root),
+              let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey]),
+              values.isRegularFile == true else {
             return nil
         }
         return resolved
+    }
+
+    /// Whether the entry at `url` is a symbolic link, judged with `lstat` before anything
+    /// resolves it.
+    static func isLink(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK
     }
 
     static func secureURL(_ url: URL, root: URL) -> URL? {
@@ -277,7 +288,7 @@ fileprivate extension DeviceInventoryService {
     static func loadConfigHints(root: URL, warnings: inout [String]) -> ConfigHints {
         var values: [String: Any] = [:]
         let configURL = root.appendingPathComponent("config.yaml")
-        if let configFile = validatedFile(configURL, root: root),
+        if let configFile = validatedFile(configURL, root: root, followingLink: true),
            let text = readText(configFile, root: root, maxBytes: 256 * 1024, warnings: &warnings) {
             values = (try? ConfigLoader.rawMapping(fromYAML: text)) ?? [:]
         }
@@ -386,9 +397,7 @@ private extension DeviceInventoryService {
                 "Ignoring \(displayPath(skipped.url, root: root)) — it is \(skipped.reason), and "
                     + "only regular files are read. Replace it with the export itself.")
         }
-        if let inboxLatest = latestFile(
-            in: inbox, root: root, extensions: ["csv"], refusingLinks: true
-        ) {
+        if let inboxLatest = latestFile(in: inbox, root: root, extensions: ["csv"]) {
             return inboxLatest
         }
         // The conflict-copy filter is right for JSON snapshots — a forked
@@ -444,14 +453,11 @@ private extension DeviceInventoryService {
         root: URL,
         extensions: Set<String>,
         maxDepth: Int = 1,
-        refusingLinks: Bool = false,
         predicate: (String) -> Bool = { _ in true }
     ) -> URL? {
         guard let dir = validatedDirectory(directory, root: root) else { return nil }
         var files: [URL] = []
-        collectFiles(
-            in: dir, root: root, extensions: extensions, maxDepth: maxDepth,
-            refusingLinks: refusingLinks, into: &files)
+        collectFiles(in: dir, root: root, extensions: extensions, maxDepth: maxDepth, into: &files)
         // `newest` applies the shared exclusions (manifest.json, `.partial`,
         // sync-conflict copies) and the shared ordering, so this picker can no
         // longer drift from the workbook's. Only the caller-supplied name
@@ -464,7 +470,6 @@ private extension DeviceInventoryService {
         root: URL,
         extensions: Set<String>,
         maxDepth: Int,
-        refusingLinks: Bool = false,
         into files: inout [URL]
     ) {
         guard maxDepth >= 1,
@@ -477,18 +482,15 @@ private extension DeviceInventoryService {
         }
 
         for entry in entries {
-            // `validatedFile` resolves a link first, so a link to a file inside the workspace
-            // would pass; judge the entry itself.
             if let file = validatedFile(entry, root: root),
-               extensions.contains(file.pathExtension.lowercased()),
-               !refusingLinks || InventoryCSV.nonRegularReason(entry) == nil {
+               extensions.contains(file.pathExtension.lowercased()) {
                 files.append(file)
                 continue
             }
             if maxDepth > 1, let childDir = validatedDirectory(entry, root: root) {
                 collectFiles(
                     in: childDir, root: root, extensions: extensions, maxDepth: maxDepth - 1,
-                    refusingLinks: refusingLinks, into: &files)
+                    into: &files)
             }
         }
     }
@@ -855,15 +857,19 @@ private extension DeviceInventoryService {
         maxBytes: Int,
         warnings: inout [String]
     ) -> Data? {
-        guard let file = validatedFile(url, root: root),
-              let values = try? file.resourceValues(forKeys: [.fileSizeKey]) else {
-            return nil
-        }
-        if let size = values.fileSize, size > maxBytes {
+        guard let file = validatedFile(url, root: root) else { return nil }
+        // One descriptor for the type check and the read, so a file swapped after the check is
+        // not what gets read.
+        do {
+            return try BoundedFile.read(file, limit: maxBytes, followSymlinks: false)
+        } catch BoundedFile.Failure.tooLarge {
             warnings.append("Skipped \(file.lastPathComponent); file is larger than \(maxBytes / 1_048_576) MB")
-            return nil
+        } catch BoundedFile.Failure.notRegular {
+            warnings.append("Skipped \(file.lastPathComponent); it is not a regular file")
+        } catch {
+            warnings.append("Could not read \(file.lastPathComponent)")
         }
-        return try? Data(contentsOf: file)
+        return nil
     }
 
     static func parseCSVRows(_ text: String) -> [[String: String]] {

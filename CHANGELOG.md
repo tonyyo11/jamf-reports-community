@@ -24,6 +24,14 @@ versions in this repository map to git tags.
   as a count written as text. Only that value is left out; a count that cannot be read shows
   as unknown, never 0. (#284)
 
+### Security
+
+- Devices, Offline Outreach and the Overview's recent activity no longer read a snapshot,
+  snapshot folder or inventory CSV that is a symbolic link, even one pointing inside the
+  workspace, where another Mac on a shared folder could plant it. Each file is checked and read
+  through one open, so it cannot be swapped between the check and the read. A `config.yaml`
+  that is a link is still read, as everywhere else in the app. (#207)
+
 ## [2.10.0] - 2026-10-15
 
 2.10 connects Jamf Cloud through a Jamf Account integration (the Jamf Platform API) and makes
