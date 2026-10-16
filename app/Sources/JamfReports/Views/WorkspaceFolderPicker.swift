@@ -5,19 +5,37 @@ import AppKit
 /// app at a workspace root: Settings, the first-launch setup card, and the
 /// Overview "Configuration incomplete" banner.
 enum WorkspaceFolderPicker {
-    /// nil when the operator cancelled.
+    /// nil when the operator cancelled. Opens at the current workspace root and offers New
+    /// Folder on every path (#289), so a fresh folder needs no trip to Finder.
     @MainActor
-    static func choose(startingAt: URL? = nil, allowCreate: Bool = false) -> URL? {
+    static func choose() -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.canCreateDirectories = allowCreate
+        panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Use Folder"
         panel.message = "Choose the folder that holds your Jamf Reports workspaces."
-        panel.directoryURL = startingAt
+        panel.directoryURL = existingFolder(atOrAbove: ProfileService.workspacesRoot())
         guard panel.runModal() == .OK else { return nil }
         return panel.url
+    }
+
+    /// The panel ignores a folder that does not exist (a first launch has no `~/Jamf-Reports`)
+    /// and reopens wherever the last panel was, so start at the nearest folder that does.
+    nonisolated static func existingFolder(
+        atOrAbove url: URL, fileManager: FileManager = .default
+    ) -> URL {
+        var candidate = url.standardizedFileURL
+        while candidate.path != "/" {
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                return candidate
+            }
+            candidate.deleteLastPathComponent()
+        }
+        return candidate
     }
 
     /// Named for what it actually shares, not for the feature.

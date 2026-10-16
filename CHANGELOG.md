@@ -11,6 +11,9 @@ versions in this repository map to git tags.
 
 - **Help → Jamf Reports Help** (⌘?) opens the project wiki in your browser. It used to say help
   was not available. (#292)
+- Every folder picker for the workspace location, including first-launch setup and the
+  Overview's "Configuration incomplete" banner, now has a **New Folder** button and opens at
+  the current workspace folder, or the nearest folder above it that exists. (#289)
 
 ## [2.10.0] - 2026-10-15
 

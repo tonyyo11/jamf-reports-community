@@ -225,9 +225,7 @@ struct SettingsView: View {
 
     private func chooseWorkspaceRoot() {
         guard !workspace.demoMode else { return }
-        guard let url = WorkspaceFolderPicker.choose(
-            startingAt: URL(fileURLWithPath: workspaceRootPath), allowCreate: true
-        ) else { return }
+        guard let url = WorkspaceFolderPicker.choose() else { return }
 
         // Choosing a synced folder widens who can read raw fleet data. That is
         // the operator's call to make — but it must be a call they knowingly
