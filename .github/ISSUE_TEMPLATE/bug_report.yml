@@ -1,0 +1,211 @@
+name: Bug Report
+description: Something in Jamf Reports is not working as it should
+title: "[Bug]: "
+labels: ["bug"]
+assignees:
+  - tonyyo11
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Thank you** for taking the time to report a bug in Jamf Reports.
+
+        Before filing, please walk through [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting) and run **Config Doctor** (Health Audit screen). Many collect and report problems are explained there with a fix.
+
+        If a report shows a number you believe is wrong, the **Report Accuracy** form asks for the details that help most.
+
+        > [!IMPORTANT]
+        > **Redact before you paste.** Remove Jamf Pro hostnames, tenant and environment IDs, serial numbers, device names, usernames, email addresses, and webhook URLs. The app's **diagnostic bundle** and Run History's **Copy log** already redact most of these, so prefer them over raw files.
+        >
+        > **Security vulnerabilities** do not belong in a public issue. See [SECURITY.md](https://github.com/tonyyo11/jamf-reports-community/blob/main/SECURITY.md).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you submit
+      options:
+        - label: I reproduced this on the [latest release](https://github.com/tonyyo11/jamf-reports-community/releases) (or the latest beta, if I am testing one)
+          required: true
+        - label: I checked [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting) and Config Doctor
+          required: true
+        - label: I removed hostnames, IDs, serials, usernames, and webhook URLs from everything below
+          required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Jamf Reports version
+      description: From **Settings**, or the version shown in the release you installed.
+      placeholder: "e.g. 2.10.0 or 2.10.0-rc1"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: From **About This Mac** or `sw_vers -productVersion`. Jamf Reports needs macOS Sequoia 15 or later.
+      placeholder: "e.g. 26.7"
+    validations:
+      required: true
+
+  - type: input
+    id: jamf-cli-version
+    attributes:
+      label: jamf-cli version
+      description: From `jamf-cli --version`, or Settings in the app.
+      placeholder: "e.g. 1.33.0"
+    validations:
+      required: true
+
+  - type: input
+    id: jamf-pro-version
+    attributes:
+      label: Jamf Pro version (if relevant)
+      placeholder: "e.g. 11.32.0"
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install Jamf Reports?
+      options:
+        - Release .pkg or .dmg
+        - Beta or release candidate
+        - Built from source
+    validations:
+      required: true
+
+  - type: dropdown
+    id: jamf-product
+    attributes:
+      label: Which Jamf product(s) does this workspace report on?
+      multiple: true
+      options:
+        - Jamf Pro (Jamf Cloud)
+        - Jamf Pro (on-premises)
+        - Jamf School
+        - Jamf Protect (added to a Jamf Pro workspace)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How does the profile connect?
+      description: The connection type you chose during onboarding.
+      options:
+        - Jamf Pro API client (OAuth2)
+        - Jamf Platform API (Jamf Account), environment level
+        - Jamf Platform API (Jamf Account), tenant level
+        - Jamf School API key
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: run-context
+    attributes:
+      label: Where did the problem happen?
+      multiple: true
+      options:
+        - In the app (manual Collect, Generate, or screen)
+        - A schedule run by the app's background item (Automation)
+        - The included `jamf-reports` command-line tool
+        - An external scheduler calling `--scheduled-run`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: workspace-storage
+    attributes:
+      label: Where does the workspace live?
+      options:
+        - Local folder on this Mac (default ~/Jamf-Reports)
+        - Synced folder (OneDrive, Box, Dropbox, iCloud, Google Drive, ...)
+        - Network share (SMB / NFS)
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected-area
+    attributes:
+      label: Which area looks broken?
+      options:
+        - Onboarding / connecting a profile
+        - Data Sources / collecting data
+        - Overview or other dashboards
+        - Devices
+        - Historical Trends
+        - Reports (workbook, HTML, PDF, CSV)
+        - Automation / schedules / background item
+        - Run History / logs
+        - Notifications (Teams or Slack webhooks)
+        - Config screen / Config Doctor
+        - Backups
+        - Included command-line tool
+        - Jamf School
+        - Jamf Protect
+        - AI insights
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior, including any error text or toast the app showed.
+      placeholder: |
+        Example: The scheduled "freshness" run shows Partial in Run History every morning, and the Overview banner says patch-device-failures has failed twice in a row.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: What did you expect to happen?
+      placeholder: |
+        Example: The run should succeed, or the app should tell me which permission the API client is missing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps make bugs much easier to act on.
+      placeholder: |
+        1. Select the profile in the sidebar
+        2. Open Data Sources and click Collect now
+        3. Open Run History and select the newest run
+        4. Observe the warning line for patch-device-failures
+    validations:
+      required: true
+
+  - type: textarea
+    id: run-log
+    attributes:
+      label: Run History excerpt or exit code
+      description: |
+        For a collect, generate, or scheduled run: use **Copy log** in Run History (it redacts the Jamf host and tenant/environment IDs) and paste the relevant lines, especially any `[error]`, `[warn]`, `[partial]`, or `[skip]` lines and the jamf-cli exit code.
+      render: text
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic artifacts
+      description: Drag and drop **redacted** attachments here.
+      placeholder: |
+        Attach any of the following when available:
+        - Diagnostic bundle: Settings → Diagnostics → Generate diagnostic bundle now
+          (or `jamf-reports diagnostic-bundle --profile <profile>`)
+        - For a scheduled run: ~/Jamf-Reports/<profile>/automation/<label>_status.json
+        - Screenshots or screen recordings
+        - Relevant config.yaml excerpts (with column names you consider sensitive removed)
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Anything else
+      description: Workarounds you found, when it started (for example after an update), or environment details that do not fit above.

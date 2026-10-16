@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and usage help (GitHub Discussions)
+    url: https://github.com/tonyyo11/jamf-reports-community/discussions
+    about: Ask setup, configuration, or "is this expected?" questions before filing an issue.
+  - name: Diagnostics & Troubleshooting (wiki)
+    url: https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting
+    about: Common failure modes, Config Doctor, logging, and the redacted diagnostic bundle.
+  - name: jamf-cli upstream issues
+    url: https://github.com/Jamf-Concepts/jamf-cli/issues
+    about: For defects in jamf-cli itself (commands, flags, JSON output) rather than in Jamf Reports.
+  - name: Report a security vulnerability
+    url: https://github.com/tonyyo11/jamf-reports-community/blob/main/SECURITY.md
+    about: Please do not open a public issue for security problems. Follow the security policy instead.
