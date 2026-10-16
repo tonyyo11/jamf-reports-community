@@ -1250,9 +1250,16 @@ extension KeyedDecodingContainer {
         return value.stringValue
     }
 
-    /// The value as a whole number, also from text ("3"); nil when absent, null or unreadable.
-    func lenientInt(forKey key: Key) -> Int? {
-        (try? decodeIfPresent(AnyCodable.self, forKey: key))?.intValue
+    /// A count: a whole number from 0 to `Int32.max`, also from text ("3"). Anything else is
+    /// nil, so a negative, fractional or huge value reads as unknown instead of a false figure
+    /// or an overflow when counts are summed.
+    func lenientCount(forKey key: Key) -> Int? {
+        guard let value = try? decodeIfPresent(AnyCodable.self, forKey: key) else { return nil }
+        if let number = value.value as? Double, number.rounded(.towardZero) != number {
+            return nil
+        }
+        guard let count = value.intValue, (0...Int(Int32.max)).contains(count) else { return nil }
+        return count
     }
 }
 
@@ -1273,11 +1280,21 @@ struct LenientElement<Row: Decodable>: Decodable {
         return (rows, elements.count - rows.count)
     }
 
+    /// Largest report snapshot `rows(at:)` reads.
+    static var maxSnapshotBytes: Int { 64 * 1024 * 1024 }
+
     /// The rows of the snapshot at `url`, logging a file that is not a list and any element
     /// skipped; nil when the file cannot be read or is not a list.
     static func rows(at url: URL, logging category: AppLogger.Category) -> [Row]? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        let name = url.lastPathComponent
+        let name = ConfigSchema.displayText(url.lastPathComponent)
+        let data: Data
+        do {
+            data = try BoundedFile.read(url, limit: maxSnapshotBytes, followSymlinks: false)
+        } catch {
+            AppLogger.event(category, .error,
+                            "\(name) not read: a link, not a regular file, or over 64 MB")
+            return nil
+        }
         guard let result = rows(in: data) else {
             AppLogger.event(category, .error, "\(name) is not a JSON list of rows; nothing read")
             return nil

@@ -21,8 +21,8 @@ versions in this repository map to git tags.
   the current workspace folder, or the nearest folder above it that exists. (#289)
 - Compliance Benchmarks, DDM Blueprints and the Overview's top failing rules no longer go
   blank when one row of a Jamf Platform API report carries a value of an unexpected type, such
-  as a count written as text. Only that value is left out; a count that cannot be read shows
-  as unknown, never 0. (#284)
+  as a count written as text. Only that value is left out, and a failure count that is
+  negative, fractional or out of range shows as unknown, never as a pass. (#284)
 
 ### Security
 

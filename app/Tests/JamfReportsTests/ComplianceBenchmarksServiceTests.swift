@@ -126,6 +126,37 @@ final class ComplianceBenchmarksServiceTests: XCTestCase {
         XCTAssertNil(devices[1].rulesFailed)
     }
 
+    /// A count outside 0...Int32.max, or with a fraction, is unknown: a negative `rulesFailed`
+    /// would otherwise count the Mac as passing, and two huge counts overflowed when summed.
+    func testACountOutOfRangeOrFractionalIsUnknown() throws {
+        let rulesURL = tempDir.appendingPathComponent("rules-range.json")
+        let json = """
+        [
+          {"rule": "A", "passed": "9223372036854775807", "failed": 9223372036854775807},
+          {"rule": "B", "passed": 9223372036854775807, "failed": "-1"},
+          {"rule": "C", "passed": 2.7, "failed": "2.0", "unknown": 3.0}
+        ]
+        """
+        try Data(json.utf8).write(to: rulesURL)
+        let rules = ComplianceBenchmarksService.load(rulesURL: rulesURL, devicesURL: nil).rules
+        XCTAssertEqual(rules.count, 3)
+        guard rules.count == 3 else { return }
+        XCTAssertEqual(rules.map(\.passed), [0, 0, 0], "an unreadable passed count defaults to 0")
+        XCTAssertEqual(rules.map(\.failed), [nil, nil, 2])
+        XCTAssertEqual(rules[2].unknown, 3)
+        _ = ComplianceBenchmarksService.Snapshot(
+            rules: rules, devices: [], rulesSourceFile: nil, devicesSourceFile: nil,
+            snapshotDate: nil
+        ).ruleAggregate
+
+        let devicesURL = tempDir.appendingPathComponent("devices-range.json")
+        try Data(#"[{"device": "MacA", "rulesPassed": 8, "rulesFailed": -1}]"#.utf8)
+            .write(to: devicesURL)
+        let snapshot = ComplianceBenchmarksService.load(rulesURL: nil, devicesURL: devicesURL)
+        XCTAssertEqual(snapshot.deviceAggregate.passing, 0, "-1 failed rules is not a pass")
+        XCTAssertEqual(snapshot.deviceAggregate.unknown, 1)
+    }
+
     func testAFileThatIsNotAListReadsAsNoRows() throws {
         let rulesURL = tempDir.appendingPathComponent("rules-object.json")
         try Data(#"{"error": "permission denied"}"#.utf8).write(to: rulesURL)

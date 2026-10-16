@@ -200,11 +200,11 @@ struct DDMBlueprintService: Sendable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             name = c.lenientText(forKey: .name)
             state = c.lenientText(forKey: .state)
-            scope = c.lenientInt(forKey: .scope)
-            steps = c.lenientInt(forKey: .steps)
-            succeeded = c.lenientInt(forKey: .succeeded)
-            failed = c.lenientInt(forKey: .failed)
-            pending = c.lenientInt(forKey: .pending)
+            scope = c.lenientCount(forKey: .scope)
+            steps = c.lenientCount(forKey: .steps)
+            succeeded = c.lenientCount(forKey: .succeeded)
+            failed = c.lenientCount(forKey: .failed)
+            pending = c.lenientCount(forKey: .pending)
         }
     }
 
@@ -224,10 +224,10 @@ struct DDMBlueprintService: Sendable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             source = c.lenientText(forKey: .source)
             type = c.lenientText(forKey: .type)
-            declarations = c.lenientInt(forKey: .declarations)
-            devices = c.lenientInt(forKey: .devices)
-            successful = c.lenientInt(forKey: .successful)
-            unsuccessful = c.lenientInt(forKey: .unsuccessful)
+            declarations = c.lenientCount(forKey: .declarations)
+            devices = c.lenientCount(forKey: .devices)
+            successful = c.lenientCount(forKey: .successful)
+            unsuccessful = c.lenientCount(forKey: .unsuccessful)
         }
     }
 }
