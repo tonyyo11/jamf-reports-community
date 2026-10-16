@@ -9,7 +9,7 @@ import Foundation
 /// runs the Platform-only kinds when the profile's auth method is `platform`, and
 /// skips the environment-level ones on a tenant-level profile.
 ///
-/// Rows decode through the private `RawRule` and `RawDevice` structs below.
+/// Rows decode through the private `RawRule` and `RawDevice` structs below, field by field.
 struct ComplianceBenchmarksService: Sendable {
 
     /// Everything the view needs to render. `.empty` when the workspace has
@@ -188,8 +188,7 @@ struct ComplianceBenchmarksService: Sendable {
     // MARK: - Internals
 
     private static func decodeRules(at url: URL) -> [Snapshot.Rule]? {
-        guard let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([RawRule].self, from: data) else {
+        guard let items = LenientElement<RawRule>.rows(at: url, logging: .platform) else {
             return nil
         }
         return items.map { raw in
@@ -207,8 +206,7 @@ struct ComplianceBenchmarksService: Sendable {
     }
 
     private static func decodeDevices(at url: URL) -> [Snapshot.Device]? {
-        guard let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([RawDevice].self, from: data) else {
+        guard let items = LenientElement<RawDevice>.rows(at: url, logging: .platform) else {
             return nil
         }
         return items.map { raw in
@@ -223,6 +221,8 @@ struct ComplianceBenchmarksService: Sendable {
         }
     }
 
+    /// Field by field, so one value of another type (a count as text, a number for a title)
+    /// costs that field, not the list.
     private struct RawRule: Decodable {
         let rule: String?
         let passed: Int?
@@ -232,6 +232,22 @@ struct ComplianceBenchmarksService: Sendable {
         let passRate: String?
         let ruleId: String?
         let benchmark: String?
+
+        enum CodingKeys: String, CodingKey {
+            case rule, passed, failed, unknown, devices, passRate, ruleId, benchmark
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            rule = c.lenientText(forKey: .rule)
+            passed = c.lenientInt(forKey: .passed)
+            failed = c.lenientInt(forKey: .failed)
+            unknown = c.lenientInt(forKey: .unknown)
+            devices = c.lenientInt(forKey: .devices)
+            passRate = c.lenientText(forKey: .passRate)
+            ruleId = c.lenientText(forKey: .ruleId)
+            benchmark = c.lenientText(forKey: .benchmark)
+        }
     }
 
     private struct RawDevice: Decodable {
@@ -241,5 +257,19 @@ struct ComplianceBenchmarksService: Sendable {
         let rulesFailed: Int?
         let compliance: String?
         let benchmark: String?
+
+        enum CodingKeys: String, CodingKey {
+            case device, deviceId, rulesPassed, rulesFailed, compliance, benchmark
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            device = c.lenientText(forKey: .device)
+            deviceId = c.lenientText(forKey: .deviceId)
+            rulesPassed = c.lenientInt(forKey: .rulesPassed)
+            rulesFailed = c.lenientInt(forKey: .rulesFailed)
+            compliance = c.lenientText(forKey: .compliance)
+            benchmark = c.lenientText(forKey: .benchmark)
+        }
     }
 }

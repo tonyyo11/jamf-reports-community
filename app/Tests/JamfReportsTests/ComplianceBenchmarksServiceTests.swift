@@ -75,6 +75,64 @@ final class ComplianceBenchmarksServiceTests: XCTestCase {
                      "Absent rulesFailed must decode to nil so the view can show 'unknown'")
     }
 
+    // MARK: - Lenient rows
+
+    /// One value of an unexpected type used to empty the whole list (`try?` around a strict
+    /// array decode); now it costs that field, and a non-object entry costs only itself.
+    func testAMistypedValueCostsItsFieldNotTheList() throws {
+        let rulesURL = tempDir.appendingPathComponent("rules-mistyped.json")
+        let json = """
+        [
+          {"rule": "FileVault", "passed": "90", "failed": 10, "unknown": 0,
+           "devices": 100, "passRate": 90},
+          {"rule": "Gatekeeper", "passed": 80, "failed": {"n": 1}, "devices": 100,
+           "passRate": "80%"},
+          "not a row",
+          {"rule": 7, "passed": 1, "failed": null, "devices": 1}
+        ]
+        """
+        try Data(json.utf8).write(to: rulesURL)
+        let rules = ComplianceBenchmarksService.load(rulesURL: rulesURL, devicesURL: nil).rules
+        XCTAssertEqual(rules.count, 3, "Only the entry that is not an object is skipped")
+        guard rules.count == 3 else { return }
+        XCTAssertEqual(rules[0].passed, 90, "A count written as text is read")
+        XCTAssertEqual(rules[0].passRate, "90", "A number where text is expected reads as text")
+        XCTAssertEqual(rules[0].failed, 10)
+        XCTAssertNil(rules[1].failed, "An unreadable count is unknown, never 0")
+        XCTAssertEqual(rules[1].passRate, "80%")
+        XCTAssertEqual(rules[2].rule, "7")
+        XCTAssertNil(rules[2].failed)
+    }
+
+    func testAMistypedDeviceValueCostsItsFieldNotTheList() throws {
+        let devicesURL = tempDir.appendingPathComponent("devices-mistyped.json")
+        let json = """
+        [
+          {"device": "MacA", "deviceId": 1, "rulesPassed": "8", "rulesFailed": "2",
+           "compliance": 80},
+          {"device": "MacB", "deviceId": "2", "rulesPassed": 10, "rulesFailed": [],
+           "compliance": "100%"}
+        ]
+        """
+        try Data(json.utf8).write(to: devicesURL)
+        let devices = ComplianceBenchmarksService.load(rulesURL: nil, devicesURL: devicesURL)
+            .devices
+        XCTAssertEqual(devices.count, 2)
+        guard devices.count == 2 else { return }
+        XCTAssertEqual(devices[0].deviceId, "1")
+        XCTAssertEqual(devices[0].rulesPassed, 8)
+        XCTAssertEqual(devices[0].rulesFailed, 2)
+        XCTAssertEqual(devices[0].compliance, "80")
+        XCTAssertNil(devices[1].rulesFailed)
+    }
+
+    func testAFileThatIsNotAListReadsAsNoRows() throws {
+        let rulesURL = tempDir.appendingPathComponent("rules-object.json")
+        try Data(#"{"error": "permission denied"}"#.utf8).write(to: rulesURL)
+        let snapshot = ComplianceBenchmarksService.load(rulesURL: rulesURL, devicesURL: nil)
+        XCTAssertTrue(snapshot.rules.isEmpty)
+    }
+
     // MARK: - Aggregates
 
     func testRuleAggregateCountsPassedFailedUnknownWithoutDoubleCount() throws {

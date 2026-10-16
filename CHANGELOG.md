@@ -19,6 +19,10 @@ versions in this repository map to git tags.
 - Every folder picker for the workspace location, including first-launch setup and the
   Overview's "Configuration incomplete" banner, now has a **New Folder** button and opens at
   the current workspace folder, or the nearest folder above it that exists. (#289)
+- Compliance Benchmarks, DDM Blueprints and the Overview's top failing rules no longer go
+  blank when one row of a Jamf Platform API report carries a value of an unexpected type, such
+  as a count written as text. Only that value is left out; a count that cannot be read shows
+  as unknown, never 0. (#284)
 
 ## [2.10.0] - 2026-10-15
 

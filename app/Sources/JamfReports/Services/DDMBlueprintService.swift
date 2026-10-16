@@ -8,7 +8,8 @@ import Foundation
 /// reports on what is on disk — it never invokes jamf-cli. `ReportEngine.collect`
 /// writes these snapshots when the profile's auth method is `platform`.
 ///
-/// Rows decode through the private `RawBlueprint` and `RawDeclaration` structs below.
+/// Rows decode through the private `RawBlueprint` and `RawDeclaration` structs below, field by
+/// field.
 struct DDMBlueprintService: Sendable {
 
     /// Everything the view needs to render. `.empty` when the workspace
@@ -148,8 +149,7 @@ struct DDMBlueprintService: Sendable {
     // MARK: - Internals
 
     private static func decodeBlueprints(at url: URL) -> [Snapshot.Blueprint]? {
-        guard let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([RawBlueprint].self, from: data) else {
+        guard let items = LenientElement<RawBlueprint>.rows(at: url, logging: .platform) else {
             return nil
         }
         return items.enumerated().map { index, raw in
@@ -167,10 +167,8 @@ struct DDMBlueprintService: Sendable {
     }
 
     private static func decodeDeclarations(at url: URL) -> [Snapshot.Declaration]? {
-        guard let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([RawDeclaration].self, from: data) else {
-            return nil
-        }
+        guard let items = LenientElement<RawDeclaration>.rows(at: url, logging: .platform)
+        else { return nil }
         return items.enumerated().map { index, raw in
             Snapshot.Declaration(
                 source: raw.source ?? "",
@@ -184,6 +182,7 @@ struct DDMBlueprintService: Sendable {
         }
     }
 
+    /// Field by field, so one value of another type costs that field, not the list.
     private struct RawBlueprint: Decodable {
         let name: String?
         let state: String?
@@ -192,6 +191,21 @@ struct DDMBlueprintService: Sendable {
         let succeeded: Int?
         let failed: Int?
         let pending: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case name, state, scope, steps, succeeded, failed, pending
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = c.lenientText(forKey: .name)
+            state = c.lenientText(forKey: .state)
+            scope = c.lenientInt(forKey: .scope)
+            steps = c.lenientInt(forKey: .steps)
+            succeeded = c.lenientInt(forKey: .succeeded)
+            failed = c.lenientInt(forKey: .failed)
+            pending = c.lenientInt(forKey: .pending)
+        }
     }
 
     private struct RawDeclaration: Decodable {
@@ -201,5 +215,19 @@ struct DDMBlueprintService: Sendable {
         let devices: Int?
         let successful: Int?
         let unsuccessful: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case source, type, declarations, devices, successful, unsuccessful
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            source = c.lenientText(forKey: .source)
+            type = c.lenientText(forKey: .type)
+            declarations = c.lenientInt(forKey: .declarations)
+            devices = c.lenientInt(forKey: .devices)
+            successful = c.lenientInt(forKey: .successful)
+            unsuccessful = c.lenientInt(forKey: .unsuccessful)
+        }
     }
 }

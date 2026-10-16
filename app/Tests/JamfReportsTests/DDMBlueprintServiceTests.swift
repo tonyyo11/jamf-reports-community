@@ -99,6 +99,50 @@ final class DDMBlueprintServiceTests: XCTestCase {
                        "Empty source must round-trip without nilling the row")
     }
 
+    // MARK: - Lenient rows
+
+    /// One value of an unexpected type used to empty the whole list; now it costs that field.
+    func testAMistypedBlueprintValueCostsItsFieldNotTheList() throws {
+        let url = tempDir.appendingPathComponent("blueprints-mistyped.json")
+        let json = """
+        [
+          {"name": "Baseline", "state": "DEPLOYED", "scope": "100", "steps": 4,
+           "succeeded": 90, "failed": "ten", "pending": 0},
+          {"name": "Legacy", "state": "NOT_DEPLOYED"},
+          42
+        ]
+        """
+        try Data(json.utf8).write(to: url)
+        let blueprints = DDMBlueprintService.load(blueprintsURL: url, declarationsURL: nil)
+            .blueprints
+        XCTAssertEqual(blueprints.count, 2, "Only the entry that is not an object is skipped")
+        guard blueprints.count == 2 else { return }
+        XCTAssertEqual(blueprints[0].scope, 100, "A count written as text is read")
+        XCTAssertNil(blueprints[0].failed, "Text that is not a number is unknown, never 0")
+        XCTAssertEqual(blueprints[0].succeeded, 90)
+        XCTAssertEqual(blueprints[1].name, "Legacy")
+    }
+
+    func testAMistypedDeclarationValueCostsItsFieldNotTheList() throws {
+        let url = tempDir.appendingPathComponent("ddm-mistyped.json")
+        let json = """
+        [
+          {"source": "Baseline", "type": "blueprint", "declarations": 4,
+           "devices": "100", "successful": 90, "unsuccessful": true},
+          {"source": 12, "type": "standalone", "declarations": 1,
+           "devices": 1, "successful": 1, "unsuccessful": 0}
+        ]
+        """
+        try Data(json.utf8).write(to: url)
+        let declarations = DDMBlueprintService.load(blueprintsURL: nil, declarationsURL: url)
+            .declarations
+        XCTAssertEqual(declarations.count, 2)
+        guard declarations.count == 2 else { return }
+        XCTAssertEqual(declarations[0].devices, 100)
+        XCTAssertEqual(declarations[0].unsuccessful, 0, "An unreadable count keeps its default")
+        XCTAssertEqual(declarations[1].source, "12")
+    }
+
     // MARK: - Row identity
 
     /// A real tenant lists one source under several types, and two blueprints can share a name
