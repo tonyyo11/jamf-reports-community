@@ -272,11 +272,9 @@ enum SharedWorkspace {
     /// `DeviceInventoryService`.
     private static let maxCoordinationFileBytes = 64 * 1024
 
-    /// Read a coordination file, refusing anything implausibly large.
+    /// Read a coordination file, refusing a link, a FIFO and anything implausibly large.
     private static func readBounded(_ url: URL) -> Data? {
-        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= maxCoordinationFileBytes else { return nil }
-        return try? Data(contentsOf: url)
+        BoundedFile.stateData(url, limit: maxCoordinationFileBytes)
     }
 
     /// Read the current claim. Returns nil when absent or unparseable — a

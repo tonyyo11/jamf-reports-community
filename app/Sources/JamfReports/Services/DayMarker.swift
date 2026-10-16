@@ -8,8 +8,7 @@ struct DayMarker: Sendable {
 
     /// The day last stamped, or nil when the marker is absent or unreadable.
     func lastStampedDay(in workspace: URL) -> String? {
-        guard let text = try? String(contentsOf: markerURL(in: workspace), encoding: .utf8)
-        else { return nil }
+        guard let text = BoundedFile.stateText(markerURL(in: workspace)) else { return nil }
         let day = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return day.isEmpty ? nil : day
     }

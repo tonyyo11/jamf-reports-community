@@ -51,7 +51,7 @@ struct MetricAlertLedger: Sendable {
     }
 
     private func load(from url: URL) -> Record? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = BoundedFile.stateData(url) else { return nil }
         return try? JSONDecoder().decode(Record.self, from: data)
     }
 

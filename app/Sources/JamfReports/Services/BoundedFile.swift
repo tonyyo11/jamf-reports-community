@@ -35,4 +35,19 @@ enum BoundedFile {
         guard data.count <= limit else { throw Failure.tooLarge }
         return data
     }
+
+    /// Largest workspace state file worth reading (day markers, the alert ledger, `state/`):
+    /// each is a line or a small JSON document, so anything bigger is corrupt or planted.
+    static let stateFileLimit = 64 * 1024
+
+    /// A state file in a folder another Mac can write, or nil when it is absent, a link, not a
+    /// regular file or over `limit`; callers read nil as "no record" (#207 M2).
+    static func stateData(_ url: URL, limit: Int = stateFileLimit) -> Data? {
+        try? read(url, limit: limit, followSymlinks: false)
+    }
+
+    /// `stateData` as UTF-8 text.
+    static func stateText(_ url: URL, limit: Int = stateFileLimit) -> String? {
+        stateData(url, limit: limit).flatMap { String(data: $0, encoding: .utf8) }
+    }
 }

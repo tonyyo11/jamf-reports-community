@@ -31,6 +31,10 @@ versions in this repository map to git tags.
   workspace, where another Mac on a shared folder could plant it. Each file is checked and read
   through one open, so it cannot be swapped between the check and the read. A `config.yaml`
   that is a link is still read, as everywhere else in the app. (#207)
+- Scheduled runs no longer follow a symbolic link, or read an oversized or non-regular file,
+  where they keep their once-a-day markers, alert record, shared-folder claim and per-source
+  collect state. Another Mac on a shared folder could plant one, for example to mark today's
+  overdue notice as already sent. Such a file now counts as no record. (#207)
 
 ## [2.10.0] - 2026-10-15
 
