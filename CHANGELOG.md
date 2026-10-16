@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Help → Jamf Reports Help** (⌘?) opens the project wiki in your browser. It used to say help
+  was not available. (#292)
+
 ## [2.10.0] - 2026-10-15
 
 2.10 connects Jamf Cloud through a Jamf Account integration (the Jamf Platform API) and makes

@@ -102,6 +102,10 @@ struct JamfReportsApp: App {
                 CheckForUpdatesView()
                 AcknowledgementsMenuButton()
             }
+
+            CommandGroup(replacing: .help) {
+                HelpMenuButton()
+            }
         }
 
         Window("Acknowledgements", id: "acknowledgements") {
