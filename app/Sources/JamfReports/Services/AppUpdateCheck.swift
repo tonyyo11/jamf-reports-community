@@ -10,28 +10,37 @@ enum AppUpdateCheck {
     /// app's preference domain turns the check off for every user (`isForcedByProfile`).
     static let enabledKey = "checkForAppUpdates"
     static let lastCheckKey = "appUpdateLastCheck"
-    static let latestVersionKey = "appUpdateLatestVersion"
+    static let lastCheckFailedKey = "appUpdateLastCheckFailed"
+    static let latestTagKey = "appUpdateLatestTag"
     static let skippedVersionKey = "appUpdateSkippedVersion"
 
     /// `releases/latest` never returns a draft or a release marked pre-release.
-    static let latestReleaseURL =
-        URL(string: "https://api.github.com/repos/tonyyo11/jamf-reports-community/releases/latest")!
-    static let releasesPage =
-        URL(string: "https://github.com/tonyyo11/jamf-reports-community/releases")!
+    static let latestReleaseAddress =
+        "https://api.github.com/repos/tonyyo11/jamf-reports-community/releases/latest"
+    static let releasesAddress = "https://github.com/tonyyo11/jamf-reports-community/releases"
     static let checkInterval: TimeInterval = 24 * 60 * 60
+    /// After a failed check (no network yet at launch, say), the next try is this soon.
+    static let retryAfterFailure: TimeInterval = 60 * 60
     /// A release document is a few KB; anything past this is not one.
     static let maxResponseBytes = 1_048_576
     static let requestTimeout: TimeInterval = 15
 
     struct Release: Equatable, Sendable {
-        /// The version without its `v`, e.g. `2.10.1`; digits and dots only (`stableVersion`).
+        /// The tag as GitHub has it (`v2.10.1`), which names the release page.
+        let tag: String
+        /// The tag without its `v`, e.g. `2.10.1`; digits and dots only (`stableVersion`).
         let version: String
 
-        /// This project's page for the release, built from the version rather than taken from
-        /// the answer, so it can only open this project's release notes.
-        var page: URL {
-            URL(string: "\(releasesPage.absoluteString)/tag/v\(version)") ?? releasesPage
+        /// Nil for a tag that is not a plain stable version.
+        init?(tag: String) {
+            guard let version = AppUpdateCheck.stableVersion(fromTag: tag) else { return nil }
+            self.tag = tag
+            self.version = version
         }
+
+        /// This project's page for the release, built from the checked tag rather than taken
+        /// from the answer, so it can only open this project's release notes.
+        var page: URL? { URL(string: "\(releasesAddress)/tag/\(tag)") }
     }
 
     enum Outcome: Equatable, Sendable {
@@ -70,9 +79,9 @@ enum AppUpdateCheck {
         }
         let raw = try JSONDecoder().decode(Raw.self, from: data)
         guard raw.prerelease != true, raw.draft != true,
-              let version = stableVersion(fromTag: raw.tag_name)
+              let release = Release(tag: raw.tag_name)
         else { throw CheckError.notAStableRelease }
-        return Release(version: version)
+        return release
     }
 
     /// `v2.10.1` → `2.10.1`; nil for anything with a suffix or other characters.
@@ -94,10 +103,11 @@ enum AppUpdateCheck {
             ? .available(release) : .upToDate(latest: release.version)
     }
 
-    /// Due when never checked, a day after the last check, or when the clock went backwards.
-    static func isDue(lastCheck: Date?, now: Date) -> Bool {
+    /// Due when never checked, a day after a check that answered, an hour after one that
+    /// failed, or when the clock went backwards.
+    static func isDue(lastCheck: Date?, failed: Bool = false, now: Date) -> Bool {
         guard let lastCheck, lastCheck <= now else { return true }
-        return now.timeIntervalSince(lastCheck) >= checkInterval
+        return now.timeIntervalSince(lastCheck) >= (failed ? retryAfterFailure : checkInterval)
     }
 
     /// The bytes of `sequence`, refusing more than `limit`.
@@ -113,19 +123,21 @@ enum AppUpdateCheck {
 
     // MARK: - Network
 
-    static var request: URLRequest {
+    /// Nil only if the fixed address stopped parsing, which `check` reports as a failure.
+    static var request: URLRequest? {
+        guard let url = URL(string: latestReleaseAddress) else { return nil }
         var request = URLRequest(
-            url: latestReleaseURL, cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: requestTimeout)
+            url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeout)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
         return request
     }
 
-    /// One GET with no cookies or cache, read up to `maxResponseBytes`.
+    /// One GET with no cookies or cache, read up to `maxResponseBytes`. The session is cancelled
+    /// on the way out, so an answer refused as too large stops downloading.
     static let liveFetch: Fetch = { request in
         let session = URLSession(configuration: .ephemeral)
-        defer { session.finishTasksAndInvalidate() }
+        defer { session.invalidateAndCancel() }
         let (bytes, response) = try await session.bytes(for: request)
         guard response.url?.host == "api.github.com" else { throw CheckError.unexpectedHost }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -135,6 +147,7 @@ enum AppUpdateCheck {
 
     /// Fetches the latest release and compares it with `current`. Never throws.
     static func check(current: String, fetch: Fetch) async -> Outcome {
+        guard let request else { return .failed("the GitHub address could not be built") }
         do {
             let release = try release(from: try await fetch(request))
             return outcome(current: current, release: release)
@@ -157,6 +170,7 @@ final class AppUpdateModel {
 
     private(set) var latest: AppUpdateCheck.Release?
     private(set) var lastCheck: Date?
+    private(set) var lastCheckFailed = false
     private(set) var lastError: String?
     private(set) var isChecking = false
     private(set) var skippedVersion: String?
@@ -177,11 +191,12 @@ final class AppUpdateModel {
         self.fetch = fetch
         isEnabled = Self.readEnabled(defaults)
         lastCheck = defaults.object(forKey: AppUpdateCheck.lastCheckKey) as? Date
+        lastCheckFailed = defaults.bool(forKey: AppUpdateCheck.lastCheckFailedKey)
         skippedVersion = defaults.string(forKey: AppUpdateCheck.skippedVersionKey)
-        if let version = defaults.string(forKey: AppUpdateCheck.latestVersionKey),
-           AppUpdateCheck.stableVersion(fromTag: version) != nil,
+        if let tag = defaults.string(forKey: AppUpdateCheck.latestTagKey),
+           let stored = AppUpdateCheck.Release(tag: tag),
            case .available(let release) = AppUpdateCheck.outcome(
-               current: currentVersion, release: .init(version: version))
+               current: currentVersion, release: stored)
         {
             latest = release
         }
@@ -208,9 +223,12 @@ final class AppUpdateModel {
         return latest
     }
 
-    /// At launch: one request a day at most, none when the switch is off.
+    /// At launch and every 30 minutes: one request a day at most (an hour after a failure),
+    /// none when the switch is off.
     func checkIfDue(now: Date = Date()) async {
-        guard isEnabled, AppUpdateCheck.isDue(lastCheck: lastCheck, now: now) else { return }
+        guard isEnabled,
+              AppUpdateCheck.isDue(lastCheck: lastCheck, failed: lastCheckFailed, now: now)
+        else { return }
         await checkNow(now: now)
     }
 
@@ -222,15 +240,17 @@ final class AppUpdateModel {
         let outcome = await AppUpdateCheck.check(current: currentVersion, fetch: fetch)
         lastCheck = now
         defaults.set(now, forKey: AppUpdateCheck.lastCheckKey)
+        if case .failed = outcome { lastCheckFailed = true } else { lastCheckFailed = false }
+        defaults.set(lastCheckFailed, forKey: AppUpdateCheck.lastCheckFailedKey)
         switch outcome {
         case .available(let release):
             latest = release
             lastError = nil
-            defaults.set(release.version, forKey: AppUpdateCheck.latestVersionKey)
+            defaults.set(release.tag, forKey: AppUpdateCheck.latestTagKey)
         case .upToDate:
             latest = nil
             lastError = nil
-            defaults.removeObject(forKey: AppUpdateCheck.latestVersionKey)
+            defaults.removeObject(forKey: AppUpdateCheck.latestTagKey)
         case .failed(let reason):
             lastError = reason
             AppLogger.event(.ui, .notice, "App update check failed: \(reason)")

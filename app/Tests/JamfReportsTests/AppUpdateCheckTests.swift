@@ -39,6 +39,13 @@ final class AppUpdateCheckTests: XCTestCase {
         }
     }
 
+    private func stable(_ tag: String) -> AppUpdateCheck.Release {
+        guard let release = AppUpdateCheck.Release(tag: tag) else {
+            preconditionFailure("\(tag) is not a stable tag")
+        }
+        return release
+    }
+
     private func model(current: String, github: FakeGitHub) -> AppUpdateModel {
         AppUpdateModel(defaults: defaults, currentVersion: current, fetch: github.fetch)
     }
@@ -48,7 +55,7 @@ final class AppUpdateCheckTests: XCTestCase {
     func testAStableReleaseIsRead() throws {
         let release = try AppUpdateCheck.release(from: releaseJSON(tag: "v2.10.1"))
         XCTAssertEqual(release.version, "2.10.1")
-        XCTAssertEqual(release.page.absoluteString,
+        XCTAssertEqual(release.page?.absoluteString,
                        "https://github.com/tonyyo11/jamf-reports-community/releases/tag/v2.10.1")
     }
 
@@ -73,14 +80,22 @@ final class AppUpdateCheckTests: XCTestCase {
     func testThePageIsThisProjectsReleaseWhateverTheAnswerSays() throws {
         let release = try AppUpdateCheck.release(from: releaseJSON(
             tag: "v2.10.1", page: "https://evil.example/tonyyo11/releases/x"))
-        XCTAssertEqual(release.page.absoluteString,
+        XCTAssertEqual(release.page?.absoluteString,
                        "https://github.com/tonyyo11/jamf-reports-community/releases/tag/v2.10.1")
+    }
+
+    /// The page names the tag as GitHub has it, so a tag without the `v` still opens.
+    func testThePageUsesTheTagAsWritten() {
+        XCTAssertEqual(stable("2.11.0").page?.absoluteString,
+                       "https://github.com/tonyyo11/jamf-reports-community/releases/tag/2.11.0")
+        XCTAssertEqual(stable("V2.11.0").page?.lastPathComponent, "V2.11.0")
+        XCTAssertEqual(stable("V2.11.0").version, "2.11.0")
     }
 
     // MARK: - Version comparison
 
     func testOnlyANewerReleaseIsOffered() {
-        let release = AppUpdateCheck.Release(version: "2.10.1")
+        let release = stable("v2.10.1")
         XCTAssertEqual(AppUpdateCheck.outcome(current: "2.10.0", release: release),
                        .available(release))
         XCTAssertEqual(AppUpdateCheck.outcome(current: "2.10.1", release: release),
@@ -92,8 +107,8 @@ final class AppUpdateCheckTests: XCTestCase {
     /// Someone on a beta of the next version is not offered the older stable release, and is
     /// offered that version's final release when it ships.
     func testABetaOfTheNextVersionWaitsForItsRelease() {
-        let older = AppUpdateCheck.Release(version: "2.10.1")
-        let final = AppUpdateCheck.Release(version: "2.11.0")
+        let older = stable("v2.10.1")
+        let final = stable("v2.11.0")
         XCTAssertEqual(AppUpdateCheck.outcome(current: "2.11.0-beta1", release: older),
                        .upToDate(latest: "2.10.1"))
         XCTAssertEqual(AppUpdateCheck.outcome(current: "2.11.0-beta1", release: final),
@@ -110,6 +125,31 @@ final class AppUpdateCheckTests: XCTestCase {
         XCTAssertTrue(AppUpdateCheck.isDue(lastCheck: now.addingTimeInterval(-25 * 3600), now: now))
         XCTAssertTrue(AppUpdateCheck.isDue(lastCheck: now.addingTimeInterval(3600), now: now),
                       "a clock that went backwards does not stop the check for good")
+    }
+
+    /// A check that failed (no network yet at launch) is tried again within the hour, not
+    /// a day later.
+    func testAFailedCheckIsRetriedAfterAnHour() {
+        let now = Date()
+        XCTAssertFalse(AppUpdateCheck.isDue(
+            lastCheck: now.addingTimeInterval(-59 * 60), failed: true, now: now))
+        XCTAssertTrue(AppUpdateCheck.isDue(
+            lastCheck: now.addingTimeInterval(-61 * 60), failed: true, now: now))
+    }
+
+    func testTheModelRetriesAFailedCheckSoonAndRemembersItAcrossLaunches() async {
+        let github = FakeGitHub(.failure(AppUpdateCheck.CheckError.httpStatus(503)))
+        let start = Date()
+        await model(current: "2.10.0", github: github).checkNow(now: start)
+        github.answer = .success(releaseJSON(tag: "v2.10.1"))
+
+        let relaunched = model(current: "2.10.0", github: github)
+        await relaunched.checkIfDue(now: start.addingTimeInterval(30 * 60))
+        XCTAssertEqual(github.requests, 1, "not yet: half an hour after the failure")
+        await relaunched.checkIfDue(now: start.addingTimeInterval(2 * 3600))
+        XCTAssertEqual(github.requests, 2)
+        XCTAssertEqual(relaunched.bannerRelease?.version, "2.10.1")
+        XCTAssertFalse(relaunched.lastCheckFailed)
     }
 
     func testAnAnswerLargerThanTheCapIsRefused() async {
@@ -195,7 +235,7 @@ final class AppUpdateCheckTests: XCTestCase {
     }
 
     func testTheRequestGoesOnlyToThisProjectsLatestRelease() {
-        let request = AppUpdateCheck.request
+        guard let request = AppUpdateCheck.request else { return XCTFail("no request") }
         XCTAssertEqual(request.url, URL(string:
             "https://api.github.com/repos/tonyyo11/jamf-reports-community/releases/latest"))
         XCTAssertEqual(request.httpMethod ?? "GET", "GET")

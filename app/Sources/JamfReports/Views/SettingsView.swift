@@ -634,10 +634,10 @@ struct SettingsView: View {
                     label: "Status",
                     sub: updates.statusText,
                     trailing: AnyView(HStack(spacing: 8) {
-                        if let latest = updates.latest, updates.isEnabled {
+                        if let page = updates.latest?.page, updates.isEnabled {
                             PNPButton(title: "View release", icon: "arrow.up.right.square",
                                       size: .sm) {
-                                NSWorkspace.shared.open(latest.page)
+                                NSWorkspace.shared.open(page)
                             }
                             .help("Open the release notes on GitHub. Nothing is downloaded.")
                         }

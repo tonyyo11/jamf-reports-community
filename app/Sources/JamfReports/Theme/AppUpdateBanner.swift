@@ -14,7 +14,7 @@ struct AppUpdateBanner: View {
                 action: InlineBannerAction(
                     label: "View release", icon: "arrow.up.right.square",
                     help: "Open the release notes on GitHub. Nothing is downloaded."
-                ) { NSWorkspace.shared.open(release.page) }
+                ) { if let page = release.page { NSWorkspace.shared.open(page) } }
             ) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Jamf Reports \(release.version) is available")
