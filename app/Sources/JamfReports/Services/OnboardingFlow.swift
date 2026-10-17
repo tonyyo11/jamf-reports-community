@@ -770,7 +770,7 @@ final class OnboardingFlow {
             let result = try await Self.runWithPTY(
                 executable: binary,
                 arguments: Self.schoolArguments(
-                    profile: name, url: schoolURL.trimmed
+                    profile: name, url: Self.normalizedSchoolURL(schoolURL) ?? schoolURL.trimmed
                 ),
                 stdin: stdinData
             )
@@ -1303,7 +1303,22 @@ final class OnboardingFlow {
         platformScopeID.trimmed.isEmpty || isPlatformScopeIDValid ? nil : Self.scopeIDProblemText
     }
     var isProtectURLValid: Bool { normalizedURL(protectURL.trimmed) != nil }
-    var isSchoolURLValid: Bool { normalizedURL(schoolURL.trimmed) != nil }
+    var isSchoolURLValid: Bool { Self.normalizedSchoolURL(schoolURL) != nil }
+
+    /// The Jamf School URL as jamf-cli should store it: `https://` added when no scheme is
+    /// typed, and trailing slashes and a trailing `/api` removed. School's API settings page
+    /// shows the URL with `/api`, and jamf-cli adds it again, so every list call 404s.
+    /// Nil unless the result is https with a host.
+    nonisolated static func normalizedSchoolURL(_ raw: String) -> String? {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.contains("://") { value = "https://" + value }
+        while value.hasSuffix("/") { value.removeLast() }
+        if value.lowercased().hasSuffix("/api") { value.removeLast(4) }
+        while value.hasSuffix("/") { value.removeLast() }
+        guard let components = URLComponents(string: value), components.scheme?.lowercased() == "https",
+              let host = components.host, !host.isEmpty else { return nil }
+        return value
+    }
 
     private var normalizedJamfURL: URL? { normalizedURL(jamfURL.trimmed) }
 

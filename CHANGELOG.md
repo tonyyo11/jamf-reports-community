@@ -23,6 +23,10 @@ versions in this repository map to git tags.
   blank when one row of a Jamf Platform API report carries a value of an unexpected type, such
   as a count written as text. Only that value is left out, and a failure count that is
   negative, fractional or out of range shows as unknown, never as a pass. (#284)
+- Jamf School setup removes a trailing `/api` from the School URL, as copied from School's
+  API settings page. jamf-cli adds `/api` itself, so with it every list command failed with
+  "not found" while the overview still worked. A School URL typed without `https://` is
+  accepted, as jamf-cli accepts it.
 
 ### Security
 
