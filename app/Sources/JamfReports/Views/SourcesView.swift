@@ -86,6 +86,7 @@ struct SourcesView: View {
                 profileSlug: workspace.profile,
                 prefillURL: activeProfileServerURL,
                 prefillAuthMethod: activeProfileAuthMethod,
+                isSchool: isSchoolWorkspace,
                 onSaved: {
                     workspace.credentialsChanged()
                     runDoctor()

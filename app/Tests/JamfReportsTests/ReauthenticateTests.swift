@@ -13,6 +13,41 @@ final class ReauthenticateTests: XCTestCase {
 
     // MARK: - Form selection from recorded auth method
 
+    /// Reported on 2.10.0: a Jamf School workspace opened the Jamf Pro form, labelled its
+    /// School URL "Jamf Pro URL" and could not save School credentials.
+    func testASchoolWorkspaceGetsTheSchoolFormWhateverItsAuthMethod() {
+        XCTAssertEqual(ReauthenticateSheet.form(isSchool: true, authMethod: "apikey"), .school)
+        XCTAssertEqual(ReauthenticateSheet.form(isSchool: true, authMethod: "platform"), .school)
+        XCTAssertEqual(ReauthenticateSheet.form(isSchool: true, authMethod: ""), .school)
+    }
+
+    func testAJamfProWorkspaceKeepsItsForms() {
+        XCTAssertEqual(
+            ReauthenticateSheet.form(isSchool: false, authMethod: "platform"), .platformGateway)
+        XCTAssertEqual(ReauthenticateSheet.form(isSchool: false, authMethod: "oauth2"), .oauth2)
+        XCTAssertEqual(ReauthenticateSheet.form(isSchool: false, authMethod: "apikey"), .oauth2)
+    }
+
+    func testSchoolVerifyNeedsAURLANetworkIDAndAKey() {
+        XCTAssertTrue(ReauthenticateSheet.canVerifySchool(
+            isBusy: false, urlValid: true, networkID: "123", hasKey: true))
+        XCTAssertFalse(ReauthenticateSheet.canVerifySchool(
+            isBusy: true, urlValid: true, networkID: "123", hasKey: true))
+        XCTAssertFalse(ReauthenticateSheet.canVerifySchool(
+            isBusy: false, urlValid: false, networkID: "123", hasKey: true))
+        XCTAssertFalse(ReauthenticateSheet.canVerifySchool(
+            isBusy: false, urlValid: true, networkID: "  ", hasKey: true))
+        XCTAssertFalse(ReauthenticateSheet.canVerifySchool(
+            isBusy: false, urlValid: true, networkID: "123", hasKey: false))
+    }
+
+    /// The URL jamf-cli stored for Keith's profile had no scheme and ended in /api; the School
+    /// form reads it as valid and saves it without /api.
+    func testAStoredSchoolURLWithoutSchemeOrWithAPIIsUsable() {
+        XCTAssertEqual(OnboardingFlow.normalizedSchoolURL("albion.jamfcloud.com/api"),
+                       "https://albion.jamfcloud.com")
+    }
+
     func testPrefersPlatformGatewayForPlatformAuthMethod() {
         XCTAssertTrue(ReauthenticateSheet.prefersPlatformGateway(authMethod: "platform"))
         // jamf-cli matches `platform` exactly (2.10, `JamfCLIAuthMethod`): neither of these is a

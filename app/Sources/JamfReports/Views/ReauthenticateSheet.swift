@@ -21,6 +21,9 @@ import SwiftUI
 /// the flow, and failure output is redacted before display. Nothing is
 /// persisted by the app: `config add-profile` writes only to jamf-cli's own
 /// credential store, not the workspace `config.yaml`.
+///
+/// On a Jamf School workspace it shows the School form instead and re-runs `jamf-cli school
+/// setup` through `OnboardingFlow.registerSchoolProfile`, the onboarding School path.
 struct ReauthenticateSheet: View {
     /// The existing profile slug whose credentials are being updated.
     let profileSlug: String
@@ -28,6 +31,8 @@ struct ReauthenticateSheet: View {
     var prefillURL: String = ""
     /// The profile's currently-recorded auth method, if any (selects the form).
     var prefillAuthMethod: String = ""
+    /// A Jamf School workspace: the School form, never the Jamf Pro connection types.
+    var isSchool: Bool = false
     /// Called once when credentials were (re)written, so the caller can re-run
     /// its connection-health probe. Not called on a pure cancel.
     var onSaved: (() -> Void)? = nil
@@ -38,6 +43,23 @@ struct ReauthenticateSheet: View {
     @State private var didPrefill = false
 
     // MARK: - Pure gating / prefill helpers (unit-tested)
+
+    enum Form: Equatable { case school, oauth2, platformGateway }
+
+    /// The form to show: School for a School workspace whatever its recorded auth method,
+    /// else the gateway form for a `platform` profile and OAuth2 for anything else.
+    nonisolated static func form(isSchool: Bool, authMethod: String) -> Form {
+        if isSchool { return .school }
+        return prefersPlatformGateway(authMethod: authMethod) ? .platformGateway : .oauth2
+    }
+
+    /// Whether the School "Verify & save" action may run. Mirrors onboarding's School step.
+    nonisolated static func canVerifySchool(
+        isBusy: Bool, urlValid: Bool, networkID: String, hasKey: Bool
+    ) -> Bool {
+        let idFilled = !networkID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return !isBusy && urlValid && idFilled && hasKey
+    }
 
     /// Chooses the form to prefill from the profile's recorded auth method.
     /// `platform` (jamf-cli's Platform Gateway auth method, `JamfCLIAuthMethod`) selects the
@@ -74,13 +96,18 @@ struct ReauthenticateSheet: View {
             Divider().background(Theme.Colors.hairlineStrong)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    connectionTypePicker
-                    if flow.proConnectionType == .oauth2 {
-                        oauth2Form
+                    if isSchool {
+                        schoolForm
+                        schoolResultSection
                     } else {
-                        platformGatewayForm
+                        connectionTypePicker
+                        if flow.proConnectionType == .oauth2 {
+                            oauth2Form
+                        } else {
+                            platformGatewayForm
+                        }
+                        resultSection
                     }
-                    resultSection
                 }
                 .padding(20)
             }
@@ -252,6 +279,79 @@ struct ReauthenticateSheet: View {
         }
     }
 
+    // MARK: - Jamf School form
+
+    private var schoolForm: some View {
+        Card(padding: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Find your Network ID at Devices → Enroll Device(s). Generate an API key at "
+                     + "Organization → Settings → API.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    FieldLabel(label: "Jamf School URL")
+                    PNPTextField(
+                        value: binding(\.schoolURL), placeholder: "https://yourorg.jamfcloud.com")
+                    validationLine(
+                        ok: flow.isSchoolURLValid,
+                        text: "An https:// address with a host; a trailing /api is removed")
+                }
+
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "Network ID")
+                        PNPTextField(
+                            value: binding(\.schoolNetworkID), placeholder: "Network ID",
+                            mono: true)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "API Key")
+                        SecureSecretField(
+                            placeholder: "School API key",
+                            onTextChange: { flow.schoolAPIKeyFieldHasText = $0 }
+                        ) { data in
+                            flow.setSchoolAPIKey(data)
+                        }
+                        .frame(height: 28)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                Text("Saving re-runs jamf-cli's School setup for this profile: it replaces the "
+                     + "stored URL, Network ID and API key, removes any Platform API access added "
+                     + "to the profile outside this app, and makes it jamf-cli's default profile.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.fg2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var schoolResultSection: some View {
+        if let error = flow.schoolConnectionError {
+            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fg2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        if flow.schoolConnected {
+            Pill(text: "CREDENTIALS SAVED", tone: .teal, icon: "checkmark")
+            if let note = flow.schoolConfigNote {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.fg2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     // MARK: - Result / validation output
 
     @ViewBuilder
@@ -318,7 +418,7 @@ struct ReauthenticateSheet: View {
     private var footer: some View {
         HStack {
             PNPButton(
-                title: flow.profileRegistered ? "Close" : "Cancel",
+                title: flow.profileRegistered || flow.schoolConnected ? "Close" : "Cancel",
                 style: .neutral,
                 size: .md
             ) {
@@ -346,12 +446,20 @@ struct ReauthenticateSheet: View {
     // MARK: - State
 
     private var isBusy: Bool {
-        flow.isRegisteringProfile || flow.isValidatingConnection
+        flow.isRegisteringProfile || flow.isValidatingConnection || flow.isConnectingSchool
     }
 
     private var canVerify: Bool {
         // The Platform API scope default is set when the jamf-cli probe answers.
         guard !flow.isCheckingJamfCLI else { return false }
+        if isSchool {
+            return Self.canVerifySchool(
+                isBusy: isBusy,
+                urlValid: flow.isSchoolURLValid,
+                networkID: flow.schoolNetworkID,
+                hasKey: !flow.schoolAPIKey.isEmpty || flow.schoolAPIKeyFieldHasText
+            )
+        }
         switch flow.proConnectionType {
         case .oauth2:
             return Self.canVerifyOAuth2(
@@ -377,14 +485,19 @@ struct ReauthenticateSheet: View {
         guard !didPrefill else { return }
         didPrefill = true
         flow.profileName = profileSlug
-        if Self.prefersPlatformGateway(authMethod: prefillAuthMethod) {
+        let stored = prefillURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch Self.form(isSchool: isSchool, authMethod: prefillAuthMethod) {
+        case .school:
+            flow.schoolProfileName = profileSlug
+            flow.schoolURL = stored
+        case .platformGateway:
             flow.proConnectionType = .platformGateway
             if let url = GatewayRegion.startingURL(fromStored: prefillURL) {
                 flow.gatewayURL = url
             }
-        } else {
+        case .oauth2:
             flow.proConnectionType = .oauth2
-            flow.jamfURL = prefillURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            flow.jamfURL = stored
         }
     }
 
@@ -395,6 +508,11 @@ struct ReauthenticateSheet: View {
         // onboarding Authenticate step and ProductConnectSheetView.)
         NSApp.keyWindow?.makeFirstResponder(nil)
         flow.lastError = nil
+        if isSchool {
+            // The School profile is the workspace's own (`connectSchoolAsPrimary`).
+            Task { await flow.connectSchoolAsPrimary() }
+            return
+        }
         Task {
             do {
                 try await flow.registerJamfCLIProfile()
@@ -413,7 +531,7 @@ struct ReauthenticateSheet: View {
     /// pressed, so a cancel would otherwise release the plaintext un-zeroed.
     private func close() {
         flow.clearAllSecrets()
-        if flow.profileRegistered { onSaved?() }
+        if flow.profileRegistered || flow.schoolConnected { onSaved?() }
         dismiss()
     }
 

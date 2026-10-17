@@ -27,6 +27,10 @@ versions in this repository map to git tags.
   API settings page. jamf-cli adds `/api` itself, so with it every list command failed with
   "not found" while the overview still worked. A School URL typed without `https://` is
   accepted, as jamf-cli accepts it.
+- **Data Sources → Update credentials** on a Jamf School workspace shows the School form (URL,
+  Network ID and API key) and re-runs School setup. It used to show the Jamf Pro connection
+  types and a "Jamf Pro URL" field that rejected the School address, so School credentials
+  could not be changed in the app.
 
 ### Security
 
