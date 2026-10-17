@@ -206,7 +206,9 @@ these interactive dashboards either — it produces a separate generated workboo
 
 ## System
 
-- **Settings** — app preferences: the jamf-cli install/update check, connections,
+- **Settings** — app preferences: the jamf-cli install/update check, **App updates** (whether
+  Jamf Reports checks GitHub once a day for a new stable release; it never downloads one),
+  connections,
   **Workspace location** (point every profile at a shared team folder — see
   [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)),
   diagnostics, and Sidebar Visibility.

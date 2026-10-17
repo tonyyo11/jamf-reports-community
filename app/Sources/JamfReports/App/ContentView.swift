@@ -107,6 +107,9 @@ struct ContentView: View {
                             }
                         )
                     }
+                    // Reports a newer stable release; also in demo mode, since it is
+                    // about the app rather than a tenant.
+                    AppUpdateBanner(model: AppUpdateModel.shared)
                     ZStack(alignment: .bottom) {
                         detailView
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -158,6 +161,8 @@ struct ContentView: View {
             if let dest = nextVisibleTab(from: tab, in: visibility) { tab = dest }
         }
         .task {
+            // Its own task, so a slow GitHub answer holds up none of the launch work below.
+            Task { await AppUpdateModel.shared.checkIfDue() }
             await workspace.autoUpdateJamfCLIIfNeeded()
             // PR-24: wire up the background refresh coordinator. The
             // foreground observer re-checks staleness when the app

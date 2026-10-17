@@ -7,7 +7,30 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-10-17
+
+2.10.1 tells you when a new stable release is out, without ever installing one. It fixes Jamf
+School setup and credential updates that a School tester reported, keeps an imported CSV from
+overriding what jamf-cli collected, and stops one unexpected value from blanking the Jamf
+Platform API screens. On a shared team folder, the app no longer follows links another Mac could
+plant among its snapshots and state files.
+
+### Added
+
+- Jamf Reports tells you when a new stable release is out. Once a day it asks GitHub for the
+  latest release and, when it is newer than yours, shows a notice with a link to the release
+  notes. It never downloads or installs anything, and never offers a beta or release
+  candidate, so you decide when to update. **Skip this version** hides the notice until a
+  later release. Turn the check off under **Settings → App updates**, or for every Mac with a
+  configuration profile (see Security and Operational Considerations in the wiki).
+
 ### Fixed
+
+- Clearing a number on **Config → Thresholds** (or the number of runs to keep) no longer breaks
+  the workspace. The field was saved as text that reports could not read, so every refresh,
+  report and scheduled run failed until config.yaml was edited by hand. A cleared field now
+  uses the default, and text that is not a whole number is refused with a message, saving
+  nothing.
 
 - Devices and the Overview show what jamf-cli last collected when an imported inventory CSV
   still counts as current. Before, the CSV won: a Mac imported as an unenrolled "DEP - serial"

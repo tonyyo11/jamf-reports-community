@@ -704,6 +704,10 @@ extension WorkspaceStore {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Self.periodicRecheckInterval))
                 guard let self, !Task.isCancelled else { return }
+                // The app update check is about the app, not a tenant, so it runs in demo mode
+                // too; `checkIfDue` keeps it to one request a day, and its own task keeps a slow
+                // GitHub answer from delaying the checks below.
+                Task { await AppUpdateModel.shared.checkIfDue() }
                 // The callees guard demo mode too; skipping here keeps a demo
                 // session from touching the disk at all.
                 guard !self.demoMode else { continue }

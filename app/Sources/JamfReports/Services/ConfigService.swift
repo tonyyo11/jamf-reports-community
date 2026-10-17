@@ -306,6 +306,8 @@ enum ConfigService {
         case changedOnDisk
         /// A scoped writer's block typed as a single value or a list.
         case notASettingsBlock(String)
+        /// A number field holding text the engine cannot read as a whole number.
+        case notAWholeNumber(key: String, value: String)
 
         var errorDescription: String? {
             switch self {
@@ -320,6 +322,10 @@ enum ConfigService {
                 "\(key) in config.yaml is not a set of settings, so it was left as typed and "
                     + "nothing was written. Write its settings indented under \"\(key):\", "
                     + "or remove that line."
+            case .notAWholeNumber(let key, let value):
+                "\(key) must be a whole number, and \"\(ConfigSchema.displayText(value))\" is "
+                    + "not one, so nothing was saved. Enter a number, or clear the field to "
+                    + "use the default."
             }
         }
     }
@@ -361,6 +367,7 @@ enum ConfigService {
         let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
         try rejectSymlinkDestination(url)
         if let stamp, !stamp.matches(url) { throw ConfigError.changedOnDisk }
+        if let bad = notAWholeNumber(in: state) { throw bad }
 
         let manager = FileManager.default
         let directory = url.deletingLastPathComponent()
@@ -839,12 +846,9 @@ enum ConfigService {
         root.set("custom_eas", value: .sequence(state.customEAs.map(customEAValue)))
 
         var thresholds = root.value(for: "thresholds")?.mapping ?? .init(entries: [])
-        thresholds.set("stale_device_days", value: intScalar(state.staleDeviceDays))
-        thresholds.set("checkin_overdue_days", value: intScalar(state.checkinOverdueDays))
-        thresholds.set("warning_disk_percent", value: intScalar(state.warningDiskPercent))
-        thresholds.set("critical_disk_percent", value: intScalar(state.criticalDiskPercent))
-        thresholds.set("cert_warning_days", value: intScalar(state.certWarningDays))
-        thresholds.set("profile_error_warning", value: intScalar(state.profileErrorWarning))
+        for (key, value) in wholeNumberFields(state) where key.first == "thresholds" {
+            thresholds.setWholeNumber(key[1], value)
+        }
         applyStaleBasis(state.staleBasis, to: &thresholds)
         applyContactGapDays(state, to: &thresholds)
         root.set("thresholds", value: .mapping(thresholds))
@@ -869,7 +873,7 @@ enum ConfigService {
         output.set("archive_dir", value: scalar(state.archiveDir))
         output.set("timestamp_outputs", value: .scalar(.bool(state.timestampOutputs)))
         output.set("archive_enabled", value: .scalar(.bool(state.archiveEnabled)))
-        output.set("keep_latest_runs", value: intScalar(state.keepLatestRuns))
+        output.setWholeNumber("keep_latest_runs", state.keepLatestRuns)
         root.set("output", value: .mapping(output))
 
         var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? .init(entries: [])
@@ -991,10 +995,40 @@ enum ConfigService {
         Int(value.trimmingCharacters(in: .whitespaces)).map { .scalar(.int($0)) }
     }
 
-    private static func intScalar(_ value: String) -> YAMLCodec.YAMLValue {
-        if let int = Int(value.trimmingCharacters(in: .whitespaces)) {
-            return .scalar(.int(int))
+    /// The number fields the Config screen writes, which the engine reads as `Int?`: any other
+    /// text there fails the decode of the whole config.yaml, on every Mac that shares it.
+    static func wholeNumberFields(_ state: ConfigState) -> [(key: [String], value: String)] {
+        [
+            (["thresholds", "stale_device_days"], state.staleDeviceDays),
+            (["thresholds", "checkin_overdue_days"], state.checkinOverdueDays),
+            (["thresholds", "warning_disk_percent"], state.warningDiskPercent),
+            (["thresholds", "critical_disk_percent"], state.criticalDiskPercent),
+            (["thresholds", "cert_warning_days"], state.certWarningDays),
+            (["thresholds", "profile_error_warning"], state.profileErrorWarning),
+            (["output", "keep_latest_runs"], state.keepLatestRuns),
+        ]
+    }
+
+    /// The first number field holding text that is neither blank nor a whole number.
+    static func notAWholeNumber(in state: ConfigState) -> ConfigError? {
+        for (key, value) in wholeNumberFields(state) {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, Int(trimmed) == nil {
+                return .notAWholeNumber(key: key.joined(separator: "."), value: value)
+            }
         }
-        return .scalar(.string(value))
+        return nil
+    }
+}
+
+private extension YAMLCodec.YAMLMapping {
+    /// A whole number is written; a blank field removes the key so the engine uses its default.
+    /// `save` refuses any other text first (`notAWholeNumber`).
+    mutating func setWholeNumber(_ key: String, _ value: String) {
+        if let number = Int(value.trimmingCharacters(in: .whitespaces)) {
+            set(key, value: .scalar(.int(number)))
+        } else {
+            entries.removeAll { $0.key == key }
+        }
     }
 }

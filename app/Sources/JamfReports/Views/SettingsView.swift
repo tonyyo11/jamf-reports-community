@@ -72,6 +72,7 @@ struct SettingsView: View {
                 }
                 sidebarVisibilityCard
                 experimentalFeaturesCard
+                appUpdatesCard
                 aboutCard
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -609,6 +610,45 @@ struct SettingsView: View {
             if Task.isCancelled { return }
             setChecking(name, false)
             if let status { onStatus(name, status) }
+        }
+    }
+
+    /// Reports a newer stable release and never installs one (`AppUpdateCheck`).
+    private var appUpdatesCard: some View {
+        let updates = AppUpdateModel.shared
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "App updates")
+                settingsRow(
+                    label: "Check for updates",
+                    sub: updates.isForcedByProfile
+                        ? "Set by your organization's configuration profile"
+                        : "Once a day, stable releases only. Nothing is downloaded or installed.",
+                    trailing: AnyView(PNPToggle(isOn: Binding(
+                        get: { updates.isEnabled }, set: { updates.setEnabled($0) }
+                    ))
+                    .disabled(updates.isForcedByProfile))
+                )
+                Divider().background(Theme.Hairline.standard)
+                settingsRow(
+                    label: "Status",
+                    sub: updates.statusText,
+                    trailing: AnyView(HStack(spacing: 8) {
+                        if let latest = updates.latest, updates.isEnabled {
+                            PNPButton(title: "View release", icon: "arrow.up.right.square",
+                                      size: .sm) {
+                                NSWorkspace.shared.open(latest.page)
+                            }
+                            .help("Open the release notes on GitHub. Nothing is downloaded.")
+                        }
+                        PNPButton(title: "Check now", size: .sm) {
+                            Task { await updates.checkNow() }
+                        }
+                        .disabled(!updates.isEnabled || updates.isChecking)
+                        .help("Ask GitHub for the latest stable release now.")
+                    })
+                )
+            }
         }
     }
 

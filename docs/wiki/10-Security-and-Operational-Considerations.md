@@ -409,10 +409,33 @@ a secret leaked from one Mac into access to all of them.
 
 ## External Network Calls
 
-**SOFA feed is the only non-Jamf host the app reaches.** When collecting, the app
-fetches macOS and XProtect release dates from `sofafeed.macadmins.io` to score
-currency in your security posture metrics. If your network must not reach third-party
-hosts, disable this fetch by adding it to `jamf_cli.collect_skip` in `config.yaml`:
+Apart from your Jamf servers, the app reaches three hosts. None of them receives anything
+about your fleet.
+
+| Host | When | How to turn it off |
+|------|------|--------------------|
+| `sofafeed.macadmins.io` | Each collect, for macOS and XProtect release dates | `jamf_cli.collect_skip: [sofa]` (below) |
+| `api.github.com` (this project) | Once a day while the app is open: one GET for the latest stable release | Settings → App updates, or the profile below |
+| `api.github.com` (jamf-cli) and `github.com` | Only when you check for or install a jamf-cli update, or turn on Auto-update jamf-cli | Leave Auto-update jamf-cli off (the default) |
+
+**App update check.** The app reads only the latest stable release of this project, never a
+beta or release candidate, and shows a notice when it is newer than the installed version. It
+downloads and installs nothing, so a release that changes behaviour you rely on is never
+applied without you. The scheduled runs and the `jamf-reports` command never check. To turn it
+off on every Mac, deploy a configuration profile (in Jamf Pro: Application & Custom Settings)
+for the preference domain `com.tonyyo.jamfreports` with:
+
+```xml
+<key>checkForAppUpdates</key>
+<false/>
+```
+
+Settings then shows the switch as set by your organization, and the app makes no request.
+
+**SOFA feed.** When collecting, the app fetches macOS and XProtect release dates from
+`sofafeed.macadmins.io` to score currency in your security posture metrics. If your network
+must not reach third-party hosts, disable this fetch by adding it to `jamf_cli.collect_skip`
+in `config.yaml`:
 
 ```yaml
 jamf_cli:
