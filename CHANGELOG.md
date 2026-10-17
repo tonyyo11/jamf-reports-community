@@ -29,8 +29,9 @@ versions in this repository map to git tags.
 - Devices, Offline Outreach and the Overview's recent activity no longer read a snapshot,
   snapshot folder or inventory CSV that is a symbolic link, even one pointing inside the
   workspace, where another Mac on a shared folder could plant it. Each file is checked and read
-  through one open, so it cannot be swapped between the check and the read. A `config.yaml`
-  that is a link is still read, as everywhere else in the app. (#207)
+  through one open, so it cannot be swapped between the check and the read. A snapshot folder
+  or `csv-inbox` that is a link is named in a warning on Devices instead of leaving the screen
+  blank. A `config.yaml` that is a link is still read, as everywhere else in the app. (#207)
 - Scheduled runs no longer follow a symbolic link, or read an oversized or non-regular file,
   where they keep their once-a-day markers, alert record, shared-folder claim and per-source
   collect state. Another Mac on a shared folder could plant one, for example to mark today's

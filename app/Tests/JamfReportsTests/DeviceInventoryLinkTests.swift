@@ -75,7 +75,22 @@ final class DeviceInventoryLinkTests: XCTestCase {
         try write(computers(named: "Mac-B", id: "2"),
                   to: "elsewhere/computers_20261016T060000.json")
         try link("jamf-cli-data/computers", to: "elsewhere")
-        XCTAssertEqual(deviceNames(), [])
+        let snapshot = DeviceInventoryService.load(profile: profile, demoMode: false)
+        XCTAssertEqual(snapshot.devices.map(\.name), [])
+        let linkWarnings = snapshot.warnings.filter { $0.contains("symbolic link") }
+        XCTAssertEqual(linkWarnings.count, 1, "the folder is named once: \(snapshot.warnings)")
+        XCTAssertTrue(linkWarnings.first?.contains("jamf-cli-data/computers") == true)
+    }
+
+    func testALinkedInboxIsNamedAndARealFolderIsNot() throws {
+        try write("Computer Name,Serial Number\nMac-C,SER3\n", to: "elsewhere/inventory.csv")
+        try link("csv-inbox", to: "elsewhere")
+        try write(computers(named: "Mac-A", id: "1"),
+                  to: "jamf-cli-data/computers/computers_20261015T060000.json")
+        let warnings = DeviceInventoryService.load(profile: profile, demoMode: false).warnings
+            .filter { $0.contains("symbolic link") }
+        XCTAssertEqual(warnings.count, 1, "only csv-inbox is a link: \(warnings)")
+        XCTAssertTrue(warnings.first?.contains("csv-inbox") == true)
     }
 
     func testALinkedConfigYAMLIsStillRead() throws {

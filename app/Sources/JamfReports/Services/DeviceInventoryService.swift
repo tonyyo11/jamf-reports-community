@@ -31,6 +31,7 @@ enum DeviceInventoryService {
 
         var warnings: [String] = []
         let config = loadConfigHints(root: root, warnings: &warnings)
+        warnings.append(contentsOf: linkedFolderWarnings(config: config, root: root))
         var merger = DeviceRecordMerger()
         var sourceFiles: [String] = []
         var newestSourceDate: Date?
@@ -182,15 +183,9 @@ enum DeviceInventoryService {
            ) {
             dates["inventory-csv"] = d
         }
-        let jsonKinds: [(kind: String, names: [String])] = [
-            ("computers", ["computers-list", "computers_list", "computers"]),
-            ("device-compliance", ["device-compliance", "device_compliance"]),
-            ("patch-device-failures", ["patch-device-failures", "patch_device_failures"]),
-            ("patch-status", ["patch-status", "patch_status"]),
-        ]
         // Same rule for the snapshot kinds: the filename stamp is when the
         // collect ran, mtime only when there is no stamp to read.
-        for entry in jsonKinds {
+        for entry in snapshotKinds {
             if let url = latestCachedJSON(
                    dataDir: config.jamfCLIDataDir, names: entry.names, root: root
                ),
@@ -223,6 +218,27 @@ fileprivate extension DeviceInventoryService {
 
     /// A folder inside the workspace, refused when the entry itself is a link: another Mac on a
     /// shared workspace can plant one, and resolving it first hid that (#207 M4).
+    /// The snapshot kinds Devices reads, with the folder names each may have.
+    static let snapshotKinds: [(kind: String, names: [String])] = [
+        ("computers", ["computers-list", "computers_list", "computers"]),
+        ("device-compliance", ["device-compliance", "device_compliance"]),
+        ("patch-device-failures", ["patch-device-failures", "patch_device_failures"]),
+        ("patch-status", ["patch-status", "patch_status"]),
+    ]
+
+    /// One warning per folder Devices reads that is a link: `validatedDirectory` refuses it,
+    /// and without this the screen would go blank with no reason given.
+    static func linkedFolderWarnings(config: ConfigHints, root: URL) -> [String] {
+        let folders = snapshotKinds.flatMap(\.names).map {
+            config.jamfCLIDataDir.appendingPathComponent($0, isDirectory: true)
+        } + [root.appendingPathComponent("csv-inbox", isDirectory: true)]
+        return folders.filter(isLink).map {
+            "Ignoring \(displayPath($0, root: root)) — it is a symbolic link, and Devices reads "
+                + "only real folders, since another Mac on a shared folder could plant a link. "
+                + "Replace it with the folder itself."
+        }
+    }
+
     static func validatedDirectory(_ url: URL, root: URL) -> URL? {
         guard !isLink(url),
               let resolved = secureURL(url, root: root),
