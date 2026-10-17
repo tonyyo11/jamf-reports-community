@@ -160,13 +160,17 @@ final class ConfigReadOneWayTests: XCTestCase {
         XCTAssertEqual(try devicesScreenCallsStale("other: 1\n"), true)
     }
 
-    /// The decoder rejects a quoted number for this key (the whole file fails to load, which
-    /// the Config screen and the Doctor report), so the Devices screen no longer takes it.
-    func testTheDevicesScreenDoesNotTakeAQuotedStaleDeviceDays() throws {
-        XCTAssertEqual(try devicesScreenCallsStale("thresholds:\n  stale_device_days: \"45\"\n"),
-                       true)
-        XCTAssertThrowsError(try ConfigLoader.loadFromString(
-            "thresholds:\n  stale_device_days: \"45\"\n"))
+    /// The decoder reads a quoted whole number for this key (2.10.1, `WholeNumberSetting`), so
+    /// the Devices screen takes it too; a value that is not a whole number is the default in
+    /// both.
+    func testTheDevicesScreenReadsAQuotedStaleDeviceDaysAsTheDecoderDoes() throws {
+        let quoted = "thresholds:\n  stale_device_days: \"45\"\n"
+        XCTAssertEqual(try devicesScreenCallsStale(quoted), false)
+        XCTAssertEqual(try ConfigLoader.loadFromString(quoted).staleRule.days, 45)
+
+        let notANumber = "thresholds:\n  stale_device_days: 45.5\n"
+        XCTAssertEqual(try devicesScreenCallsStale(notANumber), true)
+        XCTAssertEqual(try ConfigLoader.loadFromString(notANumber).staleRule.days, 30)
     }
 
     // MARK: - output.allow_absolute_paths (WorkspacePaths)

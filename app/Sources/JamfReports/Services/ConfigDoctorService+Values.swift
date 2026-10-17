@@ -271,15 +271,15 @@ extension ConfigDoctorService {
     /// engine uses the default, so the row says which.
     private static func wholeNumberRows(_ raw: [String: Any]) -> [DoctorRow] {
         wholeNumberKeys.compactMap { key in
-            guard let value = ConfigLoader.rawValue(at: key.path, in: raw), !(value is NSNull),
-                  !(value is Int) else { return nil }
-            // Text holding a whole number ("30") reads as one, as `WholeNumberSetting` reads it.
-            if let text = value as? String,
-               Int(text.trimmingCharacters(in: .whitespaces)) != nil { return nil }
+            // The decoder's own reading, so a quoted "30" passes and a `true` does not.
+            let typed = ConfigLoader.rawValue(at: key.path, in: raw)
+            guard let setting = WholeNumberSetting(raw: typed), setting.value == nil else {
+                return nil
+            }
             let path = key.path.joined(separator: ".")
             return valueRow(
                 path,
-                "\(shown(String(describing: value))) is not a whole number. The app uses "
+                "\(shown(setting.typed)) is not a whole number. The app uses "
                     + "\(key.fallback).",
                 "Write a whole number, such as \(key.fallback), or remove the key.",
                 tag: ".number")

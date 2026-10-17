@@ -323,8 +323,10 @@ fileprivate extension DeviceInventoryService {
                 root: root
             ),
             historicalCSVDir: historicalCSVDir,
-            staleDeviceDays: ConfigLoader.rawValue(
-                at: ["thresholds", "stale_device_days"], in: values) as? Int ?? 30,
+            // Read as the decoder reads it (`WholeNumberSetting`), so a quoted "45" is 45 here too.
+            staleDeviceDays: WholeNumberSetting(
+                raw: ConfigLoader.rawValue(at: ["thresholds", "stale_device_days"], in: values))?
+                .value ?? 30,
             staleBasis: StaleBasisSetting(
                 raw: ConfigLoader.rawValue(at: ["thresholds", "stale_basis"], in: values)).resolved,
             contactGapDays: WholeNumberSetting(

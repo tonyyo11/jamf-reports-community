@@ -94,6 +94,7 @@ final class ConfigWholeNumberSaveTests: XCTestCase {
         thresholds:
           stale_device_days: 30.0
           critical_disk_percent: "95"
+          warning_disk_percent: true
           cert_warning_days: 45
         output:
           keep_latest_runs: ten
@@ -103,7 +104,8 @@ final class ConfigWholeNumberSaveTests: XCTestCase {
             profile: "ws")
             .filter { $0.id.hasSuffix(".number") }
         XCTAssertEqual(rows.map(\.title).sorted(),
-                       ["output.keep_latest_runs", "thresholds.stale_device_days"])
+                       ["output.keep_latest_runs", "thresholds.stale_device_days",
+                        "thresholds.warning_disk_percent"])
         XCTAssertTrue(rows.contains { $0.detail.contains("The app uses 30") })
     }
 
