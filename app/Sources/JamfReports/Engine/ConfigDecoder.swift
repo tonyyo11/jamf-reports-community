@@ -724,6 +724,29 @@ struct WholeNumberSetting: Decodable, Sendable, Equatable {
     }
 }
 
+extension ThresholdsConfig {
+    /// A count that is not a whole number (`30.0`, `"30 days"`) reads as unset, so its default
+    /// applies and Config Doctor names it, instead of failing the decode of the whole file.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        staleDeviceDays = c.wholeNumber(.staleDeviceDays)
+        checkinOverdueDays = c.wholeNumber(.checkinOverdueDays)
+        criticalDiskPercent = c.wholeNumber(.criticalDiskPercent)
+        warningDiskPercent = c.wholeNumber(.warningDiskPercent)
+        certWarningDays = c.wholeNumber(.certWarningDays)
+        profileErrorWarning = c.wholeNumber(.profileErrorWarning)
+        staleBasis = try c.decodeIfPresent(StaleBasisSetting.self, forKey: .staleBasis)
+        contactGapDays = try c.decodeIfPresent(WholeNumberSetting.self, forKey: .contactGapDays)
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// The key's whole number through `WholeNumberSetting`; nil when absent or not one.
+    func wholeNumber(_ key: Key) -> Int? {
+        ((try? decodeIfPresent(WholeNumberSetting.self, forKey: key)) ?? nil)?.value
+    }
+}
+
 extension StaleBasisSetting {
     /// From a value of `ConfigLoader.rawMapping`: text, a list, or anything else (wrong shape).
     init(raw: Any?) {
@@ -780,6 +803,18 @@ struct OutputConfig: Decodable, Sendable {
     /// Never below 1: `archiveOldRuns` keeps this many, so 0 archived the report just written
     /// and a negative number trapped in `dropFirst`.
     var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
+}
+
+extension OutputConfig {
+    /// `keep_latest_runs` that is not a whole number reads as unset (10), as the thresholds do.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        outputDir = try c.decodeIfPresent(String.self, forKey: .outputDir)
+        timestampOutputs = try c.decodeIfPresent(Bool.self, forKey: .timestampOutputs)
+        archiveEnabled = try c.decodeIfPresent(Bool.self, forKey: .archiveEnabled)
+        archiveDir = try c.decodeIfPresent(String.self, forKey: .archiveDir)
+        keepLatestRuns = c.wholeNumber(.keepLatestRuns)
+    }
 }
 
 // MARK: - charts

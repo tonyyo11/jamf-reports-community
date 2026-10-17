@@ -367,7 +367,6 @@ enum ConfigService {
         let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
         try rejectSymlinkDestination(url)
         if let stamp, !stamp.matches(url) { throw ConfigError.changedOnDisk }
-        if let bad = notAWholeNumber(in: state) { throw bad }
 
         let manager = FileManager.default
         let directory = url.deletingLastPathComponent()
@@ -384,6 +383,7 @@ enum ConfigService {
         }
 
         try rejectCredentialKeys(in: document.root)
+        if let bad = notAWholeNumber(in: state, file: document.root) { throw bad }
         var report = ConfigSaveReport(keptBlocks: nonListBlocks(in: document.root))
         let keys = managedTopLevelKeys.subtracting(report.keptBlocks)
         apply(state: state, to: &document)
@@ -846,9 +846,7 @@ enum ConfigService {
         root.set("custom_eas", value: .sequence(state.customEAs.map(customEAValue)))
 
         var thresholds = root.value(for: "thresholds")?.mapping ?? .init(entries: [])
-        for (key, value) in wholeNumberFields(state) where key.first == "thresholds" {
-            thresholds.setWholeNumber(key[1], value)
-        }
+        setWholeNumbers(state, in: "thresholds", to: &thresholds)
         applyStaleBasis(state.staleBasis, to: &thresholds)
         applyContactGapDays(state, to: &thresholds)
         root.set("thresholds", value: .mapping(thresholds))
@@ -873,7 +871,7 @@ enum ConfigService {
         output.set("archive_dir", value: scalar(state.archiveDir))
         output.set("timestamp_outputs", value: .scalar(.bool(state.timestampOutputs)))
         output.set("archive_enabled", value: .scalar(.bool(state.archiveEnabled)))
-        output.setWholeNumber("keep_latest_runs", state.keepLatestRuns)
+        setWholeNumbers(state, in: "output", to: &output)
         root.set("output", value: .mapping(output))
 
         var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? .init(entries: [])
@@ -992,7 +990,7 @@ enum ConfigService {
     /// recurring "Configuration file problem" banner after the EA walkthrough adopts a
     /// percentage EA with no threshold set.)
     private static func optionalInt(_ value: String) -> YAMLCodec.YAMLValue? {
-        Int(value.trimmingCharacters(in: .whitespaces)).map { .scalar(.int($0)) }
+        Int(value.trimmingCharacters(in: .whitespacesAndNewlines)).map { .scalar(.int($0)) }
     }
 
     /// The number fields the Config screen writes, which the engine reads as `Int?`: any other
@@ -1009,26 +1007,37 @@ enum ConfigService {
         ]
     }
 
-    /// The first number field holding text that is neither blank nor a whole number.
-    static func notAWholeNumber(in state: ConfigState) -> ConfigError? {
+    /// The first number field the user typed that is neither blank nor a whole number. Text
+    /// the file already holds there is not refused: it stays as typed, the engine uses the
+    /// default for it and Config Doctor names it, so it cannot block saving another setting.
+    static func notAWholeNumber(
+        in state: ConfigState, file root: YAMLCodec.YAMLValue? = nil
+    ) -> ConfigError? {
         for (key, value) in wholeNumberFields(state) {
-            let trimmed = value.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty, Int(trimmed) == nil {
-                return .notAWholeNumber(key: key.joined(separator: "."), value: value)
-            }
+            guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  optionalInt(value) == nil,
+                  value != fileText(key, in: root) else { continue }
+            return .notAWholeNumber(key: key.joined(separator: "."), value: value)
         }
         return nil
     }
-}
 
-private extension YAMLCodec.YAMLMapping {
-    /// A whole number is written; a blank field removes the key so the engine uses its default.
-    /// `save` refuses any other text first (`notAWholeNumber`).
-    mutating func setWholeNumber(_ key: String, _ value: String) {
-        if let number = Int(value.trimmingCharacters(in: .whitespaces)) {
-            set(key, value: .scalar(.int(number)))
-        } else {
-            entries.removeAll { $0.key == key }
+    private static func fileText(_ key: [String], in root: YAMLCodec.YAMLValue?) -> String? {
+        root?.mapping?.value(for: key[0])?.mapping?.value(for: key[1])?.stringValue
+    }
+
+    /// Writes `block`'s number fields: a whole number as a number, a blank field by removing
+    /// the key (the engine's default applies), and any other text, which `save` has let through
+    /// only when the file already held it, left as the file has it.
+    private static func setWholeNumbers(
+        _ state: ConfigState, in block: String, to mapping: inout YAMLCodec.YAMLMapping
+    ) {
+        for (key, value) in wholeNumberFields(state) where key[0] == block {
+            if let number = optionalInt(value) {
+                mapping.set(key[1], value: number)
+            } else if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                mapping.entries.removeAll { $0.key == key[1] }
+            }
         }
     }
 }

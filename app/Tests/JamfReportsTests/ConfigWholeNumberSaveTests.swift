@@ -64,6 +64,79 @@ final class ConfigWholeNumberSaveTests: XCTestCase {
         XCTAssertThrowsError(try save(ws) { $0.keepLatestRuns = "ten" })
     }
 
+    /// A count that is not a whole number used to fail the decode of the whole config.yaml;
+    /// it now costs only that count, which takes its default.
+    func testANonNumberCountReadsAsItsDefaultAndTheRestStillDecodes() throws {
+        let config = try ConfigLoader.loadFromString("""
+        thresholds:
+          stale_device_days: 30.0
+          checkin_overdue_days: "30 days"
+          warning_disk_percent: true
+          critical_disk_percent: "95"
+          cert_warning_days: 45
+        output:
+          keep_latest_runs: ten
+          output_dir: Reports
+        """)
+        let thresholds = try XCTUnwrap(config.thresholds)
+        XCTAssertNil(thresholds.staleDeviceDays)
+        XCTAssertEqual(thresholds.resolvedStaleDays, 30)
+        XCTAssertEqual(thresholds.resolvedCheckinOverdueDays, 7)
+        XCTAssertEqual(thresholds.resolvedWarningDisk, 80)
+        XCTAssertEqual(thresholds.criticalDiskPercent, 95, "a quoted whole number still reads")
+        XCTAssertEqual(thresholds.certWarningDays, 45)
+        XCTAssertEqual(config.output?.resolvedKeepLatestRuns, 10)
+        XCTAssertEqual(config.output?.outputDir, "Reports")
+    }
+
+    func testConfigDoctorNamesEachCountItReplaced() throws {
+        let yaml = """
+        thresholds:
+          stale_device_days: 30.0
+          critical_disk_percent: "95"
+          cert_warning_days: 45
+        output:
+          keep_latest_runs: ten
+        """
+        let rows = ConfigDoctorService.valueRows(
+            try ConfigLoader.loadFromString(yaml), raw: try ConfigLoader.rawMapping(fromYAML: yaml),
+            profile: "ws")
+            .filter { $0.id.hasSuffix(".number") }
+        XCTAssertEqual(rows.map(\.title).sorted(),
+                       ["output.keep_latest_runs", "thresholds.stale_device_days"])
+        XCTAssertTrue(rows.contains { $0.detail.contains("The app uses 30") })
+    }
+
+    /// A bad count already in the file must not block saving something else, such as the
+    /// EA walkthrough's Adopt or a column re-scaffold; it is left exactly as typed.
+    func testABadCountTheFileAlreadyHoldsDoesNotBlockAnotherSave() throws {
+        let ws = try workspace()
+        let url = try ConfigService.configURL(for: ws.profile, workspaceRoot: ws.root)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "thresholds:\n  cert_warning_days: ninety\n".write(
+            to: url, atomically: true, encoding: .utf8)
+
+        let loaded = try ConfigService.load(profile: ws.profile, workspaceRoot: ws.root)
+        var state = loaded.state
+        XCTAssertEqual(state.certWarningDays, "ninety")
+        state.staleDeviceDays = "21"
+        _ = try ConfigService.save(
+            profile: ws.profile, state: state, existingDocument: loaded.document,
+            workspaceRoot: ws.root)
+
+        let text = try configText(ws)
+        XCTAssertTrue(text.contains("cert_warning_days: ninety"), text)
+        XCTAssertTrue(text.contains("stale_device_days: 21"), text)
+        XCTAssertEqual(try ConfigLoader.loadFromString(text).thresholds?.staleDeviceDays, 21)
+    }
+
+    func testAPastedNewlineAroundANumberIsAccepted() throws {
+        let ws = try workspace()
+        try save(ws) { $0.staleDeviceDays = "21\n" }
+        XCTAssertTrue(try configText(ws).contains("stale_device_days: 21"))
+    }
+
     func testEveryNumberFieldTheScreenWritesIsChecked() {
         var state = ConfigState.defaultState
         XCTAssertNil(ConfigService.notAWholeNumber(in: state))

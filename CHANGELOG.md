@@ -30,7 +30,8 @@ plant among its snapshots and state files.
   the workspace. The field was saved as text that reports could not read, so every refresh,
   report and scheduled run failed until config.yaml was edited by hand. A cleared field now
   uses the default, and text that is not a whole number is refused with a message, saving
-  nothing.
+  nothing. A threshold typed by hand that is not a whole number, such as `30.0`, now costs only
+  that setting, which uses its default, and Config Doctor names it.
 
 - Devices and the Overview show what jamf-cli last collected when an imported inventory CSV
   still counts as current. Before, the CSV won: a Mac imported as an unenrolled "DEP - serial"

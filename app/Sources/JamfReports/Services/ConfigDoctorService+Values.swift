@@ -29,6 +29,7 @@ extension ConfigDoctorService {
         rows += sheetValueRows(config, profile: profile)
         rows += exceptionValueRows(config)
         rows += thresholdValueRows(config)
+        rows += wholeNumberRows(raw)
         rows += customEAValueRows(config)
         rows += alertValueRows(config.alerts, raw: raw)
         rows += productValueRows(config, profile: profile)
@@ -252,6 +253,37 @@ extension ConfigDoctorService {
                 tag: ".order"))
         }
         return rows
+    }
+
+    /// The counts the engine reads as whole numbers and treats as unset otherwise
+    /// (`KeyedDecodingContainer.wholeNumber`), with the default each then uses.
+    static let wholeNumberKeys: [(path: [String], fallback: Int)] = [
+        (["thresholds", "stale_device_days"], 30),
+        (["thresholds", "checkin_overdue_days"], 7),
+        (["thresholds", "warning_disk_percent"], 80),
+        (["thresholds", "critical_disk_percent"], 90),
+        (["thresholds", "cert_warning_days"], 90),
+        (["thresholds", "profile_error_warning"], 10),
+        (["output", "keep_latest_runs"], 10),
+    ]
+
+    /// A count typed as something other than a whole number (`30.0`, `"30 days"`, `true`): the
+    /// engine uses the default, so the row says which.
+    private static func wholeNumberRows(_ raw: [String: Any]) -> [DoctorRow] {
+        wholeNumberKeys.compactMap { key in
+            guard let value = ConfigLoader.rawValue(at: key.path, in: raw), !(value is NSNull),
+                  !(value is Int) else { return nil }
+            // Text holding a whole number ("30") reads as one, as `WholeNumberSetting` reads it.
+            if let text = value as? String,
+               Int(text.trimmingCharacters(in: .whitespaces)) != nil { return nil }
+            let path = key.path.joined(separator: ".")
+            return valueRow(
+                path,
+                "\(shown(String(describing: value))) is not a whole number. The app uses "
+                    + "\(key.fallback).",
+                "Write a whole number, such as \(key.fallback), or remove the key.",
+                tag: ".number")
+        }
     }
 
     /// `thresholds.stale_basis` and `contact_gap_days`: a date the app does not know is skipped,

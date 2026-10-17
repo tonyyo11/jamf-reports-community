@@ -203,6 +203,8 @@ profile or app that errored); `classic-macos-profiles` is only `{id, name}` and 
 When adding a key: it joins `ConfigSchema` from its `CodingKeys`; a key read outside
 the decoder must also be added to `ConfigSchema.tree` by hand.
 
+The six `thresholds` counts and `output.keep_latest_runs` decode through `WholeNumberSetting` (2.10.1, `KeyedDecodingContainer.wholeNumber`): a value that is not a whole number reads as unset, so its default applies, Config Doctor names it (`wholeNumberRows`, `.number`), and a Config screen save leaves it as the file has it unless the user typed a new one (`ConfigService.notAWholeNumber(in:file:)`, which refuses a newly typed non-number); a blank field removes the key.
+
 `thresholds.stale_device_days` is the one stale cut-off (2.9): a Mac is stale when its last
 contact is MORE THAN that many days ago, on every screen and report the app computes (the daily
 summary, Overview, Devices, Offline Outreach, the workbook's Active Devices, Compliance Posture,
