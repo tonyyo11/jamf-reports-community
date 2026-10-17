@@ -157,6 +157,18 @@ one machine's retention budget on everyone's backups. Backups made before this
 version carry no ownership record and are never auto-removed, so clear those out
 once by hand.
 
+**Jamf Protect backups hold credentials, so they stay off shared storage.** When a Jamf Pro
+workspace has Protect connected, each backup also holds a `protect/` folder from
+`jamf-cli protect backup`. jamf-cli writes the documents that can carry a third-party
+credential (HTTP action configs' request headers, data forwarding settings) with mode 0600,
+and the app keeps that mode. On a shared workspace those files would sync to every Mac, so the
+backup skips Protect there, and also when `protect.profile` changed in the shared `config.yaml`
+and has not been confirmed on this Mac. Either way the run logs one `[warn]` line saying why
+and the Jamf Pro backup is unaffected. If Protect fails or comes back partial, the Jamf Pro
+backup stands, Run History shows the run as Partial, `protect/_failures.yaml` lists the
+resources that failed, and that backup is never pruned automatically. The app never runs
+`jamf-cli protect restore`.
+
 **Config copies.** Before a save or a scaffold drops text from config.yaml,
 the app copies it to `config.yaml.bak-<date-time>` beside it (the newest five
 are kept). The copy holds whatever the file holds, including a webhook URL,

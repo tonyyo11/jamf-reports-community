@@ -1803,11 +1803,14 @@ final class CLIBridge {
         }
     }
 
-    /// `timeout` ends a stalled `pro backup`; `_testExecutable` is a test seam.
+    /// `timeout` ends a stalled `pro backup` and `protectTimeout` a stalled `protect backup`,
+    /// each on its own clock; `_testExecutable` is a test seam. When the workspace has Protect
+    /// connected the backup also holds `protect/` (see `ProtectBackup`).
     func backup(
         profile: String,
         label: String?,
         timeout: TimeInterval = CLIBridge.backupTimeout,
+        protectTimeout: TimeInterval = ProtectBackup.timeout,
         _testExecutable: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
@@ -1931,6 +1934,17 @@ final class CLIBridge {
                     + "relying on this as a restore point."))
         }
 
+        // Protect joins the same staging folder, so one backup holds both products. Its
+        // failure never costs the Jamf Pro backup above.
+        let protectResult = await backupProtect(
+            profile: profile, workspace: workspace, staging: validatedTemp, executable: bin,
+            timeout: protectTimeout,
+            sharedStorage: {
+                BackupMaintenance.sharedStorageDescription(
+                    backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume)
+            },
+            onLine: onLine)
+
         // Rename temp dir to a timestamped final name.
         let ts = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "")
@@ -1971,12 +1985,20 @@ final class CLIBridge {
         // Write manifest.json so BackupLibrary can read label, date, and counts.
         let stats = directoryStats(validatedFinal)
         let effectiveLabel = trimmedLabel ?? ""
-        let manifest: [String: Any] = [
+        var manifest: [String: Any] = [
             "label": effectiveLabel,
             "created_at": ISO8601DateFormatter().string(from: Date()),
             "file_count": stats.fileCount,
             "size_bytes": stats.sizeBytes,
         ]
+        // Only a workspace with Protect connected records per-product results; any other
+        // manifest is as it always was, and older ones read the same.
+        if let protectResult {
+            manifest["products"] = [
+                "pro": ["exit_code": Int(exit), "state": isPartial ? "partial" : "ok"],
+                "protect": protectResult.manifestValue,
+            ] as [String: Any]
+        }
         do {
             let manifestData = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted])
             let manifestURL = validatedFinal.appendingPathComponent("manifest.json")
@@ -1993,11 +2015,15 @@ final class CLIBridge {
                          text: "[warn] backup manifest write failed — backup was created but BackupsView may show no label or stats"))
         }
 
+        let protectIncomplete = protectResult?.isIncomplete == true
         onLine(.init(
             timestamp: Date(),
-            level: isPartial ? .warn : .ok,
+            level: isPartial || protectIncomplete ? .warn : .ok,
             text: isPartial
                 ? "[warn] partial backup written: \(validatedFinal.lastPathComponent)"
+                : protectIncomplete
+                ? "[warn] backup written without a complete Jamf Protect part: "
+                    + validatedFinal.lastPathComponent
                 : "[ok] backup written: \(validatedFinal.lastPathComponent)"
         ))
         tightenOnSuccess(exit, profile: profile)

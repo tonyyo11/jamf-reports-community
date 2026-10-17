@@ -344,8 +344,14 @@ private func scheduledRunSingleBody(
             let failureDetail: String? = exit == 0 ? nil : CLIBridge.explainExit(
                 exit, operation: "Scheduled backup for '\(profile)'"
             )
+            // The Jamf Pro backup stands when only Protect fell short: exit stays 0 and the
+            // `[partial]` line, kept inside the log tail Run History reads, makes it Partial.
+            // Backup mode never retries within the day, so Partial does not repeat the run.
             let message = failureDetail.map { "[error] " + $0 }
-                ?? "[ok] scheduled backup complete for '\(profile)'"
+                ?? (honesty.incomplete
+                    ? "[partial] scheduled backup for '\(profile)' kept the Jamf Pro backup; "
+                        + "the Jamf Protect part is incomplete"
+                    : "[ok] scheduled backup complete for '\(profile)'")
             if failureDetail == nil { print(message) } else { fputs(message + "\n", stderr) }
             recorder?.record(message)
             recorder?.finish(exitCode: exit)

@@ -50,7 +50,7 @@ background item runs them one at a time, never in parallel:
 | Freshness | Daily | A light collect — the Refresh and Inventory tiers, everything except the two heavy per-device scans. Writes a daily `summary.json` per profile (one trend point/day). | +0 min |
 | Scan | Weekly (default Monday) | The two `--scan-failures` fan-outs (patch + update device failures) — the per-device-heavy queries kept off the daily path. | +10 min |
 | Reports | Off / Daily / Weekly / Monthly | Generates workbooks for every profile from the already-fresh cache. | +20 min |
-| Backup | Weekly (default Sunday) | A `jamf-cli pro backup` of your Jamf Pro configuration objects. | +30 min |
+| Backup | Weekly (default Sunday) | A `jamf-cli pro backup` of your Jamf Pro configuration objects, plus a `jamf-cli protect backup` when Protect is connected (see Security and Operational Considerations). | +30 min |
 
 Freshness and Scan collect data; Reports and Backup do not collect (Reports generates from
 cache, Backup exports config). Each schedule can be enabled independently — for example,
@@ -147,7 +147,7 @@ Each run mode is strict — it does exactly one thing:
 | `jamf-cli-only` | Generate only, from the latest cached snapshots — no collect | No |
 | `jamf-cli-full` | Collect + generate, no CSV | Yes |
 | `csv-assisted` | Collect + generate, using a CSV from the inbox — **hard-fails if no CSV is present** | Yes |
-| `backup` | `jamf-cli pro backup` only — config objects to `backups/`, no collect, no report | No |
+| `backup` | `jamf-cli pro backup` (and `protect backup` when Protect is connected) only — config objects to `backups/`, no collect, no report | No |
 
 `csv-assisted` fails loudly when its inbox has no CSV rather than silently degrading to a
 no-CSV workbook — use `jamf-cli-full` explicitly if you want the no-CSV path.

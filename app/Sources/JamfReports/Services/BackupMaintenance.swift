@@ -44,7 +44,7 @@ enum BackupMaintenance {
     /// daemon's marker) and `shared_workspace.enabled: true` each suffice: pruning wrongly
     /// scoped to this Mac only keeps backups, while pruning wrongly unscoped deletes another
     /// Mac's.
-    private static func sharedStorageDescription(
+    static func sharedStorageDescription(
         _ backupsRoot: URL, profile: String,
         volumeIsLocal: @Sendable (URL) -> Bool?
     ) -> String? {
@@ -92,6 +92,9 @@ enum BackupMaintenance {
     ///    we can prove is ours. Local storage keeps the original unscoped
     ///    behaviour: there is one writer by definition, and scoping it would
     ///    silently stop pruning every existing single-Mac install.
+    ///
+    /// A fourth rule (2.11): a backup whose manifest records a partial or failed Jamf
+    /// Protect part is left out of the candidates altogether.
     static func pruneScheduledBackups(
         profile: String,
         keep: Int,
@@ -125,6 +128,20 @@ enum BackupMaintenance {
                 ))
             }
             candidates = mine
+        }
+
+        // A backup whose Protect part is partial or failed is evidence of what went wrong and
+        // the only copy of what did land, so retention neither counts nor removes it.
+        let incompleteProtect = candidates.filter {
+            BackupProductResult.protect(inBackup: $0)?.isIncomplete == true
+        }
+        if !incompleteProtect.isEmpty {
+            candidates.removeAll { incompleteProtect.contains($0) }
+            onLine?(.init(
+                timestamp: Date(), level: .info,
+                text: "[info] keeping \(incompleteProtect.count) scheduled backup(s) whose "
+                    + "Jamf Protect part is incomplete; they are never pruned automatically."
+            ))
         }
 
         let stamped = candidates.compactMap { url -> (url: URL, key: (Date, Int))? in

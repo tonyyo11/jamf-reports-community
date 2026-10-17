@@ -330,12 +330,17 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     let sizeBytes: Int64
     let fileCount: Int
     let url: URL
+    /// The Jamf Protect part, when the backup's manifest records one.
+    var protect: BackupProductResult?
 
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
 
     /// A backup with no files: an interrupted run, or one whose contents were cleared.
     var isEmpty: Bool { fileCount == 0 }
+
+    /// The backup holds Jamf Protect objects, which a diff does not compare.
+    var includesProtectFiles: Bool { (protect?.objectTotal ?? 0) > 0 }
 
     /// A diff compares the contents of two backups, so both need files and they must differ.
     static func canDiff(_ backup: BackupRecord, against other: BackupRecord?) -> Bool {

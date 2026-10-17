@@ -201,8 +201,12 @@ these interactive dashboards either — it produces a separate generated workboo
   a line each, instead of printing every changed object in full. **Raw** is the whole
   jamf-cli payload, one click away, and **Copy** takes the diff to the clipboard. Summary
   and Copy redact credential-shaped values (password hashes, recovery keys, pre-shared
-  keys); Raw is deliberately unredacted, for scripting against.
-  Data source: `jamf-cli pro backup` exports (tier 2).
+  keys); Raw is deliberately unredacted, for scripting against. A workspace with Jamf
+  Protect connected backs Protect up in the same backup folder (under `protect/`); a banner
+  above the table says what the latest backup holds for Protect: object counts per
+  resource, or that the Protect part is incomplete, failed or skipped, and why. Diff
+  compares Jamf Pro objects only, and its sheet says Protect is not compared.
+  Data source: `jamf-cli pro backup` and `jamf-cli protect backup` exports (tier 2).
 
 ## System
 
