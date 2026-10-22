@@ -69,7 +69,8 @@ jobs:
           # `--allowedTools` only lets these run without a permission prompt; a
           # tool that needs none (Agent) stays available unless it is in
           # `--disallowedTools`. With no prompt in a CI run, anything else that
-          # asks is refused, so the model gets read-only code access: no Bash. The issue's number, title and body come from the event
+          # asks is refused, so the model gets read-only code access: no Bash.
+          # The issue's number, title and body come from the event
           # and sit in the prompt below, so the model needs no `gh` (the action
           # scrubs tokens from subprocesses, so `gh` could not authenticate
           # anyway). The model has NO tool that writes anywhere: it returns its
@@ -89,9 +90,9 @@ jobs:
           # pinned to Sonnet rather than defaulting to the largest model, and
           # capped so one issue cannot run away. Agent is denied: a sub-agent
           # runs in the background, outside the turn cap, and on #318 the model
-          # returned the placeholder `PENDING_AGENT_RESULT` before one finished. Raise --max-turns if triage
-          # starts truncating mid-investigation; drop the model to
-          # claude-haiku-4-5-20251001 if volume ever outweighs depth.
+          # returned the placeholder `PENDING_AGENT_RESULT` before one finished.
+          # Raise --max-turns if triage starts truncating mid-investigation; drop
+          # the model to claude-haiku-4-5-20251001 if volume ever outweighs depth.
           claude_args: |
             --allowedTools "Read,Grep,Glob"
             --disallowedTools "Agent,Read(//proc/**),Read(//tmp/**),Read(//home/runner/work/_temp/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**),Read(//home/runner/.ssh/**)"
