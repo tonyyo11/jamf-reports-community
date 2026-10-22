@@ -149,7 +149,10 @@ struct CompliancePostureView: View {
         Card(padding: 24) {
             EmptyStateView(
                 title: "No compliance snapshot yet",
-                message: "Run `jamf-cli pro report security` to populate this screen."
+                message: "Collect data for this screen with the Collect now banner when it shows, "
+                    + "or run this command.",
+                commands: [EmptyStateView.collectCommand(
+                    profile: workspace.profile, kinds: ["security"])]
             )
         }
     }

@@ -210,8 +210,10 @@ struct MobileFleetView: View {
             EmptyStateView(
                 systemImage: "ipad.and.iphone",
                 title: "No mobile device data detected",
-                message: "Run `jamf-cli pro mobile-devices list` (and optionally ios-profiles) "
-                    + "to populate this dashboard."
+                message: "Collect data for this screen with the Collect now banner when it shows, "
+                    + "or run this command.",
+                commands: [EmptyStateView.collectCommand(
+                    profile: workspace.profile, kinds: ["mobile-devices-list", "classic-ios-profiles"])]
             )
         }
     }

@@ -220,13 +220,32 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
     }
 }
 
-/// `UpdatesView`'s empty state prints a command to paste; `collect` requires `--profile`.
-@MainActor
-final class UpdatesViewCollectCommandTests: XCTestCase {
-    func testCollectCommandNamesTheProfile() {
+/// Empty screens print a `jamf-reports collect` command to paste; `collect` requires
+/// `--profile`, and the tiers come from the kinds the screen reads.
+final class EmptyStateCollectCommandTests: XCTestCase {
+    func testTiersFollowTheKindsInCollectOrder() {
         XCTAssertEqual(
-            UpdatesView.collectCommand(profile: "acme"),
+            EmptyStateView.collectCommand(
+                profile: "acme", kinds: ["update-device-failures", "update-status"]),
             "jamf-reports collect --profile acme --tiers inventory,scan"
+        )
+        XCTAssertEqual(
+            EmptyStateView.collectCommand(profile: "acme", kinds: ["security"]),
+            "jamf-reports collect --profile acme --tiers refresh"
+        )
+    }
+
+    func testUnmappedKindsCollectEveryTier() {
+        XCTAssertEqual(
+            EmptyStateView.collectCommand(profile: "acme", kinds: ["no-such-kind"]),
+            "jamf-reports collect --profile acme"
+        )
+    }
+
+    func testDashLeadingProfileUsesTheEqualsForm() {
+        XCTAssertEqual(
+            EmptyStateView.collectCommand(profile: "-x", kinds: ["security"]),
+            "jamf-reports collect --profile=-x --tiers refresh"
         )
     }
 }

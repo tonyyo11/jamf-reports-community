@@ -195,22 +195,17 @@ final class AccessibilitySweepTests: XCTestCase {
 
     // MARK: - v2.1.1 Accessibility Fixes
 
-    /// EmptyStateView must include command text in VoiceOver label (addresses issue #101)
-    func testEmptyStateViewIncludesCommandsInAccessibilityLabel() {
+    /// EmptyStateView reads its commands as their own elements (#101, #318): the combined
+    /// label holds the title and message only, so a command is not read twice.
+    func testEmptyStateViewKeepsCommandsOutOfTheCombinedLabel() {
         let emptyState = EmptyStateView(
             title: "No compliance snapshot yet",
             message: "Run jamf-cli to populate this screen.",
-            commands: ["jamf-cli pro report security", "jamf-cli pro report patch-status"]
+            commands: ["jamf-reports collect --profile acme --tiers refresh"]
         )
-
-        // The accessibility label should combine title, message, and commands
-        let expectedComponents = ["No compliance snapshot yet", "Run jamf-cli to populate this screen", "jamf-cli pro report security, jamf-cli pro report patch-status"]
-        let fullLabel = emptyState.accessibilityLabelText
-
-        for component in expectedComponents {
-            XCTAssertTrue(fullLabel.contains(component),
-                         "Accessibility label should include: \(component)")
-        }
+        XCTAssertEqual(emptyState.accessibilityLabelText,
+                       "No compliance snapshot yet. Run jamf-cli to populate this screen.")
+        XCTAssertEqual(emptyState.commands, ["jamf-reports collect --profile acme --tiers refresh"])
     }
 
     /// EditableNumberStepper names its field from the label, else the prefix and suffix text.

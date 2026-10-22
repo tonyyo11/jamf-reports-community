@@ -98,7 +98,13 @@ struct GroupsView: View {
             EmptyStateView(
                 systemImage: "rectangle.3.group",
                 title: "No group data detected",
-                message: "Run `jamf-cli pro classic-computer-groups list`, `classic-mobile-device-groups list`, and `advanced-mobile-device-searches list` to populate this dashboard."
+                message: "Collect data for this screen with the Collect now banner when it shows, "
+                    + "or run this command.",
+                commands: [EmptyStateView.collectCommand(
+                    profile: workspace.profile, kinds: [
+                        "classic-computer-groups", "classic-mobile-device-groups",
+                        "advanced-mobile-device-searches",
+                    ])]
             )
         }
     }

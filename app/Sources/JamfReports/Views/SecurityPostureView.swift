@@ -158,7 +158,10 @@ struct SecurityPostureView: View {
             EmptyStateView(
                 systemImage: "lock.shield",
                 title: "No security snapshot yet",
-                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report security` — and it will populate."
+                message: "Collect data for this screen with the Collect now banner when it shows, "
+                    + "or run this command.",
+                commands: [EmptyStateView.collectCommand(
+                    profile: workspace.profile, kinds: ["security"])]
             )
         }
     }

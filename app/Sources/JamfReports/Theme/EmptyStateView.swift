@@ -12,9 +12,20 @@ struct EmptyStateView: View {
 
     @Environment(\.colorSchemeContrast) private var contrast
 
-    /// Internal accessibility label text for testing
+    /// The combined label of the title and message. Commands are their own elements, so
+    /// each can be read, selected and copied.
     internal var accessibilityLabelText: String {
-        [title, message, commands.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: ". ")
+        [title, message].filter { !$0.isEmpty }.joined(separator: ". ")
+    }
+
+    /// `jamf-reports collect` for the tiers that collect `kinds` (no `--tiers` when none
+    /// maps). `collect` has no default profile, so the profile is always named.
+    nonisolated static func collectCommand(profile: String, kinds: [String]) -> String {
+        let tiers = Set(kinds.compactMap(CollectionTier.tier(forReport:)))
+        let command = "jamf-reports collect \(ProfileName.profileOption(profile))"
+        guard !tiers.isEmpty else { return command }
+        let list = CollectionTier.allCases.filter(tiers.contains).map(\.rawValue)
+        return command + " --tiers " + list.joined(separator: ",")
     }
 
     init(
@@ -67,20 +78,33 @@ struct EmptyStateView: View {
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-
-                if !commands.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(commands, id: \.self) { command in
-                            Text(command)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(Theme.Colors.fgMuted)
-                        }
-                    }
-                    .padding(.top, 4)
-                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabelText)
+
+            if !commands.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(commands, id: \.self) { command in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(command)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button {
+                                SystemActions.copyToClipboard(command)
+                            } label: {
+                                Image(systemName: "doc.on.doc").font(.system(size: 11))
+                                    .foregroundStyle(Theme.Colors.fgMuted)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Copy command")
+                            .help("Copy to clipboard")
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
 
             if let primaryAction = primaryAction {
                 HStack {

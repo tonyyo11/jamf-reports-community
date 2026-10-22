@@ -120,15 +120,10 @@ struct UpdatesView: View {
                 title: "No update status data yet",
                 message: "Collect data for this screen with the Collect now banner when it "
                     + "shows, or collect the Inventory and Scan tiers from the command line.",
-                commands: [Self.collectCommand(profile: workspace.profile)]
+                commands: [EmptyStateView.collectCommand(
+                    profile: workspace.profile, kinds: ["update-status", "update-device-failures"])]
             )
         }
-    }
-
-    /// `collect` has no default profile; without the flag the pasted command fails
-    /// on a missing `--profile`.
-    nonisolated static func collectCommand(profile: String) -> String {
-        "jamf-reports collect \(ProfileName.profileOption(profile)) --tiers inventory,scan"
     }
 
     private var kpiGrid: some View {

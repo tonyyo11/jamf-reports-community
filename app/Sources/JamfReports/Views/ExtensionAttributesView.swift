@@ -263,7 +263,10 @@ struct ExtensionAttributesView: View {
             EmptyStateView(
                 systemImage: "slider.horizontal.below.rectangle",
                 title: "No Extension Attribute data yet",
-                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report ea-results --all` — and it will populate."
+                message: "Collect data for this screen with the Collect now banner when it shows, "
+                    + "or run this command.",
+                commands: [EmptyStateView.collectCommand(
+                    profile: workspace.profile, kinds: ["ea-results", "computer-extension-attributes"])]
             )
         }
     }

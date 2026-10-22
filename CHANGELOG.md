@@ -84,6 +84,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The command an empty screen suggests can now be selected and has a copy button. Every empty
+  screen now suggests a `jamf-reports collect` command for the tiers that fill it; eight of them
+  suggested a `jamf-cli` command instead, which prints to the terminal and never fills the
+  screen. (#318)
 - Jamf Reports now needs jamf-cli 1.29.0 or later to collect or back up, on every run, not
   only for full support. An older jamf-cli stops the run with a message saying to update it;
   Settings says the same. (#226)

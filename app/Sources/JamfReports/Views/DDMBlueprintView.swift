@@ -171,7 +171,9 @@ struct DDMBlueprintView: View {
                         message: "Run a collect with the Scan tier (or wait for the weekly "
                             + "managed scan) to populate per-device DDM status. Platform "
                             + "profiles can also run the blueprint reports.",
-                        commands: [UpdatesView.collectCommand(profile: workspace.profile)]
+                        // The scan walks the computers snapshot, so inventory comes too.
+                        commands: [EmptyStateView.collectCommand(
+                            profile: workspace.profile, kinds: ["computers", "ddm-device-status"])]
                     )
                 }
             }
