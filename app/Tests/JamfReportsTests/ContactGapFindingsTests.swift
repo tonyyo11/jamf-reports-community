@@ -175,7 +175,7 @@ final class ContactGapFindingsTests: XCTestCase {
         devices.staleBasis = [.checkIn, .inventory]
         XCTAssertEqual(
             devices.staleCount(StaleRule(days: 30, basis: devices.staleBasis), now: now), 1)
-        XCTAssertEqual(devices.staleCount(thresholdDays: 30), 1, "the snapshot's own basis")
+        XCTAssertEqual(devices.staleCount(thresholdDays: 30, now: now), 1, "the snapshot's own basis")
     }
 
     // MARK: - Device-compliance rows

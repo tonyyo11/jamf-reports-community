@@ -691,8 +691,8 @@ struct DeviceInventorySnapshot: Sendable {
         }.count
     }
 
-    func staleCount(thresholdDays: Int) -> Int {
-        staleCount(StaleRule(days: thresholdDays, basis: staleBasis))
+    func staleCount(thresholdDays: Int, now: Date = Date()) -> Int {
+        staleCount(StaleRule(days: thresholdDays, basis: staleBasis), now: now)
     }
 
     func staleCount(_ rule: StaleRule, now: Date = Date()) -> Int {
