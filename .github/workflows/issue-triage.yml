@@ -66,9 +66,10 @@ jobs:
           # Required for the action to run for reporters without write access —
           # i.e. every community reporter, which is the entire point here.
           allowed_non_write_users: "*"
-          # Tool allow-list, the layer that actually constrains the model rather
-          # than asking it nicely. Read-only code access and nothing else: no
-          # Bash at all. The issue's number, title and body come from the event
+          # `--allowedTools` only lets these run without a permission prompt; a
+          # tool that needs none (Agent) stays available unless it is in
+          # `--disallowedTools`. With no prompt in a CI run, anything else that
+          # asks is refused, so the model gets read-only code access: no Bash. The issue's number, title and body come from the event
           # and sit in the prompt below, so the model needs no `gh` (the action
           # scrubs tokens from subprocesses, so `gh` could not authenticate
           # anyway). The model has NO tool that writes anywhere: it returns its
@@ -86,12 +87,14 @@ jobs:
           # Model + turn cap are the cost controls. This runs on the maintainer's
           # subscription and is triggered by members of the public, so it is
           # pinned to Sonnet rather than defaulting to the largest model, and
-          # capped so one issue cannot run away. Raise --max-turns if triage
+          # capped so one issue cannot run away. Agent is denied: a sub-agent
+          # runs in the background, outside the turn cap, and on #318 the model
+          # returned the placeholder `PENDING_AGENT_RESULT` before one finished. Raise --max-turns if triage
           # starts truncating mid-investigation; drop the model to
           # claude-haiku-4-5-20251001 if volume ever outweighs depth.
           claude_args: |
             --allowedTools "Read,Grep,Glob"
-            --disallowedTools "Read(//proc/**),Read(//tmp/**),Read(//home/runner/work/_temp/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**),Read(//home/runner/.ssh/**)"
+            --disallowedTools "Agent,Read(//proc/**),Read(//tmp/**),Read(//home/runner/work/_temp/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**),Read(//home/runner/.ssh/**)"
             --json-schema '{"type":"object","properties":{"comment":{"type":"string"}},"required":["comment"],"additionalProperties":false}'
             --model claude-sonnet-5
             --max-turns 25
@@ -193,6 +196,11 @@ jobs:
           printf '%s' "$STRUCTURED" | jq -er '.comment | select(type == "string" and length > 0)' > "${out}.body"
           if [ "$(wc -c < "${out}.body")" -gt "$max_bytes" ]; then
             echo "::error::triage comment exceeds ${max_bytes} bytes; not posting"
+            exit 1
+          fi
+          # A finished triage is a few paragraphs; a lone token is a placeholder.
+          if [ "$(wc -c < "${out}.body")" -lt 200 ] || [[ "$(tr -d '[:space:]' < "${out}.body")" =~ ^[A-Z_]+$ ]]; then
+            echo "::error::triage comment looks like a placeholder; not posting"
             exit 1
           fi
           if grep -Eq 'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|sk-ant-' "${out}.body"; then
