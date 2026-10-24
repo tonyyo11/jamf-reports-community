@@ -7,6 +7,14 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Dependencies
+
+- Reviewed jamf-cli 1.34.0 (2026-10-23). From this version jamf-cli leaves out the hidden
+  one-off policies Casper Remote and Jamf Remote created ("<date> at <time> | <user> | N
+  Computer"), so on a server that still has them the Policy Health totals and the audit's
+  policies-with-no-scope finding drop once after the upgrade. Your policies did not change.
+  Nothing else in the release changes what the app collects.
+
 ## [2.10.1] - 2026-10-17
 
 2.10.1 tells you when a new stable release is out, without ever installing one. It fixes Jamf

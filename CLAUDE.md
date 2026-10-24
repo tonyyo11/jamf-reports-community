@@ -586,6 +586,22 @@ request is never retried, and `--all` halves `--page-size` on a page that times 
 `page of N timed out; continuing at --page-size M...`), so `pro report ea-results --all` against
 a stalled on-prem server finishes more slowly instead of failing.
 
+**v1.34.0 (2026-10-23) — Keychain items trust jamf-cli, Remote ad-hoc policies left out, gateway
+rate pacing.** No code change. `pro report policy-status`, `pro audit`, `pro overview` and
+`dashboard` drop Casper/Jamf Remote ad-hoc policy rows (named `<date> at <time> | <user> | N
+Computer`), so `total_policies`, the `no_scope` findings and the dashboard's count fall once on a
+server that has them; `pro classic-policies list` still returns them, so `HtmlReport`'s catalog
+"Policies" count can exceed Policy Health's (shown only without the dashboard), and the note
+jamf-cli prints is suppressed by `--no-hints`. Keychain items are re-created on first read
+through Security.framework (#431): a signed release, Homebrew's included, reads without a
+prompt, a source build prompts after each rebuild, and a 1.33 binary prompts after the migration.
+`config validate` reports credential rows as `set` and adds a MESSAGE column to its table;
+`CLIBridge.validate` reads only the exit code, which `set` leaves alone, and it still fails
+`apikey`. Its new `--auth` requests a token for every profile, ignoring `-p`, so the app does
+not use it. `config add-profile` prints one line before `Client ID:` (prompt order
+unchanged). Gateway profiles pace on `x-ratelimit-*` per process, so fewer exit 6. Output shapes
+and exit codes of the commands the app runs are unchanged; `pro environment-type` is removed.
+
 ### notify config (v2.2.0 — opt-in webhook digest)
 
 ```yaml
