@@ -1705,6 +1705,32 @@ The v2.2.1 CHANGELOG section and release page are the reference examples
 
 ---
 
+## Stacked pull requests (dev branches)
+
+Two or more PRs headed for the same `dev/*` branch back to back go up as one GitHub stack, not as
+separate PRs that each wait for the last to merge and then rebase their CHANGELOG line. Each layer
+is built on the one below it, so their CHANGELOG lines stack without a conflict. Needs the
+extension (`gh extension install github/gh-stack`, gh 2.90 or later). Unrelated PRs that touch
+different files still go up on their own, against the dev branch.
+
+- **Build:** `gh stack init --base dev/2-11-0 <branch>`, commit, then `gh stack add <branch>` for
+  each further layer, then `gh stack submit` to push every layer and open or update its PR. Each
+  PR shows only its own layer's diff, and CI runs on every push and every PR.
+- **Merge:** squash from the bottom, or merge the top PR to land it and every layer below it at
+  once. When a lower PR merges, GitHub retargets and rebases the ones above. Then
+  `gh stack sync --prune`.
+- **Change a lower layer:** commit on that branch, `gh stack rebase`, `gh stack push`. This
+  force-pushes the stack's own branches, the one case where a pushed branch is rewritten; never
+  `dev/*` or `main`. A conflict stops the rebase at that layer: resolve it, `git add`,
+  `gh stack rebase --continue` (or `--abort` to restore every branch).
+- **Not into `main`:** the Protect Main ruleset requires a code-owner review, and only a stack's
+  bottom PR can merge by bypassing it, so `main` takes one PR at a time (dev into main is one PR).
+- The stack's local state is the shared git folder's `gh-stack` file, so every worktree sees it.
+  A `.git/worktrees/<name>` folder with no `gitdir` file (a deleted worktree iCloud left behind)
+  makes every `gh stack` command fail; `git worktree prune --dry-run -v` names it.
+
+---
+
 ## What Not to Do
 
 ### Swift App
