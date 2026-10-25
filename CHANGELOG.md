@@ -351,6 +351,10 @@ versions in this repository map to git tags.
 
 ### Security
 
+- The `jamf-reports` command-line tool now shows control characters in a device lookup, a log
+  line or an error as `\u001b`-style text when it prints to a terminal, so a device name or a
+  server error can no longer clear the screen, change the window title or write the clipboard.
+  Output piped to a file or another program is unchanged.
 - Shared logs and diagnostic bundles now remove the host of every server in your own jamf-cli
   configuration, Jamf Protect tenants included, however many labels the host has, and the Logging
   export removes the host and tenant IDs of every workspace, not only the active one. Which hosts

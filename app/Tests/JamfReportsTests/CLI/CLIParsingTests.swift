@@ -160,4 +160,30 @@ final class CLIParsingTests: XCTestCase {
         let expired = ReportEngineError.authExpired(profile: "p", failedCount: 2)
         XCTAssertEqual(JamfReportsCLI.exitCode(for: expired), ExitCode(1))
     }
+
+    func testTerminalSafeEscapesControlsAndKeepsTabsAndNewlines() {
+        // ESC clear-screen, OSC 52 clipboard write ending in BEL, DEL, C1 CSI, CR.
+        let hostile = "Mac\u{1B}[2J\u{1B}]52;c;aGk=\u{07}\u{7F}\u{9B}31m\r\tok\n"
+        XCTAssertEqual(
+            CLIRun.terminalSafe(hostile),
+            #"Mac\u001b[2J\u001b]52;c;aGk=\u0007\u007f\u009b31m\u000d"# + "\tok\n")
+        XCTAssertEqual(CLIRun.terminalSafe("Büro-Mac — 15.7 ✓"), "Büro-Mac — 15.7 ✓")
+    }
+
+    func testTerminalSafeJSONDecodesToTheSameValue() throws {
+        let name = "Mac\u{7F}\u{85}\u{9B}"
+        let json = try JSONSerialization.data(withJSONObject: ["name": name])
+        let shown = CLIRun.terminalSafe(String(decoding: json, as: UTF8.self))
+        XCTAssertFalse(shown.unicodeScalars.contains { (0x7F...0x9F).contains($0.value) }, shown)
+        let decoded = try JSONSerialization.jsonObject(with: Data(shown.utf8)) as? [String: String]
+        XCTAssertEqual(decoded?["name"], name)
+    }
+
+    func testWriteLeavesBytesUnchangedWhenNotATerminal() throws {
+        let pipe = Pipe()
+        CLIRun.write("a\u{1B}[2Jb\n", to: pipe.fileHandleForWriting)
+        try pipe.fileHandleForWriting.close()
+        let read = pipe.fileHandleForReading.readDataToEndOfFile()
+        XCTAssertEqual(String(decoding: read, as: UTF8.self), "a\u{1B}[2Jb\n")
+    }
 }

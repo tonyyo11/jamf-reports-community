@@ -224,7 +224,7 @@ struct Device: AsyncParsableCommand {
             FileHandle.standardError.write(
                 Data("warning: live lookup failed — returned last-known-good cache\n".utf8))
         }
-        print(String(decoding: result.data, as: UTF8.self))
+        CLIRun.write(String(decoding: result.data, as: UTF8.self) + "\n", to: .standardOutput)
     }
 }
 
