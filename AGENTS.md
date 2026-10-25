@@ -1716,9 +1716,12 @@ different files still go up on their own, against the dev branch.
 - **Build:** `gh stack init --base dev/2-11-0 <branch>`, commit, then `gh stack add <branch>` for
   each further layer, then `gh stack submit` to push every layer and open or update its PR. Each
   PR shows only its own layer's diff, and CI runs on every push and every PR.
-- **Merge:** squash from the bottom, or merge the top PR to land it and every layer below it at
-  once. When a lower PR merges, GitHub retargets and rebases the ones above. Then
-  `gh stack sync --prune`.
+- **Merge:** `gh stack merge <stack> --squash --yes` lands every layer in the dev branch in one
+  all-or-nothing step, one squash commit per PR; `gh stack merge <pr>` lands up to that PR. Not
+  `gh pr merge` on an upper PR: its base is the layer below, so it would squash into that branch.
+  When a lower PR merges alone, GitHub retargets and rebases the ones above. Then
+  `gh stack sync --prune` from a checked-out branch (it refuses a detached HEAD, and keeps the
+  branch checked out).
 - **Change a lower layer:** commit on that branch, `gh stack rebase`, `gh stack push`. This
   force-pushes the stack's own branches, the one case where a pushed branch is rewritten; never
   `dev/*` or `main`. A conflict stops the rebase at that layer: resolve it, `git add`,
