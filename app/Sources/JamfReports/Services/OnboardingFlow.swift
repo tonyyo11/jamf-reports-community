@@ -1047,9 +1047,11 @@ final class OnboardingFlow {
         }
     }
 
-    /// One first-report stage (collect or generate) for a profile, streaming log lines.
+    /// One first-report stage (collect or generate) for a profile, streaming log lines. The
+    /// `Date` is the run's start, one for all stages, so the collect and the report that
+    /// follows date the day's summary the same across midnight.
     typealias FirstReportStep = (
-        String, @escaping @Sendable (CLIBridge.LogLine) -> Void
+        String, Date, @escaping @Sendable (CLIBridge.LogLine) -> Void
     ) async throws -> Int32
 
     /// Runs the first report. The Jamf Pro path collects (refresh + inventory
@@ -1066,17 +1068,19 @@ final class OnboardingFlow {
     /// calls; tests inject spies to prove ordering without spawning jamf-cli.
     func runFirstReport(
         workspaceStore: WorkspaceStore,
-        collect: @escaping FirstReportStep = { profile, onLine in
+        now: Date = Date(),
+        collect: @escaping FirstReportStep = { profile, now, onLine in
             try await CLIBridge().collect(
-                profile: profile, tiers: [.refresh, .inventory], force: true, onLine: onLine
+                profile: profile, tiers: [.refresh, .inventory], force: true, now: now,
+                onLine: onLine
             )
         },
-        generate: @escaping FirstReportStep = { profile, onLine in
+        generate: @escaping FirstReportStep = { profile, now, onLine in
             try await CLIBridge.holdingGenerate {
-                try await CLIBridge().generate(profile: profile, onLine: onLine)
+                try await CLIBridge().generate(profile: profile, now: now, onLine: onLine)
             }
         },
-        schoolGenerate: @escaping FirstReportStep = { profile, onLine in
+        schoolGenerate: @escaping FirstReportStep = { profile, _, onLine in
             try await CLIBridge.holdingGenerate {
                 try await CLIBridge().schoolGenerate(profile: profile, onLine: onLine)
             }
@@ -1096,7 +1100,7 @@ final class OnboardingFlow {
 
         let collectExit: Int32
         do {
-            collectExit = try await collect(profile, onLine)
+            collectExit = try await collect(profile, now, onLine)
         } catch {
             firstReportExitCode = -1
             lastError = error.localizedDescription
@@ -1111,7 +1115,7 @@ final class OnboardingFlow {
         let exit: Int32
         do {
             let step = productPath == .school ? schoolGenerate : generate
-            exit = try await step(profile, onLine)
+            exit = try await step(profile, now, onLine)
         } catch {
             firstReportExitCode = -1
             lastError = error.localizedDescription

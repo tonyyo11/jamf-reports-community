@@ -327,9 +327,7 @@ enum CollectRouter {
     // MARK: - Default closures (production)
 
     /// Default production closure wrapping `ReportEngine.collect`.
-    static func defaultProCollect(
-        now: Date, engine: @escaping ProEngine = realProEngine
-    ) -> ProCollect {
+    static func defaultProCollect(now: Date, engine: @escaping ProEngine) -> ProCollect {
         { profile, workspacePaths, tiers, skipExpensive, force, onLine in
             try await engine(profile, workspacePaths, tiers, skipExpensive, force, now, onLine)
         }
