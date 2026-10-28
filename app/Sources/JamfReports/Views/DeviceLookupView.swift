@@ -483,12 +483,13 @@ struct DeviceLookupView: View {
                 if let toast = Self.refreshRefusalToast(for: error) { workspace.toast = toast }
             }
             // A profile switch during the collect leaves the new profile's own load in charge.
-            await index.load(profile: profile, wanted: {
+            let painted = await index.load(profile: profile, wanted: {
                 profile == workspace.profile && !workspace.demoMode
             })
             refreshing = false
-            // Auto-retry the original lookup against the freshly loaded index.
-            if !submittedTerm.isEmpty, profile == workspace.profile {
+            // Auto-retry the original lookup against the freshly loaded index; a load that did
+            // not paint leaves pre-collect candidates, which could show a false "no match".
+            if painted, !submittedTerm.isEmpty {
                 performLookup()
             }
         }

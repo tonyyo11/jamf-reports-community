@@ -398,8 +398,11 @@ final class DeviceLookupIndexTests: XCTestCase {
         await index.load(profile: "lookup-a")
         XCTAssertEqual(index.candidates.map(\.id), ["1"])
 
-        // The caller moved on before the read for `lookup-b` returned.
-        await index.load(profile: "lookup-b", wanted: { false })
+        // A load whose task is cancelled still switched the held profile first.
+        await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await index.load(profile: "lookup-b")
+        }.value
         XCTAssertTrue(index.candidates.isEmpty, "profile A's devices stayed searchable")
         XCTAssertNil(index.loadedAt)
         XCTAssertTrue(index.sourceFiles.isEmpty)
@@ -407,8 +410,24 @@ final class DeviceLookupIndexTests: XCTestCase {
         XCTAssertEqual(index.lastError?.contains("Loading") == true, true)
         XCTAssertTrue(index.resolve("1").isEmpty)
 
-        await index.load(profile: "lookup-b")
+        let painted = await index.load(profile: "lookup-b")
+        XCTAssertTrue(painted)
         XCTAssertEqual(index.candidates.map(\.id), ["2"])
+        XCTAssertNil(index.lastError)
+    }
+
+    /// A refresh on A whose collect ends after the user moved to B must leave B's index alone.
+    func testAReturningLoadForAnotherProfileLeavesTheHeldIndexAlone() async throws {
+        try addProfile("lookup-a", macID: "1")
+        try addProfile("lookup-b", macID: "2")
+        let index = DeviceLookupIndex()
+        await index.load(profile: "lookup-b")
+
+        let painted = await index.load(profile: "lookup-a", wanted: { false })
+
+        XCTAssertFalse(painted)
+        XCTAssertEqual(index.candidates.map(\.id), ["2"], "B's candidates were cleared")
+        XCTAssertEqual(index.heldProfile, "lookup-b")
         XCTAssertNil(index.lastError)
     }
 

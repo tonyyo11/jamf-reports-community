@@ -57,9 +57,12 @@ final class DeviceLookupIndex {
 
     /// Reload from `profile`'s cached list snapshots. The snapshots decode off the main actor.
     /// Another profile's candidates are cleared first, so a search while the read is in flight
-    /// finds nothing rather than a device of the profile left behind. A load a later call, a
-    /// cancelled task or `wanted` (false once the caller has moved on) replaced paints nothing.
-    func load(profile: String, wanted: @MainActor () -> Bool = { true }) async {
+    /// finds nothing rather than a device of the profile left behind. A caller that has moved
+    /// on (`wanted` false) touches nothing, not even the state of a load in flight; a load a
+    /// later call or a cancelled task replaced paints nothing. Returns whether this load painted.
+    @discardableResult
+    func load(profile: String, wanted: @MainActor () -> Bool = { true }) async -> Bool {
+        guard wanted() else { return false }
         loadGeneration += 1
         let generation = loadGeneration
         if heldProfile != profile {
@@ -72,11 +75,12 @@ final class DeviceLookupIndex {
         guard let loaded = await ScreenLoad.paint(
             stillCurrent: { generation == loadGeneration && wanted() },
             read: { Self.read(profile: profile) }
-        ) else { return }
+        ) else { return false }
         candidates = loaded.candidates
         sourceFiles = loaded.sourceFiles
         loadedAt = loaded.loadedAt
         lastError = loaded.lastError
+        return true
     }
 
     /// Resolve a free-text term against the loaded index.
