@@ -164,7 +164,8 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         lock.unlock()
 
         writeStatusJSON(
-            exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts, refused: refused)
+            exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts,
+            refused: refused)
         Self.pruneRunLogs(in: logURL.deletingLastPathComponent(), keep: Self.maxRunLogs)
     }
 
