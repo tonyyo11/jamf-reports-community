@@ -259,7 +259,7 @@ struct BackupsView: View {
     }
 
     private var syncedStorageBanner: some View {
-        let allAllowed = (proChoice.map { $0.setting == true } ?? true)
+        let allAllowed = (proChoice.map { $0.setting == .allowed } ?? true)
             && (syncedChoice?.allowed ?? true)
         return InlineBanner(icon: "lock.shield", tone: allAllowed ? .info : .warn) {
             VStack(alignment: .leading, spacing: 8) {
@@ -280,7 +280,7 @@ struct BackupsView: View {
                 .foregroundStyle(Theme.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             choiceToggle(
-                "Back up Jamf Pro in this folder", isOn: choice.setting == true,
+                "Back up Jamf Pro in this folder", isOn: choice.setting == .allowed,
                 key: .proBackupOnSyncedStorage, choice: .pro)
         }
     }
@@ -289,11 +289,15 @@ struct BackupsView: View {
         let secrets = "A Jamf Pro backup contains LDAP, SMTP and API-client configuration and "
             + "scripts that can hold secrets."
         switch choice.setting {
-        case true?:
+        case .allowed:
             return "Jamf Pro is backed up in this folder, which is \(choice.place). \(secrets)"
-        case false?:
+        case .declined:
             return "Jamf Pro is not backed up: this workspace is \(choice.place). \(secrets)"
-        case nil:
+        case .awaitingConfirmation:
+            return "Jamf Pro backups are turned on in config.yaml but wait for confirmation on "
+                + "this Mac, so they are skipped for now. Turn the switch on here to confirm. "
+                + "\(secrets)"
+        case .notChosen:
             return "Choose whether Jamf Pro is backed up in this folder, which is "
                 + "\(choice.place). \(secrets) Scheduled backups that already ran here continue "
                 + "for \(BackupMaintenance.graceRunsBeforeAsking) runs while you decide, then "
