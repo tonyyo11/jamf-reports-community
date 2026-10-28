@@ -54,6 +54,10 @@ versions in this repository map to git tags.
 - A Jamf School or Jamf Protect source refused for a missing permission is now named as such in
   Run History and is not retried every hour, as a Jamf Pro source already was. (#305)
 
+- Run now and the background item stop the jamf-cli call they are waiting on when they give up
+  after six hours, so a stalled call no longer keeps running beside the next scheduled run.
+  (#305)
+
 ### Security
 
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,

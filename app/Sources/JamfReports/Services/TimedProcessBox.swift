@@ -10,8 +10,17 @@ final class TimedProcessBox: @unchecked Sendable {
     private var timeoutItem: DispatchWorkItem?
     private var timedOut = false
     var didTimeOut: Bool { lock.lock(); defer { lock.unlock() }; return timedOut }
-    func set(_ p: Process) { lock.lock(); process = p; lock.unlock() }
+    func set(_ p: Process) {
+        lock.lock(); process = p; lock.unlock()
+        Self.live.add(self)
+    }
     func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
+
+    /// Whether the child is running, for `terminateAllRunning`.
+    private var isChildRunning: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return process?.isRunning == true
+    }
 
     func setReadHandles(_ handles: [FileHandle]) {
         lock.lock(); readHandles = handles; lock.unlock()
@@ -52,5 +61,44 @@ final class TimedProcessBox: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard let p = process, p.isRunning else { return }
         kill(p.processIdentifier, SIGKILL)
+    }
+
+    // MARK: - Every child this process started
+
+    private static let live = LiveBoxes()
+
+    /// Terminates every child still running that a box here started (SIGTERM, then SIGKILL after
+    /// `grace` for any that ignore it) and returns how many it signalled. For a process that is
+    /// about to exit and must not leave jamf-cli running past it: exiting does not end a child.
+    /// Blocks up to `grace`. Only a child Foundation reports running is signalled, so the pid of
+    /// one that exited is never reused here.
+    @discardableResult
+    static func terminateAllRunning(grace: TimeInterval = CLIBridge.timeoutKillGrace) -> Int {
+        let running = live.boxes.filter(\.isChildRunning)
+        for box in running { box.terminate() }
+        let deadline = Date().addingTimeInterval(grace)
+        while running.contains(where: \.isChildRunning), Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        for box in running { box.killIfStillRunning() }
+        return running.count
+    }
+}
+
+/// Weak references to the boxes that hold a child, so a box that has finished is not kept alive.
+private final class LiveBoxes: @unchecked Sendable {
+    private struct Weak { weak var box: TimedProcessBox? }
+    private let lock = NSLock()
+    private var entries: [Weak] = []
+
+    func add(_ box: TimedProcessBox) {
+        lock.lock(); defer { lock.unlock() }
+        entries.removeAll { $0.box == nil }
+        entries.append(Weak(box: box))
+    }
+
+    var boxes: [TimedProcessBox] {
+        lock.lock(); defer { lock.unlock() }
+        return entries.compactMap(\.box)
     }
 }

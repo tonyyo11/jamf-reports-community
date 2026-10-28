@@ -157,6 +157,8 @@ func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> 
     let message = "a run passed the tick lock's \(hours)-hour limit and was stopped so it "
         + "cannot run beside the next wake"
     reportTickError(message)
+    // Ending this process does not end the jamf-cli call it started, so stop that first.
+    CLIBridge.terminateRunningChildren()
     let failures = TickFailureLog(profiles: profiles)
     failures.recordInEveryWorkspace(message)
     failures.finish()
