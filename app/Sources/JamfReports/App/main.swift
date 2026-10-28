@@ -798,32 +798,28 @@ func runSchedule(
     if !excluded.isEmpty {
         fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
     }
-    let toRun = Set(TickScheduler.profilesToRun(profiles.map(\.name), skipping: skipping))
-    let leftOut = profiles.map(\.name).filter { !toRun.contains($0) }
-    if !leftOut.isEmpty {
-        fputs("[info] retrying only profiles that need it; leaving out: "
-              + leftOut.joined(separator: ", ") + "\n", stderr)
-    }
-    var ran: [ProfileOutcome] = []
-    for p in profiles where toRun.contains(p.name) {
-        if await skippedForMissingProfile(p.name, missing: missing) { continue }
+    let result = await TickScheduler.runProfiles(
+        names: profiles.map(\.name), skipping: skipping
+    ) { name in
+        if await skippedForMissingProfile(name, missing: missing) { return nil }
         // One watcher per profile: a shared one would carry profile A's
         // stand-down into profile B's completion line.
         let honesty = CollectHonestyWatcher()
         let start = Date()
         let code = await scheduledRunSingle(
-            profile: p.name, mode: schedule.mode, tiers: schedule.tiers,
+            profile: name, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty,
             retiredCSVAssisted: schedule.retiredCSVAssisted)
-        ran.append(ProfileOutcome(
-            profile: p.name, exitCode: code, incomplete: honesty.incomplete,
-            retryCouldHelp: honesty.retryCouldHelp(profile: p.name, exitCode: code, since: start),
-            started: start, finished: Date()))
+        return ProfileOutcome(
+            profile: name, exitCode: code, incomplete: honesty.incomplete,
+            retryCouldHelp: honesty.retryCouldHelp(profile: name, exitCode: code, since: start),
+            started: start, finished: Date())
     }
     if [.jamfCLIOnly, .jamfCLIFull].contains(schedule.mode) {
         emitConsolidatedReports()
     }
-    return ScheduleRunOutcome(over: ran, ran: ran)
+    return ScheduleRunOutcome(
+        over: result.ran, ran: result.ran, considered: result.considered)
 }
 
 // MARK: - check subcommand

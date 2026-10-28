@@ -331,11 +331,12 @@ enum TickLoop {
             let ran = await perform(run)
             // A Run now pays no day and ends no retries.
             let scheduled = run.reason != .runNow
-            let outcomesChanged = state.noteProfileOutcomes(label, ran.profiles, reason: run.reason)
-            // A retry of some profiles still answers for all of them.
-            let outcome = outcomesChanged
-                ? ScheduleRunOutcome(over: state.profileOutcomes[label] ?? [], ran: ran.profiles)
-                : ran
+            let outcomesChanged = state.noteProfileOutcomes(
+                label, ran.profiles, considered: ran.considered, reason: run.reason)
+            // A retry of some profiles still answers for all of them, one that ran none included.
+            let merged = scheduled ? state.profileOutcomes[label] ?? [] : []
+            let outcome = merged.isEmpty
+                ? ran : ScheduleRunOutcome(over: merged, ran: ran.profiles)
             if scheduled, outcome.endsRetries {
                 state.noteSucceeded(label, startedAt: startedAt)
                 do {

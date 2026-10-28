@@ -90,6 +90,82 @@ final class TickProfileOutcomeTests: XCTestCase {
         XCTAssertEqual(after.lastSucceeded[label], started)
     }
 
+    /// The commonest real case: one profile lacks a privilege, the rest are fine. The backoffs
+    /// still retry the repeating failure and leave the clean profiles alone.
+    func testOnlyAStandingFailureRetriesTheRepeatingProfileAlone() async throws {
+        let state = await firstRun([
+            outcome("alpha", exit: 1, helps: false), outcome("beta"), outcome("gamma"),
+        ])
+        let due = try XCTUnwrap(retryDue(state))
+        XCTAssertEqual(due.skipProfiles, ["beta", "gamma"])
+        XCTAssertEqual(
+            TickScheduler.profilesToRun(["alpha", "beta", "gamma"], skipping: due.skipProfiles),
+            ["alpha"])
+    }
+
+    func testAPartialThatRepeatsCountsAsNotCleanForTheFallback() async throws {
+        let state = await firstRun([
+            outcome("alpha", incomplete: true, helps: false),
+            outcome("beta", exit: 1, helps: false), outcome("gamma"),
+        ])
+        XCTAssertEqual(try XCTUnwrap(retryDue(state)).skipProfiles, ["gamma"])
+    }
+
+    func testAProfileThatWasRemovedStopsHoldingTheRetriesOpen() async throws {
+        let first = await firstRun([outcome("alpha", exit: 1, helps: true), outcome("beta")])
+        let retry = try XCTUnwrap(retryDue(first))
+        let result = ScheduleRunOutcome(
+            over: [outcome("beta")], ran: [], considered: ["beta"])
+        let after = await runDue(retry, state: first, result: result)
+        XCTAssertEqual(after.profileOutcomes[label]?.map(\.profile), ["beta"])
+        XCTAssertEqual(after.lastSucceeded[label], started)
+    }
+
+    func testAnExcludedProfileLosesItsOutcome() {
+        var state = TickState()
+        _ = state.noteProfileOutcomes(
+            label, [outcome("alpha", exit: 1, helps: true), outcome("beta")], considered: nil,
+            reason: .fire)
+        XCTAssertTrue(state.noteProfileOutcomes(
+            label, [outcome("beta")], considered: ["beta", "gamma"], reason: .retry))
+        XCTAssertEqual(state.profileOutcomes[label]?.map(\.profile), ["beta"])
+    }
+
+    func testARunThatRanNothingStillAnswersForTheStandingOutcomes() async throws {
+        let first = await firstRun([outcome("alpha", exit: 1, helps: false), outcome("beta")])
+        let retry = try XCTUnwrap(retryDue(first))
+        let result = ScheduleRunOutcome(exitCode: 0, incomplete: false)
+        let after = await runDue(retry, state: first, result: result)
+        XCTAssertNil(after.lastSucceeded[label], "alpha's failure still stands")
+    }
+
+    // MARK: - runProfiles
+
+    func testRunProfilesKeepsOrderSkipsTheLeftOutAndTheUnrunnable() async {
+        var lines: [String] = []
+        var asked: [String] = []
+        let result = await TickScheduler.runProfiles(
+            names: ["a", "b", "c", "d"], skipping: ["b"], onLine: { lines.append($0) }
+        ) { name in
+            asked.append(name)
+            return name == "c" ? nil : self.outcome(name)
+        }
+        XCTAssertEqual(asked, ["a", "c", "d"])
+        XCTAssertEqual(result.ran.map(\.profile), ["a", "d"])
+        XCTAssertEqual(result.considered, ["a", "b", "d"], "c has no jamf-cli profile")
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertTrue(lines[0].hasSuffix("leaving out: b"), lines[0])
+    }
+
+    func testRunProfilesRunsAllWithNothingToLeaveOut() async {
+        var lines: [String] = []
+        let result = await TickScheduler.runProfiles(
+            names: ["a", "b"], skipping: [], onLine: { lines.append($0) }
+        ) { self.outcome($0) }
+        XCTAssertEqual(result.ran.map(\.profile), ["a", "b"])
+        XCTAssertTrue(lines.isEmpty)
+    }
+
     func testRunNowAndAFireRunEveryProfile() async throws {
         let state = await firstRun([outcome("alpha", exit: 1, helps: true), outcome("beta")])
         XCTAssertEqual(try XCTUnwrap(retryDue(state, runNow: true)).skipProfiles, [])
@@ -100,7 +176,8 @@ final class TickProfileOutcomeTests: XCTestCase {
 
     func testARunNowRecordsNoOutcomes() async {
         var state = TickState()
-        XCTAssertFalse(state.noteProfileOutcomes(label, [outcome("alpha")], reason: .runNow))
+        XCTAssertFalse(state.noteProfileOutcomes(
+            label, [outcome("alpha")], considered: nil, reason: .runNow))
         XCTAssertTrue(state.profileOutcomes.isEmpty)
     }
 
@@ -124,7 +201,7 @@ final class TickProfileOutcomeTests: XCTestCase {
         var state = TickState()
         state.lastStarted[label] = started
         _ = state.noteProfileOutcomes(
-            label, [outcome("alpha", exit: 1, helps: true)], reason: .fire)
+            label, [outcome("alpha", exit: 1, helps: true)], considered: nil, reason: .fire)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("tick-outcomes-\(UUID().uuidString).json")
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }

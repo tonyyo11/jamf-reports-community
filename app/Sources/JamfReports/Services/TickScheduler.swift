@@ -103,24 +103,41 @@ struct ProfileOutcome: Codable, Sendable, Equatable {
     }
 }
 
+extension ProfileOutcome {
+    /// Exit 0 and complete: nothing to fetch and nothing standing.
+    var isClean: Bool { exitCode == 0 && !incomplete }
+}
+
 extension TickState {
     /// Folds a run's per-profile outcomes into the label's: a profile that ran replaces its
-    /// entry, one that did not keeps it. A Run now writes nothing, as for the other stamps.
-    /// True when the stored outcomes changed.
+    /// entry, one that did not keeps it, and one outside `considered` (removed, excluded or
+    /// skipped for a missing jamf-cli profile) loses it, since nothing would ever refresh it.
+    /// A Run now writes nothing, as for the other stamps. True when the stored outcomes changed.
     mutating func noteProfileOutcomes(
-        _ label: String, _ ran: [ProfileOutcome], reason: TickScheduler.Reason
+        _ label: String, _ ran: [ProfileOutcome], considered: Set<String>?,
+        reason: TickScheduler.Reason
     ) -> Bool {
-        guard reason != .runNow, !ran.isEmpty else { return false }
+        guard reason != .runNow else { return false }
+        let before = profileOutcomes[label]
         let ranNames = Set(ran.map(\.profile))
-        let merged = (profileOutcomes[label] ?? []).filter { !ranNames.contains($0.profile) } + ran
-        profileOutcomes[label] = merged
-        return true
+        let kept = (before ?? []).filter {
+            !ranNames.contains($0.profile) && (considered?.contains($0.profile) ?? true)
+        }
+        let merged = kept + ran
+        profileOutcomes[label] = merged.isEmpty ? nil : merged
+        return profileOutcomes[label] != before
     }
 
-    /// Profiles whose last outcome says a retry would fetch nothing (a clean run, or a failure
-    /// that repeats). A profile with no outcome is not here: not knowing fails toward collecting.
+    /// Profiles a retry leaves alone: with any profile whose failure a retry could fetch, all
+    /// the others; with none, the clean ones, so the backoffs still retry a failure that
+    /// repeats; nothing left out when no outcome is recorded or every profile is clean. A
+    /// profile with no outcome is never here: not knowing fails toward collecting.
     func profilesNotNeedingRetry(_ label: String) -> Set<String> {
-        Set((profileOutcomes[label] ?? []).filter { !$0.retryCouldHelp }.map(\.profile))
+        let all = profileOutcomes[label] ?? []
+        let helped = all.filter(\.retryCouldHelp)
+        let wanted = helped.isEmpty ? all.filter { !$0.isClean } : helped
+        guard !wanted.isEmpty else { return [] }
+        return Set(all.map(\.profile)).subtracting(wanted.map(\.profile))
     }
 }
 
@@ -137,24 +154,30 @@ struct ScheduleRunOutcome: Sendable {
     /// The profiles of a multi-profile run that ran, in run order; empty for a single-profile
     /// schedule and for a run that skipped them all.
     let profiles: [ProfileOutcome]
+    /// Every profile this run answers for (those it ran and those it left out), when it is a
+    /// multi-profile run; nil for a single-profile schedule. Outcomes of any other profile are
+    /// stale.
+    let considered: Set<String>?
 
     init(
         exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool? = nil,
-        profiles: [ProfileOutcome] = []
+        profiles: [ProfileOutcome] = [], considered: Set<String>? = nil
     ) {
         self.exitCode = exitCode
         self.incomplete = incomplete
         self.retryCouldHelp = retryCouldHelp ?? incomplete
         self.profiles = profiles
+        self.considered = considered
     }
 
     /// The schedule's outcome over every profile's latest (`all`), of which this run's
     /// `ran` are the newest: a retry that ran two of three profiles still judges all three.
-    init(over all: [ProfileOutcome], ran: [ProfileOutcome]) {
+    init(over all: [ProfileOutcome], ran: [ProfileOutcome], considered: Set<String>? = nil) {
         self.init(
             exitCode: all.contains { $0.exitCode != 0 } ? 1 : 0,
             incomplete: all.contains(where: \.incomplete),
-            retryCouldHelp: all.contains(where: \.retryCouldHelp), profiles: ran)
+            retryCouldHelp: all.contains(where: \.retryCouldHelp), profiles: ran,
+            considered: considered)
     }
 
     /// Exit 0 with nothing left on the table.
@@ -197,10 +220,31 @@ enum TickScheduler {
     }
 
     /// The profiles a multi-profile run covers: `profiles` less `skip`, or all of them when
-    /// that leaves none (the retry was due, and nothing says which profile it is for).
+    /// that leaves none (a profile left in the outcomes has since gone).
     static func profilesToRun(_ profiles: [String], skipping skip: Set<String>) -> [String] {
         let remaining = profiles.filter { !skip.contains($0) }
         return remaining.isEmpty ? profiles : remaining
+    }
+
+    /// Runs `run` for each of `names` that `profilesToRun` keeps, in order, and says which it
+    /// left out through `onLine`. `run` returns nil for a profile that cannot run (no jamf-cli
+    /// profile); that profile is not `considered`, so its old outcome goes.
+    static func runProfiles(
+        names: [String], skipping skip: Set<String>,
+        onLine: (String) -> Void = { fputs($0 + "\n", stderr) },
+        run: (String) async -> ProfileOutcome?
+    ) async -> (ran: [ProfileOutcome], considered: Set<String>) {
+        let toRun = TickScheduler.profilesToRun(names, skipping: skip)
+        let leftOut = names.filter { !toRun.contains($0) }
+        if !leftOut.isEmpty {
+            onLine("[info] retrying only profiles that need it; leaving out: "
+                   + leftOut.joined(separator: ", "))
+        }
+        var ran: [ProfileOutcome] = []
+        for name in toRun {
+            if let outcome = await run(name) { ran.append(outcome) }
+        }
+        return (ran, Set(leftOut).union(ran.map(\.profile)))
     }
 
     /// - Parameter summaryMissingToday: Whether `schedule` should have produced today's daily
