@@ -272,14 +272,22 @@ profile is a Platform one, `jamf_school` instead when `school_cli` is primary, `
 `protect.profile` when `protect.enabled` (blank sets `protectWithoutProfile`, the "protect.profile
 is blank" warning), a foreign `school_cli.profile` in `foreignSchool`. With the block the old keys
 are not read for profiles, a blank slot is a product the environment does not have, and
-`EnvironmentProfiles.refusal(workspace:)` stops collect (one `[error]`,
-`CLIBridgeError.wrongProduct`), backup and the schedule and CLI entry points when both MDM slots are set, neither is, or the MDM
-slot names another profile than the workspace (commands still take `-p` from the workspace until
-P2). The shared-config pin's `protect.profile` value is `profiles.protect` once the block exists
-(`SharedConfigPin.current`), so a peer cannot add it unseen. Writers (onboarding, Protect connect
-and disconnect, scaffold, the binding's `jamf_cli.profile`) still write the old keys; the block is
-hand-written until P4. `runProfile`/`profileMismatch` and the folder-binding reads of
-`jamf_cli.profile` stay until P2.
+`EnvironmentProfiles.refusal(workspace:)` refuses with one `[error]` when both MDM slots are
+set, neither is, or the MDM slot names another profile than the workspace (commands still take
+`-p` from the workspace until P2). Every Jamf Pro entry point applies it through
+`CLIBridge.refusesProCommand`, before the product check: collect (`CollectRouter.run`, which also
+checks the config it was handed, for School), backup, backup diff, Health audit, group analysis,
+device and mobile device lookup and the CLI `device` command (`CLIBridgeError.wrongProduct`);
+`CollectRouter.proRunRefusal` and `backupRefusal` apply it again as the check the schedule and
+CLI entry points make before the tick lock and the run record. The shared-config pin's
+`protect.profile` value is `profiles.protect` once the block exists, read as the decoder reads
+it (`ConfigLoader.textValue`: an unquoted number is its digits) (`SharedConfigPin.current`), so a
+peer cannot add it unseen. The old-key writers (Protect connect and disconnect, the School
+write) refuse under a block (`ConfigService.saveBlock(profilesSlot:)`,
+`ConfigError.profilesBlock`, "edit profiles.<slot>"); the scaffold and the binding's
+`jamf_cli.profile` still write old keys, and the block is hand-written until P4.
+`ReportEngine.runProfile`/`profileMismatch`, `profileMismatchRows` and the folder-binding reads
+still read `jamf_cli.profile` until P2.
 
 ### output config
 
