@@ -306,12 +306,33 @@ final class HtmlReportDashboardTests: XCTestCase {
         }
         XCTAssertEqual(why, "dashboard_20260925T060000.html: not a regular file")
 
-        let odd = dir.appendingPathComponent("dashboard_20260926T060000\u{7}x.html")
+        let odd = dir.appendingPathComponent("dashboard\u{7}_20260926T060000.html")
         try FileManager.default.createSymbolicLink(at: odd, withDestinationURL: target)
         guard case .unreadable(let oddWhy) = report().dashboardState() else {
             return XCTFail("a planted link must not read as never collected")
         }
-        XCTAssertFalse(oddWhy.unicodeScalars.contains("\u{7}"), oddWhy)
+        XCTAssertEqual(oddWhy, "dashboard_20260926T060000.html: not a regular file",
+                       "the BEL link is the newest by stamp and its name is filtered")
+    }
+
+    /// A failed dashboard collect names a planted link instead of saying nothing is cached.
+    func testAFailedCollectNamesAPlantedCachedPage() throws {
+        let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dataDir.appendingPathComponent("elsewhere.html")
+        try "<html></html>".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: dir.appendingPathComponent("dashboard_20260925T060000.html"),
+            withDestinationURL: target)
+        let lines = LockedLines()
+        _ = try ReportEngine.recordUnlandedAttempt(
+            kind: ReportEngine.dashboardKind, exitCode: 1, data: Data(), useCachedData: true,
+            dataDir: dataDir, stateStore: nil,
+            collectStart: Date(timeIntervalSince1970: 1_800_000_000),
+            onLine: { lines.append($0.text) })
+        let warn = try XCTUnwrap(lines.all.first { $0.hasPrefix("[warn] dashboard") })
+        XCTAssertTrue(warn.contains("dashboard_20260925T060000.html: not a regular file"), warn)
+        XCTAssertFalse(warn.contains("no cached snapshot available"), warn)
     }
 }
 

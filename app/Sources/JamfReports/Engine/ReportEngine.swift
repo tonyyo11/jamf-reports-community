@@ -2769,9 +2769,10 @@ struct ReportEngine: Sendable {
         let cached = kind == Self.dashboardKind
             ? FileManager.newestHTMLSnapshot(in: kindDir)
             : FileManager.newestJSONFile(in: kindDir)
-        let cacheNote = cached != nil
-            ? "skipped (using cached)"
-            : "no cached snapshot available"
+        // A link planted at the page's name is dropped by the picker; say so, not "none".
+        let planted = kind == Self.dashboardKind ? HtmlReport.plantedNewestPage(in: kindDir) : nil
+        let cacheNote = planted.map { "cached snapshot not used (\($0))" }
+            ?? (cached != nil ? "skipped (using cached)" : "no cached snapshot available")
         // jamf-cli's own reason beats a bare exit code in Run History.
         let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
         onLine(.init(timestamp: Date(), level: .warn,
