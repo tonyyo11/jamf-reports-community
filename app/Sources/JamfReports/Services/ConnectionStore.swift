@@ -125,7 +125,8 @@ struct ConnectionStore: Sendable {
     @discardableResult
     func recordMember(
         profile: String, scopeID: String, product: Connection.Member.Product,
-        region: Connection.Region, level: Connection.Level, now: Date = Date()
+        region: Connection.Region, level: Connection.Level, gatewayURL: String? = nil,
+        now: Date = Date()
     ) throws -> Connection {
         var all = load()
         if let index = all.firstIndex(where: { $0.members.contains { $0.profile == profile } }),
@@ -138,7 +139,7 @@ struct ConnectionStore: Sendable {
         let connection = Connection(
             name: profile, region: region, level: level,
             members: [.init(profile: profile, scopeID: scopeID, product: product)],
-            createdAt: now)
+            createdAt: now, gatewayURL: region == .other ? gatewayURL : nil)
         all.append(connection)
         try save(all)
         return connection

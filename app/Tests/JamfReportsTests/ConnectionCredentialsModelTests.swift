@@ -61,7 +61,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         existingProfiles: [String] = ["acme-prod"],
         reRegistrable: Set<String> = [],
         usesStoredLeftoverRule: Bool = false,
-        region: Connection.Region = .eu
+        region: Connection.Region = .eu,
+        gatewayURL: String? = nil
     ) throws -> Harness {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("credentials-model-\(UUID().uuidString)", isDirectory: true)
@@ -69,7 +70,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
         let store = ConnectionStore(url: dir.appendingPathComponent("connections.json"))
         let connection = Connection(
-            name: "Acme", region: region, level: .environment, members: members)
+            name: "Acme", region: region, level: .environment, members: members,
+            gatewayURL: gatewayURL)
         try store.upsert(connection)
         let recorder = Recorder()
         let provisioned = Provisioned()
@@ -441,5 +443,36 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), before)
         // A config.yaml already there is kept, not rewritten.
         XCTAssertFalse(try OnboardingFlow.createJamfCLIOnlyWorkspace(for: "acme-prod"))
+    }
+
+    // MARK: Gateway host
+
+    func testAnOtherRegionUsesItsRecordedHost() async throws {
+        let h = try harness(
+            mode: .addEnvironments, region: .other, gatewayURL: "https://gateway.example.org:8443")
+        XCTAssertNil(h.model.gatewayProblem)
+        fill(h.model, ids: "env-stage Staging")
+        await h.model.run()
+        let registrations = await h.recorder.registrations
+        XCTAssertEqual(registrations.map(\.gatewayURL), ["https://gateway.example.org:8443"])
+    }
+
+    func testAnOtherRegionOnTheRetiredGatewayRegistersNothing() async throws {
+        let h = try harness(
+            mode: .addEnvironments, region: .other, gatewayURL: "https://us.apigw.jamf.com")
+        XCTAssertNil(h.model.gatewayURL)
+        XCTAssertEqual(h.model.gatewayProblem, GatewayRegion.retiredRefusal)
+        fill(h.model, ids: "env-stage Staging")
+        XCTAssertFalse(h.model.canRun)
+        await h.model.run()
+        let registrations = await h.recorder.registrations
+        XCTAssertTrue(registrations.isEmpty)
+    }
+
+    func testAnOtherRegionWithNoRecordedHostSaysItIsUnknown() throws {
+        let h = try harness(mode: .updateAll, region: .other)
+        XCTAssertNil(h.model.gatewayURL)
+        XCTAssertNotNil(h.model.gatewayProblem)
+        XCTAssertNotEqual(h.model.gatewayProblem, GatewayRegion.retiredRefusal)
     }
 }

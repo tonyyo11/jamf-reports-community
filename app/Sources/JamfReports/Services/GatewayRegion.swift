@@ -1,7 +1,8 @@
 import Foundation
 
 /// The three Jamf Platform API gateway hosts (Jamf Cloud only). Onboarding and Update credentials
-/// pick a region instead of typing a URL; the profile still stores the URL jamf-cli was given.
+/// pick a region instead of typing a URL, or choose Other and type a host; the profile still
+/// stores the URL jamf-cli was given.
 enum GatewayRegion: String, CaseIterable, Identifiable, Sendable {
     case us, eu, apac
 
@@ -55,11 +56,95 @@ enum GatewayRegion: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// What a typed, stored or adopted gateway host is, before any jamf-cli call.
+enum GatewayURLCheck: Equatable, Sendable {
+    /// Usable: the URL as jamf-cli should receive it (`https://host[:port]`, host lowercased).
+    case ok(String)
+    case invalid
+    /// `apigw.jamf.com` or a host under it, which jamf-cli refuses by name.
+    case retired
+}
+
+extension GatewayRegion {
+    static let retiredHost = "apigw.jamf.com"
+
+    /// Shown wherever a retired gateway is refused; the hint is the one `FailureCause` gives
+    /// when jamf-cli refuses it after a failed collect.
+    static let retiredRefusal = "\(retiredHost) is the retired Jamf Platform gateway. "
+        + FailureCause.retiredGatewayHint
+
+    static let invalidHostText = "Enter a host such as gateway.example.org, with an optional "
+        + "port. Use only letters, digits, dots and hyphens; https:// is optional."
+
+    /// The one check of a gateway host for every entry point. Accepts a host of letters, digits,
+    /// dots and hyphens with an optional port, with or without `https://`.
+    static func check(_ typed: String) -> GatewayURLCheck {
+        var value = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let scheme = value.range(of: "https://", options: [.anchored, .caseInsensitive]) {
+            value.removeSubrange(scheme)
+        }
+        if value.hasSuffix("/") { value.removeLast() }
+        let parts = value.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count <= 2, let host = parts.first.map({ String($0).lowercased() }),
+              isHostName(host) else { return .invalid }
+        var port = ""
+        if parts.count == 2 {
+            guard let number = Int(parts[1]), (1...65535).contains(number),
+                  parts[1].allSatisfy(\.isASCII), parts[1].allSatisfy(\.isNumber)
+            else { return .invalid }
+            port = ":\(number)"
+        }
+        if host == retiredHost || host.hasSuffix("." + retiredHost) { return .retired }
+        return .ok("https://\(host)\(port)")
+    }
+
+    /// Dot-separated labels of ASCII letters, digits and inner hyphens, so a typed host can never
+    /// read as a flag or carry a path, user info or whitespace.
+    private static func isHostName(_ host: String) -> Bool {
+        guard !host.isEmpty, host.utf8.count <= 253 else { return false }
+        return host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { label in
+            guard !label.isEmpty, label.utf8.count <= 63,
+                  label.first != "-", label.last != "-" else { return false }
+            return label.unicodeScalars.allSatisfy {
+                $0.value < 0x80 && (CharacterSet.alphanumerics.contains($0) || $0 == "-")
+            }
+        }
+    }
+
+    /// Why `typed` cannot be used, nil when it can.
+    static func problem(with typed: String) -> String? {
+        switch check(typed) {
+        case .ok: nil
+        case .invalid: invalidHostText
+        case .retired: retiredRefusal
+        }
+    }
+}
+
 extension OnboardingFlow {
     /// The region `gatewayURL` names, nil when it is some other URL.
     var gatewayRegion: GatewayRegion? { GatewayRegion.region(forURL: gatewayURL) }
 
+    /// The picker's selection: nil is Other, which stays selected while a host is typed even
+    /// when it happens to name a region.
+    var gatewayPickerSelection: GatewayRegion? {
+        gatewayOtherSelected ? nil : gatewayRegion
+    }
+
     func chooseGatewayRegion(_ region: GatewayRegion) {
+        gatewayOtherSelected = false
         gatewayURL = region.url
+    }
+
+    /// Other starts with no host, unless one is already typed that no region names.
+    func chooseOtherGateway() {
+        gatewayOtherSelected = true
+        if gatewayRegion != nil { gatewayURL = "" }
+    }
+
+    /// The URL jamf-cli receives; nil when `gatewayURL` is not usable.
+    var normalizedGatewayURL: String? {
+        if case .ok(let url) = GatewayRegion.check(gatewayURL) { return url }
+        return nil
     }
 }

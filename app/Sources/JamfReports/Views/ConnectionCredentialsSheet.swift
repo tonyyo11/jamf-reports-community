@@ -79,11 +79,7 @@ struct ConnectionCredentialsSheet: View {
     private var inputCard: some View {
         Card(padding: 20) {
             VStack(alignment: .leading, spacing: 14) {
-                if model.gatewayURL == nil {
-                    errorBanner("This connection's region is not one of United States, Europe "
-                        + "or Asia-Pacific, so its gateway host is unknown. Add the profiles "
-                        + "from onboarding instead.")
-                }
+                if let problem = model.gatewayProblem { errorBanner(problem) }
                 if model.mode == .addEnvironments { idsEditor }
                 credentialFields
             }

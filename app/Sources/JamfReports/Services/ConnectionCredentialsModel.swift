@@ -113,9 +113,23 @@ final class ConnectionCredentialsModel {
 
     // MARK: - Gateway
 
-    /// The gateway URL of the connection's region; nil for a region this build has no host for.
+    /// The gateway URL of the connection's region, or the host recorded for an Other region;
+    /// nil when there is none or the recorded host is not usable (a retired gateway included).
     var gatewayURL: String? {
-        GatewayRegion(rawValue: connection.region.rawValue)?.url
+        if let region = GatewayRegion(rawValue: connection.region.rawValue) { return region.url }
+        guard let stored = connection.gatewayURL, case .ok(let url) = GatewayRegion.check(stored)
+        else { return nil }
+        return url
+    }
+
+    /// Why the connection has no usable gateway host, nil when it has one.
+    var gatewayProblem: String? {
+        guard gatewayURL == nil else { return nil }
+        if let stored = connection.gatewayURL, case .retired = GatewayRegion.check(stored) {
+            return GatewayRegion.retiredRefusal
+        }
+        return "This connection's gateway host is unknown, so Jamf Reports cannot register "
+            + "profiles against it. Add the profiles from onboarding instead."
     }
 
     var scope: OnboardingFlow.PlatformScope {
