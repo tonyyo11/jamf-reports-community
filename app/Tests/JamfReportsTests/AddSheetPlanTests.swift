@@ -388,6 +388,24 @@ final class AddSheetPlanTests: XCTestCase {
         }
     }
 
+    /// A Protect login on a retired host or at organization level is refused before the Protect
+    /// offer, as the adoption screen refuses it.
+    @MainActor
+    func testAProtectLoginOnARetiredHostOrAtOrganizationLevelIsStillUnavailable() {
+        let retired = JamfCLIProfile(
+            name: "old", url: "us.apigw.jamf.com", schedules: 0, status: .idle,
+            authMethod: "platform", product: .protect, platformLevel: .environment)
+        let org = profile("org", .protect, level: .organization)
+        let rows = unassigned([retired, org])
+        let flow = ExistingCLISetupFlow(profiles: [retired, org])
+        XCTAssertEqual(rows.map(\.use), [
+            .unavailable(GatewayRegion.retiredRefusal),
+            .unavailable(PlatformScopeLevel.organizationLevelReason),
+        ])
+        XCTAssertEqual(flow.refusals["old"], GatewayRegion.retiredRefusal)
+        XCTAssertEqual(flow.refusals["org"], PlatformScopeLevel.organizationLevelReason)
+    }
+
     /// The adoption screen refuses a Protect login as a workspace; the Add sheet adds it to the
     /// current one instead, so only the flow lists a reason.
     @MainActor

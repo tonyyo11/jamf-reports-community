@@ -100,6 +100,9 @@ enum AddSheetPlan {
         of profile: JamfCLIProfile, unusable: String?
     ) -> UnassignedProfile.Use {
         if let unusable { return .unavailable(unusable) }
+        if let reason = ExistingCLISetupFlow.scopeRefusal(for: profile) {
+            return .unavailable(reason)
+        }
         // A Protect login is added to the current workspace; the flow refuses it only as a
         // workspace of its own.
         if profile.product == .protect { return .addToCurrent }

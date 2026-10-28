@@ -180,12 +180,18 @@ final class ExistingCLISetupFlow {
 
     nonisolated static let securityCloudReason = "Jamf Security Cloud is not supported yet."
 
-    /// Why a profile is never a workspace, or nil: the one decision behind the adoption
-    /// screen's refused rows and the Add sheet's unavailable ones. The retired gateway and an
-    /// organization-level integration lead, since neither can be fixed by choosing a product.
-    nonisolated static func refusal(for profile: JamfCLIProfile) -> String? {
+    /// Why a profile cannot be adopted whatever its product, or nil: the retired gateway and an
+    /// organization-level integration, which choosing a different product does not fix.
+    nonisolated static func scopeRefusal(for profile: JamfCLIProfile) -> String? {
         if GatewayRegion.check(profile.url) == .retired { return GatewayRegion.retiredRefusal }
         if profile.isOrganizationLevel { return PlatformScopeLevel.organizationLevelReason }
+        return nil
+    }
+
+    /// Why a profile is never a workspace, or nil: the one decision behind the adoption
+    /// screen's refused rows and the Add sheet's unavailable ones.
+    nonisolated static func refusal(for profile: JamfCLIProfile) -> String? {
+        if let scope = scopeRefusal(for: profile) { return scope }
         switch profile.product {
         case .protect:
             return "A \(profile.product.displayName) login holds no Jamf Pro data, so it is not "
