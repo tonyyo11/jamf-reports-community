@@ -654,15 +654,10 @@ extension WorkspaceStore {
                   at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
         else { return nil }
         let fileExtension = kind == ReportEngine.dashboardKind ? "html" : "json"
-        func isNotAhead(_ url: URL) -> Bool {
-            guard let date = FileManager.snapshotDate(of: url) else { return false }
-            return date.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance
+        let candidates = entries.filter { $0.pathExtension == fileExtension }
+        guard let date = FileManager.newestSnapshotDate(among: candidates, now: now) else {
+            return nil
         }
-        let regular = entries.filter {
-            $0.pathExtension == fileExtension && FileManager.isRegularFile($0) && isNotAhead($0)
-        }
-        guard let newest = FileManager.newestSnapshot(among: regular),
-              let date = FileManager.snapshotDate(of: newest) else { return nil }
         return max(0, now.timeIntervalSince(date))
     }
 

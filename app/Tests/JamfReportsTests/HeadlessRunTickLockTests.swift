@@ -228,6 +228,20 @@ final class HeadlessRunTickLockTests: XCTestCase {
         XCTAssertEqual(result.recorded["other"], [])
     }
 
+    /// A fleet-wide schedule's give-up reaches the runnable profiles it fans out over, minus its
+    /// exclusions, from the profiles it is given (the tick's, already discovered).
+    func testAMultiScheduleNamesTheProfilesItFansOutOver() throws {
+        _ = try makeWorkspace()
+        var fleet = schedule()
+        fleet.multiTarget = MultiTarget(scope: .all, sequential: true)
+        fleet.excludedProfiles = ["skipped"]
+        let among = ["headless", "skipped"].map {
+            JamfCLIProfile(name: $0, url: "", schedules: 0, status: .ok)
+        }
+
+        XCTAssertEqual(workspaces(of: fleet, among: { among }), ["headless"])
+    }
+
     func testAScheduleNamesItsOwnWorkspace() {
         XCTAssertEqual(workspaces(of: schedule()), [profile])
     }

@@ -59,6 +59,19 @@ extension FileManager {
         return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
     }
 
+    /// The date of the newest snapshot among `urls`, as every freshness check dates it: regular
+    /// files only (`lstat`, so a planted link counts for nothing), the pickers' exclusions
+    /// (manifest, conflict copy, `.partial`), the stamp in the name before the mtime, and a file
+    /// dated more than `SharedWorkspace.clockSkewTolerance` ahead of `now` left out, since a peer
+    /// can name or touch one for the year 2999 and make a folder look fresh for good.
+    static func newestSnapshotDate(among urls: [URL], now: Date = Date()) -> Date? {
+        let candidates = urls.filter { url in
+            guard isRegularFile(url), let date = snapshotDate(of: url) else { return false }
+            return date.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance
+        }
+        return newestSnapshot(among: candidates).flatMap(snapshotDate(of:))
+    }
+
     /// Shared body: enumerate, confine to `dir`, filter, order.
     private static func newestSnapshot(inDirectory dir: URL, extensions: Set<String>) -> URL? {
         let fm = FileManager.default

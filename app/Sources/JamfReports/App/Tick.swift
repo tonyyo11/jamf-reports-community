@@ -118,7 +118,13 @@ func runTick(
             hold.touch()
             return await hold.keepingAlive(
                 every: environment.heartbeatEvery, limit: environment.heartbeatLimit,
-                onGiveUp: { exitAfterLockGiveUp(profiles: profiles, exit: environment.exit) }
+                onGiveUp: {
+                    // The stalled run is this schedule's, so its record goes to the workspaces
+                    // the schedule is for.
+                    exitAfterLockGiveUp(
+                        workspaces: { workspaces(of: run.schedule, among: { profiles }) },
+                        exit: environment.exit)
+                }
             ) {
                 await environment.perform(run)
             }
@@ -220,11 +226,15 @@ func lockGiveUp(
 }
 
 /// The workspaces a scheduled run is for: its profile, or for a multi-profile schedule the
-/// runnable ones it fans out over (discovered when asked).
-func workspaces(of schedule: Schedule) -> [String] {
+/// runnable ones it fans out over. For a multi schedule `among` defaults to discovery, which in a
+/// give-up runs after the exit path is latched, so it is folder-based at that point.
+func workspaces(
+    of schedule: Schedule,
+    among profiles: () -> [JamfCLIProfile] = { ProfileService.discoverLocal() }
+) -> [String] {
     guard schedule.isMulti else { return [schedule.profile] }
     return ProfileService.runnableProfiles(
-        ProfileService.discoverLocal(), excluding: Set(schedule.excludedProfiles ?? [])
+        profiles(), excluding: Set(schedule.excludedProfiles ?? [])
     ).map(\.name)
 }
 

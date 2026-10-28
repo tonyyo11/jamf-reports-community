@@ -89,8 +89,9 @@ versions in this repository map to git tags.
   that does not decode, and a folder another Mac marked as not shared all keep Jamf Pro out. (#305)
 - A link another Mac plants in a snapshot folder no longer hides behind "no cached snapshot" in a
   failed collect or makes a data kind look freshly collected, and a failed collect refuses a
-  snapshot folder that is itself a link, with a warning. A snapshot named for a date far in the
-  future no longer keeps a data kind looking fresh. jamf-cli's config file, which
+  snapshot folder that is itself a link, with a warning. A snapshot named or touched for a date
+  far in the future, a manifest or a sync conflict copy no longer keeps a data kind looking
+  fresh, or makes Generate skip its collect. jamf-cli's config file, which
   `XDG_CONFIG_HOME` can move to a folder anyone can write, is now read with a size limit
   everywhere, including the diagnostic bundle and Start a connection. (#305)
 
