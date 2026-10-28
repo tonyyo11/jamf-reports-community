@@ -3557,13 +3557,14 @@ struct ReportEngine: Sendable {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
             } else {
-                onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] \(kind): exit \(exitCode) — skipped"))
-                unlanded.append(kind)
                 // The cause lets the same-day retry leave a permanent failure (a 403) alone.
                 let cause = FailureCause.classify(
                     exitCode: exitCode, stdout: data, sawForbiddenOnStderr: stderrWatcher.sawForbidden,
                     sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked)
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[warn] \(kind): exit \(exitCode) — skipped"
+                                + causeSuffix(cause)))
+                unlanded.append(kind)
                 schoolOutcomes[schoolOutcomes.count - 1].cause = cause.kind
                 stateStore?.record(
                     .failed(exitCode: exitCode), report: kind, at: collectStart, cause: cause)
@@ -3740,16 +3741,17 @@ struct ReportEngine: Sendable {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
             } else {
-                onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] \(kind): exit \(exitCode) — skipped"))
-                unlanded.append(kind)
                 // The cause lets the same-day retry leave a permanent failure (a 403) alone.
+                let cause = FailureCause.classify(
+                    exitCode: exitCode, stdout: data,
+                    sawForbiddenOnStderr: stderrWatcher.sawForbidden,
+                    sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked)
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[warn] \(kind): exit \(exitCode) — skipped"
+                                + causeSuffix(cause)))
+                unlanded.append(kind)
                 stateStore?.record(
-                    .failed(exitCode: exitCode), report: kind, at: collectStart,
-                    cause: FailureCause.classify(
-                        exitCode: exitCode, stdout: data,
-                        sawForbiddenOnStderr: stderrWatcher.sawForbidden,
-                        sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked))
+                    .failed(exitCode: exitCode), report: kind, at: collectStart, cause: cause)
             }
         }
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)

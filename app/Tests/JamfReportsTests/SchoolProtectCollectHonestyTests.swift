@@ -97,6 +97,10 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
     ) throws {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertEqual(store.cause(for: kind)?.kind, .missingPermission)
+        let warn = try XCTUnwrap(
+            lines.texts.first { $0.hasPrefix("[warn] \(kind): exit 0 — skipped") },
+            "\(lines.texts)")
+        XCTAssertTrue(warn.contains("— cause: missing permission"), warn)
         let watcher = CollectHonestyWatcher()
         lines.texts.forEach(watcher.observe)
         if let start {
