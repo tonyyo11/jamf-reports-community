@@ -384,6 +384,7 @@ struct SchedulesView: View {
                 Spacer()
                 if isRunning {
                     ProgressView().scaleEffect(0.6)
+                        .accessibilityLabel("Schedule running")
                 } else if let msg = lastRunMessage, let exitCode = Self.extractExitCode(from: msg) {
                     Pill(
                         text: "EXIT \(exitCode)",

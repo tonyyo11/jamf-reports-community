@@ -366,6 +366,7 @@ struct OnboardingView: View {
         if flow.isCheckingJamfCLI {
             ProgressView()
                 .controlSize(.small)
+                .accessibilityLabel("Checking for jamf-cli")
                 .frame(width: 34)
         } else {
             statusIcon(ok: flow.jamfCLIInstalled)

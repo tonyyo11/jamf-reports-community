@@ -53,6 +53,7 @@ struct ConnectionCredentialsSheet: View {
             Text(title)
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Text(subtitle)
                 .font(.callout)
                 .foregroundStyle(Theme.Text.tertiary(contrast))

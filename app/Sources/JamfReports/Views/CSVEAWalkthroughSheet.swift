@@ -97,6 +97,7 @@ struct CSVEAWalkthroughSheet: View {
             Text(importedCSVName == nil ? "Adopt EAs" : "Set up EA tracking")
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Text.primary)
+                .accessibilityAddTraits(.isHeader)
             if let importedCSVName {
                 Mono(text: importedCSVName)
             }
@@ -335,6 +336,7 @@ struct CSVEAWalkthroughSheet: View {
     private var loadingState: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
+                .accessibilityLabel("Reading the collected Extension Attributes")
             Text("Reading the collected Extension Attributes…")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))

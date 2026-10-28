@@ -740,6 +740,7 @@ struct DevicesView: View {
                 case .loading:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
+                            .accessibilityLabel("Loading computer detail")
                         Text("Loading computer detail...")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))

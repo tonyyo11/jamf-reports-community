@@ -324,6 +324,7 @@ struct ExistingCLISetupView: View {
             Image(systemName: "circle").foregroundStyle(Theme.Colors.fgMuted)
         case .initializing, .collecting:
             ProgressView().controlSize(.small)
+                .accessibilityLabel(status == .initializing ? "Setting up" : "Collecting data")
         case .done:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.Colors.ok)
         case .failed:

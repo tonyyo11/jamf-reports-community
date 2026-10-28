@@ -13,6 +13,8 @@ struct Kicker: View {
     let text: String
     var tone: Tone = .muted
     var breadcrumbs: [Breadcrumb] = []
+    /// False where the caption sits above a title that is the heading (`PageHeader`).
+    var isHeading = true
 
     var body: some View {
         HStack(spacing: 4) {
@@ -36,12 +38,14 @@ struct Kicker: View {
                 Text("/")
                     .font(Theme.Fonts.mono(10, weight: .bold))
                     .foregroundStyle(Theme.Colors.hairlineStrong)
+                    .accessibilityHidden(true)
             }
 
             Text(text.uppercased())
                 .font(Theme.Fonts.mono(10.5, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(color)
+                .accessibilityAddTraits(isHeading ? .isHeader : [])
         }
     }
 
@@ -115,11 +119,13 @@ struct PageHeader: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs)
+                Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs,
+                       isHeading: false)
                 if let ageLabel = stalenessLabel {
                     Text("·")
                         .font(Theme.Fonts.mono(10.5, weight: .bold))
                         .foregroundStyle(Theme.Colors.hairlineStrong)
+                        .accessibilityHidden(true)
                     Text(ageLabel.uppercased())
                         .font(Theme.Fonts.mono(10.5, weight: .semibold))
                         .tracking(1.5)
@@ -129,8 +135,10 @@ struct PageHeader: View {
                 }
             }
             Text(title)
-                .font(Theme.Fonts.serif(26, weight: .bold))
+                .font(Theme.Fonts.serifTitle())
                 .foregroundStyle(Theme.Colors.fg)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
                     .font(.callout)
@@ -703,6 +711,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack {
             Text(title).font(.system(style, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
 
             // Handle legacy trailing parameter
@@ -737,6 +746,7 @@ struct StatusBar: View {
                 if status.contains("...") || status.lowercased().contains("running") || status.lowercased().contains("collecting") {
                     ProgressView().controlSize(.small)
                         .scaleEffect(0.7)
+                        .accessibilityLabel(status)
                 } else {
                     Image(systemName: "info.circle")
                         .font(.system(size: 10))

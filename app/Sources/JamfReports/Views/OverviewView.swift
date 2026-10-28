@@ -368,6 +368,7 @@ struct OverviewView: View {
     private var trendsLoadingOverlay: some View {
         VStack(spacing: 12) {
             ProgressView().controlSize(.large)
+                .accessibilityLabel("Loading fleet data")
             Text("Loading fleet data…")
                 .font(.callout)
                 .foregroundStyle(Theme.Colors.fg2)
@@ -418,6 +419,7 @@ struct OverviewView: View {
                 Spacer(minLength: 12)
                 if workspace.isInitializingWorkspace {
                     ProgressView().controlSize(.small)
+                        .accessibilityLabel("Setting up the workspace")
                 } else {
                     PNPButton(title: "Choose existing folder…", icon: "folder", size: .sm) {
                         chooseExistingRoot()
@@ -888,6 +890,7 @@ struct OverviewView: View {
         Card(padding: 14) {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
+                    .accessibilityLabel("Loading \(section.title)")
                 Text("Loading \(section.title)…")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))

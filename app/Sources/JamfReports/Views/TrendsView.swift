@@ -348,6 +348,7 @@ struct TrendsView: View {
         Card(padding: 24) {
             VStack(spacing: 12) {
                 ProgressView().controlSize(.large)
+                    .accessibilityLabel("Loading trend history")
                 Text("Loading trend history…")
                     .font(.callout)
                     .foregroundStyle(Theme.Colors.fg2)
@@ -765,6 +766,7 @@ struct TrendsView: View {
                     ))
                 } else {
                     ProgressView().frame(height: 260)
+                        .accessibilityLabel("Loading trend chart")
                 }
 
                 Divider().background(Theme.Colors.hairline)
@@ -1136,6 +1138,7 @@ struct TrendsView: View {
                 ))
             } else {
                 ProgressView().frame(height: 200)
+                    .accessibilityLabel("Loading compliance distribution")
             }
         }
     }
@@ -1179,6 +1182,7 @@ struct TrendsView: View {
                 ))
             } else {
                 ProgressView().frame(height: 200)
+                    .accessibilityLabel("Loading security posture comparison")
             }
         }
     }

@@ -31,6 +31,7 @@ struct ProductConnectSheetView: View {
                     Text("Connect Jamf Protect")
                         .font(Theme.Fonts.serif(22, weight: .bold))
                         .foregroundStyle(Theme.Colors.fg)
+                        .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Button {
                         flow.clearAllSecrets()
