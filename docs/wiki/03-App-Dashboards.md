@@ -227,8 +227,9 @@ Overview, Devices and Trends screens and a workbook of its own; see
   shared storage too: the same banner holds **Back up Jamf Pro in this folder**
   (`backup.pro_on_synced_storage`). A workspace that already ran scheduled backups there
   keeps backing up for three more scheduled runs while Needs attention asks, then skips Jamf
-  Pro until you choose; a new workspace asks before its first backup. A backup whose Jamf Pro
-  part was skipped is marked in the table and has no diff. Diff
+  Pro until you choose; a new workspace asks before its first backup. Setting it to false
+  skips Jamf Pro without marking the run Partial. A backup whose Jamf Pro part was skipped is
+  marked in the table and has no diff. Diff
   compares Jamf Pro objects only, and its sheet says Protect is not compared.
   Data source: `jamf-cli pro backup` and `jamf-cli protect backup` exports (tier 2).
 

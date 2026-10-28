@@ -14,7 +14,7 @@ final class ProBackupTests: XCTestCase {
     // MARK: - Plan
 
     func test_plan_localStorageIsAsBeforeWhateverTheKeySays() {
-        for setting in [nil, true, false] as [Bool?] {
+        for setting in [ProBackup.Setting.notChosen, .allowed, .declined, .awaitingConfirmation] {
             XCTAssertEqual(
                 ProBackup.plan(setting: setting, place: nil,
                                hasScheduledHistory: { true }, graceRunsUsed: { 3 }),
@@ -24,14 +24,15 @@ final class ProBackupTests: XCTestCase {
 
     func test_plan_optInRunsAndNoRunsOnSyncedStorage() {
         XCTAssertEqual(
-            ProBackup.plan(setting: true, place: "on OneDrive",
+            ProBackup.plan(setting: .allowed, place: "on OneDrive",
                            hasScheduledHistory: { false }, graceRunsUsed: { 3 }),
             .runOnSyncedStorage(place: "on OneDrive"))
-        guard case .skip(let reason, let asking) = ProBackup.plan(
-            setting: false, place: "on OneDrive",
+        guard case .skip(let reason, let kind) = ProBackup.plan(
+            setting: .declined, place: "on OneDrive",
             hasScheduledHistory: { true }, graceRunsUsed: { 0 })
         else { return XCTFail("false is a no, whatever the history") }
-        XCTAssertFalse(asking)
+        XCTAssertEqual(kind, .declined)
+        XCTAssertFalse(kind.makesRunPartial, "the operator's no is a decision, not a gap")
         XCTAssertTrue(reason.contains("on OneDrive"), reason)
         XCTAssertTrue(reason.contains("backup.pro_on_synced_storage"), reason)
         XCTAssertTrue(reason.contains("storage policy"), reason)
@@ -39,28 +40,56 @@ final class ProBackupTests: XCTestCase {
 
     func test_plan_absentKeyAsksAndGivesGraceOnlyToAWorkspaceWithHistory() {
         XCTAssertEqual(
-            ProBackup.plan(setting: nil, place: "on OneDrive",
+            ProBackup.plan(setting: .notChosen, place: "on OneDrive",
                            hasScheduledHistory: { true }, graceRunsUsed: { 0 }),
             .runWhileAsking(place: "on OneDrive", runsLeft: 3))
         XCTAssertEqual(
-            ProBackup.plan(setting: nil, place: "on OneDrive",
+            ProBackup.plan(setting: .notChosen, place: "on OneDrive",
                            hasScheduledHistory: { true }, graceRunsUsed: { 2 }),
             .runWhileAsking(place: "on OneDrive", runsLeft: 1))
         for (history, used) in [(true, 3), (false, 0)] {
-            guard case .skip(_, let asking) = ProBackup.plan(
-                setting: nil, place: "on OneDrive",
+            guard case .skip(_, let kind) = ProBackup.plan(
+                setting: .notChosen, place: "on OneDrive",
                 hasScheduledHistory: { history }, graceRunsUsed: { used })
             else { return XCTFail("history \(history), used \(used)") }
-            XCTAssertTrue(asking, "an absent key is asked about, never read as false")
+            XCTAssertEqual(kind, .asking)
+            XCTAssertTrue(kind.makesRunPartial)
         }
+    }
+
+    func test_plan_aTrueWaitingForConfirmationHasItsOwnReasonAndStaysPartial() {
+        guard case .skip(let reason, let kind) = ProBackup.plan(
+            setting: .awaitingConfirmation, place: "on OneDrive",
+            hasScheduledHistory: { true }, graceRunsUsed: { 0 })
+        else { return XCTFail("a drifted true must not run") }
+        XCTAssertEqual(kind, .awaitingConfirmation)
+        XCTAssertTrue(kind.makesRunPartial, "the operator wants Jamf Pro backed up")
+        XCTAssertTrue(reason.contains("waiting for confirmation on this Mac (Config Doctor)"),
+                      reason)
+    }
+
+    func test_plan_anUndecodableConfigSkipsOnSyncedStorageAndNeverStartsTheGrace() {
+        var read = 0
+        guard case .skip(let reason, let kind) = ProBackup.plan(
+            setting: .notChosen, place: "on OneDrive", decodeFailure: "thresholds: wrong type",
+            hasScheduledHistory: { read += 1; return true }, graceRunsUsed: { read += 1; return 0 })
+        else { return XCTFail("unknown must not back up") }
+        XCTAssertEqual(kind, .declined)
+        XCTAssertTrue(reason.contains("does not decode"), reason)
+        XCTAssertTrue(reason.contains("thresholds: wrong type"), reason)
+        XCTAssertEqual(read, 0)
+        XCTAssertEqual(
+            ProBackup.plan(setting: .notChosen, place: nil, decodeFailure: "x",
+                           hasScheduledHistory: { true }, graceRunsUsed: { 0 }),
+            .run, "local storage never depends on config.yaml")
     }
 
     func test_plan_aNewWorkspaceNeverReadsTheGraceCount() {
         var read = 0
-        _ = ProBackup.plan(setting: true, place: "on OneDrive",
+        _ = ProBackup.plan(setting: .allowed, place: "on OneDrive",
                            hasScheduledHistory: { read += 1; return true },
                            graceRunsUsed: { read += 1; return 0 })
-        _ = ProBackup.plan(setting: nil, place: nil,
+        _ = ProBackup.plan(setting: .notChosen, place: nil,
                            hasScheduledHistory: { read += 1; return true },
                            graceRunsUsed: { read += 1; return 0 })
         XCTAssertEqual(read, 0)
@@ -85,6 +114,10 @@ final class ProBackupTests: XCTestCase {
         XCTAssertEqual(ProBackupGrace.used(profile: "b", appSupport: support),
                        BackupMaintenance.graceRunsBeforeAsking,
                        "an unreadable count reads as used up")
+
+        ProBackupGrace.exhaust(profile: "c", appSupport: support)
+        XCTAssertEqual(ProBackupGrace.used(profile: "c", appSupport: support),
+                       BackupMaintenance.graceRunsBeforeAsking)
     }
 
     // MARK: - backup()
@@ -191,7 +224,10 @@ final class ProBackupTests: XCTestCase {
         let ctx = try makeContext(config: shared + optIn)
         let first = try await backup(ctx, label: "scheduled-t")
         XCTAssertEqual(try ctx.calls().count, 0, "an opt-in found at first sight is unconfirmed")
-        XCTAssertTrue(first.lines.contains { $0.hasPrefix("[warn] Jamf Pro not backed up") })
+        let warn = try XCTUnwrap(first.lines.first { $0.hasPrefix("[warn] Jamf Pro not backed up") })
+        XCTAssertTrue(warn.contains("waiting for confirmation on this Mac (Config Doctor)"), warn)
+        XCTAssertTrue(first.lines.contains { $0.hasPrefix("[partial]") },
+                      "the operator wants Jamf Pro backed up, so the gap shows")
         XCTAssertEqual(first.changes[.proBackupChoiceNeeded], .cleared,
                        "a written choice is not an open question")
 
@@ -207,21 +243,130 @@ final class ProBackupTests: XCTestCase {
                        "a workspace without Protect writes no products when Jamf Pro ran")
     }
 
-    func test_backup_explicitFalseSkipsAtOnceEvenWithHistoryAndRaisesNothing() async throws {
+    func test_backup_explicitFalseIsTheOperatorsDecisionNotAPartialRun() async throws {
         let ctx = try makeContext(config: shared + "backup:\n  pro_on_synced_storage: false\n")
         try addHistory(ctx, "20260101T010101")
         let run = try await backup(ctx, label: "scheduled-t")
-        XCTAssertEqual(try ctx.calls().count, 0)
-        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[partial]") })
+
+        XCTAssertEqual(run.exit, 0)
+        XCTAssertEqual(try ctx.calls().count, 0, "nothing is sent after an explicit no")
+        XCTAssertEqual(run.lines.filter { $0.hasPrefix("[warn] Jamf Pro not backed up") }.count, 1)
+        XCTAssertFalse(run.lines.contains { $0.hasPrefix("[partial]") }, "\(run.lines)")
+        let watcher = CollectHonestyWatcher()
+        run.lines.forEach(watcher.observe)
+        XCTAssertFalse(watcher.incomplete)
+        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[info] backup written without a Jamf Pro") },
+                      "\(run.lines)")
         XCTAssertEqual(run.changes[.proBackupChoiceNeeded], .cleared)
+        XCTAssertEqual(BackupProductResult.pro(inBackup: try newestBackup(ctx))?.state, .skipped)
     }
 
-    func test_backup_aNonBooleanReadsAsNotChosen() async throws {
-        let ctx = try makeContext(config: shared + "backup:\n  pro_on_synced_storage: \"maybe\"\n")
-        let run = try await backup(ctx, label: "scheduled-t")
+    func test_backup_aNonBooleanIsAnExplicitNoNotAGrace() async throws {
+        for typed in ["\"maybe\"", "no", "yes please", "1"] {
+            let ctx = try makeContext(
+                config: shared + "backup:\n  pro_on_synced_storage: \(typed)\n")
+            try addHistory(ctx, "20260101T010101")
+            let run = try await backup(ctx, label: "scheduled-t")
+            XCTAssertEqual(try ctx.calls().count, 0, "\(typed): \(run.lines)")
+            XCTAssertEqual(run.changes[.proBackupChoiceNeeded], .cleared, typed)
+            XCTAssertEqual(ProBackupGrace.used(profile: ctx.profile),
+                           BackupMaintenance.graceRunsBeforeAsking, "\(typed) uses the grace up")
+        }
+    }
+
+    func test_backup_aBackupBlockThatIsNotAMappingCostsThatBlockOnly() async throws {
+        let ctx = try makeContext(config: shared + "backup: true\n")
+        let config = try ConfigLoader.load(
+            from: ctx.workspace.appendingPathComponent("config.yaml"))
+        XCTAssertEqual(config.backup?.proOnSyncedStorage, false)
+        XCTAssertEqual(config.sharedWorkspace?.enabled, true, "the rest of the file still decodes")
+        try addHistory(ctx, "20260101T010101")
+        _ = try await backup(ctx, label: "scheduled-t")
         XCTAssertEqual(try ctx.calls().count, 0)
-        guard case .raised? = run.changes[.proBackupChoiceNeeded]
-        else { return XCTFail("\(run.changes)") }
+    }
+
+    func test_backup_anUndecodableConfigOnSyncedStorageSkipsAndStartsNoGrace() async throws {
+        let ctx = try makeContext(config: shared)
+        _ = SharedConfigPin.check(profile: ctx.profile)  // the pin says this workspace is shared
+        try addHistory(ctx, "20260101T010101")
+        try "thresholds: not-a-mapping\n".write(
+            to: ctx.workspace.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+
+        let run = try await backup(ctx, label: "scheduled-t")
+        XCTAssertEqual(try ctx.calls().count, 0, "\(run.lines)")
+        let warn = try XCTUnwrap(run.lines.first { $0.hasPrefix("[warn] Jamf Pro not backed up") })
+        XCTAssertTrue(warn.contains("does not decode"), warn)
+        XCTAssertEqual(ProBackupGrace.used(profile: ctx.profile), 0)
+        XCTAssertNil(run.changes[.proBackupChoiceNeeded].flatMap {
+            if case .raised = $0 { return $0 } else { return nil }
+        })
+    }
+
+    func test_backup_aPeerWritingSharedFalseOrBreakingTheFileDoesNotMakeItLocal() async throws {
+        let ctx = try makeContext(config: shared)
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        try "shared_workspace:\n  enabled: false\n".write(
+            to: ctx.workspace.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        _ = try await backup(ctx, label: "scheduled-t")
+        XCTAssertEqual(try ctx.calls().count, 0, "this Mac's pin says the workspace was shared")
+
+        let local = try makeContext(config: "shared_workspace:\n  enabled: false\n")
+        _ = try await backup(local, label: "scheduled-t")
+        XCTAssertEqual(try local.calls().count, 1, "no pin, no shared signal: local as before")
+    }
+
+    func test_backup_anExplicitChoiceUsesUpTheGraceSoDeletingTheKeyBuysNothing() async throws {
+        let ctx = try makeContext(config: shared + "backup:\n  pro_on_synced_storage: false\n")
+        try addHistory(ctx, "20260101T010101")
+        _ = try await backup(ctx, label: "scheduled-t")
+        try shared.write(to: ctx.workspace.appendingPathComponent("config.yaml"),
+                         atomically: true, encoding: .utf8)
+        let run = try await backup(ctx, label: "scheduled-t")
+        XCTAssertEqual(try ctx.calls().count, 0, "\(run.lines)")
+        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[partial]") }, "absent asks again")
+    }
+
+    func test_backup_onlyThisMacsStampedBackupsAreHistory() async throws {
+        let ctx = try makeContext(config: shared)
+        try addHistory(ctx, "20260101T010101", stamped: false)
+        let planted = ctx.workspace.appendingPathComponent("backups/20260102T010101")
+        try FileManager.default.createDirectory(at: planted, withIntermediateDirectories: true)
+        try Data("some-other-mac".utf8).write(
+            to: planted.appendingPathComponent(BackupMaintenance.ownerStampName))
+        try JSONSerialization.data(withJSONObject: ["label": "scheduled-x"])
+            .write(to: planted.appendingPathComponent("manifest.json"))
+        XCTAssertFalse(BackupMaintenance.hasScheduledJamfProBackup(profile: ctx.profile))
+
+        let run = try await backup(ctx, label: "scheduled-t")
+        XCTAssertEqual(try ctx.calls().count, 0, "a planted folder buys no grace: \(run.lines)")
+
+        try addHistory(ctx, "20260103T010101")
+        XCTAssertTrue(BackupMaintenance.hasScheduledJamfProBackup(profile: ctx.profile))
+    }
+
+    func test_backup_aGraceCountThatCannotBeSavedSkipsWithAFixedManifestReason() async throws {
+        let ctx = try makeContext(config: shared)
+        try addHistory(ctx, "20260101T010101")
+        // A count file nothing can replace: it reads as zero runs, and the save fails.
+        var count = ProBackupGrace.url(profile: ctx.profile, appSupport: AppSupport.directory())
+        try Data("{\"runs\": 0}".utf8).write(to: count)
+        var immutable = URLResourceValues()
+        immutable.isUserImmutable = true
+        try count.setResourceValues(immutable)
+        defer {
+            immutable.isUserImmutable = false
+            try? count.setResourceValues(immutable)
+        }
+        let run = try await backup(ctx, label: "scheduled-t")
+        XCTAssertEqual(try ctx.calls().count, 0, "\(run.lines)")
+        let warn = try XCTUnwrap(run.lines.first { $0.hasPrefix("[warn] Jamf Pro not backed up") })
+        XCTAssertTrue(warn.contains("could not be saved on this Mac: "), warn)
+        let reason = try XCTUnwrap(
+            BackupProductResult.pro(inBackup: try newestBackup(ctx))?.reason)
+        XCTAssertTrue(reason.hasSuffix("could not be saved on this Mac"), reason)
+        XCTAssertFalse(reason.contains(":"), "the error text stays out of the manifest")
     }
 
     func test_backup_protectStillBacksUpWhenJamfProIsSkipped() async throws {
@@ -331,9 +476,12 @@ final class ProBackupTests: XCTestCase {
             try loadConfig("backup:\n  pro_on_synced_storage: true\n").backup?.proOnSyncedStorage,
             true)
         XCTAssertNil(try loadConfig("output:\n  output_dir: x\n").backup)
-        XCTAssertNil(
+        XCTAssertEqual(
             try loadConfig("backup:\n  pro_on_synced_storage: sometimes\n")
-                .backup?.proOnSyncedStorage, "a non-boolean reads as absent")
+                .backup?.proOnSyncedStorage, false, "a non-boolean reads as false")
+        XCTAssertEqual(try loadConfig("backup: true\n").backup?.proOnSyncedStorage, false)
+        XCTAssertNil(try loadConfig("backup:\n  pro_on_synced_storage:\n")
+            .backup?.proOnSyncedStorage, "an empty value is not chosen")
         XCTAssertTrue(ConfigSchema.knownKeys(at: ["backup"])?.contains("pro_on_synced_storage")
                       ?? false)
         XCTAssertTrue(ConfigEditedKeys.paths.contains(["backup", "pro_on_synced_storage"]))
@@ -347,13 +495,16 @@ final class ProBackupTests: XCTestCase {
 
         XCTAssertEqual(ConfigDoctorService.proSyncedBackupRows(nil), [])
         XCTAssertEqual(ConfigDoctorService.proSyncedBackupRows(
-            .init(place: "on OneDrive", setting: true)), [])
-        for setting in [nil, false] as [Bool?] {
+            .init(place: "on OneDrive", setting: .allowed)), [])
+        for setting in [ProBackup.Setting.notChosen, .declined, .awaitingConfirmation] {
             let found = ConfigDoctorService.proSyncedBackupRows(
                 .init(place: "on OneDrive", setting: setting))
             XCTAssertEqual(found.map(\.id), ["backup.pro_synced_storage"])
             XCTAssertEqual(found.first?.severity, .suggest)
-            XCTAssertTrue(found.first?.hint?.contains("backup.pro_on_synced_storage") ?? false)
+            let text = (found.first?.detail ?? "") + (found.first?.hint ?? "")
+            XCTAssertTrue(text.contains("backup.pro_on_synced_storage"), text)
+            XCTAssertEqual(text.contains("Partial"), setting != .declined,
+                           "an explicit no is not Partial: \(text)")
         }
     }
 
@@ -361,10 +512,10 @@ final class ProBackupTests: XCTestCase {
         let ctx = try makeContext(
             config: shared + "protect:\n  enabled: true\n  profile: \"protect-login\"\n")
         _ = SharedConfigPin.check(profile: ctx.profile)
-        XCTAssertNil(try currentSetting(ctx))
+        XCTAssertEqual(try currentSetting(ctx), .notChosen)
 
         try BackupChoiceConfigWriter.save(.pro, on: true, profile: ctx.profile)
-        XCTAssertEqual(try currentSetting(ctx), true, "the switch confirms what it wrote")
+        XCTAssertEqual(try currentSetting(ctx), .allowed, "the switch confirms what it wrote")
         let config = try ConfigLoader.load(
             from: ctx.workspace.appendingPathComponent("config.yaml"))
         XCTAssertEqual(config.backup?.proOnSyncedStorage, true)
@@ -372,30 +523,32 @@ final class ProBackupTests: XCTestCase {
         XCTAssertNil(config.protect?.backupOnSyncedStorage, "the Protect key is not touched")
 
         try BackupChoiceConfigWriter.save(.pro, on: false, profile: ctx.profile)
-        XCTAssertEqual(try currentSetting(ctx), false)
+        XCTAssertEqual(try currentSetting(ctx), .declined)
         XCTAssertTrue(SharedConfigPin.check(profile: ctx.profile).drifts.isEmpty)
     }
 
     func test_aPeersOptInIsDriftAndAFalseAppliesAtOnce() throws {
         let ctx = try makeContext(config: shared)
         _ = SharedConfigPin.check(profile: ctx.profile)
-        XCTAssertNil(try currentSetting(ctx), "absent is not chosen")
+        XCTAssertEqual(try currentSetting(ctx), .notChosen, "absent is not chosen")
         func write(_ block: String) throws {
             try (shared + block).write(
                 to: ctx.workspace.appendingPathComponent("config.yaml"),
                 atomically: true, encoding: .utf8)
         }
         try write(optIn)
-        XCTAssertEqual(try currentSetting(ctx), false, "a peer's true waits for a confirm")
+        XCTAssertEqual(try currentSetting(ctx), .awaitingConfirmation,
+                       "a peer's true waits for a confirm")
         XCTAssertEqual(SharedConfigPin.check(profile: ctx.profile).drifts.map(\.key),
                        [.proBackupOnSyncedStorage])
         try SharedConfigPin.confirm(profile: ctx.profile, keys: [.proBackupOnSyncedStorage])
-        XCTAssertEqual(try currentSetting(ctx), true)
+        XCTAssertEqual(try currentSetting(ctx), .allowed)
         try write("backup:\n  pro_on_synced_storage: false\n")
-        XCTAssertEqual(try currentSetting(ctx), false, "a change to false applies at once")
+        XCTAssertEqual(try currentSetting(ctx), .declined, "a change to false applies at once")
         XCTAssertTrue(SharedConfigPin.check(profile: ctx.profile).drifts.isEmpty)
         try write(optIn)
-        XCTAssertEqual(try currentSetting(ctx), false, "a later true is drift again")
+        XCTAssertEqual(try currentSetting(ctx), .awaitingConfirmation,
+                       "a later true is drift again")
     }
 
     func test_theSyncedStorageChoiceFollowsTheStorageAndTheProduct() throws {
@@ -404,7 +557,7 @@ final class ProBackupTests: XCTestCase {
         XCTAssertEqual(
             ProBackup.syncedStorageChoice(
                 profile: ctx.profile, config: try ConfigLoader.load(from: url)),
-            .init(place: "in a shared workspace", setting: nil))
+            .init(place: "in a shared workspace", setting: .notChosen))
         try "shared_workspace:\n  enabled: false\n"
             .write(to: url, atomically: true, encoding: .utf8)
         XCTAssertNil(ProBackup.syncedStorageChoice(
@@ -418,10 +571,10 @@ final class ProBackupTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func currentSetting(_ ctx: Context) throws -> Bool? {
+    private func currentSetting(_ ctx: Context) throws -> ProBackup.Setting {
         let config = try ConfigLoader.load(
             from: ctx.workspace.appendingPathComponent("config.yaml"))
-        return SharedConfigPin.proBackupOnSyncedStorage(
+        return SharedConfigPin.proBackupSetting(
             config.backup?.proOnSyncedStorage, profile: ctx.profile)
     }
 
@@ -442,8 +595,11 @@ final class ProBackupTests: XCTestCase {
         return Run(exit: exit, lines: lines.texts, changes: log.changes)
     }
 
-    /// A scheduled backup made before the choice existed.
-    private func addHistory(_ ctx: Context, _ name: String, pro: String? = nil) throws {
+    /// A scheduled backup made before the choice existed, stamped as this Mac's unless
+    /// `stamped` is false (a folder a peer planted, or another Mac's).
+    private func addHistory(
+        _ ctx: Context, _ name: String, pro: String? = nil, stamped: Bool = true
+    ) throws {
         let dir = ctx.workspace.appendingPathComponent("backups", isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -451,6 +607,7 @@ final class ProBackupTests: XCTestCase {
         if let pro { manifest["products"] = ["pro": ["state": pro]] }
         try JSONSerialization.data(withJSONObject: manifest)
             .write(to: dir.appendingPathComponent("manifest.json"))
+        if stamped { BackupMaintenance.stampOwnership(of: dir) }
     }
 
     private func newestBackup(_ ctx: Context) throws -> URL {

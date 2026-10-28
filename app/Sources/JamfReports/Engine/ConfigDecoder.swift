@@ -745,8 +745,9 @@ struct ProtectConfig: Decodable, Sendable {
 /// `backup:` settings for the Jamf Pro half of a backup.
 struct BackupConfig: Decodable, Sendable {
     /// `pro_on_synced_storage`: back Jamf Pro up even when the workspace is on storage other
-    /// Macs reach. Absent means the operator has not chosen yet (the app asks); a value that is
-    /// not a boolean reads as absent, and Config Doctor names it. On a shared workspace
+    /// Macs reach. Absent means the operator has not chosen yet (the app asks). A value that is
+    /// not a boolean, or a `backup:` that is not a mapping, reads as false: a typo fails toward
+    /// keeping Jamf Pro off shared storage, and Config Doctor names it. On a shared workspace
     /// `SharedConfigPin` decides what this Mac uses.
     var proOnSyncedStorage: Bool?
 
@@ -756,10 +757,18 @@ struct BackupConfig: Decodable, Sendable {
 
     init(proOnSyncedStorage: Bool? = nil) { self.proOnSyncedStorage = proOnSyncedStorage }
 
-    /// A mistyped value reads as absent rather than failing the whole config.yaml decode.
+    /// A mistyped value or block costs this block only, never the whole config.yaml decode.
     init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        proOnSyncedStorage = try? container.decodeIfPresent(Bool.self, forKey: .proOnSyncedStorage)
+        guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+            proOnSyncedStorage = false
+            return
+        }
+        if let typed = try? container.decodeIfPresent(Bool.self, forKey: .proOnSyncedStorage) {
+            proOnSyncedStorage = typed
+        } else {
+            proOnSyncedStorage = container.contains(.proOnSyncedStorage)
+                && ((try? container.decodeNil(forKey: .proOnSyncedStorage)) != true) ? false : nil
+        }
     }
 }
 

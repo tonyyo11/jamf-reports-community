@@ -6,6 +6,30 @@ import Foundation
 /// decides once per workspace (`backup.pro_on_synced_storage`), as for Jamf Protect. Local
 /// storage is unchanged and needs no key.
 enum ProBackup {
+    /// `backup.pro_on_synced_storage` as this Mac may use it.
+    enum Setting: Sendable, Equatable {
+        /// Absent: the operator has not chosen.
+        case notChosen
+        /// false (or anything the app could not read as a boolean): the operator's no.
+        case declined
+        case allowed
+        /// true in config.yaml, but not confirmed on this Mac yet (`SharedConfigPin`).
+        case awaitingConfirmation
+    }
+
+    /// Why a skipped Jamf Pro part is skipped, which decides what the run says about it.
+    enum SkipKind: Sendable, Equatable {
+        /// The operator said no (or config.yaml cannot be read): a decision, so the run is not
+        /// Partial and nothing needs attention.
+        case declined
+        /// Not chosen yet: Partial, with a Needs-attention item.
+        case asking
+        /// The operator wants it but this Mac has not confirmed it: Partial.
+        case awaitingConfirmation
+
+        var makesRunPartial: Bool { self != .declined }
+    }
+
     enum Plan: Equatable {
         /// Local storage: back up as always.
         case run
@@ -14,31 +38,42 @@ enum ProBackup {
         /// No choice yet, but scheduled backups already ran here: keep going for a few runs
         /// while the operator is asked, so an upgrade never stops them silently.
         case runWhileAsking(place: String, runsLeft: Int)
-        /// `asking` is true when the operator has not chosen, false for a no.
-        case skip(reason: String, asking: Bool)
+        case skip(reason: String, kind: SkipKind)
     }
 
-    /// `setting` is `backup.pro_on_synced_storage` as this Mac may use it
-    /// (`SharedConfigPin.proBackupOnSyncedStorage`): nil when absent. `place` is
-    /// `BackupMaintenance.sharedStorageDescription`; nil means local storage.
+    /// `place` is `BackupMaintenance.sharedStorageDescription`; nil means local storage.
+    /// `decodeFailure` is why config.yaml cannot be read, when it cannot: the choice is then
+    /// unknown, and unknown never sends Jamf Pro configuration to shared storage.
     static func plan(
-        setting: Bool?,
+        setting: Setting,
         place: String?,
+        decodeFailure: String? = nil,
         hasScheduledHistory: () -> Bool,
         graceRunsUsed: () -> Int
     ) -> Plan {
         guard let place else { return .run }
+        if let decodeFailure {
+            return .skip(
+                reason: "this workspace is \(place), and config.yaml does not decode, so the "
+                    + "Jamf Pro backup choice cannot be read: \(decodeFailure)",
+                kind: .declined)
+        }
         switch setting {
-        case true?:
+        case .allowed:
             return .runOnSyncedStorage(place: place)
-        case false?:
-            return .skip(reason: syncedStorageReason(place: place), asking: false)
-        case nil:
+        case .declined:
+            return .skip(reason: syncedStorageReason(place: place), kind: .declined)
+        case .awaitingConfirmation:
+            return .skip(
+                reason: "\(SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue) is on in "
+                    + "config.yaml and waiting for confirmation on this Mac (Config Doctor)",
+                kind: .awaitingConfirmation)
+        case .notChosen:
             let left = BackupMaintenance.graceRunsBeforeAsking - graceRunsUsed()
             if left > 0, hasScheduledHistory() {
                 return .runWhileAsking(place: place, runsLeft: left)
             }
-            return .skip(reason: syncedStorageReason(place: place), asking: true)
+            return .skip(reason: syncedStorageReason(place: place), kind: .asking)
         }
     }
 
@@ -72,8 +107,7 @@ enum ProBackup {
     /// Pro. Probes the volume, so call it off the main actor.
     struct SyncedStorageChoice: Sendable, Equatable {
         let place: String
-        /// Nil: no choice made yet.
-        let setting: Bool?
+        let setting: Setting
     }
 
     static func syncedStorageChoice(
@@ -85,11 +119,11 @@ enum ProBackup {
               let place = BackupMaintenance.sharedStorageDescription(
                 workspace.appendingPathComponent("backups", isDirectory: true),
                 profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
-                unreadableConfigIsShared: false)
+                unreadableConfigIsShared: false, pinnedIsShared: true, appSupport: appSupport)
         else { return nil }
         return SyncedStorageChoice(
             place: place,
-            setting: SharedConfigPin.proBackupOnSyncedStorage(
+            setting: SharedConfigPin.proBackupSetting(
                 config?.backup?.proOnSyncedStorage, profile: profile, appSupport: appSupport))
     }
 }
@@ -112,6 +146,21 @@ enum ProBackupGrace {
               let runs = object["runs"] as? Int, runs >= 0
         else { return BackupMaintenance.graceRunsBeforeAsking }
         return min(runs, BackupMaintenance.graceRunsBeforeAsking)
+    }
+
+    /// Uses up the grace: this Mac has seen an explicit value, so a peer deleting the key later
+    /// cannot buy more runs. Best effort; the count read fails toward skipping anyway.
+    static func exhaust(profile: String, appSupport: URL = AppSupport.directory()) {
+        guard used(profile: profile, appSupport: appSupport)
+                < BackupMaintenance.graceRunsBeforeAsking else { return }
+        let url = url(profile: profile, appSupport: appSupport)
+        guard let data = try? JSONSerialization.data(
+                withJSONObject: ["runs": BackupMaintenance.graceRunsBeforeAsking]),
+              (try? data.write(to: url, options: .atomic)) != nil else {
+            AppLogger.collect.warning("ProBackupGrace: could not record the explicit choice")
+            return
+        }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     /// Counts one run. Throws when the count cannot be saved; the caller then skips.

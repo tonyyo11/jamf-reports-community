@@ -20,7 +20,8 @@ versions in this repository map to git tags.
   **Back up Jamf Pro in this folder** in Backups (or set `backup.pro_on_synced_storage`). A
   workspace that already ran scheduled backups there keeps backing up for three more scheduled
   runs while Needs attention asks, then skips Jamf Pro and shows each backup as Partial until
-  you choose; a new workspace asks before its first backup. Local storage is unchanged. (#305)
+  you choose; a new workspace asks before its first backup. Choosing no skips Jamf Pro without
+  a Partial run. Local storage is unchanged. (#305)
 
 ### Fixed
 
@@ -80,7 +81,8 @@ versions in this repository map to git tags.
 - A Jamf Pro backup holds LDAP, SMTP and API-client configuration and scripts that can contain
   secrets, so on storage other Macs reach it is no longer written without the organization's
   decision. Each Mac confirms the choice once before a shared `config.yaml` can turn it on;
-  turning it off applies at once. (#305)
+  turning it off applies at once. A value the app cannot read as true or false, a `config.yaml`
+  that does not decode, and a folder another Mac marked as not shared all keep Jamf Pro out. (#305)
 
 ## [2.11.0] - 2026-10-27
 

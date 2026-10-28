@@ -55,12 +55,19 @@ enum BackupMaintenance {
         _ backupsRoot: URL, profile: String,
         volumeIsLocal: @Sendable (URL) -> Bool?,
         syncProbe: CloudStorage.SyncProbe = .live,
-        unreadableConfigIsShared: Bool = true
+        unreadableConfigIsShared: Bool = true,
+        pinnedIsShared: Bool = false,
+        appSupport: URL = AppSupport.directory()
     ) -> String? {
         if let storage = CloudStorage.sharedStorage(
             for: backupsRoot, volumeIsLocal: volumeIsLocal, syncProbe: syncProbe) {
             if case .syncMarker = storage { return "in \(storage.displayName)" }
             return "on \(storage.displayName)"
+        }
+        // A peer can write `shared_workspace.enabled: false`, or break the file, to make a shared
+        // workspace look local; a pin on this Mac (`SharedConfigPin.appliesTo`) says it was shared.
+        if pinnedIsShared, SharedConfigPin.hasPin(profile: profile, appSupport: appSupport) {
+            return "in a shared workspace"
         }
         return sharedWorkspaceEnabled(
             profile: profile, unreadableConfigIsShared: unreadableConfigIsShared)
@@ -245,9 +252,10 @@ enum BackupMaintenance {
         }
     }
 
-    /// Whether `backups/` already holds a scheduled backup with a Jamf Pro part: the workspace
-    /// relied on scheduled Jamf Pro backups before the choice existed. One with a skipped or
-    /// failed Jamf Pro part is not that. Another Mac's counts, since it is the folder's history.
+    /// Whether this Mac already made a scheduled backup with a Jamf Pro part in `backups/`: the
+    /// workspace relied on them before the choice existed. One with a skipped or failed Jamf Pro
+    /// part is not that, and neither is a folder without this Mac's `.jrc-host` stamp, since a
+    /// peer can plant one in a synced folder.
     static func hasScheduledJamfProBackup(profile: String) -> Bool {
         guard let root = backupsRoot(for: profile),
               let entries = try? FileManager.default.contentsOfDirectory(
@@ -256,6 +264,7 @@ enum BackupMaintenance {
         return entries.contains { url in
             (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
                 && manifestLabel(of: url)?.hasPrefix("scheduled-") == true
+                && ownerHostID(of: url) == SharedWorkspace.currentHost.id
                 && BackupProductResult.pro(inBackup: url)?.leavesNoJamfProBackup != true
         }
     }

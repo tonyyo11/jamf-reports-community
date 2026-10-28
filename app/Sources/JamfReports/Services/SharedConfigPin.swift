@@ -673,14 +673,22 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             .isDrifted(.protectBackupOnSyncedStorage)
     }
 
-    /// `backup.pro_on_synced_storage` as this Mac may use it, by the same rule. Nil when the key
-    /// is absent: the operator has not chosen, which is not a no.
-    static func proBackupOnSyncedStorage(
+    /// `backup.pro_on_synced_storage` as this Mac may use it, by the same rule. An absent key is
+    /// `notChosen`, which is not a no; a true that waits for a Confirm is its own state.
+    static func proBackupSetting(
         _ configured: Bool?, profile: String, appSupport: URL = AppSupport.directory()
-    ) -> Bool? {
-        guard let configured else { return nil }
-        return configured && !check(profile: profile, appSupport: appSupport)
-            .isDrifted(.proBackupOnSyncedStorage)
+    ) -> ProBackup.Setting {
+        guard let configured else { return .notChosen }
+        guard configured else { return .declined }
+        return check(profile: profile, appSupport: appSupport).isDrifted(.proBackupOnSyncedStorage)
+            ? .awaitingConfirmation : .allowed
+    }
+
+    /// Whether this Mac holds a pin for `profile`, which only a shared workspace ever gets: the
+    /// workspace was shared once, whatever config.yaml says now.
+    static func hasPin(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
+        FileManager.default.fileExists(
+            atPath: storeURL(profile: profile, appSupport: appSupport).path)
     }
 
     // MARK: - Folder overrides
