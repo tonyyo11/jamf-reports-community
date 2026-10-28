@@ -156,6 +156,49 @@ final class AccessibilitySweepTests: XCTestCase {
         XCTAssertTrue(label.contains("down"), "Downward delta must be announced as 'down'")
     }
 
+    /// The direction word follows the number and the verdict word follows the tile's tone:
+    /// a stale count that fell is "down, better", one that rose is "up, worse".
+    func testStatTileLabelSaysDirectionOfNumberAndVerdict() {
+        let fell = StatTile.accessibilityLabel(
+            label: "Stale Devices", value: "37", delta: "−5", deltaTrend: .up, sub: nil
+        )
+        XCTAssertEqual(fell, "Stale Devices: 37, down −5, better")
+        let rose = StatTile.accessibilityLabel(
+            label: "Stale Devices", value: "47", delta: "+5", deltaTrend: .down, sub: nil
+        )
+        XCTAssertEqual(rose, "Stale Devices: 47, up +5, worse")
+        let share = StatTile.accessibilityLabel(
+            label: "FileVault", value: "91.0%", delta: "−1.0pp", deltaTrend: .down, sub: nil
+        )
+        XCTAssertEqual(share, "FileVault: 91.0%, down −1.0pp, worse")
+    }
+
+    /// A tile with no verdict announces no direction.
+    func testStatTileLabelOmitsFlatDelta() {
+        let label = StatTile.accessibilityLabel(
+            label: "Managed Computers", value: "500", delta: "+12", deltaTrend: .flat, sub: nil
+        )
+        XCTAssertEqual(label, "Managed Computers: 500")
+    }
+
+    /// The Overview tile takes its verdict from `Metric.polarity`, as the Trends hero does.
+    func testOverviewTileTrendFollowsPolarity() {
+        XCTAssertEqual(OverviewView.tileTrend(
+            metric: .stale, previous: 10, current: 8, comparable: true), .up)
+        XCTAssertEqual(OverviewView.tileTrend(
+            metric: .stale, previous: 8, current: 10, comparable: true), .down)
+        XCTAssertEqual(OverviewView.tileTrend(
+            metric: .fileVault, previous: 90, current: 91, comparable: true), .up)
+        XCTAssertEqual(OverviewView.tileTrend(
+            metric: .fileVault, previous: 91, current: 90, comparable: true), .down)
+        XCTAssertEqual(OverviewView.tileTrend(
+            metric: .mobileJailbroken, previous: 1, current: 3, comparable: true), .down)
+        XCTAssertEqual(OverviewView.tileTrend(
+            metric: .managedDevices, previous: 400, current: 450, comparable: true), .flat)
+        XCTAssertEqual(OverviewView.tileTrend(
+            metric: .fileVault, previous: 90, current: 91, comparable: false), .flat)
+    }
+
     // MARK: - Chart wiring VoiceOver contract
 
     /// TrendsView hero chart uses .accessibilityChartDescriptor(TrendLineChartDescriptor(...)).

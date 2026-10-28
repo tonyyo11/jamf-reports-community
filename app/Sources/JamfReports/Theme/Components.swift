@@ -475,7 +475,8 @@ struct StatTile: View {
                 if let delta {
                     HStack(spacing: 3) {
                         if deltaTrend != .flat {
-                            Image(systemName: deltaPointsUp(delta) ? "arrow.up" : "arrow.down")
+                            Image(systemName: Self.deltaPointsUp(delta, trend: deltaTrend)
+                                    ? "arrow.up" : "arrow.down")
                                 .font(.system(size: 10, weight: .bold))
                         }
                         Text(delta)
@@ -526,12 +527,11 @@ struct StatTile: View {
         sub: String?
     ) -> String {
         var parts = ["\(label): \(value)"]
-        if let delta {
-            switch deltaTrend {
-            case .up:   parts.append("up \(delta)")
-            case .down: parts.append("down \(delta)")
-            case .flat: break
-            }
+        // The direction word follows the number; "better"/"worse" is the tile's verdict, so a
+        // stale count that fell reads "down, better" and one that rose reads "up, worse".
+        if let delta, deltaTrend != .flat {
+            let direction = deltaPointsUp(delta, trend: deltaTrend) ? "up" : "down"
+            parts.append("\(direction) \(delta), \(deltaTrend == .up ? "better" : "worse")")
         }
         if let sub { parts.append(sub) }
         return parts.joined(separator: ", ")
@@ -545,15 +545,14 @@ struct StatTile: View {
         }
     }
 
-    /// Arrow glyph reflects the delta's literal numeric sign ("+"/"−" prefix),
-    /// independent of `deltaTrend`'s good/bad color. A metric like Stale
-    /// Devices can trend "bad" (red, `deltaTrend == .down`) while the raw
-    /// count still went up — the arrow must say up, matching the number,
-    /// while the color still says bad.
-    private func deltaPointsUp(_ delta: String) -> Bool {
+    /// Arrow glyph and VoiceOver direction reflect the delta's literal numeric sign
+    /// ("+"/"−" prefix), independent of `deltaTrend`'s good/bad color. A metric like Stale
+    /// Devices can trend "bad" (red, `deltaTrend == .down`) while the raw count still
+    /// went up — the arrow must say up, matching the number, while the color says bad.
+    nonisolated static func deltaPointsUp(_ delta: String, trend: Trend) -> Bool {
         if delta.hasPrefix("+") { return true }
         if delta.hasPrefix("−") || delta.hasPrefix("-") { return false }
-        return deltaTrend == .up
+        return trend == .up
     }
 
     private var defaultSparklineColor: Color {

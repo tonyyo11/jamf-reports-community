@@ -1130,14 +1130,8 @@ struct OverviewView: View {
             }
         }()
 
-        let trend: StatTile.Trend = {
-            guard lastValue != nil else { return .flat }
-            if diff == 0 { return .flat }
-            if metric == .stale {
-                return diff < 0 ? .up : .down // lower stale is good (up)
-            }
-            return diff > 0 ? .up : .down
-        }()
+        let trend = Self.tileTrend(metric: metric, previous: prev, current: current,
+                                   comparable: comparable && lastValue != nil)
 
         // DRAFT — needs visual verification. Two captions share this line:
         // the Active Devices clarification (redefined 2.6 to exclude stale
@@ -1191,6 +1185,19 @@ struct OverviewView: View {
         // rather than growing the row. The caption keeps to one line.
         .lineLimit(1)
         .truncationMode(.tail)
+    }
+
+    /// The tile's good/bad verdict, from the same rule as the Trends hero (`TrendChange`,
+    /// `Metric.polarity`): a metric with no good direction, or no comparison, is flat.
+    static func tileTrend(
+        metric: TrendSeries.Metric, previous: Double, current: Double, comparable: Bool
+    ) -> StatTile.Trend {
+        guard comparable else { return .flat }
+        switch TrendChange(metric: metric, first: previous, last: current).verdict {
+        case .better: return .up
+        case .worse: return .down
+        case .neutral: return .flat
+        }
     }
 
     /// Lines a score card's title may take: two for the fixed titles, one for the compliance
