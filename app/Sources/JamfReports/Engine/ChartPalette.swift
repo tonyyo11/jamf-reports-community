@@ -44,6 +44,8 @@ enum ChartPalette {
     ]
 
     /// Hues no metric uses, so an agent series never shares a colour with a metric on a chart.
+    // shortcut: 4 hues x 3 shades hashed alone, so two agents collide about 8% of the time;
+    // upgrade if workspaces name many agents.
     private static let agentSlots: [Slot] = [
         Slot(dark: [0xE87E87, 0xEE9FA6, 0xF4BEC3], light: [0xD12533, 0xA41D28, 0x76151D]),  // crimson
         Slot(dark: [0xE272E6, 0xEA98ED, 0xF1BAF3], light: [0xB821BE, 0x921A96, 0x69136B]),  // magenta
@@ -127,7 +129,9 @@ enum ChartPalette {
         // Apple jumped from 15 to 26 (iOS from 18), so later majors close up on the gap;
         // macOS 11 to 15 and 26 to 28 (iOS 15 to 18 and 26 to 27) never share a hue.
         let release = major >= 20 ? major - 6 : major
-        let steps = parts.dropFirst().prefix(2).reduce(0) { $0 + ($1 ?? 0) }
+        // Snapshot text can hold any digits; the cap keeps the sum from overflowing. Under
+        // minor + patch mod 3, 15.6 and 15.7.2 (and 26.6.2 and 26.7.1) share a shade.
+        let steps = parts.dropFirst().prefix(2).reduce(0) { $0 + min($1 ?? 0, 1_000) }
         return hex(slot: release, shade: steps, scheme: scheme)
     }
 

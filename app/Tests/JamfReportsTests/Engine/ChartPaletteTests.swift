@@ -165,6 +165,22 @@ final class ChartPaletteTests: XCTestCase {
         }
     }
 
+    /// The known collisions of the 6-step shift: a change to it must be deliberate.
+    func testKnownMajorHueCollisionsArePinned() {
+        func hex(_ major: String) -> UInt32 { ChartPalette.hex(forVersion: major, scheme: .dark) }
+        XCTAssertEqual(hex("10"), hex("28"))
+        XCTAssertEqual(hex("11"), hex("29"))
+    }
+
+    func testAnAbsurdVersionStringNeitherTrapsNorLeavesThePalette() {
+        let huge = "9223372036854775807"
+        for key in ["26.\(huge).\(huge)", "\(huge).\(huge)", "99999999999999999999.1", "26..", "."] {
+            XCTAssertNoThrow(ChartPalette.hex(forVersion: key, scheme: .light))
+        }
+        let capped = ChartPalette.hex(forVersion: "26.\(huge).\(huge)", scheme: .dark)
+        XCTAssertEqual(capped, ChartPalette.hex(forVersion: "26.1000.1000", scheme: .dark))
+    }
+
     func testMinorAndPatchStepTheShadeOfOneHue() {
         // Same major, so the same slot; 26.6, 26.7 and 26.8 take the three shades in turn.
         let shades = ["26.6", "26.7", "26.8"].map { ChartPalette.hex(forVersion: $0, scheme: .dark) }
