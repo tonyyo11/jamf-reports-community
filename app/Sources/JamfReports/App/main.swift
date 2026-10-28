@@ -272,7 +272,7 @@ private func scheduledRunSingleBody(
     // The run's day for its summary and its metric alerts, however long the collect takes.
     let runStart = Date()
     guard ProfileService.isValid(profile) else {
-        fputs("[error] Invalid profile '\(profile)'\n", stderr)
+        fputs("[error] Invalid profile '\(ConfigSchema.displayText(profile))'\n", stderr)
         return 1
     }
     guard let workspace = ProfileService.workspaceURL(for: profile) else {
@@ -825,7 +825,7 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
 @Sendable
 func runCheck(profile: String) -> Int32 {
     guard ProfileService.isValid(profile) else {
-        fputs("[error] Invalid profile '\(profile)'\n", stderr)
+        fputs("[error] Invalid profile '\(ConfigSchema.displayText(profile))'\n", stderr)
         return 1
     }
     guard let workspace = ProfileService.workspaceURL(for: profile) else {
@@ -929,7 +929,7 @@ private func severityRank(_ severity: DoctorSeverity) -> Int {
 @Sendable
 func runSchoolCheck(profile: String) -> Int32 {
     guard ProfileService.isValid(profile) else {
-        fputs("[error] Invalid profile '\(profile)'\n", stderr)
+        fputs("[error] Invalid profile '\(ConfigSchema.displayText(profile))'\n", stderr)
         return 1
     }
     guard let workspace = ProfileService.workspaceURL(for: profile) else {
