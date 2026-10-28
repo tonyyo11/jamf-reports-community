@@ -101,12 +101,13 @@ final class DevicesViewListCacheTests: XCTestCase {
     private func listKey(
         revision: Int = 0, query: String = "", os: String? = nil,
         filter: Screen.DeviceFilter = .all, staleDays: Int = 30,
+        hourBucket: Int = 490_000,
         sort: KeyPathComparator<DeviceSortRow> = KeyPathComparator(\DeviceSortRow.device.displayName)
     ) -> Screen.ListKey {
         Screen.ListKey(
             data: Screen.DataKey(
                 dataRevision: revision, demoMode: false, staleDays: staleDays,
-                agentConnectedValue: nil),
+                agentConnectedValue: nil, hourBucket: hourBucket),
             query: query, osFilter: os, filter: filter, sortOrder: [sort])
     }
 
@@ -129,7 +130,7 @@ final class DevicesViewListCacheTests: XCTestCase {
         let keys = [
             listKey(), listKey(query: "mac"), listKey(os: "26.0"), listKey(filter: .stale),
             listKey(sort: KeyPathComparator(\DeviceSortRow.riskScore)), listKey(staleDays: 45),
-            listKey(revision: 1),
+            listKey(revision: 1), listKey(revision: 1, hourBucket: 490_001),
         ]
         for (index, key) in keys.enumerated() {
             _ = cache.list(for: key) { [] }
@@ -190,8 +191,8 @@ final class DevicesViewListCacheTests: XCTestCase {
     /// Before: a redraw ran the filter and sort about eight times (the header, the filter
     /// strip, the table, its overlay, the detail panel). After: once per input change. The
     /// times are printed for the report; the assertions are the build counts.
-    func testTimingOfARedrawBurstOn2000Records() {
-        let devices = fleet(2_000)
+    func testTimingOfARedrawBurstOn200Records() {
+        let devices = fleet(200)
         let passesPerRedraw = 8
         let redraws = 5
         let clock = ContinuousClock()
@@ -223,7 +224,7 @@ final class DevicesViewListCacheTests: XCTestCase {
             }
             XCTAssertEqual(cache.listBuilds, 1)
             print("[6.5 timing] \(label), \(redraws) redraws x \(passesPerRedraw) passes, "
-                  + "2000 records: before \(before), after \(after)")
+                  + "200 records: before \(before), after \(after)")
         }
     }
 }

@@ -120,7 +120,8 @@ struct DevicesView: View {
     private var dataKey: DataKey {
         DataKey(
             dataRevision: dataRevision, demoMode: workspace.demoMode, staleDays: staleDays,
-            agentConnectedValue: configuredAgent?.connectedValue)
+            agentConnectedValue: configuredAgent?.connectedValue,
+            hourBucket: Int(Date().timeIntervalSince1970 / 3600))
     }
 
     /// The filtered, sorted list: rebuilt only when `ListKey`'s inputs change, so a redraw
@@ -1318,8 +1319,7 @@ struct DevicesView: View {
         let loaded = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.load(profile: profile, demoMode: demoMode)
         }.value
-        snapshot = loaded
-        dataRevision += 1
+        applyLoaded(snapshot: loaded)
         sourceDates = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode)
         }.value
@@ -1342,14 +1342,24 @@ struct DevicesView: View {
             .first { !$0.column.trimmingCharacters(in: .whitespaces).isEmpty }?
             .column ?? ""
         if !demoMode, !agentColumn.isEmpty {
-            agentStatusLookup = await Task.detached(priority: .userInitiated) {
+            applyLoaded(agentStatusLookup: await Task.detached(priority: .userInitiated) {
                 RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
-            }.value
+            }.value)
         } else {
-            agentStatusLookup = [:]
+            applyLoaded(agentStatusLookup: [:])
         }
-        dataRevision += 1
         isLoading = false
+    }
+
+    /// The one writer of `snapshot` and `agentStatusLookup`: the cached list and ratings are
+    /// keyed on `dataRevision`, so a write that skipped the bump would serve stale rows.
+    private func applyLoaded(
+        snapshot newSnapshot: DeviceInventorySnapshot? = nil,
+        agentStatusLookup newLookup: [String: String]? = nil
+    ) {
+        if let newSnapshot { snapshot = newSnapshot }
+        if let newLookup { agentStatusLookup = newLookup }
+        dataRevision += 1
     }
 
     private func loadSelectedDeviceDetail() async {

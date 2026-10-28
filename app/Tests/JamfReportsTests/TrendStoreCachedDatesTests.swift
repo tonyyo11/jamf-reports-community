@@ -49,12 +49,27 @@ final class TrendStoreCachedDatesTests: XCTestCase {
         XCTAssertEqual(store.points(metric: .fileVault).map(\.date), expected)
     }
 
-    func testTheBandTrendFindsEachDaysCountThroughTheDayLookup() {
+    func testTheBandTrendTakesTheFirstPointOfADayAndFallsBackToTheSummary() {
         let bands = ["NIST": MSCPBandCounts(pass: 50, low: 30, medLow: 15, medium: 4, high: 1, noData: 9)]
-        let store = TrendStore(
-            summaries: [summary("2026-05-01", bands: bands), summary("2026-05-02", bands: bands)],
-            range: .all)
-        // 50 + 30 + 15 + 4 + 1: the summary's own counts less the no-data devices.
-        XCTAssertEqual(store.points(metric: .mscpBandTrend).map(\.value), [100, 100])
+        let summaries = [summary("2026-05-01", bands: bands), summary("2026-05-02", bands: bands)]
+        let day1 = SummaryJSONParser.dateFormatter.date(from: "2026-05-01")!
+        func point(_ date: Date, pass: Int) -> MSCPChartDataBuilder.BandPoint {
+            .init(
+                date: date,
+                counts: MSCPBandCounts(pass: pass, low: 3, medLow: 0, medium: 0, high: 0, noData: 0),
+                isSalvaged: false)
+        }
+        let snapshot = TrendStore.TrendSnapshot(
+            summaries: summaries, latestSnapshotDate: nil, hasEverFetchedLive: true,
+            bandSeries: ["NIST": [
+                point(day1.addingTimeInterval(6 * 3600), pass: 7),
+                point(day1.addingTimeInterval(7 * 3600), pass: 40),
+            ]],
+            baselineNames: ["NIST"])
+        let store = TrendStore()
+        store.apply(snapshot, profile: "p", range: .all, generation: store.beginLoading())
+        // Day 1: the first ea-results point (7 + 3), not the second (40 + 3) or the summary's 100.
+        // Day 2 has no point, so the summary's counts less no-data (100).
+        XCTAssertEqual(store.points(metric: .mscpBandTrend).map(\.value), [10, 100])
     }
 }

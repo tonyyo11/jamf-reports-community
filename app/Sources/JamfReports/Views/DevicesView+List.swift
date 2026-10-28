@@ -10,6 +10,10 @@ extension DevicesView {
         var demoMode: Bool
         var staleDays: Int
         var agentConnectedValue: String?
+        /// Hours since the epoch. Staleness, the contact gap and so the risk rating are measured
+        /// against now (`StaleRule` counts elapsed 24-hour periods), so a list built hours ago
+        /// is rebuilt on the next redraw instead of disagreeing with the live per-row stale mark.
+        var hourBucket: Int
     }
 
     /// Every input of the filtered, sorted list.

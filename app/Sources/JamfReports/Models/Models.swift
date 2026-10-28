@@ -389,14 +389,15 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
         return formatter.date(from: String(match.output.2) + String(match.output.3))
     }
 
-    private static let utcNameFormatter = nameFormatter(timeZone: TimeZone(identifier: "UTC"))
-    /// The older tool wrote its names in local time; fixed at first use, as the zone was per call.
-    private static let localNameFormatter = nameFormatter(timeZone: .current)
+    private static let utcNameFormatter = nameFormatter(utc: true)
+    /// The older tool wrote its names in local time: the zone is left unset so it follows the
+    /// default zone.
+    private static let localNameFormatter = nameFormatter(utc: false)
 
-    private static func nameFormatter(timeZone: TimeZone?) -> DateFormatter {
+    private static func nameFormatter(utc: Bool) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
+        if utc { formatter.timeZone = TimeZone(identifier: "UTC") }
         formatter.dateFormat = "yyyyMMddHHmmss"
         return formatter
     }
