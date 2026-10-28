@@ -532,7 +532,9 @@ extension HtmlReport {
         guard let dir = protectDataDir else {
             return .omitted("not configured: protect.enabled is off in config.yaml")
         }
-        let alerts = loadProtectJSON(kind: "protect-alerts", dataDir: dir)
+        guard let alerts = loadProtectJSON(kind: "protect-alerts", dataDir: dir) else {
+            return .omitted("the newest protect-alerts file could not be read")
+        }
         guard !alerts.isEmpty else { return .omitted("no Protect alerts in the snapshot") }
 
         var bySeverity: [String: [[String: Any]]] = [:]
@@ -740,8 +742,9 @@ extension HtmlReport {
     // MARK: - Protect helpers
 
     /// Load JSON for a Protect kind (e.g. `protect-alerts`) from `dataDir`.
-    /// Same algorithm as `loadJSON(kind:)`, parameterized for test callers.
-    private func loadProtectJSON(kind: String, dataDir: URL) -> [[String: Any]] {
+    /// Same algorithm as `loadJSON(kind:)`, parameterized for test callers. Empty when there is no
+    /// snapshot; nil when the newest file is there but cannot be read or parsed.
+    private func loadProtectJSON(kind: String, dataDir: URL) -> [[String: Any]]? {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
@@ -764,12 +767,12 @@ extension HtmlReport {
         }
         // Shared rule (filename stamp, manifest + conflict copies excluded).
         guard let newest = FileManager.newestSnapshot(among: candidates) else { return [] }
-        guard let data = BoundedFile.readLogged(newest) else { return [] }
+        guard let data = BoundedFile.readLogged(newest) else { return nil }
         guard let result = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
             AppLogger.platform.debug(
                 "loadProtectJSON: JSON parse failed for '\(newest.path, privacy: .private)'"
             )
-            return []
+            return nil
         }
         return result
     }

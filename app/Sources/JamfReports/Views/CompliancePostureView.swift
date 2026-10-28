@@ -10,6 +10,8 @@ struct CompliancePostureView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
     @State private var mscpResults: [MSCPComplianceService.BaselineResult] = []
+    /// The newest ea-results file exists but could not be read, so the proxy below is a stand-in.
+    @State private var mscpUnreadable = false
     @State private var hasLoaded = false
     /// Bumped by each reload, so a read that a newer one replaced is dropped.
     @State private var loadGeneration = 0
@@ -32,6 +34,14 @@ struct CompliancePostureView: View {
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode && hasRead {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+            }
+
+            if mscpUnreadable && hasRead {
+                InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+                    Text("The newest ea-results file could not be read, so the mSCP baselines "
+                        + "are not shown; the control-gap proxy below stands in. The file is "
+                        + "named in Settings › Logging.")
+                }
             }
 
             // Show proxy note only when using proxy compliance (no mSCP baselines)
@@ -93,6 +103,7 @@ struct CompliancePostureView: View {
         if workspace.demoMode {
             snapshot = DemoData.compliancePostureSnapshot
             mscpResults = DemoData.complianceBaselineResults
+            mscpUnreadable = false
             hasRead = true
             return
         }
@@ -103,12 +114,13 @@ struct CompliancePostureView: View {
             // ea-results are parsed whole; on a large fleet that stalled the screen.
             let loaded = await Task.detached(priority: .userInitiated) {
                 (CompliancePostureService.load(profile: profile),
-                 Self.loadBaselineResults(profile: profile))
+                 Self.loadBaselineOutcome(profile: profile))
             }.value
             // A read that a profile switch or a later refresh replaced must not paint.
             guard generation == loadGeneration else { return }
             snapshot = loaded.0
-            mscpResults = loaded.1
+            mscpResults = loaded.1.results
+            mscpUnreadable = loaded.1.unreadable
             hasRead = true
         }
     }
@@ -117,12 +129,18 @@ struct CompliancePostureView: View {
     nonisolated static func loadBaselineResults(
         profile: String
     ) -> [MSCPComplianceService.BaselineResult] {
+        loadBaselineOutcome(profile: profile).results
+    }
+
+    nonisolated static func loadBaselineOutcome(
+        profile: String
+    ) -> (results: [MSCPComplianceService.BaselineResult], unreadable: Bool) {
         guard let workspaceURL = ProfileService.workspaceURL(for: profile),
               let config = try? ConfigLoader.load(
                   from: workspaceURL.appendingPathComponent("config.yaml")),
               let baselines = config.compliance?.resolvedBaselines, !baselines.isEmpty
-        else { return [] }
-        return MSCPComplianceService.load(profile: profile, baselines: baselines)
+        else { return ([], false) }
+        return MSCPComplianceService.loadChecked(profile: profile, baselines: baselines)
     }
 
     // MARK: - Sections

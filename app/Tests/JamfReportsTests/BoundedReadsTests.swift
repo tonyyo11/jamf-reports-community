@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import JamfReports
 
@@ -619,15 +620,158 @@ final class BoundedReadsTests: XCTestCase {
         let cache = root.appendingPathComponent("device-detail/computer-1.json")
         try fm.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: cache)
+        let stamp = Date(timeIntervalSince1970: 1_700_000_000)
+        try fm.setAttributes([.modificationDate: stamp], ofItemAtPath: cache.path)
         try fifo(at: cache.appendingPathExtension("meta"))
         let date = within { freshnessTimestamp(for: cache) }
-        XCTAssertNotNil(date.flatMap { $0 })
+        XCTAssertEqual(date.flatMap { $0 }, stamp)
     }
 
-    func testBundleSeedingSkipsAFIFOSnapshotAndReadsTheRest() throws {
+    func testBundleSeedingSkipsAFIFOSnapshotAndSeedsTheRegularOne() throws {
         let dir = root.appendingPathComponent("seed-data", isDirectory: true)
         try fifo(at: dir.appendingPathComponent("computers/computers_20991231T000000.json"))
+        let real = dir.appendingPathComponent("computers/computers_20260101T000000.json")
+        try Data(#"[{"serialNumber":"SERIAL-ABC123"}]"#.utf8).write(to: real)
         let count = within { DiagnosticRedactor().seedFromWorkspace(dir) }
-        XCTAssertEqual(count, 0)
+        XCTAssertEqual(count, 1)
+    }
+
+    func testBundleLogReadKeepsTheTailOfAnOversizeLog() throws {
+        let logs = root.appendingPathComponent("bundle-logs", isDirectory: true)
+        let staging = root.appendingPathComponent("bundle-staging", isDirectory: true)
+        try fm.createDirectory(at: logs, withIntermediateDirectories: true)
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        let log = logs.appendingPathComponent("run.20260601T000000.log")
+        let filler = Data(repeating: UInt8(ascii: "x"), count: 5 * 1024 * 1024 + 100)
+        try (filler + Data("\nEND-OF-LOG".utf8)).write(to: log)
+        let stamp = Date(timeIntervalSince1970: 1_700_000_000)
+        try fm.setAttributes([.modificationDate: stamp], ofItemAtPath: log.path)
+        let entries = DiagnosticBundleService.collectLogs(
+            from: logs, into: staging, redactor: nil, days: 7,
+            now: stamp.addingTimeInterval(3600))
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertNil(entries.first?.skipped)
+        let staged = try String(
+            contentsOf: staging.appendingPathComponent("logs/run.20260601T000000.log"),
+            encoding: .utf8)
+        XCTAssertTrue(staged.hasSuffix("END-OF-LOG"))
+        XCTAssertLessThanOrEqual(staged.utf8.count, 5 * 1024 * 1024)
+    }
+
+    func testCoreDashboardAndSchoolDashboardTreatAnUnreadableNewestFileAsNoCachedData() throws {
+        let dataDir = root.appendingPathComponent("dash-data", isDirectory: true)
+        try fifo(at: dataDir.appendingPathComponent("policy-status/policy-status_20991231T000000.json"))
+        try fifo(at: dataDir.appendingPathComponent(
+            "school-ibeacons/school-ibeacons_20991231T000000.json"))
+        let core = CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: Workbook())
+        let school = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: Workbook())
+        let coreError = within { () -> String in
+            do { try core.writePolicyHealth(); return "no error" } catch { return "\(error)" }
+        }
+        let schoolError = within { () -> String in
+            do { try school.writeSchoolIBeacons(); return "no error" } catch { return "\(error)" }
+        }
+        XCTAssertTrue(coreError?.hasPrefix("noCachedData") == true, "\(coreError ?? "hung")")
+        XCTAssertTrue(schoolError?.hasPrefix("noCachedData") == true, "\(schoolError ?? "hung")")
+    }
+
+    // MARK: - Links and the unresolved candidate
+
+    func testASnapshotFolderThatIsALinkIsRefusedByThePickerAndTheReader() throws {
+        let dataDir = root.appendingPathComponent("link-data", isDirectory: true)
+        let elsewhere = root.appendingPathComponent("elsewhere/policy-status", isDirectory: true)
+        let name = "policy-status_20260601T000000.json"
+        try fm.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(to: elsewhere.appendingPathComponent(name))
+        let kind = dataDir.appendingPathComponent("policy-status", isDirectory: true)
+        try link(kind, to: elsewhere)
+        XCTAssertNil(FileManager.newestJSONFile(in: kind))
+        XCTAssertNil(BoundedFile.readLogged(kind.appendingPathComponent(name), inside: dataDir))
+    }
+
+    func testALinkAtTheNewestNameToASiblingIsReturnedAsALinkAndRefused() throws {
+        let kind = root.appendingPathComponent("link-name/policy-status", isDirectory: true)
+        let real = kind.appendingPathComponent("policy-status_20260601T000000.json")
+        try fm.createDirectory(at: kind, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(to: real)
+        let linked = kind.appendingPathComponent("policy-status_20260602T000000.json")
+        try link(linked, to: real)
+        let picked = try XCTUnwrap(FileManager.newestJSONFile(in: kind))
+        XCTAssertEqual(picked.lastPathComponent, linked.lastPathComponent)
+        XCTAssertNil(BoundedFile.readLogged(picked))
+        XCTAssertNil(BoundedFile.readLogged(picked, inside: kind.deletingLastPathComponent()))
+    }
+
+    func testAWorkspaceUnderVarStillReadsThroughTheUnresolvedRoot() throws {
+        XCTAssertTrue(root.path.hasPrefix("/var/"), "temp dir is not under /var: \(root.path)")
+        let dataDir = root.appendingPathComponent("var-data", isDirectory: true)
+        let kind = dataDir.appendingPathComponent("policy-status", isDirectory: true)
+        try fm.createDirectory(at: kind, withIntermediateDirectories: true)
+        try Data("[7]".utf8).write(to: kind.appendingPathComponent(
+            "policy-status_20260601T000000.json"))
+        let picked = try XCTUnwrap(FileManager.newestJSONFile(in: kind))
+        XCTAssertTrue(picked.path.hasPrefix("/var/"), "the picker resolved the path: \(picked.path)")
+        XCTAssertEqual(BoundedFile.readLogged(picked, inside: dataDir), Data("[7]".utf8))
+
+        let automation = root.appendingPathComponent("var-auto", isDirectory: true)
+        try fm.createDirectory(at: automation, withIntermediateDirectories: true)
+        let status = automation.appendingPathComponent("daily_status.json")
+        try Data(#"{"label":"daily","xlsx_report_path":"/x/r.xlsx"}"#.utf8).write(to: status)
+        XCTAssertEqual(
+            ReportLibrary.scheduledFiles(statusFiles: [status], inside: automation)["r.xlsx"],
+            RunHistoryService.humanName(from: "daily"))
+    }
+
+    // MARK: - Handles, hashing and per-kind limits
+
+    func testOpenCheckedRefusesAFIFOALinkAndAHardLinkAndHashesInChunks() throws {
+        let pipe = root.appendingPathComponent("handles/pipe")
+        try fifo(at: pipe)
+        XCTAssertEqual(within { (try? BoundedFile.openChecked(pipe)) == nil }, true)
+        let file = root.appendingPathComponent("handles/file.bin")
+        let body = Data((0..<3_000_000).map { UInt8($0 % 251) })
+        try body.write(to: file)
+        let linked = root.appendingPathComponent("handles/linked.bin")
+        try link(linked, to: file)
+        XCTAssertNil(BoundedFile.sha256Hex(linked))
+        let hard = root.appendingPathComponent("handles/hard.bin")
+        try fm.linkItem(at: file, to: hard)
+        XCTAssertNil(BoundedFile.sha256Hex(hard))
+        try fm.removeItem(at: hard)
+        XCTAssertEqual(BoundedFile.sha256Hex(file),
+                       SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined())
+    }
+
+    func testOneLimitPerKindWhateverTheSpellingOrLayout() {
+        let inventory = ["ea-results", "ea_results", "computers", "computers-list",
+                         "mobile-devices-list", "mobile_devices_list"]
+        for kind in inventory {
+            XCTAssertEqual(BoundedFile.limit(forKind: kind), BoundedFile.inventoryLimit, kind)
+        }
+        XCTAssertEqual(BoundedFile.limit(forKind: "policy-status"), BoundedFile.snapshotLimit)
+        let nested = URL(fileURLWithPath: "/w/data/ea-results/ea-results_20260101T000000.json")
+        let flat = URL(fileURLWithPath: "/w/data/computers_list_20260101T000000.json")
+        let other = URL(fileURLWithPath: "/w/data/patch-status/patch-status_20260101T000000.json")
+        XCTAssertEqual(BoundedFile.limit(for: nested), BoundedFile.inventoryLimit)
+        XCTAssertEqual(BoundedFile.limit(for: flat), BoundedFile.inventoryLimit)
+        XCTAssertEqual(BoundedFile.limit(for: other), BoundedFile.snapshotLimit)
+    }
+
+    func testAnUnreadablePlantedFileIsNotReadAsEmpty() throws {
+        let dir = root.appendingPathComponent("unreadable", isDirectory: true)
+        let pipe = dir.appendingPathComponent("protect-alerts/protect-alerts_20991231T000000.json")
+        try fifo(at: pipe)
+        let snapshot = try XCTUnwrap(within {
+            ProtectDashboardService.load(
+                overviewURL: nil, alertsURL: pipe, computersURL: nil, insightsURL: nil)
+        })
+        XCTAssertFalse(snapshot.isDetected)
+        XCTAssertEqual(snapshot.unreadableKinds, ["protect-alerts"])
+
+        let computers = dir.appendingPathComponent("computers/computers_20991231T000000.json")
+        try fifo(at: computers)
+        let counts = within { DDMDeviceStatusService.fleetDDMCounts(computersURL: computers) }
+        XCTAssertNotNil(counts, "the read hung")
+        XCTAssertNil(counts ?? nil, "an unreadable computers file is unknown, not (0, 0)")
     }
 }

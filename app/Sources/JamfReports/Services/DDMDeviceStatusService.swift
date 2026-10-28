@@ -158,16 +158,18 @@ struct DDMDeviceStatusService: Sendable {
 
     /// "DDM enabled N of M" from inventory alone — costs zero jamf-cli calls,
     /// so the screen can say DDM is on before the scan has ever run.
-    static func fleetDDMCounts(profile: String) -> (enabled: Int, total: Int) {
+    /// Nil when the newest `computers` file is there but cannot be read: unknown, not zero.
+    static func fleetDDMCounts(profile: String) -> (enabled: Int, total: Int)? {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return (0, 0) }
         return fleetDDMCounts(computersURL: FileManager.newestJSONFile(
             in: dir.appendingPathComponent("computers", isDirectory: true)))
     }
 
-    static func fleetDDMCounts(computersURL: URL?) -> (enabled: Int, total: Int) {
-        guard let computersURL, let data = BoundedFile.readLogged(computersURL),
+    static func fleetDDMCounts(computersURL: URL?) -> (enabled: Int, total: Int)? {
+        guard let computersURL else { return (0, 0) }
+        guard let data = BoundedFile.readLogged(computersURL),
               let rows = try? JSONDecoder().decode([ReportEngine.DeviceScanTarget].self, from: data)
-        else { return (0, 0) }
+        else { return FileManager.default.fileExists(atPath: computersURL.path) ? nil : (0, 0) }
         return (rows.filter(\.ddmEnabled).count, rows.count)
     }
 }

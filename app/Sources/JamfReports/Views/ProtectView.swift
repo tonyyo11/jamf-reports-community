@@ -65,11 +65,16 @@ struct ProtectView: View {
                 )
             }
 
-            if !protectConnected && !snapshot.isDetected {
+            if !snapshot.unreadableKinds.isEmpty { unreadableBanner }
+            if !protectConnected && !snapshot.isDetected && snapshot.unreadableKinds.isEmpty {
                 notConnectedState
             } else {
                 if !deepDiveEnabled { lockedDeepDiveState }
-                if snapshot.isDetected { dataSections } else { emptyState }
+                if snapshot.isDetected {
+                    dataSections
+                } else if snapshot.unreadableKinds.isEmpty {
+                    emptyState
+                }
             }
         }
         .tint(Theme.Colors.goldBright)
@@ -176,6 +181,16 @@ struct ProtectView: View {
         }
         if !snapshot.plans.isEmpty {
             plansCard
+        }
+    }
+
+    /// A newest file is there but cannot be read: the rows it would hold are unknown, not zero.
+    private var unreadableBanner: some View {
+        InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            Text("Could not be read: "
+                + snapshot.unreadableKinds.map { $0.replacingOccurrences(of: "protect-", with: "") }
+                    .joined(separator: ", ")
+                + ". Refresh to collect it again; the file is named in Settings › Logging.")
         }
     }
 

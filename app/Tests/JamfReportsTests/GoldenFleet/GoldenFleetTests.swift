@@ -562,8 +562,8 @@ final class GoldenFleetTests: XCTestCase {
         ], to: dataDir.appendingPathComponent("ddm-device-status", isDirectory: true)
             .appendingPathComponent("ddm-device-status_\(stamp).json"))
 
-        let counts = DDMDeviceStatusService.fleetDDMCounts(
-            computersURL: FileManager.newestJSONFile(in: dataDir.appendingPathComponent("computers")))
+        let counts = try XCTUnwrap(DDMDeviceStatusService.fleetDDMCounts(
+            computersURL: FileManager.newestJSONFile(in: dataDir.appendingPathComponent("computers"))))
         XCTAssertEqual(counts.enabled, 2); XCTAssertEqual(counts.total, 3)
 
         let s = DDMDeviceStatusService.load(
