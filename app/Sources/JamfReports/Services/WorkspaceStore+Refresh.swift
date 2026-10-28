@@ -525,12 +525,13 @@ extension WorkspaceStore {
     nonisolated static func staleTiers(
         profile: String,
         olderThan threshold: TimeInterval,
-        expectedKinds: [String]
+        expectedKinds: [String],
+        now: Date = Date()
     ) -> [CollectionTier] {
         let exists = workspaceExists(profile: profile)
         return [CollectionTier.inventory, .scan].filter { tier in
             let stale = staleKinds(profile: profile, tier: tier, expectedKinds: expectedKinds,
-                                   olderThan: threshold)
+                                   olderThan: threshold, now: now)
             return !stale.aged.isEmpty || (exists && !stale.neverLanded.isEmpty)
         }
     }
@@ -542,12 +543,12 @@ extension WorkspaceStore {
     /// the contradictory "missing" right after a successful first collect.
     nonisolated static func tiersWithNoData(
         profile: String, among tiers: [CollectionTier],
-        expectedKinds: [String], olderThan threshold: TimeInterval
+        expectedKinds: [String], olderThan threshold: TimeInterval, now: Date = Date()
     ) -> Set<CollectionTier> {
-        guard workspaceCollectedRecently(profile: profile) else { return [] }
+        guard workspaceCollectedRecently(profile: profile, now: now) else { return [] }
         return Set(tiers.filter { tier in
             let stale = staleKinds(profile: profile, tier: tier, expectedKinds: expectedKinds,
-                                   olderThan: threshold)
+                                   olderThan: threshold, now: now)
             return !stale.neverLanded.isEmpty && stale.aged.isEmpty
         })
     }
@@ -557,14 +558,14 @@ extension WorkspaceStore {
     /// with its cause, and this prompt's button would only force the tier again.
     private nonisolated static func staleKinds(
         profile: String, tier: CollectionTier, expectedKinds: [String],
-        olderThan threshold: TimeInterval
+        olderThan threshold: TimeInterval, now: Date
     ) -> (neverLanded: [String], aged: [String]) {
         let state = (try? WorkspacePaths.stateDir(for: profile)).map(StateFileStore.init)
         var neverLanded: [String] = []
         var aged: [String] = []
         for kind in expectedKinds where CollectionTier.tier(forReport: kind) == tier {
             if let state, lastFailureRepeatsOnRetry(kind, in: state) { continue }
-            if let age = newestSnapshotAge(profile: profile, kind: kind) {
+            if let age = newestSnapshotAge(profile: profile, kind: kind, now: now) {
                 if age >= threshold { aged.append(kind) }
             } else {
                 neverLanded.append(kind)
@@ -612,7 +613,7 @@ extension WorkspaceStore {
     /// True when any snapshot kind has a file newer than `interval` —
     /// evidence that a collect ran recently.
     nonisolated static func workspaceCollectedRecently(
-        profile: String, within interval: TimeInterval = 86_400
+        profile: String, within interval: TimeInterval = 86_400, now: Date = Date()
     ) -> Bool {
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile),
               let entries = try? FileManager.default.contentsOfDirectory(
@@ -622,7 +623,8 @@ extension WorkspaceStore {
         return entries.contains { entry in
             guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
             else { return false }
-            guard let age = newestSnapshotAge(profile: profile, kind: entry.lastPathComponent)
+            guard let age = newestSnapshotAge(
+                profile: profile, kind: entry.lastPathComponent, now: now)
             else { return false }
             return age <= interval
         }
@@ -640,20 +642,28 @@ extension WorkspaceStore {
     /// `<workspace>/jamf-cli-data/<kind>/`, or nil when none exist. JSON, except
     /// jamf-cli's dashboard, the one kind saved as a page. Only a regular file counts (`lstat`,
     /// so a link a peer planted does not make a kind look fresh), chosen and dated the way the
-    /// pickers do: the stamp in the name, mtime only for a file with none.
-    nonisolated static func newestSnapshotAge(profile: String, kind: String) -> TimeInterval? {
+    /// pickers do: the stamp in the name, mtime only for a file with none. A file dated more than
+    /// `SharedWorkspace.clockSkewTolerance` ahead of `now` is left out: a peer can name one
+    /// `..._29991231T000000.json`, which would read as fresh forever.
+    nonisolated static func newestSnapshotAge(
+        profile: String, kind: String, now: Date = Date()
+    ) -> TimeInterval? {
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile),
               let dir = try? WorkspacePaths.confinedFolder([kind], under: dataDir),
               let entries = try? FileManager.default.contentsOfDirectory(
                   at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
         else { return nil }
         let fileExtension = kind == ReportEngine.dashboardKind ? "html" : "json"
+        func isNotAhead(_ url: URL) -> Bool {
+            guard let date = FileManager.snapshotDate(of: url) else { return false }
+            return date.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance
+        }
         let regular = entries.filter {
-            $0.pathExtension == fileExtension && FileManager.isRegularFile($0)
+            $0.pathExtension == fileExtension && FileManager.isRegularFile($0) && isNotAhead($0)
         }
         guard let newest = FileManager.newestSnapshot(among: regular),
               let date = FileManager.snapshotDate(of: newest) else { return nil }
-        return max(0, Date().timeIntervalSince(date))
+        return max(0, now.timeIntervalSince(date))
     }
 
     // MARK: App-foreground registration

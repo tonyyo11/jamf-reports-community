@@ -223,12 +223,9 @@ extension ReportEngine {
                             + "— failing (use_cached_data=false)"))
             throw ReportEngineError.collectFailed(kind: kind, exitCode: 0)
         }
-        let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        let cacheNote = FileManager.newestJSONFile(in: kindDir) != nil
-            ? "skipped (using cached)"
-            : "no cached snapshot available"
+        let note = cacheNote(kind: kind, dataDir: dataDir, onLine: onLine)
         onLine(.init(timestamp: Date(), level: .warn,
-                     text: "[warn] \(kind): \(cacheNote)" + causeSuffix(cause)))
+                     text: "[warn] \(kind): \(note)" + causeSuffix(cause)))
         return KindCollectResult(
             outcome: CollectOutcome(kind: kind, exitCode: 0, cause: cause.kind), saved: false)
     }

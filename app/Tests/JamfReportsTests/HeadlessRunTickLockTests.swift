@@ -185,8 +185,51 @@ final class HeadlessRunTickLockTests: XCTestCase {
         _ = try makeWorkspace()
         addTeardownBlock { TimedProcessBox.reopen() }
         let code = LockedCode()
-        lockGiveUp(exit: { code.set($0) })()
+        lockGiveUp(.scheduledRun, workspaces: { [] }, exit: { code.set($0) })()
         XCTAssertEqual(code.value, 1)
+    }
+
+    /// The give-up names its caller and records only in the workspaces that run was for.
+    private func giveUpRecords(
+        _ caller: LockHolder, for names: [String], others: [String]
+    ) throws -> (recorded: [String: [String]], code: Int32?) {
+        let workspace = try makeWorkspace()
+        for name in others {
+            try FileManager.default.createDirectory(
+                at: workspace.root.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+        addTeardownBlock { TimedProcessBox.reopen() }
+        let code = LockedCode()
+        lockGiveUp(caller, workspaces: { names }, exit: { code.set($0) })()
+        var recorded: [String: [String]] = [:]
+        for name in [profile] + others {
+            recorded[name] = RunHistoryService.list(profile: name)
+                .flatMap { RunHistoryService.loadLog($0.logURL).map(\.text) }
+        }
+        return (recorded, code.value)
+    }
+
+    func testAScheduledRunGiveUpRecordsOnlyInItsOwnWorkspace() throws {
+        let result = try giveUpRecords(.scheduledRun, for: [profile], others: ["other"])
+
+        XCTAssertEqual(result.code, 1)
+        XCTAssertTrue(result.recorded[profile]?.contains {
+            $0.contains("[error] scheduled run: a run passed the tick lock's")
+        } == true, "\(result.recorded)")
+        XCTAssertEqual(result.recorded["other"], [], "another workspace's history is untouched")
+    }
+
+    func testACommandGiveUpNamesTheCommandAndItsProfile() throws {
+        let result = try giveUpRecords(.command, for: [profile], others: ["other"])
+
+        XCTAssertTrue(
+            result.recorded[profile]?.contains { $0.contains("[error] command: ") } == true,
+            "\(result.recorded)")
+        XCTAssertEqual(result.recorded["other"], [])
+    }
+
+    func testAScheduleNamesItsOwnWorkspace() {
+        XCTAssertEqual(workspaces(of: schedule()), [profile])
     }
 
     func testAHeldLockRunsNothingAndIsLeftAlone() async throws {

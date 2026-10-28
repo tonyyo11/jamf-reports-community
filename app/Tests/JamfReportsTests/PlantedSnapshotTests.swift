@@ -7,7 +7,11 @@ import XCTest
 final class PlantedSnapshotTests: XCTestCase {
 
     private var root: URL!
-    private var dataDir: URL { root.appendingPathComponent("acme/jamf-cli-data", isDirectory: true) }
+    private var dataDir: URL {
+        root.appendingPathComponent("acme/jamf-cli-data", isDirectory: true)
+    }
+    /// 2027-01-15; snapshot names are built from it, never from the clock.
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
@@ -94,42 +98,80 @@ final class PlantedSnapshotTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("no cached snapshot available") }, "\(lines)")
     }
 
+    /// The per-benchmark failure shares the note, so a planted link is named there too.
+    func testAnUncollectableBenchmarkSelectionNamesAPlantedLink() throws {
+        let kind = "compliance-rules"
+        let dir = try folder(kind)
+        try plant("\(kind)_20260925T060000.json", in: dir)
+        let lines = Lines()
+        let selection = ReportEngine.BenchmarkSelection(
+            titles: [], missing: ["X"], ambiguous: [], listed: [])
+
+        _ = try ReportEngine.recordUncollectableSelection(
+            kind: kind, selection: selection, configuredTitles: ["X"], dataDir: dataDir,
+            useCachedData: true, stateStore: nil,
+            collectStart: Date(timeIntervalSince1970: 1_800_000_000),
+            onLine: { lines.add($0.text) })
+
+        let warn = try XCTUnwrap(lines.all.first { $0.hasPrefix("[warn] \(kind)") })
+        XCTAssertTrue(warn.contains("\(kind)_20260925T060000.json: not a regular file"), warn)
+        XCTAssertFalse(warn.contains("using cached"), warn)
+    }
+
     // MARK: - Freshness
 
-    func testALinkDoesNotMakeAKindLookFresh() throws {
-        let dir = try folder("policy-status")
-        try plant("policy-status_\(Self.stamp(secondsAgo: 0)).json", in: dir)
-        XCTAssertNil(WorkspaceStore.newestSnapshotAge(profile: "acme", kind: "policy-status"))
+    private func age(_ kind: String = "policy-status") -> TimeInterval? {
+        WorkspaceStore.newestSnapshotAge(profile: "acme", kind: kind, now: now)
+    }
 
-        try "[]".write(
-            to: dir.appendingPathComponent("policy-status_\(Self.stamp(secondsAgo: 86_400)).json"),
-            atomically: true, encoding: .utf8)
-        let age = try XCTUnwrap(
-            WorkspaceStore.newestSnapshotAge(profile: "acme", kind: "policy-status"))
-        XCTAssertEqual(age, 86_400, accuracy: 5, "the regular file's stamp, not the link's")
+    private func land(_ kind: String, secondsAgo: TimeInterval) throws {
+        let dir = try folder(kind)
+        let name = "\(kind)_\(stamp(secondsAgo: secondsAgo)).json"
+        try "[]".write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    }
+
+    func testALinkDoesNotMakeAKindLookFresh() throws {
+        try plant("policy-status_\(stamp(secondsAgo: 0)).json", in: try folder("policy-status"))
+        XCTAssertNil(age())
+
+        try land("policy-status", secondsAgo: 86_400)
+        XCTAssertEqual(try XCTUnwrap(age()), 86_400, accuracy: 1,
+                       "the regular file's stamp, not the link's")
     }
 
     func testTheAgeIsTheStampNotARestampedMtime() throws {
-        let dir = try folder("policy-status")
-        let file = dir.appendingPathComponent("policy-status_\(Self.stamp(secondsAgo: 172_800)).json")
-        try "[]".write(to: file, atomically: true, encoding: .utf8)
-        let age = try XCTUnwrap(
-            WorkspaceStore.newestSnapshotAge(profile: "acme", kind: "policy-status"))
-        XCTAssertEqual(age, 172_800, accuracy: 5)
+        try land("policy-status", secondsAgo: 172_800)
+        XCTAssertEqual(try XCTUnwrap(age()), 172_800, accuracy: 1)
     }
 
-    private static func stamp(secondsAgo: TimeInterval) -> String {
+    /// A peer can name a file for the year 2999; it must not make the kind fresh for good.
+    func testAFileStampedFarInTheFutureIsLeftOut() throws {
+        let dir = try folder("policy-status")
+        try "[]".write(to: dir.appendingPathComponent("policy-status_29991231T000000.json"),
+                       atomically: true, encoding: .utf8)
+        XCTAssertNil(age(), "the future file alone is no snapshot")
+
+        try land("policy-status", secondsAgo: 172_800)
+        XCTAssertEqual(try XCTUnwrap(age()), 172_800, accuracy: 1)
+
+        try land("policy-status", secondsAgo: -SharedWorkspace.clockSkewTolerance / 2)
+        XCTAssertEqual(try XCTUnwrap(age()), 0, accuracy: 1,
+                       "a stamp within the skew tolerance still counts, clamped to now")
+    }
+
+    private func stamp(secondsAgo: TimeInterval) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd'T'HHmmss"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter.string(from: Date(timeIntervalSinceNow: -secondsAgo))
+        return formatter.string(from: now.addingTimeInterval(-secondsAgo))
     }
 
     // MARK: - jamf-cli's config file
 
     func testTheConfigTextIsBoundedAndNeedsAFile() throws {
         let file = root.appendingPathComponent("config.yaml")
-        try "profiles:\n  a:\n    url: https://x\n".write(to: file, atomically: true, encoding: .utf8)
+        try "profiles:\n  a:\n    url: https://x\n"
+            .write(to: file, atomically: true, encoding: .utf8)
         XCTAssertEqual(ProfileService.readConfigFileText(at: file)?.hasPrefix("profiles:"), true)
 
         try Data(repeating: 0x20, count: ProfileService.maxConfigFileBytes + 1).write(to: file)

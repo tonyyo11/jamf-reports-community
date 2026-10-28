@@ -26,7 +26,7 @@ struct Generate: AsyncParsableCommand {
         if let output { CLIRun.requireSafeOutput(output) }
         let resolved = try CLIRun.resolveTemplate(template)
         let (config, dataDir) = try CLIRun.loadProfile(profile)
-        let sheetFailures = try await CLIRun.exclusively {
+        let sheetFailures = try await CLIRun.exclusively(profile: profile) {
             try await write(config: config, dataDir: dataDir, template: resolved)
         }
         // After the lock is given back: `fail` exits the process.
@@ -121,7 +121,7 @@ struct Collect: AsyncParsableCommand {
         // profile that belongs to another product.
         if let refusal = Self.refusal(profile: profile, config: config) { CLIRun.fail(refusal) }
         let tiers = CLIRun.parseTiers(tiers)
-        try await CLIRun.exclusively {
+        try await CLIRun.exclusively(profile: profile) {
             try await Self.perform(profile: profile, tiers: tiers, force: force, config: config)
         }
     }
@@ -188,7 +188,7 @@ struct Html: AsyncParsableCommand {
                               onLine: output == nil ? CLIRun.printLogLine : nil)
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
-        try await CLIRun.exclusively {
+        try await CLIRun.exclusively(profile: profile) {
             // No run record opens here, so its items land in the app record with no run log,
             // like the GUI's manual collect.
             try await AttentionLog.recording(profile: profile) {

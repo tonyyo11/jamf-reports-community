@@ -17,7 +17,7 @@ struct Backup: AsyncParsableCommand {
         // Before the tick lock and before anything is written, once: the bridge would print
         // the same refusal and ArgumentParser would print it again as an error.
         if let refusal = Self.refusal(profile: profile) { CLIRun.fail(refusal) }
-        let code = try await CLIRun.exclusively { () -> Int32 in
+        let code = try await CLIRun.exclusively(profile: profile) { () -> Int32 in
             let bridge = await MainActor.run { CLIBridge() }
             // Label like the GUI/scheduled path so a cron'd `backup` participates in
             // the same "keep newest 10" retention instead of growing unbounded.

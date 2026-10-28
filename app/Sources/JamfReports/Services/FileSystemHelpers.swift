@@ -40,7 +40,10 @@ extension FileManager {
     /// outside `dir`, so one planted at the newest stamp would read as "never collected"; a
     /// caller that claims something about the cache (the collect's "using cached" note, the
     /// dashboard section) asks this first. A screen that only reads data keeps the drop: a
-    /// refused link is not data.
+    /// refused link is not data. A link that stays inside `dir` is reported too, though the
+    /// pickers would have resolved it: nothing here writes one. The listing follows a folder
+    /// swapped for a link after the caller confined it; nothing is opened, only the newest name
+    /// is read.
     static func plantedNewestSnapshot(in dir: URL, fileExtension: String) -> String? {
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []

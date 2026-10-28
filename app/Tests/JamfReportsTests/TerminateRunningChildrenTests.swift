@@ -105,6 +105,19 @@ final class TerminateRunningChildrenTests: XCTestCase {
         XCTAssertEqual(CLIBridge.terminateRunningChildren(grace: 0.1), 0)
     }
 
+    /// Looking up which workspaces to record in can launch `config list`; the stalled call must
+    /// already be gone by then, not running on beside it.
+    func testTheGiveUpStopsTheChildBeforeItLooksUpWorkspaces() async throws {
+        let (exit, pid) = try await startChild("echo up $$ >&2; exec sleep 60")
+        let goneAtLookup = LockedFlag()
+
+        exitAfterLockGiveUp(
+            workspaces: { goneAtLookup.set(Self.isGone(pid)); return [] }, exit: { _ in })
+
+        XCTAssertTrue(goneAtLookup.value, "the child still ran when workspaces were looked up")
+        _ = try await exit.value
+    }
+
     /// The give-up stops the child before it ends the process.
     func testTheGiveUpStopsTheChildBeforeItExits() async throws {
         let (exit, pid) = try await startChild("echo up $$ >&2; exec sleep 60")

@@ -126,6 +126,7 @@ final class RunTickTests: XCTestCase {
         XCTAssertEqual(run.name, "Background item")
         let text = RunHistoryService.loadLog(run.logURL).map(\.text)
         XCTAssertTrue(text.contains { $0.contains("-hour limit and was stopped") }, "\(text)")
+        XCTAssertTrue(text.contains { $0.hasPrefix("[error] tick: ") }, "\(text)")
     }
 }
 

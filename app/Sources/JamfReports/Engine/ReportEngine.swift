@@ -2738,6 +2738,25 @@ struct ReportEngine: Sendable {
         }
     }
 
+    /// What a collect that landed nothing says about the cache. Only claims "using cached" when a
+    /// cached snapshot for this kind exists, otherwise the generate step has nothing to fall back
+    /// to and the copy would mislead. The kind folder is confined like the snapshot writer's, so a
+    /// link planted at its name is refused with one `[warn]`; a link planted at the newest stamp
+    /// is named, not read as "none". Shared by every failed-attempt path.
+    static func cacheNote(
+        kind: String, dataDir: URL, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> String {
+        let fileExtension = kind == Self.dashboardKind ? "html" : "json"
+        guard let dir = WorkspacePaths.confinedFolderOrWarn([kind], under: dataDir, onLine: onLine)
+        else { return "no cached snapshot available" }
+        if let planted = FileManager.plantedNewestSnapshot(in: dir, fileExtension: fileExtension) {
+            return "cached snapshot not used (\(planted))"
+        }
+        let cached = fileExtension == "html"
+            ? FileManager.newestHTMLSnapshot(in: dir) : FileManager.newestJSONFile(in: dir)
+        return cached != nil ? "skipped (using cached)" : "no cached snapshot available"
+    }
+
     /// An attempt that produced nothing to save: classify it, count it, say why, and keep the
     /// cache, or fail the run under `use_cached_data: false`. Shared with the per-benchmark
     /// reports.
@@ -2771,21 +2790,7 @@ struct ReportEngine: Sendable {
             ))
             throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
         }
-        // Only claim "using cached" when a cached snapshot for this kind exists; otherwise
-        // the generate step has nothing to fall back to and the copy would mislead. The
-        // folder is confined like the snapshot writer's, so a link planted at its name is
-        // refused with one `[warn]`.
-        let isPage = kind == Self.dashboardKind
-        let kindDir = WorkspacePaths.confinedFolderOrWarn([kind], under: dataDir, onLine: onLine)
-        let cached = kindDir.flatMap {
-            isPage ? FileManager.newestHTMLSnapshot(in: $0) : FileManager.newestJSONFile(in: $0)
-        }
-        // A link planted at the newest stamp is dropped by the picker; say so, not "none".
-        let planted = kindDir.flatMap {
-            FileManager.plantedNewestSnapshot(in: $0, fileExtension: isPage ? "html" : "json")
-        }
-        let cacheNote = planted.map { "cached snapshot not used (\($0))" }
-            ?? (cached != nil ? "skipped (using cached)" : "no cached snapshot available")
+        let cacheNote = Self.cacheNote(kind: kind, dataDir: dataDir, onLine: onLine)
         // jamf-cli's own reason beats a bare exit code in Run History.
         let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
         onLine(.init(timestamp: Date(), level: .warn,

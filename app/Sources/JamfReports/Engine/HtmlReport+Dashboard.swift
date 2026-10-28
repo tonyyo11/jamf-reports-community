@@ -119,7 +119,9 @@ extension HtmlReport {
         }
         // The picker leaves out a link that resolves outside the folder, which would read as
         // never collected; the newest entry by stamp, link or not, decides here.
-        if let problem = FileManager.plantedNewestSnapshot(in: dir, fileExtension: "html") { return .unreadable(problem) }
+        if let problem = FileManager.plantedNewestSnapshot(in: dir, fileExtension: "html") {
+            return .unreadable(problem)
+        }
         guard let url = FileManager.newestHTMLSnapshot(in: dir) else {
             return .absent(Self.dashboardNotCollected)
         }
