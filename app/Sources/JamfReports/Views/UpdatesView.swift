@@ -495,15 +495,23 @@ struct UpdatesView: View {
     }
 
     private func formatDate(_ dateString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        guard let date = isoFormatter.date(from: dateString) else {
+        guard let date = Self.isoFormatter.date(from: dateString) else {
             return dateString
         }
+        return Self.shortFormatter.string(from: date)
+    }
+
+    // Built once: this runs per table row, and neither is mutated after creation.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let shortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
 
     // MARK: - SOFA OS Latest Versions
 

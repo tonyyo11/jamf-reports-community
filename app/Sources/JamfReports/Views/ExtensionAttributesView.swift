@@ -646,10 +646,17 @@ private struct BarChartExportView: View {
 
     private var dateText: String {
         guard let snapshotDate else { return "No snapshot date" }
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return "Snapshot \(f.string(from: snapshotDate))"
+        return "Snapshot \(Self.dayFormatter.string(from: snapshotDate))"
     }
+
+    // Built once, never mutated after creation.
+    nonisolated(unsafe) private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {

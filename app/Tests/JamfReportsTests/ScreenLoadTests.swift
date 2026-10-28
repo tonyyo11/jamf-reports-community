@@ -13,12 +13,17 @@ private final class ReadProbe: @unchecked Sendable {
     func switchSource() { lock.withLock { _stale = true } }
 }
 
-/// The six snapshot screens (Mobile Devices, Extension Attributes, Protect, Patch, OS Updates,
-/// Groups) decode through `ScreenLoad.paint` in their `.task(id:)`: off the main thread, and a
-/// result whose profile went out of date, or whose task was cancelled, is dropped.
+/// The snapshot screens (Mobile Devices, Extension Attributes, Protect, Patch, OS Updates,
+/// Groups, Policy & Profile Health, Compliance Benchmarks, DDM, Audit) decode through
+/// `ScreenLoad.paint` in their `.task(id:)`: off the main thread, and a result whose profile
+/// went out of date, or whose task was cancelled, is dropped.
 @MainActor
 final class ScreenLoadTests: XCTestCase {
-    private func dataDir(_ files: [String: [String]]) throws -> URL {
+    /// A data dir holding each `kind` folder with the named files. `from` names the fixture
+    /// folder when it differs from the kind (the compliance fixtures carry a benchmark suffix).
+    private func dataDir(
+        _ files: [String: [String]], from fixtureFolders: [String: String] = [:]
+    ) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)
         for (kind, names) in files {
@@ -26,7 +31,7 @@ final class ScreenLoadTests: XCTestCase {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             for name in names {
                 try TestFixtures.copyFile(
-                    TestFixtures.dir("jamf-cli-data/\(kind)/\(name)"),
+                    TestFixtures.dir("jamf-cli-data/\(fixtureFolders[kind] ?? kind)/\(name)"),
                     to: dir.appendingPathComponent(name))
             }
         }
@@ -137,5 +142,74 @@ final class ScreenLoadTests: XCTestCase {
         await assertScreenLoad("Groups", loaded: { $0.isDetected }) {
             GroupInventoryService.load(dataDir: dir)
         }
+    }
+
+    func testPolicyAndProfileHealthLoadOffMain() async throws {
+        let dir = try dataDir([
+            "policy-status": ["policy-status.json"],
+            "profile-status": ["profile-status.json"],
+        ])
+        await assertScreenLoad("Policy & Profile Health", loaded: { $0.summary != nil }) {
+            PolicyHealthService.load(dataDir: dir)
+        }
+    }
+
+    func testComplianceBenchmarksLoadOffMain() async throws {
+        let suffix = "-nist-800-53r5-moderate"
+        let dir = try dataDir([
+            "compliance-rules": ["platform_compliance_rules_happy.json"],
+            "compliance-devices": ["platform_compliance_devices_happy.json"],
+        ], from: [
+            "compliance-rules": "compliance-rules" + suffix,
+            "compliance-devices": "compliance-devices" + suffix,
+        ])
+        await assertScreenLoad("Compliance Benchmarks", loaded: { $0.totalRules > 0 }) {
+            ComplianceBenchmarksService.load(dataDir: dir)
+        }
+    }
+
+    func testDeclarativeDeviceManagementLoadsOffMain() async throws {
+        let dir = try dataDir([
+            "blueprint-status": ["platform_blueprint_status_happy.json"],
+            "ddm-status": ["platform_ddm_status_happy.json"],
+        ])
+        // The screen's three reads are one task; the device scan and the fleet count ride along.
+        await assertScreenLoad("DDM & Blueprints", loaded: { $0.0.totalBlueprints > 0 }) {
+            (DDMBlueprintService.load(dataDir: dir),
+             DDMDeviceStatusService.load(dataDir: dir),
+             DDMDeviceStatusService.fleetDDMCounts(dataDir: dir))
+        }
+    }
+
+    func testAuditIntegrityReadsLoadOffMain() async throws {
+        let dir = try dataDir(["duplicate-serials": ["duplicate-serials_20260710T090000.json"]])
+        await assertScreenLoad("Audit", loaded: { $0.0.isDetected }) {
+            (DuplicateSerialService.load(dataDir: dir), MDMCommandHealthService.load(dataDir: dir))
+        }
+    }
+
+    func testDeviceLookupIndexLoadsOffMain() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)
+        let kindDir = root.appendingPathComponent("lookup/jamf-cli-data/computers-list")
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        try Data(#"[{"id": "101", "general": {"name": "Lab-Mac-01"}}]"#.utf8)
+            .write(to: kindDir.appendingPathComponent("computers-list.json"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        await assertScreenLoad("Device Lookup", loaded: { !$0.candidates.isEmpty }) {
+            DeviceLookupIndex.read(profile: "lookup")
+        }
+
+        // The index itself: a load whose task is cancelled leaves it empty.
+        let index = DeviceLookupIndex()
+        await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await index.load(profile: "lookup")
+        }.value
+        XCTAssertTrue(index.candidates.isEmpty, "a cancelled load filled the index")
     }
 }

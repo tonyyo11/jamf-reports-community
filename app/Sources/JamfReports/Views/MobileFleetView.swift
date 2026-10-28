@@ -160,7 +160,7 @@ struct MobileFleetView: View {
             : "F2LX" + String(0x51C0 + i * 0x3B, radix: 16, uppercase: true) + "N0DV"
         // Inventoried in the week before the demo's "now", never after it.
         let age = TimeInterval((i % 7) * 86_400 + (i * 37 % 300 + 20) * 60)
-        let lastUpdate = ISO8601DateFormatter().string(
+        let lastUpdate = Self.isoFormatter.string(
             from: DemoData.referenceDate.addingTimeInterval(-age))
         let ownership = supervised
             ? "Institutional"
@@ -982,17 +982,24 @@ struct MobileFleetView: View {
             return "—"
         case .right(let rich):
             guard let dateString = rich.general?.lastInventoryUpdateDate,
-                  let date = ISO8601DateFormatter().date(from: dateString) else {
+                  let date = Self.isoFormatter.date(from: dateString) else {
                 return "—"
             }
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .abbreviated
             // Demo dates were written against the demo's "now"; measured from
             // today, every one read "1 yr. ago".
             let now = workspace.demoMode ? DemoData.referenceDate : Date()
-            return formatter.localizedString(for: date, relativeTo: now)
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
+
+    // Built once: both run per table row. Configured at creation, never mutated after.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 
     private func pillTone(for deviceType: String) -> Pill.Tone {
         switch deviceType.lowercased() {

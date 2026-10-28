@@ -9,6 +9,9 @@ struct ComplianceBenchmarksView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ComplianceBenchmarksService.Snapshot = .empty
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     /// A Platform API profile, as profile discovery read it from jamf-cli.
     private var platformAvailable: Bool {
         !workspace.demoMode && workspace.activeCLIProfile?.auth?.isPlatform == true
@@ -32,17 +35,19 @@ struct ComplianceBenchmarksView: View {
     var body: some View {
         PageScaffold {
             ComplianceBenchmarksView.header()
-            if !workspace.demoMode && lockState == .unlockedWithData {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "compliance benchmarks")
+            } else {
+                if !workspace.demoMode && lockState == .unlockedWithData {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                }
+                content
             }
-            content
         }
         .tint(Theme.Colors.goldBright)
-        .task(id: workspace.profile) {
-            reload()
-        }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -290,10 +295,25 @@ struct ComplianceBenchmarksView: View {
 
     // MARK: - Helpers
 
-    private func reload() {
-        snapshot = workspace.demoMode
-            ? DemoData.complianceBenchmarksSnapshot
-            : ComplianceBenchmarksService.load(profile: workspace.profile)
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { snapshot = .empty }
+        guard !workspace.demoMode else {
+            snapshot = DemoData.complianceBenchmarksSnapshot
+            loadedSource = source
+            return
+        }
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { ComplianceBenchmarksService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
+        loadedSource = source
     }
 
     // MARK: - Static rendering helpers (kept static to keep view body type-check cheap)

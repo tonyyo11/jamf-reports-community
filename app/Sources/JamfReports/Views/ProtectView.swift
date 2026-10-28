@@ -1043,16 +1043,12 @@ struct ProtectView: View {
     // MARK: - Utilities
 
     private func formatCreatedDate(_ dateString: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
         let date: Date
-        if let parsedDate = formatter.date(from: dateString) {
+        if let parsedDate = Self.isoFractionalFormatter.date(from: dateString) {
             date = parsedDate
         } else {
             // Fallback for simpler ISO format
-            formatter.formatOptions = [.withInternetDateTime]
-            guard let fallbackDate = formatter.date(from: dateString) else {
+            guard let fallbackDate = Self.isoFormatter.date(from: dateString) else {
                 return "Unknown"
             }
             date = fallbackDate
@@ -1064,16 +1060,36 @@ struct ProtectView: View {
 
         if daysSince >= 60 {
             // For spans ≥60 days, use absolute date
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            return formatter.string(from: date)
+            return Self.dayFormatter.string(from: date)
         } else {
             // For spans <60 days, use relative formatting
-            let relativeFormatter = RelativeDateTimeFormatter()
-            relativeFormatter.unitsStyle = .abbreviated
-            return relativeFormatter.localizedString(for: date, relativeTo: now)
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
+
+    // Built once: this runs per table row. Each is configured at creation and never mutated
+    // after, so sharing is safe.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    nonisolated(unsafe) private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
+
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 }
 
 // MARK: - Export-only chart

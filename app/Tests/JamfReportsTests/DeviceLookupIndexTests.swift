@@ -75,7 +75,7 @@ final class DeviceLookupIndexTests: XCTestCase {
 
     // MARK: - Newest-JSON selection
 
-    func testNewestJSONWinsWhenMultipleSnapshotsExist() throws {
+    func testNewestJSONWinsWhenMultipleSnapshotsExist() async throws {
         // Older snapshot has only one device, newer has two. The index must
         // pick the newer file and surface both devices.
         let older = try writeSnapshot(
@@ -100,7 +100,7 @@ final class DeviceLookupIndexTests: XCTestCase {
         try setModificationDate(newer, Date(timeIntervalSince1970: 1_750_000_000))
 
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
 
         let ids = Set(index.candidates.map(\.id))
         XCTAssertEqual(ids, ["20", "21"],
@@ -113,7 +113,7 @@ final class DeviceLookupIndexTests: XCTestCase {
 
     /// The stamp in the filename wins over a restamped mtime, and a sync-conflict copy
     /// (`… 2.json`) is never picked, however fresh.
-    func testFilenameStampWinsAndConflictCopyIsSkipped() throws {
+    func testFilenameStampWinsAndConflictCopyIsSkipped() async throws {
         func mac(_ id: String) -> [[String: Any]] {
             [["id": id, "general": ["name": "Mac-\(id)"], "hardware": ["serialNumber": "S\(id)"]]]
         }
@@ -128,14 +128,14 @@ final class DeviceLookupIndexTests: XCTestCase {
         try setModificationDate(conflict, Date(timeIntervalSince1970: 1_800_000_000))
 
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
 
         XCTAssertEqual(Set(index.candidates.map(\.id)), ["2"])
     }
 
     // MARK: - `.partial` filtering
 
-    func testPartialFilesAreExcludedFromIndex() throws {
+    func testPartialFilesAreExcludedFromIndex() async throws {
         // A `.partial.json` file must be ignored even when it's the newest.
         // The good file (older mtime) is the only one the index should see.
         let good = try writeSnapshot(
@@ -159,7 +159,7 @@ final class DeviceLookupIndexTests: XCTestCase {
         try setModificationDate(partial, Date(timeIntervalSince1970: 1_750_000_000))
 
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
 
         let ids = Set(index.candidates.map(\.id))
         XCTAssertEqual(ids, ["30"],
@@ -170,7 +170,7 @@ final class DeviceLookupIndexTests: XCTestCase {
 
     // MARK: - Envelope vs bare-array decoding
 
-    func testBareArrayDecodes() throws {
+    func testBareArrayDecodes() async throws {
         try writeSnapshot(
             subdir: "computers-list",
             filename: "computers-list.json",
@@ -180,12 +180,12 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
         XCTAssertEqual(index.candidates.count, 1)
         XCTAssertEqual(index.candidates.first?.name, "Bare-Array-Mac")
     }
 
-    func testEnvelopeShapeDecodes() throws {
+    func testEnvelopeShapeDecodes() async throws {
         // {"results": [...]} envelope must work just like a bare array.
         try writeSnapshot(
             subdir: "computers-list",
@@ -198,14 +198,14 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
         XCTAssertEqual(index.candidates.count, 1)
         XCTAssertEqual(index.candidates.first?.name, "Enveloped-Mac")
     }
 
     // MARK: - resolve() priority (id → serial → name)
 
-    func testResolvePrioritisesIDOverSerialAndName() throws {
+    func testResolvePrioritisesIDOverSerialAndName() async throws {
         try writeSnapshot(
             subdir: "computers-list",
             filename: "computers-list.json",
@@ -217,7 +217,7 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
 
         // "ABC" matches the id of the first device exactly, the serial of the
         // second device exactly, AND the name of the second device as a substring.
@@ -230,7 +230,7 @@ final class DeviceLookupIndexTests: XCTestCase {
                        "Serial match comes before name substring; serial-matched device must be second")
     }
 
-    func testResolveIsCaseInsensitiveForSerialAndName() throws {
+    func testResolveIsCaseInsensitiveForSerialAndName() async throws {
         try writeSnapshot(
             subdir: "computers-list",
             filename: "computers-list.json",
@@ -240,7 +240,7 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
 
         XCTAssertEqual(index.resolve("abcdef").count, 1,
                        "Serial match must be case-insensitive")
@@ -248,7 +248,7 @@ final class DeviceLookupIndexTests: XCTestCase {
                        "Name substring match must be case-insensitive")
     }
 
-    func testResolveEmptyTermReturnsEmpty() throws {
+    func testResolveEmptyTermReturnsEmpty() async throws {
         try writeSnapshot(
             subdir: "computers-list",
             filename: "computers-list.json",
@@ -258,7 +258,7 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
         XCTAssertEqual(index.resolve("").count, 0)
         XCTAssertEqual(index.resolve("   ").count, 0,
                        "Whitespace-only term must trim to empty and return no results")
@@ -266,7 +266,7 @@ final class DeviceLookupIndexTests: XCTestCase {
 
     // MARK: - Kind filtering
 
-    func testResolveFiltersByKindWhenSpecified() throws {
+    func testResolveFiltersByKindWhenSpecified() async throws {
         try writeSnapshot(
             subdir: "computers-list",
             filename: "computers-list.json",
@@ -284,7 +284,7 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
 
         // Without kind filter — both devices match the name "Shared-Name".
         XCTAssertEqual(index.resolve("Shared-Name").count, 2,
@@ -301,7 +301,7 @@ final class DeviceLookupIndexTests: XCTestCase {
         XCTAssertEqual(mobiles.first?.kind, .mobile)
     }
 
-    func testMobileParserFallsBackToIDForIdWhenMobileDeviceIdAbsent() throws {
+    func testMobileParserFallsBackToIDForIdWhenMobileDeviceIdAbsent() async throws {
         // Mobile parser tries `mobileDeviceId` first, then top-level `id`. The
         // name fall-back chain is: dict.name → general.displayName → general.name
         // → dict.displayName → rawID. The serial fall-back is hardware.serialNumber
@@ -316,7 +316,7 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
         XCTAssertEqual(index.candidates.count, 1)
         XCTAssertEqual(index.candidates.first?.kind, .mobile)
         XCTAssertEqual(index.candidates.first?.id, "42",
@@ -327,7 +327,7 @@ final class DeviceLookupIndexTests: XCTestCase {
                        "serial resolves from top-level serialNumber")
     }
 
-    func testMobileParserResolvesTopLevelNameFromFlatJamfCLIShape() throws {
+    func testMobileParserResolvesTopLevelNameFromFlatJamfCLIShape() async throws {
         // jamf-cli `mobile-devices-list` with default `--all=true` uses
         // `selectTableColumns` which flattens `general.displayName` → top-level
         // `name`. The parser must resolve `name` from `dict["name"]` first so
@@ -341,7 +341,7 @@ final class DeviceLookupIndexTests: XCTestCase {
             ]
         )
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
         XCTAssertEqual(index.candidates.count, 1)
         XCTAssertEqual(index.candidates.first?.kind, .mobile)
         XCTAssertEqual(index.candidates.first?.id, "1",
@@ -354,10 +354,10 @@ final class DeviceLookupIndexTests: XCTestCase {
 
     // MARK: - Error surface
 
-    func testInvalidProfileSlugProducesErrorMessage() {
+    func testInvalidProfileSlugProducesErrorMessage() async {
         let index = DeviceLookupIndex()
         // Dotted slugs are rejected by ProfileService.isValid.
-        index.load(profile: "bad\nprofile")
+        await index.load(profile: "bad\nprofile")
         XCTAssertTrue(index.candidates.isEmpty)
         XCTAssertNotNil(index.lastError)
         XCTAssertTrue(
@@ -366,10 +366,10 @@ final class DeviceLookupIndexTests: XCTestCase {
         )
     }
 
-    func testEmptyDataDirProducesActionableMessage() {
+    func testEmptyDataDirProducesActionableMessage() async {
         // Workspace exists (created in setUp) but no JSON snapshots yet.
         let index = DeviceLookupIndex()
-        index.load(profile: profileSlug)
+        await index.load(profile: profileSlug)
         XCTAssertTrue(index.candidates.isEmpty)
         XCTAssertEqual(
             index.lastError,
