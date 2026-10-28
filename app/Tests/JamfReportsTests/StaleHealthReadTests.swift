@@ -27,6 +27,7 @@ final class StaleHealthReadTests: XCTestCase {
         -> WorkspaceStore
     {
         _ = useTemporaryTickLock()
+        pinTickLockReleasedAt(nil)
         let store = WorkspaceStore(
             demoMode: false, tickerRegistrar: registrar,
             jamfCLIProfileNames: { [] }, discoverProfiles: { [] }, jamfCLIInstallation: { nil })
@@ -91,28 +92,16 @@ final class StaleHealthReadTests: XCTestCase {
 
     // MARK: - Automation health
 
-    /// A schedule that fired two hours ago and never ran, as `ManualCollectTickLockTests` has it.
-    private func overdueSchedule(profile: String) -> Schedule {
-        let twoHoursAgo = Calendar.current.dateComponents(
-            [.hour, .minute], from: Date().addingTimeInterval(-2 * 3600))
-        return Schedule(
-            name: "Daily", profile: profile,
-            schedule: String(format: "Daily %02d:%02d",
-                             twoHoursAgo.hour ?? 0, twoHoursAgo.minute ?? 0),
-            cadence: "custom", mode: .snapshotOnly, next: "—", last: "—", lastStatus: .ok,
-            artifacts: [], enabled: true,
-            launchAgentLabel: "\(LaunchAgentWriter.labelPrefix).\(profile).daily")
-    }
-
-    /// Past any window an earlier test's hold left behind: the release time is per process.
-    private var afterTheWindow: Date { Date().addingTimeInterval(TickLock.wakeInterval + 61) }
+    /// Past any window an earlier test's hold left behind: the release time is per process,
+    /// so each test that reads health starts with it cleared.
+    private var afterTheWindow: Date { .testNoonAfterTheLockWindow }
 
     func testAHealthReadForAnotherProfileIsDropped() async throws {
         try useTemporaryRoot(creating: [])
         let gate = Gate()
         let registrar = BlockingRegistrar(gate: gate)
         let store = makeStore(registrar: registrar)
-        store.schedules = [overdueSchedule(profile: "alpha")]
+        store.schedules = [dailyScheduleFiringAtTen(profile: "alpha")]
         store.profile = "alpha"
         let now = afterTheWindow
         let slow = Task { @MainActor in await store.refreshAutomationHealth(now: now) }
@@ -132,7 +121,7 @@ final class StaleHealthReadTests: XCTestCase {
         try useTemporaryRoot(creating: [])
         let gate = Gate()
         let store = makeStore(registrar: BlockingRegistrar(gate: gate))
-        store.schedules = [overdueSchedule(profile: "alpha")]
+        store.schedules = [dailyScheduleFiringAtTen(profile: "alpha")]
         store.profile = "alpha"
         let now = afterTheWindow
         let slow = Task { @MainActor in await store.refreshAutomationHealth(now: now) }
@@ -152,7 +141,7 @@ final class StaleHealthReadTests: XCTestCase {
     func testAHealthReadStillPublishesWhenNothingOvertookIt() async throws {
         try useTemporaryRoot(creating: [])
         let store = makeStore()
-        store.schedules = [overdueSchedule(profile: "alpha")]
+        store.schedules = [dailyScheduleFiringAtTen(profile: "alpha")]
         store.profile = "alpha"
         await store.refreshAutomationHealth(now: afterTheWindow)
         XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [.overdue])
