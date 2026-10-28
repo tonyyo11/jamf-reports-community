@@ -269,6 +269,8 @@ private func scheduledRunSingleBody(
     honesty: CollectHonestyWatcher,
     retiredCSVAssisted: Bool
 ) async -> Int32 {
+    // The run's day for its summary and its metric alerts, however long the collect takes.
+    let runStart = Date()
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1
@@ -550,7 +552,7 @@ private func scheduledRunSingleBody(
                 )
                 await ScheduledRunSignals.notifyMetricAlerts(
                     config: routingConfig, profile: profile, workspace: workspace,
-                    recorder: recorder
+                    recorder: recorder, now: runStart
                 )
             }
             ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
@@ -609,7 +611,7 @@ private func scheduledRunSingleBody(
                 onLine: onLine)
         } else {
             failures = try await engine.generate(
-                outputURL: outputURL, template: template, onLine: onLine)
+                outputURL: outputURL, template: template, now: runStart, onLine: onLine)
         }
         if !failures.isEmpty {
             let partialMsg = partialRunMarker(sheetFailures: failures.count)
@@ -640,7 +642,8 @@ private func scheduledRunSingleBody(
         // written this run, so there is nothing new to alert on.
         if mode != .jamfCLIOnly, !honesty.stoodDown {
             await ScheduledRunSignals.notifyMetricAlerts(
-                config: config, profile: profile, workspace: workspace, recorder: recorder
+                config: config, profile: profile, workspace: workspace, recorder: recorder,
+                now: runStart
             )
         }
         ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)

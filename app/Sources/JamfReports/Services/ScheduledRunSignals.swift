@@ -658,6 +658,9 @@ struct CLIRunSignals: Sendable {
     /// Watches the run's own log stream for the two markers that make a bare
     /// exit 0 a lie. `generate` never emits them, so it is simply always quiet.
     let honesty: CollectHonestyWatcher
+    /// The run's start: the day its metric alerts judge the newest summary against, so a
+    /// collect that crosses midnight is still alerted on the day it dated its summary.
+    var startedAt: Date = Date()
 
     /// True only for `collect` — `generate` does not collect, so it never
     /// evaluates alerts (mirrors the scheduled jamf-cli-only rule).
@@ -762,7 +765,8 @@ struct CLIRunSignals: Sendable {
             )
             if evaluatesAlerts, let workspace {
                 await ScheduledRunSignals.notifyMetricAlerts(
-                    config: config, profile: profile, workspace: workspace, recorder: recorder
+                    config: config, profile: profile, workspace: workspace, recorder: recorder,
+                    now: startedAt
                 )
             }
         }

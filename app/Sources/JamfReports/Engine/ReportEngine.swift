@@ -43,6 +43,8 @@ struct ReportEngine: Sendable {
     ///                  included CLI) leave the default nil and no AI block is written.
     ///   - locateJamfCLI: Finds the jamf-cli whose version the Cover sheet records; tests
     ///                    pass `{ nil }` so no jamf-cli runs.
+    ///   - now: The run's start. The trend summary is dated by it, so a run whose `collect`
+    ///          dated the day's summary at its start does not add a second one past midnight.
     ///   - onLine: Optional streaming log callback. Post-generate side-effect warnings
     ///             (archive rotation, summary JSON) are routed here when
     ///             provided, so callers with a live log view (e.g. GenerateSheet) see them.
@@ -55,6 +57,7 @@ struct ReportEngine: Sendable {
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         // Every folder this run reads or writes is the run's profile's, so a peer cannot point
@@ -139,7 +142,7 @@ struct ReportEngine: Sendable {
         try workbook.write(to: outputURL)
 
         finishWorkbook(at: outputURL, templateID: template.identifier,
-                       profile: profile, provenance: prov, onLine: onLine)
+                       profile: profile, provenance: prov, day: now, onLine: onLine)
 
         return coreFailures
     }
@@ -196,7 +199,8 @@ struct ReportEngine: Sendable {
     /// trend summary.
     private func finishWorkbook(
         at outputURL: URL, templateID: String, profile: String,
-        provenance prov: Provenance, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+        provenance prov: Provenance, day: Date,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) {
         // Write a SHA-256 manifest alongside the artifact for federal compliance.
         // One pass over the file feeds the manifest, the sidecar and the log line.
@@ -227,7 +231,7 @@ struct ReportEngine: Sendable {
         }
 
         if let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
-            emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
+            emitSummaryJSON(summariesDir: summariesDir, provenance: prov, day: day, onLine: onLine)
         }
     }
 

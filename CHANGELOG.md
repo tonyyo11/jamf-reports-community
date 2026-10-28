@@ -27,6 +27,9 @@ versions in this repository map to git tags.
 
 - A Jamf School collect that runs past midnight now dates its summary by the day it started, as
   a Jamf Pro collect does. (#305)
+- A scheduled collect-and-report run that crosses midnight now keeps the one summary dated the
+  day it started, instead of adding a second one from cached data, and its metric alerts judge
+  that summary by the same day instead of skipping it as old. (#305)
 - A profile on the retired `apigw.jamf.com` gateway is now refused up front, with the fix, in
   setup, Update credentials, Add environments, Start a connection and when existing jamf-cli
   profiles are adopted, instead of failing at the first collect. (#305)
