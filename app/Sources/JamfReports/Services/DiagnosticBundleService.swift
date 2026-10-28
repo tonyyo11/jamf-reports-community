@@ -131,9 +131,14 @@ final class DiagnosticRedactor {
         self.ipv4RE = Self.mustCompile(
             #"(?<![\w.\-])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"#
             + #"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w\-]|\.\d)"#)
-        // A phone number needs a leading `+` (E.164) or separators (NANP), so a bare 10-digit
-        // Jamf ID, a date or a timestamp is not one.
-        self.phoneE164RE = Self.mustCompile(#"(?<![\w+])\+[1-9]\d{7,14}\b"#)
+        // A phone number needs a leading `+` (E.164, digit groups split by single spaces, dots,
+        // hyphens or parentheses, 7-15 digits in all) or separators (NANP), so a bare 10-digit
+        // Jamf ID, a date or a timestamp is not one. The lookahead counts the digits; the
+        // second guard keeps a `+2020-2026` year range out. Every separator is required between
+        // digit runs, so a failed match cannot backtrack exponentially.
+        self.phoneE164RE = Self.mustCompile(
+            #"(?<![\w+])\+(?=(?:[ .\-()]*\d){7,15}(?![ .\-()]*\d))(?!\d{4}[ .\-]\d)"#
+            + #"[1-9]\d*(?:[ .\-]?\(\d+\)|[ .\-]\d+)*(?!\w)"#)
         self.phoneNANPRE = Self.mustCompile(
             #"(?<![\w.\-])\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}(?![\w\-]|\.\d)"#)
     }

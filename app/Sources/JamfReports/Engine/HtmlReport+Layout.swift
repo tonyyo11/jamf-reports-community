@@ -178,6 +178,11 @@ extension HtmlReport {
                 omissions.append(.init(title: SectionID.jamfDashboard.title, reason: reason))
             }
             return ""
+        case .unreadable(let why):
+            let reason = "dashboard page could not be read: \(why)"
+            warn("[warn] \(reason)")
+            omissions.append(.init(title: SectionID.jamfDashboard.title, reason: reason))
+            return ""
         }
     }
 

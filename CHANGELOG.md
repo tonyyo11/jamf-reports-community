@@ -29,6 +29,14 @@ versions in this repository map to git tags.
 - Data Sources › Connection health now says when a profile's credential is an
   environment-variable reference, which the app cannot use because it starts jamf-cli with a
   clean environment, and points to a keychain or file reference instead. (#305)
+- The HTML report now says "dashboard page could not be read" when the jamf-cli dashboard page
+  is there but cannot be opened (a link, a folder or a read error), instead of "not collected
+  yet", and logs a warning. (#305)
+
+### Security
+
+- Shared logs and diagnostic bundles now mask international phone numbers written with spaces,
+  dots, hyphens or parentheses, such as `+44 20 7946 0958` and `+1 (415) 555 0132`. (#305)
 
 ## [2.11.0] - 2026-10-27
 
