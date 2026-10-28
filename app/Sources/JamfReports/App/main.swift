@@ -755,9 +755,13 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// schedule's label; a multi schedule fans out over discovered profiles minus
 /// its exclusions and emits the consolidated fleet report for report modes,
 /// and succeeds only when every profile did with none incomplete. The retry
-/// flag leaves out sources whose failure a same-day retry would only repeat.
+/// flag leaves out sources whose failure a same-day retry would only repeat. `skipping` names
+/// profiles of a multi schedule a same-day retry leaves alone (`TickScheduler.DueRun`); the
+/// outcome lists each profile that ran.
 @Sendable
-func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcome {
+func runSchedule(
+    _ schedule: Schedule, verbose: Bool, skipping: Set<String> = []
+) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
     let missing = schedule.mode == .jamfCLIOnly
         ? [] : ProfileService.workspacesMissingJamfCLIProfile()
@@ -794,10 +798,14 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
     if !excluded.isEmpty {
         fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
     }
-    var anyFailed = false
-    var anyIncomplete = false
-    var anyRetryable = false
-    for p in profiles {
+    let toRun = Set(TickScheduler.profilesToRun(profiles.map(\.name), skipping: skipping))
+    let leftOut = profiles.map(\.name).filter { !toRun.contains($0) }
+    if !leftOut.isEmpty {
+        fputs("[info] retrying only profiles that need it; leaving out: "
+              + leftOut.joined(separator: ", ") + "\n", stderr)
+    }
+    var ran: [ProfileOutcome] = []
+    for p in profiles where toRun.contains(p.name) {
         if await skippedForMissingProfile(p.name, missing: missing) { continue }
         // One watcher per profile: a shared one would carry profile A's
         // stand-down into profile B's completion line.
@@ -807,17 +815,15 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
             profile: p.name, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty,
             retiredCSVAssisted: schedule.retiredCSVAssisted)
-        if code != 0 { anyFailed = true }
-        if honesty.incomplete { anyIncomplete = true }
-        if honesty.retryCouldHelp(profile: p.name, exitCode: code, since: start) {
-            anyRetryable = true
-        }
+        ran.append(ProfileOutcome(
+            profile: p.name, exitCode: code, incomplete: honesty.incomplete,
+            retryCouldHelp: honesty.retryCouldHelp(profile: p.name, exitCode: code, since: start),
+            started: start, finished: Date()))
     }
     if [.jamfCLIOnly, .jamfCLIFull].contains(schedule.mode) {
         emitConsolidatedReports()
     }
-    return ScheduleRunOutcome(
-        exitCode: anyFailed ? 1 : 0, incomplete: anyIncomplete, retryCouldHelp: anyRetryable)
+    return ScheduleRunOutcome(over: ran, ran: ran)
 }
 
 // MARK: - check subcommand

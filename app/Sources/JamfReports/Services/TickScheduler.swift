@@ -17,6 +17,10 @@ struct TickState: Codable, Sendable {
     /// Labels whose last run failed in a way a retry repeats (`ScheduleRunOutcome.retryCouldHelp`
     /// false): the hourly retries after the backoffs skip them.
     var retryWouldRepeat: Set<String> = []
+    /// How each profile of a multi-profile schedule ended in the current fire's runs. A same-day
+    /// retry leaves out the profiles whose entry says a retry would fetch nothing. Per Mac, like
+    /// the retry count: a peer's run says nothing about what this Mac's collect fetched.
+    var profileOutcomes: [String: [ProfileOutcome]] = [:]
 
     init() {}
 
@@ -30,6 +34,10 @@ struct TickState: Codable, Sendable {
         retryCount = try c.decodeIfPresent([String: Int].self, forKey: .retryCount) ?? [:]
         lastTick = try c.decodeIfPresent(Date.self, forKey: .lastTick)
         retryWouldRepeat = try c.decodeIfPresent(Set<String>.self, forKey: .retryWouldRepeat) ?? []
+        // An unreadable entry reads as no outcome (the retry runs every profile); it must not
+        // cost the stamps above, which would re-run every schedule.
+        profileOutcomes = (try? c.decodeIfPresent(
+            [String: [ProfileOutcome]].self, forKey: .profileOutcomes)) ?? [:]
     }
 
     static func load(url: URL = TickState.defaultURL) -> TickState {
@@ -54,6 +62,8 @@ struct TickState: Codable, Sendable {
         case .fire, .catchUp:
             lastStarted[label] = now
             retryCount[label] = 0
+            // Yesterday's outcomes must not decide today's retry if this run dies mid-way.
+            profileOutcomes[label] = nil
         case .retry:
             lastStarted[label] = now
             retryCount[label] = (retryCount[label] ?? 0) + 1
@@ -76,6 +86,44 @@ struct TickState: Codable, Sendable {
     }
 }
 
+/// How one profile of a multi-profile run ended, as `retryCouldHelp(profile:exitCode:since:)`
+/// judged it. Stored in `tick-state.json` as `profiles` under the schedule's label.
+struct ProfileOutcome: Codable, Sendable, Equatable {
+    let profile: String
+    let exitCode: Int32
+    let incomplete: Bool
+    let retryCouldHelp: Bool
+    let started: Date
+    let finished: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case profile, incomplete, started, finished
+        case exitCode = "exit"
+        case retryCouldHelp = "retry_could_help"
+    }
+}
+
+extension TickState {
+    /// Folds a run's per-profile outcomes into the label's: a profile that ran replaces its
+    /// entry, one that did not keeps it. A Run now writes nothing, as for the other stamps.
+    /// True when the stored outcomes changed.
+    mutating func noteProfileOutcomes(
+        _ label: String, _ ran: [ProfileOutcome], reason: TickScheduler.Reason
+    ) -> Bool {
+        guard reason != .runNow, !ran.isEmpty else { return false }
+        let ranNames = Set(ran.map(\.profile))
+        let merged = (profileOutcomes[label] ?? []).filter { !ranNames.contains($0.profile) } + ran
+        profileOutcomes[label] = merged
+        return true
+    }
+
+    /// Profiles whose last outcome says a retry would fetch nothing (a clean run, or a failure
+    /// that repeats). A profile with no outcome is not here: not knowing fails toward collecting.
+    func profilesNotNeedingRetry(_ label: String) -> Set<String> {
+        Set((profileOutcomes[label] ?? []).filter { !$0.retryCouldHelp }.map(\.profile))
+    }
+}
+
 /// A schedule run's exit code plus what the tick needs beyond it: whether a
 /// collect came back incomplete, and whether a same-day retry could fetch what
 /// is missing.
@@ -86,11 +134,27 @@ struct ScheduleRunOutcome: Sendable {
     /// False when everything missing failed in a way a retry repeats. Defaults to
     /// `incomplete`.
     let retryCouldHelp: Bool
+    /// The profiles of a multi-profile run that ran, in run order; empty for a single-profile
+    /// schedule and for a run that skipped them all.
+    let profiles: [ProfileOutcome]
 
-    init(exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool? = nil) {
+    init(
+        exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool? = nil,
+        profiles: [ProfileOutcome] = []
+    ) {
         self.exitCode = exitCode
         self.incomplete = incomplete
         self.retryCouldHelp = retryCouldHelp ?? incomplete
+        self.profiles = profiles
+    }
+
+    /// The schedule's outcome over every profile's latest (`all`), of which this run's
+    /// `ran` are the newest: a retry that ran two of three profiles still judges all three.
+    init(over all: [ProfileOutcome], ran: [ProfileOutcome]) {
+        self.init(
+            exitCode: all.contains { $0.exitCode != 0 } ? 1 : 0,
+            incomplete: all.contains(where: \.incomplete),
+            retryCouldHelp: all.contains(where: \.retryCouldHelp), profiles: ran)
     }
 
     /// Exit 0 with nothing left on the table.
@@ -127,6 +191,16 @@ enum TickScheduler {
     struct DueRun: Sendable {
         let schedule: Schedule
         let reason: Reason
+        /// Profiles a multi-profile retry leaves alone: their last run left nothing a retry
+        /// could fetch. Empty for every other reason, so a fire or Run now runs them all.
+        var skipProfiles: Set<String> = []
+    }
+
+    /// The profiles a multi-profile run covers: `profiles` less `skip`, or all of them when
+    /// that leaves none (the retry was due, and nothing says which profile it is for).
+    static func profilesToRun(_ profiles: [String], skipping skip: Set<String>) -> [String] {
+        let remaining = profiles.filter { !skip.contains($0) }
+        return remaining.isEmpty ? profiles : remaining
     }
 
     /// - Parameter summaryMissingToday: Whether `schedule` should have produced today's daily
@@ -180,7 +254,11 @@ enum TickScheduler {
             let retry = retryIsDue(
                 mode: schedule.mode, label: label, daily: daily, state: state, now: now,
                 summaryMissing: { summaryMissingToday(schedule) })
-            return retry ? DueRun(schedule: schedule, reason: .retry) : runNow
+            guard retry else { return runNow }
+            // A Run now marker on a retry-due label still runs every profile.
+            return DueRun(
+                schedule: schedule, reason: .retry,
+                skipProfiles: runNow == nil ? state.profilesNotNeedingRetry(label) : [])
         }
     }
 

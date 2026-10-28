@@ -15,6 +15,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- When a schedule that covers every profile has a same-day retry, it now re-collects only the
+  profiles that failed or came back Partial, not the ones that finished cleanly or failed in a
+  way a retry repeats. Run now and each new day's run still cover every profile. (#305)
 - On a workspace in a sync provider folder, on a network volume or in a shared workspace, the
   Jamf Pro part of a backup is now a choice, as the Jamf Protect part already was: turn on
   **Back up Jamf Pro in this folder** in Backups (or set `backup.pro_on_synced_storage`). A
