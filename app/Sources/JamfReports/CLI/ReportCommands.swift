@@ -36,8 +36,9 @@ struct Generate: AsyncParsableCommand {
         }
     }
 
-    /// Returns how many sheets failed to write.
-    private func write(
+    /// Returns how many sheets failed to write. Internal for tests, which reach it without the
+    /// tick lock.
+    func write(
         config: ReportConfig, dataDir: URL, template resolved: any ReportTemplate
     ) async throws -> Int {
         try await AttentionLog.recording(profile: profile) {
@@ -188,6 +189,8 @@ struct Html: AsyncParsableCommand {
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
         try await CLIRun.exclusively {
+            // No run record opens here, so its items land in the app record with no run log,
+            // like the GUI's manual collect.
             try await AttentionLog.recording(profile: profile) {
                 _ = try await ReportEngine.generateHTML(
                     config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,

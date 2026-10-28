@@ -48,4 +48,34 @@ final class CLIAttentionTests: XCTestCase {
         try await collect { AttentionLog.clear(.eaSnapshotUnreadable) }
         XCTAssertEqual(AttentionLog.openItems(profile: profile), [])
     }
+
+    /// Removing or reordering `bindAttention()` would send the item to the app record with no
+    /// Run History link; this pins it to the `cli-generate` record and its log.
+    func testAGenerateRaisesItsItemIntoTheCLIGenerateRecordWithTheRunsLog() async throws {
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        let dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let snapshots = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        try FileManager.default.createDirectory(at: snapshots, withIntermediateDirectories: true)
+        try Data("this is not json".utf8)
+            .write(to: snapshots.appendingPathComponent("ea-results_20261004T100000.json"))
+        let config = try ConfigLoader.loadFromString("""
+        custom_eas:
+          - {name: One, column: One, type: text}
+        """)
+        let output = root.appendingPathComponent("out/report.xlsx")
+        let command = try Generate.parse(["--profile", profile, "--output", output.path])
+
+        _ = try await command.write(
+            config: config, dataDir: dataDir, template: FullInstanceTemplate())
+
+        let label = CLIRunSignals.cliLabel(profile: profile, kind: .generate)
+        let json = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: automationFile("\(label)_status.json"))) as? [String: Any]
+        let items = try XCTUnwrap(json?["attention"] as? [[String: Any]])
+        XCTAssertEqual(items.map { $0["code"] as? String }, ["eaSnapshotUnreadable"])
+        let runLog = try XCTUnwrap(items.first?["run_log"] as? String)
+        XCTAssertTrue(runLog.hasPrefix("\(label)."), runLog)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try automationFile(
+            "\(WorkspaceStore.appCollectRunLabel)_status.json").path))
+    }
 }
