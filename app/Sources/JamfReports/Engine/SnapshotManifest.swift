@@ -77,15 +77,16 @@ enum SnapshotManifest {
         return .verified
     }
 
-    /// True when the sibling `manifest.json` parses and has an entry for `snapshot`.
-    static func lists(_ snapshot: URL) -> Bool {
-        let manifestURL = snapshot.deletingLastPathComponent().appendingPathComponent(fileName)
+    /// The file-name to SHA-256 entries of `dir`'s `manifest.json`; empty when it is absent or
+    /// does not parse, so a caller that needs one read per folder treats both as "lists nothing".
+    static func entries(in dir: URL) -> [String: String] {
         guard let data = try? BoundedFile.read(
-                manifestURL, limit: maxManifestBytes, followSymlinks: false),
+                dir.appendingPathComponent(fileName), limit: maxManifestBytes,
+                followSymlinks: false),
               let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
-            return false
+            return [:]
         }
-        return manifest.files[snapshot.lastPathComponent] != nil
+        return manifest.files
     }
 
     // MARK: - Writer (2.6 accuracy track)

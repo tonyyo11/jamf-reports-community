@@ -5,80 +5,202 @@ extension ReportEngine {
     /// In the `state` folder; present once a workspace's mobile snapshots have been rewritten.
     static let lostModeRewriteMarker = "lost-mode-rewrite.done"
 
+    /// Both kinds can hold the text: `mobile-device-inventory-details` is the legacy inventory
+    /// snapshot, whose SECURITY section is the same Jamf Pro record. No reader in the app names
+    /// the four keys, so their spelling is the one `lostModeTextKeys` already removes.
+    private static let lostModeKinds = [MobileFleetService.deviceKind,
+                                        MobileFleetService.legacyInventoryKind]
+
+    private struct LostModeTally {
+        var rewritten = 0
+        var unparsable: [String] = []
+        var unreadable: [String] = []
+        var writeFailed: [String] = []
+        var folderFailed = false
+
+        /// A parse failure is final (the next pass would fail the same way); everything else
+        /// may succeed on a retry.
+        var isComplete: Bool {
+            unreadable.isEmpty && writeFailed.isEmpty && !folderFailed
+        }
+    }
+
+    /// Collect's entry: resolves the workspace's data and archive folders, then runs the pass.
+    static func rewriteLostModeTextOnce(
+        profile: String, workspacePaths: WorkspacePaths.Type,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) {
+        guard let dataDir = try? workspacePaths.dataDir(for: profile) else { return }
+        var archive: URL?
+        if let workspace = ProfileService.workspaceURL(for: profile) {
+            let config = SharedConfigPin.effectiveRetention(
+                SnapshotRetentionService.loadRetentionConfig(workspace: workspace),
+                check: SharedConfigPin.check(profile: profile))
+            archive = lostModeArchiveRoot(config: config, workspace: workspace, onLine: onLine)
+        }
+        rewriteLostModeTextOnce(dataDir: dataDir, archiveRoot: archive, onLine: onLine)
+    }
+
+    /// The retention archive root when it resolves inside the workspace; otherwise nil with one
+    /// `[warn]`, because a folder outside it is not ours to read or rewrite.
+    static func lostModeArchiveRoot(
+        config: RetentionConfig?, workspace: URL,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> URL? {
+        let base = workspace.resolvingSymlinksInPath().standardizedFileURL
+        let root: URL
+        do {
+            root = try SnapshotRetentionService.typedArchiveRoot(
+                config: config, workspace: workspace)
+                ?? base.appendingPathComponent("_archive", isDirectory: true)
+        } catch {
+            warnNotSwept("retention.archive_dir is refused", onLine)
+            return nil
+        }
+        let resolved = root.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path == base.path || resolved.path.hasPrefix(base.path + "/") else {
+            warnNotSwept("it is outside the workspace", onLine)
+            return nil
+        }
+        return resolved
+    }
+
+    private static func warnNotSwept(
+        _ why: String, _ onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) {
+        onLine(.init(timestamp: Date(), level: .warn,
+            text: "[warn] lost-mode rewrite: the snapshot archive was not checked because "
+                + "\(why); old mobile snapshots there may still hold lost-mode text"))
+    }
+
     /// Snapshots written before 2.11 still hold the lost-mode text `saveCollectedPayload` now
     /// drops, and the folder can sit in a shared workspace. Rewrites each such snapshot in place,
     /// once per workspace, with the reducer collect uses. Not a source: it records no failure and
-    /// logs no `[partial]`. A refused `state` or kind folder warns and skips, so nothing is
-    /// marked done; a failed write leaves the marker unwritten so the next collect retries.
+    /// logs no `[partial]`. The marker is written only when no file was unreadable or failed to
+    /// write and no folder was refused or unlistable; those retry on the next collect. A file
+    /// that is not JSON is warned about and not retried. The file's mtime changes and a link
+    /// swapped in after the folder check is not caught, as in `saveSnapshot`.
     static func rewriteLostModeTextOnce(
-        dataDir: URL, now: Date = Date(),
+        dataDir: URL, archiveRoot: URL?, now: Date = Date(),
+        limit: Int = BoundedFile.inventoryLimit,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) {
         guard let stateDir = WorkspacePaths.confinedFolderOrWarn(
             ["state"], under: dataDir, onLine: onLine) else { return }
         let marker = stateDir.appendingPathComponent(lostModeRewriteMarker)
         guard BoundedFile.stateText(marker) == nil else { return }
-        guard let dir = WorkspacePaths.confinedFolderOrWarn(
-            [MobileFleetService.deviceKind], under: dataDir, onLine: onLine) else { return }
 
-        let result = rewriteLostModeText(in: dir)
-        if !result.unreadable.isEmpty {
-            let names = result.unreadable.sorted()
-            let shown = names.prefix(10).joined(separator: ", ")
-            let more = names.count > 10 ? " and \(names.count - 10) more" : ""
-            onLine(.init(timestamp: Date(), level: .warn,
-                text: "[warn] lost-mode text not checked in \(result.unreadable.count) mobile "
-                    + "device snapshot(s) that are not readable JSON: \(shown)\(more)"))
+        var tally = LostModeTally()
+        for kind in lostModeKinds {
+            if let dir = WorkspacePaths.confinedFolderOrWarn(
+                [kind], under: dataDir, onLine: onLine) {
+                rewriteLostModeFolder(dir, label: kind, limit: limit, tally: &tally)
+            } else {
+                tally.folderFailed = true
+            }
+            guard let archiveRoot else { continue }
+            do {
+                let dir = try WorkspacePaths.confinedFolder(
+                    ["jamf-cli-data", kind], under: archiveRoot)
+                rewriteLostModeFolder(dir, label: "archive/\(kind)", limit: limit, tally: &tally)
+            } catch {
+                tally.folderFailed = true
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] lost-mode rewrite: archive/\(kind) is not used: "
+                        + "\(WorkspacePaths.refusal(of: error))"))
+            }
         }
-        guard result.writeFailures == 0 else { return }
+        report(tally, onLine)
+        guard tally.isComplete else { return }
         do {
             try FileManager.default.createDirectory(
-                at: stateDir, withIntermediateDirectories: true)
+                at: stateDir, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
             try Data(SummaryJSONParser.dateFormatter.string(from: now).utf8)
                 .write(to: marker, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: marker.path)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] lost-mode rewrite marker not written: "
                     + "\(error.localizedDescription)"))
         }
-        if result.rewritten > 0 {
+    }
+
+    private static func report(
+        _ tally: LostModeTally, _ onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) {
+        func warn(_ names: [String], _ what: String) {
+            guard !names.isEmpty else { return }
+            // File names are peer-chosen: displayText strips line breaks that could forge a line.
+            let shown = names.sorted().prefix(10).map(ConfigSchema.displayText)
+                .joined(separator: ", ")
+            let more = names.count > 10 ? " and \(names.count - 10) more" : ""
+            onLine(.init(timestamp: Date(), level: .warn,
+                text: "[warn] lost-mode rewrite: \(names.count) mobile device snapshot(s) "
+                    + "\(what): \(shown)\(more)"))
+        }
+        warn(tally.unparsable, "are not valid JSON and may still contain lost-mode text; "
+            + "delete or replace them; not rechecked")
+        warn(tally.unreadable, "could not be read; will retry on the next collect")
+        warn(tally.writeFailed, "could not be rewritten; will retry on the next collect")
+        if tally.rewritten > 0 {
             onLine(.init(timestamp: Date(), level: .info,
-                text: "[info] removed lost-mode text from \(result.rewritten) mobile device "
+                text: "[info] removed lost-mode text from \(tally.rewritten) mobile device "
                     + "snapshots"))
         }
     }
 
-    private static func rewriteLostModeText(
-        in dir: URL
-    ) -> (rewritten: Int, unreadable: [String], writeFailures: Int) {
-        let files = ((try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-            .filter { $0.pathExtension.lowercased() == "json" }
-        var rewritten = 0, writeFailures = 0
-        var unreadable: [String] = []
+    private static func rewriteLostModeFolder(
+        _ dir: URL, label: String, limit: Int, tally: inout LostModeTally
+    ) {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDirectory) else {
+            return
+        }
+        guard isDirectory.boolValue,
+              let listed = try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            tally.folderFailed = true
+            return
+        }
+        let manifest = SnapshotManifest.entries(in: dir)
+        // manifest.json holds hashes only; the rest are snapshots and their sync-conflict copies.
+        let files = listed.filter {
+            $0.pathExtension.lowercased() == "json"
+                && $0.lastPathComponent != SnapshotManifest.fileName
+        }
         for file in files {
+            let name = "\(label)/\(file.lastPathComponent)"
             guard let data = try? BoundedFile.read(
-                    file, limit: BoundedFile.snapshotLimit, followSymlinks: false, inside: dir),
-                  let stripped = droppingLostModeText(data) else {
-                unreadable.append(file.lastPathComponent)
+                    file, limit: limit, followSymlinks: false, inside: dir) else {
+                tally.unreadable.append(name)
+                continue
+            }
+            guard let stripped = droppingLostModeText(data, sortedKeys: true) else {
+                tally.unparsable.append(name)
                 continue
             }
             if stripped == data { continue }
+            // Stamp the stripped hash BEFORE the write, and only when the original bytes verify:
+            // a tampered file stays a mismatch, and a crash between the two leaves an entry the
+            // next pass reproduces exactly (the bytes are key-sorted), so it is never left stale.
+            let restamp = manifest[file.lastPathComponent]?.lowercased()
+                == SnapshotManifest.sha256Hex(data)
+            if restamp, (try? SnapshotManifest.record(snapshotFile: file, data: stripped)) == nil {
+                tally.writeFailed.append(name)
+                continue
+            }
             do {
                 // Atomic (temp file + rename), as saveSnapshot: a crash never tears a snapshot.
                 try stripped.write(to: file, options: .atomic)
                 try? FileManager.default.setAttributes(
                     [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: file.path)
-                rewritten += 1
+                tally.rewritten += 1
             } catch {
-                writeFailures += 1
-                continue
-            }
-            // Only an existing entry is refreshed: stamping an unlisted file would vouch for it.
-            if SnapshotManifest.lists(file) {
-                try? SnapshotManifest.record(snapshotFile: file, data: stripped)
+                tally.writeFailed.append(name)
+                if restamp { try? SnapshotManifest.record(snapshotFile: file, data: data) }
             }
         }
-        return (rewritten, unreadable, writeFailures)
     }
 }

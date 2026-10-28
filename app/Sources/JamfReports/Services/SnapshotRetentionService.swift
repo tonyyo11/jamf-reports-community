@@ -168,7 +168,7 @@ enum SnapshotRetentionService {
             reportsFolder: true)
     }
 
-    private static func loadRetentionConfig(workspace: URL) -> RetentionConfig? {
+    static func loadRetentionConfig(workspace: URL) -> RetentionConfig? {
         let configURL = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: configURL.path),
               let config = try? ConfigLoader.load(from: configURL) else { return nil }

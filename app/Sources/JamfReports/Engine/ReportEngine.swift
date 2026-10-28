@@ -1971,9 +1971,7 @@ struct ReportEngine: Sendable {
         // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
         // own marker keeps it idempotent. Best-effort — never fails the collect.
         SnapshotRetentionService.sweepIfDue(profile: profile, onLine: onLine)
-        if let dataDir = try? workspacePaths.dataDir(for: profile) {
-            rewriteLostModeTextOnce(dataDir: dataDir, onLine: onLine)
-        }
+        rewriteLostModeTextOnce(profile: profile, workspacePaths: workspacePaths, onLine: onLine)
 
         // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
         // summary for today already exists, unless the caller passes force: true.
@@ -4120,7 +4118,9 @@ struct ReportEngine: Sendable {
     /// The payload with every `lostModeTextKeys` key removed at any depth. Returned unchanged
     /// when it holds none of them. Nil, so the caller saves nothing, when it does not parse or
     /// cannot be written back after removal: the text must not reach disk on a guess.
-    static func droppingLostModeText(_ data: Data) -> Data? {
+    /// `sortedKeys` makes the bytes a function of the content alone, so a pass that stamps a
+    /// manifest before writing can be repeated after a crash and land on the same hash.
+    static func droppingLostModeText(_ data: Data, sortedKeys: Bool = false) -> Data? {
         guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
             return nil
         }
@@ -4139,7 +4139,8 @@ struct ReportEngine: Sendable {
         }
         let stripped = strip(object)
         guard removed else { return data }
-        return try? JSONSerialization.data(withJSONObject: stripped, options: [])
+        return try? JSONSerialization.data(
+            withJSONObject: stripped, options: sortedKeys ? [.sortedKeys] : [])
     }
 
     static func jsonPayload(from data: Data) -> Data? {
