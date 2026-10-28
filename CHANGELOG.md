@@ -44,8 +44,6 @@ versions in this repository map to git tags.
   Automation still shows it as failing with the reason. (#305)
 - When the background item cannot record that a wake was turned away, or cannot read that
   record, it now logs a warning naming the file instead of staying silent. (#305)
-- A custom `XDG_CONFIG_HOME` is now honoured: the app starts jamf-cli with it and reads the
-  profiles in `$XDG_CONFIG_HOME/jamf-cli/`, so both agree on which profiles exist. (#305)
 - A custom `XDG_CONFIG_HOME` is now honoured when the app or the `jamf-reports` command sees it
   (an app opened from the Dock does not inherit a shell `export`): the app starts jamf-cli with
   it and reads the profiles in `$XDG_CONFIG_HOME/jamf-cli/`, so both agree on which profiles
