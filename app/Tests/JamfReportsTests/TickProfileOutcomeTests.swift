@@ -22,8 +22,12 @@ final class TickProfileOutcomeTests: XCTestCase {
             started: started, finished: started.addingTimeInterval(60))
     }
 
-    private func run(_ outcomes: [ProfileOutcome]) -> ScheduleRunOutcome {
-        ScheduleRunOutcome(over: outcomes, ran: outcomes)
+    /// A multi-profile run of `outcomes`; `considered` adds the profiles it left out.
+    private func run(
+        _ outcomes: [ProfileOutcome], leftOut: Set<String> = []
+    ) -> ScheduleRunOutcome {
+        ScheduleRunOutcome(
+            over: outcomes, ran: outcomes, considered: Set(outcomes.map(\.profile)).union(leftOut))
     }
 
     /// One `TickLoop.runDue` over `due` from `state`; returns the state it ends on.
@@ -77,7 +81,8 @@ final class TickProfileOutcomeTests: XCTestCase {
             outcome("alpha", exit: 1, helps: true), outcome("beta", exit: 1, helps: false),
         ])
         let retry = try XCTUnwrap(retryDue(first))
-        let after = await runDue(retry, state: first, result: run([outcome("alpha")]))
+        let after = await runDue(
+            retry, state: first, result: run([outcome("alpha")], leftOut: ["beta"]))
         XCTAssertNil(after.lastSucceeded[label], "beta's repeating failure keeps the fire open")
         XCTAssertEqual(after.profileOutcomes[label]?.map(\.profile).sorted(), ["alpha", "beta"])
         XCTAssertEqual(after.retryCount[label], 1)
@@ -86,7 +91,8 @@ final class TickProfileOutcomeTests: XCTestCase {
     func testARetryThatClearsTheLastNeedingProfileEndsTheRetries() async throws {
         let first = await firstRun([outcome("alpha", exit: 1, helps: true), outcome("beta")])
         let retry = try XCTUnwrap(retryDue(first))
-        let after = await runDue(retry, state: first, result: run([outcome("alpha")]))
+        let after = await runDue(
+            retry, state: first, result: run([outcome("alpha")], leftOut: ["beta"]))
         XCTAssertEqual(after.lastSucceeded[label], started)
     }
 
@@ -134,9 +140,45 @@ final class TickProfileOutcomeTests: XCTestCase {
     func testARunThatRanNothingStillAnswersForTheStandingOutcomes() async throws {
         let first = await firstRun([outcome("alpha", exit: 1, helps: false), outcome("beta")])
         let retry = try XCTUnwrap(retryDue(first))
-        let result = ScheduleRunOutcome(exitCode: 0, incomplete: false)
+        let result = ScheduleRunOutcome(
+            exitCode: 0, incomplete: false, considered: ["alpha", "beta"])
         let after = await runDue(retry, state: first, result: result)
         XCTAssertNil(after.lastSucceeded[label], "alpha's failure still stands")
+    }
+
+    /// A run with no profiles (the early return) is its own result, never the stored one.
+    func testARunThatCoveredNoProfilesIsNotJudgedByStoredOutcomes() async throws {
+        var first = await firstRun([outcome("alpha", exit: 1, helps: true)])
+        first.profileOutcomes[label] = [outcome("alpha"), outcome("beta")]
+        let retry = try XCTUnwrap(retryDue(first))
+        let none = ScheduleRunOutcome(exitCode: 1, incomplete: false, considered: [])
+        let after = await runDue(retry, state: first, result: none)
+        XCTAssertNil(after.profileOutcomes[label])
+        XCTAssertNil(after.lastSucceeded[label], "exit 1 is not a success")
+        let single = ScheduleRunOutcome(exitCode: 1, incomplete: false)
+        let kept = await runDue(retry, state: first, result: single)
+        XCTAssertNil(kept.lastSucceeded[label], "a single-profile result ignores stored outcomes")
+    }
+
+    /// G failed and has since gone; B and C were clean. The skip set covers every discovered
+    /// profile, so the retry runs B and C once more (one extra same-day collect, accepted), and
+    /// pruning G lets that run end the retries.
+    func testAGoneFailingProfileCostsOneExtraRunThenEndsTheRetries() async throws {
+        let first = await firstRun([
+            outcome("G", exit: 1, helps: true), outcome("B"), outcome("C"),
+        ])
+        let retry = try XCTUnwrap(retryDue(first))
+        XCTAssertEqual(retry.skipProfiles, ["B", "C"])
+        let result = await TickScheduler.runProfiles(
+            names: ["B", "C"], skipping: retry.skipProfiles, onLine: { _ in }
+        ) { self.outcome($0) }
+        XCTAssertEqual(result.ran.map(\.profile), ["B", "C"])
+        let after = await runDue(
+            retry, state: first,
+            result: ScheduleRunOutcome(
+                over: result.ran, ran: result.ran, considered: result.considered))
+        XCTAssertEqual(after.profileOutcomes[label]?.map(\.profile), ["B", "C"])
+        XCTAssertEqual(after.lastSucceeded[label], started)
     }
 
     // MARK: - runProfiles

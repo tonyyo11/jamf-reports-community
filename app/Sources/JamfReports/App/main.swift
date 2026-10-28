@@ -793,7 +793,7 @@ func runSchedule(
     }
     guard !profiles.isEmpty else {
         fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
-        return ScheduleRunOutcome(exitCode: 1, incomplete: false)
+        return ScheduleRunOutcome(exitCode: 1, incomplete: false, considered: [])
     }
     if !excluded.isEmpty {
         fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)

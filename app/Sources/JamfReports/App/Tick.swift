@@ -334,7 +334,9 @@ enum TickLoop {
             let outcomesChanged = state.noteProfileOutcomes(
                 label, ran.profiles, considered: ran.considered, reason: run.reason)
             // A retry of some profiles still answers for all of them, one that ran none included.
-            let merged = scheduled ? state.profileOutcomes[label] ?? [] : []
+            // Only a multi-profile run answers for stored outcomes; any other result stands alone.
+            let merged = scheduled && ran.considered != nil
+                ? state.profileOutcomes[label] ?? [] : []
             let outcome = merged.isEmpty
                 ? ran : ScheduleRunOutcome(over: merged, ran: ran.profiles)
             if scheduled, outcome.endsRetries {
