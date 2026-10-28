@@ -3581,7 +3581,7 @@ struct ReportEngine: Sendable {
             let deadCause = Self.deadRunCause(schoolOutcomes)
             let error = ReportEngineError.collectDead(
                 profile: profile, failedCount: failedCount, cause: deadCause)
-            let msg = deadCause == .keychainLocked
+            let msg = deadCause != .outage
                 ? "[error] " + (error.errorDescription ?? "collect failed")
                 : "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
                     "'\(profile)' — server unreachable or credentials broken. No snapshot written."

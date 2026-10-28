@@ -83,6 +83,61 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         XCTAssertEqual(store.cause(for: kind)?.kind, .keychainLocked)
     }
 
+    /// jamf-cli's swallowed 403: exit 0, nothing on stdout, the refusal on stderr.
+    private func installSwallowed403Stub() throws {
+        let body = "#!/bin/sh\necho 'permission denied (HTTP 403)' >&2\nexit 0\n"
+        try body.write(to: bin, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
+    }
+
+    /// `failedRun` is for a collect that threw (a dead School run prints no `[partial]` line, so
+    /// the verdict comes from the failures it recorded); otherwise the `[partial]` line decides.
+    private func assertMissingPermissionEndsRetries(
+        kind: String, lines: LineBox, failedRunSince start: Date? = nil
+    ) throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.cause(for: kind)?.kind, .missingPermission)
+        let watcher = CollectHonestyWatcher()
+        lines.texts.forEach(watcher.observe)
+        if let start {
+            XCTAssertFalse(watcher.retryCouldHelp(profile: profile, exitCode: 1, since: start),
+                           "a refused permission is not fetched by a retry: \(lines.texts)")
+        } else {
+            XCTAssertTrue(watcher.incomplete, "Run History still reads the run as Partial")
+            XCTAssertFalse(watcher.retryCouldHelp(profile: profile),
+                           "a refused permission is not fetched by a retry: \(lines.texts)")
+        }
+    }
+
+    func testSchoolSwallowed403IsAMissingPermissionAndNotRetried() async throws {
+        try installSwallowed403Stub()
+        let stub: URL = bin
+        let seen = LineBox()
+        let start = Date().addingTimeInterval(-1)
+        do {
+            try await ReportEngine.schoolCollect(
+                profile: profile, workspacePaths: WorkspacePaths.self, force: true,
+                locateJamfCLI: { stub }, onLine: seen.append)
+            XCTFail("every source refused: the run is dead")
+        } catch ReportEngineError.collectDead(_, _, let cause) {
+            XCTAssertEqual(cause, .noPermission)
+        }
+        let kind = try XCTUnwrap(ReportEngine.schoolCommandMatrix(profile: profile).first?.kind)
+        try assertMissingPermissionEndsRetries(kind: kind, lines: seen, failedRunSince: start)
+    }
+
+    func testProtectSwallowed403IsAMissingPermissionAndNotRetried() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installSwallowed403Stub()
+        let stub: URL = bin
+        let seen = LineBox()
+        try await ReportEngine.protectCollect(
+            profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: seen.append)
+        let kind = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
+        try assertMissingPermissionEndsRetries(kind: kind, lines: seen)
+    }
+
     /// A `state` folder that is a link is refused with one `[warn]`, not skipped in silence.
     private func linkStateFolder() throws -> URL {
         let data = try WorkspacePaths.dataDir(for: profile)

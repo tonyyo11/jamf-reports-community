@@ -53,6 +53,8 @@ versions in this repository map to git tags.
 - When the login keychain is locked, a failed run now says so and tells you to unlock it
   (Keychain Access, or `security unlock-keychain`), instead of showing jamf-cli's raw error or
   asking you to re-authenticate. (#305)
+- A Jamf School or Jamf Protect source refused for a missing permission is now named as such in
+  Run History and is not retried every hour, as a Jamf Pro source already was. (#305)
 
 ### Security
 
