@@ -235,6 +235,9 @@ enum ConfigService {
         case notASettingsBlock(String)
         /// A number field holding text the engine cannot read as a whole number.
         case notAWholeNumber(key: String, value: String)
+        /// An old product key written under a `profiles:` block, which `EnvironmentProfiles`
+        /// would not read; the slot to edit instead.
+        case profilesBlock(slot: String)
 
         var errorDescription: String? {
             switch self {
@@ -253,6 +256,9 @@ enum ConfigService {
                 "\(key) must be a whole number, and \"\(ConfigSchema.displayText(value))\" is "
                     + "not one, so nothing was saved. Enter a number, or clear the field to "
                     + "use the default."
+            case .profilesBlock(let slot):
+                "config.yaml has a profiles block, so nothing was written here; edit "
+                    + "profiles.\(slot) in config.yaml instead."
             }
         }
     }
@@ -344,8 +350,11 @@ enum ConfigService {
     /// Writes nothing when `apply` leaves the block's settings as they were. A block typed as
     /// something other than settings is left as typed: `notASettingsBlock` is thrown. Returns
     /// the file's stamp afterwards, for a screen that loaded the file to adopt the write.
+    /// `profilesSlot` names the `profiles:` slot that replaces the block's old product keys:
+    /// under a `profiles:` mapping the write would change nothing the app reads, so it throws
+    /// `profilesBlock` instead.
     static func saveBlock(
-        key: String, profile: String, workspaceRoot: URL? = nil,
+        key: String, profile: String, workspaceRoot: URL? = nil, profilesSlot: String? = nil,
         apply: (inout YAMLCodec.YAMLMapping) -> Void
     ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
         let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
@@ -362,6 +371,9 @@ enum ConfigService {
             try rejectCredentialKeys(in: document.root)
         }
         guard case .mapping(var root) = document.root else { throw ConfigError.invalidTopLevel }
+        if let profilesSlot, root.value(for: "profiles")?.mapping != nil {
+            throw ConfigError.profilesBlock(slot: profilesSlot)
+        }
         let before = root.value(for: key)
         if let before, before.mapping == nil, before != .scalar(.null) {
             throw ConfigError.notASettingsBlock(key)

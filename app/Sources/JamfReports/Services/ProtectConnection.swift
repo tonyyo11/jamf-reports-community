@@ -45,7 +45,9 @@ enum ProtectConnection {
     static func disconnect(
         workspace profile: String, appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
-        let report = try ConfigService.saveBlock(key: "protect", profile: profile) { root in
+        let report = try ConfigService.saveBlock(
+            key: "protect", profile: profile, profilesSlot: "protect"
+        ) { root in
             guard var block = root.value(for: "protect")?.mapping else { return }
             block.set("enabled", value: .scalar(.bool(false)))
             block.entries.removeAll { $0.key == "profile" }

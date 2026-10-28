@@ -2,7 +2,8 @@ import XCTest
 @testable import JamfReports
 
 /// A `profiles:` block that cannot run stops every Jamf Pro entry point through
-/// `CLIBridge.refusesProCommand`.
+/// `CLIBridge.refusesProCommand`, and the old-key product writers refuse to write keys a block
+/// makes unread.
 final class ProfilesBlockEntryPointTests: XCTestCase {
     private let ws = "blockws"
     private var root: URL!
@@ -109,5 +110,51 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
     func testTheCLIDeviceCommandIsRefused() async {
         let answer = await Device.refusal(profile: ws)
         XCTAssertEqual(answer, refusal)
+    }
+
+    // MARK: - Old-key writers
+
+    private func assertWriteRefused(
+        slot: String, _ write: () throws -> Void,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        try writeConfig("profiles:\n  jamf_pro: blockws\n  protect: blockws-protect\n")
+        let before = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertThrowsError(try write(), file: file, line: line) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "config.yaml has a profiles block, so nothing was written here; edit "
+                    + "profiles.\(slot) in config.yaml instead.", file: file, line: line)
+        }
+        XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), before,
+                       file: file, line: line)
+    }
+
+    func testDisconnectingProtectUnderABlockWritesNothing() throws {
+        try assertWriteRefused(slot: "protect") {
+            try ProtectConnection.disconnect(
+                workspace: ws, appSupport: root.appendingPathComponent(".support"))
+        }
+    }
+
+    @MainActor
+    func testConnectingProtectUnderABlockWritesNothing() throws {
+        try assertWriteRefused(slot: "protect") {
+            try OnboardingFlow.writeProtectConfig(profileSlug: ws, protectProfileName: "other")
+        }
+    }
+
+    @MainActor
+    func testWritingSchoolUnderABlockWritesNothing() throws {
+        try assertWriteRefused(slot: "jamf_school") {
+            _ = try OnboardingFlow.writeProductBlock("school_cli", profile: ws, for: ws)
+        }
+    }
+
+    func testOldShapeWritersStillWrite() throws {
+        try writeConfig("protect:\n  enabled: true\n  profile: p\n")
+        try ProtectConnection.disconnect(
+            workspace: ws, appSupport: root.appendingPathComponent(".support"))
+        XCTAssertNil(EnvironmentProfiles.read(workspace: ws).protect)
     }
 }
