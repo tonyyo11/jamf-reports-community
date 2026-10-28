@@ -27,26 +27,31 @@ final class SchoolFleetServiceTests: XCTestCase {
     }
 
     func test_devices_readJamfCLIShape_andLeaveTrashOut() throws {
-        try write("""
-        [{"name":"Cart iPad 01","serialNumber":"SER001","model":"iPad (10th generation)",
-          "os":"iPadOS 27.0.1","isManaged":true,"isSupervised":true,
-          "lastCheckin":"2026-10-18 09:00:00","inTrash":false,"udid":"u1"},
-         {"name":"Lab Mac 02","serialNumber":"SER002","model":"MacBook Air",
-          "os":"macOS 26.6.2","isManaged":false,"isSupervised":false,
-          "lastCheckin":"2026-08-01 09:00:00","inTrash":false},
-         {"name":"Old iPad","serialNumber":"SER003","os":"iPadOS 18.1","inTrash":true},
-         {"name":"No dates","serialNumber":"SER004","os":"iOS 27.0","isManaged":"yes"}]
-        """, kind: SchoolFleetService.devicesKind)
+        try write(SchoolRows.json([
+            SchoolRows.device(1),
+            SchoolRows.device(2, [
+                "model": "MacBook Air", "os": "macOS 26.6.2", "isManaged": false,
+                "isSupervised": false, "lastCheckin": "2026-08-01 09:00:00",
+            ], omitting: ["udid"]),
+            SchoolRows.device(3, ["os": "iPadOS 18.1", "inTrash": true], omitting: [
+                "isManaged", "isSupervised", "lastCheckin", "udid",
+            ]),
+            SchoolRows.device(4, ["os": "iOS 27.0"],
+                              omitting: ["isSupervised", "lastCheckin", "udid"],
+                              malformed: ["isManaged": "yes"]),
+        ]), kind: SchoolFleetService.devicesKind)
 
         let snapshot = SchoolFleetService.load(dataDir: dataDir)
         XCTAssertTrue(snapshot.isDetected)
-        XCTAssertEqual(snapshot.devices.map(\.serial), ["SER001", "SER002", "SER004"])
+        XCTAssertEqual(snapshot.devices.map(\.serial),
+                       ["SCHOOL-SERIAL-001", "SCHOOL-SERIAL-002", "SCHOOL-SERIAL-004"])
         XCTAssertEqual(snapshot.trashedCount, 1)
         XCTAssertEqual(snapshot.managedCount, 1)
         XCTAssertEqual(snapshot.unmanagedCount, 1, "a non-boolean managed flag is unknown")
         XCTAssertEqual(snapshot.supervisedCount, 1)
-        XCTAssertEqual(snapshot.devices[0].id, "u1")
-        XCTAssertEqual(snapshot.devices[1].id, "SER002", "the serial stands in for a missing udid")
+        XCTAssertEqual(snapshot.devices[0].id, "SCHOOL-UDID-001")
+        XCTAssertEqual(snapshot.devices[1].id, "SCHOOL-SERIAL-002",
+                       "the serial stands in for a missing udid")
         XCTAssertEqual(snapshot.devices.map(\.platform), ["iPadOS", "macOS", "iOS"])
 
         let now = DateParser().parse("2026-10-19 09:00:00")!
@@ -58,21 +63,22 @@ final class SchoolFleetServiceTests: XCTestCase {
     func test_staleIsMoreThanTheThreshold() throws {
         let now = DateParser().parse("2026-10-31 09:00:00")!
         let device = SchoolFleetService.device(
-            from: ["lastCheckin": "2026-10-01 09:00:00"], index: 0)
+            from: SchoolRows.device(1, ["lastCheckin": "2026-10-01 09:00:00"]), index: 0)
         XCTAssertFalse(device.isStale(atDays: 30, now: now), "exactly 30 days is not stale")
         XCTAssertTrue(device.isStale(atDays: 29, now: now))
     }
 
     func test_overviewAndDEP_rows() throws {
-        try write("""
-        [{"section":"Devices","resource":"Devices","value":"42"},
-         {"section":"People","resource":"Users","value":"310"},
-         {"section":"x","value":"no resource"}]
-        """, kind: SchoolFleetService.overviewKind)
-        try write("""
-        [{"serialNumber":"DEP1","deviceName":"","model":"iPad","status":"assigned",
-          "profileName":"Cart profile"}]
-        """, kind: SchoolFleetService.depDevicesKind, stamp: "20261019T090000")
+        try write(SchoolRows.json([
+            SchoolRows.row("school-overview", 1, ["resource": "Devices", "value": "42"]),
+            SchoolRows.row("school-overview", 2,
+                           ["section": "People", "resource": "Users", "value": "310"]),
+            SchoolRows.row("school-overview", 3, omitting: ["resource"]),
+        ]), kind: SchoolFleetService.overviewKind)
+        try write(SchoolRows.json([
+            SchoolRows.row("school-dep-devices", 1,
+                           ["deviceName": "", "profileName": "Cart profile"]),
+        ]), kind: SchoolFleetService.depDevicesKind, stamp: "20261019T090000")
 
         let snapshot = SchoolFleetService.load(dataDir: dataDir)
         XCTAssertEqual(snapshot.overview.map(\.resource), ["Devices", "Users"])
@@ -82,19 +88,22 @@ final class SchoolFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.collectedAt, snapshot.depDate)
     }
 
-    /// A count of 0 or 1 printed as a JSON number is a number, not a boolean.
+    /// A count of 0 or 1 printed as a JSON number is a number, not a boolean. The capture has
+    /// `value` as a string; this is what the reader does with an older or odd number.
     func test_overviewNumbersZeroAndOneReadAsText() throws {
-        let rows = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data("""
-        [{"resource":"iBeacons","value":0},{"resource":"Classes","value":1},
-         {"resource":"Flag","value":true}]
-        """.utf8)) as? [[String: Any]])
+        let values: [Any] = [0, 1, true]
+        let sent = values.enumerated().map {
+            SchoolRows.row("school-overview", $0, malformed: ["value": $1])
+        }
+        let rows = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: Data(SchoolRows.json(sent).utf8)) as? [[String: Any]])
         XCTAssertEqual(rows.compactMap(SchoolFleetService.overviewRow).map(\.value), ["0", "1", ""])
     }
 
     func test_platformCounts_largestFirst() {
         var snapshot = SchoolFleetService.Snapshot()
         snapshot.devices = ["iOS 27", "iPadOS 27", "iPadOS 26", "macOS 26"].enumerated().map {
-            SchoolFleetService.device(from: ["os": $1], index: $0)
+            SchoolFleetService.device(from: SchoolRows.device($0 + 1, ["os": $1]), index: $0)
         }
         XCTAssertEqual(snapshot.platformCounts.map(\.platform), ["iPadOS", "iOS", "macOS"])
         XCTAssertEqual(snapshot.platformCounts.first?.count, 2)

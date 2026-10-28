@@ -22,19 +22,11 @@ final class SchoolDashboardTests: XCTestCase {
         super.tearDown()
     }
 
-    private var fixturesDir: URL { TestFixtures.root }
-
-    private func tempDataDir(copying names: [String]) throws -> URL {
+    private func tempDataDir() throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-school-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         createdTempDirs.append(tmp)
-        let src = fixturesDir.appendingPathComponent("jamf-cli-data")
-        for name in names {
-            let from = src.appendingPathComponent(name, isDirectory: true)
-            let to = tmp.appendingPathComponent(name, isDirectory: true)
-            try? TestFixtures.copyDir(from, to: to)
-        }
         return tmp
     }
 
@@ -44,14 +36,15 @@ final class SchoolDashboardTests: XCTestCase {
 
     // MARK: - iBeacons
 
-    func testWriteSchoolIBeaconsHappyPath() throws {
-        let dataDir = try tempDataDir(copying: ["school-ibeacons"])
-        let fixtureDir = dataDir.appendingPathComponent("school-ibeacons")
-        guard FileManager.default.fileExists(atPath: fixtureDir.path) else {
-            throw XCTSkip("school-ibeacons fixture not available")
-        }
-        let dash = makeDashboard(dataDir: dataDir)
+    /// The captured tenant returned no iBeacons, so the only captured shape is an empty list:
+    /// the tab is written with its header and no rows.
+    func testWriteSchoolIBeaconsOnTheCapturedEmptyList() throws {
+        let dataDir = try tempDataDir()
+        try SchoolRows.write([], kind: "school-ibeacons", into: dataDir)
+        let workbook = Workbook()
+        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolIBeacons())
+        XCTAssertTrue(strings(in: "iBeacons", of: workbook).contains("Name"))
     }
 
     func testWriteSchoolIBeaconsThrowsOnEmpty() throws {
@@ -70,14 +63,22 @@ final class SchoolDashboardTests: XCTestCase {
 
     // MARK: - DEP Devices
 
-    func testWriteSchoolDepDevicesHappyPath() throws {
-        let dataDir = try tempDataDir(copying: ["school-dep-devices"])
-        let fixtureDir = dataDir.appendingPathComponent("school-dep-devices")
-        guard FileManager.default.fileExists(atPath: fixtureDir.path) else {
-            throw XCTSkip("school-dep-devices fixture not available")
-        }
-        let dash = makeDashboard(dataDir: dataDir)
+    func testWriteSchoolDepDevicesReadsTheCapturedColumns() throws {
+        let dataDir = try tempDataDir()
+        try SchoolRows.write([
+            SchoolRows.row("school-dep-devices", 1, ["status": "Assigned"]),
+            SchoolRows.row("school-dep-devices", 2,
+                           ["deviceName": "", "profileName": "", "status": "Unassigned"]),
+        ], kind: "school-dep-devices", into: dataDir)
+        let workbook = Workbook()
+        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDepDevices())
+        let cells = strings(in: "DEP Devices", of: workbook)
+        for expected in ["SCHOOL-SERIAL-001", "SCHOOL-SERIAL-002", "School DEP Device 001",
+                         "School DEP Profile 001", "iPad (10th generation)", "Assigned",
+                         "Unassigned"] {
+            XCTAssertTrue(cells.contains(expected), expected)
+        }
     }
 
     func testWriteSchoolDepDevicesThrowsOnEmpty() throws {
@@ -103,13 +104,10 @@ final class SchoolDashboardTests: XCTestCase {
     }
 
     func testWriteAllWritesIBeaconsAndDepDevicesWhenAvailable() throws {
-        let dataDir = try tempDataDir(copying: ["school-ibeacons", "school-dep-devices"])
-        let ibeaconsDir = dataDir.appendingPathComponent("school-ibeacons")
-        let depDir = dataDir.appendingPathComponent("school-dep-devices")
-        guard FileManager.default.fileExists(atPath: ibeaconsDir.path),
-              FileManager.default.fileExists(atPath: depDir.path) else {
-            throw XCTSkip("school fixture(s) not available")
-        }
+        let dataDir = try tempDataDir()
+        try SchoolRows.write([], kind: "school-ibeacons", into: dataDir)
+        try SchoolRows.write([SchoolRows.row("school-dep-devices")],
+                             kind: "school-dep-devices", into: dataDir)
         let dash = makeDashboard(dataDir: dataDir)
         let (written, failures) = dash.writeAll()
         XCTAssertTrue(written.contains("iBeacons"), "Expected iBeacons sheet to be written")
@@ -117,66 +115,16 @@ final class SchoolDashboardTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, "No unexpected failures expected for valid fixture data")
     }
 
-    // MARK: - iBeacons fixture data validates expected columns
-
-    func testIBeaconsFixtureDecodesExpectedFields() throws {
-        let dataDir = try tempDataDir(copying: ["school-ibeacons"])
-        let fixtureDir = dataDir.appendingPathComponent("school-ibeacons")
-        guard FileManager.default.fileExists(atPath: fixtureDir.path) else {
-            throw XCTSkip("school-ibeacons fixture not available")
-        }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureDir, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" && $0.lastPathComponent.contains("happy") }
-        guard let file = files.first else { throw XCTSkip("happy fixture not found") }
-        let data = try Data(contentsOf: file)
-        let json = try JSONSerialization.jsonObject(with: data)
-        guard let items = json as? [[String: Any]], !items.isEmpty else {
-            throw XCTSkip("Empty iBeacons fixture")
-        }
-        let first = items[0]
-        XCTAssertNotNil(first["name"], "iBeacon should have name field")
-        XCTAssertNotNil(first["uuid"], "iBeacon should have uuid field")
-    }
-
-    // MARK: - DEP devices fixture validates expected columns
-
-    func testDepDevicesFixtureDecodesExpectedFields() throws {
-        let dataDir = try tempDataDir(copying: ["school-dep-devices"])
-        let fixtureDir = dataDir.appendingPathComponent("school-dep-devices")
-        guard FileManager.default.fileExists(atPath: fixtureDir.path) else {
-            throw XCTSkip("school-dep-devices fixture not available")
-        }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureDir, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" && $0.lastPathComponent.contains("happy") }
-        guard let file = files.first else { throw XCTSkip("happy fixture not found") }
-        let data = try Data(contentsOf: file)
-        let json = try JSONSerialization.jsonObject(with: data)
-        guard let items = json as? [[String: Any]], !items.isEmpty else {
-            throw XCTSkip("Empty DEP devices fixture")
-        }
-        let first = items[0]
-        XCTAssertNotNil(first["serialNumber"] ?? first["serial"], "DEP device should have serial field")
-        XCTAssertNotNil(first["model"], "DEP device should have model field")
-    }
-
     // MARK: - jamf-cli shape helpers
     //
-    // These fixtures mirror jamf-cli's flatten* functions verbatim (exact keys
-    // and JSON types), not the pre-2026-09 guessed key names the readers used
-    // to look for. See internal/commands/school_*.go in jamf-cli and
-    // jamfschool/*.go in jamfschool-go-sdk for the source of truth.
+    // Rows come from `SchoolRows`: the key-and-type shape captured from jamf-cli 1.33.0
+    // (exact keys and JSON types), not the pre-2026-09 guessed key names the readers used
+    // to look for.
 
-    /// Write raw jamf-cli-shaped JSON directly into a temp `<kind>/` dir,
-    /// bypassing the committed-fixture directories `tempDataDir(copying:)` uses.
-    private func tempDataDir(writing json: String, kind: String) throws -> URL {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("jrc-school-\(UUID().uuidString)")
-        let kindDir = tmp.appendingPathComponent(kind, isDirectory: true)
-        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
-        createdTempDirs.append(tmp)
-        try Data(json.utf8).write(to: kindDir.appendingPathComponent("\(kind)_fixture.json"))
+    /// Writes `rows` as the newest `<kind>` snapshot of a temp data folder.
+    private func tempDataDir(writing rows: [[String: Any]], kind: String) throws -> URL {
+        let tmp = try tempDataDir()
+        try SchoolRows.write(rows, kind: kind, into: tmp)
         return tmp
     }
 
@@ -195,7 +143,8 @@ final class SchoolDashboardTests: XCTestCase {
     /// A jamf-cli School device `lastCheckin` string: "yyyy-MM-dd HH:mm:ss",
     /// no timezone, no "T" separator (confirmed against jamfschool-go-sdk's
     /// device_test.go). `extraSeconds` keeps the value safely on one side of
-    /// a day boundary regardless of test execution delay.
+    /// a day boundary regardless of test execution delay. Relative to now because the sheets
+    /// age a check-in against the clock.
     private func schoolCheckinString(daysAgo: Int, extraSeconds: TimeInterval = 3600) -> String {
         let date = Date().addingTimeInterval(-(Double(daysAgo) * 86400) - extraSeconds)
         let formatter = DateFormatter()
@@ -208,14 +157,14 @@ final class SchoolDashboardTests: XCTestCase {
     // MARK: - School Overview: flattenSchoolOverviewRow shape
 
     func testSchoolOverviewReadsResourceAndValueFieldsNotDictKeys() throws {
-        let json = """
-        [
-          {"section": "Devices", "resource": "Devices", "value": "42"},
-          {"section": "Devices", "resource": "Device Groups", "value": "3"},
-          {"section": "Users & Organization", "resource": "Users", "value": "128"}
+        let rows = [
+            SchoolRows.row("school-overview", 1, ["resource": "Devices", "value": "42"]),
+            SchoolRows.row("school-overview", 2, ["resource": "Device Groups", "value": "3"]),
+            SchoolRows.row("school-overview", 3, [
+                "section": "Users & Organization", "resource": "Users", "value": "128",
+            ]),
         ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-overview")
+        let dataDir = try tempDataDir(writing: rows, kind: "school-overview")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolOverview())
@@ -240,13 +189,10 @@ final class SchoolDashboardTests: XCTestCase {
     // MARK: - Device Groups: flattenSchoolDeviceGroup shape
 
     func testDeviceGroupsReadsMembersAndLocationId() throws {
-        let json = """
-        [
-          {"id": 1, "name": "iPad Cart A", "description": "", "isSmartGroup": false,
-           "members": 24, "shared": true, "type": "static", "locationId": 42}
-        ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-device-groups")
+        let rows = [SchoolRows.row("school-device-groups", 1, [
+            "name": "iPad Cart A", "members": 24, "locationId": 42,
+        ])]
+        let dataDir = try tempDataDir(writing: rows, kind: "school-device-groups")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDeviceGroups())
@@ -260,22 +206,16 @@ final class SchoolDashboardTests: XCTestCase {
     // MARK: - Users: flattenSchoolUser shape
 
     func testUsersReadsStatusAndLocationId() throws {
-        let json = """
-        [
-          {"id": 5, "username": "jdoe", "email": "jdoe@school.edu", "firstName": "Jane",
-           "lastName": "Doe", "status": "Active", "deviceCount": 2, "locationId": 7,
-           "inTrash": false}
-        ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-users")
+        let rows = [SchoolRows.row("school-users", 5, ["locationId": 7])]
+        let dataDir = try tempDataDir(writing: rows, kind: "school-users")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolUsers())
         let cells = strings(in: "Users", of: workbook)
-        XCTAssertTrue(cells.contains("jdoe"))
-        XCTAssertTrue(cells.contains("Jane"))
-        XCTAssertTrue(cells.contains("Doe"))
-        XCTAssertTrue(cells.contains("jdoe@school.edu"))
+        XCTAssertTrue(cells.contains("school-user-005"))
+        XCTAssertTrue(cells.contains("First005"))
+        XCTAssertTrue(cells.contains("Last005"))
+        XCTAssertTrue(cells.contains("user-005@example.invalid"))
         XCTAssertTrue(cells.contains("Active"),
                        "Status column reads `status`; jamf-cli has no role")
         XCTAssertTrue(cells.contains("7"), "falls back to the numeric locationId")
@@ -284,13 +224,10 @@ final class SchoolDashboardTests: XCTestCase {
     // MARK: - Classes: flattenSchoolClass shape
 
     func testClassesReadsTeacherCountAndLocationId() throws {
-        let json = """
-        [
-          {"uuid": "abc-123", "name": "Homeroom 4B", "description": "", "source": "manual",
-           "studentCount": 18, "teacherCount": 3, "deviceCount": 18, "locationId": 11}
-        ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-classes")
+        let rows = [SchoolRows.row("school-classes", 1, [
+            "name": "Homeroom 4B", "studentCount": 18, "teacherCount": 3, "locationId": 11,
+        ])]
+        let dataDir = try tempDataDir(writing: rows, kind: "school-classes")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolClasses())
@@ -305,21 +242,15 @@ final class SchoolDashboardTests: XCTestCase {
     // MARK: - Apps: flattenSchoolApp shape
 
     func testAppsReadsVendorAndPlatform() throws {
-        let json = """
-        [
-          {"id": 88, "locationId": 1, "bundleId": "com.example.reader", "adamId": 12345,
-           "name": "Example Reader", "vendor": "Example Vendor Inc.", "version": "3.2.1",
-           "platform": "iOS"}
-        ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-apps")
+        let rows = [SchoolRows.row("school-apps", 8)]
+        let dataDir = try tempDataDir(writing: rows, kind: "school-apps")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolApps())
         let cells = strings(in: "Apps", of: workbook)
-        XCTAssertTrue(cells.contains("Example Reader"))
-        XCTAssertTrue(cells.contains("com.example.reader"))
-        XCTAssertTrue(cells.contains("Example Vendor Inc."),
+        XCTAssertTrue(cells.contains("School App 008"))
+        XCTAssertTrue(cells.contains("invalid.example.app008"))
+        XCTAssertTrue(cells.contains("Example Vendor 008"),
                        "jamf-cli has no per-app install/managed count; Vendor replaces it")
         XCTAssertTrue(cells.contains("iOS"), "Platform replaces the unavailable Managed column")
     }
@@ -327,19 +258,14 @@ final class SchoolDashboardTests: XCTestCase {
     // MARK: - Profiles: flattenSchoolProfile shape
 
     func testProfilesReadsIdentifierPlatformAndLocation() throws {
-        let json = """
-        [
-          {"id": 4, "locationId": 6, "identifier": "com.example.wifi.profile",
-           "name": "Campus WiFi", "description": "", "platform": "Shared"}
-        ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-profiles")
+        let rows = [SchoolRows.row("school-profiles", 4, ["locationId": 6])]
+        let dataDir = try tempDataDir(writing: rows, kind: "school-profiles")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolProfiles())
         let cells = strings(in: "Profiles", of: workbook)
-        XCTAssertTrue(cells.contains("Campus WiFi"))
-        XCTAssertTrue(cells.contains("com.example.wifi.profile"),
+        XCTAssertTrue(cells.contains("School Profile 004"))
+        XCTAssertTrue(cells.contains("invalid.example.profile004"),
                        "jamf-cli has no per-profile category; Identifier replaces it")
         XCTAssertTrue(cells.contains("Shared"), "Platform replaces the unavailable Devices column")
         XCTAssertTrue(cells.contains("6"), "Location replaces the unavailable Enabled column")
@@ -348,14 +274,11 @@ final class SchoolDashboardTests: XCTestCase {
     // MARK: - Locations: flattenSchoolLocation shape
 
     func testLocationsReadsIsDistrictAndCity() throws {
-        let json = """
-        [
-          {"id": 2, "name": "Main Campus", "isDistrict": true, "source": "manual",
-           "city": "Springfield"},
-          {"id": 3, "name": "Annex", "isDistrict": false, "source": "manual"}
+        let rows = [
+            SchoolRows.row("school-locations", 1, ["name": "Main Campus", "city": "Springfield"]),
+            SchoolRows.row("school-locations", 2, ["name": "Annex"], omitting: ["city"]),
         ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-locations")
+        let dataDir = try tempDataDir(writing: rows, kind: "school-locations")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolLocations())
@@ -370,40 +293,39 @@ final class SchoolDashboardTests: XCTestCase {
 
     // MARK: - Device-fed sheets: flattenSchoolDevice shape (school-devices)
 
-    private func deviceFixtureJSON() -> String {
-        """
+    private func deviceRows() -> [[String: Any]] {
         [
-          {"name": "Mac-Lab-01", "udid": "UDID-1", "serialNumber": "C02AAA111",
-           "model": "MacBook Air", "os": "macOS 14.3", "isManaged": true,
-           "isSupervised": true, "lastCheckin": "\(schoolCheckinString(daysAgo: 5))",
-           "inTrash": false},
-          {"name": "iPad-12", "udid": "UDID-2", "serialNumber": "DLXBBB222",
-           "model": "iPad Air", "os": "iPadOS 17.4", "isManaged": true,
-           "isSupervised": false, "lastCheckin": "\(schoolCheckinString(daysAgo: 40))",
-           "inTrash": false},
-          {"name": "iPad-13", "udid": "UDID-3", "serialNumber": "DLXCCC333",
-           "model": "iPad (9th gen)", "os": "iPadOS 17.4", "isManaged": false,
-           "isSupervised": false, "lastCheckin": "\(schoolCheckinString(daysAgo: 3))",
-           "inTrash": false}
+            SchoolRows.device(1, [
+                "name": "Mac-Lab-01", "model": "MacBook Air", "os": "macOS 14.3",
+                "lastCheckin": schoolCheckinString(daysAgo: 5),
+            ]),
+            SchoolRows.device(2, [
+                "name": "iPad-12", "model": "iPad Air", "os": "iPadOS 17.4",
+                "isSupervised": false, "lastCheckin": schoolCheckinString(daysAgo: 40),
+            ]),
+            SchoolRows.device(3, [
+                "name": "iPad-13", "model": "iPad (9th gen)", "os": "iPadOS 17.4",
+                "isManaged": false, "isSupervised": false,
+                "lastCheckin": schoolCheckinString(daysAgo: 3),
+            ]),
         ]
-        """
     }
 
     func testDeviceInventoryReadsOSAndIsManaged() throws {
-        let dataDir = try tempDataDir(writing: deviceFixtureJSON(), kind: "school-devices")
+        let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDeviceInventory())
         let cells = strings(in: "Device Inventory", of: workbook)
         XCTAssertTrue(cells.contains("Mac-Lab-01"))
-        XCTAssertTrue(cells.contains("C02AAA111"))
+        XCTAssertTrue(cells.contains("SCHOOL-SERIAL-001"))
         XCTAssertTrue(cells.contains("macOS 14.3"), "OS Version reads `os`, not `osVersion`")
         XCTAssertTrue(cells.contains("Yes"), "Managed reads `isManaged`, not `managed`")
         XCTAssertTrue(cells.contains("No"))
     }
 
     func testOSVersionsGroupsByPlatformAndMajorVersion() throws {
-        let dataDir = try tempDataDir(writing: deviceFixtureJSON(), kind: "school-devices")
+        let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolOSVersions())
@@ -416,15 +338,10 @@ final class SchoolDashboardTests: XCTestCase {
 
     /// From 26 on every Apple platform shares its major version; "26" alone merged them.
     func testOSVersionsKeepsMacsAndIPadsOnTheSameMajorApart() throws {
-        let json = """
-        [
-          {"name": "Mac-1", "os": "macOS 26.0", "isManaged": true},
-          {"name": "Mac-2", "os": "macOS 26.1", "isManaged": true},
-          {"name": "iPad-1", "os": "iPadOS 26.0", "isManaged": true},
-          {"name": "Mac-3", "os": "macOS 9.2", "isManaged": true}
-        ]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-devices")
+        let rows = ["macOS 26.0", "macOS 26.1", "iPadOS 26.0", "macOS 9.2"].enumerated().map {
+            SchoolRows.device($0 + 1, ["os": $1])
+        }
+        let dataDir = try tempDataDir(writing: rows, kind: "school-devices")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolOSVersions())
@@ -438,7 +355,7 @@ final class SchoolDashboardTests: XCTestCase {
     }
 
     func testDeviceStatusCountsIsManagedAndIsSupervised() throws {
-        let dataDir = try tempDataDir(writing: deviceFixtureJSON(), kind: "school-devices")
+        let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDeviceStatus())
@@ -457,7 +374,7 @@ final class SchoolDashboardTests: XCTestCase {
     }
 
     func testStaleDevicesParsesSchoolCheckinFormat() throws {
-        let dataDir = try tempDataDir(writing: deviceFixtureJSON(), kind: "school-devices")
+        let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolStaleDevices())
@@ -470,12 +387,14 @@ final class SchoolDashboardTests: XCTestCase {
     }
 
     func testStaleDevicesLeavesOutACheckinThatDoesNotRead() throws {
-        let json = """
-        [{"name": "Odd-1", "serialNumber": "S1", "lastCheckin": "yesterday-ish"},
-         {"name": "Blank-2", "serialNumber": "S2", "lastCheckin": ""},
-         {"name": "Old-3", "serialNumber": "S3", "lastCheckin": "\(schoolCheckinString(daysAgo: 60))"}]
-        """
-        let dataDir = try tempDataDir(writing: json, kind: "school-devices")
+        let rows = [
+            SchoolRows.device(1, ["name": "Odd-1", "lastCheckin": "yesterday-ish"]),
+            SchoolRows.device(2, ["name": "Blank-2", "lastCheckin": ""]),
+            SchoolRows.device(3, [
+                "name": "Old-3", "lastCheckin": schoolCheckinString(daysAgo: 60),
+            ]),
+        ]
+        let dataDir = try tempDataDir(writing: rows, kind: "school-devices")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolStaleDevices())
@@ -487,8 +406,10 @@ final class SchoolDashboardTests: XCTestCase {
     }
 
     func testClassesCountOutsideIntRangeReadsAsZero() throws {
-        let json = #"[{"name": "A", "studentCount": 1e30, "teacherCount": 2.9}]"#
-        let dataDir = try tempDataDir(writing: json, kind: "school-classes")
+        let rows = [SchoolRows.row(
+            "school-classes", 1, ["name": "A"],
+            malformed: ["studentCount": 1e30, "teacherCount": 2.9])]
+        let dataDir = try tempDataDir(writing: rows, kind: "school-classes")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolClasses())
