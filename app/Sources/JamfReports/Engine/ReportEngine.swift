@@ -1971,6 +1971,9 @@ struct ReportEngine: Sendable {
         // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
         // own marker keeps it idempotent. Best-effort — never fails the collect.
         SnapshotRetentionService.sweepIfDue(profile: profile, onLine: onLine)
+        if let dataDir = try? workspacePaths.dataDir(for: profile) {
+            rewriteLostModeTextOnce(dataDir: dataDir, onLine: onLine)
+        }
 
         // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
         // summary for today already exists, unless the caller passes force: true.

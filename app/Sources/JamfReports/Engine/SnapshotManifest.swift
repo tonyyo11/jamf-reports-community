@@ -77,6 +77,17 @@ enum SnapshotManifest {
         return .verified
     }
 
+    /// True when the sibling `manifest.json` parses and has an entry for `snapshot`.
+    static func lists(_ snapshot: URL) -> Bool {
+        let manifestURL = snapshot.deletingLastPathComponent().appendingPathComponent(fileName)
+        guard let data = try? BoundedFile.read(
+                manifestURL, limit: maxManifestBytes, followSymlinks: false),
+              let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
+            return false
+        }
+        return manifest.files[snapshot.lastPathComponent] != nil
+    }
+
     // MARK: - Writer (2.6 accuracy track)
 
     /// Stamp ``snapshotFile``'s sibling `manifest.json` with the SHA-256 of
