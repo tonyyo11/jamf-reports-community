@@ -638,25 +638,22 @@ extension WorkspaceStore {
 
     /// Age in seconds of the newest snapshot under
     /// `<workspace>/jamf-cli-data/<kind>/`, or nil when none exist. JSON, except
-    /// jamf-cli's dashboard, the one kind saved as a page.
+    /// jamf-cli's dashboard, the one kind saved as a page. Only a regular file counts (`lstat`,
+    /// so a link a peer planted does not make a kind look fresh), chosen and dated the way the
+    /// pickers do: the stamp in the name, mtime only for a file with none.
     nonisolated static func newestSnapshotAge(profile: String, kind: String) -> TimeInterval? {
-        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return nil }
-        let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile),
+              let dir = try? WorkspacePaths.confinedFolder([kind], under: dataDir),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        else { return nil }
         let fileExtension = kind == ReportEngine.dashboardKind ? "html" : "json"
-        let newest = entries
-            .filter { $0.pathExtension == fileExtension }
-            .compactMap {
-                (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate
-            }
-            .max()
-        guard let newest else { return nil }
-        return Date().timeIntervalSince(newest)
+        let regular = entries.filter {
+            $0.pathExtension == fileExtension && FileManager.isRegularFile($0)
+        }
+        guard let newest = FileManager.newestSnapshot(among: regular),
+              let date = FileManager.snapshotDate(of: newest) else { return nil }
+        return max(0, Date().timeIntervalSince(date))
     }
 
     // MARK: App-foreground registration

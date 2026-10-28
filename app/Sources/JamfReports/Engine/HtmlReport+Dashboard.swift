@@ -95,26 +95,6 @@ extension HtmlReport {
     private static let dashboardNotCollected = "not collected yet; with jamf-cli 1.31.0 or "
         + "later, collect saves jamf-cli's dashboard every two days"
 
-    /// "<name>: not a regular file" when the newest `.html` entry by stamp is a link, folder or
-    /// other non-regular file, which `newestHTMLSnapshot` would drop or never read. Shared with
-    /// the collect's cached-page note so the two cannot disagree.
-    static func plantedNewestPage(in dir: URL) -> String? {
-        guard let newest = newestPageEntry(in: dir), !isRegularFile(newest) else { return nil }
-        return ConfigSchema.displayText(newest.lastPathComponent) + ": not a regular file"
-    }
-
-    private static func newestPageEntry(in dir: URL) -> URL? {
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        return FileManager.newestSnapshot(
-            among: entries.filter { $0.pathExtension.lowercased() == "html" })
-    }
-
-    private static func isRegularFile(_ url: URL) -> Bool {
-        var info = stat()
-        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
-    }
-
     /// `BoundedFile`'s description repeats "could not be read", which the appendix already says.
     private static func readFailureText(_ error: Error) -> String {
         if case BoundedFile.Failure.unreadable(let code) = error {
@@ -139,7 +119,7 @@ extension HtmlReport {
         }
         // The picker leaves out a link that resolves outside the folder, which would read as
         // never collected; the newest entry by stamp, link or not, decides here.
-        if let problem = Self.plantedNewestPage(in: dir) { return .unreadable(problem) }
+        if let problem = FileManager.plantedNewestSnapshot(in: dir, fileExtension: "html") { return .unreadable(problem) }
         guard let url = FileManager.newestHTMLSnapshot(in: dir) else {
             return .absent(Self.dashboardNotCollected)
         }

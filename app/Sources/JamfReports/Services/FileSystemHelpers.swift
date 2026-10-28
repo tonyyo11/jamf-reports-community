@@ -35,6 +35,27 @@ extension FileManager {
         newestSnapshot(inDirectory: dir, extensions: ["html"])
     }
 
+    /// "<name>: not a regular file" when the newest `fileExtension` entry by stamp in `dir` is a
+    /// link, folder or other non-regular file. The pickers above drop a link that resolves
+    /// outside `dir`, so one planted at the newest stamp would read as "never collected"; a
+    /// caller that claims something about the cache (the collect's "using cached" note, the
+    /// dashboard section) asks this first. A screen that only reads data keeps the drop: a
+    /// refused link is not data.
+    static func plantedNewestSnapshot(in dir: URL, fileExtension: String) -> String? {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        guard let newest = newestSnapshot(
+                among: entries.filter { $0.pathExtension.lowercased() == fileExtension }),
+              !isRegularFile(newest) else { return nil }
+        return ConfigSchema.displayText(newest.lastPathComponent) + ": not a regular file"
+    }
+
+    /// `lstat`, so a link is not followed.
+    static func isRegularFile(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
     /// Shared body: enumerate, confine to `dir`, filter, order.
     private static func newestSnapshot(inDirectory dir: URL, extensions: Set<String>) -> URL? {
         let fm = FileManager.default

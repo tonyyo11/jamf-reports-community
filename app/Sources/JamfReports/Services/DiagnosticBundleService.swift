@@ -621,7 +621,7 @@ enum DiagnosticBundleService {
     ) -> [String] {
         let siblings = connections.scopeIDs(sharingConnectionWith: profile)
         guard FileManager.default.fileExists(atPath: configURL.path) else { return siblings }
-        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+        guard let text = ProfileService.readConfigFileText(at: configURL) else {
             AppLogger.collect.warning(
                 "DiagnosticBundle: could not read the jamf-cli config; scope IDs not redacted")
             return siblings

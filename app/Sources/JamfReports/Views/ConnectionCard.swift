@@ -220,15 +220,20 @@ struct ConnectionCard: View {
 
     private func startConnection() {
         guard !workspace.demoMode else { return }
-        let text = try? String(contentsOf: ConnectionStarter.jamfCLIConfigURL, encoding: .utf8)
-        do {
-            try ConnectionStarter.start(
-                profile: workspace.profile, storedURL: activeProfile?.url ?? "",
-                configText: text, store: workspace.connectionStore)
-            actionError = nil
-        } catch {
-            actionError = "Could not start the connection: \(error.localizedDescription)"
+        Task {
+            // Off the main actor: the file is jamf-cli's, on a path the environment can move.
+            let text = await Task.detached {
+                ProfileService.readConfigFileText(at: ProfileService.jamfCLIConfigFileURL())
+            }.value
+            do {
+                try ConnectionStarter.start(
+                    profile: workspace.profile, storedURL: activeProfile?.url ?? "",
+                    configText: text, store: workspace.connectionStore)
+                actionError = nil
+            } catch {
+                actionError = "Could not start the connection: \(error.localizedDescription)"
+            }
+            workspace.reloadConnections()
         }
-        workspace.reloadConnections()
     }
 }

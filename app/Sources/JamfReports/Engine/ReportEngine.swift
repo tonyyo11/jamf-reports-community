@@ -2772,13 +2772,18 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
         }
         // Only claim "using cached" when a cached snapshot for this kind exists; otherwise
-        // the generate step has nothing to fall back to and the copy would mislead.
-        let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        let cached = kind == Self.dashboardKind
-            ? FileManager.newestHTMLSnapshot(in: kindDir)
-            : FileManager.newestJSONFile(in: kindDir)
-        // A link planted at the page's name is dropped by the picker; say so, not "none".
-        let planted = kind == Self.dashboardKind ? HtmlReport.plantedNewestPage(in: kindDir) : nil
+        // the generate step has nothing to fall back to and the copy would mislead. The
+        // folder is confined like the snapshot writer's, so a link planted at its name is
+        // refused with one `[warn]`.
+        let isPage = kind == Self.dashboardKind
+        let kindDir = WorkspacePaths.confinedFolderOrWarn([kind], under: dataDir, onLine: onLine)
+        let cached = kindDir.flatMap {
+            isPage ? FileManager.newestHTMLSnapshot(in: $0) : FileManager.newestJSONFile(in: $0)
+        }
+        // A link planted at the newest stamp is dropped by the picker; say so, not "none".
+        let planted = kindDir.flatMap {
+            FileManager.plantedNewestSnapshot(in: $0, fileExtension: isPage ? "html" : "json")
+        }
         let cacheNote = planted.map { "cached snapshot not used (\($0))" }
             ?? (cached != nil ? "skipped (using cached)" : "no cached snapshot available")
         // jamf-cli's own reason beats a bare exit code in Run History.

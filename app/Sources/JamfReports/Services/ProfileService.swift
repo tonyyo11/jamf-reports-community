@@ -628,12 +628,18 @@ enum ProfileService {
     /// `parseConfigFile` names.
     static let maxConfigFileBytes = 1_048_576
 
-    /// The profiles in jamf-cli's config file, or nil when it is missing, not a regular file,
-    /// over `maxConfigFileBytes` or not UTF-8.
+    /// The text of jamf-cli's config file, or nil when it is missing, not a regular file, over
+    /// `maxConfigFileBytes` or not UTF-8. The one reader: `$XDG_CONFIG_HOME` can point it at a
+    /// folder anyone can write, so no caller reads the file unbounded.
+    nonisolated static func readConfigFileText(at url: URL?) -> String? {
+        guard let url, let data = try? BoundedFile.read(url, limit: maxConfigFileBytes)
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// The profiles in jamf-cli's config file, or nil when `readConfigFileText` gives none.
     static func readConfigFile(at url: URL?) -> [JamfCLIConfigProfile]? {
-        guard let url, let data = try? BoundedFile.read(url, limit: maxConfigFileBytes),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        return parseConfigFile(text)
+        readConfigFileText(at: url).map(parseConfigFile)
     }
 
     /// Reads profiles straight from jamf-cli's config file when `config list` can't run; nil

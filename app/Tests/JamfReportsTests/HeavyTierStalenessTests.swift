@@ -36,10 +36,13 @@ final class HeavyTierStalenessTests: XCTestCase {
     ) throws {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let file = dir.appendingPathComponent("\(kind)_20260930T120000.\(ext)")
-        try Data("[]".utf8).write(to: file)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSinceNow: -age)], ofItemAtPath: file.path)
+        // The age is the stamp in the name, as the pickers date a file; a sync provider can
+        // restamp the mtime.
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let stamp = formatter.string(from: Date(timeIntervalSinceNow: -age))
+        try Data("[]".utf8).write(to: dir.appendingPathComponent("\(kind)_\(stamp).\(ext)"))
     }
 
     /// The scan prompt probed update-device-failures, so listing that kind in collect_skip

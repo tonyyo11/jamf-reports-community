@@ -83,6 +83,11 @@ versions in this repository map to git tags.
   decision. Each Mac confirms the choice once before a shared `config.yaml` can turn it on;
   turning it off applies at once. A value the app cannot read as true or false, a `config.yaml`
   that does not decode, and a folder another Mac marked as not shared all keep Jamf Pro out. (#305)
+- A link another Mac plants in a snapshot folder no longer hides behind "no cached snapshot" in a
+  failed collect or makes a data kind look freshly collected, and a snapshot folder that is
+  itself a link is refused with a warning. jamf-cli's config file, which `XDG_CONFIG_HOME` can
+  move to a folder anyone can write, is now read with a size limit everywhere, including the
+  diagnostic bundle and Start a connection. (#305)
 
 ## [2.11.0] - 2026-10-27
 
