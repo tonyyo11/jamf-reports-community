@@ -485,7 +485,8 @@ struct AddSheet: View {
         }
         workspace.reloadFromDisk()
         (message, errorText) = AddSheetPlan.adoptionOutcome(
-            name: row.name, status: flow.statuses[row.name])
+            name: row.name, status: flow.statuses[row.name],
+            note: flow.connectionNotes[row.name])
         await recheck()
     }
 

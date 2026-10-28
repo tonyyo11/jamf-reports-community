@@ -6,14 +6,17 @@ import Foundation
 enum AddSheetPlan {
     /// What the sheet says once Set up workspace finished for `name`: the workspace exists, so
     /// the row leaves the list, and a first collect that failed must be said here instead.
+    /// `note` is the connection check's word on a profile it let through (a missing permission,
+    /// or no answer): the row that showed it is gone by then, so the message carries it.
     static func adoptionOutcome(
-        name: String, status: ExistingCLISetupFlow.ProfileStatus?
+        name: String, status: ExistingCLISetupFlow.ProfileStatus?, note: String? = nil
     ) -> (message: String?, error: String?) {
         if case .failed(let reason) = status {
             return (nil, "\(name)'s workspace was created, but its first collect failed "
                 + "(\(reason)). Fix the cause, then collect from that workspace.")
         }
-        return ("\(name) is set up. Switch to it from the workspace menu.", nil)
+        let done = "\(name) is set up. Switch to it from the workspace menu."
+        return (note.map { done + " " + $0 } ?? done, nil)
     }
 
     /// Why the Add sheet stays closed, or nil. Replacing a setup that has already registered a

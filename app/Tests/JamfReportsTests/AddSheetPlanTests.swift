@@ -424,4 +424,27 @@ final class AddSheetPlanTests: XCTestCase {
             flow.statuses["typo"],
             .failed(ConnectionCheck.Verdict.rejectedID(.unknownEnvironment).message))
     }
+
+    /// The row that showed the connection check's note leaves the list once adopted, so the
+    /// success message carries the note.
+    @MainActor
+    func testASuccessfulAdoptionKeepsTheConnectionChecksNote() async {
+        let row = unassigned([platform("prod", url: "us.api.jamfcloud.com")])[0]
+        let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
+        let forbidden = (try? JSONSerialization.data(withJSONObject: [
+            "error": "request failed", "message": "permission denied (HTTP 403)",
+        ])) ?? Data()
+        await flow.run(
+            connectionRunner: { _ in (5, forbidden) },
+            initialize: { _ in 0 }, collect: { _, _ in 0 })
+        let note = ConnectionCheck.Verdict.missingPermission(names: []).message
+        XCTAssertEqual(flow.connectionNotes["prod"], note)
+
+        let outcome = AddSheetPlan.adoptionOutcome(
+            name: "prod", status: flow.statuses["prod"], note: flow.connectionNotes["prod"])
+        XCTAssertEqual(
+            outcome.message,
+            "prod is set up. Switch to it from the workspace menu. " + note)
+        XCTAssertNil(outcome.error)
+    }
 }
