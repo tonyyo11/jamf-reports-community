@@ -1138,11 +1138,12 @@ final class CLIBridge {
         return false
     }
 
-    /// The refusal, after one `[error]` line, when `profile` is known to belong to another
-    /// product (Jamf School, Protect, Security Cloud) or is an organization-level integration:
-    /// no `pro` command may run against it. Nil for a Jamf Pro profile and for one that cannot
-    /// be resolved. The lookup can run `jamf-cli config list`, so it runs detached: most
-    /// callers are on the main actor. `resolved` is the test seam.
+    /// The refusal, after one `[error]` line, when the workspace's `profiles:` block cannot run
+    /// (`EnvironmentProfiles.refusal`), or when `profile` is known to belong to another product
+    /// (Jamf School, Protect, Security Cloud) or is an organization-level integration: no `pro`
+    /// command may run against it. Nil for a Jamf Pro profile and for one that cannot be
+    /// resolved. Reading config.yaml and the lookup (which can run `jamf-cli config list`) run
+    /// detached: most callers are on the main actor. `resolved` is the test seam.
     nonisolated static func refusesProCommand(
         profile: String, operation: String, onLine: (@Sendable (LogLine) -> Void)?,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
@@ -1150,7 +1151,8 @@ final class CLIBridge {
         }
     ) async -> String? {
         let refusal = await Task.detached {
-            resolved(profile)?.proRefusal(profile: profile, operation: operation)
+            EnvironmentProfiles.read(workspace: profile).refusal(workspace: profile)
+                ?? resolved(profile)?.proRefusal(profile: profile, operation: operation)
         }.value
         guard let refusal else { return nil }
         onLine?(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
@@ -2417,10 +2419,10 @@ final class CLIBridge {
 
     /// Compares the workspace's MDM profile (`EnvironmentProfiles.mdm`: `jamf_cli.profile` in an
     /// old-shape config.yaml) with `profile` before a backup. A case variant is refused like
-    /// `CollectRouter.run` refuses it: the two share the folder on a case-insensitive volume, and
-    /// so is a `profiles:` block that cannot run (`EnvironmentProfiles.refusal`). Any other old-key
-    /// name is ignored with one warning, because the backup always runs as `profile`. A missing
-    /// or undecodable config has nothing to compare.
+    /// `CollectRouter.run` refuses it: the two share the folder on a case-insensitive volume. A
+    /// `profiles:` block that cannot run was already refused by `refusesProCommand`, so any
+    /// other name here is an old-key one, ignored with one warning, because the backup always
+    /// runs as `profile`. A missing or undecodable config has nothing to compare.
     nonisolated static func checkBackupConfigProfile(
         _ profile: String,
         onLine: @Sendable (LogLine) -> Void
@@ -2436,10 +2438,6 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
-        }
-        if let refusal = environment.refusal(workspace: profile) {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
-            throw CLIBridgeError.wrongProduct(refusal)
         }
         guard owner != profile else { return }
         onLine(.init(
