@@ -116,7 +116,7 @@ struct PolicyProfileView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { snapshot = .empty }
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
         guard !workspace.demoMode else {
             snapshot = DemoData.policyHealth
             loadedSource = source

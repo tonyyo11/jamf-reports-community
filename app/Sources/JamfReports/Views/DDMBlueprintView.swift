@@ -442,6 +442,7 @@ struct DDMBlueprintView: View {
     private func load() async {
         let source = dataSource
         if loadedSource != source {
+            loadedSource = nil
             snapshot = .empty
             deviceSnapshot = .empty
             fleetCounts = (0, 0)

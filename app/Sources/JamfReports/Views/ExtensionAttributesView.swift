@@ -121,7 +121,7 @@ struct ExtensionAttributesView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { snapshot = .empty; coverageDrift = [] }
+        if loadedSource != source { loadedSource = nil; snapshot = .empty; coverageDrift = [] }
         guard !workspace.demoMode else {
             snapshot = Self.demoSnapshot
             coverageDrift = []

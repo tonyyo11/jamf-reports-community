@@ -87,7 +87,12 @@ struct PatchView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { snapshot = .empty; releaseLookup = [:]; velocity = [] }
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            releaseLookup = [:]
+            velocity = []
+        }
         // Demo mode shows no velocity card: the static demo dataset has no dated
         // history to derive a trend from.
         guard !workspace.demoMode else {

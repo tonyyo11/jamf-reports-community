@@ -83,7 +83,7 @@ struct UpdatesView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { snapshot = .empty; sofaRows = [] }
+        if loadedSource != source { loadedSource = nil; snapshot = .empty; sofaRows = [] }
         guard !workspace.demoMode else {
             snapshot = DemoData.updateStatus
             // SOFA rows come from the workspace's cache, which the demo never reads.

@@ -79,7 +79,7 @@ struct GroupsView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { snapshot = .empty }
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
         // The demo profile's name could match a real workspace on this Mac;
         // demo mode never reads one.
         guard !workspace.demoMode else {

@@ -1071,6 +1071,8 @@ struct AuditView: View {
         lastHygieneDate = nil
         newFindingKeys = []
         resolvedFindings = []
+        duplicateSerials = .empty
+        commandHealth = .empty
         hasPreviousAudit = false
         await loadIntegritySummary()
         let loadProfile = workspace.profile

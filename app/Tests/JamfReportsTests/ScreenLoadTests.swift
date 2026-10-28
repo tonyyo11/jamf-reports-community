@@ -39,6 +39,63 @@ final class ScreenLoadTests: XCTestCase {
         return root
     }
 
+    /// A temp data dir whose `kind` folder holds the given files.
+    private func tempDataDir(_ kind: String, _ files: [String: String]) throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)
+        let dir = root.appendingPathComponent(kind, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for (name, text) in files {
+            try Data(text.utf8).write(to: dir.appendingPathComponent(name))
+        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return root
+    }
+
+    /// Two ea-results days: FileVault coverage falls from both Macs to one.
+    private func driftDataDir() throws -> URL {
+        func rows(_ values: [String]) -> String {
+            let items = values.enumerated().map {
+                #"{"definition_id": "1", "device": "Mac\#($0.offset)", "ea_name": "FileVault", "#
+                    + #""value": "\#($0.element)"}"#
+            }
+            return "[" + items.joined(separator: ",") + "]"
+        }
+        return try tempDataDir("ea-results", [
+            "ea-results_20260601T080000.json": rows(["Encrypted", "Encrypted"]),
+            "ea-results_20260602T080000.json": rows(["Encrypted", ""]),
+        ])
+    }
+
+    /// Two patch-status days for one title, adoption rising.
+    private func velocityDataDir() throws -> URL {
+        func row(_ onLatest: Int) -> String {
+            #"[{"title": "Firefox", "id": "1", "on_latest": \#(onLatest), "on_other": "#
+                + #"\#(100 - onLatest), "total": 100, "latest": "1.0", "compliance_pct": "x%"}]"#
+        }
+        return try tempDataDir("patch-status", [
+            "patch-status_20260101T100000.json": row(20),
+            "patch-status_20260105T100000.json": row(60),
+        ])
+    }
+
+    /// A workspace `match` whose `computers` snapshot holds one Mac with `serial`.
+    private func workspaceWithComputer(serial: String) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)
+        let dir = root.appendingPathComponent("match/jamf-cli-data/computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let row = #"{"id": "7", "general": {"name": "Mac-7"}, "#
+            + #""hardware": {"serialNumber": "\#(serial)"}}"#
+        try Data("[\(row)]".utf8)
+            .write(to: dir.appendingPathComponent("computers_20260601T080000.json"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+    }
+
     /// The load runs off the main thread and reaches the screen; a source that changed while
     /// it read, or a task cancelled before it started, paints nothing.
     private func assertScreenLoad<T: Sendable>(
@@ -86,9 +143,10 @@ final class ScreenLoadTests: XCTestCase {
         await assertScreenLoad("Extension Attributes", loaded: { $0.reportingEAs > 0 }) {
             ExtensionAttributeService.load(dataDir: dir)
         }
-        // The second phase, coverage drift, walks every dated ea-results snapshot.
-        await assertScreenLoad("Extension Attributes drift", loaded: { _ in true }) {
-            EAParseHealthService.coverageDrift(dataDir: dir)
+        // The second phase, coverage drift, compares the two newest ea-results days.
+        let driftDir = try driftDataDir()
+        await assertScreenLoad("Extension Attributes drift", loaded: { $0.count == 1 }) {
+            EAParseHealthService.coverageDrift(dataDir: driftDir)
         }
     }
 
@@ -100,10 +158,11 @@ final class ScreenLoadTests: XCTestCase {
         await assertScreenLoad("Protect", loaded: { $0.isDetected && !$0.computers.isEmpty }) {
             ProtectDashboardService.load(dataDir: dir)
         }
-        // The second phase, the Jamf Pro match, reads the correlated inventory.
+        // The second phase, the Jamf Pro match, reads the profile's `computers` snapshot.
         let protect = ProtectDashboardService.load(dataDir: dir).computers
-        await assertScreenLoad("Protect match", loaded: { $0 != nil }) {
-            ProtectProCorrelation.load(protect: protect, profile: "unused", demoMode: true)
+        try workspaceWithComputer(serial: try XCTUnwrap(protect.first?.serial))
+        await assertScreenLoad("Protect match", loaded: { $0?.matched == 1 }) {
+            ProtectProCorrelation.load(protect: protect, profile: "match", demoMode: false)
         }
     }
 
@@ -115,10 +174,13 @@ final class ScreenLoadTests: XCTestCase {
         await assertScreenLoad("Patch", loaded: { $0.totalTitles > 0 }) {
             PatchStatusService.load(dataDir: dir)
         }
-        // The second phase, adoption velocity, walks every dated patch-status snapshot.
+        // The second phase, adoption velocity, walks the dated patch-status snapshots.
+        let history = try velocityDataDir()
         let fixedNow = Date(timeIntervalSince1970: 1_800_000_000)
-        await assertScreenLoad("Patch velocity", loaded: { _ in true }) {
-            PatchVelocityBuilder.compute(dataDir: dir, releaseRows: [], now: fixedNow)
+        await assertScreenLoad(
+            "Patch velocity", loaded: { $0.count == 1 && $0[0].series.count == 2 }
+        ) {
+            PatchVelocityBuilder.compute(dataDir: history, releaseRows: [], now: fixedNow)
         }
     }
 

@@ -49,17 +49,28 @@ final class DeviceLookupIndex {
     private(set) var sourceFiles: [String] = []
     private(set) var lastError: String?
 
+    /// The profile `candidates` belong to, or are being read for.
+    private(set) var heldProfile: String?
+
     /// Bumped by each `load`, so a read that a later load replaced does not paint.
     private var loadGeneration = 0
 
-    /// Reload from the active profile's cached list snapshots. The snapshots decode off the
-    /// main actor; a load a later call (or a cancelled task) replaced paints nothing. Safe to
-    /// call repeatedly; later calls replace earlier state.
-    func load(profile: String) async {
+    /// Reload from `profile`'s cached list snapshots. The snapshots decode off the main actor.
+    /// Another profile's candidates are cleared first, so a search while the read is in flight
+    /// finds nothing rather than a device of the profile left behind. A load a later call, a
+    /// cancelled task or `wanted` (false once the caller has moved on) replaced paints nothing.
+    func load(profile: String, wanted: @MainActor () -> Bool = { true }) async {
         loadGeneration += 1
         let generation = loadGeneration
+        if heldProfile != profile {
+            heldProfile = profile
+            candidates = []
+            sourceFiles = []
+            loadedAt = nil
+            lastError = "Loading the cached inventory for `\(profile)`…"
+        }
         guard let loaded = await ScreenLoad.paint(
-            stillCurrent: { generation == loadGeneration },
+            stillCurrent: { generation == loadGeneration && wanted() },
             read: { Self.read(profile: profile) }
         ) else { return }
         candidates = loaded.candidates

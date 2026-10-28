@@ -121,14 +121,19 @@ struct ProtectView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { snapshot = .empty; connectedProducts = .none }
+        let profile = workspace.profile
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            connectedProducts = .none
+            proMatch = .pending
+        }
         // The demo's rows are drawn by the same code as a live tenant's, and its
         // counts are taken from those rows.
         if workspace.demoMode {
             snapshot = DemoData.protectSnapshot
             connectedProducts = .none
         } else {
-            let profile = workspace.profile
             guard let loaded = await ScreenLoad.paint(
                 stillCurrent: { source == dataSource },
                 read: { (ProtectDashboardService.load(profile: profile),
@@ -138,15 +143,16 @@ struct ProtectView: View {
             connectedProducts = loaded.1
         }
         loadedSource = source
-        await loadProMatch(source: source)
+        await loadProMatch(source: source, profile: profile)
     }
 
     /// The `computers` snapshot can be about 13 MB, so the match runs after the screen paints.
-    private func loadProMatch(source: String) async {
-        proMatch = .pending
-        guard !snapshot.computers.isEmpty else { return }
+    private func loadProMatch(source: String, profile: String) async {
+        guard !snapshot.computers.isEmpty else {
+            proMatch = .pending
+            return
+        }
         let protect = snapshot.computers
-        let profile = workspace.profile
         let demo = workspace.demoMode
         let school = workspace.isSchoolWorkspace
         guard let result = await ScreenLoad.paint(

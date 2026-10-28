@@ -377,5 +377,54 @@ final class DeviceLookupIndexTests: XCTestCase {
         )
     }
 
+    // MARK: - Switching profile
+
+    /// A second workspace under the same root, holding one Mac with `id`.
+    private func addProfile(_ slug: String, macID: String) throws {
+        let dir = workspacesRoot.appendingPathComponent(slug, isDirectory: true)
+            .appendingPathComponent("jamf-cli-data/computers-list", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let rows: [[String: Any]] = [["id": macID, "general": ["name": "Mac-\(macID)"]]]
+        try JSONSerialization.data(withJSONObject: rows)
+            .write(to: dir.appendingPathComponent("computers-list_2026-05-01.json"))
+    }
+
+    /// A search while the other profile's read is in flight must not resolve a device of the
+    /// profile left behind, and a load that a later one replaced paints nothing.
+    func testSwitchingProfileDropsTheOldProfilesCandidates() async throws {
+        try addProfile("lookup-a", macID: "1")
+        try addProfile("lookup-b", macID: "2")
+        let index = DeviceLookupIndex()
+        await index.load(profile: "lookup-a")
+        XCTAssertEqual(index.candidates.map(\.id), ["1"])
+
+        // The caller moved on before the read for `lookup-b` returned.
+        await index.load(profile: "lookup-b", wanted: { false })
+        XCTAssertTrue(index.candidates.isEmpty, "profile A's devices stayed searchable")
+        XCTAssertNil(index.loadedAt)
+        XCTAssertTrue(index.sourceFiles.isEmpty)
+        XCTAssertEqual(index.heldProfile, "lookup-b")
+        XCTAssertEqual(index.lastError?.contains("Loading") == true, true)
+        XCTAssertTrue(index.resolve("1").isEmpty)
+
+        await index.load(profile: "lookup-b")
+        XCTAssertEqual(index.candidates.map(\.id), ["2"])
+        XCTAssertNil(index.lastError)
+    }
+
+    func testASupersededLoadIsDropped() async throws {
+        try addProfile("lookup-a", macID: "1")
+        try addProfile("lookup-b", macID: "2")
+        let index = DeviceLookupIndex()
+        let first = Task { await index.load(profile: "lookup-a") }
+        while index.heldProfile != "lookup-a" { await Task.yield() }
+        // The main actor stays ours until this call suspends, after it bumped the generation,
+        // so the first read cannot return before it.
+        await index.load(profile: "lookup-b")
+        await first.value
+        XCTAssertEqual(index.candidates.map(\.id), ["2"], "the replaced load painted")
+        XCTAssertEqual(index.heldProfile, "lookup-b")
+    }
+
     #endif // DEBUG
 }
