@@ -211,7 +211,7 @@ struct AddSheet: View {
 
     @ViewBuilder
     private var productsSection: some View {
-        if choice == .addToCurrent && currentTakesProtect {
+        if AddSheetPlan.step(choice: choice, takesProtect: currentTakesProtect) == .addToCurrent {
             protectCard
         } else {
             LazyVGrid(

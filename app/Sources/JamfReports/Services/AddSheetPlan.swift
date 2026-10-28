@@ -157,6 +157,12 @@ enum AddSheetPlan {
         takesProtect && discovery != nil && discovery?.currentProtect == nil
     }
 
+    /// The step the sheet shows: Add to current only while the workspace can take Protect,
+    /// else New workspace, whatever was chosen.
+    static func step(choice: Choice, takesProtect: Bool) -> Choice {
+        takesProtect ? choice : .newWorkspace
+    }
+
     /// The rows the chosen step lists. Add to current lists Protect logins only, and none once
     /// the workspace names one; New workspace lists everything else, a refused profile
     /// (Security Cloud, organization level, unusable name) included with its reason.
@@ -164,7 +170,7 @@ enum AddSheetPlan {
         choice: Choice, takesProtect: Bool, discovery: AddSheetDiscovery?
     ) -> [UnassignedProfile] {
         let rows = discovery?.unassigned ?? []
-        if choice == .addToCurrent && takesProtect {
+        if step(choice: choice, takesProtect: takesProtect) == .addToCurrent {
             return currentAcceptsProtect(takesProtect: takesProtect, discovery: discovery)
                 ? rows.filter { $0.use == .addToCurrent } : []
         }
@@ -190,7 +196,7 @@ enum AddSheetPlan {
         if let discovery, discovery.unassigned == nil { return .unreadable }
         let rows = visibleRows(choice: choice, takesProtect: takesProtect, discovery: discovery)
         if !rows.isEmpty { return .rows(rows) }
-        if choice == .addToCurrent && takesProtect {
+        if step(choice: choice, takesProtect: takesProtect) == .addToCurrent {
             return .empty(
                 currentAcceptsProtect(takesProtect: takesProtect, discovery: discovery)
                     ? "No Jamf Protect profile in jamf-cli is free to add. Connect new above."

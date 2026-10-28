@@ -217,6 +217,36 @@ final class AddSheetPlanTests: XCTestCase {
             requested: nil), .newWorkspace)
     }
 
+    func testTheStepFallsBackToNewWorkspaceWhenTheWorkspaceCannotTakeProtect() {
+        XCTAssertEqual(AddSheetPlan.step(choice: .addToCurrent, takesProtect: true), .addToCurrent)
+        XCTAssertEqual(AddSheetPlan.step(choice: .addToCurrent, takesProtect: false),
+                       .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.step(choice: .newWorkspace, takesProtect: true),
+                       .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.step(choice: .newWorkspace, takesProtect: false),
+                       .newWorkspace)
+    }
+
+    func testDemoModeOutranksReadingAndUnreadable() {
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(listing(nil, demo: true, checking: true), .demo)
+        XCTAssertEqual(listing(unreadable, demo: true), .demo)
+    }
+
+    func testRecheckWithAWorkspaceThatCannotTakeProtectOpensNewWorkspace() {
+        let found = discovery([profile("p", .protect)])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: false, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
+    func testRecheckOfUnreadableProfilesOpensNewWorkspace() {
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: unreadable, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
     func testRecheckDropsAProfileThatGainedAWorkspace() {
         let all = [profile("lab"), profile("p", .protect)]
         let before = discovery(all)
