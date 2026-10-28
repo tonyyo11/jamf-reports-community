@@ -57,6 +57,9 @@ versions in this repository map to git tags.
 - Run now and the background item stop the jamf-cli call they are waiting on when they give up
   after six hours, so a stalled call no longer keeps running beside the next scheduled run.
   (#305)
+- A scheduled run behind a proxy now uses the proxy set in System Settings. The background item
+  starts without a shell, so it had none; a proxy with a user name is skipped with a warning.
+  (#305)
 
 ### Security
 

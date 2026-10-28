@@ -362,6 +362,10 @@ private func scheduledRunSingleBody(
         }
     }
 
+    if let proxyLine = SystemProxy.scheduledRun.runLine {
+        onLine(.init(timestamp: Date(), level: .info, text: proxyLine))
+    }
+
     if retiredCSVAssisted {
         onLine(.init(timestamp: Date(), level: .info, text:
             "[info] schedule \(runLabel): csv-assisted mode was retired in 2.11; "
@@ -996,10 +1000,12 @@ if cliArgs.count > 1, cliArgs[1] == "--tick" {
     // Run now streams this process's output through a pipe; if the GUI quits mid-run, a write
     // must fail with EPIPE instead of killing the tick (and the collect) with SIGPIPE.
     signal(SIGPIPE, SIG_IGN)
+    SystemProxy.installForScheduledRun()
     let code = Task.detached { await runTick(arguments: cliArgs) }
     exit(await code.value)
 } else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
    let profile = ProfileService.profileArgument(in: cliArgs) {
+    SystemProxy.installForScheduledRun()
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)

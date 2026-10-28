@@ -2416,8 +2416,11 @@ final class CLIBridge {
 
     /// The one environment every jamf-cli child gets; `parent` is the test seam. Add a variable
     /// jamf-cli must see to `jamfCLIAllowedEnvKeys` (verbatim) or here (when it needs a check).
+    /// `proxy` is the system proxy a background run installed (`SystemProxy`); a proxy variable
+    /// already in the parent environment (a shell, the GUI) wins over it.
     nonisolated static func environmentForJamfCLI(
-        parent: [String: String] = ProcessInfo.processInfo.environment
+        parent: [String: String] = ProcessInfo.processInfo.environment,
+        proxy: String? = SystemProxy.scheduledRun.url
     ) -> [String: String] {
         var env: [String: String] = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -2434,6 +2437,9 @@ final class CLIBridge {
         // same folder (`ProfileService.jamfCLIConfigFileURL`), so a relative value is dropped.
         if let xdg = ProfileService.absoluteXDGConfigHome(in: parent) {
             env["XDG_CONFIG_HOME"] = xdg
+        }
+        if let proxy, env["HTTPS_PROXY"] == nil, env["https_proxy"] == nil {
+            env["HTTPS_PROXY"] = proxy
         }
         // v1.26.0's daily update notifier can stall PTY-driven onboarding on a
         // restricted network; older binaries ignore this var, so no version gate.
