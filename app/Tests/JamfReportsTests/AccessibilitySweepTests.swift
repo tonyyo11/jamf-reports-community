@@ -182,6 +182,9 @@ final class AccessibilitySweepTests: XCTestCase {
         }
         XCTAssertEqual(label("+12"), "Managed Computers: 500, up +12")
         XCTAssertEqual(label("−3"), "Managed Computers: 500, down −3")
+        XCTAssertEqual(label("+0"), "Managed Computers: 500")
+        XCTAssertEqual(label("+0.0pp"), "Managed Computers: 500")
+        XCTAssertEqual(label("+1.5pp"), "Managed Computers: 500, up +1.5pp")
         XCTAssertEqual(label("No Data"), "Managed Computers: 500")
         XCTAssertEqual(label("Not comparable"), "Managed Computers: 500")
     }

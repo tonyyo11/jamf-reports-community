@@ -538,8 +538,8 @@ struct StatTile: View {
             case .flat: ""
             }
             // A flat tile still draws a signed delta, so it is announced without a verdict;
-            // "No Data" and "Not comparable" carry no sign and stay silent.
-            if deltaTrend != .flat || Self.hasSign(delta) {
+            // "No Data", "Not comparable" and a zero change stay silent.
+            if deltaTrend != .flat || Self.isSignedChange(delta) {
                 let direction = deltaPointsUp(delta, trend: deltaTrend) ? "up" : "down"
                 parts.append("\(direction) \(delta)\(verdict)")
             }
@@ -556,8 +556,12 @@ struct StatTile: View {
         }
     }
 
-    nonisolated private static func hasSign(_ delta: String) -> Bool {
-        ["+", "−", "-"].contains { delta.hasPrefix($0) }
+    /// A signed, non-zero change such as "+12" or "−1.5pp"; "+0", "+0.0pp" and text with no
+    /// sign are not.
+    nonisolated private static func isSignedChange(_ delta: String) -> Bool {
+        guard ["+", "−", "-"].contains(where: { delta.hasPrefix($0) }) else { return false }
+        let magnitude = delta.dropFirst().filter { $0.isNumber || $0 == "." }
+        return (Double(magnitude) ?? 0) != 0
     }
 
     /// Arrow glyph and VoiceOver direction reflect the delta's literal numeric sign
