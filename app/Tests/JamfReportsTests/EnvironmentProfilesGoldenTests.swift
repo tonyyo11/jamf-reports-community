@@ -5,7 +5,9 @@ import XCTest
 /// The gate for the environment model's first phases: every config.yaml shape a workspace has
 /// today routes a collect to the same products, with the same `-p` profiles and the same router
 /// lines, so the jamf-cli command lines are byte for byte what they were before `profiles:`.
-/// Captured through the router's closure seams; no jamf-cli runs.
+/// Captured through the router's closure seams; no jamf-cli runs. The dashboard row goes through
+/// `ReportEngine.dashboardProtectProfile`, the collect's own call; the refusal step after it
+/// (`dashboardProtect`) is covered by `DashboardCollectTests`.
 @MainActor
 final class EnvironmentProfilesGoldenTests: XCTestCase {
     private let workspace = "ws-golden"
@@ -136,6 +138,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
     ]
 
     func testEveryOldShapeRunsTheSameCommandLines() async throws {
+        XCTAssertEqual(shapes.count, golden.count, "every shape has a golden value")
         var mismatches: [String] = []
         for shape in shapes {
             let calls = try await run(shape)
@@ -155,7 +158,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
         let calls = GoldenCalls { profile, base in
             ReportEngine.dashboardArguments(
                 base: base, profile: profile,
-                protect: EnvironmentProfiles.resolve(config: config, workspace: profile).protect)
+                protect: ReportEngine.dashboardProtectProfile(config: config, profile: profile))
         }
         let auth = shape.workspaceAuth
         let product = shape.workspaceProduct

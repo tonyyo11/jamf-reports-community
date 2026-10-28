@@ -185,6 +185,51 @@ final class EnvironmentProfilesTests: XCTestCase {
         XCTAssertEqual(calls.all, ["pro ws", "protect ws-protect"])
     }
 
+    func testAnEmptyBlockIsRefused() throws {
+        let environment = try resolve("profiles: {}\n")
+        XCTAssertEqual(environment.source, .profilesBlock)
+        XCTAssertTrue(environment.refusal(workspace: ws)?.contains("names neither") == true)
+    }
+
+    func testANonTextSlotFailsTheDecodeAndANumberReadsAsItsDigits() throws {
+        XCTAssertThrowsError(try ConfigLoader.loadFromString("profiles:\n  jamf_pro: [a, b]\n"))
+        XCTAssertEqual(try resolve("profiles:\n  jamf_pro: 2024\n").jamfPro, "2024")
+        XCTAssertEqual(try resolve("profiles:\n  jamf_pro: ws\n  protect: \"true\"\n").protect,
+                       "true", "a profile may be named like a boolean")
+    }
+
+    func testTheRouterCollectsSchoolForASchoolBlock() async throws {
+        let config = try ConfigLoader.loadFromString("profiles:\n  jamf_school: ws\n")
+        let calls = EnvCalls()
+        try await CollectRouter.run(
+            profile: ws, config: config, now: .testNoon,
+            proCollect: { _, _, _, _, _, _ in calls.add("pro"); return .collected },
+            schoolCollect: { profile, _, _, _, _ in calls.add("school \(profile)") },
+            protectCollect: { _, _, _ in calls.add("protect") },
+            resolved: { _ in nil }, onLine: { _ in })
+        XCTAssertEqual(calls.all, ["school ws"])
+    }
+
+    func testProtectBackupPlanReadsTheBlock() throws {
+        func plan(_ yaml: String) throws -> ProtectBackup.Plan {
+            ProtectBackup.plan(
+                config: try ConfigLoader.loadFromString(yaml), workspaceProfile: ws,
+                pinAllows: { true }, sharedStorage: { nil })
+        }
+        XCTAssertEqual(try plan("profiles:\n  jamf_pro: ws\n  protect: ws-protect\n"),
+                       .run(profile: "ws-protect"))
+        XCTAssertEqual(
+            try plan("protect:\n  enabled: true\n  profile: p\nprofiles:\n  jamf_pro: ws\n"),
+            .notConnected, "protect.* is not read under the block")
+        XCTAssertEqual(try plan("profiles:\n  jamf_school: ws\n  protect: ws-protect\n"),
+                       .notConnected, "a School workspace has no backup")
+        let drifted = ProtectBackup.plan(
+            config: try ConfigLoader.loadFromString("profiles:\n  jamf_pro: ws\n  protect: p\n"),
+            workspaceProfile: ws, pinAllows: { false }, sharedStorage: { nil })
+        XCTAssertEqual(drifted, .skip(reason: "profiles.protect changed in the shared config.yaml "
+            + "and is not confirmed on this Mac (Config Doctor)"))
+    }
+
     // MARK: - Schema and pin
 
     func testConfigSchemaKnowsEverySlot() throws {

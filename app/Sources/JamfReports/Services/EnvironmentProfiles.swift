@@ -12,6 +12,8 @@ struct EnvironmentProfiles: Equatable, Sendable {
         case legacyKeys
     }
 
+    /// Old keys: `jamf_cli.profile` when set, even when it differs from the workspace, so the
+    /// case-variant refusal and `profileMismatch` still see what the file names.
     var jamfPro: String?
     var platform: String?
     var jamfSchool: String?
