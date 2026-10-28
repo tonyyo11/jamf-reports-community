@@ -574,4 +574,60 @@ final class BoundedReadsTests: XCTestCase {
         XCTAssertEqual(within { SnapshotManifest.scanFlatDir(flatDir).unverified }, 0)
         XCTAssertEqual(within { SnapshotManifest.scanStateDir(flatDir).unverified }, 0)
     }
+
+    // MARK: - The one snapshot reader (`BoundedFile.readLogged`) at its callers
+
+    func testReadLoggedReadsARegularFileAndSaysNothingAboutAMissingOne() throws {
+        let file = root.appendingPathComponent("snap/regular-gone.json")
+        XCTAssertNil(BoundedFile.readLogged(file))
+        XCTAssertFalse(logged("regular-gone.json not read: could not be read: No such file or directory"))
+        try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("[1]".utf8).write(to: file)
+        XCTAssertEqual(BoundedFile.readLogged(file), Data("[1]".utf8))
+    }
+
+    func testReadLoggedRefusesAFIFOAtTheNewestNameWithoutHangingAndNamesItThroughDisplayText() throws {
+        let dir = root.appendingPathComponent("ddm-device-status", isDirectory: true)
+        let pipe = dir.appendingPathComponent("ddm-device-status_20991231T000000\u{7}.json")
+        try fifo(at: pipe)
+        let url = try XCTUnwrap(FileManager.newestJSONFile(in: dir))
+        let data = within { BoundedFile.readLogged(url) }
+        XCTAssertEqual(data, .some(nil))
+        XCTAssertTrue(logged("ddm-device-status_20991231T000000.json not read: not a regular file"))
+        // A service behind the picker reads it as unreadable, not as an empty snapshot.
+        let snapshot = try XCTUnwrap(within { DDMDeviceStatusService.load(url: url) })
+        XCTAssertTrue(snapshot.readFailed)
+    }
+
+    func testReadLoggedRefusesALinkAndAnOversizeSnapshot() throws {
+        let dir = root.appendingPathComponent("policy-status", isDirectory: true)
+        let real = dir.appendingPathComponent("policy-status_20260601T000000.json")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(to: real)
+        let linked = dir.appendingPathComponent("policy-status_20260602T000000.json")
+        try link(linked, to: real)
+        XCTAssertNil(BoundedFile.readLogged(linked))
+        XCTAssertTrue(logged("policy-status_20260602T000000.json not read: could not be read: "
+            + String(cString: strerror(ELOOP))))
+        let big = dir.appendingPathComponent("policy-status_20260603T000000.json")
+        try sparse(big, bytes: UInt64(BoundedFile.documentLimit) + 1)
+        XCTAssertNil(BoundedFile.readLogged(big, limit: BoundedFile.documentLimit))
+        XCTAssertTrue(logged("policy-status_20260603T000000.json not read: over 1 MB"))
+    }
+
+    func testDeviceDetailSidecarFIFOFallsBackToTheCacheFilesDate() throws {
+        let cache = root.appendingPathComponent("device-detail/computer-1.json")
+        try fm.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: cache)
+        try fifo(at: cache.appendingPathExtension("meta"))
+        let date = within { freshnessTimestamp(for: cache) }
+        XCTAssertNotNil(date.flatMap { $0 })
+    }
+
+    func testBundleSeedingSkipsAFIFOSnapshotAndReadsTheRest() throws {
+        let dir = root.appendingPathComponent("seed-data", isDirectory: true)
+        try fifo(at: dir.appendingPathComponent("computers/computers_20991231T000000.json"))
+        let count = within { DiagnosticRedactor().seedFromWorkspace(dir) }
+        XCTAssertEqual(count, 0)
+    }
 }
