@@ -18,8 +18,8 @@ extension ReportEngine {
         var writeFailed: [String] = []
         var folderFailed = false
 
-        /// A parse failure is final (the next pass would fail the same way); everything else
-        /// may succeed on a retry.
+        /// A file that cannot be parsed or can never be read (too large, not regular, a link)
+        /// is final: the next pass would fail the same way. Everything else may succeed on a retry.
         var isComplete: Bool {
             unreadable.isEmpty && writeFailed.isEmpty && !folderFailed
         }
@@ -41,22 +41,16 @@ extension ReportEngine {
         rewriteLostModeTextOnce(dataDir: dataDir, archiveRoot: archive, onLine: onLine)
     }
 
-    /// The retention archive root when it resolves inside the workspace; otherwise nil with one
-    /// `[warn]`, because a folder outside it is not ours to read or rewrite.
+    /// The root the retention sweep archives into (`resolvedArchiveRoot`, which falls back to
+    /// `_archive` for a refused `archive_dir`), when it resolves inside the workspace;
+    /// otherwise nil with one `[warn]`, because a folder outside it is not ours to rewrite.
     static func lostModeArchiveRoot(
         config: RetentionConfig?, workspace: URL,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) -> URL? {
         let base = workspace.resolvingSymlinksInPath().standardizedFileURL
-        let root: URL
-        do {
-            root = try SnapshotRetentionService.typedArchiveRoot(
-                config: config, workspace: workspace)
-                ?? base.appendingPathComponent("_archive", isDirectory: true)
-        } catch {
-            warnNotSwept("retention.archive_dir is refused", onLine)
-            return nil
-        }
+        let root = SnapshotRetentionService.resolvedArchiveRoot(
+            config: config, workspace: workspace, onLine: onLine)
         let resolved = root.resolvingSymlinksInPath().standardizedFileURL
         guard resolved.path == base.path || resolved.path.hasPrefix(base.path + "/") else {
             warnNotSwept("it is outside the workspace", onLine)
@@ -79,7 +73,11 @@ extension ReportEngine {
     /// logs no `[partial]`. The marker is written only when no file was unreadable or failed to
     /// write and no folder was refused or unlistable; those retry on the next collect. A file
     /// that is not JSON is warned about and not retried. The file's mtime changes and a link
-    /// swapped in after the folder check is not caught, as in `saveSnapshot`.
+    /// swapped in after the folder check is not caught, as in `saveSnapshot`. The stamp-before-
+    /// write ordering assumes `JSONSerialization` with sorted keys gives the same bytes on the
+    /// next pass; a peer Mac on another macOS that formats doubles differently would leave a
+    /// permanent `.mismatch`. After a crash between the stamp and the write, a generate with no
+    /// collect in between refuses on that file until the next collect repairs it.
     static func rewriteLostModeTextOnce(
         dataDir: URL, archiveRoot: URL?, now: Date = Date(),
         limit: Int = BoundedFile.inventoryLimit,
@@ -140,14 +138,23 @@ extension ReportEngine {
                 text: "[warn] lost-mode rewrite: \(names.count) mobile device snapshot(s) "
                     + "\(what): \(shown)\(more)"))
         }
-        warn(tally.unparsable, "are not valid JSON and may still contain lost-mode text; "
-            + "delete or replace them; not rechecked")
+        warn(tally.unparsable, "cannot be read or parsed and may still contain lost-mode "
+            + "text; delete or replace them (they are rechecked only while another failure "
+            + "keeps this pass from finishing)")
         warn(tally.unreadable, "could not be read; will retry on the next collect")
         warn(tally.writeFailed, "could not be rewritten; will retry on the next collect")
         if tally.rewritten > 0 {
             onLine(.init(timestamp: Date(), level: .info,
                 text: "[info] removed lost-mode text from \(tally.rewritten) mobile device "
                     + "snapshots"))
+        }
+    }
+
+    private static func isPermanentReadFailure(_ error: Error) -> Bool {
+        guard let failure = error as? BoundedFile.Failure else { return false }
+        switch failure {
+        case .tooLarge, .notRegular: return true
+        case .unreadable(let code): return code == ELOOP || code == EMLINK
         }
     }
 
@@ -172,9 +179,15 @@ extension ReportEngine {
         }
         for file in files {
             let name = "\(label)/\(file.lastPathComponent)"
-            guard let data = try? BoundedFile.read(
-                    file, limit: limit, followSymlinks: false, inside: dir) else {
-                tally.unreadable.append(name)
+            let data: Data
+            do {
+                data = try BoundedFile.read(file, limit: limit, followSymlinks: false, inside: dir)
+            } catch {
+                if isPermanentReadFailure(error) {
+                    tally.unparsable.append(name)
+                } else {
+                    tally.unreadable.append(name)
+                }
                 continue
             }
             guard let stripped = droppingLostModeText(data, sortedKeys: true) else {

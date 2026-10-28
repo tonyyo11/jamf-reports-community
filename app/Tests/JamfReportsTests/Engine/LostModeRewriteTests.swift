@@ -124,6 +124,7 @@ final class LostModeRewriteTests: XCTestCase {
         XCTAssertFalse(warns[0].contains("secret"))
         XCTAssertTrue(warns[0].contains("may still contain lost-mode text"))
         XCTAssertTrue(warns[0].contains("delete or replace"))
+        XCTAssertTrue(warns[0].contains("cannot be read or parsed"))
         XCTAssertTrue(markerExists, "a parse failure is final, so the pass is complete")
     }
 
@@ -193,10 +194,34 @@ final class LostModeRewriteTests: XCTestCase {
         XCTAssertTrue(markerExists)
     }
 
-    func testTooLargeFileIsWarnedLeftAndLeavesNoMarker() throws {
+    /// A file that can never be read is final, like an unparsable one: warned once, and the
+    /// marker is written so later collects do not rescan it.
+    func testTooLargeFileIsWarnedOnceAndCompletes() throws {
         let file = try write(Self.old, "\(kind)_20260101T000000.json")
         let lines = rewrite(limit: 10)
         XCTAssertEqual(try Data(contentsOf: file), Data(Self.old.utf8))
+        XCTAssertEqual(lines.all.filter { $0.contains("cannot be read or parsed") }.count, 1)
+        XCTAssertTrue(markerExists)
+        XCTAssertEqual(rewrite().all, [])
+    }
+
+    func testPlantedHardLinkIsNamedOnceAndCompletes() throws {
+        let target = try write(Self.old, "\(kind)_20260101T000000.json")
+        let link = folder.appendingPathComponent("\(kind)_20260102T000000.json")
+        XCTAssertEqual(Darwin.link(target.path, link.path), 0)
+        let lines = rewrite()
+        let warns = lines.all.filter { $0.hasPrefix("[warn]") }
+        XCTAssertEqual(warns.count, 1)
+        XCTAssertTrue(warns[0].contains("cannot be read or parsed"))
+        XCTAssertTrue(markerExists)
+    }
+
+    func testPermissionDeniedIsRetryable() throws {
+        // Only errnos that cannot change on retry are final; EACCES can.
+        let file = try write(Self.old, "\(kind)_20260101T000000.json")
+        chmod(file.path, 0o000)
+        let lines = rewrite()
+        chmod(file.path, 0o600)
         XCTAssertEqual(lines.all.filter { $0.contains("could not be read") }.count, 1)
         XCTAssertFalse(markerExists)
     }
@@ -252,18 +277,37 @@ final class LostModeRewriteTests: XCTestCase {
         XCTAssertTrue(markerExists)
     }
 
-    func testArchiveRootOutsideTheWorkspaceIsNotSweptAndWarns() throws {
+    /// A refused `archive_dir` still archives into `_archive` (retention's own fallback), so the
+    /// pass must look there.
+    func testRefusedArchiveDirStillSweepsTheDefaultArchive() throws {
         let lines = Lines()
-        let outside = try JSONDecoder().decode(
+        let refused = try JSONDecoder().decode(
             RetentionConfig.self, from: Data(#"{"archive_dir":"/Users/Shared/jr-archive"}"#.utf8))
+        let root = try XCTUnwrap(ReportEngine.lostModeArchiveRoot(
+            config: refused, workspace: dataDir, onLine: lines.add))
+        XCTAssertEqual(root.lastPathComponent, "_archive")
+        XCTAssertEqual(lines.all.filter { $0.contains("retention.archive_dir") }.count, 1)
+    }
+
+    func testArchiveRootThatResolvesOutsideTheWorkspaceIsNotSweptAndWarns() throws {
+        let lines = Lines()
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lost-mode-outside-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try FileManager.default.createSymbolicLink(
+            at: dataDir.appendingPathComponent("_archive"), withDestinationURL: outside)
         XCTAssertNil(ReportEngine.lostModeArchiveRoot(
-            config: outside, workspace: dataDir, onLine: lines.add))
+            config: nil, workspace: dataDir, onLine: lines.add))
         XCTAssertEqual(lines.all.count, 1)
         XCTAssertTrue(lines.all[0].hasPrefix("[warn]"))
+    }
 
+    func testDefaultArchiveRootIsInsideTheWorkspace() {
+        let lines = Lines()
         let inside = ReportEngine.lostModeArchiveRoot(
             config: nil, workspace: dataDir, onLine: lines.add)
         XCTAssertEqual(inside?.lastPathComponent, "_archive")
-        XCTAssertEqual(lines.all.count, 1)
+        XCTAssertEqual(lines.all, [])
     }
 }
