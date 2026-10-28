@@ -290,6 +290,29 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertEqual(warnings.count, 1, "\(lines.all)")
         XCTAssertTrue(warnings[0].hasPrefix("[warn] "))
     }
+
+    /// The picker drops a link that resolves outside the folder; the dashboard path still
+    /// says the newest entry could not be read, and the name is filtered of control characters.
+    func testAPlantedLinkIsUnreadableNotAbsent() throws {
+        let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dataDir.appendingPathComponent("elsewhere.html")
+        try "<html></html>".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: dir.appendingPathComponent("dashboard_20260925T060000.html"),
+            withDestinationURL: target)
+        guard case .unreadable(let why) = report().dashboardState() else {
+            return XCTFail("a planted link must not read as never collected")
+        }
+        XCTAssertEqual(why, "dashboard_20260925T060000.html: not a regular file")
+
+        let odd = dir.appendingPathComponent("dashboard_20260926T060000\u{7}x.html")
+        try FileManager.default.createSymbolicLink(at: odd, withDestinationURL: target)
+        guard case .unreadable(let oddWhy) = report().dashboardState() else {
+            return XCTFail("a planted link must not read as never collected")
+        }
+        XCTAssertFalse(oddWhy.unicodeScalars.contains("\u{7}"), oddWhy)
+    }
 }
 
 private final class LockedLines: @unchecked Sendable {

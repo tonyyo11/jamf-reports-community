@@ -134,11 +134,14 @@ final class DiagnosticRedactor {
         // A phone number needs a leading `+` (E.164, digit groups split by single spaces, dots,
         // hyphens or parentheses, 7-15 digits in all) or separators (NANP), so a bare 10-digit
         // Jamf ID, a date or a timestamp is not one. The lookahead counts the digits; the
-        // second guard keeps a `+2020-2026` year range out. Every separator is required between
-        // digit runs, so a failed match cannot backtrack exponentially.
+        // second guard keeps a `+2020-2026` year range out. The groups are possessive and
+        // there is no end guard, so a trailing letter (`...0958x`) never shortens the match and
+        // leaves digits behind. Known over-masking, accepted: `+2026-10-18` style text after a
+        // plus sign and `+1.29.100.200`.
         self.phoneE164RE = Self.mustCompile(
-            #"(?<![\w+])\+(?=(?:[ .\-()]*\d){7,15}(?![ .\-()]*\d))(?!\d{4}[ .\-]\d)"#
-            + #"[1-9]\d*(?:[ .\-]?\(\d+\)|[ .\-]\d+)*(?!\w)"#)
+            #"(?<![\w+])\+(?=(?:[ .\-()]*\d){7,15}(?![ .\-()]*\d))"#
+            + #"(?!(?:19|20)\d\d[ .\-](?:19|20)\d\d\b)"#
+            + #"[1-9]\d*+(?:[ .\-]?\(\d++\)|[ .\-]\d++)*+"#)
         self.phoneNANPRE = Self.mustCompile(
             #"(?<![\w.\-])\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}(?![\w\-]|\.\d)"#)
     }

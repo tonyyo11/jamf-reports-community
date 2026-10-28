@@ -18,6 +18,8 @@ final class PhoneRedactionTests: XCTestCase {
         let samples = [
             ("+44 20 7946 0958", "7946"), ("+1 (415) 555 0132", "555"),
             ("+49 30 123456", "123456"), ("+1-415-555-0132", "555"), ("+44.20.7946.0958", "7946"),
+            ("+4930-123456", "123456"), ("+3531 234 5678", "5678"),
+            ("+44 20 7946 0958x", "0958"),
         ]
         for (phone, digits) in samples {
             let out = r.redactText("[warn] contact \(phone) failed")

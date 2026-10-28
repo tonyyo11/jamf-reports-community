@@ -95,6 +95,18 @@ extension HtmlReport {
     private static let dashboardNotCollected = "not collected yet; with jamf-cli 1.31.0 or "
         + "later, collect saves jamf-cli's dashboard every two days"
 
+    private static func newestPageEntry(in dir: URL) -> URL? {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return FileManager.newestSnapshot(
+            among: entries.filter { $0.pathExtension.lowercased() == "html" })
+    }
+
+    private static func isRegularFile(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
     /// `BoundedFile`'s description repeats "could not be read", which the appendix already says.
     private static func readFailureText(_ error: Error) -> String {
         if case BoundedFile.Failure.unreadable(let code) = error {
@@ -103,9 +115,25 @@ extension HtmlReport {
         return error.localizedDescription
     }
 
+    /// A page name comes from a folder a peer can write to, so it is filtered before it
+    /// reaches a log line or the appendix.
+    private static func unreadable(_ name: String, _ why: String) -> DashboardState {
+        .unreadable(ConfigSchema.displayText(name) + ": " + why)
+    }
+
     /// The newest dashboard snapshot, as the report can use it.
     func dashboardState() -> DashboardState {
-        let dir = dataDir.appendingPathComponent(ReportEngine.dashboardKind, isDirectory: true)
+        let dir: URL
+        do {
+            dir = try WorkspacePaths.confinedFolder([ReportEngine.dashboardKind], under: dataDir)
+        } catch {
+            return Self.unreadable(ReportEngine.dashboardKind, WorkspacePaths.refusal(of: error))
+        }
+        // The picker leaves out a link that resolves outside the folder, which would read as
+        // never collected; the newest entry by stamp, link or not, decides here.
+        if let newest = Self.newestPageEntry(in: dir), !Self.isRegularFile(newest) {
+            return Self.unreadable(newest.lastPathComponent, "not a regular file")
+        }
         guard let url = FileManager.newestHTMLSnapshot(in: dir) else {
             return .absent(Self.dashboardNotCollected)
         }
@@ -124,7 +152,7 @@ extension HtmlReport {
                 "The dashboard collected \(collected) is \(size), too large to embed. Open "
                     + "\(url.lastPathComponent) from the jamf-cli-data/dashboard folder."))
         } catch {
-            return .unreadable("\(url.lastPathComponent): " + Self.readFailureText(error))
+            return Self.unreadable(url.lastPathComponent, Self.readFailureText(error))
         }
         let page = Self.dashboardPageForEmbedding(String(decoding: data, as: UTF8.self))
         let srcdoc = HtmlSectionFormatters.escapeHTML(page)
