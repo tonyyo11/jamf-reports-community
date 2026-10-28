@@ -1086,8 +1086,8 @@ final class SharedConfigPinTests: XCTestCase {
         try writeConfig(protectBackup: "true")
         _ = check()
         XCTAssertFalse(try protectOnSynced())
-        try ProtectBackupConfigWriter.save(
-            onSyncedStorage: true, profile: profile, appSupport: appSupport)
+        try BackupChoiceConfigWriter.save(
+            .protect, on: true, profile: profile, appSupport: appSupport)
         XCTAssertTrue(try protectOnSynced())
     }
 
@@ -1101,8 +1101,8 @@ final class SharedConfigPinTests: XCTestCase {
         _ = check()
         XCTAssertFalse(try protectOnSynced())
 
-        let report = try ProtectBackupConfigWriter.save(
-            onSyncedStorage: true, profile: profile, appSupport: appSupport)
+        let report = try BackupChoiceConfigWriter.save(
+            .protect, on: true, profile: profile, appSupport: appSupport)
         XCTAssertTrue(try protectOnSynced(), "the switch confirms the value it wrote")
         XCTAssertTrue(check().drifts.isEmpty)
         let backup = try XCTUnwrap(report.backupName)
@@ -1113,8 +1113,8 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(saved.protect?.resolvedProfile, "protect-a", "other protect keys stay")
         XCTAssertTrue(saved.protect?.isEnabled ?? false)
 
-        try ProtectBackupConfigWriter.save(
-            onSyncedStorage: false, profile: profile, appSupport: appSupport)
+        try BackupChoiceConfigWriter.save(
+            .protect, on: false, profile: profile, appSupport: appSupport)
         XCTAssertEqual(try ConfigLoader.load(from: url).protect?.backupOnSyncedStorage, false)
         XCTAssertFalse(try protectOnSynced())
         XCTAssertTrue(check().drifts.isEmpty)
@@ -1132,8 +1132,8 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(rows.first?.severity, .suggest)
         XCTAssertTrue(rows.first?.hint?.contains("protect.backup_on_synced_storage") ?? false)
 
-        try ProtectBackupConfigWriter.save(
-            onSyncedStorage: true, profile: profile, appSupport: appSupport)
+        try BackupChoiceConfigWriter.save(
+            .protect, on: true, profile: profile, appSupport: appSupport)
         let allowed = try XCTUnwrap(ProtectBackup.syncedStorageChoice(
             profile: profile, config: try load(), appSupport: appSupport))
         XCTAssertTrue(allowed.allowed)

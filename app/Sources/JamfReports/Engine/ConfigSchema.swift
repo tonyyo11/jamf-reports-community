@@ -231,6 +231,7 @@ enum ConfigSchema {
         "branding": Node(BrandingConfig.CodingKeys.self),
         "platform": Node(PlatformConfig.CodingKeys.self),
         "protect": Node(ProtectConfig.CodingKeys.self),
+        "backup": Node(BackupConfig.CodingKeys.self),
         "school_cli": Node(SchoolCLIConfig.CodingKeys.self),
         "notify": Node(NotifyConfig.CodingKeys.self),
         "alerts": Node(AlertsConfig.CodingKeys.self, [

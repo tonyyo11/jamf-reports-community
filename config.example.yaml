@@ -254,6 +254,22 @@ protect:
   # Config Doctor) before it applies there.
   backup_on_synced_storage: false
 
+# =============================================================================
+# BACKUPS
+# =============================================================================
+# A Jamf Pro backup contains LDAP, SMTP and API-client configuration and scripts
+# that can hold secrets. On storage other Macs reach (a sync provider, a network
+# volume, a shared workspace) the operator chooses once per workspace whether
+# Jamf Pro is backed up there. Leave the key out to be asked: a workspace that
+# already ran scheduled backups keeps backing up for 3 more runs, then skips Jamf
+# Pro (the run is Partial) until you choose; a new workspace asks before its first
+# backup. Set true to back up Jamf Pro there (each Mac confirms it once, in Backups
+# or Config Doctor, on a shared workspace), or false to keep Jamf Pro out. Local
+# storage needs no key. Uncomment to set it:
+#
+# backup:
+#   pro_on_synced_storage: true
+
 
 # =============================================================================
 # WEBHOOK NOTIFICATIONS (opt-in)

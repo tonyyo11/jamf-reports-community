@@ -20,6 +20,7 @@ struct ReportConfig: Decodable, Sendable {
     var branding: BrandingConfig?
     var platform: PlatformConfig?
     var protect: ProtectConfig?
+    var backup: BackupConfig?
     var schoolCli: SchoolCLIConfig?
     var notify: NotifyConfig?
     var alerts: AlertsConfig?
@@ -42,6 +43,7 @@ struct ReportConfig: Decodable, Sendable {
         case branding
         case platform
         case protect
+        case backup
         case schoolCli = "school_cli"
         case notify
         case alerts
@@ -736,6 +738,29 @@ struct ProtectConfig: Decodable, Sendable {
     var isEnabled: Bool { enabled ?? false }
     var backsUpOnSyncedStorage: Bool { backupOnSyncedStorage ?? false }
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
+}
+
+// MARK: - backup
+
+/// `backup:` settings for the Jamf Pro half of a backup.
+struct BackupConfig: Decodable, Sendable {
+    /// `pro_on_synced_storage`: back Jamf Pro up even when the workspace is on storage other
+    /// Macs reach. Absent means the operator has not chosen yet (the app asks); a value that is
+    /// not a boolean reads as absent, and Config Doctor names it. On a shared workspace
+    /// `SharedConfigPin` decides what this Mac uses.
+    var proOnSyncedStorage: Bool?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case proOnSyncedStorage = "pro_on_synced_storage"
+    }
+
+    init(proOnSyncedStorage: Bool? = nil) { self.proOnSyncedStorage = proOnSyncedStorage }
+
+    /// A mistyped value reads as absent rather than failing the whole config.yaml decode.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        proOnSyncedStorage = try? container.decodeIfPresent(Bool.self, forKey: .proOnSyncedStorage)
+    }
 }
 
 // MARK: - school_cli

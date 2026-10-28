@@ -35,6 +35,10 @@ struct BackupProductResult: Sendable, Hashable {
 
     var objectTotal: Int { objectCounts.values.reduce(0, +) }
 
+    /// For a Jamf Pro result: the backup holds no Jamf Pro files, because the part failed or the
+    /// operator has not allowed it on this storage.
+    var leavesNoJamfProBackup: Bool { state == .failed || state == .skipped }
+
     /// A count a manifest may hold: a whole number from 0 to `Int32.max`, as the Platform count
     /// checks read one. `manifest.json` sits in a folder a peer can write, and a larger value
     /// would trap `objectTotal`'s sum.
@@ -279,41 +283,6 @@ enum ProtectBackup {
     }
 }
 
-/// Scoped write of `protect.backup_on_synced_storage`, the Backups screen's switch. Like
-/// `NotifyConfigWriter` it rewrites only the `protect:` block (a dropped comment is copied out
-/// first) and confirms the value it wrote on this Mac, since the switch is the operator's own act.
-enum ProtectBackupConfigWriter {
-    enum WriteError: Error, LocalizedError {
-        case invalidProfile(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
-            }
-        }
-    }
-
-    static func apply(onSyncedStorage: Bool, to root: inout YAMLCodec.YAMLMapping) {
-        var protect = root.value(for: "protect")?.mapping ?? .init(entries: [])
-        protect.set("backup_on_synced_storage", value: .scalar(.bool(onSyncedStorage)))
-        root.set("protect", value: .mapping(protect))
-    }
-
-    @discardableResult
-    static func save(
-        onSyncedStorage: Bool, profile: String, appSupport: URL = AppSupport.directory()
-    ) throws -> ConfigSaveReport {
-        guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
-        let report = try ConfigService.saveBlock(key: "protect", profile: profile) {
-            apply(onSyncedStorage: onSyncedStorage, to: &$0)
-        }.report
-        SharedConfigPin.confirmWritten(
-            String(onSyncedStorage), key: .protectBackupOnSyncedStorage,
-            profile: profile, appSupport: appSupport)
-        return report
-    }
-}
-
 extension CLIBridge {
     /// Backs up Protect into `<staging>/protect` when the workspace has it connected and the
     /// plan allows it, whether or not the Jamf Pro backup succeeded. Nil means Protect is not
@@ -488,7 +457,8 @@ extension CLIBridge {
         switch state {
         case .ok: "the Jamf Pro backup is complete"
         case .partial: "the Jamf Pro backup is partial too"
-        case .failed, .skipped: "the Jamf Pro backup failed too"
+        case .failed: "the Jamf Pro backup failed too"
+        case .skipped: "the Jamf Pro backup was skipped too"
         }
     }
 }

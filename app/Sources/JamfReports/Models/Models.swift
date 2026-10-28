@@ -350,6 +350,9 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     var protect: BackupProductResult?
     /// The Jamf Pro part failed, so the folder holds only what Jamf Protect exported.
     var proFailed = false
+    /// The Jamf Pro part was skipped: the workspace is on storage other Macs reach and the
+    /// operator has not allowed Jamf Pro backups there.
+    var proSkipped = false
 
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
@@ -357,12 +360,15 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     /// A backup with no files: an interrupted run, or one whose contents were cleared.
     var isEmpty: Bool { fileCount == 0 }
 
+    /// The backup holds no Jamf Pro files, so a diff has nothing to read.
+    var lacksJamfPro: Bool { proFailed || proSkipped }
+
     /// The backup holds Jamf Protect objects, which a diff does not compare.
     var includesProtectFiles: Bool { (protect?.objectTotal ?? 0) > 0 }
 
     /// A diff compares the contents of two backups, so both need files and they must differ.
     static func canDiff(_ backup: BackupRecord, against other: BackupRecord?) -> Bool {
-        guard let other, !backup.proFailed, !other.proFailed else { return false }
+        guard let other, !backup.lacksJamfPro, !other.lacksJamfPro else { return false }
         return backup.id != other.id && !backup.isEmpty && !other.isEmpty
     }
 
@@ -389,7 +395,8 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     /// VoiceOver label for a backup row: display name, file count, size, date.
     var accessibilityLabel: String {
         let displayName = label.isEmpty ? name : label
-        let failed = proFailed ? ", Jamf Pro part failed" : ""
+        let failed = proFailed ? ", Jamf Pro part failed"
+            : proSkipped ? ", Jamf Pro part skipped" : ""
         return "\(displayName)\(failed), \(fileCount) files, \(sizeLabel), created \(createdLabel)"
     }
 

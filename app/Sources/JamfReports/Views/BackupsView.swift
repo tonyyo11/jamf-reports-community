@@ -279,7 +279,7 @@ struct BackupsView: View {
     private func setProtectOnSyncedStorage(_ on: Bool) {
         guard !workspace.demoMode else { return }
         do {
-            try ProtectBackupConfigWriter.save(onSyncedStorage: on, profile: workspace.profile)
+            try BackupChoiceConfigWriter.save(.protect, on: on, profile: workspace.profile)
         } catch {
             errorMessage = "Couldn't save the Jamf Protect backup setting: "
                 + error.localizedDescription
@@ -776,7 +776,8 @@ struct BackupLibrary {
             fileCount: manifest.fileCount ?? stats.fileCount,
             url: dir,
             protect: manifest.protect,
-            proFailed: manifest.pro?.state == .failed
+            proFailed: manifest.pro?.state == .failed,
+            proSkipped: manifest.pro?.state == .skipped
         )
     }
 

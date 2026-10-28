@@ -15,12 +15,19 @@ enum BackupMaintenance {
     /// Scheduled backups kept per profile (mirrors `output.keep_latest_runs`).
     static let defaultKeepCount = 10
 
+    /// Scheduled runs a workspace on synced storage keeps backing up Jamf Pro, with the choice
+    /// still open, before the backup skips it (`ProBackup.plan`).
+    static let graceRunsBeforeAsking = 3
+
     /// Age past which an orphaned `.tmp-*` staging dir is considered abandoned.
     static let staleTempAge: TimeInterval = 86_400  // 24 hours
 
-    /// The profile's `shared_workspace.enabled`: true when set to true, or when config.yaml
-    /// exists but cannot be loaded. False when there is no config.yaml.
-    private static func sharedWorkspaceEnabled(profile: String) -> Bool {
+    /// The profile's `shared_workspace.enabled`: true when set to true, or (unless
+    /// `unreadableConfigIsShared` is false) when config.yaml exists but cannot be loaded. False
+    /// when there is no config.yaml.
+    private static func sharedWorkspaceEnabled(
+        profile: String, unreadableConfigIsShared: Bool = true
+    ) -> Bool {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return false }
         let configURL = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: configURL.path) else { return false }
@@ -35,7 +42,7 @@ enum BackupMaintenance {
             // Mac's backups; keeping more is the safe failure.
             AppLogger.collect.warning(
                 "BackupMaintenance: config.yaml unreadable, treating storage as shared")
-            return true
+            return unreadableConfigIsShared
         }
     }
 
@@ -47,14 +54,17 @@ enum BackupMaintenance {
     static func sharedStorageDescription(
         _ backupsRoot: URL, profile: String,
         volumeIsLocal: @Sendable (URL) -> Bool?,
-        syncProbe: CloudStorage.SyncProbe = .live
+        syncProbe: CloudStorage.SyncProbe = .live,
+        unreadableConfigIsShared: Bool = true
     ) -> String? {
         if let storage = CloudStorage.sharedStorage(
             for: backupsRoot, volumeIsLocal: volumeIsLocal, syncProbe: syncProbe) {
             if case .syncMarker = storage { return "in \(storage.displayName)" }
             return "on \(storage.displayName)"
         }
-        return sharedWorkspaceEnabled(profile: profile) ? "in a shared workspace" : nil
+        return sharedWorkspaceEnabled(
+            profile: profile, unreadableConfigIsShared: unreadableConfigIsShared)
+            ? "in a shared workspace" : nil
     }
 
     /// `yyyyMMdd` stamp for scheduled-backup labels.
@@ -96,7 +106,8 @@ enum BackupMaintenance {
     /// A fourth rule (2.11): a backup whose manifest records a partial or failed Jamf
     /// Protect part is left out of the candidates until a newer candidate's Protect part is
     /// complete; from then on it is counted and pruned like any other. A backup whose Jamf
-    /// Pro part failed is held by the same rule and then removed without being counted. At
+    /// Pro part failed or was skipped (2.12) is held by the same rule and then removed without
+    /// being counted. At
     /// most `keep` (and at least `maxHeldBackups`) are held; older ones are released the same
     /// way.
     static let maxHeldBackups = 10
@@ -157,22 +168,24 @@ enum BackupMaintenance {
 
         // A backup whose Protect part is partial or failed is the only copy of what did land,
         // so retention neither counts nor removes it until a newer Protect part completes. One
-        // whose Jamf Pro part failed holds only Protect objects: held the same way, then
-        // removed without counting, so a run of Jamf Pro failures never displaces the newest
-        // Jamf Pro backups.
+        // whose Jamf Pro part failed or was skipped holds only Protect objects: held the same
+        // way, then
+        // removed without counting, so a run of Jamf Pro failures or skips never displaces the
+        // newest Jamf Pro backups.
         var newerProtectComplete = false
         var held = 0
         var released = 0
         var superseded: [URL] = []
-        // Counted like any other backup from here on; one whose Jamf Pro part failed is removed.
-        func release(_ url: URL, proFailed: Bool) -> Bool {
-            guard proFailed else { return true }
+        // Counted like any other backup from here on; one without a Jamf Pro part is removed.
+        func release(_ url: URL, proMissing: Bool) -> Bool {
+            guard proMissing else { return true }
             // A manifest edited to say failed must not get a Jamf Pro backup removed.
             guard holdsOnlyProtectPart(url) else {
                 onLine?(.init(
                     timestamp: Date(), level: .warn,
                     text: "[warn] backup \(url.lastPathComponent): manifest says the "
-                        + "Jamf Pro part failed but the folder holds Jamf Pro files — kept"
+                        + "Jamf Pro part failed or was skipped but the folder holds Jamf Pro "
+                        + "files — kept"
                 ))
                 return false
             }
@@ -186,15 +199,16 @@ enum BackupMaintenance {
             .map(\.url)
             .filter { url in
                 let protect = BackupProductResult.protect(inBackup: url)
-                let proFailed = BackupProductResult.pro(inBackup: url)?.state == .failed
+                let proMissing =
+                    BackupProductResult.pro(inBackup: url)?.leavesNoJamfProBackup == true
                 defer { if protect?.isComplete == true { newerProtectComplete = true } }
-                if newerProtectComplete { return release(url, proFailed: proFailed) }
-                guard protect?.keepsBackupFromPruning == true || proFailed else { return true }
+                if newerProtectComplete { return release(url, proMissing: proMissing) }
+                guard protect?.keepsBackupFromPruning == true || proMissing else { return true }
                 // Only the newest few are held, so a Protect part that fails every day cannot
                 // keep every backup forever.
                 guard held < max(keep, maxHeldBackups) else {
                     released += 1
-                    return release(url, proFailed: proFailed)
+                    return release(url, proMissing: proMissing)
                 }
                 held += 1
                 return false
@@ -203,8 +217,8 @@ enum BackupMaintenance {
             onLine?(.init(
                 timestamp: Date(), level: .info,
                 text: "[info] keeping \(held) scheduled backup(s) with an incomplete Jamf "
-                    + "Protect or failed Jamf Pro part until a later backup's Jamf Protect part "
-                    + "completes."
+                    + "Protect or a failed or skipped Jamf Pro part until a later backup's Jamf "
+                    + "Protect part completes."
             ))
         }
         if released > 0 {
@@ -231,7 +245,23 @@ enum BackupMaintenance {
         }
     }
 
-    /// Whether `backup` holds only what a failed Jamf Pro part leaves: `protect/`, the manifest
+    /// Whether `backups/` already holds a scheduled backup with a Jamf Pro part: the workspace
+    /// relied on scheduled Jamf Pro backups before the choice existed. One with a skipped or
+    /// failed Jamf Pro part is not that. Another Mac's counts, since it is the folder's history.
+    static func hasScheduledJamfProBackup(profile: String) -> Bool {
+        guard let root = backupsRoot(for: profile),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]) else { return false }
+        return entries.contains { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                && manifestLabel(of: url)?.hasPrefix("scheduled-") == true
+                && BackupProductResult.pro(inBackup: url)?.leavesNoJamfProBackup != true
+        }
+    }
+
+    /// Whether `backup` holds only what a failed or skipped Jamf Pro part leaves: `protect/`, the
+    /// manifest
     /// and dotfiles (`.jrc-host`). A folder that cannot be listed does not.
     static func holdsOnlyProtectPart(_ backup: URL) -> Bool {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: backup.path)

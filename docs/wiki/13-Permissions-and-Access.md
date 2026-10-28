@@ -210,7 +210,8 @@ inventory, groups, patch titles and audit checks as the areas above and, on a Pl
 profile, blueprints and benchmarks. A section the credential cannot read is left out of the
 page, which says so at the top; the rest of the page still lands.
 
-**Backups** (optional) read every object type they export. A type the credential cannot
+**Backups** (optional) read every object type they export. On shared storage the Jamf Pro
+part runs only once the workspace's choice allows it (`backup.pro_on_synced_storage`). A type the credential cannot
 read is listed in the backup's `_failures` file and the rest is kept, so a read-limited
 credential produces a partial backup rather than none. When Jamf Protect is connected to
 the workspace, a Jamf Pro backup also runs `jamf-cli protect backup` with the Protect API

@@ -165,6 +165,18 @@ one machine's retention budget on everyone's backups. Backups made before this
 version carry no ownership record and are never auto-removed, so clear those out
 once by hand.
 
+**Jamf Pro backups can hold secrets, so on shared storage your policy decides too.** A
+`pro backup` export includes LDAP, SMTP and API-client configuration and scripts with embedded
+values. On a shared workspace the Jamf Pro part of a backup needs the same decision as the
+Protect part: turn on **Back up Jamf Pro in this folder** on the Backups screen, or set
+`backup.pro_on_synced_storage: true`. Each Mac confirms a `true` once (the Backups switch or
+Config Doctor) before it applies there, and turning it off applies at once. Leave the key out
+to be asked: a workspace that already ran scheduled backups there keeps backing up for three
+more scheduled runs, with a Needs attention item, then skips Jamf Pro until you choose; a new
+workspace asks before its first backup. A skip logs one `[warn]` line naming the setting, the
+run reads as Partial and does not retry, and the backup folder records the skip in its
+manifest (`products.pro.state: skipped`). Local storage needs no key.
+
 **Jamf Protect backups hold credentials, so on shared storage your policy decides.** When a
 Jamf Pro workspace has Protect connected, each backup also holds a `protect/` folder from
 `jamf-cli protect backup`. jamf-cli writes the documents that can carry a third-party
