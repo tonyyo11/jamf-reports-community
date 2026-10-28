@@ -279,35 +279,22 @@ enum BackupMaintenance {
         return names.allSatisfy { $0 == "protect" || $0 == "manifest.json" || $0.hasPrefix(".") }
     }
 
-    /// The backup a run just finished, as its caller knows it. A run that wrote no folder is
-    /// `.none`: stamping the newest scheduled folder then would claim a peer's.
-    enum FinishedBackup {
-        case folder(URL)
-        case none
-        /// A caller with no run to ask: the newest scheduled folder is taken to be this Mac's.
-        case unknown
-
-        init(_ folder: URL?) { self = folder.map { .folder($0) } ?? .none }
-    }
-
     /// Post-success housekeeping run by both the `jamf-reports backup` command
     /// (`UtilityCommands`) and the headless `--scheduled-run` path (`main.swift`).
     /// Prunes old scheduled backups and sweeps abandoned `.tmp-*` staging dirs.
     /// Both paths must call this and nothing else — do not inline the two steps
-    /// at call sites or they will diverge again.
+    /// at call sites or they will diverge again. `justFinished` is the folder the run wrote,
+    /// nil when it wrote none; only that folder is stamped, never the newest one on disk, which
+    /// on shared storage may be a peer's.
     static func performPostSuccessHousekeeping(
         profile: String,
-        justFinished: FinishedBackup = .unknown,
+        justFinished: URL?,
         keep: Int = defaultKeepCount,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) {
         // Stamp first: retention below can only scope to this machine on shared
         // storage if the backup that just finished says who made it.
-        switch justFinished {
-        case .folder(let backup): stampOwnership(of: backup)
-        case .none: break
-        case .unknown: stampNewestScheduledBackup(profile: profile)
-        }
+        if let justFinished { stampOwnership(of: justFinished) }
         pruneScheduledBackups(profile: profile, keep: keep, onLine: onLine)
         cleanStaleTempDirs(profile: profile)
     }
@@ -394,27 +381,6 @@ enum BackupMaintenance {
               let id = String(data: data, encoding: .utf8) else { return nil }
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    /// Stamp the newest scheduled backup as this machine's. Called right after
-    /// a backup completes, before retention runs.
-    static func stampNewestScheduledBackup(profile: String) {
-        guard let backupsRoot = backupsRoot(for: profile),
-              let entries = try? FileManager.default.contentsOfDirectory(
-                  at: backupsRoot, includingPropertiesForKeys: [.isDirectoryKey],
-                  options: [.skipsHiddenFiles]
-              ) else { return }
-        let newest = entries
-            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
-            .filter { manifestLabel(of: $0)?.hasPrefix("scheduled-") == true }
-            .compactMap { url -> (URL, Date, Int)? in
-                guard let p = CloudStorage.backupDirectoryTimestamp(name: url.lastPathComponent)
-                else { return nil }
-                return (url, p.date, p.sequence)
-            }
-            .max { lhs, rhs in lhs.1 == rhs.1 ? lhs.2 < rhs.2 : lhs.1 < rhs.1 }
-        guard let newest else { return }
-        stampOwnership(of: newest.0)
     }
 
     private static func manifestLabel(of backupDir: URL) -> String? {

@@ -32,7 +32,7 @@ struct Backup: AsyncParsableCommand {
             // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
             if CLIBridge.backupOutputIsPrunable(exit: code) {
                 BackupMaintenance.performPostSuccessHousekeeping(
-                    profile: profile, justFinished: .init(run.folder),
+                    profile: profile, justFinished: run.folder,
                     onLine: CLIRun.printLogLine)
             }
             return code

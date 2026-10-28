@@ -447,7 +447,7 @@ private func scheduledRunSingleBody(
             // a restore point, and the row should stay red until it's fixed.
             if CLIBridge.backupOutputIsPrunable(exit: exit) {
                 BackupMaintenance.performPostSuccessHousekeeping(
-                    profile: profile, justFinished: .init(run.folder), onLine: onLine)
+                    profile: profile, justFinished: run.folder, onLine: onLine)
             }
             // Explain the exit code (cause + remediation) instead of a bare
             // integer — same translation the GUI's Backups screen already shows
@@ -462,6 +462,9 @@ private func scheduledRunSingleBody(
                 ?? (honesty.incomplete
                     ? "[partial] scheduled backup for '\(profile)' is incomplete; the lines "
                         + "above say which product's part is missing"
+                    : run.folder == nil
+                    ? "[ok] scheduled backup ran for '\(profile)' and kept nothing: Jamf Pro was "
+                        + "skipped and Jamf Protect left no objects"
                     : "[ok] scheduled backup complete for '\(profile)'")
             if failureDetail == nil { print(message) } else { fputs(message + "\n", stderr) }
             recorder?.record(message)

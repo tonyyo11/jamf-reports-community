@@ -73,27 +73,6 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         XCTAssertTrue(left.contains("20260825T050000"), "the newest must survive")
     }
 
-    /// The stamp is what makes the newest-backup attribution work after a run.
-    func testStampNewestPicksTheLatestByName() throws {
-        try makeBackup("20260825T010000", owner: nil)
-        try makeBackup("20260825T090000", owner: nil)
-        try makeBackup("20260825T050000", owner: nil)
-        BackupMaintenance.stampNewestScheduledBackup(profile: profile)
-
-        XCTAssertEqual(
-            BackupMaintenance.ownerHostID(
-                of: backupsDir.appendingPathComponent("20260825T090000")
-            ),
-            SharedWorkspace.currentHost.id
-        )
-        XCTAssertNil(
-            BackupMaintenance.ownerHostID(
-                of: backupsDir.appendingPathComponent("20260825T050000")
-            ),
-            "only the backup that just finished is ours to claim"
-        )
-    }
-
     // MARK: - Stamping the folder a run finished
 
     /// A peer's newer scheduled folder, unstamped, beside the one this run made.
@@ -106,22 +85,16 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
     func testHousekeepingStampsTheFolderTheRunFinishedNotAPeersNewerOne() throws {
         let (mine, peer) = try finishedAndPeers()
         BackupMaintenance.performPostSuccessHousekeeping(
-            profile: profile, justFinished: .folder(mine))
+            profile: profile, justFinished: mine)
         XCTAssertEqual(BackupMaintenance.ownerHostID(of: mine), SharedWorkspace.currentHost.id)
         XCTAssertNil(BackupMaintenance.ownerHostID(of: peer))
     }
 
     func testHousekeepingAfterARunThatWroteNoFolderStampsNothing() throws {
         let (mine, peer) = try finishedAndPeers()
-        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, justFinished: .none)
+        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, justFinished: nil)
         XCTAssertNil(BackupMaintenance.ownerHostID(of: mine))
         XCTAssertNil(BackupMaintenance.ownerHostID(of: peer))
-    }
-
-    func testHousekeepingWithNoRunToAskStampsTheNewestScheduledFolder() throws {
-        let (_, newest) = try finishedAndPeers()
-        BackupMaintenance.performPostSuccessHousekeeping(profile: profile)
-        XCTAssertEqual(BackupMaintenance.ownerHostID(of: newest), SharedWorkspace.currentHost.id)
     }
 
     /// Retention on a shared folder still spends only this Mac's budget once the run names its
@@ -133,7 +106,7 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         let peer = try makeBackup("20260825T090000", owner: "some-other-host-abc123")
 
         BackupMaintenance.performPostSuccessHousekeeping(
-            profile: profile, justFinished: .folder(mine), keep: 1)
+            profile: profile, justFinished: mine, keep: 1)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: older.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: mine.path))
@@ -301,21 +274,5 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
             [])
         XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
         XCTAssertEqual(BackupMaintenance.cleanStaleTempDirs(profile: profile).count, 1)
-    }
-
-    /// Ordering is by folder name, never mtime — the whole reason this is safe
-    /// on a volume where a sync provider rewrites modification dates.
-    func testNewestIsChosenByNameNotModificationDate() throws {
-        let older = try makeBackup("20260825T010000", owner: nil)
-        try makeBackup("20260825T090000", owner: nil)
-        // Make the OLDER folder look freshly modified, as a provider would.
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date().addingTimeInterval(3600)], ofItemAtPath: older.path
-        )
-        BackupMaintenance.stampNewestScheduledBackup(profile: profile)
-        XCTAssertNil(
-            BackupMaintenance.ownerHostID(of: older),
-            "a re-stamped mtime must not make an old backup look like the newest"
-        )
     }
 }

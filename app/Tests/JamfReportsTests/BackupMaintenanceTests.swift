@@ -171,7 +171,8 @@ final class BackupMaintenanceTests: XCTestCase {
             [.modificationDate: Date(timeIntervalSinceNow: -2 * 86_400)], ofItemAtPath: staleTemp.path
         )
 
-        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, keep: 1)
+        BackupMaintenance.performPostSuccessHousekeeping(
+            profile: profile, justFinished: nil, keep: 1)
 
         let remaining = try FileManager.default.contentsOfDirectory(atPath: backupsRoot.path).sorted()
         XCTAssertTrue(remaining.contains("20260502T010101"), "newest scheduled backup kept")
