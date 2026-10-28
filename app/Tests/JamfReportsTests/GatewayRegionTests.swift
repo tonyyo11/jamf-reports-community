@@ -148,25 +148,6 @@ final class GatewayRegionTests: XCTestCase {
         XCTAssertEqual(kept.gatewayURL, "https://gateway.example.org")
     }
 
-    func testAConnectionKeepsTheHostOfAnOtherRegionOnly() throws {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("gateway-host-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
-        let store = ConnectionStore(url: dir.appendingPathComponent("connections.json"))
-
-        let custom = try store.recordMember(
-            profile: "custom", scopeID: "env-1", product: .pro, region: .other,
-            level: .environment, gatewayURL: "https://gateway.example.org:8443")
-        let fixed = try store.recordMember(
-            profile: "fixed", scopeID: "env-2", product: .pro, region: .eu,
-            level: .environment, gatewayURL: "https://gateway.example.org")
-        let loaded = store.load()
-        XCTAssertEqual(loaded.first { $0.id == custom.id }?.gatewayURL,
-                       "https://gateway.example.org:8443")
-        XCTAssertNil(loaded.first { $0.id == fixed.id }?.gatewayURL)
-    }
-
     /// A custom host whose first label reads like a region must not be filed under that region.
     func testARegionIsNamedByTheWholeHostNotItsFirstLabel() {
         XCTAssertEqual(Connection.Region.region(forGatewayURL: "https://us.example.com"), .other)
@@ -187,6 +168,17 @@ final class GatewayRegionTests: XCTestCase {
         XCTAssertEqual(GatewayRegion.check("apigw.jamf.com.example.org"),
                        .ok("https://apigw.jamf.com.example.org"))
         XCTAssertTrue(GatewayRegion.retiredRefusal.contains(FailureCause.retiredGatewayHint))
+    }
+
+    /// The retired gateway is named even when the scheme or path would make the URL invalid.
+    func testTheRetiredGatewayIsNamedBeforeTheShapeIsChecked() {
+        for typed in [
+            "http://apigw.jamf.com", "https://apigw.jamf.com/x", "https://user@apigw.jamf.com",
+            "ftp://us.apigw.jamf.com:8443/a?b#c", "apigw.jamf.com/x",
+        ] {
+            XCTAssertEqual(GatewayRegion.check(typed), .retired, typed)
+        }
+        XCTAssertEqual(GatewayRegion.check("http://gateway.example.org"), .invalid)
     }
 
     /// Onboarding and Update credentials share the flow: a retired host cannot advance, and
@@ -227,6 +219,5 @@ final class GatewayRegionTests: XCTestCase {
             profile: "custom", storedURL: "gateway.example.org:8443", configText: nil,
             store: store)
         XCTAssertEqual(started.region, .other)
-        XCTAssertEqual(started.gatewayURL, "https://gateway.example.org:8443")
     }
 }

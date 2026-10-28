@@ -79,12 +79,15 @@ extension GatewayRegion {
     /// The one check of a gateway host for every entry point. Accepts a host of letters, digits,
     /// dots and hyphens with an optional port, with or without `https://`.
     static func check(_ typed: String) -> GatewayURLCheck {
-        var value = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let scheme = value.range(of: "https://", options: [.anchored, .caseInsensitive]) {
-            value.removeSubrange(scheme)
+        let value = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The retired gateway is named whatever else is wrong with the URL (a scheme, a path).
+        if isRetired(host: looseHost(of: value)) { return .retired }
+        var rest = Substring(value)
+        if let scheme = rest.range(of: "https://", options: [.anchored, .caseInsensitive]) {
+            rest.removeSubrange(scheme)
         }
-        if value.hasSuffix("/") { value.removeLast() }
-        let parts = value.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+        if rest.hasSuffix("/") { rest.removeLast() }
+        let parts = rest.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
         guard parts.count <= 2, let host = parts.first.map({ String($0).lowercased() }),
               isHostName(host) else { return .invalid }
         var port = ""
@@ -94,8 +97,22 @@ extension GatewayRegion {
             else { return .invalid }
             port = ":\(number)"
         }
-        if host == retiredHost || host.hasSuffix("." + retiredHost) { return .retired }
         return .ok("https://\(host)\(port)")
+    }
+
+    private static func isRetired(host: String) -> Bool {
+        host == retiredHost || host.hasSuffix("." + retiredHost)
+    }
+
+    /// The host of `value` with any scheme, user info, port, path, query or fragment removed;
+    /// not validated, only for recognising the retired gateway.
+    private static func looseHost(of value: String) -> String {
+        var rest = Substring(value)
+        if let scheme = rest.range(of: "://") { rest = rest[scheme.upperBound...] }
+        if let end = rest.firstIndex(where: { "/?#".contains($0) }) { rest = rest[..<end] }
+        if let at = rest.lastIndex(of: "@") { rest = rest[rest.index(after: at)...] }
+        if let colon = rest.firstIndex(of: ":") { rest = rest[..<colon] }
+        return rest.lowercased()
     }
 
     /// Dot-separated labels of ASCII letters, digits and inner hyphens, so a typed host can never

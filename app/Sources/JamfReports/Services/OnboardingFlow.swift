@@ -1025,8 +1025,7 @@ final class OnboardingFlow {
             try connectionStore.recordMember(
                 profile: profile, scopeID: scopeID, product: product,
                 region: .region(forGatewayURL: normalizedGatewayURL ?? gatewayURL.trimmed),
-                level: platformScope == .tenant ? .tenant : .environment,
-                gatewayURL: normalizedGatewayURL)
+                level: platformScope == .tenant ? .tenant : .environment)
         } catch {
             AppLogger.auth.warning(
                 """

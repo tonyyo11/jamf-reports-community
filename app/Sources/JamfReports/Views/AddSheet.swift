@@ -369,6 +369,7 @@ struct AddSheet: View {
         } else {
             if let twin = discovery?.twinNotes[row.name] { note(twin) }
             if row.name == adoptingName, let flow = adoptFlow {
+                if let checkNote = flow.connectionNotes[row.name] { note(checkNote) }
                 adoptStatus(flow.statuses[row.name] ?? .pending, flow: flow)
             }
         }
@@ -474,9 +475,7 @@ struct AddSheet: View {
         guard !isAdopting else { return }
         message = nil
         errorText = nil
-        let profile = JamfCLIProfile(
-            name: row.name, url: row.url, schedules: 0, status: .idle, product: row.product)
-        let flow = ExistingCLISetupFlow(profiles: [profile])
+        let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
         adoptFlow = flow
         adoptingName = row.name
         await flow.run()

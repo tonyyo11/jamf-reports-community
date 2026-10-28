@@ -354,4 +354,47 @@ final class AddSheetPlanTests: XCTestCase {
         }, "a profile was probed twice: \(asked)")
         XCTAssertFalse(asked.isEmpty)
     }
+
+    // MARK: - Platform profiles adopted from the sheet
+
+    private func platform(_ name: String, url: String) -> JamfCLIProfile {
+        JamfCLIProfile(name: name, url: url, schedules: 0, status: .idle, authMethod: "platform",
+                       product: .pro, platformLevel: .environment)
+    }
+
+    func testAProfileOnTheRetiredGatewayIsUnavailableWithTheRefusal() {
+        let rows = unassigned([
+            platform("old", url: "us.apigw.jamf.com"), platform("new", url: "us.api.jamfcloud.com"),
+        ])
+        XCTAssertEqual(rows[0].use, .unavailable(GatewayRegion.retiredRefusal))
+        XCTAssertEqual(rows[1].use, .newWorkspace)
+    }
+
+    func testARowCarriesWhatTheConnectionCheckReads() {
+        let row = unassigned([platform("prod", url: "us.api.jamfcloud.com")])[0]
+        let adopted = AddSheetPlan.adoptionProfile(for: row)
+        XCTAssertEqual(adopted.auth, .platform)
+        XCTAssertEqual(adopted.platformLevel, .environment)
+        XCTAssertEqual(adopted.url, "us.api.jamfcloud.com")
+    }
+
+    /// The Add sheet adopts through `ExistingCLISetupFlow` with the row's profile: a rejected ID
+    /// is refused with the check's reason, which the row shows, and no workspace is created.
+    @MainActor
+    func testAnAddSheetPlatformProfileWithARejectedIDIsRefused() async {
+        let row = unassigned([platform("typo", url: "us.api.jamfcloud.com")])[0]
+        let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
+        let rejected = (try? JSONSerialization.data(withJSONObject: [
+            "error": "request failed", "message": "[ENVIRONMENT_NOT_FOUND] not found.",
+        ])) ?? Data()
+        var initialized: [String] = []
+        await flow.run(
+            connectionRunner: { _ in (4, rejected) },
+            initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
+        XCTAssertTrue(initialized.isEmpty)
+        XCTAssertFalse(flow.canContinue)
+        XCTAssertEqual(
+            flow.statuses["typo"],
+            .failed(ConnectionCheck.Verdict.rejectedID(.unknownEnvironment).message))
+    }
 }

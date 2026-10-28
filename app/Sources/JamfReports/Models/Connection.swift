@@ -64,9 +64,6 @@ struct Connection: Codable, Sendable, Equatable, Identifiable {
     var id: UUID
     var name: String
     var region: Region
-    /// The gateway URL of an `other` region, so Add environments and Update credentials for all
-    /// can reach it; nil for the three Jamf Cloud regions, whose host the region names.
-    var gatewayURL: String?
     var level: Level
     var members: [Member]
     var createdAt: Date
@@ -77,10 +74,8 @@ struct Connection: Codable, Sendable, Equatable, Identifiable {
 
     init(
         id: UUID = UUID(), name: String, region: Region, level: Level,
-        members: [Member], createdAt: Date = Date(), unconfirmedProfiles: [String] = [],
-        gatewayURL: String? = nil
+        members: [Member], createdAt: Date = Date(), unconfirmedProfiles: [String] = []
     ) {
-        self.gatewayURL = gatewayURL
         self.id = id
         self.name = name
         self.region = region
@@ -91,7 +86,7 @@ struct Connection: Codable, Sendable, Equatable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, region, level, members, createdAt, unconfirmedProfiles, gatewayURL
+        case id, name, region, level, members, createdAt, unconfirmedProfiles
     }
 
     /// Unknown future values for `region` and `level` and a bad date decode to a default, so
@@ -102,7 +97,6 @@ struct Connection: Codable, Sendable, Equatable, Identifiable {
         members = try c.decodeIfPresent([Member].self, forKey: .members) ?? []
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? members.first?.profile ?? ""
         region = (try? c.decodeIfPresent(Region.self, forKey: .region)) ?? .other
-        gatewayURL = (try? c.decodeIfPresent(String.self, forKey: .gatewayURL)) ?? nil
         level = (try? c.decodeIfPresent(Level.self, forKey: .level)) ?? .environment
         createdAt = (try? c.decodeIfPresent(Date.self, forKey: .createdAt))
             ?? Date(timeIntervalSince1970: 0)

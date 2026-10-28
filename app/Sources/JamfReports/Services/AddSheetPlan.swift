@@ -51,7 +51,17 @@ enum AddSheetPlan {
         let product: JamfCLIProduct
         let url: String
         let use: Use
+        /// Kept so adoption runs the Platform connection check (`ExistingCLISetupFlow`).
+        var authMethod = ""
+        var platformLevel: PlatformScopeLevel?
         var id: String { name }
+    }
+
+    /// The profile `ExistingCLISetupFlow` adopts for a row, with what its checks read.
+    static func adoptionProfile(for row: UnassignedProfile) -> JamfCLIProfile {
+        JamfCLIProfile(
+            name: row.name, url: row.url, schedules: 0, status: .idle,
+            authMethod: row.authMethod, product: row.product, platformLevel: row.platformLevel)
     }
 
     static let securityCloudReason = "Jamf Security Cloud is not supported yet."
@@ -80,7 +90,8 @@ enum AddSheetPlan {
             .map { profile in
                 UnassignedProfile(
                     name: profile.name, product: profile.product, url: profile.url,
-                    use: use(of: profile, unusable: unusable[profile.name]))
+                    use: use(of: profile, unusable: unusable[profile.name]),
+                    authMethod: profile.authMethod, platformLevel: profile.platformLevel)
             }
     }
 
@@ -88,6 +99,9 @@ enum AddSheetPlan {
         of profile: JamfCLIProfile, unusable: String?
     ) -> UnassignedProfile.Use {
         if let unusable { return .unavailable(unusable) }
+        if GatewayRegion.check(profile.url) == .retired {
+            return .unavailable(GatewayRegion.retiredRefusal)
+        }
         if profile.isOrganizationLevel {
             return .unavailable(PlatformScopeLevel.organizationLevelReason)
         }
