@@ -35,16 +35,46 @@ final class ScheduledRunProductGuardTests: XCTestCase {
         root.appendingPathComponent("Jamf-Reports/\(profile)/automation")
     }
 
-    func testARefusedScheduleSucceedsEndsItsRetriesAndLeavesNoRecord() async throws {
+    func testARefusedScheduleSucceedsEndsItsRetriesAndLeavesOneMarkedRecord() async throws {
         try ProductGuardSeed.seed(profile: profile, product: "protect", in: root)
-        for mode in [Schedule.RunMode.jamfCLIFull, .snapshotOnly, .backup] {
+        let modes: [Schedule.RunMode] = [.jamfCLIFull, .snapshotOnly, .backup]
+        for mode in modes {
             let outcome = await runSchedule(schedule(mode), verbose: false)
             XCTAssertEqual(outcome.exitCode, 0, "\(mode)")
             XCTAssertTrue(outcome.endsRetries, "\(mode): the tick must not retry it")
             XCTAssertTrue(outcome.succeeded, "\(mode)")
         }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: automation.path),
-                       "the refusal created automation/ in the workspace")
+        let runs = RunHistoryService.list(profile: profile)
+        XCTAssertEqual(runs.count, modes.count, "one Run History entry per refused run")
+        for run in runs {
+            XCTAssertEqual(run.exitCode, 0)
+            let text = try String(contentsOf: run.logURL, encoding: .utf8)
+            XCTAssertTrue(text.contains("[skip] scheduled"), text)
+        }
+        let statuses = try FileManager.default.contentsOfDirectory(atPath: automation.path)
+            .filter { $0.hasSuffix("_status.json") }
+        XCTAssertEqual(statuses.count, modes.count)
+        for name in statuses {
+            let data = try Data(contentsOf: automation.appendingPathComponent(name))
+            let payload = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(payload["refused"] as? Bool, true, name)
+        }
+        let stateDir = root.appendingPathComponent(
+            "Jamf-Reports/\(profile)/jamf-cli-data/state").path
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateDir),
+                       "a refused run is not a failed source: no .fail file")
+    }
+
+    func testARefusedRunInAProfileWithNoWorkspaceCreatesNoFolder() async throws {
+        let ghost = "protect-ghost"
+        try ProductGuardSeed.seed(profile: ghost, product: "protect", in: root)
+        var ghostSchedule = schedule(.snapshotOnly)
+        ghostSchedule.profile = ghost
+        let outcome = await runSchedule(ghostSchedule, verbose: false)
+        XCTAssertEqual(outcome.exitCode, 0)
+        let folder = root.appendingPathComponent("Jamf-Reports/\(ghost)").path
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder))
     }
 
     func testAScheduleThatReadsOnlyTheCacheIsNotRefused() async throws {
@@ -120,6 +150,35 @@ final class ScheduledRunHealthProductGuardTests: XCTestCase {
         XCTAssertTrue(refused.allSatisfy { $0.kind == .failing })
         XCTAssertTrue(refused.allSatisfy { $0.reason?.contains("'\(profile)' is a Jamf Protect profile") == true })
         XCTAssertTrue(issues.filter { $0.kind == .overdue }.allSatisfy { $0.reason == nil })
+    }
+
+    /// A refused run's record is exit 0, but it covers no fire: with the refusal gone the
+    /// schedule reads overdue, and while it stands the reason shows.
+    func testARefusedRecordNeitherSatisfiesAFireNorReadsAsSuccess() throws {
+        let fm = FileManager.default
+        let automation = root.appendingPathComponent("Jamf-Reports/\(profile)/automation")
+        try fm.createDirectory(at: automation, withIntermediateDirectories: true)
+        // After the workspace folder was created (a fire before it is never overdue), always.
+        let now = try XCTUnwrap(Calendar.current.date(from: DateComponents(
+            year: 2099, month: 1, day: 5, hour: 12)))
+        let finished = ISO8601DateFormatter().string(from: now.addingTimeInterval(-3_600))
+        let sched = schedule(.snapshotOnly)
+        let label = try XCTUnwrap(sched.launchAgentLabel)
+        let status: [String: Any] = [
+            "success": true, "exit_code": 0, "refused": true, "finished_at": finished]
+        try JSONSerialization.data(withJSONObject: status)
+            .write(to: automation.appendingPathComponent("\(label)_status.json"))
+
+        for (refusal, expected) in [("nope", AutomationHealthIssue.Kind.failing), (nil, .overdue)] {
+            let inputs = LaunchAgentService.healthInputs(
+                schedules: [sched], statusProfile: nil, now: now, refusal: { _ in refusal })
+            let input = try XCTUnwrap(inputs.first)
+            XCTAssertNil(input.lastRunFinishedAt)
+            XCTAssertNil(input.lastRunSuccess)
+            let issues = AutomationHealth.evaluate(inputs: inputs, now: now)
+            XCTAssertEqual(issues.first?.kind, expected)
+            XCTAssertEqual(issues.first?.reason, refusal)
+        }
     }
 
     func testAJamfProScheduleIsNotRefused() throws {

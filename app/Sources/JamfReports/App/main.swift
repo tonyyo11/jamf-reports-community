@@ -309,7 +309,8 @@ private func scheduledRunSingleBody(
     // a Jamf Pro schedule, so every retry would fail the same way. Refused before the recorder
     // creates anything in the workspace; like a School backup, it ends the run as a success
     // so the tick does not retry it and no failure webhook is posted. jamf-cli-only reads the
-    // cache and sends no command.
+    // cache and sends no command. A workspace that already exists gets a one-line run record
+    // marked refused; a login with no workspace (Protect) gets none, so no folder appears.
     if mode != .jamfCLIOnly, configError == nil || mode == .backup,
        let refusal = CollectRouter.proRunRefusal(
         profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig
@@ -319,6 +320,11 @@ private func scheduledRunSingleBody(
             + "scheduling it."
         fputs(message + "\n", stderr)
         AppLogger.schedule.notice("\(LogRedactor.redact(message), privacy: .public)")
+        if FileManager.default.fileExists(atPath: workspace.path),
+           let refusedRecorder = ScheduledRunRecorder(workspace: workspace, label: runLabel) {
+            refusedRecorder.record(message)
+            refusedRecorder.finish(exitCode: 0, refused: true)
+        }
         // Exit 0 so the tick does not retry it, but not silence: one card a day.
         await ScheduledRunSignals.notifyScheduledRunFailure(
             config: routingConfig, profile: profile, mode: mode,

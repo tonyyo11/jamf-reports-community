@@ -486,6 +486,15 @@ final class LaunchAgentServiceTests: XCTestCase {
         XCTAssertEqual(schedule.lastStatus, .partial)
     }
 
+    func testLastStatusIsWarnForARefusedRun() throws {
+        let scaffold = try writeSheetFailuresStatusScaffold(
+            success: true, sheetFailures: 0, refused: true)
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .warn, "exit 0 from a refusal is not a success")
+    }
+
     func testLastStatusIsOkWhenSuccessTrueWithZeroSheetFailures() throws {
         let scaffold = try writeSheetFailuresStatusScaffold(success: true, sheetFailures: 0)
         defer { scaffold.cleanup() }
@@ -522,7 +531,8 @@ final class LaunchAgentServiceTests: XCTestCase {
     /// path rather than the private function directly.
     private func writeSheetFailuresStatusScaffold(
         success: Bool,
-        sheetFailures: Int?
+        sheetFailures: Int?,
+        refused: Bool = false
     ) throws -> SheetFailuresScaffold {
         let profile = "dummy"
         let workspacesRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -538,6 +548,7 @@ final class LaunchAgentServiceTests: XCTestCase {
         let label = "\(prefix).\(profile).sheet-failures-\(UUID().uuidString.lowercased())"
         var status: [String: Any] = ["success": success, "finished_at": "2026-07-27T12:00:00Z"]
         if let sheetFailures { status["sheet_failures"] = sheetFailures }
+        if refused { status["refused"] = true }
         let statusData = try JSONSerialization.data(withJSONObject: status)
         try statusData.write(to: automation.appendingPathComponent("\(label)_status.json"))
 

@@ -577,14 +577,42 @@ struct TickLock: Sendable {
     /// and the first after a gap of more than `TickScheduler.offGap` between two of them.
     typealias Refusals = (first: Date, latest: Date, afterGap: Date?)
 
+    /// Logged when the stamp cannot be written or read; a test swaps it to capture the line.
+    static let defaultStampWarning: @Sendable (String) -> Void = { message in
+        AppLogger.schedule.warning("\(message, privacy: .public)")
+    }
+
+    /// The stamp's lines. A missing file is no stamp and no warning; a file that cannot be read
+    /// warns and reads as absent, the same fail-safe a missing one gets.
+    private static func stampLines(
+        at url: URL, warn: (String) -> Void
+    ) -> [String]? {
+        do {
+            let data = try BoundedFile.read(url, limit: 4096, followSymlinks: false)
+            guard let text = String(data: data, encoding: .utf8) else {
+                warn("tick refusal stamp \(url.lastPathComponent) is not UTF-8; read as absent")
+                return nil
+            }
+            return text.split(whereSeparator: \.isNewline).map(String.init)
+        } catch BoundedFile.Failure.unreadable(ENOENT) {
+            return nil
+        } catch {
+            warn("tick refusal stamp \(url.lastPathComponent) could not be read "
+                + "(\(error.localizedDescription)); read as absent")
+            return nil
+        }
+    }
+
     /// Record that a wake was turned away. The stamp holds `Refusals` one per line (the third
     /// only once a gap happened) and is rewritten whole, atomically; the FIRST refusal is never
-    /// overwritten.
-    static func noteBlocked(url: URL = defaultBlockedURL, now: Date = Date()) {
+    /// overwritten. A stamp that cannot be read starts over; one that cannot be written warns.
+    static func noteBlocked(
+        url: URL = defaultBlockedURL, now: Date = Date(),
+        warn: (String) -> Void = defaultStampWarning
+    ) {
         let formatter = ISO8601DateFormatter()
         let stamp = formatter.string(from: now)
-        let lines = ((try? String(contentsOf: url, encoding: .utf8)) ?? "")
-            .split(whereSeparator: \.isNewline).map(String.init)
+        let lines = stampLines(at: url, warn: warn) ?? []
         var afterGap = lines.count > 2 ? lines[2] : nil
         if let latest = (lines.count > 1 ? lines[1] : lines.first).flatMap(formatter.date),
            now.timeIntervalSince(latest) > TickScheduler.offGap {
@@ -592,19 +620,24 @@ struct TickLock: Sendable {
         }
         let text = ([lines.first ?? stamp, stamp] + [afterGap].compactMap { $0 })
             .joined(separator: "\n")
-        try? Data("\(text)\n".utf8).write(to: url, options: .atomic)
+        do {
+            try Data("\(text)\n".utf8).write(to: url, options: .atomic)
+        } catch {
+            warn("tick refusal stamp \(url.lastPathComponent) could not be written "
+                + "(\(error.localizedDescription)); the next run cannot tell it was queued")
+        }
     }
 
     /// Read and clear the stamp; nil when no wake was blocked since the last wake that took the
-    /// lock. A stamp from an earlier build (one or two lines) reads as no gap, its one line as
-    /// both the first and the latest.
-    static func takeBlockedSince(url: URL = defaultBlockedURL) -> Refusals? {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+    /// lock, or when the stamp cannot be read (warned). A stamp from an earlier build (one or
+    /// two lines) reads as no gap, its one line as both the first and the latest.
+    static func takeBlockedSince(
+        url: URL = defaultBlockedURL, warn: (String) -> Void = defaultStampWarning
+    ) -> Refusals? {
+        guard let lines = stampLines(at: url, warn: warn) else { return nil }
         try? FileManager.default.removeItem(at: url)
         let formatter = ISO8601DateFormatter()
-        let stamps = text.split(whereSeparator: \.isNewline).map {
-            formatter.date(from: $0.trimmingCharacters(in: .whitespaces))
-        }
+        let stamps = lines.map { formatter.date(from: $0.trimmingCharacters(in: .whitespaces)) }
         guard let parsed = stamps.first, let first = parsed else { return nil }
         let latest = stamps.count > 1 ? stamps[1] : nil
         return (first, latest ?? first, stamps.count > 2 ? stamps[2] : nil)

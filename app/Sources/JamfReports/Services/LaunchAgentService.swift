@@ -329,11 +329,14 @@ enum LaunchAgentService {
                     profile: schedule.profile)
             }
             let owner = schedule.isMulti ? statusProfile : schedule.profile
+            // A refused run accounts for no fire: were the refusal to clear, the schedule must
+            // read overdue, not covered by the record of a run that never began.
+            let ran = status.flatMap { $0.refused ? nil : $0 }
             return ScheduleHealthInput(
                 label: label, displayName: schedule.name, enabled: schedule.enabled,
                 profile: schedule.profile, isMulti: schedule.isMulti, expectedFire: expected,
-                lastRunFinishedAt: status?.finishedAt, lastRunSuccess: status?.success,
-                lastRunExitCode: status?.exitCode,
+                lastRunFinishedAt: ran?.finishedAt, lastRunSuccess: ran?.success,
+                lastRunExitCode: ran?.exitCode,
                 activeSince: owner.flatMap(workspaceCreationDate(profile:)),
                 refusal: refusal(schedule))
         }
@@ -700,6 +703,8 @@ enum LaunchAgentService {
         /// on an otherwise-successful run. nil for status files written
         /// before this field existed (back-compat, reads as "no failures").
         let sheetFailures: Int?
+        /// The product guard ended the run before it began (exit 0, not a success).
+        let refused: Bool
         let artifacts: [String]
     }
 
@@ -752,6 +757,7 @@ enum LaunchAgentService {
             success: payload["success"] as? Bool,
             exitCode: exitCodeValue(payload["exit_code"]),
             sheetFailures: payload["sheet_failures"] as? Int,
+            refused: payload["refused"] as? Bool ?? false,
             artifacts: artifactLabels(from: payload, root: root)
         )
     }
@@ -769,6 +775,7 @@ enum LaunchAgentService {
             success: payload["success"] as? Bool,
             exitCode: exitCodeValue(payload["exit_code"]),
             sheetFailures: payload["sheet_failures"] as? Int,
+            refused: payload["refused"] as? Bool ?? false,
             artifacts: []
         )
     }
@@ -837,6 +844,7 @@ enum LaunchAgentService {
         from runStatus: ParsedRunStatus?,
         logSummary: ParsedLogSummary
     ) -> Schedule.LastStatus {
+        if runStatus?.refused == true { return .warn }
         if let success = runStatus?.success {
             // A successful run can still have failed to render some sheets —
             // check that BEFORE the ok/fail split so `.partial` is reachable.
