@@ -48,6 +48,12 @@ versions in this repository map to git tags.
 - When the background item cannot record that a wake was turned away, or cannot read that
   record, it now logs a warning naming the file instead of staying silent. (#305)
 
+- A custom `XDG_CONFIG_HOME` is now honoured: the app starts jamf-cli with it and reads the
+  profiles in `$XDG_CONFIG_HOME/jamf-cli/`, so both agree on which profiles exist. (#305)
+- When the login keychain is locked, a failed run now says so and tells you to unlock it
+  (Keychain Access, or `security unlock-keychain`), instead of showing jamf-cli's raw error or
+  asking you to re-authenticate. (#305)
+
 ### Security
 
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,

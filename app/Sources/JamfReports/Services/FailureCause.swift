@@ -42,6 +42,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// The profile's URL is the retired `apigw.jamf.com` gateway, which jamf-cli refuses by
         /// name (exit 2) before sending a request.
         case retiredGateway
+        /// The login keychain is locked (or unreachable in this session, such as over SSH or
+        /// before login), so jamf-cli could not read the profile's `keychain:` credentials.
+        case keychainLocked
         /// Rule 8: anything else; the exit-code handling that existed before applies.
         case other
     }
@@ -82,6 +85,25 @@ struct FailureCause: Codable, Equatable, Sendable {
         + "profile's integration; the error names both. An environment-level integration is the "
         + "level Jamf recommends, and a tenant-level one cannot reach every command."
 
+    /// jamf-cli reports an unreadable `keychain:` credential as
+    /// "reading keychain item <service>/<account>: <error>".
+    /// errSecInteractionNotAllowed, which a locked keychain gives when nothing can prompt: the
+    /// Security framework's text, or the `security` exit status go-keyring reports (jamf-cli
+    /// 1.31 and earlier).
+    static let keychainInteractionMarkers = ["User interaction is not allowed", "exit status 36"]
+    /// jamf-cli's own wording when the login keychain refuses a write.
+    static let keychainRejectedWriteMarker = "login keychain rejected"
+    static let keychainLockedHint = "Unlock the login keychain (open Keychain Access, or run "
+        + "`security unlock-keychain`), then try again"
+
+    /// True for jamf-cli text that says it could not read credentials because the login
+    /// keychain is locked. A missing item ("keychain item not found") is not a lock.
+    static func mentionsLockedKeychain(_ text: String) -> Bool {
+        if text.contains(keychainRejectedWriteMarker) { return true }
+        guard text.contains("keychain") else { return false }
+        return keychainInteractionMarkers.contains { text.contains($0) }
+    }
+
     /// Retrying within the hour cannot help (spec §9.5): the credential, its scope ID, its
     /// permissions, the environment's data or the config has to change first. Edge blocks stay
     /// retryable.
@@ -90,7 +112,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
              .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark,
              .retiredGateway: true
-        case .edgeBlocked, .other: false
+        case .edgeBlocked, .keychainLocked, .other: false
         }
     }
 
@@ -102,6 +124,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .edgeBlocked: "blocked at the Jamf gateway edge"
         case .retiredGateway: "the profile uses the retired apigw.jamf.com gateway host"
         case .notServed: "not served through this connection"
+        case .keychainLocked:
+            "the login keychain is locked, so jamf-cli could not read this profile's stored "
+                + "credentials"
         case .missingPermission:
             names.isEmpty
                 ? "missing permission"
@@ -125,7 +150,8 @@ struct FailureCause: Codable, Equatable, Sendable {
 
     static func classify(
         exitCode: Int32, stdout: Data, sawForbiddenOnStderr: Bool = false,
-        sawNoDeclarationDataOnStderr: Bool = false, sawSoftwareUpdatePlansOffOnStderr: Bool = false
+        sawNoDeclarationDataOnStderr: Bool = false, sawSoftwareUpdatePlansOffOnStderr: Bool = false,
+        sawKeychainLockedOnStderr: Bool = false
     ) -> FailureCause {
         let envelope = JamfCLIErrorEnvelope.parse(stdout)
         let message = envelope?.message ?? ""
@@ -138,6 +164,11 @@ struct FailureCause: Codable, Equatable, Sendable {
         ) -> FailureCause {
             FailureCause(
                 kind: kind, names: names, hint: cappedHint ?? hintOverride, exitCode: exitCode)
+        }
+        if sawKeychainLockedOnStderr || mentionsLockedKeychain(message + "\n" + hint) {
+            // Our hint, not jamf-cli's: the fix is the same whatever it suggested.
+            return FailureCause(kind: .keychainLocked, names: [], hint: keychainLockedHint,
+                                exitCode: exitCode)
         }
         if message.contains(retiredGatewayMarker) {
             return cause(.retiredGateway, hintOverride: retiredGatewayHint)
@@ -217,7 +248,9 @@ final class StderrSignalWatcher: @unchecked Sendable {
     private var softwareUpdatePlansOff = false
     private var noUpdateData = false
     private var updateFetchWarning = false
+    private var keychainLocked = false
 
+    var sawKeychainLocked: Bool { lock.withLock { keychainLocked } }
     var sawForbidden: Bool { lock.withLock { forbidden } }
     var sawNoBlueprints: Bool { lock.withLock { noBlueprints } }
     var sawNoDeclarationData: Bool { lock.withLock { noDeclarationData } }
@@ -234,6 +267,7 @@ final class StderrSignalWatcher: @unchecked Sendable {
             softwareUpdatePlansOff = false
             noUpdateData = false
             updateFetchWarning = false
+            keychainLocked = false
         }
     }
 
@@ -259,6 +293,7 @@ final class StderrSignalWatcher: @unchecked Sendable {
                 if text.contains(FailureCause.updateFetchWarningStderrMarker) {
                     self.updateFetchWarning = true
                 }
+                if FailureCause.mentionsLockedKeychain(text) { self.keychainLocked = true }
             }
             onLine(line)
         }
