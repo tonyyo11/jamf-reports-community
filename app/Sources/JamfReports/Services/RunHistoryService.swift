@@ -54,7 +54,9 @@ enum RunHistoryService {
                     && ScheduledRunRecorder.isRunInProgress(logURL: resolved)
                 let status: Schedule.LastStatus
                 if let code = exitCode {
-                    if code == 0 && isPartialRun(logURL: url, logTailText: logText) {
+                    if code == 0 && logText.contains(ScheduledRunRecorder.refusedLine) {
+                        status = .warn
+                    } else if code == 0 && isPartialRun(logURL: url, logTailText: logText) {
                         status = .partial
                     } else {
                         status = code == 0 ? .ok : .fail

@@ -57,6 +57,17 @@ final class TickRefusalStampTests: XCTestCase {
         XCTAssertEqual(second.all.count, 1, "an unwritable folder warns too")
     }
 
+    func testAnUnreadableRegularStampIsRemovedSoItWarnsOnce() throws {
+        let url = dir.appendingPathComponent(".tick.blocked")
+        try Data([0xFF, 0xFE, 0x00]).write(to: url)
+        let warnings = Warnings()
+        XCTAssertNil(TickLock.takeBlockedSince(url: url, warn: warnings.add))
+        XCTAssertEqual(warnings.all.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertNil(TickLock.takeBlockedSince(url: url, warn: warnings.add))
+        XCTAssertEqual(warnings.all.count, 1, "no repeat on the next wake")
+    }
+
     func testAMissingStampIsAbsentWithoutAWarning() {
         let warnings = Warnings()
         XCTAssertNil(TickLock.takeBlockedSince(

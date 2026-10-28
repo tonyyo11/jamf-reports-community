@@ -27,6 +27,10 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     /// pruned — legacy `.out.log` / `.err.log` files are never touched.
     static let maxRunLogs = 50
 
+    /// The line a refused run's log ends on, before the exit footer; Run History reads it as a
+    /// warning, not an OK.
+    static let refusedLine = "[warn] run refused by the product guard; nothing ran"
+
     let logURL: URL
     let statusURL: URL
 
@@ -156,6 +160,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         exitCode: Int32, sheetFailures: Int = 0, artifacts: [URL] = [], refused: Bool = false
     ) {
         let seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
+        if refused { record(Self.refusedLine) }
         record("[info] exit \(exitCode) after \(seconds)s")
 
         lock.lock()

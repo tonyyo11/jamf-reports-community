@@ -14,6 +14,10 @@ final class ScheduledRunProductGuardTests: XCTestCase {
         let workspaces = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
         try FileManager.default.createDirectory(
             at: workspaces.appendingPathComponent(profile), withIntermediateDirectories: true)
+        // A folder with a config.yaml is a workspace; only it gets a refused-run record.
+        try "thresholds:\n  stale_device_days: 30\n".write(
+            to: workspaces.appendingPathComponent("\(profile)/config.yaml"),
+            atomically: true, encoding: .utf8)
         setenv("JRC_TEST_WORKSPACES_ROOT", workspaces.path, 1)
         ProfileAuthMethod.invalidateCache()
     }
@@ -48,6 +52,7 @@ final class ScheduledRunProductGuardTests: XCTestCase {
         XCTAssertEqual(runs.count, modes.count, "one Run History entry per refused run")
         for run in runs {
             XCTAssertEqual(run.exitCode, 0)
+            XCTAssertEqual(run.status, .warn, "Run History must not read a refusal as OK")
             let text = try String(contentsOf: run.logURL, encoding: .utf8)
             XCTAssertTrue(text.contains("[skip] scheduled"), text)
         }
@@ -64,6 +69,18 @@ final class ScheduledRunProductGuardTests: XCTestCase {
             "Jamf-Reports/\(profile)/jamf-cli-data/state").path
         XCTAssertFalse(FileManager.default.fileExists(atPath: stateDir),
                        "a refused run is not a failed source: no .fail file")
+    }
+
+    func testARefusedRunInAFolderWithoutConfigWritesNothingInIt() async throws {
+        let leftover = "protect-leftover"
+        let folder = root.appendingPathComponent("Jamf-Reports/\(leftover)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try ProductGuardSeed.seed(profile: leftover, product: "protect", in: root)
+        var leftoverSchedule = schedule(.snapshotOnly)
+        leftoverSchedule.profile = leftover
+        let outcome = await runSchedule(leftoverSchedule, verbose: false)
+        XCTAssertEqual(outcome.exitCode, 0)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
     }
 
     func testARefusedRunInAProfileWithNoWorkspaceCreatesNoFolder() async throws {

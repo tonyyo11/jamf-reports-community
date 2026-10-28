@@ -76,8 +76,33 @@ final class ScheduleHealthInputsTests: XCTestCase {
                        "the profile-less caller takes the newest finish across profiles")
     }
 
+    /// An all-profiles run records a refused (org-level) profile too; its newer file must not
+    /// hide the profile that did run, or the whole schedule reads overdue.
+    func testANewerRefusedRecordDoesNotHideTheProfileThatRan() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory
+            .appendingPathComponent("jrc-health-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+
+        let label = "com.github.tonyyo11.jamf-reports-community.multi.managed-freshness"
+        try writeStatus(root: root, profile: "ran", label: label,
+                        finished: date(2026, 9, 7, 6, 30), success: true)
+        try writeStatus(root: root, profile: "org-level", label: label,
+                        finished: date(2026, 9, 7, 8, 0), success: true, refused: true)
+
+        let multi = schedule(label, profile: "", multi: true, cadence: "Daily 06:20")
+        let input = try XCTUnwrap(LaunchAgentService.healthInputs(
+            schedules: [multi], statusProfile: nil, now: date(2026, 9, 7, 9, 0)).first)
+        XCTAssertEqual(input.lastRunFinishedAt, date(2026, 9, 7, 6, 30))
+        XCTAssertEqual(input.lastRunSuccess, true)
+    }
+
     private func writeStatus(
-        root: URL, profile: String, label: String, finished: Date, success: Bool
+        root: URL, profile: String, label: String, finished: Date, success: Bool,
+        refused: Bool = false
     ) throws {
         let workspace = root.appendingPathComponent(profile, isDirectory: true)
         let automation = workspace.appendingPathComponent("automation", isDirectory: true)
@@ -86,11 +111,12 @@ final class ScheduleHealthInputsTests: XCTestCase {
         // only counts a directory as a profile when it holds a config.yaml.
         try "".write(to: workspace.appendingPathComponent("config.yaml"),
                      atomically: true, encoding: .utf8)
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "finished_at": ISO8601DateFormatter().string(from: finished),
             "success": success,
             "exit_code": success ? 0 : 1,
         ]
+        if refused { payload["refused"] = true }
         try JSONSerialization.data(withJSONObject: payload)
             .write(to: automation.appendingPathComponent("\(label)_status.json"))
     }

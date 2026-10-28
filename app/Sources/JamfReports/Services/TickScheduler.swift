@@ -591,6 +591,7 @@ struct TickLock: Sendable {
             let data = try BoundedFile.read(url, limit: 4096, followSymlinks: false)
             guard let text = String(data: data, encoding: .utf8) else {
                 warn("tick refusal stamp \(url.lastPathComponent) is not UTF-8; read as absent")
+                removeUnreadable(url)
                 return nil
             }
             return text.split(whereSeparator: \.isNewline).map(String.init)
@@ -599,8 +600,17 @@ struct TickLock: Sendable {
         } catch {
             warn("tick refusal stamp \(url.lastPathComponent) could not be read "
                 + "(\(error.localizedDescription)); read as absent")
+            removeUnreadable(url)
             return nil
         }
+    }
+
+    /// Drop a bad regular file so its warning does not repeat on every wake; a folder or other
+    /// non-regular entry at the path stays and keeps warning.
+    private static func removeUnreadable(_ url: URL) {
+        var info = stat()
+        guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     /// Record that a wake was turned away. The stamp holds `Refusals` one per line (the third
