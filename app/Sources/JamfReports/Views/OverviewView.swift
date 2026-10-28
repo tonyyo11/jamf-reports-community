@@ -1048,7 +1048,9 @@ struct OverviewView: View {
         EqualHeightTileGrid(minTileWidth: 220) {
             ForEach(offeredScoreCards) { metric in
                 let hasData = !metricValues(metric).isEmpty
-                let isDanger = hasData && scoreCardTrend(for: metric) == .down && metric != .stale
+                let isDanger = hasData && Self.tileIsDanger(
+                    metric: metric, values: metricValues(metric),
+                    comparable: scoreCardComparable(metric))
                 Button {
                     drill = .metric(metric.rawValue)
                 } label: {
@@ -1071,16 +1073,9 @@ struct OverviewView: View {
         workspace.selectedScoreCards.filter { workspace.isOffered($0) }
     }
 
-    private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
-        let values: [Double] = workspace.demoMode ?
-            (DemoData.trends[metric] ?? []) :
-            trendStore.values(metric: metric)
-        guard let last = values.last else { return .flat }
-        let prev = values.count > 1 ? values[values.count - 2] : last
-        let diff = last - prev
-        if diff == 0 { return .flat }
-        if metric == .stale { return diff < 0 ? .up : .down }
-        return diff > 0 ? .up : .down
+    /// Two scores on different definitions (`securityScoreBasis`) have no change between them.
+    private func scoreCardComparable(_ metric: TrendSeries.Metric) -> Bool {
+        metric != .securityScore || workspace.demoMode || trendStore.latestSecurityScoresComparable
     }
 
     /// "Aug 20" — short by design; the tile caption has little room and the
@@ -1108,9 +1103,7 @@ struct OverviewView: View {
         let lastValue = values.last
         let current = lastValue ?? 0
         let prev = values.count > 1 ? values[values.count - 2] : current
-        // Two scores on different definitions (`securityScoreBasis`) have no change between them.
-        let comparable = metric != .securityScore || workspace.demoMode
-            || trendStore.latestSecurityScoresComparable
+        let comparable = scoreCardComparable(metric)
         let diff = comparable ? current - prev : 0
 
         let valueStr: String = {
@@ -1201,6 +1194,18 @@ struct OverviewView: View {
         case .worse: return .down
         case .neutral: return .flat
         }
+    }
+
+    /// The red chrome around a card follows the tile's verdict (`tileTrend`), so the border
+    /// and the delta colour never disagree. Not limited to Stale: a rising Stale count is
+    /// as much "worse" as a rising mobile stale or jailbroken count.
+    static func tileIsDanger(
+        metric: TrendSeries.Metric, values: [Double], comparable: Bool
+    ) -> Bool {
+        guard let current = values.last else { return false }
+        let previous = values.count > 1 ? values[values.count - 2] : current
+        return tileTrend(metric: metric, previous: previous, current: current,
+                         comparable: comparable) == .down
     }
 
     /// Lines a score card's title may take: two for the fixed titles, one for the compliance

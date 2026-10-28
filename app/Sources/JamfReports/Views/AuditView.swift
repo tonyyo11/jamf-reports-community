@@ -745,7 +745,8 @@ struct AuditView: View {
                     }
                 }
             }
-            .motionSafeAnimation(.spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
+            .motionSafeAnimation(
+                .spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
         }
     }
 

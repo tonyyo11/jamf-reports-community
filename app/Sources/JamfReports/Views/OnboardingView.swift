@@ -156,6 +156,7 @@ struct OnboardingView: View {
             Text(headerTitle)
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Text(headerSubtitle)
                 .font(.body)
                 .foregroundStyle(Theme.Text.tertiary(contrast))

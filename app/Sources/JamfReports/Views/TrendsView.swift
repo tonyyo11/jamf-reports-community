@@ -1377,7 +1377,9 @@ struct TrendsView: View {
             }
             .onAppear {
                 guard isLatest, !archivePulse, !reduceMotion else { return }
-                withMotionSafeAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
+                withMotionSafeAnimation(
+                    .easeInOut(duration: 1.0).repeatForever(autoreverses: false)
+                ) {
                     archivePulse = true
                 }
             }

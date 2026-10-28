@@ -173,12 +173,33 @@ final class AccessibilitySweepTests: XCTestCase {
         XCTAssertEqual(share, "FileVault: 91.0%, down −1.0pp, worse")
     }
 
-    /// A tile with no verdict announces no direction.
-    func testStatTileLabelOmitsFlatDelta() {
-        let label = StatTile.accessibilityLabel(
-            label: "Managed Computers", value: "500", delta: "+12", deltaTrend: .flat, sub: nil
-        )
-        XCTAssertEqual(label, "Managed Computers: 500")
+    /// A flat tile draws its signed delta muted, so VoiceOver reads direction without a verdict;
+    /// text with no sign is silent.
+    func testStatTileLabelFlatDelta() {
+        func label(_ delta: String) -> String {
+            StatTile.accessibilityLabel(
+                label: "Managed Computers", value: "500", delta: delta, deltaTrend: .flat, sub: nil)
+        }
+        XCTAssertEqual(label("+12"), "Managed Computers: 500, up +12")
+        XCTAssertEqual(label("−3"), "Managed Computers: 500, down −3")
+        XCTAssertEqual(label("No Data"), "Managed Computers: 500")
+        XCTAssertEqual(label("Not comparable"), "Managed Computers: 500")
+    }
+
+    /// Danger chrome follows the tile verdict: a falling neutral count has none, a rising
+    /// mobile stale count has it, and a falling stale count does not.
+    func testOverviewTileDangerFollowsVerdict() {
+        XCTAssertFalse(OverviewView.tileIsDanger(
+            metric: .managedDevices, values: [450, 400], comparable: true))
+        XCTAssertTrue(OverviewView.tileIsDanger(
+            metric: .mobileStale, values: [2, 5], comparable: true))
+        XCTAssertTrue(OverviewView.tileIsDanger(
+            metric: .stale, values: [8, 10], comparable: true))
+        XCTAssertFalse(OverviewView.tileIsDanger(
+            metric: .stale, values: [10, 8], comparable: true))
+        XCTAssertFalse(OverviewView.tileIsDanger(
+            metric: .fileVault, values: [90, 80], comparable: false))
+        XCTAssertFalse(OverviewView.tileIsDanger(metric: .fileVault, values: [], comparable: true))
     }
 
     /// The Overview tile takes its verdict from `Metric.polarity`, as the Trends hero does.

@@ -531,9 +531,18 @@ struct StatTile: View {
         var parts = ["\(label): \(value)"]
         // The direction word follows the number; "better"/"worse" is the tile's verdict, so a
         // stale count that fell reads "down, better" and one that rose reads "up, worse".
-        if let delta, deltaTrend != .flat {
-            let direction = deltaPointsUp(delta, trend: deltaTrend) ? "up" : "down"
-            parts.append("\(direction) \(delta), \(deltaTrend == .up ? "better" : "worse")")
+        if let delta {
+            let verdict = switch deltaTrend {
+            case .up: ", better"
+            case .down: ", worse"
+            case .flat: ""
+            }
+            // A flat tile still draws a signed delta, so it is announced without a verdict;
+            // "No Data" and "Not comparable" carry no sign and stay silent.
+            if deltaTrend != .flat || Self.hasSign(delta) {
+                let direction = deltaPointsUp(delta, trend: deltaTrend) ? "up" : "down"
+                parts.append("\(direction) \(delta)\(verdict)")
+            }
         }
         if let sub { parts.append(sub) }
         return parts.joined(separator: ", ")
@@ -545,6 +554,10 @@ struct StatTile: View {
         case .down: Theme.Colors.danger
         case .flat: Theme.Colors.fgMuted
         }
+    }
+
+    nonisolated private static func hasSign(_ delta: String) -> Bool {
+        ["+", "−", "-"].contains { delta.hasPrefix($0) }
     }
 
     /// Arrow glyph and VoiceOver direction reflect the delta's literal numeric sign
