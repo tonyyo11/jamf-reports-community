@@ -2174,7 +2174,7 @@ final class CLIBridge {
             onLine: onLine)
         // With Jamf Pro failed, the folder is kept only for Protect objects to restore from.
         if proFailed, (protectResult?.objectTotal ?? 0) == 0 {
-            discardStaging(validatedTemp, onLine: onLine)
+            discardStaging(validatedTemp, protect: protectResult, onLine: onLine)
             tightenOnSuccess(exit, profile: profile)
             return BackupRun(exit: exit, folder: nil)
         }
@@ -2182,7 +2182,7 @@ final class CLIBridge {
         // so no folder is written; the skip line, the Partial line and the attention item above
         // already say so. Not a failure.
         if proSkipped, (protectResult?.objectTotal ?? 0) == 0 {
-            discardStaging(validatedTemp, onLine: onLine)
+            discardStaging(validatedTemp, protect: protectResult, onLine: onLine)
             onLine(.init(
                 timestamp: Date(), level: proSkip?.isPartial == true ? .warn : .info,
                 text: (proSkip?.isPartial == true ? "[warn]" : "[info]")
@@ -2384,6 +2384,20 @@ final class CLIBridge {
             AttentionLog.raise(.proBackupChoiceNeeded, message)
             return nil
         }
+    }
+
+    /// Removes a staging folder the run keeps nothing from. The Protect part's failure list
+    /// (`protect/_failures.yaml`), which its `[warn]` line points the operator to, goes with it,
+    /// so say so.
+    private func discardStaging(
+        _ staging: URL, protect: BackupProductResult?, onLine: @Sendable (LogLine) -> Void
+    ) {
+        discardStaging(staging, onLine: onLine)
+        guard protect?.hasFailuresFile == true else { return }
+        onLine(.init(timestamp: Date(), level: .warn,
+                     text: "[warn] the Jamf Protect failure list "
+                         + "(\(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName)) was "
+                         + "discarded with the staging folder, since this backup keeps nothing"))
     }
 
     private func discardStaging(_ staging: URL, onLine: @Sendable (LogLine) -> Void) {

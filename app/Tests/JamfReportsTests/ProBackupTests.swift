@@ -399,6 +399,22 @@ final class ProBackupTests: XCTestCase {
         XCTAssertTrue(run.lines.contains { $0.hasPrefix("[warn] Jamf Pro not backed up") })
     }
 
+    /// The Protect warning points at protect/_failures.yaml in the backup folder; a run that
+    /// keeps no folder says the list went with the staging folder.
+    func test_backup_aDiscardedFolderSaysItTookTheProtectFailureListWithIt() async throws {
+        let ctx = try makeContext(
+            config: shared + "protect:\n  enabled: true\n  profile: \"protect-login\"\n"
+                + "  backup_on_synced_storage: true\n",
+            protectFailuresOnly: true)
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        try SharedConfigPin.confirm(profile: ctx.profile, keys: [.protectBackupOnSyncedStorage])
+        let run = try await backup(ctx, label: "scheduled-t")
+
+        XCTAssertEqual(try backupFolders(ctx), [], "\(run.lines)")
+        let notes = run.lines.filter { $0.contains("failure list") && $0.contains("discarded") }
+        XCTAssertEqual(notes.count, 1, "\(run.lines)")
+    }
+
     /// The run names the folder it finished, so housekeeping stamps that one and no other.
     func test_backupRun_namesTheFolderOnlyWhenOneWasWritten() async throws {
         let none = try makeContext(config: shared)
@@ -754,7 +770,9 @@ final class ProBackupTests: XCTestCase {
         }
     }
 
-    private func makeContext(config: String?, protectPartial: Bool = false) throws -> Context {
+    private func makeContext(
+        config: String?, protectPartial: Bool = false, protectFailuresOnly: Bool = false
+    ) throws -> Context {
         let root = try tempDir()
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
@@ -778,8 +796,9 @@ final class ProBackupTests: XCTestCase {
         mkdir -p "$out"
         case " $* " in
         *" protect backup "*)
-        mkdir -p "$out/plans"
-        echo 'name: a' > "$out/plans/a.yaml"
+        \(protectFailuresOnly
+            ? "echo 'plans: boom' > \"$out/_failures.yaml\""
+            : "mkdir -p \"$out/plans\"; echo 'name: a' > \"$out/plans/a.yaml\"")
         \(protectPartial ? "echo 'plans: boom' > \"$out/_failures.yaml\"; exit 7" : "")
         ;;
         *)
