@@ -38,6 +38,20 @@ final class FailureCauseKeychainTests: XCTestCase {
         XCTAssertEqual(cause.kind, .other)
     }
 
+    func testExitStatus36WithoutTheWordKeychainStaysOther() {
+        let cause = FailureCause.classify(exitCode: 1, stdout: envelope("exit status 36"))
+        XCTAssertEqual(cause.kind, .other)
+        XCTAssertFalse(FailureCause.mentionsLockedKeychain("copying file: exit status 36"))
+    }
+
+    func testExplainExitIsUnchangedForOtherCauses() {
+        let other = FailureCause(kind: .other, names: [], hint: nil, exitCode: 1)
+        XCTAssertEqual(CLIBridge.explainExit(1, operation: "Collect", cause: other),
+                       CLIBridge.explainExit(1, operation: "Collect"))
+        XCTAssertEqual(CLIBridge.explainExit(5, operation: "Collect", cause: nil),
+                       CLIBridge.explainExit(5, operation: "Collect"))
+    }
+
     func testStderrLineClassifiesAnExitWithNoEnvelope() {
         let watcher = StderrSignalWatcher()
         let forward = watcher.forwarding { _ in }

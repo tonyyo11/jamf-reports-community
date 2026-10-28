@@ -32,24 +32,24 @@ versions in this repository map to git tags.
 - The HTML report now says "dashboard page could not be read" when the jamf-cli dashboard page
   is there but cannot be opened (a link, a folder or a read error), instead of "not collected
   yet", and logs a warning. (#305)
-
 - VoiceOver and Reduce Motion fixes: score cards say whether a change is better or worse (a
   falling stale count reads "down, better"), the Adopt EAs sheet no longer closes itself and
   announces its result, animations stay still with Reduce Motion on, page titles follow text
   size and read as headings, and loading spinners are named. (#305)
-
 - The `jamf-reports` command-line tool now adds a warning from `collect`, `generate` or `html` to
   "Needs attention" in the app, as a scheduled run does, and clears it when a later run passes
   the check. (#305)
-
 - A scheduled run that is skipped because the profile belongs to another product now shows in
   Run History with the reason, and the schedule's last run reads as a warning, not a success.
   Automation still shows it as failing with the reason. (#305)
 - When the background item cannot record that a wake was turned away, or cannot read that
   record, it now logs a warning naming the file instead of staying silent. (#305)
-
 - A custom `XDG_CONFIG_HOME` is now honoured: the app starts jamf-cli with it and reads the
   profiles in `$XDG_CONFIG_HOME/jamf-cli/`, so both agree on which profiles exist. (#305)
+- A custom `XDG_CONFIG_HOME` is now honoured when the app or the `jamf-reports` command sees it
+  (an app opened from the Dock does not inherit a shell `export`): the app starts jamf-cli with
+  it and reads the profiles in `$XDG_CONFIG_HOME/jamf-cli/`, so both agree on which profiles
+  exist. (#305)
 - When the login keychain is locked, a failed run now says so and tells you to unlock it
   (Keychain Access, or `security unlock-keychain`), instead of showing jamf-cli's raw error or
   asking you to re-authenticate. (#305)

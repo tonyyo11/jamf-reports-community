@@ -1006,6 +1006,9 @@ struct TokenStatus: Sendable, Codable {
     let expiresAt: Date?
     /// True when jamf-cli returned a token without error (exit 0).
     let isValid: Bool
+    /// True when jamf-cli could not read the profile's credentials because the login keychain
+    /// is locked; `isValid` is false then, but re-authenticating is not the fix.
+    let keychainLocked: Bool
 
     /// True when the token has a known expiry and that expiry is in the past.
     var isExpired: Bool {
@@ -1014,7 +1017,7 @@ struct TokenStatus: Sendable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case profile, expiresAt, isValid
+        case profile, expiresAt, isValid, keychainLocked
     }
 
     init(from decoder: any Decoder) throws {
@@ -1022,12 +1025,19 @@ struct TokenStatus: Sendable, Codable {
         profile = try c.decode(String.self, forKey: .profile)
         expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
         isValid = try c.decode(Bool.self, forKey: .isValid)
+        keychainLocked = try c.decodeIfPresent(Bool.self, forKey: .keychainLocked) ?? false
     }
 
-    private init(profile: String, expiresAt: Date?, isValid: Bool) {
+    private init(profile: String, expiresAt: Date?, isValid: Bool, keychainLocked: Bool = false) {
         self.profile = profile
         self.expiresAt = expiresAt
         self.isValid = isValid
+        self.keychainLocked = keychainLocked
+    }
+
+    /// The probe could not read `profile`'s credentials from a locked login keychain.
+    static func keychainLocked(profile: String) -> TokenStatus {
+        TokenStatus(profile: profile, expiresAt: nil, isValid: false, keychainLocked: true)
     }
 
     /// Factory for constructing a `TokenStatus`. Prefer this over direct memberwise init.

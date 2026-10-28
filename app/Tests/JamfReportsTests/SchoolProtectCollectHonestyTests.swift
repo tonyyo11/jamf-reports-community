@@ -47,6 +47,42 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         }
     }
 
+    /// UNCAPTURED fixture: go-keyring's error shape, printed on stderr only.
+    private func installLockedKeychainStub() throws {
+        let body = "#!/bin/sh\necho 'Error: reading keychain item jamf-cli/p/client-secret: "
+            + "exit status 36' >&2\nexit 1\n"
+        try body.write(to: bin, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
+    }
+
+    func testSchoolRunWithALockedKeychainIsADeadCollectNamingTheKeychain() async throws {
+        try installLockedKeychainStub()
+        let stub: URL = bin
+        let seen = LineBox()
+        do {
+            try await ReportEngine.schoolCollect(
+                profile: profile, workspacePaths: WorkspacePaths.self, force: true,
+                locateJamfCLI: { stub }, onLine: seen.append)
+            XCTFail("a locked keychain must not read as a successful School run")
+        } catch ReportEngineError.collectDead(_, _, let cause) {
+            XCTAssertEqual(cause, .keychainLocked)
+            XCTAssertTrue(seen.texts.contains { $0.contains(FailureCause.keychainLockedHint) },
+                          "\(seen.texts)")
+        }
+    }
+
+    func testProtectCollectRecordsALockedKeychainAsTheCause() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installLockedKeychainStub()
+        let stub: URL = bin
+        try await ReportEngine.protectCollect(
+            profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: { _ in })
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let kind = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
+        XCTAssertEqual(store.cause(for: kind)?.kind, .keychainLocked)
+    }
+
     /// A `state` folder that is a link is refused with one `[warn]`, not skipped in silence.
     private func linkStateFolder() throws -> URL {
         let data = try WorkspacePaths.dataDir(for: profile)

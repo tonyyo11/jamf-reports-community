@@ -183,12 +183,12 @@ extension ReportEngine {
                 + "\(targets.filter(\.ddmEnabled).count) DDM-enabled"
         ))
 
-        let (results, stops) = await scanDevices(
+        let (results, stops, stopCause) = await scanDevices(
             targets, profile: profile, bin: bin,
             probe: authConfirmationProbe, limits: limits, onLine: onLine
         )
         return reduceAndSave(
-            results: results, stops: stops, dataDir: dataDir,
+            results: results, stops: stops, stopCause: stopCause, dataDir: dataDir,
             recordManifest: recordManifest, stateStore: stateStore,
             collectStart: collectStart, onLine: onLine
         )
@@ -220,7 +220,7 @@ extension ReportEngine {
         _ targets: [DeviceScanTarget], profile: String, bin: URL,
         probe: @escaping AuthConfirmationProbe, limits: DeviceCallLimits,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async -> (results: [DeviceResult], stops: [CallType: Int32]) {
+    ) async -> (results: [DeviceResult], stops: [CallType: Int32], stopCause: FailureCause?) {
         let bridge = CLIBridge()
         let gate = StopGate(probe: probe, profile: profile, bin: bin, limits: limits)
         var results: [DeviceResult] = []
@@ -253,7 +253,7 @@ extension ReportEngine {
             }
             for await r in group { results.append(r) }
         }
-        return (results, await gate.stops())
+        return (results, await gate.stops(), await gate.stopCause())
     }
 
     static func statusItemsArguments(profile: String, managementId: String) -> [String] {
@@ -312,7 +312,7 @@ extension ReportEngine {
             await gate.noteLaunchFailure(type, onLine: onLine)
             return .launchFailed
         }
-        if result.0 == CLIBridge.exitCodeUnauthorized,
+        if result.exit == CLIBridge.exitCodeUnauthorized,
            await gate.credentialsConfirmed(onLine: onLine) {
             guard let retry = await run(bridge, bin, args, timeout: timeout) else {
                 await gate.noteLaunchFailure(type, onLine: onLine)
@@ -320,18 +320,24 @@ extension ReportEngine {
             }
             result = retry
         }
-        await gate.observe(result.0, stdout: result.1, for: type, onLine: onLine)
-        return .ran(exit: result.0, data: result.1)
+        await gate.observe(
+            result.exit, stdout: result.data, keychainLocked: result.keychainLocked,
+            for: type, onLine: onLine)
+        return .ran(exit: result.exit, data: result.data)
     }
 
     private static func run(
         _ bridge: CLIBridge, _ bin: URL, _ args: [String], timeout: TimeInterval
-    ) async -> (Int32, Data)? {
-        try? await bridge.runAndCapture(
+    ) async -> (exit: Int32, data: Data, keychainLocked: Bool)? {
+        // stderr is read only for the locked-keychain line; a device call prints nothing else
+        // the scan acts on.
+        let watcher = StderrSignalWatcher()
+        guard let (exit, data) = try? await bridge.runAndCapture(
             executable: bin, arguments: args,
             environment: CLIBridge.environmentForJamfCLI(),
-            timeout: timeout, onLine: { _ in }
-        )
+            timeout: timeout, onLine: watcher.forwarding(to: { _ in })
+        ) else { return nil }
+        return (exit, data, watcher.sawKeychainLocked)
     }
 
     /// Per-run "stop this call type" flags, keyed by the exit code that
@@ -347,6 +353,7 @@ extension ReportEngine {
         private var tokenCheckLogged = false
         private let limits: DeviceCallLimits
         private var timeoutStreak: [CallType: Int] = [:]
+        private var keychainStop: FailureCause?
 
         init(
             probe: @escaping AuthConfirmationProbe, profile: String, bin: URL,
@@ -364,6 +371,9 @@ extension ReportEngine {
         func stillScanning() -> Bool { stopped[.history] == nil || stopped[.statusItems] == nil }
 
         func stops() -> [CallType: Int32] { stopped }
+
+        /// Set when a locked login keychain stopped the scan, so the failure is recorded with it.
+        func stopCause() -> FailureCause? { keychainStop }
 
         /// One forced token exchange shared by every device that hit exit 3 at the same
         /// moment; true means jamf-cli could still get a token.
@@ -393,11 +403,27 @@ extension ReportEngine {
         }
 
         func observe(
-            _ exit: Int32, stdout: Data, for type: CallType,
+            _ exit: Int32, stdout: Data, keychainLocked: Bool = false, for type: CallType,
             onLine: @Sendable (CLIBridge.LogLine) -> Void
         ) {
             guard stopped[type] == nil else { return }
             let kind = type.kind
+            // A locked keychain fails every device the same way (exit 1), so both call types stop.
+            if exit != 0, keychainLocked
+                || FailureCause.classify(exitCode: exit, stdout: stdout).kind == .keychainLocked {
+                for t in [CallType.history, .statusItems] where stopped[t] == nil {
+                    stopped[t] = exit
+                }
+                keychainStop = FailureCause(
+                    kind: .keychainLocked, names: [], hint: FailureCause.keychainLockedHint,
+                    exitCode: exit)
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] device scan: the login keychain is locked — "
+                        + FailureCause.keychainLockedHint + "; stopping both call types"
+                ))
+                return
+            }
             noteTimeouts(exit, for: type, onLine: onLine)
             guard stopped[type] == nil else { return }
             switch exit {
@@ -549,7 +575,8 @@ extension ReportEngine {
     }
 
     private static func reduceAndSave(
-        results: [DeviceResult], stops: [CallType: Int32], dataDir: URL, recordManifest: Bool,
+        results: [DeviceResult], stops: [CallType: Int32], stopCause: FailureCause?,
+        dataDir: URL, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) -> Set<String> {
@@ -564,7 +591,8 @@ extension ReportEngine {
                     + deviceScanNotWrittenMarkerSuffix
             ))
             stateStore?.record(
-                .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart
+                .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart,
+                cause: stopCause
             )
         } else {
             let healthTally = tally(
@@ -593,7 +621,8 @@ extension ReportEngine {
                     + deviceScanNotWrittenMarkerSuffix
             ))
             stateStore?.record(
-                .failed(exitCode: stopExit), report: ddmDeviceStatusKind, at: collectStart
+                .failed(exitCode: stopExit), report: ddmDeviceStatusKind, at: collectStart,
+                cause: stopCause
             )
         } else {
             // Eligible devices; empty means the fleet has no DDM-enabled Mac with a managementId.

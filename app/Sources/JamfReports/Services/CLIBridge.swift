@@ -1045,6 +1045,8 @@ final class CLIBridge {
                 return explainExit(1, operation: operation)                   // all kinds failed
             case .noPermission:
                 return explainExit(exitCodePermissionDenied, operation: operation)
+            case .keychainLocked:
+                return "\(operation) failed: \(keychainLockedDetail)"
             case .rejectedID:
                 return "\(operation) failed: the Jamf Platform gateway rejected this profile's "
                     + "environment or tenant ID. Correct it with Update credentials in Data "
@@ -1231,8 +1233,8 @@ final class CLIBridge {
         guard !ProfileAuthMethod.skipsProAuthProbe(profile: profile) else { return nil }
         switch await probeToken(for: profile, executable: nil, timeout: Self.tokenProbeTimeout) {
         case .status(let status): return status
-        case .timedOut, .keychainLocked:
-            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
+        case .timedOut: return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
+        case .keychainLocked: return TokenStatus.keychainLocked(profile: profile)
         }
     }
 
@@ -1252,13 +1254,16 @@ final class CLIBridge {
         let args = CLICommand.proAuthToken(profile: profile).argv
         let exitCode: Int32
         let data: Data
+        // A keychain error may be printed on stderr, which `runAndCapture` keeps out of `data`.
+        let stderrWatcher = StderrSignalWatcher()
         do {
             (exitCode, data) = try await runAndCapture(
                 executable: bin,
                 arguments: args,
                 environment: Self.environmentForJamfCLI(),
-                timeout: timeout
-            ) { _ in }
+                timeout: timeout,
+                onLine: stderrWatcher.forwarding(to: { _ in })
+            )
         } catch {
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
@@ -1269,9 +1274,10 @@ final class CLIBridge {
         }
         if exitCode == Self.exitCodeTimedOut { return .timedOut }
         guard exitCode == 0, !data.isEmpty else {
-            if FailureCause.classify(exitCode: exitCode, stdout: data).kind == .keychainLocked {
-                return .keychainLocked
-            }
+            let cause = FailureCause.classify(
+                exitCode: exitCode, stdout: data,
+                sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked)
+            if cause.kind == .keychainLocked { return .keychainLocked }
             return .status(TokenStatus.make(profile: profile, token: nil, expiresAt: nil))
         }
         return .status(parseTokenStatus(profile: profile, data: data))

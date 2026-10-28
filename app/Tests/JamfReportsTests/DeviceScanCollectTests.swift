@@ -381,6 +381,25 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertFalse(warn.contains("Read Computers"), warn)
     }
 
+    /// Fixture is UNCAPTURED (go-keyring's error shape, on stderr only): a locked keychain
+    /// fails every device with exit 1, so the scan stops both call types after the first.
+    func testLockedKeychainOnStderrStopsTheScanAndRecordsTheCause() async throws {
+        try writeComputers([("1", "A", "m1", true), ("2", "B", "m2", true)])
+        for id in ["1", "2"] {
+            try answer("hist-\(id)", "", exit: 1)
+            try "Error: reading keychain item jamf-cli/p/client-secret: exit status 36\n".write(
+                to: answers.appendingPathComponent("hist-\(id).err"), atomically: true,
+                encoding: .utf8)
+        }
+        let lines = try await runScan()
+        XCTAssertTrue(lines.contains { $0.contains("login keychain is locked") }, "\(lines)")
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.cause(for: "mdm-command-health")?.kind, .keychainLocked)
+        XCTAssertEqual(store.cause(for: "ddm-device-status")?.kind, .keychainLocked)
+    }
+
     func testExit8SkipsHistoryForTheRun() async throws {
         try writeComputers([("1", "A", "m1", true)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))

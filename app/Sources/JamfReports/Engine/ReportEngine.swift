@@ -1805,12 +1805,16 @@ struct ReportEngine: Sendable {
         /// A failure named a rejected scope ID. One is enough: Jamf Pro commands on a gateway
         /// profile drop the 404 body (spec §14.1), so they never name it themselves.
         case rejectedID
+        /// A failure was a locked login keychain: every call fails the same way, exit 1, so it
+        /// would otherwise read as an outage.
+        case keychainLocked
     }
 
     /// Exit-2 outcomes are left out, as in `isCollectDead`: a usage error says nothing about
     /// access.
     static func deadRunCause(_ outcomes: [CollectOutcome]) -> DeadRunCause {
         let causes = outcomes.filter { $0.exitCode != CLIBridge.exitCodeUsage }.map(\.cause)
+        if causes.contains(.keychainLocked) { return .keychainLocked }
         if causes.contains(where: { $0 == .scopeRejected || $0 == .unknownEnvironment }) {
             return .rejectedID
         }
@@ -3516,11 +3520,12 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let schoolResult: (Int32, Data)?
+            let stderrWatcher = StderrSignalWatcher()
             do {
                 schoolResult = try await bridge.runAndCapture(
                     executable: bin, arguments: args,
                     environment: CLIBridge.environmentForJamfCLI(),
-                    timeout: collectKindTimeout, onLine: onLine
+                    timeout: collectKindTimeout, onLine: stderrWatcher.forwarding(to: onLine)
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
@@ -3556,9 +3561,12 @@ struct ReportEngine: Sendable {
                              text: "[warn] \(kind): exit \(exitCode) — skipped"))
                 unlanded.append(kind)
                 // The cause lets the same-day retry leave a permanent failure (a 403) alone.
+                let cause = FailureCause.classify(
+                    exitCode: exitCode, stdout: data, sawForbiddenOnStderr: stderrWatcher.sawForbidden,
+                    sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked)
+                schoolOutcomes[schoolOutcomes.count - 1].cause = cause.kind
                 stateStore?.record(
-                    .failed(exitCode: exitCode), report: kind, at: collectStart,
-                    cause: FailureCause.classify(exitCode: exitCode, stdout: data))
+                    .failed(exitCode: exitCode), report: kind, at: collectStart, cause: cause)
             }
         }
 
@@ -3570,11 +3578,16 @@ struct ReportEngine: Sendable {
         // outage, not a Partial run with exit 0.
         if Self.isCollectDead(schoolOutcomes, savedKinds: schoolSaved) {
             let failedCount = schoolOutcomes.count
-            let msg = "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
-                "'\(profile)' — server unreachable or credentials broken. No snapshot written."
+            let deadCause = Self.deadRunCause(schoolOutcomes)
+            let error = ReportEngineError.collectDead(
+                profile: profile, failedCount: failedCount, cause: deadCause)
+            let msg = deadCause == .keychainLocked
+                ? "[error] " + (error.errorDescription ?? "collect failed")
+                : "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
+                    "'\(profile)' — server unreachable or credentials broken. No snapshot written."
             AppLogger.collect.error("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
-            throw ReportEngineError.collectDead(profile: profile, failedCount: failedCount)
+            throw error
         }
         // Before the summary, so the same run's OS currency can read the feed. Past the outage
         // guard, as in the Pro path: a dead tenant fetches nothing.
@@ -3693,11 +3706,12 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let protectResult: (Int32, Data)?
+            let stderrWatcher = StderrSignalWatcher()
             do {
                 protectResult = try await bridge.runAndCapture(
                     executable: bin, arguments: args,
                     environment: CLIBridge.environmentForJamfCLI(),
-                    timeout: collectKindTimeout, onLine: onLine
+                    timeout: collectKindTimeout, onLine: stderrWatcher.forwarding(to: onLine)
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
@@ -3732,7 +3746,10 @@ struct ReportEngine: Sendable {
                 // The cause lets the same-day retry leave a permanent failure (a 403) alone.
                 stateStore?.record(
                     .failed(exitCode: exitCode), report: kind, at: collectStart,
-                    cause: FailureCause.classify(exitCode: exitCode, stdout: data))
+                    cause: FailureCause.classify(
+                        exitCode: exitCode, stdout: data,
+                        sawForbiddenOnStderr: stderrWatcher.sawForbidden,
+                        sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked))
             }
         }
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
@@ -4583,6 +4600,9 @@ enum ReportEngineError: Error, LocalizedError {
                 return "All \(n) live jamf-cli call(s) failed for profile '\(p)': the Jamf " +
                     "Platform gateway rejected the profile's environment or tenant ID. No " +
                     "snapshot was written. Correct the ID with Update credentials in Data Sources."
+            case .keychainLocked:
+                return "All \(n) live jamf-cli call(s) failed for profile '\(p)': " +
+                    CLIBridge.keychainLockedDetail + " No snapshot was written."
             }
         case .snapshotIntegrityViolation(let summary, let dataDir):
             var parts: [String] = []

@@ -165,6 +165,8 @@ struct FailureCause: Codable, Equatable, Sendable {
             FailureCause(
                 kind: kind, names: names, hint: cappedHint ?? hintOverride, exitCode: exitCode)
         }
+        // First: this failure comes before any request, so its text carries no HTTP code for the
+        // rules below; checked last it would fall through to `.other`.
         if sawKeychainLockedOnStderr || mentionsLockedKeychain(message + "\n" + hint) {
             // Our hint, not jamf-cli's: the fix is the same whatever it suggested.
             return FailureCause(kind: .keychainLocked, names: [], hint: keychainLockedHint,
