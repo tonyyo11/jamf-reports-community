@@ -59,7 +59,8 @@ versions in this repository map to git tags.
   (#305)
 - A scheduled run behind a proxy now uses the HTTPS proxy and bypass list set in System Settings.
   The background item starts without a shell, so it had none; a proxy with a user name is skipped
-  with a warning. Collects started from the app still use the proxy in the app's own environment.
+  with a warning. Collects started from the app do not read the System Settings proxy; an app
+  opened from Finder has no proxy variables.
   (#305)
 
 ### Security

@@ -25,7 +25,7 @@ import SwiftUI
 /// this runs in the all-profiles path, so the log file is the durable record.
 @Sendable
 private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in }) {
-    let policy = AutomationPolicy.current()
+    let policy = TickEnvironment.storedPolicy()
     guard !policy.reportGroups.isEmpty else { return }
     let lookback: Int = {
         switch policy.reportsCadence {
