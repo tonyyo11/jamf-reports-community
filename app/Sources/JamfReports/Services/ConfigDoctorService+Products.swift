@@ -95,7 +95,8 @@ extension ConfigDoctorService {
     /// storage may hold Jamf Pro's configuration is the organization's call, so this points at
     /// the setting.
     static func proSyncedBackupRows(_ choice: ProBackup.SyncedStorageChoice?) -> [DoctorRow] {
-        guard let choice, choice.setting != .allowed else { return [] }
+        guard let choice, choice.setting != .allowed,
+              choice.setting != .configUnreadable else { return [] }
         let key = SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue
         let secrets = "A Jamf Pro backup contains LDAP, SMTP and API-client configuration and "
             + "scripts that can hold secrets."

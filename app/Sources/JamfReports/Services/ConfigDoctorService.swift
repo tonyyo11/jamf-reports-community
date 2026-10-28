@@ -473,6 +473,16 @@ enum ConfigDoctorService {
             case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
             }
         }
+        // A `backup:` that is not a block of settings reads as an explicit no.
+        if let value = ConfigLoader.rawValue(at: ["backup"], in: root),
+           !(value is NSNull), !(value is [String: Any]) {
+            rows.append(DoctorRow(
+                id: "config.value.backup", severity: .warn, title: "backup",
+                detail: "\((value as? Bool).map { "\($0)" } ?? typedText(value)) is not a block of "
+                    + "settings, so the app reads "
+                    + "backup.pro_on_synced_storage as false.",
+                hint: "Write backup: with pro_on_synced_storage: true or false under it."))
+        }
         let switches = [
             ["html", "track_history"], ["html", "with_workbook"], ["notify", "heartbeat"],
             ["protect", "backup_on_synced_storage"], ["backup", "pro_on_synced_storage"],

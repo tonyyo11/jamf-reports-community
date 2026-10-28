@@ -2140,7 +2140,8 @@ final class CLIBridge {
             proState: proSkipped ? .skipped : proFailed ? .failed : (isPartial ? .partial : .ok),
             sharedStorage: {
                 BackupMaintenance.sharedStorageDescription(
-                    backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume)
+                    backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
+                    pinnedIsShared: true)
             },
             onLine: onLine)
         // With Jamf Pro failed, the folder is kept only for Protect objects to restore from.
@@ -2240,14 +2241,14 @@ final class CLIBridge {
             timestamp: Date(),
             level: proSkip?.isPartial == true || isPartial || protectIncomplete ? .warn
                 : proSkipped ? .info : .ok,
-            text: proSkipped
-                ? (proSkip?.isPartial == true ? "[warn]" : "[info]")
-                    + " backup written without a Jamf Pro part: "
-                    + validatedFinal.lastPathComponent
-                : isPartial
+            text: isPartial
                 ? "[warn] partial backup written: \(validatedFinal.lastPathComponent)"
                 : protectIncomplete
                 ? "[warn] backup written without a complete Jamf Protect part: "
+                    + validatedFinal.lastPathComponent
+                : proSkipped
+                ? (proSkip?.isPartial == true ? "[warn]" : "[info]")
+                    + " backup written without a Jamf Pro part: "
                     + validatedFinal.lastPathComponent
                 : "[ok] backup written: \(validatedFinal.lastPathComponent)"
         ))
@@ -2270,14 +2271,9 @@ final class CLIBridge {
         profile: String, workspace: URL, backupsRoot: URL, isScheduled: Bool,
         onLine: @Sendable (LogLine) -> Void
     ) -> ProSkip? {
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        var config: ReportConfig?
-        var decodeFailure: String?
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do { config = try ConfigLoader.load(from: configURL) } catch {
-                decodeFailure = LogRedactor.redact(error.localizedDescription)
-            }
-        }
+        let read = ProBackup.readConfig(profile: profile)
+        let config = read.config
+        let decodeFailure = read.failure
         // A config.yaml that does not decode cannot say the folder is shared; the storage and
         // this Mac's pin can.
         let place = BackupMaintenance.sharedStorageDescription(
@@ -2324,7 +2320,7 @@ final class CLIBridge {
                              + "it on this Mac"))
             return nil
         case .skip(let reason, let kind):
-            return skip(reason, kind, place: place ?? "on synced storage")
+            return skip(reason, kind, place: place ?? "on synced storage", detail: decodeFailure)
         case .runWhileAsking(let place, let runsLeft):
             // Only a scheduled run uses up the grace; a manual backup during it is free.
             var left = runsLeft

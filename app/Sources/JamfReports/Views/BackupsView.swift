@@ -279,9 +279,12 @@ struct BackupsView: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            choiceToggle(
-                "Back up Jamf Pro in this folder", isOn: choice.setting == .allowed,
-                key: .proBackupOnSyncedStorage, choice: .pro)
+            // An unreadable config.yaml leaves nothing to write the switch into.
+            if choice.setting != .configUnreadable {
+                choiceToggle(
+                    "Back up Jamf Pro in this folder", isOn: choice.setting == .allowed,
+                    key: .proBackupOnSyncedStorage, choice: .pro)
+            }
         }
     }
 
@@ -297,6 +300,9 @@ struct BackupsView: View {
             return "Jamf Pro backups are turned on in config.yaml but wait for confirmation on "
                 + "this Mac, so they are skipped for now. Turn the switch on here to confirm. "
                 + "\(secrets)"
+        case .configUnreadable:
+            return "config.yaml could not be read; Jamf Pro is not backed up here "
+                + "(\(choice.place)). Fix the file in Config Doctor, then choose."
         case .notChosen:
             return "Choose whether Jamf Pro is backed up in this folder, which is "
                 + "\(choice.place). \(secrets) Scheduled backups that already ran here continue "
@@ -351,11 +357,10 @@ struct BackupsView: View {
         guard !workspace.demoMode else { syncedChoice = nil; proChoice = nil; return }
         let profile = workspace.profile
         let choices = await Task.detached(priority: .utility) {
-            let config = ProfileService.workspaceURL(for: profile).flatMap {
-                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
-            }
-            return (ProtectBackup.syncedStorageChoice(profile: profile, config: config),
-                    ProBackup.syncedStorageChoice(profile: profile, config: config))
+            let read = ProBackup.readConfig(profile: profile)
+            return (ProtectBackup.syncedStorageChoice(profile: profile, config: read.config),
+                    ProBackup.syncedStorageChoice(
+                        profile: profile, config: read.config, decodeFailure: read.failure))
         }.value
         guard profile == workspace.profile else { return }
         syncedChoice = choices.0

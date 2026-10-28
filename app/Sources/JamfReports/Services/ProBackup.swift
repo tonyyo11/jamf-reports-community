@@ -15,6 +15,31 @@ enum ProBackup {
         case allowed
         /// true in config.yaml, but not confirmed on this Mac yet (`SharedConfigPin`).
         case awaitingConfirmation
+        /// config.yaml cannot be read, so the choice is unknown and Jamf Pro is skipped.
+        case configUnreadable
+    }
+
+    /// config.yaml as the backup and the Backups screen both read it: the one reader. A file
+    /// that exists but does not decode has a `failure` (redacted) and no config.
+    struct ConfigRead: Sendable {
+        let config: ReportConfig?
+        let failure: String?
+    }
+
+    static func readConfig(profile: String) -> ConfigRead {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            return ConfigRead(config: nil, failure: nil)
+        }
+        let url = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return ConfigRead(config: nil, failure: nil)
+        }
+        do {
+            return ConfigRead(config: try ConfigLoader.load(from: url), failure: nil)
+        } catch {
+            return ConfigRead(
+                config: nil, failure: LogRedactor.redact(error.localizedDescription))
+        }
     }
 
     /// Why a skipped Jamf Pro part is skipped, which decides what the run says about it.
@@ -42,8 +67,8 @@ enum ProBackup {
     }
 
     /// `place` is `BackupMaintenance.sharedStorageDescription`; nil means local storage.
-    /// `decodeFailure` is why config.yaml cannot be read, when it cannot: the choice is then
-    /// unknown, and unknown never sends Jamf Pro configuration to shared storage.
+    /// `decodeFailure` is set when config.yaml cannot be read: the choice is then unknown, and
+    /// unknown never sends Jamf Pro configuration to shared storage.
     static func plan(
         setting: Setting,
         place: String?,
@@ -52,13 +77,13 @@ enum ProBackup {
         graceRunsUsed: () -> Int
     ) -> Plan {
         guard let place else { return .run }
-        if let decodeFailure {
+        switch decodeFailure == nil ? setting : .configUnreadable {
+        case .configUnreadable:
+            // Fixed text: the decode error carries a path, so it goes in the log line only.
             return .skip(
-                reason: "this workspace is \(place), and config.yaml does not decode, so the "
-                    + "Jamf Pro backup choice cannot be read: \(decodeFailure)",
+                reason: "this workspace is \(place), and config.yaml could not be read, so the "
+                    + "Jamf Pro backup choice is unknown",
                 kind: .declined)
-        }
-        switch setting {
         case .allowed:
             return .runOnSyncedStorage(place: place)
         case .declined:
@@ -111,7 +136,8 @@ enum ProBackup {
     }
 
     static func syncedStorageChoice(
-        profile: String, config: ReportConfig?, appSupport: URL = AppSupport.directory()
+        profile: String, config: ReportConfig?, decodeFailure: String? = nil,
+        appSupport: URL = AppSupport.directory()
     ) -> SyncedStorageChoice? {
         let detected = ProfileProductType.detect(from: config, profile: profile)
         guard detected.type == .jamfPro,
@@ -123,7 +149,8 @@ enum ProBackup {
         else { return nil }
         return SyncedStorageChoice(
             place: place,
-            setting: SharedConfigPin.proBackupSetting(
+            setting: decodeFailure != nil ? .configUnreadable
+                : SharedConfigPin.proBackupSetting(
                 config?.backup?.proOnSyncedStorage, profile: profile, appSupport: appSupport))
     }
 }

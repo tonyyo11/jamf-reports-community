@@ -128,7 +128,8 @@ enum BackupMaintenance {
     ) {
         guard let backupsRoot = backupsRoot(for: profile) else { return }
         let sharedWhere = sharedStorageDescription(
-            backupsRoot, profile: profile, volumeIsLocal: volumeIsLocal, syncProbe: syncProbe)
+            backupsRoot, profile: profile, volumeIsLocal: volumeIsLocal, syncProbe: syncProbe,
+            pinnedIsShared: true)
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: backupsRoot,
@@ -308,8 +309,8 @@ enum BackupMaintenance {
         // no timestamp. On synced storage that mtime is the provider's, and the
         // directory may belong to another Mac's in-flight backup, so don't sweep.
         if sharedStorageDescription(
-            backupsRoot, profile: profile, volumeIsLocal: volumeIsLocal, syncProbe: syncProbe)
-            != nil {
+            backupsRoot, profile: profile, volumeIsLocal: volumeIsLocal, syncProbe: syncProbe,
+            pinnedIsShared: true) != nil {
             return []
         }
         let fm = FileManager.default

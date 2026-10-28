@@ -75,8 +75,9 @@ final class ProBackupTests: XCTestCase {
             hasScheduledHistory: { read += 1; return true }, graceRunsUsed: { read += 1; return 0 })
         else { return XCTFail("unknown must not back up") }
         XCTAssertEqual(kind, .declined)
-        XCTAssertTrue(reason.contains("does not decode"), reason)
-        XCTAssertTrue(reason.contains("thresholds: wrong type"), reason)
+        XCTAssertTrue(reason.contains("config.yaml could not be read"), reason)
+        XCTAssertFalse(reason.contains("thresholds: wrong type"),
+                       "the error text goes in the log line, not the reason")
         XCTAssertEqual(read, 0)
         XCTAssertEqual(
             ProBackup.plan(setting: .notChosen, place: nil, decodeFailure: "x",
@@ -296,7 +297,12 @@ final class ProBackupTests: XCTestCase {
         let run = try await backup(ctx, label: "scheduled-t")
         XCTAssertEqual(try ctx.calls().count, 0, "\(run.lines)")
         let warn = try XCTUnwrap(run.lines.first { $0.hasPrefix("[warn] Jamf Pro not backed up") })
-        XCTAssertTrue(warn.contains("does not decode"), warn)
+        XCTAssertTrue(warn.contains("config.yaml could not be read"), warn)
+        XCTAssertTrue(warn.contains("thresholds"), "the log line keeps the detail: \(warn)")
+        let reason = try XCTUnwrap(
+            BackupProductResult.pro(inBackup: try newestBackup(ctx))?.reason)
+        XCTAssertFalse(reason.contains("thresholds"), reason)
+        XCTAssertFalse(reason.contains(ctx.workspace.path), "no path in the manifest")
         XCTAssertEqual(ProBackupGrace.used(profile: ctx.profile), 0)
         XCTAssertNil(run.changes[.proBackupChoiceNeeded].flatMap {
             if case .raised = $0 { return $0 } else { return nil }
@@ -394,6 +400,37 @@ final class ProBackupTests: XCTestCase {
         let run = try await backup(ctx, label: "scheduled-t")
         XCTAssertEqual(try ctx.calls().count, 1, "\(run.lines)")
         XCTAssertFalse(run.lines.contains { $0.contains("Jamf Pro not backed up") })
+    }
+
+    func test_backup_theClosingLineKeepsTheProtectGapWhenJamfProIsDeclined() async throws {
+        let ctx = try makeContext(
+            config: shared + "backup:\n  pro_on_synced_storage: false\n" + protectConfig
+                + "  backup_on_synced_storage: true\n", protectPartial: true)
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        try SharedConfigPin.confirm(profile: ctx.profile, keys: [.protectBackupOnSyncedStorage])
+        let run = try await backup(ctx, label: "scheduled-t")
+
+        XCTAssertEqual(run.exit, 0)
+        let closing = try XCTUnwrap(run.lines.last { $0.contains("backup written") }, "\(run.lines)")
+        XCTAssertTrue(closing.hasPrefix("[warn] backup written without a complete Jamf Protect part"),
+                      closing)
+        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[partial]") }, "Protect's gap shows")
+    }
+
+    func test_backup_protectIsSkippedTooWhenAPeerMakesASharedWorkspaceLookLocal() async throws {
+        let ctx = try makeContext(config: shared + optIn + protectConfig)
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        try SharedConfigPin.confirm(profile: ctx.profile, keys: [.proBackupOnSyncedStorage])
+        try ("shared_workspace:\n  enabled: false\n" + optIn + protectConfig).write(
+            to: ctx.workspace.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+
+        let run = try await backup(ctx, label: "scheduled-t")
+        let calls = try ctx.calls()
+        XCTAssertEqual(calls.count, 1, "only Jamf Pro (opted in) runs: \(calls)")
+        XCTAssertFalse(calls[0].contains("protect backup"), calls[0])
+        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[warn] Jamf Protect not backed up") },
+                      "\(run.lines)")
     }
 
     // MARK: - Records, retention, diff
@@ -551,6 +588,34 @@ final class ProBackupTests: XCTestCase {
                        "a later true is drift again")
     }
 
+    func test_theBackupsCardReadsAnUndecodableConfigAsTheEngineDoes() throws {
+        let ctx = try makeContext(config: shared)
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        try "thresholds: not-a-mapping\n".write(
+            to: ctx.workspace.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        let read = ProBackup.readConfig(profile: ctx.profile)
+        XCTAssertNil(read.config)
+        XCTAssertNotNil(read.failure)
+        let choice = try XCTUnwrap(ProBackup.syncedStorageChoice(
+            profile: ctx.profile, config: read.config, decodeFailure: read.failure))
+        XCTAssertEqual(choice.setting, .configUnreadable)
+        XCTAssertEqual(ConfigDoctorService.proSyncedBackupRows(choice), [],
+                       "Doctor has its own decode rows")
+    }
+
+    func test_doctorNamesABackupBlockThatIsNotAMapping() throws {
+        for yaml in ["backup: true\n", "backup: \"on\"\n", "backup:\n  - a\n"] {
+            let rows = ConfigDoctorService.fileReadBooleanRows(
+                try ConfigLoader.rawMapping(fromYAML: yaml))
+            XCTAssertEqual(rows.map(\.id), ["config.value.backup"], yaml)
+        }
+        for yaml in ["backup:\n  pro_on_synced_storage: true\n", "backup:\n", "output: {}\n"] {
+            XCTAssertEqual(ConfigDoctorService.fileReadBooleanRows(
+                try ConfigLoader.rawMapping(fromYAML: yaml)), [], yaml)
+        }
+    }
+
     func test_theSyncedStorageChoiceFollowsTheStorageAndTheProduct() throws {
         let ctx = try makeContext(config: shared)
         let url = ctx.workspace.appendingPathComponent("config.yaml")
@@ -641,7 +706,7 @@ final class ProBackupTests: XCTestCase {
         }
     }
 
-    private func makeContext(config: String?) throws -> Context {
+    private func makeContext(config: String?, protectPartial: Bool = false) throws -> Context {
         let root = try tempDir()
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
@@ -667,6 +732,7 @@ final class ProBackupTests: XCTestCase {
         *" protect backup "*)
         mkdir -p "$out/plans"
         echo 'name: a' > "$out/plans/a.yaml"
+        \(protectPartial ? "echo 'plans: boom' > \"$out/_failures.yaml\"; exit 7" : "")
         ;;
         *)
         echo '{"a":1}' > "$out/computers.json"

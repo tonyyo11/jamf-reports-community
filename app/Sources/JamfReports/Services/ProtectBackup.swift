@@ -214,7 +214,8 @@ enum ProtectBackup {
               let workspace = ProfileService.workspaceURL(for: profile),
               let place = BackupMaintenance.sharedStorageDescription(
                 workspace.appendingPathComponent("backups", isDirectory: true),
-                profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume)
+                profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
+                pinnedIsShared: true)
         else { return nil }
         return SyncedStorageChoice(
             place: place,
