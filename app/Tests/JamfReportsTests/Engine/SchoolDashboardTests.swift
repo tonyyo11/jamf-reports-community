@@ -30,8 +30,11 @@ final class SchoolDashboardTests: XCTestCase {
         return tmp
     }
 
-    private func makeDashboard(dataDir: URL) -> SchoolDashboard {
-        SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: Workbook())
+    private func makeDashboard(
+        dataDir: URL, workbook: Workbook = Workbook()
+    ) -> SchoolDashboard {
+        SchoolDashboard(
+            config: ReportConfig(), dataDir: dataDir, workbook: workbook, now: .testNoon)
     }
 
     // MARK: - iBeacons
@@ -42,7 +45,7 @@ final class SchoolDashboardTests: XCTestCase {
         let dataDir = try tempDataDir()
         try SchoolRows.write([], kind: "school-ibeacons", into: dataDir)
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolIBeacons())
         XCTAssertTrue(strings(in: "iBeacons", of: workbook).contains("Name"))
     }
@@ -71,7 +74,7 @@ final class SchoolDashboardTests: XCTestCase {
                            ["deviceName": "", "profileName": "", "status": "Unassigned"]),
         ], kind: "school-dep-devices", into: dataDir)
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDepDevices())
         let cells = strings(in: "DEP Devices", of: workbook)
         for expected in ["SCHOOL-SERIAL-001", "SCHOOL-SERIAL-002", "School DEP Device 001",
@@ -142,11 +145,9 @@ final class SchoolDashboardTests: XCTestCase {
 
     /// A jamf-cli School device `lastCheckin` string: "yyyy-MM-dd HH:mm:ss",
     /// no timezone, no "T" separator (confirmed against jamfschool-go-sdk's
-    /// device_test.go). `extraSeconds` keeps the value safely on one side of
-    /// a day boundary regardless of test execution delay. Relative to now because the sheets
-    /// age a check-in against the clock.
+    /// device_test.go). Counted back from `.testNoon`, the `now` every dashboard here is given.
     private func schoolCheckinString(daysAgo: Int, extraSeconds: TimeInterval = 3600) -> String {
-        let date = Date().addingTimeInterval(-(Double(daysAgo) * 86400) - extraSeconds)
+        let date = Date.testNoon.addingTimeInterval(-(Double(daysAgo) * 86400) - extraSeconds)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone.current
@@ -166,7 +167,7 @@ final class SchoolDashboardTests: XCTestCase {
         ]
         let dataDir = try tempDataDir(writing: rows, kind: "school-overview")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolOverview())
         let cells = workbook.sheet(named: "School Overview")?.dedupedCells ?? []
         let resourceCells: [String] = cells.filter { $0.col == 0 }.compactMap {
@@ -194,7 +195,7 @@ final class SchoolDashboardTests: XCTestCase {
         ])]
         let dataDir = try tempDataDir(writing: rows, kind: "school-device-groups")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDeviceGroups())
         XCTAssertTrue(strings(in: "Device Groups", of: workbook).contains("iPad Cart A"))
         XCTAssertTrue(ints(in: "Device Groups", of: workbook).contains(24),
@@ -209,7 +210,7 @@ final class SchoolDashboardTests: XCTestCase {
         let rows = [SchoolRows.row("school-users", 5, ["locationId": 7])]
         let dataDir = try tempDataDir(writing: rows, kind: "school-users")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolUsers())
         let cells = strings(in: "Users", of: workbook)
         XCTAssertTrue(cells.contains("school-user-005"))
@@ -229,7 +230,7 @@ final class SchoolDashboardTests: XCTestCase {
         ])]
         let dataDir = try tempDataDir(writing: rows, kind: "school-classes")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolClasses())
         XCTAssertTrue(strings(in: "Classes", of: workbook).contains("Homeroom 4B"))
         let classInts = ints(in: "Classes", of: workbook)
@@ -245,7 +246,7 @@ final class SchoolDashboardTests: XCTestCase {
         let rows = [SchoolRows.row("school-apps", 8)]
         let dataDir = try tempDataDir(writing: rows, kind: "school-apps")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolApps())
         let cells = strings(in: "Apps", of: workbook)
         XCTAssertTrue(cells.contains("School App 008"))
@@ -261,7 +262,7 @@ final class SchoolDashboardTests: XCTestCase {
         let rows = [SchoolRows.row("school-profiles", 4, ["locationId": 6])]
         let dataDir = try tempDataDir(writing: rows, kind: "school-profiles")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolProfiles())
         let cells = strings(in: "Profiles", of: workbook)
         XCTAssertTrue(cells.contains("School Profile 004"))
@@ -280,7 +281,7 @@ final class SchoolDashboardTests: XCTestCase {
         ]
         let dataDir = try tempDataDir(writing: rows, kind: "school-locations")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolLocations())
         let cells = strings(in: "Locations", of: workbook)
         XCTAssertTrue(cells.contains("Main Campus"))
@@ -314,7 +315,7 @@ final class SchoolDashboardTests: XCTestCase {
     func testDeviceInventoryReadsOSAndIsManaged() throws {
         let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDeviceInventory())
         let cells = strings(in: "Device Inventory", of: workbook)
         XCTAssertTrue(cells.contains("Mac-Lab-01"))
@@ -327,7 +328,7 @@ final class SchoolDashboardTests: XCTestCase {
     func testOSVersionsGroupsByPlatformAndMajorVersion() throws {
         let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolOSVersions())
         let cells = strings(in: "OS Versions", of: workbook)
         XCTAssertTrue(cells.contains("macOS 14"), "the major version keeps its platform")
@@ -343,7 +344,7 @@ final class SchoolDashboardTests: XCTestCase {
         }
         let dataDir = try tempDataDir(writing: rows, kind: "school-devices")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolOSVersions())
         let cells = strings(in: "OS Versions", of: workbook)
         XCTAssertTrue(cells.contains("macOS 26"))
@@ -357,7 +358,7 @@ final class SchoolDashboardTests: XCTestCase {
     func testDeviceStatusCountsIsManagedAndIsSupervised() throws {
         let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolDeviceStatus())
         let cells = workbook.sheet(named: "Device Status")?.dedupedCells ?? []
         var countByLabel: [String: Int] = [:]
@@ -376,7 +377,7 @@ final class SchoolDashboardTests: XCTestCase {
     func testStaleDevicesParsesSchoolCheckinFormat() throws {
         let dataDir = try tempDataDir(writing: deviceRows(), kind: "school-devices")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolStaleDevices())
         let cells = strings(in: "Stale Devices", of: workbook)
         XCTAssertTrue(cells.contains("iPad-12"), "the 40-day-stale device is listed")
@@ -396,7 +397,7 @@ final class SchoolDashboardTests: XCTestCase {
         ]
         let dataDir = try tempDataDir(writing: rows, kind: "school-devices")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolStaleDevices())
         let cells = strings(in: "Stale Devices", of: workbook)
         XCTAssertTrue(cells.contains("Old-3"))
@@ -411,11 +412,97 @@ final class SchoolDashboardTests: XCTestCase {
             malformed: ["studentCount": 1e30, "teacherCount": 2.9])]
         let dataDir = try tempDataDir(writing: rows, kind: "school-classes")
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let dash = makeDashboard(dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolClasses())
         let counts = ints(in: "Classes", of: workbook)
         XCTAssertTrue(counts.contains(0), "1e30 is no count; Int(_:) would trap")
         XCTAssertTrue(counts.contains(2), "a fractional count still truncates")
+    }
+
+    // MARK: - Trashed records: one fleet rule with the Devices screen
+
+    /// Devices 1 and 2 are in the fleet; device 3 is in School's trash and long stale.
+    private func fleetWithTrash() throws -> (dir: URL, screen: SchoolFleetService.Snapshot) {
+        let rows = [
+            SchoolRows.device(1, [
+                "os": "macOS 26.6.2", "lastCheckin": schoolCheckinString(daysAgo: 2),
+            ]),
+            SchoolRows.device(2, [
+                "os": "iPadOS 18.1", "isManaged": false, "isSupervised": false,
+                "lastCheckin": schoolCheckinString(daysAgo: 50),
+            ]),
+            SchoolRows.device(3, [
+                "os": "iPadOS 17.0", "inTrash": true,
+                "lastCheckin": schoolCheckinString(daysAgo: 90),
+            ]),
+        ]
+        let dir = try tempDataDir(writing: rows, kind: "school-devices")
+        let screen = SchoolFleetService.load(dataDir: dir)
+        XCTAssertEqual(screen.devices.count, 2)
+        XCTAssertEqual(screen.trashedCount, 1)
+        return (dir, screen)
+    }
+
+    func testDeviceStatusCountsTheScreensFleetAndNamesTheTrashApart() throws {
+        let (dir, screen) = try fleetWithTrash()
+        let workbook = Workbook()
+        try makeDashboard(dataDir: dir, workbook: workbook).writeSchoolDeviceStatus()
+        let cells = workbook.sheet(named: "Device Status")?.dedupedCells ?? []
+        func count(_ label: String) -> Int? {
+            guard let name = cells.first(where: {
+                if case .string(label) = $0.value { return $0.col == 0 } else { return false }
+            }), let cell = cells.first(where: { $0.row == name.row && $0.col == 1 }),
+                  case let .int(n) = cell.value else { return nil }
+            return n
+        }
+        XCTAssertEqual(count("Total Devices"), screen.devices.count)
+        XCTAssertEqual(count("Managed"), screen.managedCount)
+        XCTAssertEqual(count("Unmanaged"), screen.unmanagedCount)
+        XCTAssertEqual(count("Supervised"), screen.supervisedCount)
+        XCTAssertEqual(count("In Trash (not counted above)"), screen.trashedCount)
+    }
+
+    func testDeviceInventoryLeavesTrashedDevicesOut() throws {
+        let (dir, screen) = try fleetWithTrash()
+        let workbook = Workbook()
+        try makeDashboard(dataDir: dir, workbook: workbook).writeSchoolDeviceInventory()
+        let serials = strings(in: "Device Inventory", of: workbook).filter {
+            $0.hasPrefix("SCHOOL-SERIAL-")
+        }
+        XCTAssertEqual(serials.count, screen.devices.count)
+        XCTAssertFalse(serials.contains("SCHOOL-SERIAL-003"))
+    }
+
+    func testOSVersionsLeavesTrashedDevicesOut() throws {
+        let (dir, screen) = try fleetWithTrash()
+        let workbook = Workbook()
+        try makeDashboard(dataDir: dir, workbook: workbook).writeSchoolOSVersions()
+        XCTAssertEqual(ints(in: "OS Versions", of: workbook).reduce(0, +), screen.devices.count)
+        XCTAssertFalse(strings(in: "OS Versions", of: workbook).contains("iPadOS 17"))
+    }
+
+    func testStaleDevicesLeavesTrashedDevicesOutAndAgreesWithTheScreen() throws {
+        let (dir, screen) = try fleetWithTrash()
+        let workbook = Workbook()
+        try makeDashboard(dataDir: dir, workbook: workbook).writeSchoolStaleDevices()
+        let serials = strings(in: "Stale Devices", of: workbook).filter {
+            $0.hasPrefix("SCHOOL-SERIAL-")
+        }
+        XCTAssertEqual(serials, ["SCHOOL-SERIAL-002"])
+        XCTAssertEqual(serials.count, screen.staleCount(atDays: 30, now: .testNoon))
+    }
+
+    func testUsersLeavesTrashedUsersOut() throws {
+        let rows = [
+            SchoolRows.row("school-users", 1),
+            SchoolRows.row("school-users", 2, ["inTrash": true]),
+        ]
+        let workbook = Workbook()
+        try makeDashboard(
+            dataDir: try tempDataDir(writing: rows, kind: "school-users"), workbook: workbook
+        ).writeSchoolUsers()
+        let users = strings(in: "Users", of: workbook).filter { $0.hasPrefix("school-user-") }
+        XCTAssertEqual(users, ["school-user-001"])
     }
 }
 

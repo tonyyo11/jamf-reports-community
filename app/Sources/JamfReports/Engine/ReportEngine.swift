@@ -3801,7 +3801,8 @@ struct ReportEngine: Sendable {
         let summaries = profile.flatMap { try? WorkspacePaths.summariesDir(for: $0) }
             .map(SummaryJSONParser.parseDirectory) ?? []
         let core = SchoolDashboard(
-            config: config, dataDir: dataDir, workbook: workbook, summaries: summaries)
+            config: config, dataDir: dataDir, workbook: workbook, summaries: summaries,
+            now: Date())
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
         let (_, schoolFailures) = core.writeAll(sheets: sheets)
 

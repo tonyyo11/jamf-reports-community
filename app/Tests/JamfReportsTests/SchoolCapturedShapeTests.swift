@@ -59,7 +59,8 @@ final class SchoolCapturedShapeTests: XCTestCase {
         created.append(dataDir)
         try SchoolRows.write([row], kind: kind, into: dataDir)
         let workbook = Workbook()
-        try write(SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook))
+        try write(SchoolDashboard(
+            config: ReportConfig(), dataDir: dataDir, workbook: workbook, now: .testNoon))
         return sheets.flatMap { sheet in
             (workbook.sheet(named: sheet)?.dedupedCells ?? []).map {
                 "\(sheet)|\($0.row),\($0.col)|\($0.value)"
@@ -114,14 +115,13 @@ final class SchoolCapturedShapeTests: XCTestCase {
         }
     }
 
-    /// `inTrash` is ignored here although the fleet reader leaves trashed devices out: the
-    /// workbook counts them (reported with this test, not changed by it).
+    /// `inTrash` is read: a trashed device leaves every device tab, as it leaves the screen.
     func testDeviceSheets() throws {
         try assertReads(
             "school-devices",
             read: ["name", "serialNumber", "model", "os", "isManaged", "isSupervised",
-                   "lastCheckin"],
-            ignored: ["udid", "inTrash"]
+                   "lastCheckin", "inTrash"],
+            ignored: ["udid"]
         ) {
             try sheetText("school-devices", $0, sheets: [
                 "Device Inventory", "OS Versions", "Device Status", "Stale Devices",
@@ -148,8 +148,9 @@ final class SchoolCapturedShapeTests: XCTestCase {
     func testUsersSheet() throws {
         try assertReads(
             "school-users",
-            read: ["username", "firstName", "lastName", "email", "locationId", "status"],
-            ignored: ["deviceCount", "id", "inTrash"]
+            read: ["username", "firstName", "lastName", "email", "locationId", "status",
+                   "inTrash"],
+            ignored: ["deviceCount", "id"]
         ) {
             try sheetText("school-users", $0, sheets: ["Users"]) { try $0.writeSchoolUsers() }
         }

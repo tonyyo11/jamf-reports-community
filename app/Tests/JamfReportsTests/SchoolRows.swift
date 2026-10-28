@@ -10,6 +10,7 @@ import XCTest
 enum SchoolRows {
     enum JSONType { case string, int, bool }
 
+    // Captured 2026-10-28, jamf-cli 1.33.0. A recapture is an edit to this table.
     static let shapes: [String: [String: JSONType]] = [
         "school-overview": ["resource": .string, "section": .string, "value": .string],
         "school-devices": [

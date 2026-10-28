@@ -25,6 +25,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The Jamf School workbook's Device Inventory, OS Versions, Device Status and Stale Devices
+  tabs and its Users tab no longer count devices and users in School's trash, as the Devices
+  screen never did, so those counts are lower than before on a tenant with trashed records.
+  Device Status shows the trashed devices on a line of their own. (#305)
 - A Jamf School collect that runs past midnight now dates its summary by the day it started, as
   a Jamf Pro collect does. (#305)
 - A collect-and-report run that crosses midnight, scheduled, from Generate or the command line,

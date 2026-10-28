@@ -17,6 +17,8 @@ struct SchoolDashboard: Sendable {
     let workbook: Workbook
     /// The profile's daily summaries, for the Trends tab.
     var summaries: [DailySummary] = []
+    /// The run's start: the "Generated" stamp and the age of a check-in.
+    var now = Date()
 
     private var staleThreshold: Int { config.thresholds?.resolvedStaleDays ?? 30 }
 
@@ -98,7 +100,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 24)
         var row = ws.writeSheetHeader(
             title: "School Overview",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 2
         )
         ws.write("Resource", row: row, col: 0, format: .header)
@@ -122,7 +124,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 2, 50)
         var row = ws.writeSheetHeader(
             title: "Device Groups",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 3
         )
         let hdrs = ["Group Name", "Device Count", "Location ID"]
@@ -144,7 +146,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolUsers() throws {
         let raw = try loadSchoolJSON(names: ["school-users", "school_users"])
-        let items = flattenSchoolList(raw)
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
         let ws = workbook.addSheet("Users")
         ws.setColumnWidth(0, 1, 20)
         ws.setColumnWidth(2, 2, 20)
@@ -152,7 +154,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(4, 5, 24)
         var row = ws.writeSheetHeader(
             title: "Users",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 6
         )
         // jamf-cli has no user role, only an account status.
@@ -180,7 +182,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 3, 20)
         var row = ws.writeSheetHeader(
             title: "Classes",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 4
         )
         // jamf-cli has a teacher headcount, not teacher names.
@@ -208,7 +210,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 3, 20)
         var row = ws.writeSheetHeader(
             title: "Apps",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 4
         )
         // jamf-cli has no install or managed count per app.
@@ -236,7 +238,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 3, 16)
         var row = ws.writeSheetHeader(
             title: "Profiles",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 4
         )
         // jamf-cli has no category, device count or enabled flag per profile.
@@ -262,7 +264,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 2, 20)
         var row = ws.writeSheetHeader(
             title: "Locations",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 3
         )
         // jamf-cli has no device count or street address per location.
@@ -288,7 +290,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 4, 20)
         var row = ws.writeSheetHeader(
             title: "DEP Devices",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 5
         )
         let hdrs = ["Serial", "Device Name", "Model", "Status", "Profile"]
@@ -318,7 +320,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(3, 4, 12)
         var row = ws.writeSheetHeader(
             title: "iBeacons",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 5
         )
         let hdrs = ["Name", "UUID", "Description", "Major", "Minor"]
@@ -345,7 +347,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 4, 24)
         var row = ws.writeSheetHeader(
             title: "Blueprints",
-            subtitle: "Experimental. Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Experimental. Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 5
         )
         let hdrs = ["Name", "State", "Last deployed", "Created", "Updated"]
@@ -371,7 +373,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolDeviceInventory() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
         let ws = workbook.addSheet("Device Inventory")
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 18)
@@ -379,7 +381,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(4, 5, 22)
         var row = ws.writeSheetHeader(
             title: "Device Inventory",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 6
         )
         let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin"]
@@ -401,7 +403,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolOSVersions() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
         var counts: [String: Int] = [:]
         for item in items {
             let os = stringField(item, ["os"])
@@ -412,7 +414,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 14)
         var row = ws.writeSheetHeader(
             title: "OS Versions",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 2
         )
         ws.write("OS Version", row: row, col: 0, format: .header)
@@ -433,7 +435,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolDeviceStatus() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
+        let (items, trashed) = SchoolFleetService.partitionFleet(flattenSchoolList(raw))
         var managed = 0
         var unmanaged = 0
         var supervised = 0
@@ -446,7 +448,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 14)
         var row = ws.writeSheetHeader(
             title: "Device Status",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 2
         )
         ws.write("Status", row: row, col: 0, format: .header)
@@ -457,6 +459,7 @@ struct SchoolDashboard: Sendable {
             ("Managed", managed),
             ("Unmanaged", unmanaged),
             ("Supervised", supervised),
+            ("In Trash (not counted above)", trashed),
         ]
         for (label, count) in pairs {
             ws.write(label, row: row, col: 0, format: .cell)
@@ -469,7 +472,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolStaleDevices() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
         // A check-in that does not read is unknown, not stale, so the device is left out.
         let stale = items.compactMap { item -> (item: [String: Any], days: Int)? in
             let checkin = stringField(item, ["lastCheckin", "last_checkin", "lastContactTime"])
@@ -483,7 +486,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(3, 3, 18)
         var row = ws.writeSheetHeader(
             title: "Stale Devices (>\(staleThreshold) days)",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: 4
         )
         let hdrs = ["Device Name", "Serial", "Last Checkin", "Days Since Checkin"]
@@ -513,7 +516,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 10, 18)
         var row = ws.writeSheetHeader(
             title: "Trends",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
             ncols: Self.trendColumns.count)
         for (col, title) in Self.trendColumns.enumerated() {
             ws.write(title, row: row, col: col, format: .header)
@@ -630,7 +633,7 @@ struct SchoolDashboard: Sendable {
 
     /// jamf-cli's `lastCheckin` is "yyyy-MM-dd HH:mm:ss", which `DateParser` reads.
     private func daysSince(_ dateString: String) -> Int? {
-        DateParser().parse(dateString).map { Int(Date().timeIntervalSince($0) / 86400) }
+        DateParser().parse(dateString).map { Int(now.timeIntervalSince($0) / 86400) }
     }
 
     /// The platform and major version in jamf-cli's `os`, which reads "Prefix Version": "macOS
