@@ -34,6 +34,8 @@ final class ExistingCLISetupFlow {
         case credentials
         /// The collect ran or launched and failed for another reason.
         case collect
+        /// The connection check refused the profile before its workspace was created.
+        case connection
     }
 
     /// Live tally of the collect stream, parsed from the engine's per-kind
@@ -130,6 +132,9 @@ final class ExistingCLISetupFlow {
     var runTime: String
 
     private(set) var statuses: [String: ProfileStatus] = [:]
+    /// What the connection check said about a Platform profile it did not refuse (a missing
+    /// permission, or no answer), shown beside its row.
+    private(set) var connectionNotes: [String: String] = [:]
     /// Why each failed profile failed, beside the row text in `statuses`.
     private(set) var failureStages: [String: FailureStage] = [:]
     /// Profiles whose workspace initialized this run, whatever the collect then did.
@@ -166,6 +171,9 @@ final class ExistingCLISetupFlow {
         }
         for profile in profiles where profile.isOrganizationLevel {
             refusals[profile.name] = PlatformScopeLevel.organizationLevelReason
+        }
+        for profile in profiles where GatewayRegion.check(profile.url) == .retired {
+            refusals[profile.name] = GatewayRegion.retiredRefusal
         }
         self.refusals = refusals
         let unusable = ProfileService.unusableProfiles(in: profileNames)
@@ -309,7 +317,11 @@ final class ExistingCLISetupFlow {
     /// `initialize` / `collect` default to the real `CLIBridge` calls; tests
     /// inject spies. The collect closure receives an onLine sink — the engine's
     /// per-kind log stream — which feeds `progress` for the live UI.
+    ///
+    /// `connectionRunner` runs the Platform connection check for each Platform profile before
+    /// its workspace is created (nil when jamf-cli is absent: nothing is checked).
     func run(
+        connectionRunner: ConnectionCheck.Runner? = ConnectionCheck.liveRunner(),
         initialize: @escaping (String) async throws -> Int32 = { profile in
             try await CLIBridge().initializeWorkspace(profile: profile, onLine: CLIBridge.noOpOnLine)
         },
@@ -354,6 +366,10 @@ final class ExistingCLISetupFlow {
             failureStages[name] = nil
             initializedWorkspaces.remove(name)
             var stage = FailureStage.workspace
+            if let refusal = await connectionRefusal(for: name, runner: connectionRunner) {
+                fail(name, refusal, at: .connection)
+                continue
+            }
             do {
                 let initExit = try await initialize(name)
                 guard initExit == 0 else {
@@ -387,6 +403,24 @@ final class ExistingCLISetupFlow {
             }
         }
         didComplete = true
+    }
+
+    /// The check's reason to refuse a Platform profile (a rejected ID, or a tenant with no Jamf
+    /// Pro); a missing permission or no answer lets it proceed with a note on its row.
+    private func connectionRefusal(
+        for name: String, runner: ConnectionCheck.Runner?
+    ) async -> String? {
+        connectionNotes[name] = nil
+        guard let runner, let profile = profiles.first(where: { $0.name == name }),
+              profile.auth?.isPlatform == true else { return nil }
+        let verdict = await ConnectionCheck.run(profile: name, runner: runner)
+        let text = verdict.message(tenantLevel: profile.platformLevel == .tenant)
+        switch verdict {
+        case .rejectedID, .noJamfPro: return text
+        case .missingPermission, .undecided: connectionNotes[name] = text
+        case .accepted: break
+        }
+        return nil
     }
 
     /// Selected, usable and not refused: the profiles a run sets up.
@@ -434,6 +468,9 @@ final class ExistingCLISetupFlow {
         } else if noWorkspace > 1 {
             parts.append("\(noWorkspace) workspaces could not be created, so nothing was "
                 + "collected for those profiles; each row above names the cause.")
+        }
+        if failures.contains(.connection) {
+            parts.append("A profile's connection check refused it; its row above names the cause.")
         }
         if failures.contains(.credentials) {
             parts.append("A collect failed on jamf-cli sign-in. Once jamf-cli auth is fixed, "
