@@ -204,17 +204,21 @@ enum HtmlSectionFormatters {
     }
 
     /// Proportional bars, a label, a track and a count per row. The first `limit` show; the
-    /// rest sit behind "Show all N".
+    /// rest sit behind "Show all N". `colored` draws each bar in its `ChartPalette` colour
+    /// (versions, titles); without it every bar is the accent, as for a plain category.
     nonisolated static func renderBars(
         _ rows: [(label: String, count: Int)],
         limit: Int = visibleRowLimit,
-        expanded: Bool = false
+        expanded: Bool = false,
+        colored kind: ChartPalette.Kind? = nil
     ) -> String {
         let peak = max(rows.map(\.count).max() ?? 1, 1)
-        return renderBarRows(rows.map { row in
+        let colors = barColors(kind, labels: rows.map(\.label))
+        return renderBarRows(rows.enumerated().map { index, row in
             BarRow(label: row.label, fill: Double(row.count) / Double(peak) * 100,
                    value: "\(row.count)",
-                   spoken: row.count == 1 ? "1 device" : "\(row.count) devices")
+                   spoken: row.count == 1 ? "1 device" : "\(row.count) devices",
+                   colors: colors[index])
         }, limit: limit, expanded: expanded)
     }
 
@@ -223,12 +227,15 @@ enum HtmlSectionFormatters {
     nonisolated static func renderPercentBars(
         _ rows: [(label: String, pct: Double)],
         limit: Int = visibleRowLimit,
-        expanded: Bool = false
+        expanded: Bool = false,
+        colored kind: ChartPalette.Kind? = nil
     ) -> String {
-        renderBarRows(rows.map { row in
+        let colors = barColors(kind, labels: rows.map(\.label))
+        return renderBarRows(rows.enumerated().map { index, row in
             let pct = row.pct.isFinite ? min(max(row.pct, 0), 100) : 0
             let text = pct == pct.rounded() ? "\(Int(pct))%" : String(format: "%.1f%%", pct)
-            return BarRow(label: row.label, fill: pct, value: text, spoken: text)
+            return BarRow(label: row.label, fill: pct, value: text, spoken: text,
+                          colors: colors[index])
         }, limit: limit, expanded: expanded)
     }
 
@@ -238,6 +245,18 @@ enum HtmlSectionFormatters {
         let fill: Double
         let value: String
         let spoken: String
+        /// The palette colour on the light and the dark theme; nil draws the accent.
+        let colors: (light: UInt32, dark: UInt32)?
+    }
+
+    /// Colours over every row, hidden ones included, so "Show all" does not recolour a bar.
+    private nonisolated static func barColors(
+        _ kind: ChartPalette.Kind?, labels: [String]
+    ) -> [(light: UInt32, dark: UInt32)?] {
+        guard let kind else { return labels.map { _ in nil } }
+        let light = ChartPalette.hexes(for: kind, keys: labels, scheme: .light)
+        let dark = ChartPalette.hexes(for: kind, keys: labels, scheme: .dark)
+        return zip(light, dark).map { (light: $0, dark: $1) }
     }
 
     private nonisolated static func renderBarRows(
@@ -247,11 +266,14 @@ enum HtmlSectionFormatters {
             let html = slice.map { row -> String in
                 let width = Int(min(max(row.fill, 0), 100).rounded())
                 let key = escapeHTML(row.label)
+                let tint = row.colors.map {
+                    String(format: ";--bar:#%06X;--bar-dark:#%06X", $0.light, $0.dark)
+                } ?? ""
                 return """
                 <div class="cohort-bar-row">
                   <span class="cohort-bar-key">\(key)</span>
                   <div class="cohort-bar-bg">
-                    <div class="cohort-bar-fill" style="width:\(width)%"
+                    <div class="cohort-bar-fill" style="width:\(width)%\(tint)"
                          aria-label="\(key): \(escapeHTML(row.spoken))"></div>
                   </div>
                   <span class="cohort-bar-n">\(escapeHTML(row.value))</span>
@@ -376,13 +398,16 @@ enum HtmlSectionFormatters {
     .section-list li { margin-bottom: 0.25rem; }
     .count-sublabel { font-size: 0.75rem; color: var(--subtext); margin-top: 0.15rem; }
     p.empty { color: var(--subtext); font-size: 0.85rem; padding: 0.5rem 0; font-style: italic; }
+    .chart-series { color: var(--c); }
+    [data-theme="dark"] .chart-series { color: var(--c-dark); }
     .svg-bar-chart { display: block; width: 100%; max-width: 640px; height: auto; }
     .cohort-bar-section { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
     .cohort-bar-row { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
     .cohort-bar-key { min-width: 6rem; color: var(--subtext); }
     .cohort-bar-bg  { flex: 1; height: 16px; background: var(--border);
                       border-radius: 3px; overflow: hidden; }
-    .cohort-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+    .cohort-bar-fill { height: 100%; background: var(--bar, var(--accent)); border-radius: 3px; }
+    [data-theme="dark"] .cohort-bar-fill { background: var(--bar-dark, var(--accent)); }
     .cohort-bar-n   { min-width: 3rem; text-align: right; }
     /* Cleanup Analysis tab strip */
     .cleanup-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem;

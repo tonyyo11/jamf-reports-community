@@ -247,33 +247,30 @@ extension Theme {
 // MARK: - Chart palette semantic tokens
 
 extension Theme {
+    /// SwiftUI colours from the app's one chart palette (`JamfReports.ChartPalette`, which the
+    /// workbook and the HTML report read too). `scheme` is `.dark` in the app and `.light` in
+    /// an exported image.
     enum ChartPalette {
         /// Supervision donut: a validated blue/orange pair (color-blind safe on the card).
         static let supervised   = Color(hex: 0x3987E5)
         static let unsupervised = Color(hex: 0xD95926)
 
-        /// Ordered palette for OS version distributions. Read at small slice sizes
-        /// in both dark in-app and light export canvases.
-        static let osVersionInApp: [Color] = [
-            Theme.Colors.goldBright,     // 0xE8B614
-            Theme.Colors.tealBright,     // 0x4FAAAA - teal at 3:1 on the card
-            Color(hex: 0x7DA3F9),        // soft blue
-            Color(hex: 0xC58AF9),        // soft purple
-            Color(hex: 0xF98AA3),        // soft pink
-            Color(hex: 0xF9C58A),        // soft orange
-            Color(hex: 0x8AF9C5),        // soft mint
-            Color(hex: 0xA8A8AD)         // neutral gray
-        ]
+        typealias Scheme = JamfReports.ChartPalette.Scheme
 
-        static let osVersionExport: [Color] = [
-            Color(hex: 0xCA8A04),
-            Color(hex: 0x0891B2),
-            Color(hex: 0x2563EB),
-            Color(hex: 0x7C3AED),
-            Color(hex: 0xDB2777),
-            Color(hex: 0xEA580C),
-            Color(hex: 0x059669),
-            Color(hex: 0x6B7280)
-        ]
+        static func color(forMetric metric: TrendSeries.Metric, scheme: Scheme = .dark) -> Color {
+            Color(hex: JamfReports.ChartPalette.hex(forMetric: metric, scheme: scheme))
+        }
+
+        /// The colours of the versions one chart draws, in the order given.
+        static func colors(forVersions versions: [String], scheme: Scheme = .dark) -> [Color] {
+            JamfReports.ChartPalette.hexes(for: .version, keys: versions, scheme: scheme)
+                .map { Color(hex: $0) }
+        }
+
+        /// The colours of the patch titles one chart draws, in the order given.
+        static func colors(forTitles titles: [String], scheme: Scheme = .dark) -> [Color] {
+            JamfReports.ChartPalette.hexes(for: .title, keys: titles, scheme: scheme)
+                .map { Color(hex: $0) }
+        }
     }
 }

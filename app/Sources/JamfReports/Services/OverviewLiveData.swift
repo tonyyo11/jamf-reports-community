@@ -328,15 +328,10 @@ enum OverviewLiveDataLoader {
         guard total > 0 else { return ([], nil, 0, 0) }
         let ranked = valid.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
         let shown = ranked.count > limit ? Array(ranked.prefix(max(limit - 1, 1))) : ranked
-        // Gold for versions on their major's latest release, greys for the rest —
-        // the demo donut's scheme.
-        var currentPalette: [UInt32] = [0xC9970A, 0xA87E08, 0x8A6906]
-        var behindPalette: [UInt32] = [0x7D8794, 0x5A6068, 0x4A4F55, 0x3F4449]
         func pct(_ count: Int) -> Double { (Double(count) / Double(total) * 1000).rounded() / 10 }
-        var rows: [OSDistribution] = shown.map { entry -> OSDistribution in
+        let colors = ChartPalette.hexes(for: .version, keys: shown.map(\.key), scheme: .dark)
+        var rows: [OSDistribution] = zip(shown, colors).map { entry, color -> OSDistribution in
             let current = SOFAFeedService.isCurrent(entry.key, latestByMajor: latestByMajor) == true
-            let color = current
-                ? currentPalette.removeFirstOrLast() : behindPalette.removeFirstOrLast()
             return OSDistribution(version: "macOS \(entry.key)", count: entry.value,
                                   pct: pct(entry.value), colorHex: color, current: current)
         }
@@ -344,7 +339,7 @@ enum OverviewLiveDataLoader {
         if otherCount > 0 {
             rows.append(OSDistribution(
                 version: "Other (\(ranked.count - shown.count) versions)", count: otherCount,
-                pct: pct(otherCount), colorHex: 0x33373B, current: false))
+                pct: pct(otherCount), colorHex: ChartPalette.neutralHex, current: false))
         }
         var share: Double?
         if !latestByMajor.isEmpty {
@@ -470,12 +465,5 @@ enum OverviewLiveDataLoader {
         guard let raw = try? ReportEngine.loadLatestSnapshotData(
             kind: "ea-results", dataDir: dataDir) else { return nil }
         return EAResultRow.decodeSnapshot(raw).rows
-    }
-}
-
-private extension Array where Element == UInt32 {
-    /// Next colour in the palette; the last one repeats once the rest are used.
-    mutating func removeFirstOrLast() -> UInt32 {
-        count > 1 ? removeFirst() : (first ?? 0x4A4F55)
     }
 }

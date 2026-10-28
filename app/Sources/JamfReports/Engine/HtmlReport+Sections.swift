@@ -1206,14 +1206,20 @@ extension HtmlReport {
             topPad + plotH - (min(max(pct, 0), 100) / 100.0) * plotH
         }
 
-        // Series definitions: (label, color, values)
+        // Series definitions: (label, metric, values). The colour is the metric's palette
+        // colour on the light and the dark theme (`.chart-series`).
         let f = HtmlSectionFormatters.self
-        typealias Series = (label: String, color: String, values: [Double?])
+        typealias Series = (label: String, metric: TrendSeries.Metric, values: [Double?])
         let allSeries: [Series] = [
-            ("FileVault %", "#2D5EA2", summaries.map { $0.fileVaultPct }),
-            ("SIP %",       "#43A047", summaries.map { $0.sipPct }),
-            ("Compliance %", "#E65100", summaries.map { $0.compliancePct }),
+            ("FileVault %", .fileVault, summaries.map { $0.fileVaultPct }),
+            ("SIP %", .sip, summaries.map { $0.sipPct }),
+            ("Compliance %", .compliance, summaries.map { $0.compliancePct }),
         ]
+        func tint(_ metric: TrendSeries.Metric) -> String {
+            String(format: "--c:#%06X;--c-dark:#%06X",
+                   ChartPalette.hex(forMetric: metric, scheme: .light),
+                   ChartPalette.hex(forMetric: metric, scheme: .dark))
+        }
         // Only include series that have at least one non-nil value.
         let activeSeries = allSeries.filter { $0.values.contains(where: { $0 != nil }) }
 
@@ -1253,6 +1259,7 @@ extension HtmlReport {
         // Render each series as a polyline + dots
         var seriesHTML = ""
         for series in activeSeries {
+            seriesHTML += "<g class=\"chart-series\" style=\"\(tint(series.metric))\">"
             // Build point list; skip nil values by breaking the polyline.
             var segments: [[Int]] = []
             var current: [Int] = []
@@ -1272,7 +1279,7 @@ extension HtmlReport {
                     return "\(String(format: "%.1f", xPos(i))),\(String(format: "%.1f", yPos(val)))"
                 }.joined(separator: " ")
                 seriesHTML += """
-                <polyline fill="none" stroke="\(series.color)" stroke-width="2"
+                <polyline fill="none" stroke="currentColor" stroke-width="2"
                   stroke-linejoin="round" points="\(points)"/>
                 """
             }
@@ -1286,16 +1293,17 @@ extension HtmlReport {
                 seriesHTML += """
                 <circle cx="\(String(format: "%.1f", xPos(i)))" \
                 cy="\(String(format: "%.1f", yPos(val)))" \
-                r="3" fill="\(series.color)" aria-label="\(f.escapeHTML(series.label)): \(String(format: "%.1f", val))%"/>
+                r="3" fill="currentColor" aria-label="\(f.escapeHTML(series.label)): \(String(format: "%.1f", val))%"/>
                 """
             }
+            seriesHTML += "</g>"
         }
 
         // Legend
         let legendItems = activeSeries.map { series -> String in
             """
-            <g>
-              <rect x="0" y="-6" width="14" height="6" fill="\(series.color)"/>
+            <g class="chart-series" style="\(tint(series.metric))">
+              <rect x="0" y="-6" width="14" height="6" fill="currentColor"/>
               <text x="18" y="0" style="font-size:10px;fill:var(--text)">\(f.escapeHTML(series.label))</text>
             </g>
             """

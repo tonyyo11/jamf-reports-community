@@ -5,65 +5,6 @@ import ImageIO
 import AppKit
 #endif
 
-// MARK: - Color palette
-
-/// Chart color palette matching the Python matplotlib palette used in ChartGenerator.
-enum ChartPalette {
-    /// OS version adoption colors — keyed by major version number string.
-    static let majorVersionColors: [String: CGColor] = [
-        "15": CGColor(red: 0.200, green: 0.620, blue: 0.965, alpha: 1),
-        "14": CGColor(red: 0.230, green: 0.541, blue: 0.816, alpha: 1),
-        "13": CGColor(red: 0.184, green: 0.459, blue: 0.710, alpha: 1),
-        "12": CGColor(red: 0.122, green: 0.471, blue: 0.706, alpha: 1),
-        "11": CGColor(red: 0.529, green: 0.808, blue: 0.922, alpha: 1),
-        "10": CGColor(red: 0.302, green: 0.686, blue: 0.290, alpha: 1),
-        "26": CGColor(red: 0.125, green: 0.694, blue: 0.667, alpha: 1),
-    ]
-
-    /// Default series color cycle (6 colors, wraps).
-    static let seriesColors: [CGColor] = [
-        CGColor(red: 0.267, green: 0.447, blue: 0.769, alpha: 1), // #4472C4
-        CGColor(red: 0.906, green: 0.298, blue: 0.235, alpha: 1), // #E74C3C
-        CGColor(red: 0.180, green: 0.620, blue: 0.341, alpha: 1), // #2E9E57
-        CGColor(red: 0.945, green: 0.769, blue: 0.188, alpha: 1), // #F1C430
-        CGColor(red: 0.608, green: 0.349, blue: 0.714, alpha: 1), // #9B59B6
-        CGColor(red: 0.204, green: 0.596, blue: 0.859, alpha: 1), // #3498DB
-    ]
-
-    /// Compliance band colors for the mSCP/STIG donut and band trend, from the in-app
-    /// band colors so a band has one color everywhere.
-    /// Order: Pass, Low, Med-Low, Medium, High (5 entries — no No-Data here).
-    static let complianceBandColors: [CGColor] =
-        [ComplianceBandingService.Band.pass, .low, .medLow, .medium, .high]
-            .map { cgColor(hex: $0.colorHex) }
-
-    static func cgColor(hex: UInt32) -> CGColor {
-        CGColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-    }
-
-    /// Grey for "No Data" slices in the compliance donut.
-    static let noDataColor: CGColor = cgColor(hex: ComplianceBandingService.Band.noData.colorHex)
-
-    /// Compliance band colors extended with No-Data grey (6 entries for donut use).
-    /// Order: Pass, Low, Med-Low, Medium, High, No-Data.
-    static var complianceBandColorsWithNoData: [CGColor] {
-        complianceBandColors + [noDataColor]
-    }
-
-    static func color(for index: Int) -> CGColor {
-        let count = seriesColors.count
-        let normalized = ((index % count) + count) % count
-        return seriesColors[normalized]
-    }
-
-    static func colorForMajorVersion(_ version: String) -> CGColor {
-        // hashValue is seeded per process; the fallback must give the same color every run.
-        majorVersionColors[version]
-            ?? color(for: Int(version) ?? version.utf8.reduce(0) { $0 &+ Int($1) })
-    }
-}
-
 // MARK: - Chart data types
 
 struct ChartSeries: Sendable {
@@ -536,7 +477,7 @@ enum ChartRenderer {
         for (idx, (cat, value)) in zip(data.categories, data.values).enumerated() {
             let x = plotRect.minX + CGFloat(idx) * spacing + spacing * 0.15
             let barHeight = CGFloat(value / maxVal) * plotRect.height
-            let color = idx < data.colors.count ? data.colors[idx] : ChartPalette.color(for: idx)
+            let color = idx < data.colors.count ? data.colors[idx] : ChartPalette.noDataColor
             ctx.setFillColor(color)
             ctx.fill(CGRect(x: x, y: plotRect.maxY - barHeight, width: barWidth, height: barHeight))
             // Category label
