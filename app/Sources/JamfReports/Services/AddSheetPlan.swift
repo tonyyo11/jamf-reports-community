@@ -64,8 +64,6 @@ enum AddSheetPlan {
             authMethod: row.authMethod, product: row.product, platformLevel: row.platformLevel)
     }
 
-    static let securityCloudReason = "Jamf Security Cloud is not supported yet."
-
     /// The current workspace takes Jamf Protect: a live workspace on disk, Jamf Pro or, from
     /// 2.11 (Experimental), Jamf School. Demo mode writes nothing.
     static func currentTakesProtect(
@@ -99,17 +97,11 @@ enum AddSheetPlan {
         of profile: JamfCLIProfile, unusable: String?
     ) -> UnassignedProfile.Use {
         if let unusable { return .unavailable(unusable) }
-        if GatewayRegion.check(profile.url) == .retired {
-            return .unavailable(GatewayRegion.retiredRefusal)
-        }
-        if profile.isOrganizationLevel {
-            return .unavailable(PlatformScopeLevel.organizationLevelReason)
-        }
-        switch profile.product {
-        case .protect: return .addToCurrent
-        case .securityCloud: return .unavailable(securityCloudReason)
-        case .pro, .school, .unknown: return .newWorkspace
-        }
+        // A Protect login is added to the current workspace; the flow refuses it only as a
+        // workspace of its own.
+        if profile.product == .protect { return .addToCurrent }
+        if let reason = ExistingCLISetupFlow.refusal(for: profile) { return .unavailable(reason) }
+        return .newWorkspace
     }
 
     /// The line under an unassigned profile that reaches the same Jamf Pro as a profile that

@@ -68,7 +68,7 @@ final class AddSheetPlanTests: XCTestCase {
         ])
         XCTAssertEqual(rows.map(\.use), [
             .newWorkspace, .newWorkspace, .newWorkspace, .addToCurrent,
-            .unavailable(AddSheetPlan.securityCloudReason),
+            .unavailable(ExistingCLISetupFlow.securityCloudReason),
         ])
     }
 
@@ -161,7 +161,7 @@ final class AddSheetPlanTests: XCTestCase {
         guard case .rows(let rows) = listing(found) else { return XCTFail("no rows") }
         XCTAssertEqual(rows.map(\.name), ["lab", "cloud", "org"])
         XCTAssertEqual(rows.map(\.use), [
-            .newWorkspace, .unavailable(AddSheetPlan.securityCloudReason),
+            .newWorkspace, .unavailable(ExistingCLISetupFlow.securityCloudReason),
             .unavailable(PlatformScopeLevel.organizationLevelReason),
         ])
     }
@@ -368,6 +368,33 @@ final class AddSheetPlanTests: XCTestCase {
         ])
         XCTAssertEqual(rows[0].use, .unavailable(GatewayRegion.retiredRefusal))
         XCTAssertEqual(rows[1].use, .newWorkspace)
+    }
+
+    /// One decision: the Add sheet's unavailable reason is the one the adoption screen refuses
+    /// the same profile with, for every profile either can reject.
+    @MainActor
+    func testTheAddSheetAndTheAdoptionScreenGiveTheSameReason() {
+        let refused = [
+            platform("old", url: "us.apigw.jamf.com"),
+            profile("org", level: .organization),
+            profile("cloud", .securityCloud),
+        ]
+        let rows = unassigned(refused)
+        let flow = ExistingCLISetupFlow(profiles: refused)
+        for (row, source) in zip(rows, refused) {
+            let reason = try? XCTUnwrap(flow.refusals[source.name])
+            XCTAssertEqual(row.use, .unavailable(reason ?? ""), source.name)
+            XCTAssertEqual(ExistingCLISetupFlow.refusal(for: source), reason, source.name)
+        }
+    }
+
+    /// The adoption screen refuses a Protect login as a workspace; the Add sheet adds it to the
+    /// current one instead, so only the flow lists a reason.
+    @MainActor
+    func testAProtectLoginIsRefusedAsAWorkspaceButOfferedToTheCurrentOne() {
+        let protect = profile("p", .protect)
+        XCTAssertNotNil(ExistingCLISetupFlow.refusal(for: protect))
+        XCTAssertEqual(unassigned([protect]).map(\.use), [.addToCurrent])
     }
 
     func testARowCarriesWhatTheConnectionCheckReads() {
