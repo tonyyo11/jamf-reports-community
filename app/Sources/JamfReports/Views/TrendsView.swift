@@ -308,7 +308,7 @@ struct TrendsView: View {
             }
             // Range change only re-filters cached data — no disk read.
             if !workspaceStore.demoMode {
-                withAnimation(.snappy) { trendStore.setRange(newValue) }
+                withMotionSafeAnimation(.snappy) { trendStore.setRange(newValue) }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
@@ -467,7 +467,7 @@ struct TrendsView: View {
         let isBadTrend = verdict == .worse
 
         return Button {
-            withAnimation(.snappy(duration: 0.25)) { metric = m }
+            withMotionSafeAnimation(.snappy(duration: 0.25)) { metric = m }
         } label: {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
@@ -527,7 +527,7 @@ struct TrendsView: View {
         .help("Show \(metricLabel(m)) trend")
         .onAppear {
             guard !pillPulse, !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+            withMotionSafeAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
                 pillPulse = true
             }
         }
@@ -563,7 +563,7 @@ struct TrendsView: View {
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()
                 .contentTransition(.numericText(countsDown: delta < 0))
-                .animation(.snappy(duration: 0.35), value: displayVal)
+                .motionSafeAnimation(.snappy(duration: 0.35), value: displayVal)
                 .fixedSize()
 
             if selectedPoint == nil {
@@ -754,7 +754,7 @@ struct TrendsView: View {
                         }
                     }
                     .frame(height: 260)
-                    .animation(.snappy(duration: 0.35), value: metric)
+                    .motionSafeAnimation(.snappy(duration: 0.35), value: metric)
                     .accessibilityLabel(Self.metricTrendChartLabel(metricLabel(metric)))
                     .accessibilityChartDescriptor(TrendLineChartDescriptor(
                         title: "\(metricLabel(metric)) Trend",
@@ -1308,7 +1308,7 @@ struct TrendsView: View {
                 }
                 .frame(height: 56)
                 .padding(.vertical, 8)
-                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: metric)
+                .motionSafeAnimation(.spring(response: 0.4, dampingFraction: 0.8), value: metric)
 
                 Divider().background(Theme.Colors.hairline)
                 HStack {
@@ -1373,7 +1373,7 @@ struct TrendsView: View {
             }
             .onAppear {
                 guard isLatest, !archivePulse, !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
+                withMotionSafeAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
                     archivePulse = true
                 }
             }

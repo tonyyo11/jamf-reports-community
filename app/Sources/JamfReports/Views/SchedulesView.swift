@@ -733,7 +733,7 @@ private struct RunLogConsole: View {
             )
             .onChange(of: lines.count) { _, _ in
                 guard isScrolledToBottom else { return }
-                withAnimation(.easeOut(duration: 0.15)) {
+                withMotionSafeAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
                 }
             }

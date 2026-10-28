@@ -199,6 +199,13 @@ final class AccessibilitySweepTests: XCTestCase {
             metric: .fileVault, previous: 90, current: 91, comparable: false), .flat)
     }
 
+    /// Reduce Motion turns every helper-routed animation into none.
+    func testReduceMotionResolvesAnimationToNil() {
+        XCTAssertNil(Animation.resolved(.snappy, reduceMotion: true))
+        XCTAssertNil(Animation.resolved(nil, reduceMotion: false))
+        XCTAssertEqual(Animation.resolved(.snappy, reduceMotion: false), .snappy)
+    }
+
     // MARK: - Chart wiring VoiceOver contract
 
     /// TrendsView hero chart uses .accessibilityChartDescriptor(TrendLineChartDescriptor(...)).

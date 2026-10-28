@@ -189,7 +189,7 @@ struct OutreachView: View {
                 if let copyConfirmation {
                     Pill(text: copyConfirmation, tone: .teal)
                         .opacity(reduceMotion ? 1.0 : 0.8)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: copyConfirmation)
+                        .motionSafeAnimation(.easeInOut(duration: 0.3), value: copyConfirmation)
                 }
 
                 Spacer()

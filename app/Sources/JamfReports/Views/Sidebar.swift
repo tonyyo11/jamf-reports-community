@@ -330,7 +330,7 @@ struct Sidebar: View {
         .menuIndicator(.hidden)
         .focused($chipFocused)
         .onHover { chipHovered = $0 }
-        .animation(.easeOut(duration: 0.18), value: engaged)
+        .motionSafeAnimation(.easeOut(duration: 0.18), value: engaged)
         .accessibilityLabel(Self.workspaceChipLabel(
             profile: workspace.profile, subtitle: workspaceSubtitle,
             hasError: workspace.profiles.first { $0.name == workspace.profile }?.status == .error))

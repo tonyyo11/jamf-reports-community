@@ -464,7 +464,6 @@ struct SecurityPostureView: View {
 /// letter grade in the same `Theme.Fonts.serif` used by `StatTile`.
 private struct ScoreRing: View {
     let score: SecurityScore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
@@ -481,7 +480,7 @@ private struct ScoreRing: View {
                     style: StrokeStyle(lineWidth: 14, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: score.value)
+                .motionSafeAnimation(.easeOut(duration: 0.5), value: score.value)
             VStack(spacing: 2) {
                 Text(displayValue)
                     .font(Theme.Fonts.serif(scoreDisplaySize, weight: .bold))

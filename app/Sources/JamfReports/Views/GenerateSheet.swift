@@ -409,7 +409,7 @@ struct GenerateSheet: View {
         Task { @MainActor in
             // The target appears in the same update; scroll once it is laid out.
             await Task.yield()
-            withAnimation(.easeOut(duration: 0.25)) {
+            withMotionSafeAnimation(.easeOut(duration: 0.25)) {
                 proxy.scrollTo(target, anchor: target == .log ? .top : .bottom)
             }
         }
@@ -1075,7 +1075,7 @@ private struct RunLogConsoleEmbed: View {
                     .strokeBorder(Theme.Hairline.strong, lineWidth: 1)
             )
             .onChange(of: lines.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.12)) {
+                withMotionSafeAnimation(.easeOut(duration: 0.12)) {
                     proxy.scrollTo("log-bottom", anchor: .bottom)
                 }
             }

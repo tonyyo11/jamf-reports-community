@@ -2007,7 +2007,7 @@ private struct DrillDownChromeModifier: ViewModifier {
             )
             .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
             .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.15)) {
+                withMotionSafeAnimation(.easeOut(duration: 0.15)) {
                     isHovering = hovering
                 }
             }
@@ -2094,7 +2094,7 @@ struct AgentCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .shadow(color: .black.opacity(isHovering ? 0.25 : 0), radius: isHovering ? 8 : 0, y: isHovering ? 4 : 0)
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
+            withMotionSafeAnimation(.easeOut(duration: 0.15)) {
                 isHovering = hovering
             }
         }
