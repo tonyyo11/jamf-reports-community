@@ -178,8 +178,7 @@ enum SchoolFleetService {
     }
 
     private static func decodedRows(at file: URL) -> [[String: Any]]? {
-        guard let data = try? BoundedFile.read(file, limit: BoundedFile.snapshotLimit)
-        else { return nil }
+        guard let data = BoundedFile.readLogged(file) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
     }
 

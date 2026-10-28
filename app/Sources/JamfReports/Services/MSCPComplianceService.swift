@@ -82,7 +82,7 @@ struct MSCPComplianceService: Sendable {
         let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         guard let url = FileManager.newestSnapshotFile(in: resultsDir) else { return [] }
 
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = BoundedFile.readLogged(url) else {
             AppLogger.platform.warning(
                 "MSCPComplianceService: could not read ea-results file \(url.lastPathComponent, privacy: .public)"
             )

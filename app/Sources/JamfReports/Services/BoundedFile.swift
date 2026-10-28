@@ -144,12 +144,18 @@ enum BoundedFile {
     /// Largest inventory snapshot (`mobile-devices-list`): a large district's list passes 64 MB.
     static let inventoryLimit = 256 * 1024 * 1024
 
-    /// `read` following links, or nil. A file over `limit` or not a regular file is logged by
-    /// name, so a snapshot left unread is never silent; other failures are the caller's to log.
-    static func readLogged(_ url: URL, limit: Int, category: AppLogger.Category) -> Data? {
+    /// The one reader of a snapshot, summary, cache or log file the picker chose: `read` refusing a
+    /// link or a second hard link, or nil. A missing file is nil with no line; a file over
+    /// `limit`, not a regular file or otherwise unreadable is logged by name, so a file left
+    /// unread is never silent. Callers read nil as "not read", never as an empty snapshot.
+    static func readLogged(
+        _ url: URL, limit: Int = snapshotLimit, category: AppLogger.Category = .collect
+    ) -> Data? {
         do {
-            return try read(url, limit: limit)
-        } catch let failure as Failure where failure == .tooLarge || failure == .notRegular {
+            return try read(url, limit: limit, followSymlinks: false)
+        } catch let failure as Failure {
+            // EMLINK is logged by the open itself.
+            if failure == .unreadable(ENOENT) || failure == .unreadable(EMLINK) { return nil }
             let name = ConfigSchema.displayText(url.lastPathComponent)
             let detail = failure == .tooLarge
                 ? "over \(limit / 1_048_576) MB" : failure.localizedDescription

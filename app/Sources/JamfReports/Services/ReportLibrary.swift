@@ -252,7 +252,7 @@ struct ReportLibrary {
     static func scheduledFiles(statusFiles: [URL]) -> [String: String] {
         var named: [String: String] = [:]
         for url in statusFiles {
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(url, limit: BoundedFile.documentLimit),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let label = json["label"] as? String, !label.isEmpty else { continue }
             let schedule = RunHistoryService.humanName(from: label)
@@ -315,7 +315,8 @@ struct ReportLibrary {
         let summaryURL = summariesDir.appendingPathComponent("summary_\(dateString).json")
 
         guard FileManager.default.fileExists(atPath: summaryURL.path),
-              let data = try? Data(contentsOf: summaryURL),
+              let data = BoundedFile.readLogged(
+                  summaryURL, limit: SummaryJSONParser.maxSummaryFileBytes),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }

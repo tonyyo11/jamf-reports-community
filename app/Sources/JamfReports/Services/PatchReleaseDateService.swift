@@ -45,7 +45,7 @@ struct PatchReleaseDateService: Sendable {
     /// Test seam: load directly from a file URL.
     static func load(from url: URL) -> [Row] {
         guard FileManager.default.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url),
+              let data = BoundedFile.readLogged(url),
               let rows = try? JSONDecoder().decode([Row].self, from: data)
         else { return [] }
         return rows

@@ -316,7 +316,7 @@ final class DiagnosticRedactor {
         jsonFiles.sort { $0.path < $1.path }
         var sets: [String: Set<String>] = [:]
         for url in jsonFiles {
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(url, limit: BoundedFile.inventoryLimit),
                   let obj = try? JSONSerialization.jsonObject(with: data) else { continue }
             harvest(obj, into: &sets)
         }
@@ -838,7 +838,8 @@ enum DiagnosticBundleService {
             if let mtime = values?.contentModificationDate, mtime < cutoff { continue }
             let relative = relativePath(of: url, under: logsDir)
             let arcname = "logs/\(redactor?.redactWorkspaceNames(in: relative) ?? relative)"
-            guard let data = try? Data(contentsOf: url) else {
+            // The tail of a log past the limit, as Run History reads it, not a skipped file.
+            guard let data = (try? BoundedFile.readTail(url, limit: 5 * 1024 * 1024))?.data else {
                 entries.append(.skipped(path: arcname, reason: "could not read log"))
                 continue
             }
@@ -874,7 +875,8 @@ enum DiagnosticBundleService {
                 entries.append(.skipped(path: arcname, reason: "symlink — skipped"))
                 continue
             }
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(
+                    url, limit: SummaryJSONParser.maxSummaryFileBytes),
                   let obj = try? JSONSerialization.jsonObject(with: data) else {
                 entries.append(.skipped(path: arcname, reason: "could not parse summary"))
                 continue

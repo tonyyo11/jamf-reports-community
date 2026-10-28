@@ -185,7 +185,7 @@ struct RiskScoringService: Sendable {
         // decodeSnapshot, like every other ea-results reader: an envelope or a
         // truncated snapshot still yields its rows.
         guard let url = FileManager.newestJSONFile(in: resultsDir),
-              let data = try? Data(contentsOf: url),
+              let data = BoundedFile.readLogged(url),
               let rows = EAResultRow.decodeSnapshot(data).rows else {
             return [:]
         }

@@ -183,7 +183,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadOverview(
         from url: URL?, success: inout Bool
     ) -> [ProtectOverviewItem] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectOverviewItem].self, from: data)
         else { return [] }
         success = true
@@ -193,7 +193,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadAlerts(
         from url: URL?, success: inout Bool
     ) -> [ProtectAlertRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectAlertRow].self, from: data)
         else { return [] }
         success = true
@@ -203,7 +203,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadComputers(
         from url: URL?, success: inout Bool
     ) -> [ProtectComputerRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectComputerRow].self, from: data)
         else { return [] }
         success = true
@@ -213,7 +213,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadInsights(
         from url: URL?, success: inout Bool
     ) -> [ProtectInsightRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectInsightRow].self, from: data)
         else { return [] }
         success = true
@@ -223,7 +223,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadPlans(
         from url: URL?, success: inout Bool
     ) -> [ProtectPlanRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectPlanRow].self, from: data)
         else { return [] }
         success = true

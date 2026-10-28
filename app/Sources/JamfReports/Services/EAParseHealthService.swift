@@ -290,7 +290,7 @@ struct EAParseHealthService {
             let date = MSCPChartDataBuilder.dateFromSnapshotFilename(url, fm: fm)
             let day = cal.dateComponents([.year, .month, .day], from: date)
             if days.contains(where: { $0.day == day }) { continue }  // older file, same day
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = BoundedFile.readLogged(url) else { continue }
             let decoded = EAResultRow.decodeSnapshot(data)
             if EAResultRow.isSalvageReason(decoded.reason) {
                 sawSalvage = true

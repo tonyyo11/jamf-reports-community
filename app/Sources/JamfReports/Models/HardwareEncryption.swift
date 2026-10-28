@@ -93,7 +93,7 @@ enum HardwareEncryption {
                 """)
             return [:]
         }
-        guard let data = try? Data(contentsOf: url),
+        guard let data = BoundedFile.readLogged(url),
               let items = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
         else {
             AppLogger.report.warning("""

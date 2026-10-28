@@ -197,8 +197,7 @@ struct GroupInventoryService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [AdvancedMobileSearchRow] {
         guard let url else { return [] }
-        guard let data = try? BoundedFile.read(
-            url, limit: BoundedFile.snapshotLimit, followSymlinks: false) else {
+        guard let data = BoundedFile.readLogged(url) else {
             AppLogger.collect.warning(
                 "GroupInventoryService: could not read advanced-mobile-device-searches file \(url.lastPathComponent, privacy: .public)"
             )
@@ -218,8 +217,7 @@ struct GroupInventoryService: Sendable {
         from url: URL?, kind: String, success: inout Bool
     ) -> [ClassicGroupRow] {
         guard let url else { return [] }
-        guard let data = try? BoundedFile.read(
-            url, limit: BoundedFile.snapshotLimit, followSymlinks: false) else {
+        guard let data = BoundedFile.readLogged(url) else {
             AppLogger.collect.warning(
                 "GroupInventoryService: could not read \(kind, privacy: .public) file \(url.lastPathComponent, privacy: .public)"
             )
