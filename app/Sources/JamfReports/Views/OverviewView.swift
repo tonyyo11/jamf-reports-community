@@ -296,8 +296,7 @@ struct OverviewView: View {
         let failing = issues.filter { $0.kind == .failing }
         // Shared by BOTH branches: the failing branch used to show no timestamp
         // at all while its overdue sibling did (#213).
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
+        let formatter = Self.relativeFormatter
         if let first = overdue.first {
             let when = first.expectedFire.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
@@ -1077,6 +1076,12 @@ struct OverviewView: View {
     private func scoreCardComparable(_ metric: TrendSeries.Metric) -> Bool {
         metric != .securityScore || workspace.demoMode || trendStore.latestSecurityScoresComparable
     }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter
+    }()
 
     /// "Aug 20" — short by design; the tile caption has little room and the
     /// year is only ambiguous for comparisons more than a year stale, which
