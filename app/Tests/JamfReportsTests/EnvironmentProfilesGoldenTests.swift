@@ -84,7 +84,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "cccc2d79cc4db9aab98df272df3f40415f85e9af03612883a30450874af40baa"),
+            sha256: "f0efc4da5917b07516b6211d95aa3cc6fbba44a79430dbeacc58a1d75f98ffbc"),
         "pro-protect-blank": (
             transcript: """
                 pro ws-golden
@@ -114,7 +114,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "cccc2d79cc4db9aab98df272df3f40415f85e9af03612883a30450874af40baa"),
+            sha256: "f0efc4da5917b07516b6211d95aa3cc6fbba44a79430dbeacc58a1d75f98ffbc"),
         "school-protect": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
@@ -151,7 +151,10 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
 
     private func run(_ shape: Shape) async throws -> GoldenCalls {
         let config = try shape.yaml.map { try ConfigLoader.loadFromString($0) }
-        let calls = GoldenCalls()
+        // The dashboard row is the one command line built from config.yaml inside the collect.
+        let calls = GoldenCalls { profile, base in
+            ReportEngine.dashboardArguments(base: base, profile: profile, protect: config?.protect)
+        }
         let auth = shape.workspaceAuth
         let product = shape.workspaceProduct
         let workspace = workspace
@@ -179,6 +182,11 @@ private final class GoldenCalls: @unchecked Sendable {
     private let lock = NSLock()
     private var transcriptLines: [String] = []
     private var commandLineText: [String] = []
+    private let dashboard: @Sendable (String, [String]) -> [String]
+
+    init(dashboard: @escaping @Sendable (String, [String]) -> [String]) {
+        self.dashboard = dashboard
+    }
 
     func log(_ text: String) { append("log " + text, expanded: []) }
 
@@ -188,8 +196,12 @@ private final class GoldenCalls: @unchecked Sendable {
         case "school": ReportEngine.schoolCommandMatrix(profile: profile)
         default: ReportEngine.protectCommandMatrix(profile: profile)
         }
+        let lines = matrix.map { row in
+            row.kind == ReportEngine.dashboardKind && product == "pro"
+                ? dashboard(profile, row.args) : row.args
+        }
         append("\(product) \(profile)",
-               expanded: matrix.map { "jamf-cli " + $0.args.joined(separator: " ") })
+               expanded: lines.map { "jamf-cli " + $0.joined(separator: " ") })
     }
 
     private func append(_ line: String, expanded: [String]) {
