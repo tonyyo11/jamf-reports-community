@@ -8,13 +8,14 @@ struct ProtectView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var selectedTimelineDevice: String?
     @State private var connectedProducts = ConnectedProducts.none
     @State private var showingConnect = false
     @State private var proMatch = ProMatchState.pending
-    @State private var proMatchTask: Task<Void, Never>?
 
     /// The "Jamf Pro match" card ("Jamf School match" on a School workspace): nothing until the
     /// match has run, then either the result or the reason there is none.
@@ -47,45 +48,48 @@ struct ProtectView: View {
                 trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode && protectConnected {
-                StaleDataBanner(source: snapshot.cacheSource)
-                // A tenant that doesn't run Protect at all has no expected
-                // kinds — every one of them would render a false-alarm "never"
-                // chip. Only assert expectations once Protect is detected;
-                // present-kind chips still show either way.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: snapshot.isDetected ? [
-                        "protect-overview", "protect-alerts", "protect-computers",
-                        "protect-insights", "protect-plans",
-                    ] : []
-                )
-            }
-
-            if !snapshot.unreadableKinds.isEmpty { unreadableBanner }
-            if !protectConnected && !snapshot.isDetected && snapshot.unreadableKinds.isEmpty {
-                notConnectedState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "Jamf Protect data")
             } else {
-                if !deepDiveEnabled { lockedDeepDiveState }
-                if snapshot.isDetected {
-                    dataSections
-                } else if snapshot.unreadableKinds.isEmpty {
-                    emptyState
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode && protectConnected {
+                    StaleDataBanner(source: snapshot.cacheSource)
+                    // A tenant that doesn't run Protect at all has no expected
+                    // kinds — every one of them would render a false-alarm "never"
+                    // chip. Only assert expectations once Protect is detected;
+                    // present-kind chips still show either way.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: snapshot.isDetected ? [
+                            "protect-overview", "protect-alerts", "protect-computers",
+                            "protect-insights", "protect-plans",
+                        ] : []
+                    )
+                }
+
+                if !snapshot.unreadableKinds.isEmpty { unreadableBanner }
+                if !protectConnected && !snapshot.isDetected && snapshot.unreadableKinds.isEmpty {
+                    notConnectedState
+                } else {
+                    if !deepDiveEnabled { lockedDeepDiveState }
+                    if snapshot.isDetected {
+                        dataSections
+                    } else if snapshot.unreadableKinds.isEmpty {
+                        emptyState
+                    }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onChange(of: dataSource) { _, _ in
             // The picked device belongs to the old source; a real host name must not outlive it.
             selectedTimelineDevice = nil
-            reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -114,41 +118,44 @@ struct ProtectView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
-
-    private func reload() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { snapshot = .empty; connectedProducts = .none }
         // The demo's rows are drawn by the same code as a live tenant's, and its
         // counts are taken from those rows.
-        snapshot = workspace.demoMode
-            ? DemoData.protectSnapshot
-            : ProtectDashboardService.load(profile: workspace.profile)
-        connectedProducts = workspace.demoMode
-            ? .none : ConnectedProducts.read(profile: workspace.profile)
-        reloadProMatch()
+        if workspace.demoMode {
+            snapshot = DemoData.protectSnapshot
+            connectedProducts = .none
+        } else {
+            let profile = workspace.profile
+            guard let loaded = await ScreenLoad.paint(
+                stillCurrent: { source == dataSource },
+                read: { (ProtectDashboardService.load(profile: profile),
+                         ConnectedProducts.read(profile: profile)) }
+            ) else { return }
+            snapshot = loaded.0
+            connectedProducts = loaded.1
+        }
+        loadedSource = source
+        await loadProMatch(source: source)
     }
 
-    /// Off the main actor: the `computers` snapshot can be about 13 MB.
-    private func reloadProMatch() {
-        proMatchTask?.cancel()
+    /// The `computers` snapshot can be about 13 MB, so the match runs after the screen paints.
+    private func loadProMatch(source: String) async {
         proMatch = .pending
         guard !snapshot.computers.isEmpty else { return }
         let protect = snapshot.computers
         let profile = workspace.profile
         let demo = workspace.demoMode
         let school = workspace.isSchoolWorkspace
-        proMatchTask = Task {
-            let result = await Task.detached {
-                ProtectProCorrelation.load(
-                    protect: protect, profile: profile, demoMode: demo, school: school)
-            }.value
-            guard !Task.isCancelled else { return }
-            proMatch = result.map(ProMatchState.ready)
-                ?? .noInventory(school ? .jamfSchool : .jamfPro)
-        }
+        guard let result = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { ProtectProCorrelation.load(
+                protect: protect, profile: profile, demoMode: demo, school: school) }
+        ) else { return }
+        proMatch = result.map(ProMatchState.ready)
+            ?? .noInventory(school ? .jamfSchool : .jamfPro)
     }
 
     // MARK: - Sections
@@ -221,7 +228,7 @@ struct ProtectView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingConnect, onDismiss: reload) {
+        .sheet(isPresented: $showingConnect, onDismiss: { reloads += 1 }) {
             ProductConnectSheetView(profileSlug: workspace.profile)
         }
     }
