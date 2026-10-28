@@ -58,7 +58,7 @@ final class ScheduledRunFailureCardTests: XCTestCase {
             launchAgentLabel: "com.github.tonyyo11.jamf-reports-community.r\(UUID().uuidString.prefix(8))")
     }
 
-    func testARefusedRunPostsOneCardADayAndWritesNothingInTheWorkspace() async throws {
+    func testARefusedRunPostsOneCardADayAndLeavesOnlyARefusedRecord() async throws {
         try ProductGuardSeed.seed(profile: profile, product: "protect", in: root)
         let schedule = refusedSchedule()
         for _ in 0..<3 {
@@ -69,8 +69,22 @@ final class ScheduledRunFailureCardTests: XCTestCase {
         XCTAssertEqual(WebhookCapture.posted.count, 1, "once a day, not once a wake")
         XCTAssertTrue(WebhookCapture.posted.first?.contains("Failed") == true)
         let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        // The workspace has a config.yaml, so each refused run leaves a Run History record
+        // marked refused; nothing else is written (no collect state, no `.fail` file).
+        let automation = workspace.appendingPathComponent("automation")
+        let statuses = try FileManager.default.contentsOfDirectory(atPath: automation.path)
+            .filter { $0.hasSuffix("_status.json") }
+        XCTAssertEqual(statuses.count, 1)
+        let status = try Data(
+            contentsOf: automation.appendingPathComponent(try XCTUnwrap(statuses.first)))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: status) as? [String: Any])
+        XCTAssertEqual(payload["refused"] as? Bool, true)
+        let logs = try FileManager.default.contentsOfDirectory(
+            atPath: automation.appendingPathComponent("logs").path)
+        // Three runs inside one second share a log name, so count the record, not the runs.
+        XCTAssertFalse(logs.isEmpty, "a refused run leaves a Run History log")
         XCTAssertFalse(FileManager.default.fileExists(
-            atPath: workspace.appendingPathComponent("automation").path))
+            atPath: workspace.appendingPathComponent("jamf-cli-data").path), "nothing collected")
     }
 
     // MARK: - One card a day per failure
