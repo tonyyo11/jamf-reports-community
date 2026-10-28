@@ -7,7 +7,9 @@ struct GroupsView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: GroupInventoryService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
     var body: some View {
         PageScaffold {
@@ -19,35 +21,38 @@ struct GroupsView: View {
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
-            }
-
-            if !snapshot.isDetected {
-                emptyState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "groups")
             } else {
-                summaryTiles
-                GroupTableCard(
-                    title: "Computer Groups", emptyText: "No computer groups found.",
-                    groups: snapshot.classicComputerGroups, platform: .computer,
-                    snapshot: snapshot)
-                GroupTableCard(
-                    title: "Mobile Device Groups", emptyText: "No mobile device groups found.",
-                    groups: snapshot.classicMobileGroups, platform: .mobile,
-                    snapshot: snapshot)
-                if !snapshot.advancedMobileSearches.isEmpty {
-                    advancedSearchesCard
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                }
+
+                if !snapshot.isDetected {
+                    emptyState
+                } else {
+                    summaryTiles
+                    GroupTableCard(
+                        title: "Computer Groups", emptyText: "No computer groups found.",
+                        groups: snapshot.classicComputerGroups, platform: .computer,
+                        snapshot: snapshot)
+                    GroupTableCard(
+                        title: "Mobile Device Groups", emptyText: "No mobile device groups found.",
+                        groups: snapshot.classicMobileGroups, platform: .mobile,
+                        snapshot: snapshot)
+                    if !snapshot.advancedMobileSearches.isEmpty {
+                        advancedSearchesCard
+                    }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -68,18 +73,27 @@ struct GroupsView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        reload()
-        hasLoaded = true
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { snapshot = .empty }
         // The demo profile's name could match a real workspace on this Mac;
         // demo mode never reads one.
-        snapshot = workspace.demoMode
-            ? DemoData.groupInventory
-            : GroupInventoryService.load(profile: workspace.profile)
+        guard !workspace.demoMode else {
+            snapshot = DemoData.groupInventory
+            loadedSource = source
+            return
+        }
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { GroupInventoryService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
+        loadedSource = source
     }
 
     /// Maps Jamf's siteId to a display label, matching the Python sheet convention:

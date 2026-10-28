@@ -22,6 +22,10 @@ versions in this repository map to git tags.
   runs while Needs attention asks, then skips Jamf Pro and shows each backup as Partial until
   you choose; a new workspace asks before its first backup. Choosing no skips Jamf Pro without
   a Partial run. Local storage is unchanged. (#305)
+- Mobile Devices, Extension Attributes, Jamf Protect, Patch Compliance, OS Updates and Groups &
+  Searches no longer block the window while a large snapshot decodes. They show a loading card
+  until the data is ready, and switching profile or turning demo mode on or off shows the new
+  data only. (#305)
 
 ### Fixed
 
