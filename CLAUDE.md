@@ -66,6 +66,12 @@ write Y, reconsider whether the change is necessary. A `PreToolUse` hook
 auto-surfaces this history for every `Edit`/`Write` call — don't ignore
 the output.
 
+**Fix the class, not the site.** A bug that bypasses a seam the code already has (a
+shared reader, validator, timeout, product gate, redactor, escape, calculator) is fixed at
+every sibling site in the same PR, with the grep in the PR body; one site of a known class
+is an incomplete fix. `docs/superpowers/review-checklist.md` lists the twelve classes that
+recurred from 2.8.0 to 2.11.0 and the check for each; reviewers read it first.
+
 **No scaffolding without wiring.** Do not add a new
 Service/View/Model/Engine file unless a caller for it lands in the same
 PR. A button, a tab, a route, or a test that exercises it — something
