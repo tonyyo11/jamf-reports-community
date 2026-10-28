@@ -152,6 +152,10 @@ or turn on **Write the HTML report with every workbook** on the Customize screen
 Generate button, each scheduled run that generates and `jamf-reports generate` then write the
 HTML report beside the workbook.
 
+For a CSV copy of every workbook tab, tick **CSV folder** in Generate, run
+`jamf-reports generate --csv-folder`, or set `output.csv_folder: true`: one CSV per tab goes into
+a folder beside the workbook.
+
 ### OS currency and patch release dates
 
 - **OS Currency** — an "OS Currency" workbook sheet and HTML card show the latest available

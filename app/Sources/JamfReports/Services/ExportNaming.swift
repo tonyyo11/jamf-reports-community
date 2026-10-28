@@ -25,7 +25,7 @@ enum ExportNaming {
     /// definition the writers and the Generate sheet's "What will be written" share.
     static func reportKind(for type: GenerateOutputType, schoolMode: Bool) -> String {
         switch type {
-        case .xlsx: schoolMode ? "school-report" : "report"
+        case .xlsx, .csvFolder: schoolMode ? "school-report" : "report"
         case .html, .pdf: "jamf_report"
         case .csv: "inventory"
         }

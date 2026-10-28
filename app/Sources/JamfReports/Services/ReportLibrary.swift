@@ -128,7 +128,8 @@ struct ReportLibrary {
         }
 
         return entries.compactMap { candidate in
-            guard allowedExtensions.contains(candidate.pathExtension.lowercased()),
+            guard allowedExtensions.contains(candidate.pathExtension.lowercased())
+                    || Self.isCSVFolder(candidate),
                   let validated = WorkspacePathGuard.validate(candidate, underAny: roots),
                   isReadableFile(validated) else {
                 return nil
@@ -148,7 +149,10 @@ struct ReportLibrary {
 
         var urls: [URL] = []
         for case let candidate as URL in enumerator {
-            guard allowedExtensions.contains(candidate.pathExtension.lowercased()),
+            // A CSV folder is one entry; its files are not reports of their own.
+            if Self.isCSVFolder(candidate) { enumerator.skipDescendants() }
+            guard allowedExtensions.contains(candidate.pathExtension.lowercased())
+                    || Self.isCSVFolder(candidate),
                   let validated = WorkspacePathGuard.validate(candidate, underAny: roots),
                   isReadableFile(validated) else {
                 continue
@@ -183,16 +187,37 @@ struct ReportLibrary {
               let values = try? validated.resourceValues(
                 forKeys: [.fileSizeKey, .contentModificationDateKey]
               ),
-              let size = values.fileSize,
               let mtime = values.contentModificationDate else {
             return nil
         }
+        guard let size = Self.isCSVFolder(validated) ? folderSize(validated) : values.fileSize
+        else { return nil }
         return (validated, Int64(size), mtime)
     }
 
     private func isReadableFile(_ url: URL) -> Bool {
         let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
-        return values?.isRegularFile == true
+        return values?.isRegularFile == true || Self.isCSVFolder(url)
+    }
+
+    /// The CSV folder a workbook run writes (`ReportEngine.csvFolderURL`): a real folder, not a
+    /// link, whose name ends in `_csv`.
+    static func isCSVFolder(_ url: URL) -> Bool {
+        guard url.pathExtension.isEmpty, url.lastPathComponent.hasSuffix("_csv"),
+              let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        else { return false }
+        return values.isDirectory == true && values.isSymbolicLink != true
+    }
+
+    /// The bytes of the regular files directly in `folder`.
+    private func folderSize(_ folder: URL) -> Int? {
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]) else { return nil }
+        return entries.reduce(0) { total, entry in
+            let values = try? entry.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            return total + (values?.isRegularFile == true ? values?.fileSize ?? 0 : 0)
+        }
     }
 
     /// The Type column: what the file is, then the schedule that wrote it when `schedule` is
@@ -219,6 +244,7 @@ struct ReportLibrary {
             return match.label
         }
         switch URL(fileURLWithPath: lowered).pathExtension {
+        case "" where lowered.hasSuffix("_csv"): return "CSV folder"
         case "xlsx": return "Workbook"
         case "html": return "HTML report"
         case "pdf": return "PDF report"

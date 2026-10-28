@@ -9,6 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
+- A **CSV folder** report format writes one CSV per workbook tab into a folder beside the
+  workbook, for tools that read CSV. Tick it in Generate, run `jamf-reports generate
+  --csv-folder`, or set `output.csv_folder: true` to get it with every workbook, scheduled runs
+  included. `.xlsx` stays the default; the folder follows the workbook into the archive. (#305)
 - The Platform API region list now has Other, which takes a gateway host such as
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)

@@ -146,6 +146,7 @@ final class GenerateSheetRequestTests: XCTestCase {
             "jamf_report_acme_<date>.html + integrity manifest",
             "jamf_report_acme_<date>.pdf + integrity manifest",
             "inventory_acme_<date>.csv",
+            "report_acme_<date>_csv/ (one .csv per workbook tab, with the workbook)",
         ])
         XCTAssertEqual(names("acme", school: true).first,
                        "school-report_acme_<date>.xlsx + integrity sidecar (.sha256)")

@@ -170,14 +170,16 @@ extension CLIBridge {
                 generateXLSX: {
                     if schoolMode {
                         return try await self.schoolGenerate(
-                            profile: profile, onLine: onLine)
+                            profile: profile, csvFolder: types.contains(.csvFolder),
+                            onLine: onLine)
                     }
                     // A chosen HTML format is the run's one HTML report; `html.with_workbook`
                     // would write a second.
                     return try await self.generate(
                         profile: profile, template: template,
                         outputDir: outputDir, aiNarrative: aiNarrative,
-                        htmlWithWorkbook: !types.contains(.html), now: now, onLine: onLine
+                        htmlWithWorkbook: !types.contains(.html),
+                        csvFolder: types.contains(.csvFolder), now: now, onLine: onLine
                     )
                 },
                 generateHTML: {
@@ -244,19 +246,24 @@ extension CLIBridge {
     ) async -> GenerateAllResult {
         var result = GenerateAllResult()
 
-        // XLSX is the canonical workbook output.
-        if types.contains(.xlsx) {
+        // XLSX is the canonical workbook output. The CSV folder is written by the same run
+        // from the same tabs, so asking for it runs the workbook step and shares its outcome.
+        let workbookTypes = [GenerateOutputType.xlsx, .csvFolder].filter(types.contains)
+        if !workbookTypes.isEmpty {
             do {
                 let code = try await generateXLSX()
-                if code == 0 {
-                    result.succeeded.append(.xlsx)
-                } else {
-                    result.failed.append((.xlsx, code))
+                for type in workbookTypes {
+                    if code == 0 {
+                        result.succeeded.append(type)
+                    } else {
+                        result.failed.append((type, code))
+                    }
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] generate failed: \(error.localizedDescription)"))
-                result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
+                // -1: no process exit code (pre-spawn failure)
+                result.failed.append(contentsOf: workbookTypes.map { ($0, -1) })
                 // Continue to next format — do not return.
             }
         }
