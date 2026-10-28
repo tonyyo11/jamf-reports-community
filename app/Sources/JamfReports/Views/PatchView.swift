@@ -400,7 +400,7 @@ struct PatchView: View {
     private var velocityChart: some View {
         let titles = slowestVelocityTitles
         let labels: [String] = titles.map(\.title)
-        let colors: [Color] = Theme.ChartPalette.colors(forTitles: labels)
+        let colors: [Color] = Theme.ChartColors.colors(forTitles: labels)
         return Chart {
             ForEach(titles) { title in
                 ForEach(Array(title.series.enumerated()), id: \.offset) { _, point in

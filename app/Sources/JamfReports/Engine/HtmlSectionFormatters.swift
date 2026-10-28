@@ -408,6 +408,11 @@ enum HtmlSectionFormatters {
                       border-radius: 3px; overflow: hidden; }
     .cohort-bar-fill { height: 100%; background: var(--bar, var(--accent)); border-radius: 3px; }
     [data-theme="dark"] .cohort-bar-fill { background: var(--bar-dark, var(--accent)); }
+    /* Print is always the light page, whichever theme is on screen. */
+    @media print {
+      [data-theme="dark"] .cohort-bar-fill { background: var(--bar, var(--accent)); }
+      [data-theme="dark"] .chart-series { color: var(--c); }
+    }
     .cohort-bar-n   { min-width: 3rem; text-align: right; }
     /* Cleanup Analysis tab strip */
     .cleanup-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem;

@@ -437,7 +437,7 @@ struct SecurityPostureView: View {
             .accessibilityValue("\(row.count) devices, \(Int(row.pct.rounded()))%")
         }
         .chartForegroundStyleScale(
-            domain: orderedKeys, range: Theme.ChartPalette.colors(forVersions: orderedKeys))
+            domain: orderedKeys, range: Theme.ChartColors.colors(forVersions: orderedKeys))
         // ViewThatFits picks the trailing legend when there's room, otherwise
         // falls back to a bottom legend so narrow cards don't truncate.
         .chartLegend(position: .bottom, alignment: .leading, spacing: 8)
@@ -517,7 +517,7 @@ private struct SecurityPostureOSDonutExport: View {
     let totalDevices: Int
 
     var body: some View {
-        let colors = Theme.ChartPalette.colors(forVersions: rows.map(\.osVersion), scheme: .light)
+        let colors = Theme.ChartColors.colors(forVersions: rows.map(\.osVersion), scheme: .light)
         HStack(alignment: .center, spacing: 24) {
             Chart(Array(rows.enumerated()), id: \.offset) { offset, row in
                 SectorMark(

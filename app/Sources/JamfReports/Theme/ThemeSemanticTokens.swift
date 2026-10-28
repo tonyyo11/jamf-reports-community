@@ -247,29 +247,29 @@ extension Theme {
 // MARK: - Chart palette semantic tokens
 
 extension Theme {
-    /// SwiftUI colours from the app's one chart palette (`JamfReports.ChartPalette`, which the
+    /// SwiftUI colours from the app's one chart palette (`ChartPalette`, which the
     /// workbook and the HTML report read too). `scheme` is `.dark` in the app and `.light` in
     /// an exported image.
-    enum ChartPalette {
+    enum ChartColors {
         /// Supervision donut: a validated blue/orange pair (color-blind safe on the card).
         static let supervised   = Color(hex: 0x3987E5)
         static let unsupervised = Color(hex: 0xD95926)
 
-        typealias Scheme = JamfReports.ChartPalette.Scheme
+        typealias Scheme = ChartPalette.Scheme
 
         static func color(forMetric metric: TrendSeries.Metric, scheme: Scheme = .dark) -> Color {
-            Color(hex: JamfReports.ChartPalette.hex(forMetric: metric, scheme: scheme))
+            Color(hex: ChartPalette.hex(forMetric: metric, scheme: scheme))
         }
 
         /// The colours of the versions one chart draws, in the order given.
         static func colors(forVersions versions: [String], scheme: Scheme = .dark) -> [Color] {
-            JamfReports.ChartPalette.hexes(for: .version, keys: versions, scheme: scheme)
+            ChartPalette.hexes(for: .version, keys: versions, scheme: scheme)
                 .map { Color(hex: $0) }
         }
 
         /// The colours of the patch titles one chart draws, in the order given.
         static func colors(forTitles titles: [String], scheme: Scheme = .dark) -> [Color] {
-            JamfReports.ChartPalette.hexes(for: .title, keys: titles, scheme: scheme)
+            ChartPalette.hexes(for: .title, keys: titles, scheme: scheme)
                 .map { Color(hex: $0) }
         }
     }

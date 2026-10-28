@@ -466,8 +466,8 @@ struct MobileFleetView: View {
     /// Blue vs orange stays apart for color-blind readers; warn is a status color, not a series.
     static func supervisionColor(for role: MobileFleetService.SupervisionRole) -> Color {
         switch role {
-        case .supervised: return Theme.ChartPalette.supervised
-        case .unsupervised: return Theme.ChartPalette.unsupervised
+        case .supervised: return Theme.ChartColors.supervised
+        case .unsupervised: return Theme.ChartColors.unsupervised
         // A mid grey rather than a hairline tone: at 12% white the slice
         // almost vanished, and selected it read dimmer than the dimmed ones.
         case .unmanaged: return Theme.Colors.fgMuted
@@ -567,7 +567,7 @@ struct MobileFleetView: View {
                         .accessibilityLabel("Export iOS/iPadOS version distribution chart as PNG")
                         .help("Save the iOS/iPadOS version distribution bar chart as a PNG image")
                     }
-                    let colors = Theme.ChartPalette.colors(
+                    let colors = Theme.ChartColors.colors(
                         forVersions: snapshot.osDistribution.map(\.osVersion))
                     ForEach(Array(snapshot.osDistribution.enumerated()), id: \.element.osVersion) {
                         index, item in
@@ -1060,7 +1060,7 @@ private struct MobileFleetOSDistributionExport: View {
     }
 
     var body: some View {
-        let colors = Theme.ChartPalette.colors(
+        let colors = Theme.ChartColors.colors(
             forVersions: displayRows.map(\.osVersion), scheme: .light)
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(displayRows.enumerated()), id: \.offset) { offset, row in

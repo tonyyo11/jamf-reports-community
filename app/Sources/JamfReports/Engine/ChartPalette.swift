@@ -4,11 +4,15 @@ import Foundation
 /// The one mapping from a charted thing to a colour, so a macOS version, a metric, a patch
 /// title or a compliance band is the same colour on every screen and in every report.
 ///
+/// A key's colour depends on the key alone, never on what else is charted:
 /// - Metrics and bands have a fixed colour each. A metric never uses a status colour
 ///   (`Theme.Colors.ok`, `warn`, `danger`); a band is the one fixed colour on both schemes.
-/// - Versions and titles are not a closed set, so a key's colour comes from a hash of the key
-///   (`slotIndexes`), which is stable across runs and unaffected by which other keys exist,
-///   except that two keys charted together never share a slot while a free one remains.
+/// - A version's hue is its release (majors 11 to 15 and 26 to 28 never share one) and its
+///   shade steps with the minor and patch number, so 26.6 and 26.7 are two shades of one hue.
+///   "macOS 26.7" and "iOS 26.7" are one key on purpose: the numbers are one release train and
+///   no chart draws both.
+/// - A patch title or an agent hashes (FNV-1a) into a slot and shade. Two titles in one chart
+///   can share a colour; the chart's labels, not its colours, name each one.
 /// - `dark` is the in-app card and the HTML report's dark theme; `light` is the workbook's PNG
 ///   charts, the exported images and the HTML report's light theme.
 enum ChartPalette {
@@ -17,30 +21,51 @@ enum ChartPalette {
     /// What a key names, so a version and a title with the same text do not share a hash.
     enum Kind: String, Sendable { case version, title }
 
-    private struct Slot { let dark: UInt32; let light: UInt32 }
+    /// Three shades of one hue per scheme; shade 0 is the base that metrics use. Each shade is
+    /// held to 4.5:1 on its scheme's surfaces by `ChartPaletteTests`: dark steps lighter
+    /// (relative luminance 0.34, 0.46, 0.60), light steps darker (0.15, 0.09, 0.045).
+    private struct Slot { let dark: [UInt32]; let light: [UInt32] }
 
-    // Each pair has its relative luminance targeted at 0.34 (dark) and 0.15 (light), which
-    // keeps 4.5:1 against every surface in `ChartPaletteTests.darkSurfaces` / `lightSurfaces`.
+    static let shadeCount = 3
+
     private static let slots: [Slot] = [
-        Slot(dark: 0xC59616, light: 0x88680F),  // gold
-        Slot(dark: 0x25B09E, light: 0x1A7A6D),  // teal
-        Slot(dark: 0x67A0EE, light: 0x1867D7),  // blue
-        Slot(dark: 0xBA89E6, light: 0x9242D7),  // purple
-        Slot(dark: 0xE779B9, light: 0xC72383),  // pink
-        Slot(dark: 0xEF7F35, light: 0xB14F0E),  // orange
-        Slot(dark: 0x2DB44F, light: 0x1F7D36),  // green
-        Slot(dark: 0x909FB2, light: 0x5D6E85),  // slate
-        Slot(dark: 0x11ABD2, light: 0x0C7590),  // cyan
-        Slot(dark: 0x9B95E8, light: 0x6459DC),  // indigo
-        Slot(dark: 0xBB9773, light: 0x896542),  // tan
-        Slot(dark: 0x88A924, light: 0x5E7419),  // lime
+        Slot(dark: [0xC59616, 0xE2AC19, 0xEDC760], light: [0x88680F, 0x6A510C, 0x4B3A08]),  // gold
+        Slot(dark: [0x25B09E, 0x2BC9B4, 0x66DECE], light: [0x1A7A6D, 0x146055, 0x0E443C]),  // teal
+        Slot(dark: [0x67A0EE, 0x8DB8F2, 0xB0CEF6], light: [0x1867D7, 0x1351A9, 0x0E3B7A]),  // blue
+        Slot(dark: [0xBA89E6, 0xCBA6EC, 0xDBC1F2], light: [0x9242D7, 0x7628BB, 0x551C86]),  // purple
+        Slot(dark: [0xE779B9, 0xED9CCB, 0xF3BCDC], light: [0xC72383, 0x9E1C67, 0x71144A]),  // pink
+        Slot(dark: [0xEF7F35, 0xF3A36D, 0xF7C19C], light: [0xB14F0E, 0x8B3E0B, 0x632C08]),  // orange
+        Slot(dark: [0x2DB44F, 0x3DCF61, 0x81E099], light: [0x1F7D36, 0x18622B, 0x11451E]),  // green
+        Slot(dark: [0x909FB2, 0xABB6C4, 0xC5CCD7], light: [0x5D6E85, 0x485568, 0x333C4A]),  // slate
+        Slot(dark: [0x11ABD2, 0x22C4ED, 0x71DAF4], light: [0x0C7590, 0x095D71, 0x074150]),  // cyan
+        Slot(dark: [0x9B95E8, 0xB3AEEE, 0xCAC7F3], light: [0x6459DC, 0x4639D5, 0x2E23A5]),  // indigo
+        Slot(dark: [0xBB9773, 0xCCB094, 0xDCC9B5], light: [0x896542, 0x6B5034, 0x4C3825]),  // tan
+        Slot(dark: [0x88A924, 0x9CC229, 0xB6D94B], light: [0x5E7419, 0x495C13, 0x34410E]),  // lime
+    ]
+
+    /// Hues no metric uses, so an agent series never shares a colour with a metric on a chart.
+    private static let agentSlots: [Slot] = [
+        Slot(dark: [0xE87E87, 0xEE9FA6, 0xF4BEC3], light: [0xD12533, 0xA41D28, 0x76151D]),  // crimson
+        Slot(dark: [0xE272E6, 0xEA98ED, 0xF1BAF3], light: [0xB821BE, 0x921A96, 0x69136B]),  // magenta
+        Slot(dark: [0x3BB27A, 0x5BC896, 0x91DAB8], light: [0x297A54, 0x205F42, 0x17442F]),  // seafoam
+        Slot(dark: [0xA6A212, 0xBFBA15, 0xD7D018], light: [0x726F0D, 0x5A570A, 0x3F3D07]),  // mustard
     ]
 
     static var slotCount: Int { slots.count }
+    static var agentSlotCount: Int { agentSlots.count }
 
-    static func hex(slot: Int, scheme: Scheme) -> UInt32 {
-        let entry = slots[((slot % slots.count) + slots.count) % slots.count]
-        return scheme == .dark ? entry.dark : entry.light
+    static func hex(slot: Int, shade: Int = 0, scheme: Scheme) -> UInt32 {
+        pick(slots, slot: slot, shade: shade, scheme: scheme)
+    }
+
+    static func hex(agentSlot: Int, shade: Int = 0, scheme: Scheme) -> UInt32 {
+        pick(agentSlots, slot: agentSlot, shade: shade, scheme: scheme)
+    }
+
+    private static func pick(_ table: [Slot], slot: Int, shade: Int, scheme: Scheme) -> UInt32 {
+        let entry = table[((slot % table.count) + table.count) % table.count]
+        let shades = scheme == .dark ? entry.dark : entry.light
+        return shades[((shade % shades.count) + shades.count) % shades.count]
     }
 
     // MARK: Bands
@@ -64,9 +89,9 @@ enum ChartPalette {
 
     // MARK: Metrics
 
-    /// Each metric's slot. A mobile metric shares its Mac counterpart's slot (the Mobile
-    /// screens mirror the Computers ones), and no screen plots both in one chart. No default,
-    /// so a new metric needs a decision here.
+    /// Each metric's slot, in its base shade. A mobile metric shares its Mac counterpart's slot
+    /// (the Mobile screens mirror the Computers ones), and no screen plots both in one chart.
+    /// No default, so a new metric needs a decision here.
     static func hex(forMetric metric: TrendSeries.Metric, scheme: Scheme) -> UInt32 {
         switch metric {
         case .stability:                          return hex(slot: 0, scheme: scheme)
@@ -83,58 +108,58 @@ enum ChartPalette {
         case .firewall, .mobileSupervised:        return hex(slot: 11, scheme: scheme)
         case .activeDevices:                      return neutralHex
         case .agent(let name):
-            // shortcut: agents hash alone, so two agents can share a slot; upgrade if a
-            // workspace names more than a handful.
-            let slot = Int(fnv1a("agent:" + normalized(name)) % UInt64(slots.count))
-            return hex(slot: slot, scheme: scheme)
+            let hash = fnv1a("agent:" + normalized(name))
+            let count = UInt64(agentSlots.count)
+            return hex(agentSlot: Int(hash % count), shade: Int(hash / count % 3), scheme: scheme)
         }
     }
 
     // MARK: Versions and titles
 
     static func hex(forVersion version: String, scheme: Scheme) -> UInt32 {
-        hexes(for: .version, keys: [version], scheme: scheme)[0]
+        let name = normalized(version, kind: .version)
+        if isNeutral(name) { return neutralHex }
+        let parts = name.split(separator: ".", omittingEmptySubsequences: false)
+            .map { Int($0.prefix(while: \.isNumber)) }
+        guard let first = parts.first, let major = first else {
+            return hashed(.version, name, scheme: scheme)
+        }
+        // Apple jumped from 15 to 26 (iOS from 18), so later majors close up on the gap;
+        // macOS 11 to 15 and 26 to 28 (iOS 15 to 18 and 26 to 27) never share a hue.
+        let release = major >= 20 ? major - 6 : major
+        let steps = parts.dropFirst().prefix(2).reduce(0) { $0 + ($1 ?? 0) }
+        return hex(slot: release, shade: steps, scheme: scheme)
     }
 
     static func hex(forTitle title: String, scheme: Scheme) -> UInt32 {
-        hexes(for: .title, keys: [title], scheme: scheme)[0]
+        let name = normalized(title, kind: .title)
+        return isNeutral(name) ? neutralHex : hashed(.title, name, scheme: scheme)
     }
 
-    /// The colours of the keys one chart draws, in the order given. "Other (3 versions)" and
-    /// the like are `neutralHex`. Keys that read as one entity ("26.7", "macOS 26.7.0") get
-    /// one colour.
+    /// The colours of the keys one chart draws, in the order given: each key's own colour.
     static func hexes(for kind: Kind, keys: [String], scheme: Scheme) -> [UInt32] {
-        let names = keys.map { normalized($0, kind: kind) }
-        let assigned = slotIndexes(kind: kind, names: names)
-        return names.map { name in
-            assigned[name].map { hex(slot: $0, scheme: scheme) } ?? neutralHex
-        }
+        keys.map { kind == .version ? hex(forVersion: $0, scheme: scheme)
+                                    : hex(forTitle: $0, scheme: scheme) }
     }
 
-    /// Each distinct key's slot: its hash, or the next free slot when another key in this set
-    /// already holds it. Keys are placed in sorted order so one set always resolves the same
-    /// way. Past `slots.count` keys the slots repeat. An "Other" key has no entry.
-    private static func slotIndexes(kind: Kind, names: [String]) -> [String: Int] {
-        var result: [String: Int] = [:]
-        var taken = Set<Int>()
-        for name in Set(names).sorted() {
-            guard !name.hasPrefix("other") else { continue }
-            var slot = Int(fnv1a(kind.rawValue + ":" + name) % UInt64(slots.count))
-            if taken.count < slots.count {
-                while taken.contains(slot) { slot = (slot + 1) % slots.count }
-            }
-            taken.insert(slot)
-            result[name] = slot
-        }
-        return result
+    private static func hashed(_ kind: Kind, _ name: String, scheme: Scheme) -> UInt32 {
+        let hash = fnv1a(kind.rawValue + ":" + name)
+        let count = UInt64(slots.count)
+        return hex(slot: Int(hash % count), shade: Int(hash / count % UInt64(shadeCount)),
+                   scheme: scheme)
+    }
+
+    /// "Unknown", "Other" and "Other (3 versions)" name no entity.
+    private static func isNeutral(_ name: String) -> Bool {
+        name == "other" || name == "unknown" || name.hasPrefix("other (")
     }
 
     /// A version without its product word and trailing ".0" ("macOS 26.7.0" is "26.7"); any
     /// other text is trimmed and lowercased.
     private static func normalized(_ key: String, kind: Kind) -> String {
         let text = normalized(key)
-        // "Other (3 versions)" has digits to strip but names no version.
-        guard kind == .version, !text.hasPrefix("other"), let digit = text.firstIndex(where: \.isNumber) else { return text }
+        guard kind == .version, !isNeutral(text),
+              let digit = text.firstIndex(where: \.isNumber) else { return text }
         return OSVersionName.normalized(String(text[digit...]))
     }
 

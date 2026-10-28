@@ -201,7 +201,7 @@ struct FleetOverviewView: View {
     }
 
     private func stabilityChart(points: [StabilityTrendPoint]) -> some View {
-        let stability = Theme.ChartPalette.color(forMetric: .stability)
+        let stability = Theme.ChartColors.color(forMetric: .stability)
         return Chart {
             ForEach(points) { point in
                 AreaMark(

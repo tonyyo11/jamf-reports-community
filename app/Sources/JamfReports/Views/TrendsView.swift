@@ -930,11 +930,11 @@ struct TrendsView: View {
                 }
                 multilineComparisonChart
                 HStack(spacing: 14) {
-                    legendDot(color: Theme.ChartPalette.color(forMetric: .fileVault),
+                    legendDot(color: Theme.ChartColors.color(forMetric: .fileVault),
                               label: "FileVault")
-                    legendDot(color: Theme.ChartPalette.color(forMetric: .compliance),
+                    legendDot(color: Theme.ChartColors.color(forMetric: .compliance),
                               label: workspaceStore.complianceBenchmarkLabel ?? "Compliance")
-                    legendDot(color: Theme.ChartPalette.color(forMetric: .osCurrent), label: "macOS")
+                    legendDot(color: Theme.ChartColors.color(forMetric: .osCurrent), label: "macOS")
                 }
             }
         }
@@ -1149,12 +1149,12 @@ struct TrendsView: View {
         Group {
             if let domain = chartDomain {
                 Chart {
-                    series("FileVault", color: Theme.ChartPalette.color(forMetric: .fileVault),
+                    series("FileVault", color: Theme.ChartColors.color(forMetric: .fileVault),
                            points: points(for: .fileVault))
                     series(workspaceStore.complianceBenchmarkLabel ?? "Compliance",
-                           color: Theme.ChartPalette.color(forMetric: .compliance),
+                           color: Theme.ChartColors.color(forMetric: .compliance),
                            points: points(for: .compliance))
-                    series("macOS Current", color: Theme.ChartPalette.color(forMetric: .osCurrent),
+                    series("macOS Current", color: Theme.ChartColors.color(forMetric: .osCurrent),
                            points: points(for: .osCurrent))
                 }
                 .chartXScale(domain: domain)
