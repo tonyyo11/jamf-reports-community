@@ -1,5 +1,30 @@
 import Foundation
 
+/// What `runTick` touches outside its own logic. The defaults are the real files, clock, runs
+/// and exit; a test swaps them so the real function runs end to end.
+struct TickEnvironment: Sendable {
+    var lock = TickLock(url: TickLock.defaultURL)
+    var blockedURL = TickLock.defaultBlockedURL
+    var stateURL = TickState.defaultURL
+    var markerDir = TickRunner.runNowMarkerDir
+    var scheduleStore = ScheduleStore()
+    var profiles: @Sendable () -> [JamfCLIProfile] = { ProfileService.discoverLocal() }
+    var policy: @Sendable () -> AutomationPolicy = { AutomationPolicy.current() }
+    var clock: @Sendable () -> Date = { Date() }
+    var summaryIsMissing: @Sendable (Schedule, [JamfCLIProfile], Date) -> Bool = {
+        summaryMissing(for: $0, profiles: $1, now: $2)
+    }
+    var perform: @Sendable (TickScheduler.DueRun) async -> ScheduleRunOutcome = { run in
+        // A same-day retry must not be answered by the once-a-day collect guard.
+        await ReportEngine.$isSameDayRetry.withValue(run.reason == .retry) {
+            await runSchedule(run.schedule, verbose: false)
+        }
+    }
+    var heartbeatEvery: Duration = TickLock.heartbeatInterval
+    var heartbeatLimit: Duration = TickLock.heartbeatLimit
+    var exit: @Sendable (Int32) -> Void = { Darwin.exit($0) }
+}
+
 /// The bundled agent's entry: `JamfReports --tick [--now <label>]`.
 /// Exit 0 unless the lock or a tick-state stamp cannot be written, 75 when another run holds
 /// the lock. Each schedule's own outcome lands in its Run History record, not in this code,
@@ -7,12 +32,15 @@ import Foundation
 @Sendable
 func runTick(
     arguments: [String],
-    now: Date = Date(),
-    lock: TickLock = TickLock(url: TickLock.defaultURL)
+    environment: TickEnvironment = TickEnvironment()
 ) async -> Int32 {
+    let now = environment.clock()
+    let lock = environment.lock
     if let idx = arguments.firstIndex(of: "--now"), idx + 1 < arguments.count,
        !arguments[idx + 1].hasPrefix("--") {
-        do { try TickRunner.requestRunNow(label: arguments[idx + 1]) } catch {
+        do {
+            try TickRunner.requestRunNow(label: arguments[idx + 1], dir: environment.markerDir)
+        } catch {
             fputs("[error] could not queue run-now: \(error.localizedDescription)\n", stderr)
             return 1
         }
@@ -24,7 +52,7 @@ func runTick(
     case .heldElsewhere:
         // Stamp the refusal before returning: the non-catch-up window and the off gap for the
         // wake that eventually gets in are measured from here, not from that wake's own clock.
-        TickLock.noteBlocked()
+        TickLock.noteBlocked(url: environment.blockedURL, now: now)
         fputs("[info] tick: another run holds the lock — queued markers run on the next wake\n",
               stderr)
         return TickRunner.queuedExitCode
@@ -33,55 +61,56 @@ func runTick(
         // `TickState.save` writes beside it, and a blocked stamp would hide the overdue warning.
         let message = "lock file not writable (\(lock.url.path))"
         fputs("[error] tick: \(message)\n", stderr)
-        let failures = TickFailureLog(profiles: ProfileService.discoverLocal())
+        let failures = TickFailureLog(profiles: environment.profiles())
         failures.recordInEveryWorkspace(message)
         failures.finish()
         return 1
     }
     defer { hold.release() }
-    let blocked = TickLock.takeBlockedSince()
+    let blocked = TickLock.takeBlockedSince(url: environment.blockedURL)
 
     // Listed before the schedules load: Run now only queues a label whose schedule
     // already exists, so the load below sees every schedule a listed marker names.
-    let runNowLabels = TickRunner.pendingRunNowLabels()
-    let policy = AutomationPolicy.current()
-    let profiles = ProfileService.discoverLocal()
+    let runNowLabels = TickRunner.pendingRunNowLabels(dir: environment.markerDir)
+    let policy = environment.policy()
+    let profiles = environment.profiles()
     let base = ManagedAutomation.managedBaseProfile(profiles: profiles, policy: policy)
     let managed = ManagedAutomation.desiredSchedules(for: policy, baseProfile: base)
-    let handBuilt = ScheduleStore().load().map { $0.toSchedule() }
+    let handBuilt = environment.scheduleStore.load().map { $0.toSchedule() }
         .sorted { ($0.launchAgentLabel ?? "") < ($1.launchAgentLabel ?? "") }
     let schedules = managed + handBuilt
     // A marker no schedule carries can never run: drop it now, as the old
     // read-and-delete did. The rest are cleared one by one as their runs start.
     let known = Set(schedules.compactMap(\.launchAgentLabel))
     for label in runNowLabels.subtracting(known) {
-        TickRunner.clearRunNowMarker(label: label)
+        TickRunner.clearRunNowMarker(label: label, dir: environment.markerDir)
     }
 
-    var state = TickState.load()
+    var state = TickState.load(url: environment.stateURL)
     let due = TickScheduler.due(
         schedules: schedules, state: state, runNowLabels: runNowLabels, now: now,
         nonCatchUpAnchor: TickScheduler.nonCatchUpAnchor(refusals: blocked, now: now),
         wasOff: TickScheduler.wasOff(lastTick: state.lastTick, refusals: blocked, now: now),
-        summaryMissingToday: { summaryMissing(for: $0, profiles: profiles, now: now) })
+        summaryMissingToday: { environment.summaryIsMissing($0, profiles, now) })
     // After the decision, which reads the previous wake. Best-effort: without it a daily
     // schedule just waits for its fire. A wake a long run turns away stamps `.tick.blocked`,
     // so the run's own length never reads as the Mac being off.
     state.lastTick = now
-    saveLastTick(state)
+    saveLastTick(state, to: environment.stateURL)
     let failures = TickFailureLog(profiles: profiles)
     defer { failures.finish() }
     let result = await TickLoop.runDue(
         due, state: state, runNowLabels: runNowLabels,
-        save: { try $0.save() },
-        clearRunNowMarker: { TickRunner.clearRunNowMarker(label: $0) },
+        clock: environment.clock,
+        save: { try $0.save(url: environment.stateURL) },
+        clearRunNowMarker: { TickRunner.clearRunNowMarker(label: $0, dir: environment.markerDir) },
         perform: { run in
             hold.touch()
-            return await hold.keepingAlive(onGiveUp: { exitAfterLockGiveUp(profiles: profiles) }) {
-                // A same-day retry must not be answered by the once-a-day collect guard.
-                await ReportEngine.$isSameDayRetry.withValue(run.reason == .retry) {
-                    await runSchedule(run.schedule, verbose: false)
-                }
+            return await hold.keepingAlive(
+                every: environment.heartbeatEvery, limit: environment.heartbeatLimit,
+                onGiveUp: { exitAfterLockGiveUp(profiles: profiles, exit: environment.exit) }
+            ) {
+                await environment.perform(run)
             }
         },
         recordFailure: failures.record,
@@ -90,7 +119,10 @@ func runTick(
         // reported overdue by the same process. Inside the heartbeat like the runs, so a slow
         // webhook send cannot let the lock read as stale.
         notifyOverdue: {
-            await hold.keepingAlive(onGiveUp: { exitAfterLockGiveUp(profiles: profiles) }) {
+            await hold.keepingAlive(
+                every: environment.heartbeatEvery, limit: environment.heartbeatLimit,
+                onGiveUp: { exitAfterLockGiveUp(profiles: profiles, exit: environment.exit) }
+            ) {
                 await notifyOverdueSchedulesHeadless(
                     profiles: profiles.map(\.name), excluding: Set(policy.excludedProfiles))
                 // A Run now (the GUI, `schedules run`) is not the background item's own wake.
@@ -120,7 +152,7 @@ func summaryMissing(for schedule: Schedule, profiles: [JamfCLIProfile], now: Dat
 /// answered is still running with no lock. The next wake would start a second run beside it, so
 /// the process ends, which ends the call; the run's own record is left without a footer and
 /// reads as interrupted, and this adds the reason to every workspace's Run History.
-private func exitAfterLockGiveUp(profiles: [JamfCLIProfile]) {
+func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> Void) {
     let hours = TickLock.heartbeatLimit.components.seconds / 3600
     let message = "a run passed the tick lock's \(hours)-hour limit and was stopped so it "
         + "cannot run beside the next wake"
@@ -131,8 +163,8 @@ private func exitAfterLockGiveUp(profiles: [JamfCLIProfile]) {
     exit(1)
 }
 
-private func saveLastTick(_ state: TickState) {
-    do { try state.save() } catch {
+private func saveLastTick(_ state: TickState, to url: URL) {
+    do { try state.save(url: url) } catch {
         AppLogger.schedule.warning(
             "tick: wake time not recorded: \(error.localizedDescription, privacy: .public)")
     }

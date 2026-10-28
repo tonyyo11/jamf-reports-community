@@ -121,9 +121,10 @@ final class NotifyHeartbeatTests: XCTestCase {
         try writeNotify("  heartbeat: true\n")
         let lock = TickLock(url: root.appendingPathComponent(".tick.lock"))
         let label = "\(LaunchAgentWriter.labelPrefix).\(profile).none"
-        _ = await runTick(arguments: ["--tick", "--now", label], lock: lock)
+        _ = await runTick(
+            arguments: ["--tick", "--now", label], environment: TickEnvironment(lock: lock))
         XCTAssertTrue(WebhookCapture.posted.isEmpty, "\(WebhookCapture.posted)")
-        _ = await runTick(arguments: ["--tick"], lock: lock)
+        _ = await runTick(arguments: ["--tick"], environment: TickEnvironment(lock: lock))
         XCTAssertEqual(WebhookCapture.posted.count, 1)
     }
 
