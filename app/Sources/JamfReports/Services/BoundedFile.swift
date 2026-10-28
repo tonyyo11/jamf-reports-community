@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A read of a file another Mac can write, bounded in size and type. The file is opened once
@@ -141,18 +142,70 @@ enum BoundedFile {
     /// Largest cached `pro audit` or group-tools snapshot read for the Audit screen.
     static let snapshotLimit = 64 * 1024 * 1024
 
-    /// Largest inventory snapshot (`mobile-devices-list`): a large district's list passes 64 MB.
+    /// Largest inventory snapshot: a large district's `mobile-devices-list`, `computers` or
+    /// `ea-results` passes 64 MB.
     static let inventoryLimit = 256 * 1024 * 1024
+
+    /// The kinds whose rows grow with the fleet; every reader of one shares `inventoryLimit`.
+    private static let inventoryKinds = [
+        "ea-results", "computers", "computers-list", "mobile-devices-list",
+        "mobile-device-inventory-details",
+    ]
+
+    /// The read limit for a snapshot of `kind` (`_` and `-` are one spelling).
+    static func limit(forKind kind: String) -> Int {
+        inventoryKinds.contains(kind.replacingOccurrences(of: "_", with: "-"))
+            ? inventoryLimit : snapshotLimit
+    }
+
+    /// The read limit for the snapshot file `url`, from its kind: the folder it sits in, else
+    /// the flat `<kind>-<stamp>` file name.
+    static func limit(for url: URL) -> Int {
+        let folder = url.deletingLastPathComponent().lastPathComponent
+        let name = url.lastPathComponent.replacingOccurrences(of: "_", with: "-")
+        let isInventory = limit(forKind: folder) == inventoryLimit
+            || inventoryKinds.contains { name.hasPrefix($0 + "-") }
+        return isInventory ? inventoryLimit : snapshotLimit
+    }
+
+    /// A handle on the regular file at `url` for a reader that seeks or streams: opened
+    /// non-blocking (a FIFO cannot hang the open), a link or a second hard link refused, the
+    /// type checked on the descriptor. The handle closes when released.
+    static func openChecked(_ url: URL) throws -> FileHandle {
+        let descriptor = try openRegular(url, followSymlinks: false, inside: nil)
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    /// SHA-256 of the regular file at `url`, hashed in 1 MB chunks through `openChecked`, so
+    /// a workbook of any size is neither held in memory nor read twice. Nil when unreadable.
+    static func sha256Hex(_ url: URL) -> String? {
+        guard let handle = try? openChecked(url) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let chunk: Data?
+            do { chunk = try handle.read(upToCount: 1_048_576) } catch { return nil }
+            // nil or empty is the end of the file.
+            guard let chunk, !chunk.isEmpty else { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
 
     /// The one reader of a snapshot, summary, cache or log file the picker chose: `read` refusing a
     /// link or a second hard link, or nil. A missing file is nil with no line; a file over
     /// `limit`, not a regular file or otherwise unreadable is logged by name, so a file left
-    /// unread is never silent. Callers read nil as "not read", never as an empty snapshot.
+    /// unread is never silent. Callers read nil as "not read", never as an empty snapshot. The
+    /// limit defaults to the file's kind (`limit(for:)`). `root` is the folder the caller holds
+    /// (a data folder), as the caller holds it: `read(inside:)` follows its own links, then
+    /// refuses a link at any component below it, so a kind folder that is a link is refused.
     static func readLogged(
-        _ url: URL, limit: Int = snapshotLimit, category: AppLogger.Category = .collect
+        _ url: URL, limit: Int? = nil, inside root: URL? = nil,
+        category: AppLogger.Category = .collect
     ) -> Data? {
+        let limit = limit ?? Self.limit(for: url)
         do {
-            return try read(url, limit: limit, followSymlinks: false)
+            return try read(url, limit: limit, followSymlinks: false, inside: root)
         } catch let failure as Failure {
             // EMLINK is logged by the open itself.
             if failure == .unreadable(ENOENT) || failure == .unreadable(EMLINK) { return nil }

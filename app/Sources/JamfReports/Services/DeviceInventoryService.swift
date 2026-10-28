@@ -578,7 +578,7 @@ private extension DeviceInventoryService {
         warnings: inout [String]
     ) -> [[String: Any]] {
         guard let file = validatedFile(url, root: root),
-              let data = readData(file, root: root, maxBytes: 60 * 1024 * 1024, warnings: &warnings) else {
+              let data = readData(file, root: root, maxBytes: BoundedFile.limit(for: file), warnings: &warnings) else {
             return []
         }
         guard let object = try? JSONSerialization.jsonObject(with: data) else {

@@ -1312,21 +1312,11 @@ struct LenientElement<Row: Decodable>: Decodable {
         return (rows, elements.count - rows.count)
     }
 
-    /// Largest report snapshot `rows(at:)` reads.
-    static var maxSnapshotBytes: Int { 64 * 1024 * 1024 }
-
     /// The rows of the snapshot at `url`, logging a file that is not a list and any element
     /// skipped; nil when the file cannot be read or is not a list.
     static func rows(at url: URL, logging category: AppLogger.Category) -> [Row]? {
         let name = ConfigSchema.displayText(url.lastPathComponent)
-        let data: Data
-        do {
-            data = try BoundedFile.read(url, limit: maxSnapshotBytes, followSymlinks: false)
-        } catch {
-            AppLogger.event(category, .error,
-                            "\(name) not read: a link, not a regular file, or over 64 MB")
-            return nil
-        }
+        guard let data = BoundedFile.readLogged(url, category: category) else { return nil }
         guard let result = rows(in: data) else {
             AppLogger.event(category, .error, "\(name) is not a JSON list of rows; nothing read")
             return nil

@@ -147,7 +147,7 @@ enum LaunchAgentService {
     /// caller copies it verbatim, preserving behavior for non-secret plists.
     /// Internal (not private) so the redaction is directly unit-testable.
     static func redactedPlistData(at url: URL) -> Data? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = try? BoundedFile.read(url, limit: BoundedFile.documentLimit),
               let parsed = try? PropertyListSerialization.propertyList(
                   from: data, options: [], format: nil),
               var plist = parsed as? [String: Any],
@@ -199,7 +199,7 @@ enum LaunchAgentService {
     /// Parse one plist into a Schedule. Returns nil if the plist is malformed
     /// or the label doesn't match the expected naming convention.
     static func parse(_ url: URL) -> Schedule? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = try? BoundedFile.read(url, limit: BoundedFile.documentLimit),
               let plist = try? PropertyListSerialization
                 .propertyList(from: data, format: nil) as? [String: Any],
               let label = plist["Label"] as? String,
@@ -389,7 +389,7 @@ enum LaunchAgentService {
     }
 
     private static func plistLabel(_ url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = try? BoundedFile.read(url, limit: BoundedFile.documentLimit),
               let plist = try? PropertyListSerialization
                 .propertyList(from: data, format: nil) as? [String: Any] else {
             return nil

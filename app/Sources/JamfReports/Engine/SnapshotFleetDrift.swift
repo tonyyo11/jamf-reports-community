@@ -115,7 +115,7 @@ extension CoreDashboard {
             throw CoreDashboardError.noCachedData(names: ["computers (two different days)"])
         }
         func read(_ url: URL) throws -> Data {
-            try BoundedFile.read(url, limit: BoundedFile.snapshotLimit, followSymlinks: false)
+            try BoundedFile.read(url, limit: BoundedFile.limit(for: url), followSymlinks: false)
         }
         guard let current = ComputerDates.decodeSnapshot(try read(pair.current.url)),
               let prior = ComputerDates.decodeSnapshot(try read(pair.prior.url)) else {
