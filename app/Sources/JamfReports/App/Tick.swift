@@ -179,6 +179,14 @@ func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> 
     exit(1)
 }
 
+/// The give-up for a process that holds the tick lock through `holdingForRun` (`--scheduled-run`,
+/// the included CLI): the tick's own, so a stalled jamf-cli call there cannot run beside the
+/// next wake either. Profiles are discovered when it fires, not at launch.
+func lockGiveUp(exit: @escaping @Sendable (Int32) -> Void = { Darwin.exit($0) })
+    -> @Sendable () -> Void {
+    { exitAfterLockGiveUp(profiles: ProfileService.discoverLocal(), exit: exit) }
+}
+
 private func saveLastTick(_ state: TickState, to url: URL) {
     do { try state.save(url: url) } catch {
         AppLogger.schedule.warning(
@@ -194,9 +202,13 @@ private func saveLastTick(_ state: TickState, to url: URL) {
 func runScheduleExclusively(
     _ schedule: Schedule,
     verbose: Bool,
-    lock: TickLock = TickLock(url: TickLock.defaultURL)
+    lock: TickLock = TickLock(url: TickLock.defaultURL),
+    limit: Duration = TickLock.heartbeatLimit,
+    onGiveUp: @escaping @Sendable () -> Void = lockGiveUp()
 ) async -> ScheduleRunOutcome? {
-    let outcome = await lock.holdingForRun { await runSchedule(schedule, verbose: verbose) }
+    let outcome = await lock.holdingForRun(limit: limit, onGiveUp: onGiveUp) {
+        await runSchedule(schedule, verbose: verbose)
+    }
     if outcome == nil {
         fputs("[info] scheduled-run: \(TickLock.busyMessage)\n", stderr)
     }

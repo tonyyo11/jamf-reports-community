@@ -102,9 +102,10 @@ enum CLIRun {
     /// that ends with a failure exit returns what it would have exited with and fails after.
     static func exclusively<T: Sendable>(
         lock: TickLock = TickLock(url: TickLock.defaultURL),
+        onGiveUp: @escaping @Sendable () -> Void = lockGiveUp(),
         _ body: () async throws -> T
     ) async throws -> T {
-        guard let result = try await lock.holdingForRun(body) else {
+        guard let result = try await lock.holdingForRun(onGiveUp: onGiveUp, body) else {
             FileHandle.standardError.write(Data("error: \(TickLock.busyMessage)\n".utf8))
             throw ExitCode(TickRunner.queuedExitCode)
         }

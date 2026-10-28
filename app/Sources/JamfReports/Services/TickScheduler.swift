@@ -544,9 +544,13 @@ struct TickLock: Sendable {
     /// included CLI): it cannot overlap a GUI collect or report, a tick or another such process.
     /// Nil, without running `body`, when another live process holds the lock. A lock file that
     /// cannot be written runs `body` without it, as a GUI collect does: refusing would turn a
-    /// broken Application Support into a dead command, and a tick needs the same file.
+    /// broken Application Support into a dead command, and a tick needs the same file. Past
+    /// `limit` the lock is given up and `onGiveUp` runs, as for the tick: a call that never
+    /// answered would otherwise run on beside the next wake's.
     func holdingForRun<T: Sendable>(
         beatEvery interval: Duration = TickLock.heartbeatInterval,
+        limit: Duration = TickLock.heartbeatLimit,
+        onGiveUp: (@Sendable () -> Void)? = nil,
         isolation: isolated (any Actor)? = #isolation,
         _ body: () async throws -> T
     ) async rethrows -> T? {
@@ -556,7 +560,7 @@ struct TickLock: Sendable {
         case .writeFailed:
             return try await body()
         case .acquired(let hold):
-            let beats = hold.heartbeat(every: interval)
+            let beats = hold.heartbeat(every: interval, limit: limit, onGiveUp: onGiveUp)
             defer {
                 beats.cancel()
                 hold.release()

@@ -17,8 +17,13 @@ final class TimedProcessBox: @unchecked Sendable {
     func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
 
     /// Right after `process.run()` at every launch site: a process that is exiting
-    /// (`terminateAllRunning` ran) must not leave a child it started after that pass.
-    func stopIfClosing() { if Self.isClosing { signalIfRunning(SIGTERM) } }
+    /// (`terminateAllRunning` ran) must not leave a child it started after that pass. Same
+    /// SIGTERM, grace, SIGKILL as the pass, blocking up to `grace`: the process is exiting, and
+    /// a child that ignores SIGTERM would otherwise outlive it.
+    func stopIfClosing(grace: TimeInterval = CLIBridge.timeoutKillGrace) {
+        guard Self.isClosing else { return }
+        Self.terminate([self], grace: grace)
+    }
 
     /// Whether the child is running, for `terminateAllRunning`.
     private var isChildRunning: Bool {
@@ -91,13 +96,17 @@ final class TimedProcessBox: @unchecked Sendable {
     static func terminateAllRunning(grace: TimeInterval = CLIBridge.timeoutKillGrace) -> Int {
         closing.set(true)
         let running = live.boxes.filter(\.isChildRunning)
-        for box in running { box.signalIfRunning(SIGTERM) }
+        terminate(running, grace: grace)
+        return running.count
+    }
+
+    private static func terminate(_ boxes: [TimedProcessBox], grace: TimeInterval) {
+        for box in boxes { box.signalIfRunning(SIGTERM) }
         let deadline = Date().addingTimeInterval(grace)
-        while running.contains(where: \.isChildRunning), Date() < deadline {
+        while boxes.contains(where: \.isChildRunning), Date() < deadline {
             Thread.sleep(forTimeInterval: 0.05)
         }
-        for box in running { box.killIfStillRunning() }
-        return running.count
+        for box in boxes { box.killIfStillRunning() }
     }
 }
 

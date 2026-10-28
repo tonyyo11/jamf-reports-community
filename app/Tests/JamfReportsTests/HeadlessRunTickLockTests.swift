@@ -159,6 +159,36 @@ final class HeadlessRunTickLockTests: XCTestCase {
         XCTAssertEqual(fresh, true)
     }
 
+    /// Past the limit the lock is given up and the give-up runs, as for the tick, so a stalled
+    /// call cannot run beside the next wake's.
+    func testARunPastTheLimitGivesTheLockUpAndRunsTheGiveUp() async throws {
+        let lock = temporaryLock()
+        let gaveUp = Flag()
+        let releasedAtGiveUp = Flag()
+        _ = try await lock.holdingForRun(
+            beatEvery: .milliseconds(10), limit: .milliseconds(40),
+            onGiveUp: { gaveUp.set(); if lock.namesNoHolder { releasedAtGiveUp.set() } }
+        ) { () -> Int in
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            while !gaveUp.isSet, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            return 1
+        }
+        XCTAssertTrue(gaveUp.isSet)
+        XCTAssertTrue(releasedAtGiveUp.isSet, "the lock was still held when the give-up ran")
+    }
+
+    /// Runs the real give-up, so the workspaces root is a temporary one and the latch it sets on
+    /// new launches is cleared after.
+    func testTheGiveUpOfAHeadlessRunExitsOne() throws {
+        _ = try makeWorkspace()
+        addTeardownBlock { TimedProcessBox.reopen() }
+        let code = LockedCode()
+        lockGiveUp(exit: { code.set($0) })()
+        XCTAssertEqual(code.value, 1)
+    }
+
     func testAHeldLockRunsNothingAndIsLeftAlone() async throws {
         let lock = temporaryLock()
         try await whileAnotherProcessHolds(lock) {
@@ -200,4 +230,11 @@ private final class Flag: @unchecked Sendable {
     private var raised = false
     var isSet: Bool { lock.withLock { raised } }
     func set() { lock.withLock { raised = true } }
+}
+
+private final class LockedCode: @unchecked Sendable {
+    private let lock = NSLock()
+    private var code: Int32?
+    var value: Int32? { lock.withLock { code } }
+    func set(_ new: Int32) { lock.withLock { code = new } }
 }
