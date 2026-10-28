@@ -435,17 +435,19 @@ private func scheduledRunSingleBody(
         }
         do {
             let bridge = CLIBridge()
-            let exit = try await bridge.backup(
+            let run = try await bridge.backupRun(
                 profile: profile,
                 label: "scheduled-\(BackupMaintenance.dateStamp())",
                 onLine: onLine
             )
+            let exit = run.exit
             // Exit 7 keeps its partial export on disk, so retention has to see
             // it — otherwise partial backups accumulate unpruned forever. The
             // run itself still reports non-success: an incomplete backup is not
             // a restore point, and the row should stay red until it's fixed.
             if CLIBridge.backupOutputIsPrunable(exit: exit) {
-                BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
+                BackupMaintenance.performPostSuccessHousekeeping(
+                    profile: profile, justFinished: .init(run.folder), onLine: onLine)
             }
             // Explain the exit code (cause + remediation) instead of a bare
             // integer — same translation the GUI's Backups screen already shows

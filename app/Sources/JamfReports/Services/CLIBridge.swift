@@ -1974,6 +1974,27 @@ final class CLIBridge {
         _testExecutable: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
+        try await backupRun(
+            profile: profile, label: label, timeout: timeout, protectTimeout: protectTimeout,
+            _testExecutable: _testExecutable, onLine: onLine).exit
+    }
+
+    /// What one backup run left: jamf-cli's exit and the folder it finished, nil when it wrote
+    /// none (a failure with nothing to keep, or Jamf Pro skipped with no Jamf Protect objects).
+    struct BackupRun: Sendable {
+        let exit: Int32
+        let folder: URL?
+    }
+
+    /// `backup`, with the folder it finished, for a caller that stamps and prunes it.
+    func backupRun(
+        profile: String,
+        label: String?,
+        timeout: TimeInterval = CLIBridge.backupTimeout,
+        protectTimeout: TimeInterval = ProtectBackup.timeout,
+        _testExecutable: URL? = nil,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async throws -> BackupRun {
         try await AttentionLog.recording(profile: profile) {
             try await backupRecording(
                 profile: profile, label: label, timeout: timeout,
@@ -1988,7 +2009,7 @@ final class CLIBridge {
         protectTimeout: TimeInterval,
         _testExecutable: URL?,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async throws -> Int32 {
+    ) async throws -> BackupRun {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             throw CLIBridgeError.invalidProfile(profile)
@@ -2116,7 +2137,7 @@ final class CLIBridge {
             guard cleared else {
                 discardStaging(validatedTemp, onLine: onLine)
                 tightenOnSuccess(exit, profile: profile)
-                return exit
+                return BackupRun(exit: exit, folder: nil)
             }
         }
 
@@ -2144,7 +2165,20 @@ final class CLIBridge {
         if proFailed, (protectResult?.objectTotal ?? 0) == 0 {
             discardStaging(validatedTemp, onLine: onLine)
             tightenOnSuccess(exit, profile: profile)
-            return exit
+            return BackupRun(exit: exit, folder: nil)
+        }
+        // A skipped Jamf Pro part with no Jamf Protect objects leaves nothing to restore from,
+        // so no folder is written; the skip line, the Partial line and the attention item above
+        // already say so. Not a failure.
+        if proSkipped, (protectResult?.objectTotal ?? 0) == 0 {
+            discardStaging(validatedTemp, onLine: onLine)
+            onLine(.init(
+                timestamp: Date(), level: proSkip?.isPartial == true ? .warn : .info,
+                text: (proSkip?.isPartial == true ? "[warn]" : "[info]")
+                    + " no backup written: Jamf Pro was skipped and Jamf Protect left nothing "
+                    + "to keep"))
+            tightenOnSuccess(exit, profile: profile)
+            return BackupRun(exit: exit, folder: nil)
         }
 
         // Rename temp dir to a timestamped final name.
@@ -2230,7 +2264,7 @@ final class CLIBridge {
                          text: "[error] Jamf Pro backup failed; kept the Jamf Protect part in "
                              + validatedFinal.lastPathComponent))
             tightenOnSuccess(exit, profile: profile)
-            return exit
+            return BackupRun(exit: exit, folder: validatedFinal)
         }
         let protectIncomplete = protectResult?.isIncomplete == true
         onLine(.init(
@@ -2249,7 +2283,7 @@ final class CLIBridge {
                 : "[ok] backup written: \(validatedFinal.lastPathComponent)"
         ))
         tightenOnSuccess(exit, profile: profile)
-        return exit
+        return BackupRun(exit: exit, folder: validatedFinal)
     }
 
     /// A Jamf Pro part this backup leaves out: `reason` goes in the manifest, `isPartial` is

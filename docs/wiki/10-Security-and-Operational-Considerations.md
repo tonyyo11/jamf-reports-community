@@ -175,7 +175,8 @@ to be asked: a workspace where this Mac already made scheduled backups keeps bac
 three more scheduled runs, with a Needs attention item, then skips Jamf Pro until you choose;
 a new workspace asks before its first backup. Once this Mac has seen a value, deleting it later
 does not restart those runs. A skip logs one `[warn]` line naming the setting and the backup
-folder records it in its manifest (`products.pro.state: skipped`). The run reads as Partial
+folder records it in its manifest (`products.pro.state: skipped`); a run with no Jamf Protect
+part to keep writes no backup folder at all. The run reads as Partial
 when nobody has chosen yet or a `true` waits for this Mac's confirmation; an explicit `false`
 is your decision and the run is not Partial. A value that is not `true` or `false`, a
 `config.yaml` that does not decode, or a workspace this Mac pinned as shared (even if the file

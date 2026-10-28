@@ -279,6 +279,17 @@ enum BackupMaintenance {
         return names.allSatisfy { $0 == "protect" || $0 == "manifest.json" || $0.hasPrefix(".") }
     }
 
+    /// The backup a run just finished, as its caller knows it. A run that wrote no folder is
+    /// `.none`: stamping the newest scheduled folder then would claim a peer's.
+    enum FinishedBackup {
+        case folder(URL)
+        case none
+        /// A caller with no run to ask: the newest scheduled folder is taken to be this Mac's.
+        case unknown
+
+        init(_ folder: URL?) { self = folder.map { .folder($0) } ?? .none }
+    }
+
     /// Post-success housekeeping run by both the `jamf-reports backup` command
     /// (`UtilityCommands`) and the headless `--scheduled-run` path (`main.swift`).
     /// Prunes old scheduled backups and sweeps abandoned `.tmp-*` staging dirs.
@@ -286,12 +297,17 @@ enum BackupMaintenance {
     /// at call sites or they will diverge again.
     static func performPostSuccessHousekeeping(
         profile: String,
+        justFinished: FinishedBackup = .unknown,
         keep: Int = defaultKeepCount,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) {
         // Stamp first: retention below can only scope to this machine on shared
         // storage if the backup that just finished says who made it.
-        stampNewestScheduledBackup(profile: profile)
+        switch justFinished {
+        case .folder(let backup): stampOwnership(of: backup)
+        case .none: break
+        case .unknown: stampNewestScheduledBackup(profile: profile)
+        }
         pruneScheduledBackups(profile: profile, keep: keep, onLine: onLine)
         cleanStaleTempDirs(profile: profile)
     }

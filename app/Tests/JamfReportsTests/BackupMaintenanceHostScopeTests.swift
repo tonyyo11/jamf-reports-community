@@ -94,6 +94,53 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         )
     }
 
+    // MARK: - Stamping the folder a run finished
+
+    /// A peer's newer scheduled folder, unstamped, beside the one this run made.
+    private func finishedAndPeers() throws -> (mine: URL, peer: URL) {
+        let mine = try makeBackup("20260825T010000", owner: nil)
+        let peer = try makeBackup("20260825T090000", owner: nil)
+        return (mine, peer)
+    }
+
+    func testHousekeepingStampsTheFolderTheRunFinishedNotAPeersNewerOne() throws {
+        let (mine, peer) = try finishedAndPeers()
+        BackupMaintenance.performPostSuccessHousekeeping(
+            profile: profile, justFinished: .folder(mine))
+        XCTAssertEqual(BackupMaintenance.ownerHostID(of: mine), SharedWorkspace.currentHost.id)
+        XCTAssertNil(BackupMaintenance.ownerHostID(of: peer))
+    }
+
+    func testHousekeepingAfterARunThatWroteNoFolderStampsNothing() throws {
+        let (mine, peer) = try finishedAndPeers()
+        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, justFinished: .none)
+        XCTAssertNil(BackupMaintenance.ownerHostID(of: mine))
+        XCTAssertNil(BackupMaintenance.ownerHostID(of: peer))
+    }
+
+    func testHousekeepingWithNoRunToAskStampsTheNewestScheduledFolder() throws {
+        let (_, newest) = try finishedAndPeers()
+        BackupMaintenance.performPostSuccessHousekeeping(profile: profile)
+        XCTAssertEqual(BackupMaintenance.ownerHostID(of: newest), SharedWorkspace.currentHost.id)
+    }
+
+    /// Retention on a shared folder still spends only this Mac's budget once the run names its
+    /// folder: the older stamped one goes, the peer's newer one stays.
+    func testSyncedHousekeepingCountsOnlyThisMachinesFolders() throws {
+        try makeSyncedWorkspaceRoot()
+        let older = try makeBackup("20260825T010000", owner: SharedWorkspace.currentHost.id)
+        let mine = try makeBackup("20260825T020000", owner: nil)
+        let peer = try makeBackup("20260825T090000", owner: "some-other-host-abc123")
+
+        BackupMaintenance.performPostSuccessHousekeeping(
+            profile: profile, justFinished: .folder(mine), keep: 1)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: older.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mine.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: peer.path))
+        XCTAssertEqual(BackupMaintenance.ownerHostID(of: peer), "some-other-host-abc123")
+    }
+
     // MARK: - Synced-volume pruning
 
     /// Redirects `JRC_TEST_WORKSPACES_ROOT` at a path shaped like a provider mount

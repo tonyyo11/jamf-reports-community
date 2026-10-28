@@ -39,6 +39,9 @@ versions in this repository map to git tags.
 - Setting up an existing profile from the Add sheet now keeps the connection check's note, such as
   a missing permission, in the message shown after it finishes, instead of losing it when the
   profile leaves the list. (#305)
+- A scheduled backup that skips Jamf Pro on shared storage and has no Jamf Protect part to keep
+  no longer leaves an empty backup folder behind, and the run now marks as its own Mac's only
+  the folder it wrote, never a newer folder another Mac added to the shared workspace. (#305)
 - Config Doctor now warns when the notification webhook points at a host that is not a known
   Microsoft Teams, Power Automate or Slack webhook host. It shows the host only, and the app
   still sends. (#305)

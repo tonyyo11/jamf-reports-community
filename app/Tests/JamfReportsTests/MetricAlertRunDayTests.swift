@@ -21,7 +21,8 @@ final class MetricAlertRunDayTests: XCTestCase {
         setenv("JRC_TEST_WORKSPACES_ROOT", workspaces.path, 1)
         workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
         let configURL = workspace.appendingPathComponent("config.yaml")
-        try ("notify:\n  enabled: true\n  provider: teams\n  url: \"\(WebhookCapture.webhookURL)\"\n"
+        try ("notify:\n  enabled: true\n  provider: teams\n"
+            + "  url: \"\(WebhookCapture.webhookURL)\"\n"
             + "alerts:\n  enabled: true\n  rules:\n"
             + "    - {metric: \"total_devices\", when: \"above\", threshold: 0}\n")
             .write(to: configURL, atomically: true, encoding: .utf8)
