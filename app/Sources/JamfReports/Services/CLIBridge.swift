@@ -2372,8 +2372,11 @@ final class CLIBridge {
         }
     }
 
-    nonisolated static func environmentForJamfCLI() -> [String: String] {
-        let parent = ProcessInfo.processInfo.environment
+    /// The one environment every jamf-cli child gets; `parent` is the test seam. Add a variable
+    /// jamf-cli must see to `jamfCLIAllowedEnvKeys` (verbatim) or here (when it needs a check).
+    nonisolated static func environmentForJamfCLI(
+        parent: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
         var env: [String: String] = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
@@ -2411,6 +2414,11 @@ final class CLIBridge {
                     profile: profile,
                     workspacesRoot: ProfileService.workspacesRoot(),
                     seedConfigURL: Self.bundledSeedConfig(),
+        // jamf-cli keeps its profiles under $XDG_CONFIG_HOME when it is set; the app reads the
+        // same folder (`ProfileService.jamfCLIConfigFileURL`), so a relative value is dropped.
+        if let xdg = ProfileService.absoluteXDGConfigHome(in: parent) {
+            env["XDG_CONFIG_HOME"] = xdg
+        }
                     onLine: onLine
                 )
             } catch {

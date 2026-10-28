@@ -446,7 +446,7 @@ enum ProfileService {
         _testConfigURL: URL? = nil
     ) -> [JamfCLIProfile]? {
         #if DEBUG
-        // A test never reads this Mac's ~/.config/jamf-cli/config.yaml, the fallback when no
+        // A test never reads this Mac's jamf-cli config file, the fallback when no
         // jamf-cli is found; one that checks discovery passes its own binary.
         if _testBinaryOverride == nil, NSClassFromString("XCTestCase") != nil { return nil }
         #endif
@@ -461,7 +461,7 @@ enum ProfileService {
         }
 
         // M-01: refuse to spawn a tampered jamf-cli even for `config list`.
-        // Fall back to reading `~/.config/jamf-cli/config.yaml` directly —
+        // Fall back to reading jamf-cli's config file directly —
         // the same recovery path used when the binary is absent or launch
         // fails. The user still sees their profiles; nothing un-trusted runs.
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
@@ -595,14 +595,32 @@ enum ProfileService {
         }
     }
 
-    /// jamf-cli's config file: `~/.config/jamf-cli/config.yaml`, the path its pinned
-    /// environment resolves to. nil in a test process, which never reads the real file.
+    /// `XDG_CONFIG_HOME` when `environment` sets it to an absolute path; jamf-cli ignores a
+    /// relative one, so the app does too.
+    nonisolated static func absoluteXDGConfigHome(in environment: [String: String]) -> String? {
+        guard let value = environment["XDG_CONFIG_HOME"], value.hasPrefix("/") else { return nil }
+        return value
+    }
+
+    /// The one place jamf-cli's config file path is built: `$XDG_CONFIG_HOME/jamf-cli/config.yaml`
+    /// when that variable is absolute, else `~/.config/jamf-cli/config.yaml`. The app passes the
+    /// variable to jamf-cli (`CLIBridge.environmentForJamfCLI`), so both read the same file.
+    nonisolated static func jamfCLIConfigFileURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> URL {
+        let base = absoluteXDGConfigHome(in: environment).map { URL(fileURLWithPath: $0) }
+            ?? home.appendingPathComponent(".config")
+        return base.appendingPathComponent("jamf-cli/config.yaml")
+    }
+
+    /// jamf-cli's config file (see `jamfCLIConfigFileURL`). nil in a test process, which never
+    /// reads the real file.
     static var defaultConfigFileURL: URL? {
         #if DEBUG
         if NSClassFromString("XCTestCase") != nil { return nil }
         #endif
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml")
+        return jamfCLIConfigFileURL()
     }
 
     /// The file is credentials-adjacent: it holds keychain references, and a user may have
@@ -622,8 +640,7 @@ enum ProfileService {
     /// when the file can't be read. `configURL` is a test seam; production callers omit it.
     static func fallbackConfigProfiles(
         scheduleCounts: [String: Int],
-        configURL: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml")
+        configURL: URL = ProfileService.jamfCLIConfigFileURL()
     ) -> [JamfCLIProfile]? {
         guard let configured = readConfigFile(at: configURL) else { return nil }
         return rows(for: configured, scheduleCounts: scheduleCounts, configFileRead: true)

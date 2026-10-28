@@ -26,10 +26,7 @@ enum ConnectionStarter {
         let errorDescription: String?
     }
 
-    static var jamfCLIConfigURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml")
-    }
+    static var jamfCLIConfigURL: URL { ProfileService.jamfCLIConfigFileURL() }
 
     /// Records `profile` as the first member of a connection named after it. The region comes
     /// from the profile's server (`storedURL`, as the profile list shows it) and the ID and
