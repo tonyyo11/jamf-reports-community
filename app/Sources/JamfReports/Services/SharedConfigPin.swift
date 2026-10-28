@@ -258,6 +258,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             .trimmingCharacters(in: .whitespaces)
         // The Protect login is `profiles.protect` once that block exists, as `EnvironmentProfiles`
         // reads it, so the one pin key covers both forms and a peer cannot add the block unseen.
+        // Read as the decoder reads it, so the pinned name is the one jamf-cli receives.
         let protectProfile = ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
             ? raw("profiles", "protect") : raw("protect", "profile")
         return SharedConfigPin(
@@ -270,7 +271,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             retentionArchiveDir: path("retention", "archive_dir"),
             sharedEnabled: (raw("shared_workspace", "enabled") as? Bool).map { String($0) } ?? "",
             historicalDir: path("charts", "historical_csv_dir"),
-            protectProfile: ((protectProfile as? String) ?? "")
+            protectProfile: (ConfigLoader.textValue(protectProfile) ?? "")
                 .trimmingCharacters(in: .whitespaces),
             notifyDetail: notifyDetail,
             notifyURLHost: webhookHost(typedURL),
