@@ -69,11 +69,7 @@ enum CellValue: Sendable {
             })
         }
         let s = String(String.UnicodeScalarView(kept))
-        // Escape formula-injection: cells starting with =, +, -, @ get a leading tab.
-        if let first = s.first, "=+-@".contains(first) {
-            return .string("\t" + s)
-        }
-        return .string(s)
+        return .string(StaleDeviceService.formulaGuarded(s))
     }
 }
 
@@ -265,6 +261,9 @@ final class Workbook: @unchecked Sendable {
     }
 
     var firstSheet: Worksheet? { sheets.first }
+
+    /// The tabs in their written order.
+    var worksheets: [Worksheet] { sheets }
 
     /// Return the first worksheet whose name matches `name` (exact, after sanitization).
     func sheet(named name: String) -> Worksheet? {
