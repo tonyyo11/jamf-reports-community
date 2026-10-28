@@ -1684,7 +1684,7 @@ struct CoreDashboard: Sendable {
         guard let source = MobileFleetService.inventorySource(among: newestPerKind) else {
             return []
         }
-        if let data = BoundedFile.readLogged(source.url, limit: BoundedFile.inventoryLimit) {
+        if let data = BoundedFile.readLogged(source.url) {
             SnapshotManifest.verify(snapshot: source.url, data: data)
         }
         return source.devices
@@ -3468,7 +3468,7 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: names)
         }
         // An unreadable newest file is "no snapshot" (logged by name), not a thrown I/O error.
-        guard let data = BoundedFile.readLogged(newest) else {
+        guard let data = BoundedFile.readLogged(newest, inside: dataDir) else {
             throw CoreDashboardError.noCachedData(names: names)
         }
         SnapshotManifest.verify(snapshot: newest, data: data)

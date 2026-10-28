@@ -316,9 +316,13 @@ final class DiagnosticRedactor {
         jsonFiles.sort { $0.path < $1.path }
         var sets: [String: Set<String>] = [:]
         for url in jsonFiles {
-            guard let data = BoundedFile.readLogged(url, limit: BoundedFile.inventoryLimit),
-                  let obj = try? JSONSerialization.jsonObject(with: data) else { continue }
-            harvest(obj, into: &sets)
+            // Each file is parsed whole; release it before the next, or a workspace of large
+            // snapshots holds them all until the loop ends.
+            autoreleasepool {
+                guard let data = BoundedFile.readLogged(url),
+                      let obj = try? JSONSerialization.jsonObject(with: data) else { return }
+                harvest(obj, into: &sets)
+            }
         }
         let total = sets.values.reduce(0) { $0 + $1.count }
         for (category, values) in sets { compileSeededRegex(category, from: values) }
@@ -816,7 +820,7 @@ enum DiagnosticBundleService {
 
     // MARK: - Collectors
 
-    private static func collectLogs(
+    static func collectLogs(
         from logsDir: URL, into staging: URL, redactor: DiagnosticRedactor?,
         days: Int, now: Date
     ) -> [ManifestEntry] {
@@ -866,7 +870,8 @@ enum DiagnosticBundleService {
         let summaries = contents
             .filter { $0.lastPathComponent.hasPrefix("summary_")
                 && $0.pathExtension.lowercased() == "json" }
-            .sorted { lhs, rhs in modified(lhs) > modified(rhs) }
+            .filter(FileManager.isSelectableSnapshot)
+            .sorted { FileManager.isOlderSnapshot($1, than: $0) }
             .prefix(limit)
         var entries: [ManifestEntry] = []
         for url in summaries {

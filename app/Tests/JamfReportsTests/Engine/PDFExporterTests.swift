@@ -72,20 +72,6 @@ final class PDFExporterTests: XCTestCase {
         XCTAssertGreaterThan(size, 1024, "PDF must be larger than 1 KB, got \(size) bytes")
     }
 
-    /// Exporting from a file URL backed by a known-good HTML file should succeed.
-    func testExportFromFileURL() async throws {
-        let htmlFile = outputDir.appendingPathComponent("source.html")
-        let html = "<html><body><p>File URL export test</p></body></html>"
-        try html.write(to: htmlFile, atomically: true, encoding: .utf8)
-
-        let dest = outputDir.appendingPathComponent("from_file.pdf")
-        try await PDFExporter.export(htmlURL: htmlFile, to: dest)
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path))
-        let magic = try Data(contentsOf: dest).prefix(5)
-        XCTAssertEqual(String(bytes: magic, encoding: .ascii), "%PDF-")
-    }
-
     /// The exporter should create intermediate directories if the destination path
     /// does not yet exist.
     func testExportCreatesIntermediateDirectories() async throws {

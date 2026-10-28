@@ -637,8 +637,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     }
 
     private nonisolated static func decodePatchRows(at url: URL) -> [PatchStatusRow]? {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .report) else { return nil }
+        guard let data = BoundedFile.readLogged(url, category: .report) else { return nil }
         return try? JSONDecoder().decode([PatchStatusRow].self, from: data)
     }
 }

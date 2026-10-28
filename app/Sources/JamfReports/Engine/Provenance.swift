@@ -129,7 +129,7 @@ extension Provenance {
                 forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             return lMod < rMod
         }),
-              let data = BoundedFile.readLogged(newest),
+              let data = BoundedFile.readLogged(newest, inside: dataDir),
               let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return nil }
 

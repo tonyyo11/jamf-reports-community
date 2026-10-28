@@ -138,10 +138,8 @@ struct SecurityPostureService: Sendable {
         at url: URL, policy: SecurityControlPolicy, hardware: [String: Bool]
     ) throws -> Snapshot {
         guard let data = BoundedFile.readLogged(url) else {
-            AppLogger.platform.warning(
-                "SecurityPostureService: could not read security file \(url.lastPathComponent, privacy: .public)"
-            )
-            throw LoadError.decodeFailed("could not read \(url.lastPathComponent)")
+            throw LoadError.decodeFailed(
+                "could not read \(ConfigSchema.displayText(url.lastPathComponent))")
         }
         guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
             AppLogger.platform.warning(

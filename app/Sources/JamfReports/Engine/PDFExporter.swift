@@ -53,27 +53,6 @@ final class PDFExporter {
         try writePDF(data: data, to: outputURL)
     }
 
-    /// Export HTML from a file URL to a PDF file at `outputURL`.
-    ///
-    /// - Parameters:
-    ///   - htmlURL: Source `.html` file URL.
-    ///   - outputURL: Destination file URL. Parent directory is created if absent.
-    ///   - paperSize: PDF page size in points. Defaults to US Letter.
-    static func export(
-        htmlURL: URL,
-        to outputURL: URL,
-        paperSize: CGSize = CGSize(width: 612, height: 792)
-    ) async throws {
-        let html = try String(contentsOf: htmlURL, encoding: .utf8)
-        let coordinator = Coordinator(paperSize: paperSize)
-        // P9-A-04: do not pass `baseURL: htmlURL`. With JS disabled the WKWebView
-        // does not need to resolve same-origin asset paths from the source file,
-        // and a `baseURL` lets the renderer attempt subresource loads (favicon,
-        // CSS imports) against the user's filesystem. Fail closed instead.
-        let data = try await coordinator.render(htmlString: html, baseURL: nil)
-        try writePDF(data: data, to: outputURL)
-    }
-
     // MARK: - Private helpers
 
     private static func writePDF(data: Data, to outputURL: URL) throws {

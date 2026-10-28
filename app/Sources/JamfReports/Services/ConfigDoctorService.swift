@@ -704,7 +704,7 @@ extension ConfigDoctorService {
         guard let dataDir else { return nil }
         let dir = dataDir.appendingPathComponent("computers", isDirectory: true)
         guard let url = FileManager.newestSnapshotFile(in: dir),
-              let data = BoundedFile.readLogged(url),
+              let data = BoundedFile.readLogged(url, inside: dataDir),
               let items = try? JSONSerialization.jsonObject(with: data) as? [Any]
         else { return nil }
         return items.count
@@ -715,7 +715,7 @@ extension ConfigDoctorService {
         guard let dataDir else { return nil }
         let dir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         guard let url = FileManager.newestSnapshotFile(in: dir),
-              let data = BoundedFile.readLogged(url) else { return nil }
+              let data = BoundedFile.readLogged(url, inside: dataDir) else { return nil }
         return EAResultRow.decodeSnapshot(data).rows
     }
 

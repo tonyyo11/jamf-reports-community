@@ -519,14 +519,7 @@ struct MobileFleetService: Sendable {
 
     /// The inventory rows in `url`, or nil when the file cannot be read or decoded.
     static func inventoryRows(at url: URL) -> [MobileDeviceInventoryItem]? {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.inventoryLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read \(url.lastPathComponent, privacy: .public)"
-            )
-            return nil
-        }
+        guard let data = BoundedFile.readLogged(url) else { return nil }
         guard let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
         else {
             AppLogger.collect.info(
@@ -644,14 +637,7 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileDeviceListRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.inventoryLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read mobile-devices-list file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readLogged(url) else { return [] }
         guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
             AppLogger.collect.info(
                 "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .public)"
@@ -666,14 +652,7 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileConfigProfileRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read classic-ios-profiles file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readLogged(url) else { return [] }
         if let profiles = try? JSONDecoder().decode([MobileConfigProfileRow].self, from: data) {
             success = true
             return profiles

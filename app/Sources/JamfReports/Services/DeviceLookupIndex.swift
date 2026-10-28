@@ -168,7 +168,7 @@ final class DeviceLookupIndex {
     }
 
     private func parseMobile(_ url: URL) -> [Candidate] {
-        guard let array = decodeArray(url, limit: BoundedFile.inventoryLimit) else { return [] }
+        guard let array = decodeArray(url) else { return [] }
         return array.compactMap { dict -> Candidate? in
             // Mobile records use `mobileDeviceId` at the root and `general.displayName`
             // for the human label; serial lives at `hardware.serialNumber`.
@@ -194,10 +194,8 @@ final class DeviceLookupIndex {
         }
     }
 
-    private func decodeArray(
-        _ url: URL, limit: Int = BoundedFile.snapshotLimit
-    ) -> [[String: Any]]? {
-        guard let data = BoundedFile.readLogged(url, limit: limit),
+    private func decodeArray(_ url: URL) -> [[String: Any]]? {
+        guard let data = BoundedFile.readLogged(url),
               let raw = try? JSONSerialization.jsonObject(with: data) else { return nil }
         if let array = raw as? [[String: Any]] { return array }
         if let envelope = raw as? [String: Any],

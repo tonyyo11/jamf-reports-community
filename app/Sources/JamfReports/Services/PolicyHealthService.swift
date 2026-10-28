@@ -132,10 +132,6 @@ struct PolicyHealthService: Sendable {
                         "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .public)"
                     )
                 }
-            } else {
-                AppLogger.collect.info(
-                    "PolicyHealthService: could not read policy-status file \(policyURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 
@@ -166,10 +162,6 @@ struct PolicyHealthService: Sendable {
                         "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .public)"
                     )
                 }
-            } else {
-                AppLogger.collect.warning(
-                    "PolicyHealthService: could not read profile-status file \(profileURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 

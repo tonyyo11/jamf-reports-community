@@ -33,7 +33,7 @@ enum PeriodEAReader {
             .filter { $0.0 <= date }
             .sorted { $0.0 < $1.0 }
             .last
-        guard let candidate, let data = BoundedFile.readLogged(candidate.1) else { return nil }
+        guard let candidate, let data = BoundedFile.readLogged(candidate.1, inside: dataDir) else { return nil }
         return snapshot(from: data, at: candidate.0)
     }
 }

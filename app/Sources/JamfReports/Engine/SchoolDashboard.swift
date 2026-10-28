@@ -581,11 +581,8 @@ struct SchoolDashboard: Sendable {
                 })
             }
         }
-        func modified(_ url: URL) -> Date {
-            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
-                .flatMap(\.contentModificationDate) ?? .distantPast
-        }
-        guard let newest = candidates.max(by: { modified($0) < modified($1) }) else {
+        // The shared rule: filename stamp first, conflict copies and staging files excluded.
+        guard let newest = FileManager.newestSnapshot(among: candidates) else {
             throw SchoolDashboardError.noCachedData(names: names)
         }
         guard let data = BoundedFile.readLogged(newest) else {
