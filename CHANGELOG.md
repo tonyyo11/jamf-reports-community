@@ -15,6 +15,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Computers screen no longer filters and sorts the whole inventory again on every redraw, so
+  scrolling, selecting and resizing stay quick on a large fleet; Trends reads each day's date
+  once instead of per chart point. (#305)
 - On a workspace in a sync provider folder, on a network volume or in a shared workspace, the
   Jamf Pro part of a backup is now a choice, as the Jamf Protect part already was: turn on
   **Back up Jamf Pro in this folder** in Backups (or set `backup.pro_on_synced_storage`). A
