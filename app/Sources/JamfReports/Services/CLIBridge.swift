@@ -572,12 +572,14 @@ final class CLIBridge {
         outputDir: URL? = nil,
         aiNarrative: String? = nil,
         htmlWithWorkbook: Bool = true,
+        now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await AttentionLog.recording(profile: profile) {
             try await generateRecording(
                 profile: profile, template: template, outputDir: outputDir,
-                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook, onLine: onLine)
+                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook, now: now,
+                onLine: onLine)
         }
     }
 
@@ -587,6 +589,7 @@ final class CLIBridge {
         outputDir: URL?,
         aiNarrative: String?,
         htmlWithWorkbook: Bool,
+        now: Date,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await ensureWorkspace(profile: profile, onLine: onLine)
@@ -630,7 +633,7 @@ final class CLIBridge {
         do {
             let failures = try await engine.generate(
                 outputURL: outputURL, template: template,
-                aiNarrative: aiNarrative, onLine: onLine
+                aiNarrative: aiNarrative, now: now, onLine: onLine
             )
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -815,11 +818,12 @@ final class CLIBridge {
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         force: Bool = false,
+        now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await Self.holdingTickLock {
             try await self.collectHoldingTickLock(
-                profile: profile, tiers: tiers, force: force, onLine: onLine)
+                profile: profile, tiers: tiers, force: force, now: now, onLine: onLine)
         }
     }
 
@@ -827,6 +831,7 @@ final class CLIBridge {
         profile: String,
         tiers: Set<CollectionTier>,
         force: Bool,
+        now: Date,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -858,6 +863,7 @@ final class CLIBridge {
                 skipExpensive: skipExpensive,
                 force: force,
                 config: config,
+                now: now,
                 onLine: onLine
             )
             tightenOnSuccess(0, profile: profile)
@@ -887,16 +893,21 @@ final class CLIBridge {
         // Auth is checked inside collect(); skipping a separate probe here avoids calling
         // jamf-cli pro auth token twice for the combined collect+generate flow.
         onLine(.init(timestamp: Date(), level: .info, text: "[info] collecting jamf-cli snapshots for \(profile)"))
+        // One clock for the run, so a collect that crosses midnight and the report that follows
+        // it date the day's summary the same.
+        let runStart = Date()
         return try await Self.runCollectThenGenerate(
             // force: true — collectThenGenerate is always a GUI "Run now" action; the
             // once-per-day guard must not silently skip a user-triggered collect+generate.
-            collect: { try await self.collect(profile: profile, force: true, onLine: onLine) },
+            collect: {
+                try await self.collect(profile: profile, force: true, now: runStart, onLine: onLine)
+            },
             narrative: narrative,
             generate: { aiNarrative in
                 onLine(.init(timestamp: Date(), level: .info,
                              text: "[info] generating report from cached snapshots"))
-                return try await self.generate(profile: profile,
-                                               aiNarrative: aiNarrative, onLine: onLine)
+                return try await self.generate(profile: profile, aiNarrative: aiNarrative,
+                                               now: runStart, onLine: onLine)
             }
         )
     }

@@ -515,6 +515,7 @@ private func scheduledRunSingleBody(
                 force: mode.forcesCollect(
                     for: ProfileProductType.detect(from: routingConfig, profile: profile).type),
                 config: routingConfig,
+                now: runStart,
                 onLine: onLine
             )
             // Tighten permissions on collected snapshots immediately after
