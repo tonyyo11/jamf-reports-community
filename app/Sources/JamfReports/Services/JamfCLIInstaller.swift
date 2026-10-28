@@ -1224,6 +1224,7 @@ final class JamfCLIInstaller {
                 stderrDrainer.cancel()
                 return error.localizedDescription
             }
+            box.stopIfClosing()
             box.armTimeout(timeout)
             return nil
         }

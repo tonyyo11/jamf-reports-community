@@ -9,7 +9,7 @@ struct TickEnvironment: Sendable {
     var markerDir = TickRunner.runNowMarkerDir
     var scheduleStore = ScheduleStore()
     var profiles: @Sendable () -> [JamfCLIProfile] = { ProfileService.discoverLocal() }
-    var policy: @Sendable () -> AutomationPolicy = { AutomationPolicy.current() }
+    var policy: @Sendable () -> AutomationPolicy = { TickEnvironment.storedPolicy() }
     var clock: @Sendable () -> Date = { Date() }
     var summaryIsMissing: @Sendable (Schedule, [JamfCLIProfile], Date) -> Bool = {
         summaryMissing(for: $0, profiles: $1, now: $2)
@@ -23,6 +23,16 @@ struct TickEnvironment: Sendable {
     var heartbeatEvery: Duration = TickLock.heartbeatInterval
     var heartbeatLimit: Duration = TickLock.heartbeatLimit
     var exit: @Sendable (Int32) -> Void = { Darwin.exit($0) }
+
+    /// The stored policy. A test process shares `UserDefaults.standard` across suites, so a
+    /// policy one left behind would run managed schedules another never asked for; there a tick
+    /// reads the default policy unless the test injects one through `policy`.
+    static func storedPolicy() -> AutomationPolicy {
+        #if DEBUG
+        if NSClassFromString("XCTestCase") != nil { return AutomationPolicy() }
+        #endif
+        return AutomationPolicy.current()
+    }
 }
 
 /// The bundled agent's entry: `JamfReports --tick [--now <label>]`.
@@ -124,7 +134,8 @@ func runTick(
                 onGiveUp: { exitAfterLockGiveUp(profiles: profiles, exit: environment.exit) }
             ) {
                 await notifyOverdueSchedulesHeadless(
-                    profiles: profiles.map(\.name), excluding: Set(policy.excludedProfiles))
+                    profiles: profiles.map(\.name), excluding: Set(policy.excludedProfiles),
+                    policy: policy)
                 // A Run now (the GUI, `schedules run`) is not the background item's own wake.
                 guard !arguments.contains("--now") else { return }
                 await ScheduledRunSignals.notifyHeartbeats(
@@ -162,6 +173,9 @@ func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> 
     let failures = TickFailureLog(profiles: profiles)
     failures.recordInEveryWorkspace(message)
     failures.finish()
+    // A launch that slipped in during the writes above is stopped by its own site; this catches
+    // any that were already running.
+    CLIBridge.terminateRunningChildren()
     exit(1)
 }
 

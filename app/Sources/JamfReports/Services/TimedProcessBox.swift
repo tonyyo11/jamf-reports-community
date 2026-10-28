@@ -16,6 +16,10 @@ final class TimedProcessBox: @unchecked Sendable {
     }
     func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
 
+    /// Right after `process.run()` at every launch site: a process that is exiting
+    /// (`terminateAllRunning` ran) must not leave a child it started after that pass.
+    func stopIfClosing() { if Self.isClosing { signalIfRunning(SIGTERM) } }
+
     /// Whether the child is running, for `terminateAllRunning`.
     private var isChildRunning: Bool {
         lock.lock(); defer { lock.unlock() }
@@ -57,25 +61,37 @@ final class TimedProcessBox: @unchecked Sendable {
 
     /// Checked under the lock and only while Foundation still reports the child running,
     /// so the pid of a child that has exited (and could be reused) is not signalled.
-    private func killIfStillRunning() {
+    private func killIfStillRunning() { signalIfRunning(SIGKILL) }
+
+    private func signalIfRunning(_ signal: Int32) {
         lock.lock(); defer { lock.unlock() }
         guard let p = process, p.isRunning else { return }
-        kill(p.processIdentifier, SIGKILL)
+        kill(p.processIdentifier, signal)
     }
 
     // MARK: - Every child this process started
 
     private static let live = LiveBoxes()
+    private static let closing = ClosingLatch()
+
+    /// True once `terminateAllRunning` has run in this process: it is exiting, so no launch
+    /// site may leave a child running (see `stopIfClosing`).
+    static var isClosing: Bool { closing.value }
+
+    /// Tests only: lets later tests start children after one exercised the exit path.
+    static func reopen() { closing.set(false) }
 
     /// Terminates every child still running that a box here started (SIGTERM, then SIGKILL after
-    /// `grace` for any that ignore it) and returns how many it signalled. For a process that is
+    /// `grace` for any that ignore it) and returns how many it signalled. Latches `isClosing`
+    /// first, so a launch that follows the pass is stopped by its own site. For a process that is
     /// about to exit and must not leave jamf-cli running past it: exiting does not end a child.
     /// Blocks up to `grace`. Only a child Foundation reports running is signalled, so the pid of
     /// one that exited is never reused here.
     @discardableResult
     static func terminateAllRunning(grace: TimeInterval = CLIBridge.timeoutKillGrace) -> Int {
+        closing.set(true)
         let running = live.boxes.filter(\.isChildRunning)
-        for box in running { box.terminate() }
+        for box in running { box.signalIfRunning(SIGTERM) }
         let deadline = Date().addingTimeInterval(grace)
         while running.contains(where: \.isChildRunning), Date() < deadline {
             Thread.sleep(forTimeInterval: 0.05)
@@ -83,6 +99,13 @@ final class TimedProcessBox: @unchecked Sendable {
         for box in running { box.killIfStillRunning() }
         return running.count
     }
+}
+
+private final class ClosingLatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    var value: Bool { lock.withLock { flag } }
+    func set(_ new: Bool) { lock.withLock { flag = new } }
 }
 
 /// Weak references to the boxes that hold a child, so a box that has finished is not kept alive.

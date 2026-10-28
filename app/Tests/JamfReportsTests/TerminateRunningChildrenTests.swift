@@ -5,6 +5,11 @@ import XCTest
 /// started: `CLIBridge.terminateRunningChildren` does, with SIGKILL after a grace.
 final class TerminateRunningChildrenTests: XCTestCase {
 
+    override func tearDown() {
+        TimedProcessBox.reopen()
+        super.tearDown()
+    }
+
     private final class Lines: @unchecked Sendable {
         private let lock = NSLock()
         private var texts: [String] = []
@@ -53,6 +58,19 @@ final class TerminateRunningChildrenTests: XCTestCase {
         XCTAssertEqual(code, SIGKILL)
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 0.3)
         XCTAssertTrue(Self.isGone(pid))
+    }
+
+    /// The exit path latches: a call that starts once the pass has run (the next kind, Mac or
+    /// schedule) is stopped by its own launch site instead of outliving the process.
+    func testAChildStartedAfterThePassIsStoppedByItsOwnLaunchSite() async throws {
+        CLIBridge.terminateRunningChildren(grace: 0.1)
+        XCTAssertTrue(TimedProcessBox.isClosing)
+
+        let (code, _) = try await CLIBridge().runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "exec sleep 60"],
+            onLine: { _ in })
+
+        XCTAssertEqual(code, SIGTERM)
     }
 
     func testNothingRunningTerminatesNothing() {

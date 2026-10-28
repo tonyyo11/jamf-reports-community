@@ -22,7 +22,10 @@ final class RunTickTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: workspaces.appendingPathComponent("alpha"), withIntermediateDirectories: true)
         setenv("JRC_TEST_WORKSPACES_ROOT", workspaces.path, 1)
-        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            TimedProcessBox.reopen()   // the give-up test latches the exit path
+        }
     }
 
     override func tearDownWithError() throws {
@@ -67,6 +70,20 @@ final class RunTickTests: XCTestCase {
         XCTAssertEqual(state.lastStarted[label], now)
         XCTAssertEqual(state.lastSucceeded[label], now)
         XCTAssertEqual(state.lastTick, now)
+    }
+
+    /// A policy a suite left in the shared defaults must not run managed schedules in a tick.
+    func testATestProcessTickIgnoresAStoredManagedPolicy() {
+        let key = AutomationPolicy.storageKey
+        let saved = UserDefaults.standard.string(forKey: key)
+        var managed = AutomationPolicy()
+        managed.isManaged = true
+        UserDefaults.standard.set(managed.serialize(), forKey: key)
+        addTeardownBlock { UserDefaults.standard.set(saved, forKey: key) }
+
+        XCTAssertTrue(AutomationPolicy.current().isManaged)
+        XCTAssertFalse(TickEnvironment().policy().isManaged)
+        XCTAssertFalse(TickEnvironment.storedPolicy().isManaged)
     }
 
     func testAHeldLockExitsQueuedKeepsTheMarkerAndRunsNothing() async throws {

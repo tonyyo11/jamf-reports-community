@@ -1523,6 +1523,7 @@ final class OnboardingFlow {
                 throw FlowError.processFailed("launch failed: \(error.localizedDescription)")
             }
 
+            box.stopIfClosing()
             box.armTimeout(timeout)
 
             // Close the slave end in the parent so reads on master see EOF when
