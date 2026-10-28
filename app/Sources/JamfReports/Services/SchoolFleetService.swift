@@ -117,8 +117,8 @@ enum SchoolFleetService {
     }
 
     /// The devices of one `school-devices` file, or nil when it does not decode as a row list.
-    static func devicesSnapshot(at file: URL) -> Snapshot? {
-        guard let rows = decodedRows(at: file) else { return nil }
+    static func devicesSnapshot(at file: URL, inside root: URL? = nil) -> Snapshot? {
+        guard let rows = decodedRows(at: file, inside: root) else { return nil }
         return devicesSnapshot(rows: rows, date: snapshotDate(of: file))
     }
 
@@ -177,8 +177,8 @@ enum SchoolFleetService {
         return (rows, snapshotDate(of: file))
     }
 
-    private static func decodedRows(at file: URL) -> [[String: Any]]? {
-        guard let data = BoundedFile.readLogged(file) else { return nil }
+    private static func decodedRows(at file: URL, inside root: URL? = nil) -> [[String: Any]]? {
+        guard let data = BoundedFile.readLogged(file, inside: root) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
     }
 

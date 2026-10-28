@@ -50,8 +50,7 @@ extension ReportEngine {
     ) -> (written: Int, writeFailures: Int) {
         let kind = SchoolFleetService.devicesKind
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        let files = ((try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
+        let files = (FileManager.snapshotFolderEntries(in: dir, includingPropertiesForKeys: nil) ?? [])
             .filter { $0.pathExtension.lowercased() == "json" }
             .filter(FileManager.isSelectableSnapshot)
             .compactMap { url in
@@ -75,7 +74,7 @@ extension ReportEngine {
                 daysSeen.insert(day)
                 continue
             }
-            guard let snapshot = SchoolFleetService.devicesSnapshot(at: file.url) else {
+            guard let snapshot = SchoolFleetService.devicesSnapshot(at: file.url, inside: dataDir) else {
                 undecodable += 1
                 continue
             }
