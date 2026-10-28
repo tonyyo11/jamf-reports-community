@@ -76,10 +76,6 @@ struct AddSheet: View {
             initialized: workspace.initializedProfiles.map(\.name))
     }
 
-    private var currentAcceptsProtect: Bool {
-        currentTakesProtect && discovery != nil && discovery?.currentProtect == nil
-    }
-
     private var isAdopting: Bool { adoptFlow?.isRunning == true }
 
     var body: some View {
@@ -287,12 +283,10 @@ struct AddSheet: View {
 
     // MARK: - Step 2: profiles jamf-cli already has
 
-    private var visibleRows: [AddSheetPlan.UnassignedProfile] {
-        let rows = discovery?.unassigned ?? []
-        if choice == .addToCurrent && currentTakesProtect {
-            return currentAcceptsProtect ? rows.filter { $0.use == .addToCurrent } : []
-        }
-        return rows.filter { $0.use != .addToCurrent }
+    private var listing: AddSheetPlan.Listing {
+        AddSheetPlan.listing(
+            demoMode: workspace.demoMode, isChecking: isChecking, choice: choice,
+            takesProtect: currentTakesProtect, discovery: discovery)
     }
 
     private var existingProfilesSection: some View {
@@ -319,39 +313,30 @@ struct AddSheet: View {
 
     @ViewBuilder
     private var existingProfilesBody: some View {
-        if workspace.demoMode {
+        switch listing {
+        case .demo:
             note("Demo mode is on. Profiles jamf-cli already has are listed once a real "
                 + "connection is set up.")
-        } else if isChecking && discovery == nil {
+        case .reading:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 note("Reading jamf-cli's profiles…")
             }
-        } else if discovery != nil && discovery?.unassigned == nil {
+        case .unreadable:
             note("Could not read jamf-cli's profiles. Check that jamf-cli is installed, then "
                 + "Re-check.")
-        } else if visibleRows.isEmpty {
-            note(emptyText)
-        } else {
+        case .empty(let text):
+            note(text)
+        case .rows(let rows):
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(visibleRows) { row in
+                ForEach(rows) { row in
                     profileRow(row)
-                    if row.id != visibleRows.last?.id {
+                    if row.id != rows.last?.id {
                         Divider().background(Theme.Hairline.standard)
                     }
                 }
             }
         }
-    }
-
-    private var emptyText: String {
-        if choice == .addToCurrent && currentTakesProtect {
-            return currentAcceptsProtect
-                ? "No Jamf Protect profile in jamf-cli is free to add. Connect new above."
-                : "This workspace already has Jamf Protect."
-        }
-        return "Every jamf-cli profile already has a workspace. Profiles made in Terminal "
-            + "appear here after Re-check."
     }
 
     private func profileRow(_ row: AddSheetPlan.UnassignedProfile) -> some View {
@@ -468,12 +453,9 @@ struct AddSheet: View {
         let current = currentTakesProtect ? workspace.profile : nil
         let found = await Task.detached { AddSheetDiscovery.load(currentWorkspace: current) }.value
         discovery = found
-        if !choiceTouched {
-            choice = AddSheetPlan.preselection(
-                unassigned: found.unassigned ?? [],
-                currentAcceptsProtect: currentTakesProtect && found.currentProtect == nil,
-                requested: requested)
-        }
+        choice = AddSheetPlan.recheck(
+            found: found, takesProtect: currentTakesProtect, choice: choice,
+            choiceTouched: choiceTouched, requested: requested)
         twinProbe?.cancel()
         let probe = Task.detached {
             AddSheetDiscovery.load(currentWorkspace: current, probeTwins: true)
