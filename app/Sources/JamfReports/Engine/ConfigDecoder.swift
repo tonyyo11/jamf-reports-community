@@ -22,6 +22,7 @@ struct ReportConfig: Decodable, Sendable {
     var protect: ProtectConfig?
     var backup: BackupConfig?
     var schoolCli: SchoolCLIConfig?
+    var profiles: ProfilesConfig?
     var notify: NotifyConfig?
     var alerts: AlertsConfig?
     var retention: RetentionConfig?
@@ -45,6 +46,7 @@ struct ReportConfig: Decodable, Sendable {
         case protect
         case backup
         case schoolCli = "school_cli"
+        case profiles
         case notify
         case alerts
         case retention
@@ -800,6 +802,30 @@ struct SchoolCLIConfig: Decodable, Sendable {
     /// recorded in a Jamf Pro workspace, which the app does not use there.
     func isForeign(toWorkspace workspace: String) -> Bool {
         isEnabled && !isPrimary(forWorkspace: workspace)
+    }
+}
+
+// MARK: - profiles
+
+/// `profiles:` — the jamf-cli profile that serves each product in this workspace (environment).
+/// A blank or absent slot is a product the environment does not have. When the block is present
+/// the old keys (`jamf_cli.profile`, `protect.enabled/profile`, `school_cli`) are not read for
+/// profiles; `EnvironmentProfiles.resolve` is the one reader of both forms. Slots decode like
+/// `jamf_cli.profile`: an unquoted number reads as its digits, any other non-text value fails the
+/// decode, which Config Doctor reports.
+struct ProfilesConfig: Decodable, Sendable, Equatable {
+    var jamfPro: String?
+    var platform: String?
+    var jamfSchool: String?
+    var protect: String?
+    var securityCloud: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case jamfPro = "jamf_pro"
+        case platform
+        case jamfSchool = "jamf_school"
+        case protect
+        case securityCloud = "security_cloud"
     }
 }
 

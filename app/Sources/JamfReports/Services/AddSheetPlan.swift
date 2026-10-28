@@ -76,8 +76,8 @@ enum AddSheetPlan {
     }
 
     /// The jamf-cli profiles no workspace uses: neither a workspace folder of their own nor
-    /// named by a workspace's `protect.profile` or `school_cli.profile`. Names compare by
-    /// folder key, since a case variant shares its workspace's folder. `unusable` holds
+    /// named by a workspace's config.yaml (`EnvironmentProfiles.connectedProfiles`). Names
+    /// compare by folder key, since a case variant shares its workspace's folder. `unusable` holds
     /// `ProfileService.unusableProfiles` explanations.
     static func unassigned(
         profiles: [JamfCLIProfile],
@@ -249,7 +249,7 @@ struct AddSheetDiscovery: Sendable {
     static func load(currentWorkspace: String?, probeTwins: Bool = false) -> AddSheetDiscovery {
         let root = ProfileService.workspacesRoot()
         let currentProtect = currentWorkspace.flatMap {
-            ConnectedProducts.read(profile: $0, under: root).protectProfile
+            EnvironmentProfiles.read(workspace: $0, under: root).protect
         }
         guard let listed = ProfileService.listJamfCLIProfiles(scheduleCounts: [:]) else {
             return AddSheetDiscovery(unassigned: nil, currentProtect: currentProtect)
@@ -263,9 +263,8 @@ struct AddSheetDiscovery: Sendable {
             + ProfileService.localOnlyWorkspaces(under: root, cliNames: names)
         var paired = Set<String>()
         for workspace in workspaces {
-            let products = ConnectedProducts.read(profile: workspace, under: root)
-            paired.formUnion([products.protectProfile, products.foreignSchoolProfile]
-                .compactMap { $0 })
+            paired.formUnion(
+                EnvironmentProfiles.read(workspace: workspace, under: root).connectedProfiles)
         }
         let unassigned = AddSheetPlan.unassigned(
             profiles: listed, workspaces: workspaces, paired: paired,

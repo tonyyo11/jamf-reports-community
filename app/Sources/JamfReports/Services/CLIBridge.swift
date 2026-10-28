@@ -2415,10 +2415,12 @@ final class CLIBridge {
          "--format", "json", "--output", outputDirectory]
     }
 
-    /// Compares the workspace's `jamf_cli.profile` with `profile` before a backup. A case
-    /// variant is refused like `CollectRouter.run` refuses it: the two share the folder on a
-    /// case-insensitive volume. Any other name is ignored with one warning, because the
-    /// backup always runs as `profile`. A missing or undecodable config has nothing to compare.
+    /// Compares the workspace's MDM profile (`EnvironmentProfiles.mdm`: `jamf_cli.profile` in an
+    /// old-shape config.yaml) with `profile` before a backup. A case variant is refused like
+    /// `CollectRouter.run` refuses it: the two share the folder on a case-insensitive volume, and
+    /// so is a `profiles:` block that cannot run (`EnvironmentProfiles.refusal`). Any other old-key
+    /// name is ignored with one warning, because the backup always runs as `profile`. A missing
+    /// or undecodable config has nothing to compare.
     nonisolated static func checkBackupConfigProfile(
         _ profile: String,
         onLine: @Sendable (LogLine) -> Void
@@ -2427,14 +2429,19 @@ final class CLIBridge {
               let config = try? ConfigLoader.load(
                   from: workspace.appendingPathComponent("config.yaml")
               ) else { return }
-        let owner = config.jamfCli?.resolvedProfile ?? ""
-        guard !owner.isEmpty, owner != profile else { return }
-        guard !ProfileService.isCaseVariant(owner, of: profile) else {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        let owner = environment.mdm ?? profile
+        if ProfileService.isCaseVariant(owner, of: profile) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
         }
+        if let refusal = environment.refusal(workspace: profile) {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
+            throw CLIBridgeError.wrongProduct(refusal)
+        }
+        guard owner != profile else { return }
         onLine(.init(
             timestamp: Date(), level: .warn,
             text: "[warn] backup: config.yaml sets jamf_cli.profile to "

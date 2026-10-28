@@ -2,7 +2,7 @@ import Foundation
 
 /// What Data Sources > Additional Products says about Jamf Protect, and the write that
 /// disconnects it. The connection itself is `protect.enabled/profile` in the workspace's
-/// config.yaml (`ConnectedProducts`); the jamf-cli profile it names lives in jamf-cli.
+/// config.yaml (`EnvironmentProfiles`); the jamf-cli profile it names lives in jamf-cli.
 enum ProtectConnection {
     enum State: Equatable, Sendable {
         case notConnected

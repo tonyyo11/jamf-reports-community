@@ -14,30 +14,30 @@ extension ReportEngine {
     /// Snapshot kind and directory name. The only kind saved as `.html`.
     static let dashboardKind = "dashboard"
 
-    /// The matrix row's argv plus the Protect profile, when Protect is on and has
-    /// a profile of its own. jamf-cli refuses two profiles of one product (a Pro and
+    /// The matrix row's argv plus the Protect profile (`EnvironmentProfiles.protect`), when it
+    /// is not the main profile. jamf-cli refuses two profiles of one product (a Pro and
     /// a Platform profile count as one), so Protect is the only one ever added.
     /// Passed as `--include-profile=<name>`, so any name jamf-cli accepts, a leading `-`
     /// included, is the flag's value. A name the app can't use (`ProfileService.isValid`)
     /// is left out.
     static func dashboardArguments(
-        base: [String], profile: String, protect: ProtectConfig?
+        base: [String], profile: String, protect: String?
     ) -> [String] {
-        guard let protect, protect.isEnabled else { return base }
-        let other = protect.resolvedProfile
-        guard ProfileService.isValid(other), other != profile else { return base }
+        guard let other = protect, ProfileService.isValid(other), other != profile else {
+            return base
+        }
         return base + ["--include-profile=\(other)"]
     }
 
     /// `protect` unless its profile is known to be another product's login, which jamf-cli
     /// would take for a clash or fail on; then one `[warn]` line and the page has no Protect card.
     static func dashboardProtect(
-        _ protect: ProtectConfig?, bin: URL,
+        _ protect: String?, bin: URL,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
-    ) async -> ProtectConfig? {
-        guard let protect, protect.isEnabled, !protect.resolvedProfile.isEmpty else { return protect }
+    ) async -> String? {
+        guard let protect else { return nil }
         let refusal = await ProfileAuthMethod.protectRefusal(
-            profile: protect.resolvedProfile,
+            profile: protect,
             resolved: { ProfileAuthMethod.resolve(profile: $0, binary: bin) })
         guard let refusal else { return protect }
         onLine(.init(timestamp: Date(), level: .warn,

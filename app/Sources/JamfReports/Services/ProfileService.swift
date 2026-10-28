@@ -249,10 +249,9 @@ enum ProfileService {
     ) -> [JamfCLIProfile] {
         var paired = Set<String>()
         for profile in profiles where hasWorkspace(profile.name, under: root) {
-            let products = ConnectedProducts.read(
+            let environment = EnvironmentProfiles.read(
                 configURL: configURL(profile.name, under: root), workspace: profile.name)
-            for name in [products.protectProfile, products.foreignSchoolProfile].compactMap({ $0 })
-            where name != profile.name {
+            for name in environment.connectedProfiles where name != profile.name {
                 paired.insert(name)
             }
         }

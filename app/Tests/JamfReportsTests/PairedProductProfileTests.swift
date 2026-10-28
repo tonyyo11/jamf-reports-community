@@ -93,7 +93,7 @@ final class PairedProductProfileTests: XCTestCase {
         XCTAssertEqual(names(ProfileService.runnableProfiles(listed, excluding: [])), ["prod"])
     }
 
-    func testConnectedProductsReadsEnabledBlocksWithAProfile() throws {
+    func testEnvironmentReadsEnabledBlocksWithAProfile() throws {
         try workspace("prod", config: """
             protect:
               enabled: true
@@ -103,22 +103,23 @@ final class PairedProductProfileTests: XCTestCase {
               profile: school
             """)
         XCTAssertEqual(
-            ConnectedProducts.read(profile: "prod", under: root),
-            ConnectedProducts(protectProfile: "protect", foreignSchoolProfile: nil))
+            EnvironmentProfiles.read(workspace: "prod", under: root).connectedProfiles, ["protect"])
     }
 
-    func testConnectedProductsNamesOnlyAForeignSchoolProfile() throws {
+    func testEnvironmentNamesOnlyAForeignSchoolProfile() throws {
         try workspace("prod", config: "school_cli:\n  enabled: true\n  profile: school\n")
         try workspace("edu", config: "school_cli:\n  enabled: true\n  profile: edu\n")
         XCTAssertEqual(
-            ConnectedProducts.read(profile: "prod", under: root),
-            ConnectedProducts(protectProfile: nil, foreignSchoolProfile: "school"))
-        XCTAssertEqual(ConnectedProducts.read(profile: "edu", under: root), .none)
+            EnvironmentProfiles.read(workspace: "prod", under: root).connectedProfiles, ["school"])
+        XCTAssertEqual(
+            EnvironmentProfiles.read(workspace: "edu", under: root).connectedProfiles, [])
     }
 
-    func testConnectedProductsIsNoneForMissingOrBlankConfig() throws {
+    func testEnvironmentNamesNoLoginForMissingOrBlankConfig() throws {
         try workspace("blank", config: "protect:\n  enabled: true\n")
-        XCTAssertEqual(ConnectedProducts.read(profile: "blank", under: root), .none)
-        XCTAssertEqual(ConnectedProducts.read(profile: "absent", under: root), .none)
+        for name in ["blank", "absent"] {
+            XCTAssertEqual(
+                EnvironmentProfiles.read(workspace: name, under: root).connectedProfiles, [], name)
+        }
     }
 }

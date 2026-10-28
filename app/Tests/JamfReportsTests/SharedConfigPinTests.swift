@@ -305,7 +305,7 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(ReportEngine.dashboardArguments(
             base: ["x"], profile: profile,
             protect: SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport)
-                ? config.protect : nil), ["x"])
+                ? config.protect?.profile : nil), ["x"])
     }
 
     @MainActor

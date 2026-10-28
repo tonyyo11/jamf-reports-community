@@ -153,7 +153,9 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
         let config = try shape.yaml.map { try ConfigLoader.loadFromString($0) }
         // The dashboard row is the one command line built from config.yaml inside the collect.
         let calls = GoldenCalls { profile, base in
-            ReportEngine.dashboardArguments(base: base, profile: profile, protect: config?.protect)
+            ReportEngine.dashboardArguments(
+                base: base, profile: profile,
+                protect: EnvironmentProfiles.resolve(config: config, workspace: profile).protect)
         }
         let auth = shape.workspaceAuth
         let product = shape.workspaceProduct

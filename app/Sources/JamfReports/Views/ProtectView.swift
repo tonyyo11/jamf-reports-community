@@ -11,7 +11,7 @@ struct ProtectView: View {
     @State private var hasLoaded = false
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var selectedTimelineDevice: String?
-    @State private var connectedProducts = ConnectedProducts.none
+    @State private var environment = EnvironmentProfiles.none
     @State private var showingConnect = false
     @State private var proMatch = ProMatchState.pending
     @State private var proMatchTask: Task<Void, Never>?
@@ -22,11 +22,11 @@ struct ProtectView: View {
         case pending, noInventory(ProtectProCorrelation.Inventory), ready(ProtectProCorrelation)
     }
 
-    /// Protect is connected to this workspace (`protect.enabled` with a profile). Before 2.10
+    /// Protect is connected to this workspace (`EnvironmentProfiles.protect`). Before 2.10
     /// the screen decided from snapshots on disk alone, so an unconnected workspace was told
     /// to run jamf-cli commands that write nothing into it.
     private var protectConnected: Bool {
-        workspace.demoMode || connectedProducts.protectProfile != nil
+        workspace.demoMode || environment.protect != nil
     }
 
     /// The demo shows the deep dive: its data is populated, and a locked card on
@@ -126,8 +126,8 @@ struct ProtectView: View {
         snapshot = workspace.demoMode
             ? DemoData.protectSnapshot
             : ProtectDashboardService.load(profile: workspace.profile)
-        connectedProducts = workspace.demoMode
-            ? .none : ConnectedProducts.read(profile: workspace.profile)
+        environment = workspace.demoMode
+            ? .none : EnvironmentProfiles.read(workspace: workspace.profile)
         reloadProMatch()
     }
 

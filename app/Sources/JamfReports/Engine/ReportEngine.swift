@@ -2172,8 +2172,10 @@ struct ReportEngine: Sendable {
                     collectStart: collectStart, onLine: onLine
                 )
             } else if kind == Self.dashboardKind {
+                let protect = EnvironmentProfiles.resolve(config: loadedConfig, workspace: profile)
+                    .protect
                 let dashboardProtect = await Self.dashboardProtect(
-                    SharedConfigPin.protectAllowed(profile: profile) ? loadedConfig?.protect : nil,
+                    SharedConfigPin.protectAllowed(profile: profile) ? protect : nil,
                     bin: bin, onLine: onLine)
                 result = try await Self.collectDashboard(
                     profile: profile,
