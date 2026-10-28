@@ -340,6 +340,10 @@ final class ProtectBackupTests: XCTestCase {
         let result = try XCTUnwrap(BackupProductResult.protect(inBackup: try ctx.onlyBackup()))
         XCTAssertEqual(result.state, .skipped)
         XCTAssertTrue(try XCTUnwrap(result.reason).contains("config.yaml does not decode"))
+        let reason = try XCTUnwrap(result.reason)
+        XCTAssertFalse(reason.contains(ctx.workspace.path), "no path in the manifest: \(reason)")
+        XCTAssertFalse(reason.contains("thresholds"), "the detail stays in the log: \(reason)")
+        XCTAssertTrue(warns[0].contains("thresholds"), "the log line keeps the detail: \(warns[0])")
         XCTAssertFalse(lines.texts.contains { $0.hasPrefix("[partial]") })
     }
 

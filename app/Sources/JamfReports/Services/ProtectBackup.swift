@@ -300,26 +300,19 @@ extension CLIBridge {
         sharedStorage: () -> String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> BackupProductResult? {
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig?
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                // Whether Protect is connected cannot be told, so say so instead of leaving it out.
-                let reason = LogRedactor.redact(
-                    "config.yaml does not decode, so Protect cannot be told from it: "
-                        + error.localizedDescription)
-                onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] Jamf Protect not backed up: \(reason). "
-                                 + "The Jamf Pro backup is unaffected."))
-                AttentionLog.raise(
-                    .protectBackupSkipped, "Protect not backed up: config.yaml does not decode")
-                return BackupProductResult(state: .skipped, reason: reason)
-            }
-        } else {
-            config = nil
+        let read = ProBackup.readConfig(profile: profile)
+        if let detail = read.failure {
+            // Whether Protect is connected cannot be told, so say so instead of leaving it out.
+            // The error text can carry a path: it goes in the log line, not the manifest.
+            let reason = "config.yaml does not decode, so Protect cannot be told from it"
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] Jamf Protect not backed up: \(reason): \(detail). "
+                             + "The Jamf Pro backup is unaffected."))
+            AttentionLog.raise(
+                .protectBackupSkipped, "Protect not backed up: config.yaml does not decode")
+            return BackupProductResult(state: .skipped, reason: reason)
         }
+        let config = read.config
         let named = config?.protect?.resolvedProfile ?? ""
         let refusal = config?.protect?.isEnabled == true && !named.isEmpty
             ? await ProfileAuthMethod.protectRefusal(profile: named) : nil
