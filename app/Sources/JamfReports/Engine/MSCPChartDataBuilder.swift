@@ -155,7 +155,7 @@ struct MSCPChartDataBuilder: Sendable {
             .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
             .sorted { dateFromSnapshotFilename($0) < dateFromSnapshotFilename($1) }
         for url in jsonFiles {
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = BoundedFile.readLogged(url) else { continue }
             let decoded = EAResultRow.decodeSnapshot(data)
             guard let rows = decoded.rows else {
                 // `.notice` (not `.debug`) so the shape surfaces without verbose

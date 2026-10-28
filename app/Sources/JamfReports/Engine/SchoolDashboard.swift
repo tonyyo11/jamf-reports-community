@@ -588,7 +588,9 @@ struct SchoolDashboard: Sendable {
         guard let newest = candidates.max(by: { modified($0) < modified($1) }) else {
             throw SchoolDashboardError.noCachedData(names: names)
         }
-        let data = try Data(contentsOf: newest)
+        guard let data = BoundedFile.readLogged(newest) else {
+            throw SchoolDashboardError.noCachedData(names: names)
+        }
         return try JSONSerialization.jsonObject(with: data)
     }
 

@@ -764,15 +764,7 @@ extension HtmlReport {
         }
         // Shared rule (filename stamp, manifest + conflict copies excluded).
         guard let newest = FileManager.newestSnapshot(among: candidates) else { return [] }
-        let data: Data
-        do {
-            data = try Data(contentsOf: newest)
-        } catch {
-            AppLogger.platform.debug(
-                "loadProtectJSON: could not read '\(newest.path, privacy: .private)' — \(error, privacy: .private)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readLogged(newest) else { return [] }
         guard let result = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
             AppLogger.platform.debug(
                 "loadProtectJSON: JSON parse failed for '\(newest.path, privacy: .private)'"
@@ -803,16 +795,7 @@ extension HtmlReport {
             .filter(FileManager.isSelectableSnapshot)
             .sorted { FileManager.isOlderSnapshot($0, than: $1) }
             .compactMap { url -> [String: Int]? in
-                let data: Data
-                do {
-                    data = try Data(contentsOf: url)
-                } catch {
-                    AppLogger.platform.debug(
-                        // swiftlint:disable:next line_length
-                        "loadProtectInsightSnapshots: could not read \(url.path, privacy: .private) — \(error, privacy: .private)"
-                    )
-                    return nil
-                }
+                guard let data = BoundedFile.readLogged(url) else { return nil }
                 // jamf-cli's flattened row: label, section, enabled,
                 // totalPass/totalFail/totalNone, cisIDs — a bare array, not a dict.
                 let parsed = try? JSONSerialization.jsonObject(with: data)
@@ -1154,7 +1137,7 @@ extension HtmlReport {
         var skipped = 0
         var snapshots: [SummarySnapshot] = []
         for url in candidates {
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(url),
                   let obj = try? JSONSerialization.jsonObject(with: data),
                   let dict = obj as? [String: Any],
                   let date = dict["date"] as? String

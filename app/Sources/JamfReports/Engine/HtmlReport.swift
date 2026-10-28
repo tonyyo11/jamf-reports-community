@@ -759,7 +759,7 @@ struct HtmlReport: Sendable {
     }
 
     func loadJSONData(kind: String) -> Data? {
-        newestSnapshotURL(kind: kind).flatMap { try? Data(contentsOf: $0) }
+        newestSnapshotURL(kind: kind).flatMap { BoundedFile.readLogged($0) }
     }
 
     /// The newest snapshot file for `kind`, from its subdirectory and the flat
