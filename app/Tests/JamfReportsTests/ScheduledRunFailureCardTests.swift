@@ -91,7 +91,7 @@ final class ScheduledRunFailureCardTests: XCTestCase {
     func testTheSameFailurePostsOnceADayPerScheduleAndAgainTheNextDay() async throws {
         let config = try loadConfig()
         let state = root.appendingPathComponent("card-state")
-        let today = Date()
+        let today = Date.testNoon
         let tomorrow = today.addingTimeInterval(86_400)
         for (key, day) in [("a", today), ("a", today), ("b", today), ("a", tomorrow)] {
             await post(key, "refused", state: state, at: day, config: config)
@@ -102,7 +102,7 @@ final class ScheduledRunFailureCardTests: XCTestCase {
     func testADifferentFailureTheSameDayPostsAndOnlyNumbersDoNotCount() async throws {
         let config = try loadConfig()
         let state = root.appendingPathComponent("card-state")
-        let now = Date()
+        let now = Date.testNoon
         await post("a", "collect timed out after 60 s", state: state, at: now, config: config)
         await post("a", "collect timed out after 61 s", state: state, at: now, config: config)
         XCTAssertEqual(WebhookCapture.posted.count, 1)
@@ -118,7 +118,7 @@ final class ScheduledRunFailureCardTests: XCTestCase {
             + "  url: \"\(WebhookCapture.webhookURL)\"\n")
         let working = try loadConfig()
         let state = root.appendingPathComponent("card-state")
-        let now = Date()
+        let now = Date.testNoon
         await post("a", "refused", state: state, at: now, config: broken)
         XCTAssertTrue(WebhookCapture.posted.isEmpty)
         await post("a", "refused", state: state, at: now, config: working)

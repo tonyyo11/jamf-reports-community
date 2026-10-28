@@ -145,13 +145,14 @@ final class SchoolCollectSOFATests: XCTestCase {
         let stub = try makeStub()
         try await ReportEngine.schoolCollect(
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
-            force: true, locateJamfCLI: { stub }, refreshSOFA: fetch, onLine: lines.append)
+            force: true, locateJamfCLI: { stub }, refreshSOFA: fetch, now: .testNoon,
+            onLine: lines.append)
         return lines.texts
     }
 
     private func todaysSummary() throws -> DailySummary {
         let dir = try WorkspacePaths.summariesDir(for: profile)
-        let name = "summary_\(SummaryJSONParser.dateFormatter.string(from: Date())).json"
+        let name = "summary_\(SummaryJSONParser.dateFormatter.string(from: .testNoon)).json"
         return try SummaryJSONParser.decode(Data(contentsOf: dir.appendingPathComponent(name)))
     }
 }

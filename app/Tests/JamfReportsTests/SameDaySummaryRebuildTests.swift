@@ -52,13 +52,13 @@ final class SameDaySummaryRebuildTests: XCTestCase {
     }
 
     private var todayFile: URL {
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         return summariesDir.appendingPathComponent("summary_\(today).json")
     }
 
     @discardableResult
     private func collect(landed: Set<String>) -> ReportEngine.SummaryEmitOutcome {
-        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: landed)
+        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: landed, day: .testNoon)
     }
 
     // MARK: - A run that landed a source rebuilds the day

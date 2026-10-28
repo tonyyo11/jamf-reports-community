@@ -184,7 +184,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         // buildSummaryFromCLI returns nil when there is no security/inventory data.
         // Test the dir-creation and file-writing behavior via a pre-seeded data dir.
         try writeMinimalSecuritySnapshot()
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
         // Dir should have been created.
         XCTAssertTrue(FileManager.default.fileExists(atPath: summariesDir.path))
@@ -196,9 +196,23 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertTrue(file.hasSuffix(".json"))
     }
 
+    /// A run that started 30 s before local midnight dates its summary that day, though the
+    /// write lands after midnight: the day is the caller's, never read again from the wall clock.
+    func testEmitDatesTheSummaryByTheDayItIsGivenNotTheNextOne() throws {
+        let lateEvening = try XCTUnwrap(Calendar.current.date(
+            from: DateComponents(year: 2026, month: 6, day: 15, hour: 23, minute: 59, second: 30)))
+        try writeMinimalSecuritySnapshot()
+        XCTAssertEqual(engine.emitSummaryJSON(summariesDir: summariesDir, day: lateEvening), .wrote)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: summariesDir.path),
+                       ["summary_2026-06-15.json"])
+        let read = try SummaryJSONParser.parse(
+            summariesDir.appendingPathComponent("summary_2026-06-15.json"))
+        XCTAssertEqual(read.date, "2026-06-15")
+    }
+
     func testEmitDoesNotOverwriteValidSameDaySummary() throws {
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let existingURL = summariesDir.appendingPathComponent("summary_\(today).json")
         let existingSummary = DailySummary(
             date: today, totalDevices: 999, fileVaultPct: 99.9, compliancePct: nil,
@@ -209,7 +223,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         try data.write(to: existingURL, options: .atomic)
 
         try writeMinimalSecuritySnapshot()
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
         // File must not have been replaced — totalDevices sentinel still 999.
         let read = try SummaryJSONParser.parse(existingURL)
@@ -218,7 +232,7 @@ final class SummaryJSONEmitTests: XCTestCase {
 
     func testEmitSummaryParsesBackThroughSummaryJSONParser() throws {
         try writeMinimalSecuritySnapshot()
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
         let summaries = SummaryJSONParser.parseDirectory(summariesDir)
         guard !summaries.isEmpty else {
             // No cached data to build summary from — test is vacuously satisfied.
@@ -253,7 +267,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         try writeEAResultsSnapshot(to: dataDir, eaColumn: eaColumn, passCount: 8, failCount: 2)
 
         let localSummaries = tmpDir.appendingPathComponent("real-summaries", isDirectory: true)
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let summaries = SummaryJSONParser.parseDirectory(localSummaries)
         let s = try XCTUnwrap(summaries.first, "Summary must be emitted when security + ea-results exist")
@@ -286,7 +300,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         try writeSecuritySnapshotWithDevices(to: dataDir)
 
         let localSummaries = tmpDir.appendingPathComponent("proxy-summaries", isDirectory: true)
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let summaries = SummaryJSONParser.parseDirectory(localSummaries)
         let s = try XCTUnwrap(summaries.first, "Summary must be emitted from security data alone")
@@ -339,7 +353,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         let summaries = tmpDir.appendingPathComponent("hw-summaries", isDirectory: true)
         // `liveKinds` makes the writer record `collectionSources`.
         ReportEngine(config: config, dataDir: dataDir).emitSummaryJSON(
-            summariesDir: summaries, liveKinds: ["security", "computers"])
+            summariesDir: summaries, liveKinds: ["security", "computers"], day: .testNoon)
         return try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first)
     }
 
@@ -386,7 +400,7 @@ final class SummaryJSONEmitTests: XCTestCase {
                                 values: ["Running", "running", "Running", "Stopped"])
 
         let localSummaries = tmpDir.appendingPathComponent("edr-summaries", isDirectory: true)
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
         // Over the whole fleet: the Mac with no value counts as not connected.
@@ -410,7 +424,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             devices: ["MacBook Pro", "MacBook Pro", "mac-2", "mac-3"])
 
         let localSummaries = tmpDir.appendingPathComponent("edr-names-summaries", isDirectory: true)
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
         XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
@@ -442,7 +456,8 @@ final class SummaryJSONEmitTests: XCTestCase {
             to: dataDir, column: column, values: ["Running", "Running", "Running", "Stopped"],
             devices: ["MacBook Pro", "MacBook Pro", "mac-2", "mac-3"])
         let localSummaries = tmpDir.appendingPathComponent("card-summaries", isDirectory: true)
-        ReportEngine(config: cfg, dataDir: dataDir).emitSummaryJSON(summariesDir: localSummaries)
+        ReportEngine(config: cfg, dataDir: dataDir)
+            .emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
         let summary = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
 
         let live = try await OverviewLiveDataLoader.load(
@@ -466,7 +481,7 @@ final class SummaryJSONEmitTests: XCTestCase {
 
         let localSummaries = tmpDir.appendingPathComponent(
             "edr-nomatch-summaries", isDirectory: true)
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
         XCTAssertNil(s.crowdstrikePct, "A column no Mac reports is unknown, not 0%")
@@ -488,7 +503,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             to: dataDir.appendingPathComponent("security/security_\(stamp).json"))
         let summaries = tmpDir.appendingPathComponent("weights-summaries-\(run)", isDirectory: true)
         ReportEngine(config: try ConfigLoader.loadFromString(policyYAML), dataDir: dataDir)
-            .emitSummaryJSON(summariesDir: summaries)
+            .emitSummaryJSON(summariesDir: summaries, day: .testNoon)
         return try XCTUnwrap(
             try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first).securityScore)
     }
@@ -523,7 +538,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         try writeMobileDevicesListSnapshot(to: dataDir, count: 7)
 
         let localSummaries = tmpDir.appendingPathComponent("mobile-summaries", isDirectory: true)
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let summaries = SummaryJSONParser.parseDirectory(localSummaries)
         let s = try XCTUnwrap(summaries.first)
@@ -534,7 +549,7 @@ final class SummaryJSONEmitTests: XCTestCase {
     /// never a fabricated 0.
     func testEmitOmitsMobileDeviceCountWhenSnapshotAbsent() throws {
         try writeMinimalSecuritySnapshot()
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
         let summaries = SummaryJSONParser.parseDirectory(summariesDir)
         guard let s = summaries.first else { return }
         XCTAssertNil(s.mobileDeviceCount)
@@ -714,14 +729,15 @@ final class SummaryJSONEmitTests: XCTestCase {
         let localSummaries = tmpDir.appendingPathComponent("edr-frozen", isDirectory: true)
         try FileManager.default.createDirectory(
             at: localSummaries, withIntermediateDirectories: true)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         // Today's summary as an earlier build wrote it: no EDR figure.
         let earlier = makeSummary(
             complianceIsProxy: nil, hasBands: false, date: today, totalDevices: 5)
         try JSONEncoder().encode(earlier)
             .write(to: localSummaries.appendingPathComponent("summary_\(today).json"))
 
-        XCTAssertEqual(localEngine.emitSummaryJSON(summariesDir: localSummaries), .wrote)
+        XCTAssertEqual(
+            localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon), .wrote)
 
         let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
         XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
@@ -801,7 +817,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         try FileManager.default.createDirectory(at: localSummaries, withIntermediateDirectories: true)
 
         // Write a synthetic proxy summary for today.
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
         let proxySummary = makeSummary(complianceIsProxy: true, hasBands: false,
                                        date: today, totalDevices: 42)
@@ -809,7 +825,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         try existingData.write(to: summaryFile, options: .atomic)
 
         // Run emit — should upgrade.
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let result = try SummaryJSONParser.parse(summaryFile)
         XCTAssertEqual(result.complianceIsProxy, false,
@@ -839,14 +855,14 @@ final class SummaryJSONEmitTests: XCTestCase {
         let localSummaries = tmpDir.appendingPathComponent("nodowngrade-summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: localSummaries, withIntermediateDirectories: true)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
         // Sentinel totalDevices=999 to distinguish "unchanged" from overwritten.
         let realSummary = makeSummary(complianceIsProxy: false, hasBands: true,
                                       date: today, totalDevices: 999)
         try JSONEncoder().encode(realSummary).write(to: summaryFile, options: .atomic)
 
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let result = try SummaryJSONParser.parse(summaryFile)
         XCTAssertEqual(result.totalDevices, 999,
@@ -873,14 +889,14 @@ final class SummaryJSONEmitTests: XCTestCase {
         let localSummaries = tmpDir.appendingPathComponent("realreal-summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: localSummaries, withIntermediateDirectories: true)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
         // Sentinel to detect an overwrite.
         let existingReal = makeSummary(complianceIsProxy: false, hasBands: true,
                                        date: today, totalDevices: 777)
         try JSONEncoder().encode(existingReal).write(to: summaryFile, options: .atomic)
 
-        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries, day: .testNoon)
 
         let result = try SummaryJSONParser.parse(summaryFile)
         XCTAssertEqual(result.totalDevices, 777,
@@ -896,7 +912,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         let localSummaries = tmpDir.appendingPathComponent("rebuild-summaries", isDirectory: true)
         try FileManager.default.createDirectory(
             at: localSummaries, withIntermediateDirectories: true)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
         // An earlier run today collected security live but had no mobile count yet.
         let earlier = makeSummary(
@@ -906,7 +922,7 @@ final class SummaryJSONEmitTests: XCTestCase {
 
         // This run collected only the mobile list; security is read back from disk.
         localEngine.emitSummaryJSON(
-            summariesDir: localSummaries, liveKinds: ["mobile-devices-list"])
+            summariesDir: localSummaries, liveKinds: ["mobile-devices-list"], day: .testNoon)
 
         let rebuilt = try SummaryJSONParser.parse(summaryFile)
         XCTAssertEqual(rebuilt.mobileDeviceCount, 7, "the later run's data must land")

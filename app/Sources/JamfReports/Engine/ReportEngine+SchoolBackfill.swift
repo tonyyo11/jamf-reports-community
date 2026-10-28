@@ -10,7 +10,7 @@ extension ReportEngine {
     /// the only cost of a later run. `staleDays` is asked for only when a pass will run. A
     /// refused `state` folder warns and skips the pass, so nothing repeats on every collect.
     static func backfillSchoolHistoryOnce(
-        dataDir: URL, summariesDir: URL, staleDays: () -> Int,
+        dataDir: URL, summariesDir: URL, staleDays: () -> Int, now: Date = Date(),
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) {
         guard let stateDir = WorkspacePaths.confinedFolderOrWarn(
@@ -18,12 +18,13 @@ extension ReportEngine {
         let marker = stateDir.appendingPathComponent(schoolBackfillMarker)
         guard BoundedFile.stateText(marker) == nil else { return }
         let result = backfillSchoolSummaries(
-            dataDir: dataDir, summariesDir: summariesDir, staleDays: staleDays(), onLine: onLine)
+            dataDir: dataDir, summariesDir: summariesDir, staleDays: staleDays(), now: now,
+            onLine: onLine)
         guard result.writeFailures == 0 else { return }  // the next collect tries again
         do {
             try FileManager.default.createDirectory(
                 at: stateDir, withIntermediateDirectories: true)
-            try Data(SummaryJSONParser.dateFormatter.string(from: Date()).utf8)
+            try Data(SummaryJSONParser.dateFormatter.string(from: now).utf8)
                 .write(to: marker, options: .atomic)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,

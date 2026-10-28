@@ -45,13 +45,13 @@ final class MobileOnlySummaryTests: XCTestCase {
     }
 
     private var todayFile: URL {
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         return summariesDir.appendingPathComponent("summary_\(today).json")
     }
 
     @discardableResult
     private func emit(_ live: Set<String>? = nil) -> ReportEngine.SummaryEmitOutcome {
-        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: live)
+        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: live, day: .testNoon)
     }
 
     private func summary() throws -> DailySummary {
@@ -211,7 +211,7 @@ final class MobileOnlySummaryTests: XCTestCase {
         XCTAssertEqual(
             emit(["security", "patch-status", "mobile-devices-list", "ea-results"]), .wrote)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let json = try String(contentsOf: todayFile, encoding: .utf8)
         XCTAssertEqual(
             json, Self.macFleetGolden.replacingOccurrences(of: "DATE", with: today))
