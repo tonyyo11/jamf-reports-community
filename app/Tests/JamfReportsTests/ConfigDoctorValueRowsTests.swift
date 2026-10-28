@@ -129,7 +129,8 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
             XCTAssertTrue(text.contains(URL(string: url)?.host ?? "?"))
             XCTAssertFalse(text.contains("SECRET"), "the path and signature are the secret")
         }
-        let disabled = try rows("notify:\n  enabled: false\n  url: \"https://relay.example.com/x\"\n")
+        let off = "notify:\n  enabled: false\n  url: \"https://relay.example.com/x\"\n"
+        let disabled = try rows(off)
         XCTAssertNil(detail(disabled, "notify.url"), "a webhook that is off is not judged")
     }
 
