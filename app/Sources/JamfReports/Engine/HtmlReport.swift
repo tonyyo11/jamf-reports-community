@@ -770,12 +770,7 @@ struct HtmlReport: Sendable {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
-        if fm.fileExists(atPath: subdir.path),
-           let files = try? fm.contentsOfDirectory(
-            at: subdir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-           ) {
+        if let files = FileManager.snapshotFolderEntries(in: subdir) {
             candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
         }
         if let files = try? fm.contentsOfDirectory(

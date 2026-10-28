@@ -194,11 +194,12 @@ final class PostureViewsRenderTests: XCTestCase {
         XCTAssertEqual(security, SecurityPostureService.load(profile: profile))
         XCTAssertEqual(security.totalDevices, 101)
 
-        let baselines = await Task.detached {
-            CompliancePostureView.loadBaselineResults(profile: profile)
+        let outcome = await Task.detached {
+            CompliancePostureView.loadBaselineOutcome(profile: profile)
         }.value
-        XCTAssertEqual(baselines.map(\.name), ["Baseline"])
-        XCTAssertEqual(baselines.first?.devicesWithData, 2)
+        XCTAssertFalse(outcome.unreadable)
+        XCTAssertEqual(outcome.results.map(\.name), ["Baseline"])
+        XCTAssertEqual(outcome.results.first?.devicesWithData, 2)
     }
 
     // MARK: - Service decode parity

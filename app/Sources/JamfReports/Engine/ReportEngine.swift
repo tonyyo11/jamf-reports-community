@@ -4272,11 +4272,7 @@ struct ReportEngine: Sendable {
     ) throws -> Data {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ), !files.isEmpty else {
+        guard let files = FileManager.snapshotFolderEntries(in: dir), !files.isEmpty else {
             throw ReportEngineError.snapshotParseError(kind)
         }
         // Order and age snapshots by the timestamp encoded in the FILENAME
@@ -4307,7 +4303,8 @@ struct ReportEngine: Sendable {
                 throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
             }
         }
-        return try BoundedFile.read(url, limit: BoundedFile.limit(for: url), followSymlinks: false)
+        return try BoundedFile.read(
+            url, limit: BoundedFile.limit(for: url), followSymlinks: false, inside: dataDir)
     }
 
     /// Merge `ea-results` snapshot into computer rows.

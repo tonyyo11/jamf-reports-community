@@ -210,9 +210,9 @@ enum SnapshotManifest {
 
         for typeDir in typeDirs {
             let isDir = (try? typeDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            guard isDir else { continue }
+            guard isDir, !FileManager.isLink(typeDir) else { continue }
             guard let newest = newestSnapshot(in: typeDir, fm: fm) else { continue }
-            guard let data = BoundedFile.readLogged(newest) else { continue }
+            guard let data = BoundedFile.readLogged(newest, inside: dataDir) else { continue }
             switch verify(snapshot: newest, data: data) {
             case .verified: summary.verified += 1
             case .absent:   summary.absent += 1

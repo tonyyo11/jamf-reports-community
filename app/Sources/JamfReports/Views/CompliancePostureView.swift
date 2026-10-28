@@ -126,12 +126,6 @@ struct CompliancePostureView: View {
     }
 
     /// The configured mSCP baselines' results; none when config.yaml names none.
-    nonisolated static func loadBaselineResults(
-        profile: String
-    ) -> [MSCPComplianceService.BaselineResult] {
-        loadBaselineOutcome(profile: profile).results
-    }
-
     nonisolated static func loadBaselineOutcome(
         profile: String
     ) -> (results: [MSCPComplianceService.BaselineResult], unreadable: Bool) {

@@ -68,19 +68,10 @@ struct MSCPComplianceService: Sendable {
         }
     }
 
-    /// Convenience: load the newest `ea-results` snapshot from the workspace
-    /// and evaluate all configured baselines.
-    ///
-    /// Returns `[]` when no snapshot is available (pre-first-collect).
-    static func load(
-        profile: String,
-        baselines: [ComplianceBaselineConfig]
-    ) -> [BaselineResult] {
-        loadChecked(profile: profile, baselines: baselines).results
-    }
-
-    /// `load` that also says when the newest `ea-results` file is there but could not be read,
-    /// so a screen does not fall back to the proxy as if nothing had been collected.
+    /// Loads the newest `ea-results` snapshot from the workspace and evaluates all configured
+    /// baselines; `[]` when no snapshot is available (pre-first-collect). Also says when the
+    /// newest file is there but could not be read, so a screen does not fall back to the proxy
+    /// as if nothing had been collected.
     static func loadChecked(
         profile: String,
         baselines: [ComplianceBaselineConfig]

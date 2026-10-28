@@ -177,17 +177,25 @@ enum BoundedFile {
     }
 
     /// SHA-256 of the regular file at `url`, hashed in 1 MB chunks through `openChecked`, so
-    /// a workbook of any size is neither held in memory nor read twice. Nil when unreadable.
+    /// a workbook of any size is neither held in memory nor read twice. Exactly the size
+    /// `fstat` gave at open is hashed, so a file a peer keeps growing cannot stretch the read.
+    /// Nil when unreadable or shorter than that size.
     static func sha256Hex(_ url: URL) -> String? {
         guard let handle = try? openChecked(url) else { return nil }
         defer { try? handle.close() }
+        var info = stat()
+        guard fstat(handle.fileDescriptor, &info) == 0 else { return nil }
+        var remaining = Int(max(info.st_size, 0))
         var hasher = SHA256()
-        while true {
+        while remaining > 0 {
             let chunk: Data?
-            do { chunk = try handle.read(upToCount: 1_048_576) } catch { return nil }
-            // nil or empty is the end of the file.
-            guard let chunk, !chunk.isEmpty else { break }
+            do { chunk = try handle.read(upToCount: min(remaining, 1_048_576)) } catch {
+                return nil
+            }
+            // nil or empty before the size is reached: the file shrank under the read.
+            guard let chunk, !chunk.isEmpty else { return nil }
             hasher.update(data: chunk)
+            remaining -= chunk.count
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

@@ -748,12 +748,7 @@ extension HtmlReport {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
-        if fm.fileExists(atPath: subdir.path),
-           let files = try? fm.contentsOfDirectory(
-            at: subdir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-           ) {
+        if let files = FileManager.snapshotFolderEntries(in: subdir) {
             candidates = files.filter { $0.pathExtension == "json" }
         }
         if let files = try? fm.contentsOfDirectory(
@@ -767,7 +762,7 @@ extension HtmlReport {
         }
         // Shared rule (filename stamp, manifest + conflict copies excluded).
         guard let newest = FileManager.newestSnapshot(among: candidates) else { return [] }
-        guard let data = BoundedFile.readLogged(newest) else { return nil }
+        guard let data = BoundedFile.readLogged(newest, inside: dataDir) else { return nil }
         guard let result = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
             AppLogger.platform.debug(
                 "loadProtectJSON: JSON parse failed for '\(newest.path, privacy: .private)'"
@@ -782,12 +777,7 @@ extension HtmlReport {
     private func loadProtectInsightSnapshots(dataDir: URL) -> [[String: Int]] {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent("protect-insights", isDirectory: true)
-        guard fm.fileExists(atPath: subdir.path),
-              let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-              ) else { return [] }
+        guard let files = FileManager.snapshotFolderEntries(in: subdir) else { return [] }
         return files
             .filter { $0.pathExtension == "json" }
             // Shared rule (`FileSystemHelpers`): order by the filename stamp,
@@ -798,7 +788,7 @@ extension HtmlReport {
             .filter(FileManager.isSelectableSnapshot)
             .sorted { FileManager.isOlderSnapshot($0, than: $1) }
             .compactMap { url -> [String: Int]? in
-                guard let data = BoundedFile.readLogged(url) else { return nil }
+                guard let data = BoundedFile.readLogged(url, inside: dataDir) else { return nil }
                 // jamf-cli's flattened row: label, section, enabled,
                 // totalPass/totalFail/totalNone, cisIDs — a bare array, not a dict.
                 let parsed = try? JSONSerialization.jsonObject(with: data)
@@ -1128,10 +1118,8 @@ extension HtmlReport {
             .deletingLastPathComponent()
             .appendingPathComponent("snapshots/summaries", isDirectory: true)
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: summariesDir,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+        guard let files = FileManager.snapshotFolderEntries(
+            in: summariesDir, includingPropertiesForKeys: nil
         ) else { return ([], 0) }
 
         let candidates = files
@@ -1140,7 +1128,8 @@ extension HtmlReport {
         var skipped = 0
         var snapshots: [SummarySnapshot] = []
         for url in candidates {
-            guard let data = BoundedFile.readLogged(url),
+            guard let data = BoundedFile.readLogged(
+                    url, inside: dataDir.deletingLastPathComponent()),
                   let obj = try? JSONSerialization.jsonObject(with: data),
                   let dict = obj as? [String: Any],
                   let date = dict["date"] as? String

@@ -689,6 +689,27 @@ final class BoundedReadsTests: XCTestCase {
         XCTAssertNil(BoundedFile.readLogged(kind.appendingPathComponent(name), inside: dataDir))
     }
 
+    func testEveryKindFolderListingRefusesALinkedKindFolder() throws {
+        let dataDir = root.appendingPathComponent("listing-data", isDirectory: true)
+        let name = "ea-results_20260601T000000.json"
+        let real = root.appendingPathComponent("listing-elsewhere/ea-results", isDirectory: true)
+        try fm.createDirectory(at: real, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(to: real.appendingPathComponent(name))
+        // A real kind folder lists its snapshot...
+        let plain = dataDir.appendingPathComponent("plain/ea-results", isDirectory: true)
+        try fm.createDirectory(at: plain, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(to: plain.appendingPathComponent(name))
+        XCTAssertEqual(TrendStore.datedSnapshots(
+            of: "ea-results", in: dataDir.appendingPathComponent("plain")).count, 1)
+        // ...a kind folder that is a link lists nothing, for the shared helper and its callers.
+        let linked = dataDir.appendingPathComponent("linked", isDirectory: true)
+        try link(linked.appendingPathComponent("ea-results"), to: real)
+        XCTAssertNil(FileManager.snapshotFolderEntries(
+            in: linked.appendingPathComponent("ea-results")))
+        XCTAssertTrue(TrendStore.datedSnapshots(of: "ea-results", in: linked).isEmpty)
+        XCTAssertNil(FileManager.newestJSONFile(in: linked.appendingPathComponent("ea-results")))
+    }
+
     func testALinkAtTheNewestNameToASiblingIsReturnedAsALinkAndRefused() throws {
         let kind = root.appendingPathComponent("link-name/policy-status", isDirectory: true)
         let real = kind.appendingPathComponent("policy-status_20260601T000000.json")

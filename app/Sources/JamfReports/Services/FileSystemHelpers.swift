@@ -77,13 +77,7 @@ extension FileManager {
     /// newest name reaches the reader as a link and is refused there (`BoundedFile` opens with
     /// `O_NOFOLLOW`). A `dir` that is itself a link is no snapshot folder at all.
     private static func newestSnapshot(inDirectory dir: URL, extensions: Set<String>) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path), !isLink(dir) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
+        guard let files = snapshotFolderEntries(in: dir) else { return nil }
         let dirPrefix = dir.resolvingSymlinksInPath().standardizedFileURL.path + "/"
         let confined = files
             .filter { extensions.contains($0.pathExtension.lowercased()) }
@@ -92,6 +86,19 @@ extension FileManager {
             }
             .map { dir.appendingPathComponent($0.lastPathComponent) }
         return newestSnapshot(among: confined)
+    }
+
+    /// The entries of a snapshot kind folder: nil when `dir` is missing, unreadable or itself a
+    /// link, so every listing of a kind folder applies the one rule the pickers do. (The data
+    /// folder above the kind folders may be a link; a kind folder may not.)
+    static func snapshotFolderEntries(
+        in dir: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]? = [.contentModificationDateKey],
+        options: DirectoryEnumerationOptions = [.skipsHiddenFiles]
+    ) -> [URL]? {
+        guard !isLink(dir) else { return nil }
+        return try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: keys, options: options)
     }
 
     /// `lstat` says `url` is a symbolic link.

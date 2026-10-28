@@ -57,6 +57,7 @@ struct DDMBlueprintView: View {
             platformAvailable: platformAvailable,
             hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0,
             hasDeviceData: !deviceSnapshot.records.isEmpty,
+            // An unreadable computers file (nil) unlocks nothing: only a count can.
             ddmEnabledCount: fleetCounts?.enabled ?? 0,
             hasDeviceSnapshot: deviceSnapshot.isDetected)
     }

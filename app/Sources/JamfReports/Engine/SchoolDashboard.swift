@@ -569,12 +569,7 @@ struct SchoolDashboard: Sendable {
         var candidates: [URL] = []
         for name in names {
             let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
-            if fm.fileExists(atPath: subdir.path),
-               let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-               ) {
+            if let files = FileManager.snapshotFolderEntries(in: subdir) {
                 candidates.append(contentsOf: files.filter {
                     $0.pathExtension == "json"
                     && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
@@ -585,7 +580,7 @@ struct SchoolDashboard: Sendable {
         guard let newest = FileManager.newestSnapshot(among: candidates) else {
             throw SchoolDashboardError.noCachedData(names: names)
         }
-        guard let data = BoundedFile.readLogged(newest) else {
+        guard let data = BoundedFile.readLogged(newest, inside: dataDir) else {
             throw SchoolDashboardError.noCachedData(names: names)
         }
         return try JSONSerialization.jsonObject(with: data)

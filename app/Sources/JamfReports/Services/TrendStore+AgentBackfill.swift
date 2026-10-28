@@ -68,7 +68,7 @@ extension TrendStore {
             guard let snapshot = newestByDay[day] else { continue }
             let key = "\(profile)|\(day)|\(snapshot.url.lastPathComponent)|\(signature)"
             let counts = AgentBackfillCache.shared.counts(for: key) {
-                decodedAgentCounts(at: snapshot.url, agents: agents)
+                decodedAgentCounts(at: snapshot.url, agents: agents, inside: dataDir)
             }
             if !counts.isEmpty { result[day] = counts }
         }
@@ -76,9 +76,11 @@ extension TrendStore {
     }
 
     private nonisolated static func decodedAgentCounts(
-        at url: URL, agents: [SecurityAgentConfig]
+        at url: URL, agents: [SecurityAgentConfig], inside root: URL
     ) -> [String: Int] {
-        guard let data = BoundedFile.readLogged(url, category: .report) else { return [:] }
+        guard let data = BoundedFile.readLogged(url, inside: root, category: .report) else {
+            return [:]
+        }
         let decoded = EAResultRow.decodeSnapshot(data)
         guard let rows = decoded.rows, decoded.reason == "array" || decoded.reason == "envelope"
         else { return [:] }

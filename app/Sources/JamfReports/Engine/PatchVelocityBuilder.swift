@@ -143,11 +143,7 @@ enum PatchVelocityBuilder {
     private static func loadDailyRows(dataDir: URL) -> [DayRows] {
         let dir = dataDir.appendingPathComponent("patch-status", isDirectory: true)
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard let files = FileManager.snapshotFolderEntries(in: dir) else {
             return []
         }
 

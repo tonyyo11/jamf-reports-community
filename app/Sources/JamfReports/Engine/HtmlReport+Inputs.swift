@@ -80,7 +80,7 @@ extension HtmlReport {
         func rows(_ label: String, _ kinds: [String]) -> [[String: Any]] {
             for kind in kinds {
                 guard let url = newestSnapshotURL(kind: kind),
-                      let data = BoundedFile.readLogged(url),
+                      let data = BoundedFile.readLogged(url, inside: dataDir),
                       let parsed = (try? JSONSerialization.jsonObject(with: data))
                         as? [[String: Any]], !parsed.isEmpty
                 else { continue }
@@ -123,7 +123,7 @@ extension HtmlReport {
         (inputs.fleet, inputs.p0Gaps) = securityCounts()
         if !(config.securityAgents ?? []).isEmpty,
            let url = track("Extension attribute results", "ea-results"),
-           let data = BoundedFile.readLogged(url) {
+           let data = BoundedFile.readLogged(url, inside: dataDir) {
             inputs.eaRows = EAResultRow.decodeSnapshot(data).rows
         }
         inputs.summaries = loadDailySummaries()
