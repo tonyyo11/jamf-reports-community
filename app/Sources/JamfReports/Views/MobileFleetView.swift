@@ -567,8 +567,12 @@ struct MobileFleetView: View {
                         .accessibilityLabel("Export iOS/iPadOS version distribution chart as PNG")
                         .help("Save the iOS/iPadOS version distribution bar chart as a PNG image")
                     }
-                    ForEach(snapshot.osDistribution, id: \.osVersion) { item in
-                        osVersionBar(osVersion: item.osVersion, count: item.count)
+                    let colors = Theme.ChartPalette.colors(
+                        forVersions: snapshot.osDistribution.map(\.osVersion))
+                    ForEach(Array(snapshot.osDistribution.enumerated()), id: \.element.osVersion) {
+                        index, item in
+                        osVersionBar(osVersion: item.osVersion, count: item.count,
+                                     color: colors[index])
                     }
                 }
             }
@@ -591,7 +595,7 @@ struct MobileFleetView: View {
         }
     }
 
-    private func osVersionBar(osVersion: String, count: Int) -> some View {
+    private func osVersionBar(osVersion: String, count: Int, color: Color) -> some View {
         let total = snapshot.totalDevices
         let percentage = total > 0 ? (Double(count) / Double(total)) * 100 : 0
 
@@ -615,7 +619,7 @@ struct MobileFleetView: View {
                     .frame(height: 4)
                     .overlay(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(Theme.Colors.goldBright)
+                            .fill(color)
                             .frame(width: geo.size.width * (percentage / 100), height: 4)
                     }
             }
@@ -1056,8 +1060,10 @@ private struct MobileFleetOSDistributionExport: View {
     }
 
     var body: some View {
+        let colors = Theme.ChartPalette.colors(
+            forVersions: displayRows.map(\.osVersion), scheme: .light)
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(displayRows.enumerated()), id: \.offset) { _, row in
+            ForEach(Array(displayRows.enumerated()), id: \.offset) { offset, row in
                 let pct = totalDevices > 0 ? Double(row.count) / Double(totalDevices) * 100 : 0
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
@@ -1080,7 +1086,7 @@ private struct MobileFleetOSDistributionExport: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color(hex: 0xE2E8F0))
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.ChartPalette.osVersionExport[0]) // Use muted gold export color
+                                .fill(colors[offset])
                                 .frame(width: max(0, geo.size.width * pct / 100))
                         }
                     }

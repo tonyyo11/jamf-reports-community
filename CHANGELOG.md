@@ -15,6 +15,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Charts now keep one colour for the same thing everywhere: a macOS version, a patch title, a
+  metric or a compliance band is the same colour on the Overview, Trends, Computers, Patch
+  Compliance and Security Posture screens, in the workbook's charts and in the HTML report's
+  bars and history chart. Metrics no longer borrow the red, amber and green used for status,
+  and compliance bands are one colour that reads on both the dark app and a white page. (#305)
 - On a workspace in a sync provider folder, on a network volume or in a shared workspace, the
   Jamf Pro part of a backup is now a choice, as the Jamf Protect part already was: turn on
   **Back up Jamf Pro in this folder** in Backups (or set `backup.pro_on_synced_storage`). A
