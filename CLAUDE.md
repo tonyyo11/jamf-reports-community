@@ -1608,6 +1608,11 @@ Protect: an alert's `computer` is a host name and `analytics` a comma-joined lis
 insight has a `uuid`. An alert's `severity` is High, Medium, Low or Informational (there is no
 Critical) and its `status` is New, InProgress, Resolved or AutoResolved. School: a device carries `os` ("macOS 14.3"), `isManaged`, `isSupervised`
 and `lastCheckin` ("yyyy-MM-dd HH:mm:ss"); a device group carries `members` and `locationId`.
+The School shapes were captured on 2026-10-28 from jamf-cli 1.33.0 (`school <resource> list
+--output json`, a read-only tenant; keys and JSON types only, no values): ten kinds, each a bare
+array. `school-ibeacons` returned no rows, and `school-blueprints` exits 1 without Platform fields,
+so neither has a captured row shape. `app/Tests/JamfReportsTests/SchoolRows.swift` holds the
+captured keys and types, and School test rows come from it, never from documentation.
 `protect overview` and `school overview` print `{section, resource, value}` rows. The keys are the
 same at 1.18.0 and 1.29.0, except a plan's `unifiedLoggingFilterSets`, which 1.18.0 lacks.
 
