@@ -132,6 +132,7 @@ final class ReauthenticateTests: XCTestCase {
         XCTAssertTrue(SourcesView.healthNeedsCredentials(.credentialsUnresolved))
         XCTAssertTrue(SourcesView.healthNeedsCredentials(.unauthorized))
         XCTAssertTrue(SourcesView.healthNeedsCredentials(.noProfile))
+        XCTAssertTrue(SourcesView.healthNeedsCredentials(.environmentReference))
     }
 
     func testHealthNotNeedingCredentials() {

@@ -97,6 +97,42 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        "both are read case-insensitively")
     }
 
+    func testKnownWebhookHostsRaiseNoHostRow() throws {
+        let urls = [
+            "https://hooks.slack.com/services/T0/B0/xyz",
+            "https://acme.webhook.office.com/webhookb2/abc",
+            "https://prod-12.westus.logic.azure.com:443/workflows/abc?sig=s",
+            "https://prod-12.westus.logic.azure.us/workflows/abc",
+            "https://abc.12.environment.api.powerplatform.com/powerautomate/x",
+            "https://abc.environment.api.gov.powerplatform.microsoft.us/x",
+            "https://abc.environment.api.high.powerplatform.microsoft.us/x",
+            "https://abc.environment.api.appsplatform.us/x",
+            "https://HOOKS.SLACK.COM/services/T0/B0/xyz",
+        ]
+        for url in urls {
+            let found = try rows("notify:\n  enabled: true\n  url: \"\(url)\"\n")
+            XCTAssertNil(detail(found, "notify.url"), "\(url) is a known host")
+        }
+    }
+
+    func testAnUnknownWebhookHostWarnsWithTheHostOnlyAndNeverTheURL() throws {
+        let urls = [
+            "https://relay.example.com/hooks/SECRETPATH?sig=SECRETSIG",
+            "https://hooks.slack.com.evil.example/services/SECRETPATH",
+            "https://discord.com/api/webhooks/1/SECRETPATH",
+        ]
+        for url in urls {
+            let found = try rows("notify:\n  enabled: true\n  url: \"\(url)\"\n")
+            let row = try XCTUnwrap(found.first { $0.title == "notify.url" }, url)
+            XCTAssertEqual(row.severity, .warn)
+            let text = row.detail + (row.hint ?? "")
+            XCTAssertTrue(text.contains(URL(string: url)?.host ?? "?"))
+            XCTAssertFalse(text.contains("SECRET"), "the path and signature are the secret")
+        }
+        let disabled = try rows("notify:\n  enabled: false\n  url: \"https://relay.example.com/x\"\n")
+        XCTAssertNil(detail(disabled, "notify.url"), "a webhook that is off is not judged")
+    }
+
     func testAnEnabledNotifyBlockWithoutAUsableURLSaysNothingIsSentAndNeverShowsTheURL() throws {
         let empty = try rows("notify:\n  enabled: true\n  url: \"\"\n")
         XCTAssertEqual(detail(empty, "notify.url"),
@@ -108,7 +144,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        + "The app sends no webhook.")
         let shown = plain.map { $0.title + $0.detail + ($0.hint ?? "") }.joined()
         XCTAssertFalse(shown.contains("hooks.example.com"), "a webhook URL is a secret")
-        let https = "notify:\n  enabled: true\n  url: \"https://hooks.example.com/x\"\n"
+        let https = "notify:\n  enabled: true\n  url: \"https://hooks.slack.com/services/x\"\n"
         XCTAssertEqual(try rows(https), [])
         XCTAssertEqual(try rows("notify:\n  enabled: false\n  url: \"\"\n"), [],
                        "off is a choice, not a mistake")

@@ -23,6 +23,12 @@ versions in this repository map to git tags.
 - Adopting existing Platform API profiles now checks each one's environment or tenant ID: a
   wrong ID or a tenant with no Jamf Pro is refused with the reason, and a missing permission or
   an unanswered check shows a note and continues. (#305)
+- Config Doctor now warns when the notification webhook points at a host that is not a known
+  Microsoft Teams, Power Automate or Slack webhook host. It shows the host only, and the app
+  still sends. (#305)
+- Data Sources › Connection health now says when a profile's credential is an
+  environment-variable reference, which the app cannot use because it starts jamf-cli with a
+  clean environment, and points to a keychain or file reference instead. (#305)
 
 ## [2.11.0] - 2026-10-27
 
