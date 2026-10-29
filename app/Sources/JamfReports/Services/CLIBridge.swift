@@ -574,13 +574,14 @@ final class CLIBridge {
         htmlWithWorkbook: Bool = true,
         csvFolder: Bool = false,
         now: Date = Date(),
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await AttentionLog.recording(profile: profile) {
             try await generateRecording(
                 profile: profile, template: template, outputDir: outputDir,
                 aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook,
-                csvFolder: csvFolder, now: now, onLine: onLine)
+                csvFolder: csvFolder, now: now, written: written, onLine: onLine)
         }
     }
 
@@ -592,6 +593,7 @@ final class CLIBridge {
         htmlWithWorkbook: Bool,
         csvFolder: Bool,
         now: Date,
+        written: RunArtifacts?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await ensureWorkspace(profile: profile, onLine: onLine)
@@ -634,10 +636,11 @@ final class CLIBridge {
             }
         }
         do {
-            let failures = try await engine.generate(
+            let generated = try await engine.generateReport(
                 outputURL: outputURL, template: template,
                 aiNarrative: aiNarrative, csvFolder: csvFolder, now: now, onLine: onLine
             )
+            let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] report written: \(outputURL.lastPathComponent)"))
@@ -650,11 +653,15 @@ final class CLIBridge {
                                  text: "  failed sheet: \(f.sheet): \(f.error)"))
                 }
             }
+            var htmlURL: URL?
             if htmlWithWorkbook {
-                await engine.writeHTMLWithWorkbook(
+                htmlURL = await engine.writeHTMLWithWorkbook(
                     besideWorkbook: outputURL, template: template,
                     aiNarrative: aiNarrative, onLine: onLine)
             }
+            await RunArtifacts.record(
+                [outputURL, htmlURL, generated.csvFolder].compactMap { $0 }, in: written,
+                config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -727,8 +734,10 @@ final class CLIBridge {
     /// Run school-generate for Jamf School tenants via the Swift engine.
     func schoolGenerate(
         profile: String,
+        outputDir: URL? = nil,
         csvFolder: Bool = false,
         now: Date = Date(),
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -750,9 +759,13 @@ final class CLIBridge {
         }
         let engine = ReportEngine(
             config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
-        let outputURL = try engine.resolveOutputURL(
+        // A folder chosen on the Generate sheet takes the School workbook too, as it does the
+        // Jamf Pro one, so the run's files share one folder and one manifest.
+        let defaultURL = try engine.resolveOutputURL(
             stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true),
-            onLine: onLine)
+            onLine: outputDir == nil ? onLine : nil)
+        let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) }
+            ?? defaultURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -771,7 +784,7 @@ final class CLIBridge {
             }
         }
         do {
-            let failures = try await ReportEngine.schoolGenerate(
+            let generated = try await ReportEngine.schoolGenerateReport(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
@@ -780,6 +793,7 @@ final class CLIBridge {
                 now: now,
                 onLine: onLine
             )
+            let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] school report written: \(outputURL.lastPathComponent)"))
@@ -792,6 +806,9 @@ final class CLIBridge {
                                  text: "  failed sheet: \(f.sheet): \(f.error)"))
                 }
             }
+            await RunArtifacts.record(
+                [outputURL, generated.csvFolder].compactMap { $0 }, in: written,
+                config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -1636,6 +1653,7 @@ final class CLIBridge {
         outFile: String?,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
@@ -1692,6 +1710,8 @@ final class CLIBridge {
             )
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -1707,6 +1727,7 @@ final class CLIBridge {
         profile: String,
         outFile: String,
         template: any ReportTemplate = FullInstanceTemplate(),
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // PDF generation reads only cached jamf-cli JSON snapshots; no live API calls.
@@ -1764,6 +1785,8 @@ final class CLIBridge {
             )
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] PDF report written: \(outputURL.lastPathComponent)"))
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -1777,6 +1800,7 @@ final class CLIBridge {
     func exportInventoryCSV(
         profile: String,
         outFile: String?,
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // Epic #103 parity with generatePDF: the engine createDirectory()s at
@@ -1816,11 +1840,13 @@ final class CLIBridge {
                 workspacePaths: WorkspacePaths.self,
                 outputURL: outputURL
             )
-            // No sidecar or manifest for a CSV; the hash line is what lists it as a file the
-            // run wrote.
+            // No sidecar for a CSV; the hash line is what lists it as a file the run wrote, and
+            // a Generate run's manifest lists it.
             if let line = ReportEngine.sha256LogLine(for: outputURL) { onLine(line) }
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] inventory CSV written: \(outputURL.lastPathComponent)"))
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {

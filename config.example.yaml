@@ -814,6 +814,21 @@ output:
   # write it for one run.
   csv_folder: false
 
+  # Every workbook or Generate run also writes <name>.manifest.json beside its files,
+  # named after the workbook: the size and SHA-256 of the workbook, its HTML report,
+  # each file of its CSV folder, and the HTML, PDF and CSV formats Generate wrote with
+  # it (chart PNGs and the period and fleet reports are not listed).
+  # `jamf-reports verify <manifest>` recomputes them. Set timestamp_authority to an
+  # RFC 3161 time-stamp authority's https:// address to have each manifest
+  # timestamped: the manifest's SHA-256, a random number and fixed request headers
+  # (User-Agent "JamfReports") are sent there, nothing else, and the signed reply is
+  # saved beside it as <name>.tsr. A failed request is a warning; the reports stand.
+  # Empty (the default) sends nothing. https://freetsa.org/tsr is a free test
+  # service, not a qualified authority; use your organization's or a commercial TSA
+  # for evidence. On a shared workspace the address is not used on a Mac until it is
+  # confirmed there (Config Doctor), including the first time that Mac sees it.
+  timestamp_authority: ""
+
   # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE
   # the workspace.
   #

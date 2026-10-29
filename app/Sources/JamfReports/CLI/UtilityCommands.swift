@@ -85,10 +85,13 @@ struct Scaffold: AsyncParsableCommand {
     /// On stderr, so stdout stays the one path a script reads.
     private func keepCopy(of url: URL) throws {
         guard let backup = try ConfigService.backUp(url) else { return }
+        let omitted = ConfigService.backupOmissions(backup)
+        let restore = omitted.count > 1 ? "them" : "it"
         FileHandle.standardError.write(
             Data(("note: kept a copy of the existing file at \(backup.path)"
-                + (ConfigService.backupOmitsWebhook(backup)
-                    ? "; its webhook URL is not kept, so enter it again after a restore" : "")
+                + (omitted.isEmpty ? "" : "; its \(omitted.joined(separator: " and ")) "
+                    + "\(omitted.count > 1 ? "are" : "is") not kept, so enter \(restore) again "
+                    + "after a restore")
                 + "\n").utf8))
     }
 }
@@ -129,6 +132,21 @@ struct Check: AsyncParsableCommand {
         )
         print(String(decoding: try encoder.encode(payload), as: UTF8.self))
         Foundation.exit(report.failCount > 0 ? 1 : 0)
+    }
+}
+
+/// `jamf-reports verify <stem>.manifest.json`: read-only, so it takes no lock and no profile.
+struct Verify: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Check a report run's manifest: every artifact's size and SHA-256, and the "
+            + "RFC 3161 timestamp (.tsr) beside it when there is one. Exits 1 when anything "
+            + "differs.")
+    @Argument(help: "The run's <stem>.manifest.json, beside its workbook.") var manifest: String
+
+    func run() async throws {
+        let result = RunManifest.verify(manifestAt: URL(fileURLWithPath: manifest))
+        CLIRun.write(result.lines.joined(separator: "\n") + "\n", to: .standardOutput)
+        Foundation.exit(result.passed ? 0 : 1)
     }
 }
 

@@ -66,6 +66,7 @@ name as `%2C` and a percent sign as `%25`.
 | `device` | Print one device's detail JSON (Jamf Pro profiles only) | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School workspace; refuses a profile that is not one | `--profile` |
 | `schedules` | List, add, remove, or run hand-built schedules (managed ones come from the Automation policy and are not editable here) | `list`, `add …`, `remove <label>`, `run <label>` |
+| `verify` | Check a report run's manifest: every file's size and SHA-256, and the RFC 3161 timestamp beside it when there is one; exits `1` when anything differs | `<stem>.manifest.json` |
 
 ### Gating a job on config health
 
@@ -110,6 +111,27 @@ A few behaviors worth knowing:
   it with `_csv` added. It holds the rows the workbook tabs hold, honours `sheets.only`,
   `skip` and `order`, and moves to the archive with its workbook. A failure prints a
   `[warn] CSV folder not written: …` line and leaves the workbook as it is.
+- Every workbook run (`generate`, the app, a schedule) and every Generate run in the app also
+  writes `<name>.manifest.json`, named after the workbook (else the run's first file): the size
+  and SHA-256 of the workbook, its HTML report, each CSV in its CSV folder, and the HTML, PDF
+  and CSV formats the Generate run wrote with it. Chart PNGs and the period and fleet reports
+  are not listed; `jamf-reports html` and the Reports screen's PDF and CSV exports write a
+  manifest for their one file. `jamf-reports verify <manifest>` prints `OK`, `CHANGED`, `MISSING` or
+  `UNREADABLE` for each, `EXTRA` for a file added to a listed folder (Finder's `.DS_Store`
+  excepted), and exits `1` unless all match. With `output.timestamp_authority: "https://…"`
+  the manifest's SHA-256, a random nonce and fixed request headers (`User-Agent: JamfReports`)
+  are sent to that RFC 3161 time-stamp authority, nothing else, and its signed reply saved as
+  `<name>.tsr`; `verify` then checks the reply signs this manifest and prints the authority's
+  time, its certificate's SHA-256 fingerprint and whether this Mac trusts its certificate
+  chain. Compare that fingerprint with the one the authority publishes: a self-signed
+  certificate can name itself anything. With no `.tsr`, or an untrusted chain, `verify` adds a
+  note: anyone who can write the folder can write a matching manifest, so a match holds only if
+  you trust where the manifest (and the signer fingerprint) came from. A failed request is a `[warn] report timestamp not
+  saved: …` line; the reports stand. On a shared workspace the address is used on a Mac only
+  once it is confirmed there (Config Doctor). `https://freetsa.org/tsr` is a free test service,
+  not a qualified authority. To check a reply without this app, macOS's own LibreSSL (3.3.6,
+  macOS 15 and later) does it:
+  `openssl ts -verify -data <stem>.manifest.json -in <stem>.tsr -CAfile <authority CA>.pem`.
 - A Jamf Pro `collect` runs at most once per profile per day; a second run the same day
   exits successfully without re-collecting. A Jamf School workspace collects each source at
   most every 12 hours instead. Pass `--force` to override either.

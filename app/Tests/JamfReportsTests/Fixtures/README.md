@@ -41,3 +41,10 @@ row's `aliases` and rewrites the JSON with 2-space indent (jamf-cli prints alias
 and the committed file has that one normalisation applied; nothing else is edited. Python
 writes Go's HTML escapes (`\u003e` for `>`, and `<`, `&`) as the characters themselves, so the
 text of the descriptions and gateway permissions differs from jamf-cli's raw bytes there.
+
+`timestamp/` is not synthetic either: `freetsa.tsr` is FreeTSA's real reply
+(https://freetsa.org/tsr, 2026-10-29 06:38:24 UTC) to `freetsa.tsq`, a query made with
+`openssl ts -query -digest <sha256> -sha256 -cert` over the SHA-256 of
+`report_fixture_2026-10-29_090000.manifest.json`, which `RunManifest.build` wrote over the
+three small artifacts `RunManifestTests` recreates. The query holds only that hash and a nonce.
+Never edit these three files; a new capture replaces all three together.

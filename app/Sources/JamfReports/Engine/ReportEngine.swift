@@ -264,8 +264,8 @@ struct ReportEngine: Sendable {
     ///
     /// A run is a workbook: `keep` counts workbooks, and one that moves takes its companion HTML
     /// (the same name with `.html`, written by `html.with_workbook`), its CSV folder
-    /// (`csvFolderURL`) and their sidecars with it. An HTML report or CSV folder with no
-    /// workbook of the same name beside it is never moved.
+    /// (`csvFolderURL`), their sidecars, and its run manifest and `.tsr` with it. An HTML
+    /// report or CSV folder with no workbook of the same name beside it is never moved.
     ///
     /// - Parameter onLine: When provided, warnings are emitted here instead of (only) via
     ///   `print`, so live log views (e.g. GenerateSheet) display side-effect failures.
@@ -306,7 +306,8 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): \(error.localizedDescription)"
+            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): "
+                + error.localizedDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -315,16 +316,24 @@ struct ReportEngine: Sendable {
 
         for file in sorted.dropFirst(keep) {
             // The workbook's companion HTML (`html.with_workbook`) and CSV folder are part of its
-            // run. A `.html` with no workbook beside it, such as the Generate sheet's HTML
-            // format or `jamf-reports html` output, is not a run of this stem and is left where
-            // it is.
-            let run = [file, Self.htmlURL(besideWorkbook: file),
+            // run, as is every file its run manifest lists (a Generate run's HTML, PDF and CSV
+            // formats). A `.html` with no workbook or manifest naming it, such as
+            // `jamf-reports html` output, is not a run of this stem and is left where it is.
+            let manifest = RunManifest.manifestURL(for: file)
+            let own = [file, Self.htmlURL(besideWorkbook: file),
                        Self.csvFolderURL(besideWorkbook: file)]
-                .filter { fm.fileExists(atPath: $0.path) }
+            // What only the peer-writable manifest names never replaces an archive entry.
+            let listed = RunManifest.listedFiles(manifestAt: manifest, besideWorkbook: file)
+                .filter { !own.contains($0) }
+            let run = (own + listed).filter { fm.fileExists(atPath: $0.path) }
+            var everyFileMoved = true
             for artifact in run {
                 // Skip sidecars when the move failed: sidecars without their report in the
                 // archive are uninformative.
-                guard Self.moveToArchive(artifact, archiveDir: archiveDir, onLine: onLine) else {
+                guard Self.moveToArchive(
+                    artifact, archiveDir: archiveDir, replacing: !listed.contains(artifact),
+                    onLine: onLine) else {
+                    everyFileMoved = false
                     continue
                 }
                 // Sibling sidecar files (sha256 + manifest.txt) move with their report so
@@ -334,8 +343,24 @@ struct ReportEngine: Sendable {
                     let sidecar = artifact.appendingPathExtension(ext)
                     guard fm.fileExists(atPath: sidecar.path) else { continue }
                     Self.moveToArchive(
-                        sidecar, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
+                        sidecar, archiveDir: archiveDir, label: "sidecar ",
+                        replacing: !listed.contains(artifact), onLine: onLine)
                 }
+            }
+            // The run manifest and its timestamp follow their run, whole; they are never runs.
+            let records = [manifest, RunManifest.timestampURL(for: file)]
+                .filter { fm.fileExists(atPath: $0.path) }
+            guard !records.isEmpty else { continue }
+            guard everyFileMoved else {
+                let msg = "[warn] Run manifest \(manifest.lastPathComponent) left in the report "
+                    + "folder: not every file of its run could be archived."
+                AppLogger.report.warning("\(msg, privacy: .private)")
+                onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                continue
+            }
+            for record in records {
+                Self.moveToArchive(
+                    record, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
             }
         }
     }
@@ -353,15 +378,24 @@ struct ReportEngine: Sendable {
                 == .orderedSame
     }
 
-    /// Moves `file` into `archiveDir`, replacing a file of the same name there. A failure is a
-    /// `[warn]` line, and the result is false.
+    /// Moves `file` into `archiveDir`, replacing a file of the same name there unless
+    /// `replacing` is false, when an existing entry (a link included) stops the move. A failure
+    /// is a `[warn]` line, and the result is false.
     @discardableResult
     static func moveToArchive(
-        _ file: URL, archiveDir: URL, label: String = "",
+        _ file: URL, archiveDir: URL, label: String = "", replacing: Bool = true,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) -> Bool {
         let fm = FileManager.default
         let dest = archiveDir.appendingPathComponent(file.lastPathComponent)
+        var held = stat()
+        guard replacing || lstat(dest.path, &held) != 0 else {
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): the archive "
+                + "already holds an entry of that name, so both are left in place."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return false
+        }
         guard !isSameFile(dest, file) else {
             let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): the archive "
                 + "folder is the folder it is in."
@@ -376,7 +410,8 @@ struct ReportEngine: Sendable {
             try fm.moveItem(at: file, to: dest)
             return true
         } catch {
-            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error.localizedDescription)"
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): "
+                + error.localizedDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             if label.isEmpty { print(msg) }
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -1424,7 +1459,7 @@ struct ReportEngine: Sendable {
             try png.write(to: url, options: .atomic)
         } catch {
             AppLogger.report.warning(
-                "[warn] PNG export failed for \(kind, privacy: .public): \(error)"
+                "[warn] PNG export failed for \(kind, privacy: .public): \(error.localizedDescription)"
             )
         }
     }
@@ -4449,8 +4484,8 @@ struct ReportEngine: Sendable {
             try line.write(to: sidecarURL, atomically: true, encoding: .utf8)
             return hex
         } catch {
-            fputs("[warn] sha256 sidecar: could not write \(sidecarURL.lastPathComponent): \(error)\n",
-                  stderr)
+            fputs("[warn] sha256 sidecar: could not write \(sidecarURL.lastPathComponent): "
+                + "\(error.localizedDescription)\n", stderr)
             return nil
         }
     }
@@ -4503,8 +4538,8 @@ struct ReportEngine: Sendable {
         do {
             try manifest.write(to: manifestURL, atomically: true, encoding: .utf8)
         } catch {
-            fputs("[warn] manifest: could not write \(manifestURL.lastPathComponent): \(error)\n",
-                  stderr)
+            fputs("[warn] manifest: could not write \(manifestURL.lastPathComponent): "
+                + "\(error.localizedDescription)\n", stderr)
         }
         return hex
     }

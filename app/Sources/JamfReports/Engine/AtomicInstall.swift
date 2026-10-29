@@ -106,7 +106,8 @@ enum AtomicInstall {
     private static let stagingMarker = ".tmp-"
 
     /// Which staged shapes a sweep removes. `reports`: the folder a person chose for reports,
-    /// so only what the report writers stage (a `.xlsx` file, a `_csv` folder). `workspace`: a
+    /// so only what the report writers stage (a `.xlsx`, run manifest or `.tsr` file, a `_csv`
+    /// folder). `workspace`: a
     /// folder the app confines and owns, so any staged regular file (`.json`, `.last`, config);
     /// a staged folder is a `_csv` one in both scopes.
     enum StagingScope: Sendable {
@@ -115,6 +116,8 @@ enum AtomicInstall {
         fileprivate func stages(original: Substring, isDirectory: Bool) -> Bool {
             if isDirectory { return original.hasSuffix(ReportEngine.csvFolderSuffix) }
             return self == .workspace || original.hasSuffix(".xlsx")
+                || original.hasSuffix(RunManifest.manifestSuffix)
+                || original.hasSuffix("." + RunManifest.timestampExtension)
         }
     }
 

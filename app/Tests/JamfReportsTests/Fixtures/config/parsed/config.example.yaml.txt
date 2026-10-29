@@ -110,6 +110,7 @@ output.archive_enabled = bool true
 output.archive_dir = string ""
 output.keep_latest_runs = int 10
 output.csv_folder = bool false
+output.timestamp_authority = string ""
 output.allow_absolute_paths = bool false
 charts.enabled = bool true
 charts.save_png = bool true

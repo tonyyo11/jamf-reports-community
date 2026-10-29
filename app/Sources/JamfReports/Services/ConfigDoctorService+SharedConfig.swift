@@ -31,7 +31,7 @@ extension ConfigDoctorService {
                 + "you confirm, every screen, report and run on this Mac uses the safe value "
                 + "for each key (workspace Generated Reports folder, archive instead of "
                 + "delete, no webhook send, no Protect collection, no logo, the history file "
-                + "beside the report).",
+                + "beside the report, no report timestamp).",
             action: unreadable ? .confirmSharedConfig(check.drifts) : nil,
             items: items
         )]
@@ -39,7 +39,8 @@ extension ConfigDoctorService {
 
     /// The key, the value pinned and the value now, each as typed (control characters removed,
     /// nothing cut short before the 1024-character limit), and for a folder where it lands.
-    /// The webhook shows its host and a short fingerprint, never the URL.
+    /// The webhook and the timestamp authority show their host and a short fingerprint, never
+    /// the URL.
     private static func sharedConfigText(
         _ drift: SharedConfigPin.Drift, workspace: URL?
     ) -> String {

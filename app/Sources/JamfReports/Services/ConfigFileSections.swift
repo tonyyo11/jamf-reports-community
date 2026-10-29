@@ -125,7 +125,9 @@ struct ConfigFileSections: Equatable, Sendable {
 
     // MARK: - Values
 
-    private static let secretWords = ["url", "token", "secret", "password", "key", "webhook"]
+    private static let secretWords = [
+        "url", "token", "secret", "password", "key", "webhook", "timestamp_authority",
+    ]
 
     /// The value as listed. A key whose path names a secret shows only whether it is set.
     static func displayValue(_ value: YAMLCodec.YAMLValue, keyPath: String) -> String {

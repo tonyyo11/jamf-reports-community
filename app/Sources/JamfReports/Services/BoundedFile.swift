@@ -181,11 +181,20 @@ enum BoundedFile {
     /// `fstat` gave at open is hashed, so a file a peer keeps growing cannot stretch the read.
     /// Nil when unreadable or shorter than that size.
     static func sha256Hex(_ url: URL) -> String? {
-        guard let handle = try? openChecked(url) else { return nil }
+        fingerprint(url)?.sha256
+    }
+
+    /// `sha256Hex` with the size it hashed. With `root`, a link anywhere below it is refused, as
+    /// `read(inside:)` does, so a run manifest lists only files that are in its folder.
+    static func fingerprint(_ url: URL, inside root: URL? = nil) -> (sha256: String, size: Int)? {
+        guard let descriptor = try? openRegular(url, followSymlinks: false, inside: root)
+        else { return nil }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         defer { try? handle.close() }
         var info = stat()
         guard fstat(handle.fileDescriptor, &info) == 0 else { return nil }
-        var remaining = Int(max(info.st_size, 0))
+        let size = Int(max(info.st_size, 0))
+        var remaining = size
         var hasher = SHA256()
         while remaining > 0 {
             let chunk: Data?
@@ -197,7 +206,7 @@ enum BoundedFile {
             hasher.update(data: chunk)
             remaining -= chunk.count
         }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return (hasher.finalize().hexString, size)
     }
 
     /// The one reader of a snapshot, summary, cache or log file the picker chose: `read` refusing a
@@ -248,4 +257,9 @@ enum BoundedFile {
     ) -> String? {
         stateData(url, limit: limit, inside: root).flatMap { String(data: $0, encoding: .utf8) }
     }
+}
+
+extension Sequence where Element == UInt8 {
+    /// Lowercase hex, two digits a byte: how a SHA-256 or fingerprint is written and compared.
+    var hexString: String { map { String(format: "%02x", $0) }.joined() }
 }

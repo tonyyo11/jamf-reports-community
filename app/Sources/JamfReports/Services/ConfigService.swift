@@ -554,12 +554,16 @@ enum ConfigService {
     static func scrubbedForBackup(_ data: Data) -> Data {
         guard let text = String(data: data, encoding: .utf8) else { return data }
         // Any other webhook URL the file carries (an old one in a comment, a second block).
-        let swept = removingWebhookURLs(text)
-        guard let root = try? ConfigLoader.rawMapping(fromYAML: text),
-              let url = (ConfigLoader.rawValue(at: ["notify", "url"], in: root) as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !url.isEmpty else { return swept == text ? data : Data(swept.utf8) }
-        return Data(removingNotifyURL(url, from: swept).utf8)
+        var swept = removingWebhookURLs(text)
+        // The webhook and the timestamp authority: either URL can carry a token.
+        if let root = try? ConfigLoader.rawMapping(fromYAML: text) {
+            for (section, key) in [("notify", "url"), ("output", "timestamp_authority")] {
+                guard let url = (ConfigLoader.rawValue(at: [section, key], in: root) as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty else { continue }
+                swept = removingURL(url, at: section, key, from: swept)
+            }
+        }
+        return swept == text ? data : Data(swept.utf8)
     }
 
     /// Every incoming-webhook URL `LogRedactor` recognises, replaced with `<removed>`.
@@ -573,35 +577,41 @@ enum ConfigService {
         }
     }
 
-    /// `notify.url`'s line written as `url: ""` with a comment naming only the host, and any
-    /// other copy of that text replaced with `<removed>`.
-    private static func removingNotifyURL(_ url: String, from text: String) -> String {
+    /// `<section>.<key>`'s line written as `<key>: ""` with a comment naming only the host, and
+    /// any other copy of that text replaced with `<removed>`.
+    private static func removingURL(
+        _ url: String, at section: String, _ key: String, from text: String
+    ) -> String {
         let host = URL(string: url)?.host.map { "https://\($0)/…" } ?? "its host"
-        var inNotify = false
+        var inSection = false
         var lines: [String] = []
         for line in text.components(separatedBy: "\n") {
             let first = line.first
             if first != nil, first != " ", first != "\t", first != "#", first != "\r" {
-                inNotify = line.hasPrefix("notify:")
+                inSection = line.hasPrefix(section + ":")
             }
             let body = line.drop { $0 == " " || $0 == "\t" }
-            guard inNotify, body.count < line.count, body.hasPrefix("url"),
-                  body.dropFirst(3).drop(while: { $0 == " " }).first == ":" else {
+            guard inSection, body.count < line.count, body.hasPrefix(key),
+                  body.dropFirst(key.count).drop(while: { $0 == " " }).first == ":" else {
                 lines.append(line.replacingOccurrences(of: url, with: "<removed>"))
                 continue
             }
             let indent = String(line.prefix(line.count - body.count))
             let ending = line.hasSuffix("\r") ? "\r" : ""
-            lines.append("\(indent)url: \"\"\(ending)")
-            lines.append("\(indent)# notify.url removed from this copy (was \(host))\(ending)")
+            lines.append("\(indent)\(key): \"\"\(ending)")
+            lines.append(
+                "\(indent)# \(section).\(key) removed from this copy (was \(host))\(ending)")
         }
         return lines.joined(separator: "\n")
     }
 
-    /// Whether the copy at `backup` had its webhook URL taken out (`scrubbedForBackup`).
-    static func backupOmitsWebhook(_ backup: URL) -> Bool {
-        ((try? ConfigLoader.readText(at: backup)) ?? "")
-            .contains("# notify.url removed from this copy")
+    /// What `scrubbedForBackup` took out of the copy at `backup`, worded for a note: the webhook
+    /// URL and the timestamp authority address. Empty when neither was there.
+    static func backupOmissions(_ backup: URL) -> [String] {
+        let text = (try? ConfigLoader.readText(at: backup)) ?? ""
+        return [("notify.url", "webhook URL"), ("output.timestamp_authority",
+                                                "timestamp authority address")]
+            .filter { text.contains("# \($0.0) removed from this copy") }.map(\.1)
     }
 
     /// `<prefix><yyyyMMdd-HHmmss>` names in `directory`; nothing else that shares the prefix.
