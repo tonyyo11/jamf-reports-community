@@ -320,10 +320,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
 
     // MARK: - Store
 
-    /// `<AppSupport>/shared-config-pin-<profile>.json`, 0600.
-    static func storeURL(profile: String, appSupport: URL) -> URL {
-        appSupport.appendingPathComponent(
-            "shared-config-pin-\(ProfileName.pathComponent(profile)).json")
+    /// `<AppSupport>/shared-config-pin-<WorkspaceID.pathComponent>.json`, 0600: the name a pin
+    /// had before 2.12, when the workspace ID was its profile. Nil for a name that is no
+    /// workspace ID, which has no pin.
+    static func storeURL(workspace: String, appSupport: URL) -> URL? {
+        WorkspaceID(workspace).map {
+            appSupport.appendingPathComponent("shared-config-pin-\($0.pathComponent).json")
+        }
     }
 
     /// What the store holds. Only a missing file is a first sight: a pin that exists but
@@ -340,8 +343,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     }
 
     static func read(profile: String, appSupport: URL) -> Stored {
-        let url = storeURL(profile: profile, appSupport: appSupport)
-        guard FileManager.default.fileExists(atPath: url.path) else { return .absent }
+        guard let url = storeURL(workspace: profile, appSupport: appSupport),
+              FileManager.default.fileExists(atPath: url.path) else { return .absent }
         guard let data = try? Data(contentsOf: url),
               let pin = try? JSONDecoder().decode(SharedConfigPin.self, from: data)
         else { return .unreadable }
@@ -353,7 +356,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     }
 
     static func save(_ pin: SharedConfigPin, profile: String, appSupport: URL) throws {
-        let url = storeURL(profile: profile, appSupport: appSupport)
+        guard let url = storeURL(workspace: profile, appSupport: appSupport) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(pin).write(to: url, options: .atomic)
@@ -503,8 +508,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         guard appliesTo(
             sharedEnabled: sharedConfig?.enabled,
             onSharedStorage: CloudStorage.isSharedStorage(workspace, syncProbe: syncProbe),
-            pinExists: FileManager.default.fileExists(
-                atPath: storeURL(profile: profile, appSupport: appSupport).path))
+            pinExists: hasPin(profile: profile, appSupport: appSupport))
         else { return .local }
         return current(workspace: workspace).map(SharedRead.readable) ?? .unreadable
     }
@@ -754,8 +758,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// Whether this Mac holds a pin for `profile`, which only a shared workspace ever gets: the
     /// workspace was shared once, whatever config.yaml says now.
     static func hasPin(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
-        FileManager.default.fileExists(
-            atPath: storeURL(profile: profile, appSupport: appSupport).path)
+        storeURL(workspace: profile, appSupport: appSupport)
+            .map { FileManager.default.fileExists(atPath: $0.path) } ?? false
     }
 
     // MARK: - Folder overrides
@@ -872,7 +876,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let support = AppSupport.resolved(home: FileManager.default.homeDirectoryForCurrentUser)
         let digest = contentDigest(of: workspace.appendingPathComponent("config.yaml"))
         let pinStamps = { (names: [String]) in
-            names.map { FileStamp(of: storeURL(profile: $0, appSupport: support)) }
+            names.compactMap {
+                storeURL(workspace: $0, appSupport: support).map(FileStamp.init(of:))
+            }
         }
         if let cached = overridesCache.withLock({ $0[id] }), cached.config == digest,
            cached.pins == pinStamps(cached.profiles) {
@@ -881,9 +887,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let candidates = profiles(forWorkspace: workspace)
         // A candidate with a pin is this Mac's profile for the folder; first-sight judgement
         // applies only when none has one (another folder name resolving here is not a profile).
-        let pinned = candidates.filter {
-            FileManager.default.fileExists(atPath: storeURL(profile: $0, appSupport: support).path)
-        }
+        let pinned = candidates.filter { hasPin(profile: $0, appSupport: support) }
         let profiles = pinned.isEmpty ? candidates : pinned
         guard !profiles.isEmpty else { return PathOverrides() }
         let stamps = pinStamps(profiles)

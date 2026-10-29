@@ -10,6 +10,13 @@ import Foundation
 /// mirrors that behavior, reading the file through the engine's loader.
 enum WorkspacePaths {
 
+    /// The workspace's folder under the workspaces root. Every folder path starts here.
+    static func workspaceURL(
+        for workspace: WorkspaceID, under root: URL = ProfileService.workspacesRoot()
+    ) -> URL {
+        root.appendingPathComponent(workspace.pathComponent, isDirectory: true)
+    }
+
     /// The conventional subdirectory name for generated report output.
     /// Used by `CLIBridge+Generation` to construct HTML and PDF output paths
     /// without duplicating the literal.
@@ -180,12 +187,10 @@ enum WorkspacePaths {
         for profile: String,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws -> URL {
-        guard ProfileService.workspaceURL(for: profile) != nil else {
-            throw PathError.invalidProfile(profile)
-        }
+        guard let id = WorkspaceID(profile) else { throw PathError.invalidProfile(profile) }
         return home
             .appendingPathComponent("Library/Logs/JamfReports/diagnostics", isDirectory: true)
-            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
+            .appendingPathComponent(id.pathComponent, isDirectory: true)
     }
 
     /// A fixed folder below a workspace (or below a config-derived folder such as `data_dir`),

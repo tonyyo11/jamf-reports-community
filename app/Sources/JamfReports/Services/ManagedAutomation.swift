@@ -52,7 +52,7 @@ enum ManagedAutomation {
 
     /// Name-list form, for the callers that only ever hold profile slugs.
     static func managedBaseProfile(names: [String], policy: AutomationPolicy) -> String? {
-        names.first { !policy.excludedProfiles.contains($0) && ProfileService.isValid($0) }
+        names.first { !policy.excludedWorkspaces.contains($0) && ProfileService.isValid($0) }
     }
 
     // MARK: - Desired specs (pure)
@@ -105,7 +105,7 @@ enum ManagedAutomation {
             launchAgentLabel: label(for: kind),
             multiTarget: MultiTarget(scope: .all, sequential: true),
             tiers: tiers(kind),
-            excludedProfiles: policy.excludedProfiles
+            excludedProfiles: policy.excludedWorkspaces
         )
     }
 

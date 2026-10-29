@@ -121,11 +121,21 @@ enum CLIRun {
         exit(code)
     }
 
-    /// Exit unless `profile` is a name the app takes; the typed name is filtered before it is
-    /// printed, since an invalid one can hold control characters.
+    /// Exit unless `profile` is a name the app takes and its workspace folder is its own, before
+    /// any command opens a lock, a run record or a file in it. Every subcommand that names a
+    /// profile calls this first, `generate` and `html` before `loadProfile`.
     static func requireValidProfile(_ profile: String) {
-        guard !ProfileService.isValid(profile) else { return }
-        fail("invalid profile '\(ConfigSchema.displayText(profile))'")
+        if let refusal = profileRefusal(profile) { fail(refusal) }
+    }
+
+    /// Why `profile` cannot be used here: a name the app does not take (filtered before it is
+    /// printed, since it can hold control characters), or a case variant whose folder is
+    /// another spelling's (`ProfileService.caseVariantRefusal`).
+    static func profileRefusal(_ profile: String) -> String? {
+        guard ProfileService.isValid(profile) else {
+            return "invalid profile '\(ConfigSchema.displayText(profile))'"
+        }
+        return ProfileService.caseVariantRefusal(of: profile)
     }
 
     /// Reject a user-supplied output path that lands in a sensitive directory

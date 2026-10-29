@@ -138,9 +138,10 @@ final class ScheduledRunSignalsTests: XCTestCase {
 
     // MARK: - CLIRunSignals seams
 
-    func testCLILabelsAreDistinctAndValid() {
-        let collect = CLIRunSignals.cliLabel(profile: "prod", kind: .collect)
-        let generate = CLIRunSignals.cliLabel(profile: "prod", kind: .generate)
+    func testCLILabelsAreDistinctAndValid() throws {
+        let prod = try XCTUnwrap(WorkspaceID("prod"))
+        let collect = CLIRunSignals.cliLabel(workspace: prod, kind: .collect)
+        let generate = CLIRunSignals.cliLabel(workspace: prod, kind: .generate)
         XCTAssertEqual(collect, "\(LaunchAgentWriter.labelPrefix).prod.cli-collect")
         XCTAssertEqual(generate, "\(LaunchAgentWriter.labelPrefix).prod.cli-generate")
         // Distinct labels so Run History never conflates the two run kinds, and

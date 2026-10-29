@@ -12,7 +12,7 @@ final class AutomationPolicyTests: XCTestCase {
         XCTAssertEqual(p.reportsCadence, .weekly)
         XCTAssertFalse(p.backupsEnabled)
         XCTAssertEqual(p.runTime, "06:00")
-        XCTAssertEqual(p.excludedProfiles, [])
+        XCTAssertEqual(p.excludedWorkspaces, [])
     }
 
     func testSerializeParseRoundTrip() {
@@ -20,11 +20,11 @@ final class AutomationPolicyTests: XCTestCase {
         p.isManaged = true
         p.reportsCadence = .monthly
         p.reportsDayOfMonth = 15
-        p.excludedProfiles = ["dummy", "sandbox"]
+        p.excludedWorkspaces = ["dummy", "sandbox"]
         p.runTime = "07:30"
         p.reportGroups = [
-            ReportGroup(name: "Production Fleet", profiles: ["prod", "dev"]),
-            ReportGroup(name: "Customer A", profiles: ["cust-a"]),
+            ReportGroup(name: "Production Fleet", workspaces: ["prod", "dev"]),
+            ReportGroup(name: "Customer A", workspaces: ["cust-a"]),
         ]
         XCTAssertEqual(AutomationPolicy.parse(p.serialize()), p)
     }

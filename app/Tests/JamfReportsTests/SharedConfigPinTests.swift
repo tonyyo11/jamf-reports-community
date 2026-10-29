@@ -93,7 +93,8 @@ final class SharedConfigPinTests: XCTestCase {
         let pinned = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
         XCTAssertEqual(pinned.retentionMode, "archive")
         XCTAssertEqual(pinned.notifyURLHost, "hooks.example.com")
-        let url = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let url = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let permissions = try fileManager.attributesOfItem(atPath: url.path)[.posixPermissions]
         XCTAssertEqual(permissions as? Int, 0o600)
     }
@@ -101,7 +102,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testPinHoldsTheWebhookHostNeverTheURL() throws {
         try writeConfig(webhook: "https://hooks.example.com/services/T0/B0/secret-token")
         _ = check()
-        let url = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let url = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("hooks.example.com"))
         XCTAssertFalse(text.contains("secret-token"))
@@ -169,7 +171,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAnUnreadablePinFailsClosedWithEveryKeyDrifted() throws {
         try writeConfig(retentionMode: "archive")
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         try "not json".write(to: store, atomically: true, encoding: .utf8)
 
         let result = check()
@@ -188,7 +191,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAPinWrittenBeforeAKeyWasAddedPinsThatKeyAtItsFirstSight() throws {
         try writeConfig(historicalDir: outside, protectProfile: "protect-a")
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let old = #"{"allowAbsolutePaths":false,"outputDir":"","archiveDir":"","dataDir":"","#
             + #""retentionEnabled":true,"retentionMode":"archive","#
             + #""notifyURLHost":"hooks.example.com"}"#
@@ -263,7 +267,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testConfirmingAnUnreadablePinNeedsEveryKeyToStillMatch() throws {
         try writeConfig()
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         try "not json".write(to: store, atomically: true, encoding: .utf8)
         let shown = check().drifts
         try writeConfig(retentionMode: "delete")
@@ -294,8 +299,8 @@ final class SharedConfigPinTests: XCTestCase {
         let lines = LineBox()
         let protectRuns = LineBox()
         try await CollectRouter.run(
-            profile: profile, config: config,
-            proCollect: { _, _, _, _, _, _ in .collected },
+            workspace: WorkspaceID(validating: profile), config: config,
+            proCollect: { _, _, _, _, _, _, _ in .collected },
             protectCollect: { name, _, _ in protectRuns.add(name) },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
@@ -327,8 +332,8 @@ final class SharedConfigPinTests: XCTestCase {
         let lines = LineBox()
         let protectRuns = LineBox()
         try await CollectRouter.run(
-            profile: profile, config: config,
-            proCollect: { _, _, _, _, _, _ in .collected },
+            workspace: WorkspaceID(validating: profile), config: config,
+            proCollect: { _, _, _, _, _, _, _ in .collected },
             protectCollect: { name, _, _ in protectRuns.add(name) },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
@@ -763,7 +768,8 @@ final class SharedConfigPinTests: XCTestCase {
         try writeConfig(outputDir: outside, allowAbsolute: true)
         _ = check()
         try confirmAll()
-        let pin = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let pin = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let before = try Data(contentsOf: pin)
         for _ in 0..<50 { _ = try WorkspacePaths.outputDir(for: profile) }
         XCTAssertEqual(try Data(contentsOf: pin), before, "a read never rewrites the pin")
@@ -841,7 +847,8 @@ final class SharedConfigPinTests: XCTestCase {
         for school in [false, true] {
             try writeConfig()
             try? fileManager.removeItem(
-                at: SharedConfigPin.storeURL(profile: profile, appSupport: appSupport))
+                at: try XCTUnwrap(
+                    SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport)))
             _ = check()
             try writeConfig(retentionMode: school ? "archive" : "delete",
                             retentionArchiveDir: school ? "peer" : "")
@@ -853,9 +860,9 @@ final class SharedConfigPinTests: XCTestCase {
             let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
             let lines = LineBox()
             try await CollectRouter.run(
-                profile: profile, config: config,
-                proCollect: { _, _, _, _, _, _ in .collected },
-                schoolCollect: { _, _, _, _, _ in },
+                workspace: WorkspaceID(validating: profile), config: config,
+                proCollect: { _, _, _, _, _, _, _ in .collected },
+                schoolCollect: { _, _, _, _, _, _ in },
                 onLine: { lines.add($0.text) })
             XCTAssertEqual(
                 lines.all.first,
@@ -911,7 +918,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAnUnreadablePinOffersOneConfirmAllAndNoPerKeyButton() throws {
         try writeConfig()
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         try "not json".write(to: store, atomically: true, encoding: .utf8)
         let row = try XCTUnwrap(ConfigDoctorService.sharedConfigRows(
             profile: profile, appSupport: appSupport).first)
@@ -1031,7 +1039,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAPinWrittenBeforeTheHeartbeatKeyPinsItAtFirstSight() throws {
         try writeConfig(heartbeat: true)
         _ = check()
-        let url = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let url = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         var pin = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
         pin.notifyHeartbeat = false
         pin.pinnedKeys.removeAll { $0 == SharedConfigPin.Key.notifyHeartbeat.rawValue }

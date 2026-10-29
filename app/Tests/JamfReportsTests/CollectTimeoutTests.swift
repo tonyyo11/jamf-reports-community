@@ -53,6 +53,7 @@ final class CollectTimeoutTests: XCTestCase {
         let collector = LogTextCollector()
 
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan], force: true,
             authConfirmationProbe: { _, _ in false }, locateJamfCLI: { stub },
             kindTimeout: 1, onLine: collector.append)
@@ -97,6 +98,7 @@ final class CollectTimeoutTests: XCTestCase {
 
         do {
             _ = try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan], force: true,
                 authConfirmationProbe: ReportEngine.authConfirmationProbe(timeout: 1),
                 locateJamfCLI: { stub }, onLine: collector.append)
@@ -138,6 +140,7 @@ final class CollectTimeoutTests: XCTestCase {
         let collector = LogTextCollector()
 
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh], force: true,
             authConfirmationProbe: { _, _ in false }, locateJamfCLI: { stub },
             refreshSOFA: { _ in (.empty, []) },

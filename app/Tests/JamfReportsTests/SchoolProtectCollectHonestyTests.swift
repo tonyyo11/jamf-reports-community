@@ -39,6 +39,7 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let stub: URL = bin
         do {
             try await ReportEngine.schoolCollect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, force: true,
                 locateJamfCLI: { stub }, onLine: { _ in })
             XCTFail("a School run that launched nothing must not succeed")
@@ -61,6 +62,7 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let seen = LineBox()
         do {
             try await ReportEngine.schoolCollect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, force: true,
                 locateJamfCLI: { stub }, onLine: seen.append)
             XCTFail("a locked keychain must not read as a successful School run")
@@ -120,6 +122,7 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let start = Date().addingTimeInterval(-1)
         do {
             try await ReportEngine.schoolCollect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, force: true,
                 locateJamfCLI: { stub }, onLine: seen.append)
             XCTFail("every source refused: the run is dead")
@@ -163,6 +166,7 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let stub: URL = bin
         let seen = LineBox()
         _ = try? await ReportEngine.schoolCollect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, force: true,
             locateJamfCLI: { stub }, onLine: seen.append)
         XCTAssertEqual(refusals(seen.texts).count, 1, "\(seen.texts)")

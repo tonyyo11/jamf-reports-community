@@ -254,7 +254,7 @@ final class HtmlReportLayoutTests: XCTestCase {
 
     func testTheHeaderFillsProfileVersionAndMacCountFromWhatTheAppHas() async throws {
         let html = try await render(
-            Fleet(yaml: "jamf_cli:\n  profile: \"acme-prod\"\n"), profile: ""
+            Fleet(yaml: "jamf_cli:\n  profile: \"other\"\n"), profile: "acme-prod"
         ) { $0.templateName = "Full Instance Report" }
         let header = try XCTUnwrap(html.range(of: "<header>")).lowerBound
         let end = try XCTUnwrap(html.range(of: "</header>")).lowerBound
@@ -747,7 +747,7 @@ final class HtmlReportLayoutTests: XCTestCase {
         let (config, dataDir) = try workspace(Fleet(staleMacs: 30, freshMacs: 2))
         let out = dataDir.deletingLastPathComponent().appendingPathComponent("r.pdf")
         try await ReportEngine.generatePDF(
-            config: config, dataDir: dataDir, outputURL: out, profileName: "prod",
+            config: config, dataDir: dataDir, outputURL: out, workspace: WorkspaceID("prod"),
             template: FullInstanceTemplate(), locateJamfCLI: { nil })
         let document = try XCTUnwrap(PDFDocument(url: out))
         let text = document.string ?? ""

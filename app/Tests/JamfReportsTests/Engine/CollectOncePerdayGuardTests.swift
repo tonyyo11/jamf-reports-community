@@ -53,6 +53,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
     ) async {
         do {
             try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: testProfile),
                 profile: testProfile, workspacePaths: WorkspacePaths.self, tiers: tiers,
                 force: force, locateJamfCLI: { nil }, now: .testNoon, onLine: onLine)
             XCTFail("with no jamf-cli a collect past the guard throws jamfCLINotFound")
@@ -92,6 +93,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         // it would throw ReportEngineError.jamfCLINotFound. Catching that error
         // would be a test failure. The test passes when no error is thrown.
         let disposition = try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: testProfile),
             profile: testProfile,
             workspacePaths: WorkspacePaths.self,
             force: false,

@@ -157,6 +157,7 @@ final class CollectSOFASkipTests: XCTestCase {
         let lines = SOFASkipLineCollector()
         let stub = try makeStub()
         _ = try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
             force: true, authConfirmationProbe: { _, _ in false },
             locateJamfCLI: { stub },

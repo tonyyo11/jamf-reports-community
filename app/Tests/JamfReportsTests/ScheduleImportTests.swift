@@ -25,8 +25,8 @@ final class ScheduleImportTests: XCTestCase {
             "\(prefix).alpha.nightly", "\(prefix).multi.fleet"])
         XCTAssertEqual(result.managedLabels, ["\(prefix).multi.managed-scan"])
         XCTAssertEqual(result.unparseable, ["broken.plist"])
-        XCTAssertEqual(result.imported.first?.profile, "alpha")
-        XCTAssertEqual(result.imported.last?.allProfiles, true)
+        XCTAssertEqual(result.imported.first?.workspace, "alpha")
+        XCTAssertEqual(result.imported.last?.allWorkspaces, true)
     }
 
     /// The store holds only "all profiles", so importing a list-scoped plist would run it

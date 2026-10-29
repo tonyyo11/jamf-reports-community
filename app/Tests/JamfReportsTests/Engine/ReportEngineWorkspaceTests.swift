@@ -2,10 +2,9 @@ import Foundation
 import XCTest
 @testable import JamfReports
 
-/// The folders `ReportEngine.generate` reads and writes belong to the run's profile. The
-/// `jamf_cli.profile` in a shared workspace's config.yaml, which a peer can edit, may be blank
-/// or equal to it and is otherwise refused.
-final class ReportEngineRunProfileTests: XCTestCase {
+/// The folders `ReportEngine.generate` reads and writes belong to the run's workspace. The
+/// `jamf_cli.profile` in a shared workspace's config.yaml, which a peer can edit, names no folder.
+final class ReportEngineWorkspaceTests: XCTestCase {
 
     private final class Lines: @unchecked Sendable {
         private let lock = NSLock()
@@ -45,7 +44,7 @@ final class ReportEngineRunProfileTests: XCTestCase {
         return ReportEngine(
             config: try ConfigLoader.load(from: config),
             dataDir: workspace("shared").appendingPathComponent("jamf-cli-data"),
-            profile: run)
+            workspace: run.flatMap(WorkspaceID.init))
     }
 
     private func everything(under folder: URL) -> [String] {
@@ -53,43 +52,25 @@ final class ReportEngineRunProfileTests: XCTestCase {
         return (walker?.allObjects as? [String] ?? []).sorted()
     }
 
-    func testAConfigNamingAnotherProfileIsRefusedWithBothNamesAndWritesNothing() async throws {
-        let engine = try engine(namedProfile: "victim")
-        let lines = Lines()
-        let out = workspace("shared").appendingPathComponent("Generated Reports/r.xlsx")
-
-        do {
-            try await engine.generate(outputURL: out, locateJamfCLI: { nil },
-                                      onLine: lines.add)
-            XCTFail("a mismatched jamf_cli.profile must be refused")
-        } catch let error as ReportEngineError {
-            guard case .profileMismatch(let named, let run) = error else {
-                return XCTFail("\(error)")
-            }
-            XCTAssertEqual(named, "victim")
-            XCTAssertEqual(run, "shared")
-            let text = error.localizedDescription
-            XCTAssertTrue(text.contains("victim") && text.contains("shared"), text)
-        }
-        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[error] ") && $0.contains("victim") },
-                      "\(lines.all)")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: out.path))
-        XCTAssertEqual(everything(under: workspace("victim")), [])
-    }
-
-    func testABlankOrEqualConfigProfileGeneratesIntoTheRunsOwnFolders() async throws {
-        for named in [nil, "shared"] {
+    /// Before 2.12 this was refused (`profileMismatch`). The key no longer names the folder or
+    /// the profile, so the run generates into its own workspace and leaves the other alone.
+    func testAConfigNamingAnotherProfileGeneratesIntoTheRunsOwnFolders() async throws {
+        for named in [nil, "shared", "victim"] {
             let engine = try engine(namedProfile: named)
             let out = workspace("shared").appendingPathComponent("Generated Reports/r.xlsx")
             try await engine.generate(outputURL: out, locateJamfCLI: { nil })
             XCTAssertTrue(FileManager.default.fileExists(atPath: out.path), "\(named ?? "blank")")
+            XCTAssertFalse(everything(under: workspace("shared")).isEmpty)
             XCTAssertEqual(everything(under: workspace("victim")), [])
         }
     }
 
-    func testTheRunProfileLeadsWhenTheCallerNamedOne() throws {
-        XCTAssertEqual(try engine(namedProfile: nil).runProfile(onLine: nil), "shared")
-        XCTAssertEqual(try engine(namedProfile: "shared").runProfile(onLine: nil), "shared")
-        XCTAssertThrowsError(try engine(namedProfile: "victim").runProfile(onLine: nil))
+    /// An engine with no workspace resolves no workspace folder, even when config.yaml names one.
+    func testAnEngineWithNoWorkspaceNeverWritesIntoTheFolderTheConfigNames() async throws {
+        let engine = try engine(namedProfile: "victim", run: nil)
+        let lines = Lines()
+        let out = workspace("shared").appendingPathComponent("Generated Reports/r.xlsx")
+        try await engine.generate(outputURL: out, locateJamfCLI: { nil }, onLine: lines.add)
+        XCTAssertEqual(everything(under: workspace("victim")), [])
     }
 }

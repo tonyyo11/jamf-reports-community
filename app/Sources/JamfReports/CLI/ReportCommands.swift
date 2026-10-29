@@ -53,7 +53,8 @@ struct Generate: AsyncParsableCommand {
     private func writeRecording(
         config: ReportConfig, dataDir: URL, template resolved: any ReportTemplate
     ) async throws -> Int {
-        let engine = ReportEngine(config: config, dataDir: dataDir, profile: profile)
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         // A School workspace writes the School workbook whatever the template: the Pro
         // engine would skip every sheet.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
@@ -64,15 +65,16 @@ struct Generate: AsyncParsableCommand {
         signals.bindAttention()
         let outputURL = try output.map { URL(fileURLWithPath: $0) }
             ?? engine.resolveOutputURL(
-                stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool), profile: profile,
+                stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool),
                 onLine: signals.teeing(CLIRun.printLogLine))
         do {
             let onLine = signals.teeing(CLIRun.printLogLine)
             let generated: GeneratedReport
             if isSchool {
                 generated = try await ReportEngine.schoolGenerateReport(
-                    config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                    csvFolder: csvFolder, now: signals.startedAt, onLine: onLine)
+                    config: config, dataDir: dataDir, outputURL: outputURL,
+                    workspace: try WorkspaceID(validating: profile), csvFolder: csvFolder,
+                    now: signals.startedAt, onLine: onLine)
             } else {
                 generated = try await engine.generateReport(
                     outputURL: outputURL, template: resolved, csvFolder: csvFolder, onLine: onLine)
@@ -152,7 +154,7 @@ struct Collect: AsyncParsableCommand {
                 // Protect-enabled Pro profile also runs protectCollect, matching
                 // every other production collect entry point.
                 try await CollectRouter.run(
-                    profile: profile,
+                    workspace: try WorkspaceID(validating: profile),
                     tiers: tiers,
                     force: force,
                     config: config,
@@ -193,8 +195,9 @@ struct Html: AsyncParsableCommand {
         if let refusal = Self.refusal(config: config, profile: profile) { CLIRun.fail(refusal) }
         // Reuse the xlsx naming convention (timestamp + profile attribution),
         // swapping the extension — there's no HTML-specific path resolver.
-        let defaultURL = try ReportEngine(config: config, dataDir: dataDir)
-            .resolveOutputURL(stem: "report", profile: profile,
+        let defaultURL = try ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
+            .resolveOutputURL(stem: "report",
                               onLine: output == nil ? CLIRun.printLogLine : nil)
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
@@ -203,8 +206,8 @@ struct Html: AsyncParsableCommand {
             // like the GUI's manual collect.
             try await AttentionLog.recording(profile: profile) {
                 _ = try await ReportEngine.generateHTML(
-                    config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                    onLine: CLIRun.printLogLine)
+                    config: config, dataDir: dataDir, outputURL: outputURL,
+                    workspace: try WorkspaceID(validating: profile), onLine: CLIRun.printLogLine)
                 await ReportEngine.sealRun(
                     artifacts: [outputURL], config: config, profile: profile,
                     onLine: CLIRun.printLogLine)

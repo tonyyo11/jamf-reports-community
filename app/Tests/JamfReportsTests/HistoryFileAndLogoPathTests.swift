@@ -61,7 +61,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
         let lines = Lines()
         var report = HtmlReport(config: try config(),
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         report.onLine = { lines.add($0.text) }
         let out = workspace.appendingPathComponent("Generated Reports/report.html")
         for typed in ["/Users/Shared/h.json", "/tmp/h.json", "~/Public/h.json"] {
@@ -81,7 +81,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
         """)
         var report = HtmlReport(config: try config(),
                                 dataDir: root.appendingPathComponent("elsewhere/data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         _ = report.buildHistorySection(
             security: [], outputURL: workspace.appendingPathComponent("Generated Reports/r.html"))
         XCTAssertTrue(fm.fileExists(atPath: workspace.appendingPathComponent("h.json").path),
@@ -109,7 +109,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
 
         var report = HtmlReport(config: try config(),
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         _ = report.buildHistorySection(security: [], outputURL: out)
         XCTAssertFalse(fm.fileExists(atPath: workspace.appendingPathComponent("peer.json").path))
         XCTAssertTrue(fm.fileExists(
@@ -261,7 +261,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
 
         var report = HtmlReport(config: decoyConfig,
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         let out = workspace.appendingPathComponent("Generated Reports/r.html")
         try fm.createDirectory(
             at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -302,7 +302,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
         let lines = Lines()
         var report = HtmlReport(config: try config(),
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         report.onLine = { lines.add($0.text) }
         let out = workspace.appendingPathComponent("Generated Reports/r.html")
         try fm.createDirectory(

@@ -398,6 +398,7 @@ final class DashboardCollectTests: XCTestCase {
         let stub = try makeStub()
         let collector = DashboardLogCollector()
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.inventory], force: true,
             locateJamfCLI: { stub }, onLine: collector.append)

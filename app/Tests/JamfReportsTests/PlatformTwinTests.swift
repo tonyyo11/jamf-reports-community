@@ -168,9 +168,9 @@ final class PlatformTwinTests: XCTestCase {
         await flow.run(initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
         XCTAssertEqual(initialized, ["gw"])
         var base = AutomationPolicy()
-        base.excludedProfiles = ["kept"]
+        base.excludedWorkspaces = ["kept"]
         flow.enableAutomation = false
-        XCTAssertEqual(flow.configuredPolicy(basedOn: base).excludedProfiles, ["kept", "direct"])
+        XCTAssertEqual(flow.configuredPolicy(basedOn: base).excludedWorkspaces, ["kept", "direct"])
         XCTAssertFalse(flow.configuredPolicy(basedOn: base).isManaged)
     }
 

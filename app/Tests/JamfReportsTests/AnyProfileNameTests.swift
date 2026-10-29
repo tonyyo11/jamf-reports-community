@@ -53,7 +53,8 @@ final class AnyProfileNameTests: XCTestCase {
     func testRunHistoryRecordsARunForEveryName() throws {
         for name in names {
             let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: name))
-            let label = CLIRunSignals.cliLabel(profile: name, kind: .collect)
+            let label = CLIRunSignals.cliLabel(
+                workspace: try XCTUnwrap(WorkspaceID(name)), kind: .collect)
             let recorder = try XCTUnwrap(
                 ScheduledRunRecorder(workspace: workspace, label: label), "\(name): \(label)"
             )
@@ -138,7 +139,7 @@ final class AnyProfileNameTests: XCTestCase {
     func testCaseAndAccentVariantsShareOneFolder() {
         XCTAssertEqual(
             ProfileService.unusableProfiles(
-                in: ["Zürich", "zürich"], recordedOwner: { _ in nil }
+                in: ["Zürich", "zürich"], folderNames: { _ in [] }
             ),
             ["Zürich": .sharesFolder(with: "zürich")]
         )

@@ -104,7 +104,7 @@ final class OutputDirResolutionTests: XCTestCase {
                 config: try ConfigLoader.load(from: configURL),
                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
             try await engine.generate(
-                outputURL: try engine.resolveOutputURL(stem: "report", profile: profile),
+                outputURL: try engine.inWorkspace(profile).resolveOutputURL(stem: "report"),
                 template: ComplianceTemplate(), locateJamfCLI: { nil },
                 onLine: { lines.add($0.text) })
             XCTAssertTrue(old.allSatisfy { FileManager.default.fileExists(atPath: $0.path) },
@@ -125,7 +125,7 @@ final class OutputDirResolutionTests: XCTestCase {
                 at: workspace.appendingPathComponent("Generated Reports"),
                 withDestinationURL: published)
             let engine = ReportEngine(config: ReportConfig(), dataDir: workspace)
-            XCTAssertThrowsError(try engine.resolveOutputURL(stem: "report", profile: profile)) {
+            XCTAssertThrowsError(try engine.inWorkspace(profile).resolveOutputURL(stem: "report")) {
                 guard case ReportEngineError.reportFolderUnavailable(let named) = $0 else {
                     return XCTFail("\($0)")
                 }
@@ -144,8 +144,8 @@ final class OutputDirResolutionTests: XCTestCase {
         try yaml.write(to: configURL, atomically: true, encoding: .utf8)
         let engine = ReportEngine(config: try ConfigLoader.load(from: configURL),
                                   dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        let url = try engine.resolveOutputURL(stem: "report", profile: profile,
-                                          onLine: { lines.add($0.text) })
+        let url = try engine.inWorkspace(profile).resolveOutputURL(
+            stem: "report", onLine: { lines.add($0.text) })
         try await engine.generate(outputURL: url, template: ComplianceTemplate(),
                                   locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))

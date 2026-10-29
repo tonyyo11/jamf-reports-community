@@ -79,7 +79,7 @@ final class HTMLWithWorkbookTests: XCTestCase {
         try await withHTMLWorkbookFixture { fixture in
             let engine = try fixture.engine(config: withWorkbookOn)
             let lines = HTMLWorkbookLines()
-            let workbook = try engine.resolveOutputURL(stem: "report", profile: fixture.profile)
+            let workbook = try engine.inWorkspace(fixture.profile).resolveOutputURL(stem: "report")
             try await engine.generate(outputURL: workbook, locateJamfCLI: { nil })
             let page = await engine.writeHTMLWithWorkbook(
                 besideWorkbook: workbook, template: FullInstanceTemplate(), onLine: lines.add)
@@ -104,7 +104,8 @@ final class HTMLWithWorkbookTests: XCTestCase {
                      "html:\n  track_history: true\n", "html:\n  with_workbook: maybe\n"] {
             try await withHTMLWorkbookFixture { fixture in
                 let engine = try fixture.engine(config: yaml)
-                let workbook = try engine.resolveOutputURL(stem: "report", profile: fixture.profile)
+                let workbook = try engine.inWorkspace(fixture.profile)
+                    .resolveOutputURL(stem: "report")
                 try await engine.generate(outputURL: workbook, locateJamfCLI: { nil })
                 let page = await engine.writeHTMLWithWorkbook(
                     besideWorkbook: workbook, template: FullInstanceTemplate())
@@ -122,7 +123,7 @@ final class HTMLWithWorkbookTests: XCTestCase {
         try await withHTMLWorkbookFixture { fixture in
             let engine = try fixture.engine(
                 config: "output:\n  timestamp_outputs: false\n" + withWorkbookOn)
-            let workbook = try engine.resolveOutputURL(stem: "report", profile: fixture.profile)
+            let workbook = try engine.inWorkspace(fixture.profile).resolveOutputURL(stem: "report")
             let blocked = workbook.deletingPathExtension().appendingPathExtension("html")
             try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
             try Data("x".utf8).write(to: blocked.appendingPathComponent("held"))

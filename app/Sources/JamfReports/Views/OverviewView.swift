@@ -1992,7 +1992,7 @@ struct OverviewView: View {
                 .map { $0.toSchedule() }
                 .contains { $0.profile == profile }
             let policy = AutomationPolicy.current()
-            let excluded = policy.excludedProfiles.contains(profile)
+            let excluded = policy.excludedWorkspaces.contains(profile)
             return scheduleCovered(hasAgent: hasAgent, policyIsManaged: policy.isManaged, excluded: excluded)
         }.value
 
