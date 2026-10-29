@@ -123,4 +123,40 @@ final class AtomicInstallWritersTests: XCTestCase {
             .state.staleDeviceDays, "61")
         XCTAssertEqual(try mode(of: url), 0o600)
     }
+
+    /// Every writer's folder is swept of the staged files a crash left (`.json`, `.last`, config
+    /// text, anything `AtomicInstall.write` names), by the same name parser the stagers use.
+    func testWriteSweepsOldStagedFilesOfEveryShape() throws {
+        let fm = FileManager.default
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func staged(_ name: String, age: TimeInterval) throws -> URL {
+            let url = root.appendingPathComponent(name)
+            try Data("x".utf8).write(to: url)
+            try fm.setAttributes([.modificationDate: now.addingTimeInterval(-age)],
+                                 ofItemAtPath: url.path)
+            return url
+        }
+        let day: TimeInterval = 86_400
+        let oldJSON = try staged(".daily_status.json.tmp-\(UUID().uuidString)", age: 2 * day)
+        let oldLast = try staged(".computers.last.tmp-\(UUID().uuidString)", age: 2 * day)
+        let oldConfig = try staged(".config.yaml.tmp-\(UUID().uuidString)", age: 2 * day)
+        let fresh = try staged(".computers.last.tmp-\(UUID().uuidString)", age: 3_600)
+        let notUUID = try staged(".computers.last.tmp-nope", age: 2 * day)
+        let visible = try staged("computers.last.tmp-\(UUID().uuidString)", age: 2 * day)
+        let link = root.appendingPathComponent(".linked.json.tmp-\(UUID().uuidString)")
+        try plantLink(at: link)
+        try fm.setAttributes([.modificationDate: now.addingTimeInterval(-2 * day)],
+                             ofItemAtPath: root.path)
+
+        try AtomicInstall.write(Data("new".utf8), to: root.appendingPathComponent("a.json"),
+                                now: now)
+
+        for gone in [oldJSON, oldLast, oldConfig] {
+            XCTAssertFalse(fm.fileExists(atPath: gone.path), gone.lastPathComponent)
+        }
+        for kept in [fresh, notUUID, visible, victim!] {
+            XCTAssertTrue(fm.fileExists(atPath: kept.path), kept.lastPathComponent)
+        }
+        XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is kept")
+    }
 }

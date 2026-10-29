@@ -272,6 +272,7 @@ final class CSVFolderTests: XCTestCase {
         let notStaging = try file(".report_z.xlsx.tmp-notauuid", age: 2 * day)
         let otherTool = try file(".other.tmp-\(UUID().uuidString)", age: 2 * day)
         let visible = try file("report_x.xlsx.tmp-\(UUID().uuidString)", age: 2 * day)
+        let workspaceShape = try file(".status.json.tmp-\(UUID().uuidString)", age: 2 * day)
         let outside = scratchURL("staging-target")
         defer { try? fm.removeItem(at: outside.deletingLastPathComponent()) }
         try fm.createDirectory(at: outside, withIntermediateDirectories: true)
@@ -284,7 +285,7 @@ final class CSVFolderTests: XCTestCase {
 
         XCTAssertFalse(fm.fileExists(atPath: oldFolder.path))
         XCTAssertFalse(fm.fileExists(atPath: oldFile.path), "an old staged workbook goes too")
-        for kept in [freshFolder, otherFolder, freshFile, notStaging, visible, otherTool] {
+        for kept in [freshFolder, otherFolder, freshFile, notStaging, visible, otherTool, workspaceShape] {
             XCTAssertTrue(fm.fileExists(atPath: kept.path), kept.lastPathComponent)
         }
         XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is left alone")

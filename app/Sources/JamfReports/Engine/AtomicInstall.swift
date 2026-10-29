@@ -33,13 +33,15 @@ enum AtomicInstall {
     /// then `install`s it, so a link planted at `final` is replaced and a crash leaves the old
     /// file or the new one. `mode` is the file's permission bits; nil keeps those of a regular
     /// file already at `final` (as `replaceItemAt` did), else the process default.
-    static func write(_ data: Data, to final: URL, mode: mode_t? = nil) throws {
+    static func write(
+        _ data: Data, to final: URL, mode: mode_t? = nil, now: Date = Date()
+    ) throws {
+        removeStaleStaging(in: final.deletingLastPathComponent(), now: now, scope: .workspace)
         var existing = stat()
         let held = lstat(final.path, &existing) == 0 && (existing.st_mode & S_IFMT) == S_IFREG
             ? existing.st_mode & 0o7777 : nil
         let exact = mode ?? held
-        let staged = final.deletingLastPathComponent()
-            .appendingPathComponent(".\(final.lastPathComponent).tmp-\(UUID().uuidString)")
+        let staged = stagedURL(for: final)
         let fd = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, exact ?? 0o666)
         guard fd >= 0 else { throw posixError() }
         do {
@@ -59,8 +61,7 @@ enum AtomicInstall {
             guard rename(staged.path, final.path) == 0 else { throw posixError() }
             return
         }
-        let aside = final.deletingLastPathComponent()
-            .appendingPathComponent(".\(final.lastPathComponent).tmp-\(UUID().uuidString)")
+        let aside = stagedURL(for: final, isDirectory: false)
         guard rename(final.path, aside.path) == 0 else { throw posixError() }
         guard rename(staged.path, final.path) == 0 else {
             let failure = posixError()
@@ -83,12 +84,36 @@ enum AtomicInstall {
     /// as far as that.
     static let maxStagingEntriesRead = 500
 
+    /// The one staging name: a hidden sibling `.<name>.tmp-<uuid>`. Every stager (`write`, the
+    /// rename-aside fallback, `Workbook.write`, the CSV folder) builds its name here and
+    /// `removeStaleStaging` reads it back, so the two cannot drift.
+    static func stagedURL(for final: URL, isDirectory: Bool = false) -> URL {
+        final.deletingLastPathComponent().appendingPathComponent(
+            ".\(final.lastPathComponent)\(stagingMarker)\(UUID().uuidString)",
+            isDirectory: isDirectory)
+    }
+
+    private static let stagingMarker = ".tmp-"
+
+    /// Which staged shapes a sweep removes. `reports`: the folder a person chose for reports,
+    /// so only what the report writers stage (a `.xlsx` file, a `_csv` folder). `workspace`: a
+    /// folder the app confines and owns, so any staged regular file (`.json`, `.last`, config).
+    enum StagingScope: Sendable {
+        case reports, workspace
+
+        fileprivate func stages(original: Substring, isDirectory: Bool) -> Bool {
+            if isDirectory { return original.hasSuffix(ReportEngine.csvFolderSuffix) }
+            return self == .workspace || original.hasSuffix(".xlsx")
+        }
+    }
+
     /// Removes the staging entries a crash, or the tick's give-up exit, left in `parent`, older
-    /// than `staleStagingAge`: only what this code writes, hidden `.<name>.tmp-<uuid>` regular
-    /// files whose name ends in `.xlsx` before the marker (a staged workbook) and real folders
-    /// whose name ends in `_csv` (a staged CSV folder). Another tool's `.tmp-` files in a folder
-    /// a person chose are left alone. Each is `lstat`-checked; a link is never touched.
-    static func removeStaleStaging(in parent: URL, now: Date) {
+    /// than `staleStagingAge`: hidden `.<name>.tmp-<uuid>` entries (the UUID must parse) of the
+    /// shapes `scope` lists, each `lstat`-checked; a link is never touched. Another tool's
+    /// `.tmp-` files in a folder a person chose are left alone.
+    static func removeStaleStaging(
+        in parent: URL, now: Date, scope: StagingScope = .reports
+    ) {
         guard let entries = FileManager.default.enumerator(
             at: parent, includingPropertiesForKeys: nil, options: [.skipsSubdirectoryDescendants])
         else { return }
@@ -98,16 +123,14 @@ enum AtomicInstall {
             if read > maxStagingEntriesRead { return }
             let name = url.lastPathComponent
             guard name.hasPrefix("."),
-                  let marker = name.range(of: ".tmp-", options: .backwards),
+                  let marker = name.range(of: stagingMarker, options: .backwards),
                   UUID(uuidString: String(name[marker.upperBound...])) != nil else { continue }
-            let original = name[..<marker.lowerBound]
             var info = stat()
             guard lstat(url.path, &info) == 0 else { continue }
-            switch info.st_mode & S_IFMT {
-            case S_IFREG where original.hasSuffix(".xlsx"): break
-            case S_IFDIR where original.hasSuffix(ReportEngine.csvFolderSuffix): break
-            default: continue
-            }
+            let kind = info.st_mode & S_IFMT
+            guard kind == S_IFREG || kind == S_IFDIR,
+                  scope.stages(original: name[..<marker.lowerBound], isDirectory: kind == S_IFDIR)
+            else { continue }
             let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
             if now.timeIntervalSince(modified) > staleStagingAge { discard(url) }
         }

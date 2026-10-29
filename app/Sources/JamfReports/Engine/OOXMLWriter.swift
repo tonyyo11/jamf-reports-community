@@ -287,7 +287,7 @@ final class Workbook: @unchecked Sendable {
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         AtomicInstall.removeStaleStaging(in: dir, now: Date())
-        let staged = dir.appendingPathComponent(".\(url.lastPathComponent).tmp-\(UUID().uuidString)")
+        let staged = AtomicInstall.stagedURL(for: url)
         do {
             try buildZIP().write(to: staged, options: .withoutOverwriting)
             try AtomicInstall.install(staged, at: url)
