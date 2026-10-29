@@ -15,23 +15,31 @@ enum EnvironmentComposition: Equatable, Sendable {
     /// 0; an absent count is no evidence of any, and is not read as 0 devices either way: it
     /// only means the Mobile Devices section has nothing to draw.
     ///
-    /// A day with no Macs reads as mobile only when `previous`, the summary before it, had
-    /// none either. The writer also produces `totalDevices` 0 for a mixed fleet on a day its
-    /// Mac sources are older than `jamf_cli.max_cache_age_hours` while the mobile list landed,
-    /// and one such day must not drop the Mac sections and cards. A real change to mobile only
-    /// shows one summary later.
+    /// `previous` is the summary before `summary`, from everything loaded (not the range
+    /// shown); nil means there is none. The writer also gives `totalDevices` 0 to a mixed fleet
+    /// on a day its Mac sources are past `jamf_cli.max_cache_age_hours` while the mobile list
+    /// landed, so a day with no Macs reads as mobile only only when the day before had none
+    /// too, as mixed when it had Macs, and as unknown on a first day. The limit: a mixed
+    /// fleet whose Mac sources stay unmeasured two days running reads as mobile only on the
+    /// second, and a workspace that is mobile only from the start reads unknown for its first
+    /// day. The durable fix is for the writer to leave `totalDevices` unmeasured.
     init(summary: DailySummary?, previous: DailySummary? = nil) {
         guard let summary else {
             self = .unknown
             return
         }
-        let macs = summary.totalDevices > 0 || (previous?.totalDevices ?? 0) > 0
+        let macs = summary.totalDevices > 0
         let mobile = summary.mobile != nil || (summary.mobileDeviceCount ?? 0) > 0
         switch (macs, mobile) {
         case (true, true): self = .mixed
         case (true, false): self = .macsOnly
-        case (false, true): self = .mobileOnly
         case (false, false): self = .unknown
+        case (false, true):
+            guard let previous else {
+                self = .unknown
+                return
+            }
+            self = previous.totalDevices > 0 ? .mixed : .mobileOnly
         }
     }
 

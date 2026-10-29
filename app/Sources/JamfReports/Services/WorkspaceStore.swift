@@ -207,12 +207,13 @@ final class WorkspaceStore {
     /// fleet has both. The Overview's sections and score cards follow it (mobile spec 3.2).
     var environmentComposition: EnvironmentComposition {
         guard !demoMode else { return DemoData.composition }
-        let recent = trendStore.filteredSummaries.suffix(2)
-        return EnvironmentComposition(summary: recent.last, previous: recent.dropLast().last)
+        let (newest, previous) = trendStore.newestTwoSummaries
+        return EnvironmentComposition(summary: newest, previous: previous)
     }
 
     /// False until the trend store has read this profile's summaries, so a screen can tell
-    /// "not loaded yet" from "loaded and empty" before it acts on the composition.
+    /// "not loaded yet" from "loaded and empty" before it acts on the composition. It turns
+    /// true when `apply` publishes the summaries, before `backfillHistory` fills older days.
     var summariesLoaded: Bool { demoMode || trendStore.currentProfile == profile }
 
     /// The score cards the Overview draws: the saved selection that is offered here, or on a
@@ -227,10 +228,10 @@ final class WorkspaceStore {
     /// selection with nothing offered, they become the selection first, so the change edits
     /// the cards on screen instead of a list that was never shown.
     func setScoreCard(_ metric: TrendSeries.Metric, shown: Bool) {
-        adoptShownScoreCards()
-        let onScreen = shownScoreCards
+        // Refused before anything is adopted, so a refusal never edits the stored selection.
         if !shown, OverviewScoreCards.isLastOnMobileOnly(
-            metric, shown: onScreen, composition: environmentComposition) { return }
+            metric, shown: shownScoreCards, composition: environmentComposition) { return }
+        adoptShownScoreCards()
         if shown {
             if !selectedScoreCards.contains(metric) { selectedScoreCards.append(metric) }
         } else {

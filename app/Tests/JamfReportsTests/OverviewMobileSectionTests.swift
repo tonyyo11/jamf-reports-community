@@ -36,9 +36,12 @@ final class OverviewMobileSectionTests: XCTestCase {
         XCTAssertEqual(EnvironmentComposition(summary: summary(macs: 40, mobileCount: 12)), .mixed)
         XCTAssertEqual(
             EnvironmentComposition(summary: summary(macs: 40, mobile: mobileFigures())), .mixed)
-        XCTAssertEqual(EnvironmentComposition(summary: summary(macs: 0, mobileCount: 12)),
-                       .mobileOnly, "totalDevices 0 is how a mobile-only summary says no Macs")
         XCTAssertEqual(EnvironmentComposition(summary: summary(macs: 40)), .macsOnly)
+        XCTAssertEqual(
+            EnvironmentComposition(
+                summary: summary(macs: 0, mobileCount: 12),
+                previous: summary(macs: 0, mobileCount: 12)),
+            .mobileOnly, "totalDevices 0 two days running is how a mobile-only fleet reads")
     }
 
     /// An absent mobile count is no evidence of mobile devices, and a zero count is none; a
@@ -60,18 +63,27 @@ final class OverviewMobileSectionTests: XCTestCase {
         XCTAssertEqual(
             EnvironmentComposition(summary: mobileDay, previous: summary(macs: 40, mobileCount: 30)),
             .mixed)
+    }
+
+    /// With no summary before it there is nothing to tell a mobile-only fleet from a bad
+    /// day, so a first day with no Macs is unknown, not mobile only.
+    func testAFirstDayWithNoMacsIsUnknown() {
         XCTAssertEqual(
-            EnvironmentComposition(summary: mobileDay, previous: summary(macs: 0, mobileCount: 30)),
-            .mobileOnly, "Two days in a row with no Macs is mobile only")
-        XCTAssertEqual(EnvironmentComposition(summary: mobileDay, previous: nil), .mobileOnly,
-                       "A first summary has no earlier day to disagree")
+            EnvironmentComposition(summary: summary(macs: 0, mobileCount: 30), previous: nil),
+            .unknown)
+    }
+
+    /// The known limit: two days running with no Macs reads as mobile only, whatever caused them.
+    func testTwoConsecutiveDaysWithNoMacsReadAsMobileOnly() {
+        let day = summary(macs: 0, mobileCount: 30)
+        XCTAssertEqual(EnvironmentComposition(summary: day, previous: day), .mobileOnly)
     }
 
     func testCompositionOfTheSummaryTheWriterProducesForAMobileOnlyFleet() {
         let written = ReportEngine.mobileOnlySummary(
             date: "2026-10-28", mobileDeviceCount: 30, mobile: mobileFigures(),
             collectionSources: nil, collectedByHost: nil)
-        XCTAssertEqual(EnvironmentComposition(summary: written), .mobileOnly)
+        XCTAssertEqual(EnvironmentComposition(summary: written, previous: written), .mobileOnly)
     }
 
     // MARK: - Availability per section

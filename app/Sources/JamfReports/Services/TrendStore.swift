@@ -366,6 +366,23 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }
     }
 
+    /// The newest summary and the one before it, by date, from everything loaded rather than
+    /// the range shown, so a short range cannot hide the day before.
+    var newestTwoSummaries: (newest: DailySummary?, previous: DailySummary?) {
+        var newest: DailySummary?, previous: DailySummary?
+        for summary in allSummaries {
+            if let top = newest, summary.date <= top.date {
+                // A second summary of the newest day is not the day before.
+                let floor = previous?.date ?? ""
+                if top.date > summary.date, summary.date > floor { previous = summary }
+            } else {
+                previous = newest
+                newest = summary
+            }
+        }
+        return (newest, previous)
+    }
+
     func dates() -> [Date] {
         filteredSummaries.map { $0.parsedDate }
     }

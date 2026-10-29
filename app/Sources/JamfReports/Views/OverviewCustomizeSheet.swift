@@ -226,7 +226,7 @@ struct OverviewCustomizeSheet: View {
                     unavailableNote("No value in the loaded summaries. \(metric.dataRequirement)")
                 }
                 if isLast {
-                    Text("Hide the Score Cards section to remove them.")
+                    Text("To remove them, turn off Show Score Cards under Sections.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }

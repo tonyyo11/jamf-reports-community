@@ -33,7 +33,8 @@ final class WorkspaceStoreMobileCompositionTests: XCTestCase {
     }
 
     private func store(
-        demo: Bool = false, summaries: [DailySummary] = [], cards: [Metric]? = nil
+        demo: Bool = false, summaries: [DailySummary] = [], cards: [Metric]? = nil,
+        range: TrendRange = .all
     ) -> WorkspaceStore {
         let store = WorkspaceStore(demoMode: demo)
         if let cards { store.selectedScoreCards = cards }
@@ -42,7 +43,7 @@ final class WorkspaceStoreMobileCompositionTests: XCTestCase {
             TrendStore.TrendSnapshot(
                 summaries: summaries, latestSnapshotDate: nil, hasEverFetchedLive: false,
                 bandSeries: [:], baselineNames: []),
-            profile: store.profile, range: .all, generation: generation)
+            profile: store.profile, range: range, generation: generation)
         return store
     }
 
@@ -63,6 +64,35 @@ final class WorkspaceStoreMobileCompositionTests: XCTestCase {
             store(summaries: [day("2026-10-28", macs: 40, mobile: 12)]).environmentComposition,
             .mixed)
         XCTAssertEqual(store(summaries: mobileOnlyDays).environmentComposition, .mobileOnly)
+    }
+
+    /// A short range keeps one summary in the filtered list; the day before still counts.
+    func testThePreviousDayComesFromEverythingLoadedNotTheRange() {
+        let days = [day("2026-08-01", macs: 40, mobile: 12), day("2026-10-28", macs: 0, mobile: 12)]
+        let store = store(summaries: days, range: .w4)
+
+        XCTAssertEqual(store.trendStore.filteredSummaries.count, 1, "The range drops August")
+        XCTAssertEqual(store.environmentComposition, .mixed)
+    }
+
+    func testASingleSummaryWithNoMacsIsUnknownAndAGapBetweenDaysStillAgrees() {
+        XCTAssertEqual(
+            store(summaries: [day("2026-10-28", macs: 0, mobile: 12)]).environmentComposition,
+            .unknown)
+        let gap = [day("2026-09-01", macs: 0, mobile: 12), day("2026-10-28", macs: 0, mobile: 12)]
+        XCTAssertEqual(store(summaries: gap).environmentComposition, .mobileOnly)
+    }
+
+    func testTheNewestTwoSummariesAreByDateWhateverTheLoadedOrder() {
+        let days = [
+            day("2026-10-28", macs: 1, mobile: nil), day("2026-10-26", macs: 1, mobile: nil),
+            day("2026-10-27", macs: 1, mobile: nil),
+        ]
+        let pair = store(summaries: days).trendStore.newestTwoSummaries
+
+        XCTAssertEqual(pair.newest?.date, "2026-10-28")
+        XCTAssertEqual(pair.previous?.date, "2026-10-27")
+        XCTAssertNil(store().trendStore.newestTwoSummaries.newest)
     }
 
     func testOneMacLessDayDoesNotFlipAMixedEnvironment() {
@@ -132,6 +162,16 @@ final class WorkspaceStoreMobileCompositionTests: XCTestCase {
 
         XCTAssertEqual(store.selectedScoreCards, [.mobileStale], "The selection is untouched")
         XCTAssertEqual(store.shownScoreCards, [.mobileStale])
+    }
+
+    /// A refusal edits nothing: it does not append the mobile defaults to the stored selection.
+    func testRefusingTheLastCardLeavesTheSelectionExactlyAsSaved() {
+        let saved: [Metric] = [.fileVault, .mobileStale]
+        let store = store(summaries: mobileOnlyDays, cards: saved)
+
+        store.setScoreCard(.mobileStale, shown: false)
+
+        XCTAssertEqual(store.selectedScoreCards, saved)
     }
 
     func testSwitchingOffDownToTheLastCardStopsThere() {

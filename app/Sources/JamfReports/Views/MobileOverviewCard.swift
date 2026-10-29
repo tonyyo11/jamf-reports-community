@@ -23,14 +23,13 @@ struct MobileOverviewCard: View {
                     Spacer(minLength: 8)
                     PNPButton(title: "Open", icon: "chevron.right", size: .sm, action: onOpen)
                         .help("Open Mobile Devices")
+                        .accessibilityLabel("Open Mobile Devices")
                 }
                 // Two columns fit a half-width card at the minimum window width.
                 EqualHeightTileGrid(minTileWidth: 120, spacing: 10, idealColumns: 2) {
                     ForEach(summary.overviewTiles) { tile in
                         if tile.opensAudit {
-                            Button(action: onOpenAudit) { MobileOverviewTileView(tile: tile) }
-                                .buttonStyle(.plain)
-                                .help("Open Health Audit")
+                            MobileAttentionButton(tile: tile, action: onOpenAudit)
                         } else {
                             MobileOverviewTileView(tile: tile)
                         }
@@ -71,5 +70,44 @@ private struct MobileOverviewTileView: View {
             tile.value == MobileOverviewTile.dash
                 ? "\(tile.label): \(tile.caption)"
                 : "\(tile.label): \(tile.value), \(tile.caption)")
+    }
+}
+
+/// The Needs attention line as a button: it shows a gold outline on hover and on keyboard
+/// focus, as the Overview's other drill-downs do.
+private struct MobileAttentionButton: View {
+    let tile: MobileOverviewTile
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            MobileAttentionLabel(tile: tile, isHovering: isHovering)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withMotionSafeAnimation(.easeOut(duration: 0.15)) { isHovering = hovering }
+        }
+        .help("Open Health Audit")
+        .accessibilityHint("Opens Health Audit")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// The button's label, a view of its own because `isFocused` is the focus of the view's
+/// nearest focusable ancestor, here the button.
+private struct MobileAttentionLabel: View {
+    let tile: MobileOverviewTile
+    let isHovering: Bool
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        MobileOverviewTileView(tile: tile)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Theme.Colors.gold.opacity(0.6), lineWidth: 1)
+                    .opacity(isHovering || isFocused ? 1 : 0)
+                    .allowsHitTesting(false)
+            )
     }
 }
