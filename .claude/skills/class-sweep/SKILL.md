@@ -2,7 +2,7 @@
 name: class-sweep
 description: List every sibling site of a seam a fix routes through, plus the twelve review-checklist class greps, as a checklist with a PR-body block. Use when fixing or reviewing a bug that bypasses a shared reader, validator, timeout, product gate, redactor, escape or calculator, before editing and again before the PR.
 argument-hint: "[--changed BASE] [--limit N] [SEAM_REGEX]"
-allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/class-sweep *)
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/class-sweep *), Bash(${CLAUDE_SKILL_DIR}/scripts/test-class-sweep)
 ---
 
 # Class sweep
@@ -27,3 +27,12 @@ The greps are `grep -E` over `*.swift` (portable; no ripgrep needed). Class 5 is
 command. The other classes grep the symbols the checklist names (calculators, product gates, the
 honesty chain, redactors, escapes, demo guards), so they list the places that already use the
 seam: a new site that is missing from the list is the one to examine.
+
+Limits, stated plainly: this lists consumers of the seam, not bypasses. A bypass in a file that
+never mentions the seam (a raw `Data(contentsOf:)` in a file that never names `BoundedFile`) shows
+only through the class greps, which for most classes are the seam's own symbols. Open question, not
+built: a `--bypass REGEX` option that lists the raw API calls the seam replaces in files that do not
+mention the seam. It needs its own design (what counts as the raw call per seam).
+
+Self-check: `${CLAUDE_SKILL_DIR}/scripts/test-class-sweep` (a throwaway repo; covers the default
+`--limit` path, `--limit 0` and a bad `--limit`).

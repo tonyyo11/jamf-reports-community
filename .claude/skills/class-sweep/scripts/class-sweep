@@ -98,7 +98,8 @@ show() {
   print -r -- "${note}"
   print -r -- "grep -E '${rx}'"
   shown=("${lines[@]}")
-  ((cap && ${#lines[@]} > cap)) && shown=("${lines[@]:0:cap}")
+  # shellcheck disable=SC2296 # zsh subscript range; bash's ${arr[@]:0:n} is not valid zsh
+  ((cap && ${#lines[@]} > cap)) && shown=("${(@)lines[1,cap]}")
   for line in "${shown[@]}"; do
     file="${line%%:*}"
     rest="${line#*:}"
