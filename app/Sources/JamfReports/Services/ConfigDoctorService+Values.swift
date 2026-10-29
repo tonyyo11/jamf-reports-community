@@ -22,6 +22,7 @@ extension ConfigDoctorService {
         _ config: ReportConfig, raw: [String: Any], workspace: URL? = nil, profile: String
     ) -> [DoctorRow] {
         var rows = notifyValueRows(config.notify)
+        rows += timestampAuthorityRows(config.output)
         rows += retentionValueRows(config.retention, workspace: workspace)
         rows += sharedWorkspaceValueRows(config.sharedWorkspace)
         rows += limitValueRows(config)
@@ -61,6 +62,18 @@ extension ConfigDoctorService {
         }
         if notify.isUsable, let row = unknownWebhookHostRow(notify.resolvedURL) { rows.append(row) }
         return rows
+    }
+
+    /// A `timestamp_authority` the run does not use. The host only is shown, as for the webhook.
+    private static func timestampAuthorityRows(_ output: OutputConfig?) -> [DoctorRow] {
+        guard let typed = output?.timestampAuthority?.trimmingCharacters(in: .whitespaces),
+              !typed.isEmpty, output?.timestampAuthorityURL == nil else { return [] }
+        let host = URL(string: typed)?.host.map { " (host \(shown($0)))" } ?? ""
+        return [valueRow(
+            "output.timestamp_authority",
+            "output.timestamp_authority\(host) is not an https:// address. Run manifests are "
+                + "written but not timestamped.",
+            "Set it to the https:// address of an RFC 3161 time-stamp authority, or remove it.")]
     }
 
     /// Warns, never refuses: a relay or proxy may front a webhook. The host only is shown; the

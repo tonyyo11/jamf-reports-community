@@ -51,6 +51,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// `backup.pro_on_synced_storage`: whether a backup on shared storage includes Jamf Pro.
     /// An absent key pins as false; whether it was absent is read from config.yaml, not the pin.
     var proBackupOnSyncedStorage: Bool = false
+    /// `output.timestamp_authority`, pinned as the webhook is: `host[:port]` and the SHA-256 of
+    /// the URL, which can carry a token.
+    var timestampAuthorityHost: String = ""
+    var timestampAuthorityHash: String = ""
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -71,10 +75,16 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case brandingLogoPath = "branding.logo_path"
         case protectBackupOnSyncedStorage = "protect.backup_on_synced_storage"
         case proBackupOnSyncedStorage = "backup.pro_on_synced_storage"
+        case timestampAuthority = "output.timestamp_authority"
 
-        /// `text(of:)` with everything a comparison needs: the webhook's full URL hash.
+        /// `text(of:)` with everything a comparison needs: a URL's full hash.
         fileprivate func token(of pin: SharedConfigPin) -> String {
-            self == .notifyURL ? "\(pin.notifyURLHost) \(pin.notifyURLHash)" : text(of: pin)
+            switch self {
+            case .notifyURL: "\(pin.notifyURLHost) \(pin.notifyURLHash)"
+            case .timestampAuthority:
+                "\(pin.timestampAuthorityHost) \(pin.timestampAuthorityHash)"
+            default: text(of: pin)
+            }
         }
 
         /// The keys that name a folder or file the app reads or writes.
@@ -107,11 +117,14 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .brandingLogoPath: pin.brandingLogoPath
             case .protectBackupOnSyncedStorage: String(pin.protectBackupOnSyncedStorage)
             case .proBackupOnSyncedStorage: String(pin.proBackupOnSyncedStorage)
-            case .notifyURL:
-                pin.notifyURLHash.isEmpty
-                    ? pin.notifyURLHost
-                    : "\(pin.notifyURLHost) (URL fingerprint \(pin.notifyURLHash.prefix(8)))"
+            case .notifyURL: Self.urlText(pin.notifyURLHost, pin.notifyURLHash)
+            case .timestampAuthority:
+                Self.urlText(pin.timestampAuthorityHost, pin.timestampAuthorityHash)
             }
+        }
+
+        private static func urlText(_ host: String, _ hash: String) -> String {
+            hash.isEmpty ? host : "\(host) (URL fingerprint \(hash.prefix(8)))"
         }
 
         fileprivate func copy(from source: SharedConfigPin, into pin: inout SharedConfigPin) {
@@ -137,6 +150,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .notifyURL:
                 pin.notifyURLHost = source.notifyURLHost
                 pin.notifyURLHash = source.notifyURLHash
+            case .timestampAuthority:
+                pin.timestampAuthorityHost = source.timestampAuthorityHost
+                pin.timestampAuthorityHash = source.timestampAuthorityHash
             }
         }
     }
@@ -256,6 +272,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let notifyDetail = detail.isEmpty ? "full" : detail
         let typedURL = ((raw("notify", "url") as? String) ?? "")
             .trimmingCharacters(in: .whitespaces)
+        let authority = ((raw("output", "timestamp_authority") as? String) ?? "")
+            .trimmingCharacters(in: .whitespaces)
         return SharedConfigPin(
             allowAbsolutePaths: WorkspacePaths.optIn(raw("output", "allow_absolute_paths")) == true,
             outputDir: path("output", "output_dir"),
@@ -277,7 +295,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             protectBackupOnSyncedStorage:
                 (raw("protect", "backup_on_synced_storage") as? Bool) ?? false,
             proBackupOnSyncedStorage:
-                (raw("backup", "pro_on_synced_storage") as? Bool) ?? false
+                (raw("backup", "pro_on_synced_storage") as? Bool) ?? false,
+            timestampAuthorityHost: webhookHost(authority),
+            timestampAuthorityHash: authority.isEmpty ? "" : SharedConfigPin.sha256Hex(authority)
         )
     }
 
@@ -657,6 +677,14 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return safe
     }
 
+    /// False when `output.timestamp_authority` differs from the pinned one: the run's manifest
+    /// is written but not sent for a timestamp.
+    static func timestampAuthorityAllowed(
+        profile: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        !check(profile: profile, appSupport: appSupport).isDrifted(.timestampAuthority)
+    }
+
     /// False when `protect.profile` differs from the pinned one: Protect is not collected and
     /// the dashboard does not include it.
     static func protectAllowed(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
@@ -943,5 +971,9 @@ extension SharedConfigPin {
             Bool.self, forKey: .protectBackupOnSyncedStorage) ?? false
         proBackupOnSyncedStorage = try c.decodeIfPresent(
             Bool.self, forKey: .proBackupOnSyncedStorage) ?? false
+        timestampAuthorityHost = try c.decodeIfPresent(
+            String.self, forKey: .timestampAuthorityHost) ?? ""
+        timestampAuthorityHash = try c.decodeIfPresent(
+            String.self, forKey: .timestampAuthorityHash) ?? ""
     }
 }

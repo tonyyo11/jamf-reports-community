@@ -587,6 +587,9 @@ struct OutputConfig: Decodable, Sendable {
     var keepLatestRuns: Int?        // key is `keep_latest_runs`
     /// `csv_folder`: write a folder of CSVs, one per workbook tab, beside every report workbook.
     var csvFolder: Bool?
+    /// `timestamp_authority`: an RFC 3161 authority's https URL; each run's manifest hash is
+    /// sent there and the reply saved as `<stem>.tsr`. Absent is off.
+    var timestampAuthority: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case outputDir = "output_dir"
@@ -595,6 +598,7 @@ struct OutputConfig: Decodable, Sendable {
         case archiveDir = "archive_dir"
         case keepLatestRuns = "keep_latest_runs"
         case csvFolder = "csv_folder"
+        case timestampAuthority = "timestamp_authority"
     }
 
     var resolvedOutputDir: String { outputDir?.trimmingCharacters(in: .whitespaces) ?? "Generated Reports" }
@@ -604,6 +608,13 @@ struct OutputConfig: Decodable, Sendable {
     /// and a negative number trapped in `dropFirst`.
     var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
     var writesCSVFolder: Bool { csvFolder ?? false }
+    /// `timestamp_authority` when it is an https URL with a host; anything else is off.
+    var timestampAuthorityURL: URL? {
+        let typed = (timestampAuthority ?? "").trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: typed), url.scheme?.lowercased() == "https",
+              url.host?.isEmpty == false else { return nil }
+        return url
+    }
 }
 
 extension OutputConfig {
@@ -617,6 +628,7 @@ extension OutputConfig {
         keepLatestRuns = c.wholeNumber(.keepLatestRuns)
         // A mistyped value reads as off instead of failing the whole config.yaml decode.
         csvFolder = try? c.decodeIfPresent(Bool.self, forKey: .csvFolder)
+        timestampAuthority = try? c.decodeIfPresent(String.self, forKey: .timestampAuthority)
     }
 }
 
