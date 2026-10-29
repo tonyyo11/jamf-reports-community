@@ -282,8 +282,8 @@ struct ReportEngine: Sendable {
     ///
     /// A run is a workbook: `keep` counts workbooks, and one that moves takes its companion HTML
     /// (the same name with `.html`, written by `html.with_workbook`), its CSV folder
-    /// (`csvFolderURL`) and their sidecars with it. An HTML report or CSV folder with no
-    /// workbook of the same name beside it is never moved.
+    /// (`csvFolderURL`), their sidecars, and its run manifest and `.tsr` with it. An HTML
+    /// report or CSV folder with no workbook of the same name beside it is never moved.
     ///
     /// - Parameter onLine: When provided, warnings are emitted here instead of (only) via
     ///   `print`, so live log views (e.g. GenerateSheet) display side-effect failures.
@@ -340,12 +340,14 @@ struct ReportEngine: Sendable {
             let run = [file, Self.htmlURL(besideWorkbook: file),
                        Self.csvFolderURL(besideWorkbook: file)]
                 .filter { fm.fileExists(atPath: $0.path) }
+            var workbookMoved = false
             for artifact in run {
                 // Skip sidecars when the move failed: sidecars without their report in the
                 // archive are uninformative.
                 guard Self.moveToArchive(artifact, archiveDir: archiveDir, onLine: onLine) else {
                     continue
                 }
+                if artifact == file { workbookMoved = true }
                 // Sibling sidecar files (sha256 + manifest.txt) move with their report so
                 // they don't accumulate as orphans in the reports root. Failures are
                 // best-effort: warn and continue rather than block rotation.
@@ -355,6 +357,14 @@ struct ReportEngine: Sendable {
                     Self.moveToArchive(
                         sidecar, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
                 }
+            }
+            // The run manifest and its timestamp follow the workbook; they are never runs.
+            guard workbookMoved else { continue }
+            for record in [RunManifest.manifestURL(besideWorkbook: file),
+                           RunManifest.timestampURL(besideWorkbook: file)]
+            where fm.fileExists(atPath: record.path) {
+                Self.moveToArchive(
+                    record, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
             }
         }
     }

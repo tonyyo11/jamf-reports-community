@@ -68,22 +68,27 @@ struct Generate: AsyncParsableCommand {
                 onLine: signals.teeing(CLIRun.printLogLine))
         do {
             let onLine = signals.teeing(CLIRun.printLogLine)
-            let failures: [SheetFailure]
+            let generated: GeneratedReport
             if isSchool {
-                failures = try await ReportEngine.schoolGenerate(
+                generated = try await ReportEngine.schoolGenerateReport(
                     config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
                     csvFolder: csvFolder, onLine: onLine)
             } else {
-                failures = try await engine.generate(
+                generated = try await engine.generateReport(
                     outputURL: outputURL, template: resolved, csvFolder: csvFolder, onLine: onLine)
             }
-            // html.with_workbook. Before the path below, which stays the last line of
-            // stdout for a script that reads it. There is no School HTML report.
+            let failures = generated.failures
+            // html.with_workbook, then the run manifest over everything written. Before the
+            // path below, which stays the last line of stdout for a script that reads it. There
+            // is no School HTML report.
+            var htmlURL: URL?
             if !isSchool {
-                await engine.writeHTMLWithWorkbook(
-                    besideWorkbook: outputURL, template: resolved,
-                    onLine: signals.teeing(CLIRun.printLogLine))
+                htmlURL = await engine.writeHTMLWithWorkbook(
+                    besideWorkbook: outputURL, template: resolved, onLine: onLine)
             }
+            await ReportEngine.sealRun(
+                workbook: outputURL, artifacts: [htmlURL, generated.csvFolder].compactMap { $0 },
+                config: config, profile: profile, onLine: onLine)
             // The workbook is written even when some sheets error, so always emit
             // the path (scripts can still find the artifact); exit non-zero to
             // flag partial.

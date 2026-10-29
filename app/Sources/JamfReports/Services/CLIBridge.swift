@@ -633,10 +633,11 @@ final class CLIBridge {
             }
         }
         do {
-            let failures = try await engine.generate(
+            let generated = try await engine.generateReport(
                 outputURL: outputURL, template: template,
                 aiNarrative: aiNarrative, csvFolder: csvFolder, now: now, onLine: onLine
             )
+            let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] report written: \(outputURL.lastPathComponent)"))
@@ -649,11 +650,15 @@ final class CLIBridge {
                                  text: "  failed sheet: \(f.sheet): \(f.error)"))
                 }
             }
+            var htmlURL: URL?
             if htmlWithWorkbook {
-                await engine.writeHTMLWithWorkbook(
+                htmlURL = await engine.writeHTMLWithWorkbook(
                     besideWorkbook: outputURL, template: template,
                     aiNarrative: aiNarrative, onLine: onLine)
             }
+            await ReportEngine.sealRun(
+                workbook: outputURL, artifacts: [htmlURL, generated.csvFolder].compactMap { $0 },
+                config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -768,7 +773,7 @@ final class CLIBridge {
             }
         }
         do {
-            let failures = try await ReportEngine.schoolGenerate(
+            let generated = try await ReportEngine.schoolGenerateReport(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
@@ -776,6 +781,7 @@ final class CLIBridge {
                 csvFolder: csvFolder,
                 onLine: onLine
             )
+            let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] school report written: \(outputURL.lastPathComponent)"))
@@ -788,6 +794,9 @@ final class CLIBridge {
                                  text: "  failed sheet: \(f.sheet): \(f.error)"))
                 }
             }
+            await ReportEngine.sealRun(
+                workbook: outputURL, artifacts: [generated.csvFolder].compactMap { $0 },
+                config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {

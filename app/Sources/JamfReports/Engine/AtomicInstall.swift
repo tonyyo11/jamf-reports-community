@@ -60,7 +60,8 @@ enum AtomicInstall {
 
     /// Removes the staging entries a crash, or the tick's give-up exit, left in `parent`, older
     /// than `staleStagingAge`: only what this code writes, hidden `.<name>.tmp-<uuid>` regular
-    /// files whose name ends in `.xlsx` before the marker (a staged workbook) and real folders
+    /// files whose name ends in `.xlsx`, `.manifest.json` or `.tsr` before the marker (a staged
+    /// workbook, run manifest or timestamp) and real folders
     /// whose name ends in `_csv` (a staged CSV folder). Another tool's `.tmp-` files in a folder
     /// a person chose are left alone. Each is `lstat`-checked; a link is never touched.
     static func removeStaleStaging(in parent: URL, now: Date) {
@@ -79,7 +80,9 @@ enum AtomicInstall {
             var info = stat()
             guard lstat(url.path, &info) == 0 else { continue }
             switch info.st_mode & S_IFMT {
-            case S_IFREG where original.hasSuffix(".xlsx"): break
+            case S_IFREG where original.hasSuffix(".xlsx")
+                || original.hasSuffix(RunManifest.manifestSuffix)
+                || original.hasSuffix("." + RunManifest.timestampExtension): break
             case S_IFDIR where original.hasSuffix(ReportEngine.csvFolderSuffix): break
             default: continue
             }
