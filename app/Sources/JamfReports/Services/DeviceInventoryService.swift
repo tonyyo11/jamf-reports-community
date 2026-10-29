@@ -821,11 +821,15 @@ fileprivate extension DeviceInventoryService {
 
     static func formattedDate(_ date: Date?) -> String {
         guard let date else { return "No current device data" }
+        return mediumShortFormatter.string(from: date)
+    }
+
+    private static let mediumShortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 }
 
 // MARK: - Device identity

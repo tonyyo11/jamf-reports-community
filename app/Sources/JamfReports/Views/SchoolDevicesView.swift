@@ -9,7 +9,9 @@ struct SchoolDevicesView: View {
     @State private var snapshot: SchoolFleetService.Snapshot = .empty
     @State private var filter: Filter = .all
     @State private var search = ""
-    @State private var reloadToken = 0
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
     enum Filter: String, CaseIterable, Identifiable {
         case all = "All", managed = "Managed", unmanaged = "Unmanaged", stale = "Stale"
@@ -26,18 +28,22 @@ struct SchoolDevicesView: View {
                 subtitle: subtitle,
                 lastModified: snapshot.collectedAt
             )
-            if snapshot.devicesDate == nil {
-                emptyState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "devices")
             } else {
-                SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
-                devicesCard
+                if snapshot.devicesDate == nil {
+                    emptyState
+                } else {
+                    SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
+                    devicesCard
+                }
+                if !snapshot.depDevices.isEmpty { depCard }
             }
-            if !snapshot.depDevices.isEmpty { depCard }
         }
         .tint(Theme.Colors.goldBright)
-        .task(id: "\(workspace.profile)#\(reloadToken)") { await reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reloadToken += 1
+            reloads += 1
         }
     }
 
@@ -47,14 +53,21 @@ struct SchoolDevicesView: View {
         return "\(count) device\(count == 1 ? "" : "s") in Jamf School."
     }
 
-    private func reload() async {
-        guard !workspace.demoMode else { snapshot = .empty; return }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        guard !workspace.demoMode else { loadedSource = source; return }
         let profile = workspace.profile
-        let loaded = await Task.detached(priority: .userInitiated) {
-            SchoolFleetService.load(profile: profile)
-        }.value
-        guard profile == workspace.profile else { return }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { SchoolFleetService.load(profile: profile) }
+        ) else { return }
         snapshot = loaded
+        loadedSource = source
     }
 
     // MARK: - Sections

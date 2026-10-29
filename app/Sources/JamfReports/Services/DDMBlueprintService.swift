@@ -121,6 +121,11 @@ struct DDMBlueprintService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let blueprintsDir = dir.appendingPathComponent("blueprint-status", isDirectory: true)
         let declarationsDir = dir.appendingPathComponent("ddm-status", isDirectory: true)
         let blueprintsURL = FileManager.newestJSONFile(in: blueprintsDir)

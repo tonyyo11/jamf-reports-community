@@ -99,14 +99,9 @@ struct SourcesView: View {
             reload()
             reloadCapabilities()
         }
-        .onChange(of: workspace.profile) { _, _ in
-            schoolResolved = nil
-            schoolPlatformCheck = nil
-            doctorOutcome = nil
-            doctorRunning = false
-            reload()
-            reloadCapabilities()
-        }
+        .onChange(of: workspace.profile) { _, _ in sourceChanged() }
+        // The same profile name can be the demo workspace or a real one.
+        .onChange(of: workspace.demoMode) { _, _ in sourceChanged() }
         .confirmationDialog(
             "Elevate \"\(pendingScopeProfile ?? "")\" to Full Admin?",
             isPresented: $showElevateScopeConfirm,
@@ -688,6 +683,18 @@ struct SourcesView: View {
         )
         .frame(maxWidth: .infinity, minHeight: 160)
         .padding(.vertical, 8)
+    }
+
+    /// The profile or demo mode changed: nothing of the previous source stays on screen.
+    private func sourceChanged() {
+        schoolResolved = nil
+        sourcesPlan = nil
+        cachedAt = [:]
+        schoolPlatformCheck = nil
+        doctorOutcome = nil
+        doctorRunning = false
+        reload()
+        reloadCapabilities()
     }
 
     private func reload() {

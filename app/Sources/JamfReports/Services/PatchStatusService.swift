@@ -87,7 +87,11 @@ struct PatchStatusService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
 
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let patchDir = dir.appendingPathComponent("patch-status", isDirectory: true)
         let failuresDir = dir.appendingPathComponent("patch-device-failures", isDirectory: true)
 

@@ -9,7 +9,9 @@ struct MobileFleetView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: MobileFleetService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var selectedDeviceID: String?
     /// Supervision bucket the devices table is filtered to. Set from a donut
     /// slice or legend row, cleared by the same control or the filter chip.
@@ -25,46 +27,49 @@ struct MobileFleetView: View {
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
-                // A Mac-only tenant has no mobile devices at all, so no
-                // expected kinds — every one of them would render a
-                // false-alarm "never" chip. Only assert expectations once
-                // mobile data is detected; present-kind chips still show
-                // either way.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: snapshot.isDetected ? [
-                        "mobile-devices-list", "classic-ios-profiles",
-                    ] : []
-                )
-            }
-
-            if snapshot.totalDevices == 0 {
-                // Collected and empty reads differently from never collected.
-                if snapshot.collectedWithNoDevices { noDevicesState } else { emptyState }
-                if !snapshot.profiles.isEmpty { profilesTable }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "mobile devices")
             } else {
-                kpiGrid
-                supervisionCard
-                enrollmentMethodCard
-                complianceKpiGrid
-                osDistributionCard
-                devicesTable
-                if let device = selectedRichDevice {
-                    deviceDetailCard(device)
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                    // A Mac-only tenant has no mobile devices at all, so no
+                    // expected kinds — every one of them would render a
+                    // false-alarm "never" chip. Only assert expectations once
+                    // mobile data is detected; present-kind chips still show
+                    // either way.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: snapshot.isDetected ? [
+                            "mobile-devices-list", "classic-ios-profiles",
+                        ] : []
+                    )
                 }
-                profilesTable
+
+                if snapshot.totalDevices == 0 {
+                    // Collected and empty reads differently from never collected.
+                    if snapshot.collectedWithNoDevices { noDevicesState } else { emptyState }
+                    if !snapshot.profiles.isEmpty { profilesTable }
+                } else {
+                    kpiGrid
+                    supervisionCard
+                    enrollmentMethodCard
+                    complianceKpiGrid
+                    osDistributionCard
+                    devicesTable
+                    if let device = selectedRichDevice {
+                        deviceDetailCard(device)
+                    }
+                    profilesTable
+                }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -75,17 +80,27 @@ struct MobileFleetView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : MobileFleetService.load(profile: workspace.profile)
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        guard !workspace.demoMode else {
+            snapshot = Self.demoSnapshot
+            supervisionFilter = nil
+            loadedSource = source
+            return
+        }
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { MobileFleetService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
         supervisionFilter = nil
+        loadedSource = source
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
@@ -145,7 +160,7 @@ struct MobileFleetView: View {
             : "F2LX" + String(0x51C0 + i * 0x3B, radix: 16, uppercase: true) + "N0DV"
         // Inventoried in the week before the demo's "now", never after it.
         let age = TimeInterval((i % 7) * 86_400 + (i * 37 % 300 + 20) * 60)
-        let lastUpdate = ISO8601DateFormatter().string(
+        let lastUpdate = Self.isoFormatter.string(
             from: DemoData.referenceDate.addingTimeInterval(-age))
         let ownership = supervised
             ? "Institutional"
@@ -967,17 +982,24 @@ struct MobileFleetView: View {
             return "—"
         case .right(let rich):
             guard let dateString = rich.general?.lastInventoryUpdateDate,
-                  let date = ISO8601DateFormatter().date(from: dateString) else {
+                  let date = Self.isoFormatter.date(from: dateString) else {
                 return "—"
             }
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .abbreviated
             // Demo dates were written against the demo's "now"; measured from
             // today, every one read "1 yr. ago".
             let now = workspace.demoMode ? DemoData.referenceDate : Date()
-            return formatter.localizedString(for: date, relativeTo: now)
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
+
+    // Built once: both run per table row. Configured at creation, never mutated after.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 
     private func pillTone(for deviceType: String) -> Pill.Tone {
         switch deviceType.lowercased() {

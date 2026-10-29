@@ -353,7 +353,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         XCTAssertEqual(eaSheets.sheetPlan.map(\.name), ConfigDoctorService.eaWarningsSheetNames)
         let school = SchoolDashboard(
             config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
-            workbook: Workbook())
+            workbook: Workbook(), now: .testNoon)
         XCTAssertEqual(school.sheetPlan.map(\.name), ConfigDoctorService.schoolSheetNames)
     }
 

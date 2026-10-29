@@ -8,7 +8,9 @@ struct UpdatesView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: UpdateStatusService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     /// Latest OS versions from cached SOFA feeds. Empty until the first collect that
     /// fetches SOFA — view renders nothing new when empty.
     @State private var sofaRows: [SOFAFeedService.OSFamilyRow] = []
@@ -22,42 +24,45 @@ struct UpdatesView: View {
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["update-status", "update-device-failures"]
-                )
-            }
-            if snapshot.collectedWithNoData {
-                noUpdateDataState
-            } else if snapshot.total == 0 {
-                emptyState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "OS updates")
             } else {
-                kpiGrid
-                planStateCard
-                statusSummaryCard
-                if !snapshot.failedPlans.isEmpty {
-                    failedPlansCard
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
+                    // Per-kind file dates are the honest per-screen signal here;
+                    // digest-level collectionSources belongs on summary screens only.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: ["update-status", "update-device-failures"]
+                    )
                 }
-                if !snapshot.errorDevices.isEmpty {
-                    errorDevicesCard
-                }
-                if !sofaRows.isEmpty {
-                    sofaLatestCard
+                if snapshot.collectedWithNoData {
+                    noUpdateDataState
+                } else if snapshot.total == 0 {
+                    emptyState
+                } else {
+                    kpiGrid
+                    planStateCard
+                    statusSummaryCard
+                    if !snapshot.failedPlans.isEmpty {
+                        failedPlansCard
+                    }
+                    if !snapshot.errorDevices.isEmpty {
+                        errorDevicesCard
+                    }
+                    if !sofaRows.isEmpty {
+                        sofaLatestCard
+                    }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -72,25 +77,32 @@ struct UpdatesView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty; sofaRows = [] }
         guard !workspace.demoMode else {
             snapshot = DemoData.updateStatus
-            // SOFA rows come from the workspace's cache. Left in place, a live
-            // profile's rows stayed on screen after switching to the demo.
+            // SOFA rows come from the workspace's cache, which the demo never reads.
             sofaRows = []
+            loadedSource = source
             return
         }
-        snapshot = UpdateStatusService.load(profile: workspace.profile)
-        if let dir = try? WorkspacePaths.dataDir(for: workspace.profile) {
-            let sofaSnap = SOFAFeedService.load(dataDir: dir)
-            sofaRows = sofaSnap.rows
-        }
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { () -> (UpdateStatusService.Snapshot, [SOFAFeedService.OSFamilyRow]) in
+                let rows = (try? WorkspacePaths.dataDir(for: profile))
+                    .map { SOFAFeedService.load(dataDir: $0).rows } ?? []
+                return (UpdateStatusService.load(profile: profile), rows)
+            }
+        ) else { return }
+        snapshot = loaded.0
+        sofaRows = loaded.1
+        loadedSource = source
     }
 
     // MARK: - Computed values
@@ -483,15 +495,23 @@ struct UpdatesView: View {
     }
 
     private func formatDate(_ dateString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        guard let date = isoFormatter.date(from: dateString) else {
+        guard let date = Self.isoFormatter.date(from: dateString) else {
             return dateString
         }
+        return Self.shortFormatter.string(from: date)
+    }
+
+    // Built once: this runs per table row, and neither is mutated after creation.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let shortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
 
     // MARK: - SOFA OS Latest Versions
 
