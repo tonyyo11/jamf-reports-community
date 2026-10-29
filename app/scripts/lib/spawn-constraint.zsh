@@ -46,15 +46,31 @@ jr_add_spawn_constraint() {
     && plutil -lint "$plist" >/dev/null
 }
 
-# jr_verify_spawn_constraint <app bundle>
-# Fails unless the bundled executable's signature has the team and identifier the tick plist
-# demands, so a build that launchd would refuse to start is stopped here. A plist with no
-# constraint passes (ad-hoc builds).
+# jr_verify_spawn_constraint <app bundle> <required|none>
+# "required": fails unless the tick plist carries a SpawnConstraint and the bundled executable's
+# signature has the team and identifier it demands, so a build launchd would refuse to start is
+# stopped here. "none": fails if the plist carries one (an ad-hoc build must not).
 jr_verify_spawn_constraint() {
-  local app="${1-}" plist team identifier info
+  local app="${1-}" mode="${2-}" plist team identifier info
+  case "$mode" in
+    required|none) ;;
+    *) echo "✗ spawn constraint: mode must be required or none" >&2; return 1 ;;
+  esac
   plist="$(ls "$app"/Contents/Library/LaunchAgents/*.tick.plist 2>/dev/null | head -1)"
-  team="$(plutil -extract SpawnConstraint.team-identifier raw -o - "$plist" 2>/dev/null)" || return 0
-  identifier="$(plutil -extract SpawnConstraint.signing-identifier raw -o - "$plist" 2>/dev/null)" || return 0
+  if [[ -z "$plist" ]]; then
+    echo "✗ spawn constraint: no tick plist in $app" >&2; return 1
+  fi
+  team="$(plutil -extract SpawnConstraint.team-identifier raw -o - "$plist" 2>/dev/null)"
+  identifier="$(plutil -extract SpawnConstraint.signing-identifier raw -o - "$plist" 2>/dev/null)"
+  if [[ "$mode" == "none" ]]; then
+    if plutil -extract SpawnConstraint raw -o - "$plist" >/dev/null 2>&1; then
+      echo "✗ spawn constraint: an unsigned or ad-hoc build must not carry one" >&2; return 1
+    fi
+    return 0
+  fi
+  if [[ -z "$team" || -z "$identifier" ]]; then
+    echo "✗ spawn constraint: the tick plist has no complete SpawnConstraint" >&2; return 1
+  fi
   info="$(codesign -dvv "$app/Contents/MacOS/JamfReports" 2>&1)"
   if ! printf '%s\n' "$info" | grep -qx "TeamIdentifier=${team}" \
      || ! printf '%s\n' "$info" | grep -qx "Identifier=${identifier}"; then

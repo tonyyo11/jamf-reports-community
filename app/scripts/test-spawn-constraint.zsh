@@ -53,7 +53,8 @@ expect "identifier with a quote refused" "1" \
 expect "missing plist refused" "1" \
   "$(jr_add_spawn_constraint "${work}/none.plist" ABCDE12345 com.x 2>/dev/null; echo $?)"
 
-# An ad-hoc bundle has no team: a constrained plist must fail verification, an unconstrained pass.
+# An ad-hoc bundle has no team: a constrained plist must fail "required", an unconstrained
+# one must fail "required" too (nothing to enforce) and pass "none".
 app="${work}/T.app"
 mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Library/LaunchAgents"
 cp /bin/echo "${app}/Contents/MacOS/JamfReports"
@@ -66,11 +67,19 @@ cat > "${app}/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 </dict></plist>
 PLIST
-cp "$src" "${app}/Contents/Library/LaunchAgents/"
+tickplist="${app}/Contents/Library/LaunchAgents/$(basename "$src")"
+verify() { jr_verify_spawn_constraint "$app" "$1" >/dev/null 2>&1; echo $?; }
+
+expect "no tick plist fails required" "1" "$(verify required)"
+expect "no tick plist fails none" "1" "$(verify none)"
+cp "$src" "$tickplist"
 codesign --force --sign - "$app" >/dev/null 2>&1
-expect "unconstrained plist passes" "0" "$(jr_verify_spawn_constraint "$app" 2>/dev/null; echo $?)"
-jr_add_spawn_constraint "${app}/Contents/Library/LaunchAgents/$(basename "$src")" ABCDE12345 com.example.t
-expect "constrained ad-hoc bundle fails" "1" "$(jr_verify_spawn_constraint "$app" 2>/dev/null; echo $?)"
+expect "unconstrained passes none" "0" "$(verify none)"
+expect "unconstrained fails required" "1" "$(verify required)"
+expect "bad mode refused" "1" "$(verify maybe)"
+jr_add_spawn_constraint "$tickplist" ABCDE12345 com.example.t
+expect "constrained fails none" "1" "$(verify none)"
+expect "constrained ad-hoc bundle fails required" "1" "$(verify required)"
 
 printf '%d passed, %d failed\n' "$passed" "$failed"
 (( failed == 0 ))

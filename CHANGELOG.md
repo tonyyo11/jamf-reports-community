@@ -152,6 +152,8 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A webhook that answers with a redirect to another host now fails, with the HTTP status in the
+  log, instead of the app following the redirect with the report data.
 - The unified log (Console.app, `log show`) now shows `<private>` for profile names, paths and
   error text the app logs; the in-app log viewer and exports are unchanged. In a signed release
   the background item's launch agent is also restricted to this app's own signature, so launchd

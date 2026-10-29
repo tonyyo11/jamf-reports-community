@@ -284,7 +284,11 @@ if [[ -f "$ENTITLEMENTS" ]]; then
     echo "✗ codesign failed for $APP_OUT" >&2
     exit 1
   fi
-  jr_verify_spawn_constraint "$APP_OUT" || exit 1
+  if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+    jr_verify_spawn_constraint "$APP_OUT" none || exit 1
+  else
+    jr_verify_spawn_constraint "$APP_OUT" required || exit 1
+  fi
 else
   echo "✗ $ENTITLEMENTS missing — refusing to sign without entitlements" >&2
   exit 1

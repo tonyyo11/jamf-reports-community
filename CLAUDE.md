@@ -1448,7 +1448,9 @@ file (legacy import or live run) populates that field.
   signature has the release's team and the app's bundle ID; the plist in `app/LaunchAgents` stays
   unconstrained. The team ID is the OU of the identity's certificate (`TEAM_ID` if that cannot be
   read) and the build stops if the signed executable does not match
-  (`scripts/lib/spawn-constraint.zsh`, tested by `scripts/test-spawn-constraint.zsh`). An ad-hoc
+  (`scripts/lib/spawn-constraint.zsh`, tested by `scripts/test-spawn-constraint.zsh`);
+  `release.sh` builds with the team of its `DEVELOPER_ID_APP`, and `sign-release.sh` re-checks
+  the constraint after re-signing, so two Developer ID certs cannot disagree. An ad-hoc
   build gets none, so a source build with its own team or none still runs its tick; a
   re-signed build under another team needs `build-app.sh` run again. Honored from macOS 14.
 - **Hardened Runtime + entitlements:** The release bundle is built with Hardened Runtime
