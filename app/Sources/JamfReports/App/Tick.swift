@@ -118,7 +118,13 @@ func runTick(
             hold.touch()
             return await hold.keepingAlive(
                 every: environment.heartbeatEvery, limit: environment.heartbeatLimit,
-                onGiveUp: { exitAfterLockGiveUp(profiles: profiles, exit: environment.exit) }
+                onGiveUp: {
+                    // The stalled run is this schedule's, so its record goes to the workspaces
+                    // the schedule is for.
+                    exitAfterLockGiveUp(
+                        workspaces: { workspaces(of: run.schedule, among: { profiles }) },
+                        exit: environment.exit)
+                }
             ) {
                 await environment.perform(run)
             }
@@ -159,24 +165,77 @@ func summaryMissing(for schedule: Schedule, profiles: [JamfCLIProfile], now: Dat
     return names.contains { !SummaryJSONParser.hasSummary(profile: $0, on: now) }
 }
 
+/// Who held the tick lock when its heartbeat gave it up; names the process in the log line and
+/// the Run History record.
+enum LockHolder: Sendable {
+    case tick, scheduledRun, command
+
+    var label: String {
+        switch self {
+        case .tick: "tick"
+        case .scheduledRun: "scheduled run"
+        case .command: "command"
+        }
+    }
+}
+
 /// The heartbeat gave the lock up after `TickLock.heartbeatLimit`, so a call that never
 /// answered is still running with no lock. The next wake would start a second run beside it, so
 /// the process ends, which ends the call; the run's own record is left without a footer and
-/// reads as interrupted, and this adds the reason to every workspace's Run History.
-func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> Void) {
+/// reads as interrupted, and this adds the reason to the Run History of `workspaces` (the ones
+/// the run was for). `workspaces` runs after the children are stopped: discovering profiles can
+/// launch `config list`, and the stalled call must not keep running while it does.
+func exitAfterLockGiveUp(
+    caller: LockHolder = .tick,
+    workspaces: () -> [String],
+    exit: @Sendable (Int32) -> Void
+) {
     let hours = TickLock.heartbeatLimit.components.seconds / 3600
     let message = "a run passed the tick lock's \(hours)-hour limit and was stopped so it "
         + "cannot run beside the next wake"
-    reportTickError(message)
-    // Ending this process does not end the jamf-cli call it started, so stop that first.
+    reportTickError(message, caller: caller)
+    // Ending this process does not end the jamf-cli call it started, so stop that first. It also
+    // latches the exit path, so a probe the lookup below launches is stopped at its own site.
     CLIBridge.terminateRunningChildren()
-    let failures = TickFailureLog(profiles: profiles)
-    failures.recordInEveryWorkspace(message)
+    let failures = TickFailureLog(profiles: [])
+    failures.record(message, in: workspaces(), as: caller)
     failures.finish()
     // A launch that slipped in during the writes above is stopped by its own site; this catches
     // any that were already running.
     CLIBridge.terminateRunningChildren()
     exit(1)
+}
+
+/// The tick's give-up: its record goes to every runnable workspace, since any of them may be the
+/// one an operator opens.
+func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> Void) {
+    exitAfterLockGiveUp(
+        workspaces: { ProfileService.runnableProfiles(profiles, excluding: []).map(\.name) },
+        exit: exit)
+}
+
+/// The give-up for a process that holds the tick lock through `holdingForRun` (`--scheduled-run`,
+/// the included CLI): the tick's own, so a stalled jamf-cli call there cannot run beside the
+/// next wake either.
+func lockGiveUp(
+    _ caller: LockHolder,
+    workspaces: @escaping @Sendable () -> [String],
+    exit: @escaping @Sendable (Int32) -> Void = { Darwin.exit($0) }
+) -> @Sendable () -> Void {
+    { exitAfterLockGiveUp(caller: caller, workspaces: workspaces, exit: exit) }
+}
+
+/// The workspaces a scheduled run is for: its profile, or for a multi-profile schedule the
+/// runnable ones it fans out over. For a multi schedule `among` defaults to discovery, which in a
+/// give-up runs after the exit path is latched, so it is folder-based at that point.
+func workspaces(
+    of schedule: Schedule,
+    among profiles: () -> [JamfCLIProfile] = { ProfileService.discoverLocal() }
+) -> [String] {
+    guard schedule.isMulti else { return [schedule.profile] }
+    return ProfileService.runnableProfiles(
+        profiles(), excluding: Set(schedule.excludedProfiles ?? [])
+    ).map(\.name)
 }
 
 private func saveLastTick(_ state: TickState, to url: URL) {
@@ -194,9 +253,14 @@ private func saveLastTick(_ state: TickState, to url: URL) {
 func runScheduleExclusively(
     _ schedule: Schedule,
     verbose: Bool,
-    lock: TickLock = TickLock(url: TickLock.defaultURL)
+    lock: TickLock = TickLock(url: TickLock.defaultURL),
+    limit: Duration = TickLock.heartbeatLimit,
+    onGiveUp: (@Sendable () -> Void)? = nil
 ) async -> ScheduleRunOutcome? {
-    let outcome = await lock.holdingForRun { await runSchedule(schedule, verbose: verbose) }
+    let giveUp = onGiveUp ?? lockGiveUp(.scheduledRun, workspaces: { workspaces(of: schedule) })
+    let outcome = await lock.holdingForRun(limit: limit, onGiveUp: giveUp) {
+        await runSchedule(schedule, verbose: verbose)
+    }
     if outcome == nil {
         fputs("[info] scheduled-run: \(TickLock.busyMessage)\n", stderr)
     }
@@ -331,8 +395,13 @@ final class TickFailureLog {
     /// A failure that belongs to no schedule (the tick could not take its lock): the record
     /// goes to every runnable workspace, since any of them may be the one an operator opens.
     func recordInEveryWorkspace(_ message: String) {
-        for profile in ProfileService.runnableProfiles(profiles, excluding: []) {
-            recorder(for: profile.name)?.record("[error] tick: \(message)")
+        record(message, in: ProfileService.runnableProfiles(profiles, excluding: []).map(\.name))
+    }
+
+    /// A failure of the process `caller` names, recorded in the workspaces it was for.
+    func record(_ message: String, in names: [String], as caller: LockHolder = .tick) {
+        for name in names {
+            recorder(for: name)?.record("[error] \(caller.label): \(message)")
         }
     }
 
@@ -359,7 +428,7 @@ final class TickFailureLog {
 
 /// stderr reaches only a Run now caller that streams the tick's output; the bundled
 /// agent's stderr goes nowhere, so OSLog and `TickFailureLog` are the lasting record.
-private func reportTickError(_ message: String) {
-    fputs("[error] tick: \(message)\n", stderr)
-    AppLogger.schedule.error("tick: \(message, privacy: .public)")
+private func reportTickError(_ message: String, caller: LockHolder = .tick) {
+    fputs("[error] \(caller.label): \(message)\n", stderr)
+    AppLogger.schedule.error("\(caller.label, privacy: .public): \(message, privacy: .public)")
 }

@@ -100,11 +100,15 @@ enum CLIRun {
     /// it, nothing runs: one line on stderr and exit `TickRunner.queuedExitCode`, the code a
     /// tick turned away by the lock exits with. `fail` exits without unwinding, so a command
     /// that ends with a failure exit returns what it would have exited with and fails after.
+    /// Past the lock's time limit the process ends and `profile`'s Run History says why.
     static func exclusively<T: Sendable>(
+        profile: String,
         lock: TickLock = TickLock(url: TickLock.defaultURL),
+        onGiveUp: (@Sendable () -> Void)? = nil,
         _ body: () async throws -> T
     ) async throws -> T {
-        guard let result = try await lock.holdingForRun(body) else {
+        let giveUp = onGiveUp ?? lockGiveUp(.command, workspaces: { [profile] })
+        guard let result = try await lock.holdingForRun(onGiveUp: giveUp, body) else {
             FileHandle.standardError.write(Data("error: \(TickLock.busyMessage)\n".utf8))
             throw ExitCode(TickRunner.queuedExitCode)
         }

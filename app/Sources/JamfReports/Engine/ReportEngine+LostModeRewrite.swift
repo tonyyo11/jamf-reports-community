@@ -72,7 +72,8 @@ extension ReportEngine {
     /// once per workspace, with the reducer collect uses. Not a source: it records no failure and
     /// logs no `[partial]`. The marker is written only when no file was unreadable or failed to
     /// write and no folder was refused or unlistable; those retry on the next collect. A file
-    /// that is not JSON is warned about and not retried. The file's mtime changes and a link
+    /// that cannot be used (not JSON, over the size limit, not a regular file, or a link) is
+    /// warned about and not retried. The file's mtime changes and a link
     /// swapped in after the folder check is not caught, as in `saveSnapshot`. The stamp-before-
     /// write ordering assumes `JSONSerialization` with sorted keys gives the same bytes on the
     /// next pass; a peer Mac on another macOS that formats doubles differently would leave a

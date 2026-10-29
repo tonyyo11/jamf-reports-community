@@ -66,6 +66,10 @@ versions in this repository map to git tags.
 - Run now and the background item stop the jamf-cli call they are waiting on when they give up
   after six hours, so a stalled call no longer keeps running beside the next scheduled run.
   (#305)
+- A scheduled run started by an outside scheduler, and the included command line, now give up the
+  same way after six hours: the jamf-cli call is stopped, the Run History of the workspace the
+  run was for says why, and the run ends. A jamf-cli call that ignores the first stop signal
+  while the app is exiting is now force-stopped too. (#305)
 - A scheduled run behind a proxy now uses the HTTPS proxy and bypass list set in System Settings.
   The background item starts without a shell, so it had none; a proxy with a user name is skipped
   with a warning. Collects started from the app do not read the System Settings proxy; an app
@@ -83,6 +87,13 @@ versions in this repository map to git tags.
   decision. Each Mac confirms the choice once before a shared `config.yaml` can turn it on;
   turning it off applies at once. A value the app cannot read as true or false, a `config.yaml`
   that does not decode, and a folder another Mac marked as not shared all keep Jamf Pro out. (#305)
+- A link another Mac plants in a snapshot folder no longer hides behind "no cached snapshot" in a
+  failed collect or makes a data kind look freshly collected, and a failed collect refuses a
+  snapshot folder that is itself a link, with a warning. A snapshot named or touched for a date
+  far in the future, a manifest or a sync conflict copy no longer keeps a data kind looking
+  fresh, or makes Generate skip its collect. jamf-cli's config file, which
+  `XDG_CONFIG_HOME` can move to a folder anyone can write, is now read with a size limit
+  everywhere, including the diagnostic bundle and Start a connection. (#305)
 
 ## [2.11.0] - 2026-10-27
 

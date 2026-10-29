@@ -35,6 +35,43 @@ extension FileManager {
         newestSnapshot(inDirectory: dir, extensions: ["html"])
     }
 
+    /// "<name>: not a regular file" when the newest `fileExtension` entry by stamp in `dir` is a
+    /// link, folder or other non-regular file. The pickers above drop a link that resolves
+    /// outside `dir`, so one planted at the newest stamp would read as "never collected"; a
+    /// caller that claims something about the cache (the collect's "using cached" note, the
+    /// dashboard section) asks this first. A screen that only reads data keeps the drop: a
+    /// refused link is not data. A link that stays inside `dir` is reported too, though the
+    /// pickers would have resolved it: nothing here writes one. The listing follows a folder
+    /// swapped for a link after the caller confined it; nothing is opened, only the newest name
+    /// is read.
+    static func plantedNewestSnapshot(in dir: URL, fileExtension: String) -> String? {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        guard let newest = newestSnapshot(
+                among: entries.filter { $0.pathExtension.lowercased() == fileExtension }),
+              !isRegularFile(newest) else { return nil }
+        return ConfigSchema.displayText(newest.lastPathComponent) + ": not a regular file"
+    }
+
+    /// `lstat`, so a link is not followed.
+    static func isRegularFile(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
+    /// The date of the newest snapshot among `urls`, as every freshness check dates it: regular
+    /// files only (`lstat`, so a planted link counts for nothing), the pickers' exclusions
+    /// (manifest, conflict copy, `.partial`), the stamp in the name before the mtime, and a file
+    /// dated more than `SharedWorkspace.clockSkewTolerance` ahead of `now` left out, since a peer
+    /// can name or touch one for the year 2999 and make a folder look fresh for good.
+    static func newestSnapshotDate(among urls: [URL], now: Date = Date()) -> Date? {
+        let candidates = urls.filter { url in
+            guard isRegularFile(url), let date = snapshotDate(of: url) else { return false }
+            return date.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance
+        }
+        return newestSnapshot(among: candidates).flatMap(snapshotDate(of:))
+    }
+
     /// Shared body: enumerate, confine to `dir`, filter, order.
     private static func newestSnapshot(inDirectory dir: URL, extensions: Set<String>) -> URL? {
         let fm = FileManager.default

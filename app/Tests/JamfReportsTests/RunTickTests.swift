@@ -21,6 +21,8 @@ final class RunTickTests: XCTestCase {
         let workspaces = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
         try FileManager.default.createDirectory(
             at: workspaces.appendingPathComponent("alpha"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: workspaces.appendingPathComponent("beta"), withIntermediateDirectories: true)
         setenv("JRC_TEST_WORKSPACES_ROOT", workspaces.path, 1)
         addTeardownBlock {
             unsetenv("JRC_TEST_WORKSPACES_ROOT")
@@ -45,12 +47,13 @@ final class RunTickTests: XCTestCase {
         let store = ScheduleStore(url: root.appendingPathComponent("schedules.json"))
         try store.save([try XCTUnwrap(ScheduleRecord(schedule: schedule))])
         let alpha = JamfCLIProfile(name: "alpha", url: "", schedules: 0, status: .ok)
+        let beta = JamfCLIProfile(name: "beta", url: "", schedules: 0, status: .ok)
         return TickEnvironment(
             lock: TickLock(url: root.appendingPathComponent(".tick.lock")),
             blockedURL: root.appendingPathComponent(".tick.blocked"),
             stateURL: root.appendingPathComponent("tick-state.json"),
             markerDir: root.appendingPathComponent("run-now"), scheduleStore: store,
-            profiles: { [alpha] }, policy: { AutomationPolicy() }, clock: { [now] in now },
+            profiles: { [alpha, beta] }, policy: { AutomationPolicy() }, clock: { [now] in now },
             summaryIsMissing: { _, _, _ in false }, perform: perform,
             heartbeatEvery: .milliseconds(10), heartbeatLimit: heartbeatLimit, exit: exit)
     }
@@ -106,7 +109,8 @@ final class RunTickTests: XCTestCase {
     }
 
     /// A run that outlasts the heartbeat limit gives the lock up and the tick ends itself,
-    /// leaving the reason in the workspace's Run History.
+    /// leaving the reason in the Run History of the workspace the stalled schedule is for, and
+    /// of no other workspace.
     func testARunPastTheHeartbeatLimitExitsAndRecordsWhy() async throws {
         let exits = Counter()
         let env = try environment(
@@ -126,6 +130,9 @@ final class RunTickTests: XCTestCase {
         XCTAssertEqual(run.name, "Background item")
         let text = RunHistoryService.loadLog(run.logURL).map(\.text)
         XCTAssertTrue(text.contains { $0.contains("-hour limit and was stopped") }, "\(text)")
+        XCTAssertTrue(text.contains { $0.hasPrefix("[error] tick: ") }, "\(text)")
+        XCTAssertTrue(RunHistoryService.list(profile: "beta").isEmpty,
+                      "the other workspace's history is untouched")
     }
 }
 

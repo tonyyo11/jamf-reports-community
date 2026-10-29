@@ -73,8 +73,49 @@ final class TerminateRunningChildrenTests: XCTestCase {
         XCTAssertEqual(code, SIGTERM)
     }
 
+    /// A launch after the pass gets the pass's SIGTERM, grace, SIGKILL, not SIGTERM alone. The
+    /// test waits for the child's trap before calling `stopIfClosing`, which production cannot
+    /// do: that is the case where the signal arrives first.
+    func testALaunchAfterThePassThatIgnoresSIGTERMIsKilledAfterTheGrace() throws {
+        let box = TimedProcessBox()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", #"trap "" TERM; echo up; while :; do :; done"#]
+        let out = Pipe()
+        process.standardOutput = out
+        CLIBridge.terminateRunningChildren(grace: 0.1)
+        XCTAssertTrue(TimedProcessBox.isClosing)
+        try process.run()
+        box.set(process)
+        defer { kill(process.processIdentifier, SIGKILL); process.waitUntilExit() }
+        XCTAssertEqual(String(decoding: out.fileHandleForReading.readData(ofLength: 3),
+                              as: UTF8.self), "up\n")
+        let started = Date()
+
+        box.stopIfClosing(grace: 0.3)
+
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 0.3)
+        // Foundation reaps the child on its own thread, a moment after the kill.
+        for _ in 0..<200 where process.isRunning { Thread.sleep(forTimeInterval: 0.01) }
+        XCTAssertFalse(process.isRunning, "SIGTERM alone left the child running")
+        XCTAssertEqual(process.terminationStatus, SIGKILL)
+    }
+
     func testNothingRunningTerminatesNothing() {
         XCTAssertEqual(CLIBridge.terminateRunningChildren(grace: 0.1), 0)
+    }
+
+    /// Looking up which workspaces to record in can launch `config list`; the stalled call must
+    /// already be gone by then, not running on beside it.
+    func testTheGiveUpStopsTheChildBeforeItLooksUpWorkspaces() async throws {
+        let (exit, pid) = try await startChild("echo up $$ >&2; exec sleep 60")
+        let goneAtLookup = LockedFlag()
+
+        exitAfterLockGiveUp(
+            workspaces: { goneAtLookup.set(Self.isGone(pid)); return [] }, exit: { _ in })
+
+        XCTAssertTrue(goneAtLookup.value, "the child still ran when workspaces were looked up")
+        _ = try await exit.value
     }
 
     /// The give-up stops the child before it ends the process.

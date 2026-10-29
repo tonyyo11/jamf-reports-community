@@ -28,7 +28,7 @@ enum SnapshotFreshness {
         threshold: TimeInterval = 3600,
         now: Date = Date()
     ) -> Decision {
-        guard let newestMTime = newestSnapshotMTime(in: dataDir) else {
+        guard let newestMTime = newestSnapshotMTime(in: dataDir, now: now) else {
             return .noSnapshots
         }
 
@@ -50,36 +50,17 @@ enum SnapshotFreshness {
         return evaluate(dataDir: dataDir)
     }
 
-    /// Find the newest modification time across all regular files in `dataDir` and its
-    /// subdirectories. Hidden files and directories themselves are excluded.
+    /// The date of the newest snapshot file in `dataDir` and its subdirectories, picked as every
+    /// freshness check picks one (`FileManager.newestSnapshotDate`): a manifest, a sync-conflict
+    /// copy, a `.partial` file, a link or a file dated far ahead of `now` does not count. Hidden
+    /// files and directories are excluded.
     ///
-    /// - Returns: The most recent modification date, or nil if no regular files exist.
-    nonisolated static func newestSnapshotMTime(in dataDir: URL) -> Date? {
+    /// - Returns: The newest date, or nil if no such file exists.
+    nonisolated static func newestSnapshotMTime(in dataDir: URL, now: Date = Date()) -> Date? {
         guard let enumerator = FileManager.default.enumerator(
-            at: dataDir,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
-
-        var newestDate: Date?
-        for case let fileURL as URL in enumerator {
-            guard let values = try? fileURL.resourceValues(
-                forKeys: [.contentModificationDateKey, .isRegularFileKey]
-            ),
-            values.isRegularFile == true,
-            let mtime = values.contentModificationDate else {
-                continue
-            }
-
-            if let current = newestDate {
-                if mtime > current { newestDate = mtime }
-            } else {
-                newestDate = mtime
-            }
-        }
-
-        return newestDate
+            at: dataDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        ) else { return nil }
+        let files = enumerator.compactMap { $0 as? URL }
+        return FileManager.newestSnapshotDate(among: files, now: now)
     }
 }
