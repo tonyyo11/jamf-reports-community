@@ -202,6 +202,59 @@ final class RunManifestTests: XCTestCase {
             "Timestamp signer certificate SHA-256: 32e841a95cc1164101ffde41298ef2fc") })
     }
 
+    // MARK: --signer-sha256
+
+    private let freeTSASigner = "32e841a95cc1164101ffde41298ef2fc75c1c4372ef095e88a6bbd47dfb191fc"
+
+    /// The expected signer replaces the untrusted-chain caveat: the pin is what is trusted.
+    func testVerifyPassesWhenTheSignerIsTheExpectedCertificate() throws {
+        try layOutFixtureRun()
+        let pinned = try XCTUnwrap(RunManifest.normalizedSignerSHA256(
+            stride(from: 0, to: 64, by: 2).map {
+                let i = freeTSASigner.index(freeTSASigner.startIndex, offsetBy: $0)
+                return freeTSASigner[i...freeTSASigner.index(after: i)].uppercased()
+            }.joined(separator: ":")))
+        let result = RunManifest.verify(
+            manifestAt: folder.appendingPathComponent(manifestName), expectedSigner: pinned)
+        XCTAssertTrue(result.passed, result.lines.joined(separator: "\n"))
+        XCTAssertTrue(result.lines.contains(
+            "OK    timestamp signer is the expected certificate (--signer-sha256)"))
+        XCTAssertFalse(result.lines.contains(RunManifest.untrustedChainNote))
+    }
+
+    /// A token signed by any other certificate (a forged, self-signed one) fails.
+    func testVerifyFailsWhenTheSignerIsAnotherCertificate() throws {
+        try layOutFixtureRun()
+        let other = String(repeating: "ab", count: 32)
+        let result = RunManifest.verify(
+            manifestAt: folder.appendingPathComponent(manifestName), expectedSigner: other)
+        XCTAssertFalse(result.passed)
+        XCTAssertTrue(result.lines.contains("FAIL  timestamp signer is not the expected "
+            + "certificate: expected \(other), signed by \(freeTSASigner)"), "\(result.lines)")
+        XCTAssertTrue(result.lines.contains("3 of 3 artifacts match."))
+    }
+
+    /// Removing the .tsr must not get a forged run past a pinned signer.
+    func testVerifyFailsWithAnExpectedSignerAndNoTimestamp() throws {
+        try layOutFixtureRun(withReply: false)
+        let result = RunManifest.verify(
+            manifestAt: folder.appendingPathComponent(manifestName), expectedSigner: freeTSASigner)
+        XCTAssertFalse(result.passed)
+        XCTAssertTrue(result.lines.contains(
+            "FAIL  --signer-sha256 was given, but the run has no timestamp"))
+        XCTAssertFalse(result.lines.contains(RunManifest.untimestampedNote))
+    }
+
+    func testASignerSHA256MustBe64HexDigits() {
+        XCTAssertEqual(RunManifest.normalizedSignerSHA256(" \(freeTSASigner.uppercased()) "),
+                       freeTSASigner)
+        XCTAssertNil(RunManifest.normalizedSignerSHA256(String(freeTSASigner.dropLast())))
+        XCTAssertNil(RunManifest.normalizedSignerSHA256(String(freeTSASigner.dropLast()) + "g"))
+        XCTAssertNil(RunManifest.normalizedSignerSHA256(""))
+        XCTAssertThrowsError(try Verify.parse(["x.manifest.json", "--signer-sha256", "abc"]))
+        XCTAssertNoThrow(try Verify.parse(["x.manifest.json", "--signer-sha256", freeTSASigner]))
+    }
+
     /// A file added to the CSV folder, at its top or in a folder inside it, is not part of the
     /// run; Finder's `.DS_Store` is the one entry left alone.
     func testVerifyNamesAnExtraFileInTheCSVFolderAndFails() throws {

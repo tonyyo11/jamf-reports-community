@@ -157,7 +157,9 @@ versions in this repository map to git tags.
   and `jamf-reports verify` checks a run against it, including files added afterwards. Set
   `output.timestamp_authority` to have each manifest timestamped by an RFC 3161 authority:
   only the manifest's hash is sent, and on a shared workspace each Mac sends only once the
-  address is confirmed there. A failed timestamp is a warning, never a failed run. (#305)
+  address is confirmed there. A failed timestamp is a warning, never a failed run.
+  `jamf-reports verify --signer-sha256 <hex>` also fails a run with no timestamp, or one signed
+  by any certificate other than the authority's you name. (#305)
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,
   dots, hyphens or parentheses, such as `+44 20 7946 0958` and `+1 (415) 555 0132`. (#305)
 - Mobile device snapshots saved by earlier versions no longer keep lost-mode phone numbers,

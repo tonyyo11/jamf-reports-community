@@ -142,9 +142,22 @@ struct Verify: AsyncParsableCommand {
             + "RFC 3161 timestamp (.tsr) beside it when there is one. Exits 1 when anything "
             + "differs.")
     @Argument(help: "The run's <stem>.manifest.json, beside its workbook.") var manifest: String
+    @Option(name: .customLong("signer-sha256"), help: ArgumentHelp(
+        "The SHA-256 of the timestamp authority's signing certificate. With it, a run with no "
+            + "timestamp, or one signed by another certificate, exits 1.",
+        valueName: "hex"))
+    var signerSHA256: String?
+
+    func validate() throws {
+        if let signerSHA256, RunManifest.normalizedSignerSHA256(signerSHA256) == nil {
+            throw ValidationError("--signer-sha256 needs 64 hex digits (colons and spaces allowed)")
+        }
+    }
 
     func run() async throws {
-        let result = RunManifest.verify(manifestAt: URL(fileURLWithPath: manifest))
+        let result = RunManifest.verify(
+            manifestAt: URL(fileURLWithPath: manifest),
+            expectedSigner: signerSHA256.flatMap(RunManifest.normalizedSignerSHA256))
         CLIRun.write(result.lines.joined(separator: "\n") + "\n", to: .standardOutput)
         Foundation.exit(result.passed ? 0 : 1)
     }
