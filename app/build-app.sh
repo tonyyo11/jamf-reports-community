@@ -10,6 +10,9 @@ cd "$(dirname "$0")"
 # scripts/package-dmg.sh (scripts/test-versioning.zsh covers them in CI).
 # shellcheck source-path=SCRIPTDIR source=scripts/lib/versioning.zsh
 source "${PWD}/scripts/lib/versioning.zsh"
+# The tick agent's SpawnConstraint (scripts/test-spawn-constraint.zsh covers it in CI).
+# shellcheck source-path=SCRIPTDIR source=scripts/lib/spawn-constraint.zsh
+source "${PWD}/scripts/lib/spawn-constraint.zsh"
 
 CONFIG="${1:-release}"
 
@@ -256,6 +259,20 @@ else
 fi
 echo "→ signing identity: ${SIGNING_IDENTITY}"
 
+# Constrain the tick agent to this signature, before the bundle is sealed. Ad-hoc builds get
+# none: they carry no team ID, and a source build must still run its own tick.
+TICK_PLIST="$APP_OUT/Contents/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist"
+if [[ "$SIGNING_IDENTITY" != "-" ]]; then
+  SPAWN_TEAM="$(jr_identity_team_id "$SIGNING_IDENTITY")"
+  SPAWN_TEAM="${SPAWN_TEAM:-${TEAM_ID:-}}"
+  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_OUT/Contents/Info.plist")"
+  if ! jr_add_spawn_constraint "$TICK_PLIST" "$SPAWN_TEAM" "$BUNDLE_ID"; then
+    echo "✗ could not constrain the tick agent for identity: ${SIGNING_IDENTITY}" >&2
+    exit 1
+  fi
+  echo "→ tick agent constrained to team ${SPAWN_TEAM}, identifier ${BUNDLE_ID}"
+fi
+
 ENTITLEMENTS="JamfReports.entitlements"
 if [[ -f "$ENTITLEMENTS" ]]; then
   echo "→ signing $APP_OUT"
@@ -267,6 +284,7 @@ if [[ -f "$ENTITLEMENTS" ]]; then
     echo "✗ codesign failed for $APP_OUT" >&2
     exit 1
   fi
+  jr_verify_spawn_constraint "$APP_OUT" || exit 1
 else
   echo "✗ $ENTITLEMENTS missing — refusing to sign without entitlements" >&2
   exit 1

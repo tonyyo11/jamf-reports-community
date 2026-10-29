@@ -1442,8 +1442,20 @@ file (legacy import or live run) populates that field.
   No `sudo`, no daemons.
 - **Atomic writes:** Configuration and plist updates use `replaceItem(at:withItemAt:)` to
   prevent corruption on power loss or crash.
+- **Tick agent spawn constraint (2.12):** when `build-app.sh` signs with a real identity it adds a
+  `SpawnConstraint` (`team-identifier`, `signing-identifier`) to the copied tick plist before
+  sealing the bundle, so launchd starts `Contents/MacOS/JamfReports` for the tick only if its
+  signature has the release's team and the app's bundle ID; the plist in `app/LaunchAgents` stays
+  unconstrained. The team ID is the OU of the identity's certificate (`TEAM_ID` if that cannot be
+  read) and the build stops if the signed executable does not match
+  (`scripts/lib/spawn-constraint.zsh`, tested by `scripts/test-spawn-constraint.zsh`). An ad-hoc
+  build gets none, so a source build with its own team or none still runs its tick; a
+  re-signed build under another team needs `build-app.sh` run again. Honored from macOS 14.
 - **Hardened Runtime + entitlements:** The release bundle is built with Hardened Runtime
-  enabled. Entitlements are in `app/JamfReports.entitlements`.
+  enabled. `app/JamfReports.entitlements` holds `app-sandbox` false and `allow-jit` false (the
+  default) only: the file, bookmark, network-client and inherit keys it once listed are App
+  Sandbox entitlements that do nothing in an unsandboxed app, and no code uses
+  security-scoped bookmarks.
 
 #### Included CLI (2.4.0)
 

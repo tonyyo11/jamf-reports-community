@@ -77,6 +77,11 @@ jobs:
           set -e -o pipefail
           swift test 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
 
+      # The tick agent's SpawnConstraint needs plutil and codesign, so it runs on macOS only.
+      - name: Test the tick agent's spawn constraint
+        shell: zsh {0}
+        run: zsh app/scripts/test-spawn-constraint.zsh
+
       # A test run logs thousands of lines and the tail is what a log viewer
       # shows, so on failure repeat just the compiler errors and failed tests,
       # from the build log too: when the build fails the test step never runs.
@@ -110,6 +115,8 @@ jobs:
             app/build-app.sh \
             app/build-pkg.sh \
             app/scripts/lib/versioning.zsh \
+            app/scripts/lib/spawn-constraint.zsh \
+            app/scripts/test-spawn-constraint.zsh \
             app/scripts/test-versioning.zsh \
             app/scripts/check-test-only-symbols.zsh \
             app/scripts/test-check-test-only-symbols.zsh \
