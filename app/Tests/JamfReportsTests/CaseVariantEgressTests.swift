@@ -2,8 +2,8 @@ import XCTest
 @testable import JamfReports
 
 /// A case variant (`Prod` beside the folder `prod/`) has no workspace of its own: the health
-/// reader names the refusal, and no overdue digest or heartbeat reaches the other spelling's
-/// webhook or stamps its folder.
+/// reader names the refusal, and no overdue digest, heartbeat or schedule reaches the other
+/// spelling's webhook or stamps its folder.
 final class CaseVariantEgressTests: XCTestCase {
     nonisolated(unsafe) private var root: URL!
 
@@ -51,5 +51,14 @@ final class CaseVariantEgressTests: XCTestCase {
             profiles: ["Prod"], stateRoot: stamps, now: .testNoon)
         XCTAssertTrue(WebhookCapture.posted.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: stamps.path))
+    }
+
+    func testSchedulesAddRefusesAVariantBeforeReadingItsConfig() {
+        XCTAssertThrowsError(try Schedules.Add.record(
+            name: "nightly", profile: "Prod", allProfiles: false, exclude: nil,
+            mode: "snapshot-only", cadence: "Daily 06:00", tiers: nil, disabled: false)
+        ) { error in
+            XCTAssertTrue("\(error)".contains("'prod'"), "\(error)")
+        }
     }
 }
