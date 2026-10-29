@@ -52,6 +52,8 @@ versions in this repository map to git tags.
 
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,
   dots, hyphens or parentheses, such as `+44 20 7946 0958` and `+1 (415) 555 0132`. (#305)
+- Mobile device snapshots saved by earlier versions no longer keep lost-mode phone numbers,
+  locations or messages: the first refresh after updating removes them. (#305)
 
 ## [2.11.0] - 2026-10-27
 
