@@ -68,9 +68,13 @@ enum TickRunner {
         guard wait else {
             guard FileManager.default.isExecutableFile(atPath: executable.path) else { return 1 }
             Task.detached {
-                _ = try? await bridge.run(
-                    executable: executable, arguments: arguments,
-                    environment: environment, onLine: onLine)
+                do {
+                    _ = try await bridge.run(
+                        executable: executable, arguments: arguments,
+                        environment: environment, onLine: onLine)
+                } catch {
+                    logLaunchFailure(label: label, error: error)
+                }
             }
             return 0
         }
@@ -82,9 +86,16 @@ enum TickRunner {
                     executable: executable, arguments: arguments,
                     environment: environment, onLine: onLine)
             } catch {
+                logLaunchFailure(label: label, error: error)
                 return Int32(1)
             }
         }
         return await run.value
+    }
+
+    private static func logLaunchFailure(label: String, error: any Error) {
+        let reason = error.localizedDescription
+        AppLogger.schedule.error(
+            "Run now \(label, privacy: .private) did not start: \(reason, privacy: .private)")
     }
 }
