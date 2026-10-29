@@ -147,8 +147,10 @@ final class WorkspaceStore {
         .stability, .activeDevices, .fileVault, .compliance,
     ]
 
-    nonisolated static func persistScoreCards(_ metrics: [TrendSeries.Metric]) {
-        UserDefaults.standard.set(
+    nonisolated static func persistScoreCards(
+        _ metrics: [TrendSeries.Metric], defaults: UserDefaults = .standard
+    ) {
+        defaults.set(
             metrics.map(\.rawValue).joined(separator: ","),
             forKey: scoreCardsKey
         )
@@ -156,8 +158,10 @@ final class WorkspaceStore {
 
     /// nil when nothing was persisted yet (first launch) or the stored value
     /// contains no recognizable metrics — callers fall back to the default set.
-    nonisolated static func loadPersistedScoreCards() -> [TrendSeries.Metric]? {
-        guard let raw = UserDefaults.standard.string(forKey: scoreCardsKey), !raw.isEmpty else {
+    nonisolated static func loadPersistedScoreCards(
+        defaults: UserDefaults = .standard
+    ) -> [TrendSeries.Metric]? {
+        guard let raw = defaults.string(forKey: scoreCardsKey), !raw.isEmpty else {
             return nil
         }
         let metrics = raw.split(separator: ",").compactMap {
