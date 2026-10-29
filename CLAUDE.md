@@ -72,6 +72,13 @@ every sibling site in the same PR, with the grep in the PR body; one site of a k
 is an incomplete fix. `docs/superpowers/review-checklist.md` lists the twelve classes that
 recurred from 2.8.0 to 2.11.0 and the check for each; reviewers read it first.
 
+**Agent loop.** `docs/superpowers/agent-loop.md` says which work gets a subagent (parallel fresh
+context, independent verification, or reading far more than the loop needs) and which stays in the
+main loop; the controller reads small, plain fix diffs instead of dispatching a re-review. The
+recurring controller steps are project skills in `.claude/skills/`: `review-package`,
+`class-sweep`, `changelog-union`, `bundle-wave`, `stack-adopt` (person-started), `tip-test`, and
+`loop-eval`, which scores a wave against the committed baseline.
+
 **No scaffolding without wiring.** Do not add a new
 Service/View/Model/Engine file unless a caller for it lands in the same
 PR. A button, a tab, a route, or a test that exercises it — something
