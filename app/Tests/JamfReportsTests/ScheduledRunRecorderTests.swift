@@ -146,6 +146,20 @@ final class ScheduledRunRecorderTests: XCTestCase {
         XCTAssertNotNil(ISO8601DateFormatter().date(from: finishedAt))
     }
 
+    func testFinishRecordsACSVFolderUnderItsOwnKeyWhateverTheProfilesDots() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        let book = workspace.appendingPathComponent("report_acme.example.com_2026-06-01.xlsx")
+        let folder = workspace.appendingPathComponent("report_acme.example.com_2026-06-01_csv")
+        recorder.finish(exitCode: 0, artifacts: [book, folder])
+
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: recorder.statusURL)) as? [String: Any])
+        XCTAssertEqual(payload["csv_folder_path"] as? String, folder.path)
+        XCTAssertEqual(payload["xlsx_report_path"] as? String, book.path)
+        XCTAssertNil(payload["inventory_csv_path"])
+    }
+
     func testRefusedFinishMarksTheStatusFile() throws {
         let workspace = try makeWorkspace()
         let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))

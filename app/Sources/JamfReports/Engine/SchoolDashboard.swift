@@ -37,7 +37,8 @@ struct SchoolDashboard: Sendable {
     /// passes the settings from config.yaml (`ReportEngine.sheetSettings`).
     @discardableResult
     func writeAll(
-        sheets: SheetsConfig = SheetsConfig()
+        sheets: SheetsConfig = SheetsConfig(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> (written: [String], failures: [SheetFailure]) {
         var written: [String] = []
         var failures: [SheetFailure] = []
@@ -47,11 +48,13 @@ struct SchoolDashboard: Sendable {
                 written.append(name)
             } catch let skippable as SheetSkippable {
                 // Cached data absent — expected for tenants that haven't collected school snapshots.
-                print("  [skip] \(name): \(skippable)")
+                let msg = SheetRegistry.skipLine(sheet: name, error: skippable)
+                print("  " + msg)
+                onLine?(.init(timestamp: Date(), level: .info, text: msg))
             } catch {
-                let label = "\(type(of: error)): \(error)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
+                let failure = SheetRegistry.failure(sheet: name, error: error)
+                failures.append(failure)
+                print("  [fail] \(name): unexpected error — \(failure.error)")
             }
         }
         return (written, failures)
@@ -650,7 +653,9 @@ struct SchoolDashboard: Sendable {
 enum SchoolDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
 
-    var errorDescription: String? {
+    var errorDescription: String? { skipReason }
+
+    var skipReason: String {
         switch self {
         case .noCachedData(let names):
             return "No cached school snapshot found for: \(names.joined(separator: ", "))"

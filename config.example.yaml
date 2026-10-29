@@ -805,6 +805,14 @@ output:
   # Generate sheet's HTML format or `jamf-reports html` output, is never moved.
   keep_latest_runs: 10
 
+  # Also write one CSV per workbook tab into a folder beside every report workbook,
+  # named like the workbook with _csv added (report_prod_2026-10-04_091500_csv). The
+  # folder is written from the same tabs as the workbook, so sheets.only / skip /
+  # order apply to it, and it moves to archive_dir with its workbook. Off by default.
+  # The Generate sheet's "CSV folder" format and `jamf-reports generate --csv-folder`
+  # write it for one run.
+  csv_folder: false
+
   # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE
   # the workspace.
   #

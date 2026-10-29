@@ -327,19 +327,9 @@ struct SOFAFeedService: Sendable {
     }
 
     static func writeCacheAtomic(data: Data, to url: URL) {
-        let tmp = url.deletingLastPathComponent()
-            .appendingPathComponent(".\(url.lastPathComponent).partial")
         do {
-            // Atomic, so a symlink planted at the staging name is replaced, not followed.
-            try data.write(to: tmp, options: .atomic)
-            // replaceItem requires the destination to exist; use move when it doesn't.
-            if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
-            } else {
-                try FileManager.default.moveItem(at: tmp, to: url)
-            }
+            try AtomicInstall.write(data, to: url)
         } catch {
-            try? FileManager.default.removeItem(at: tmp)
             let msg = "SOFAFeedService: could not write cache \(url.lastPathComponent): " +
                       error.localizedDescription
             AppLogger.collect.warning("\(msg, privacy: .private)")

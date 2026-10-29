@@ -69,11 +69,7 @@ enum CellValue: Sendable {
             })
         }
         let s = String(String.UnicodeScalarView(kept))
-        // Escape formula-injection: cells starting with =, +, -, @ get a leading tab.
-        if let first = s.first, "=+-@".contains(first) {
-            return .string("\t" + s)
-        }
-        return .string(s)
+        return .string(StaleDeviceService.formulaGuarded(s))
     }
 }
 
@@ -266,6 +262,9 @@ final class Workbook: @unchecked Sendable {
 
     var firstSheet: Worksheet? { sheets.first }
 
+    /// The tabs in their written order.
+    var worksheets: [Worksheet] { sheets }
+
     /// Return the first worksheet whose name matches `name` (exact, after sanitization).
     func sheet(named name: String) -> Worksheet? {
         let sanitized = sanitizeSheetName(name)
@@ -281,14 +280,21 @@ final class Workbook: @unchecked Sendable {
         sheets = typed.applyTo(sheets.map { (name: $0.name, write: $0) }).map(\.write)
     }
 
-    /// Write the workbook to `url` atomically using a temp file + `replaceItem`.
+    /// Write the workbook to `url` atomically: built in memory, written once to a staged file
+    /// beside it (one exclusive create, one descriptor, no reopen by path), then installed by
+    /// `AtomicInstall`, which replaces a link at `url` instead of writing through it.
     func write(to url: URL) throws {
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempURL = tempDir.appendingPathComponent(UUID().uuidString + ".xlsx")
-        try buildZIP(at: tempURL)
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+        AtomicInstall.removeStaleStaging(in: dir, now: Date())
+        let staged = AtomicInstall.stagedURL(for: url)
+        do {
+            try buildZIP().write(to: staged, options: .withoutOverwriting)
+            try AtomicInstall.install(staged, at: url)
+        } catch {
+            AtomicInstall.discard(staged)
+            throw error
+        }
     }
 
     // MARK: - Private ZIP assembly
@@ -313,8 +319,8 @@ final class Workbook: @unchecked Sendable {
         }
     }
 
-    private func buildZIP(at url: URL) throws {
-        let archive = try Archive(url: url, accessMode: .create)
+    private func buildZIP() throws -> Data {
+        let archive = try Archive(accessMode: .create)
 
         try Self.addData(Data(contentTypesXML().utf8), path: "[Content_Types].xml", to: archive)
         try Self.addData(Data(rootRelsXML().utf8), path: "_rels/.rels", to: archive)
@@ -374,6 +380,8 @@ final class Workbook: @unchecked Sendable {
                 )
             }
         }
+        guard let data = archive.data else { throw CocoaError(.fileWriteUnknown) }
+        return data
     }
 
     // MARK: - XML generators

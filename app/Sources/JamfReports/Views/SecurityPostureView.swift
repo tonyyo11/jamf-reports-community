@@ -438,7 +438,8 @@ struct SecurityPostureView: View {
             .accessibilityLabel(row.osVersion)
             .accessibilityValue("\(row.count) devices, \(Int(row.pct.rounded()))%")
         }
-        .chartForegroundStyleScale(domain: orderedKeys, range: Theme.ChartPalette.osVersionInApp)
+        .chartForegroundStyleScale(
+            domain: orderedKeys, range: Theme.ChartColors.colors(forVersions: orderedKeys))
         // ViewThatFits picks the trailing legend when there's room, otherwise
         // falls back to a bottom legend so narrow cards don't truncate.
         .chartLegend(position: .bottom, alignment: .leading, spacing: 8)
@@ -517,11 +518,8 @@ private struct SecurityPostureOSDonutExport: View {
     let rows: [SecurityPostureService.Snapshot.OSVersion]
     let totalDevices: Int
 
-    /// Fixed palette chosen for legibility on the light export canvas. Mirrors
-    /// the ChartExportView color discipline — saturated but not neon.
-    private static let palette: [Color] = Theme.ChartPalette.osVersionExport
-
     var body: some View {
+        let colors = Theme.ChartColors.colors(forVersions: rows.map(\.osVersion), scheme: .light)
         HStack(alignment: .center, spacing: 24) {
             Chart(Array(rows.enumerated()), id: \.offset) { offset, row in
                 SectorMark(
@@ -529,7 +527,7 @@ private struct SecurityPostureOSDonutExport: View {
                     innerRadius: .ratio(0.62),
                     angularInset: 1.5
                 )
-                .foregroundStyle(Self.palette[offset % Self.palette.count])
+                .foregroundStyle(colors[offset])
             }
             .chartLegend(.hidden)
             .frame(width: 260, height: 260)
@@ -539,7 +537,7 @@ private struct SecurityPostureOSDonutExport: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { offset, row in
                     HStack(spacing: 8) {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(Self.palette[offset % Self.palette.count])
+                            .fill(colors[offset])
                             .frame(width: 10, height: 10)
                         Text(row.osVersion)
                             .font(.system(size: 11.5, weight: .medium))

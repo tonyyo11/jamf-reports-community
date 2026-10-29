@@ -260,20 +260,29 @@ struct StaleDeviceService: Sendable {
             list: kept.joined(separator: "; "), count: kept.count, skipped: skipped)
     }
 
-    /// Escape a value for CSV output. Neutralizes spreadsheet formula injection
-    /// (leading `=`, `+`, `-`, `@`, tab or carriage return get a tab prefix) and applies
-    /// RFC 4180 quoting. The one implementation every CSV writer uses.
+    /// Neutralizes spreadsheet formula injection: a value that starts with `=`, `+`, `-`, `@`,
+    /// tab or carriage return gets a tab prefix. The one guard every spreadsheet and CSV sink
+    /// uses (`CellValue.safe` and `csvField`).
     ///
     /// Tests unicode scalars, not `Character`s: Swift reads "\r\n" as one Character equal
     /// to neither "\r" nor "\n", and a sign plus a combining mark as one Character that is
     /// not the sign.
-    static func csvField(_ value: String) -> String {
-        var field = value
-        if let first = field.unicodeScalars.first, "=+-@\t\r".unicodeScalars.contains(first) {
-            field = "\t" + field
-        }
+    static func formulaGuarded(_ value: String) -> String {
+        guard let first = value.unicodeScalars.first,
+              "=+-@\t\r".unicodeScalars.contains(first) else { return value }
+        return "\t" + value
+    }
+
+    /// RFC 4180 quoting for a field that is already guarded.
+    static func csvQuoted(_ field: String) -> String {
         guard field.unicodeScalars.contains(where: { ",\"\n\r".unicodeScalars.contains($0) })
         else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// Escape a value for CSV output: `formulaGuarded`, then `csvQuoted`. The one
+    /// implementation every CSV writer uses.
+    static func csvField(_ value: String) -> String {
+        csvQuoted(formulaGuarded(value))
     }
 }

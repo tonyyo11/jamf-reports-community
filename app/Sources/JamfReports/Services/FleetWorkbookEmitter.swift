@@ -70,7 +70,7 @@ enum FleetWorkbookEmitter {
         let bar = BarChartData(
             categories: withFV.map(\.profile),
             values: withFV.map { $0.fileVaultPct ?? 0 },
-            colors: withFV.enumerated().map { ChartPalette.color(for: $0.offset) })
+            colors: withFV.map { _ in ChartPalette.cgColor(forMetric: .fileVault) })
         if let png = ChartRenderer.barChart(data: bar, title: "FileVault % by Profile") {
             ws.insertImage(row: head + model.universal.count + 3, col: 0,
                            data: png, filename: "fleet-fv-by-profile.png")
@@ -119,10 +119,16 @@ enum FleetWorkbookEmitter {
         let bar = BarChartData(
             categories: present.map(\.label),
             values: present.map { $0.value ?? 0 },
-            colors: present.enumerated().map { ChartPalette.color(for: $0.offset) })
+            colors: present.map { controlColor($0.key) })
         if let png = ChartRenderer.barChart(data: bar, title: "Fleet Security Posture") {
             ws.insertImage(row: controls.count + 3, col: 0, data: png, filename: "fleet-posture.png")
         }
+    }
+
+    /// A rollup KPI's key is its `TrendSeries.Metric` raw value; any other gets the neutral grey.
+    private static func controlColor(_ key: String) -> CGColor {
+        TrendSeries.Metric(rawValue: key).map { ChartPalette.cgColor(forMetric: $0) }
+            ?? ChartPalette.noDataColor
     }
 
     // MARK: - Compliance (baseline-grouped)
@@ -220,19 +226,23 @@ enum FleetWorkbookEmitter {
     }
 
     private static func trendLine(_ model: FleetWorkbookModel) -> Data? {
-        let kpis: [(label: String, value: (FleetWorkbookModel.TrendPoint) -> Double?)] = [
-            ("FileVault %", { $0.fileVaultPct }), ("SIP %", { $0.sipPct }),
-            ("Firewall %", { $0.firewallPct }), ("Gatekeeper %", { $0.gatekeeperPct }),
-            ("Patch %", { $0.patchPct }), ("OS Current %", { $0.osCurrentPct }),
-            ("Security Score", { $0.securityScore })]
-        let series = kpis.enumerated().compactMap { idx, kpi -> ChartSeries? in
+        typealias KPI = (label: String, metric: TrendSeries.Metric,
+                         value: (FleetWorkbookModel.TrendPoint) -> Double?)
+        let kpis: [KPI] = [
+            ("FileVault %", .fileVault, { $0.fileVaultPct }), ("SIP %", .sip, { $0.sipPct }),
+            ("Firewall %", .firewall, { $0.firewallPct }),
+            ("Gatekeeper %", .gatekeeper, { $0.gatekeeperPct }),
+            ("Patch %", .patch, { $0.patchPct }), ("OS Current %", .osCurrent, { $0.osCurrentPct }),
+            ("Security Score", .securityScore, { $0.securityScore })]
+        let series = kpis.compactMap { kpi -> ChartSeries? in
             let points = model.trend.compactMap { tp -> (date: Date, value: Double)? in
                 guard let date = SummaryJSONParser.dateFormatter.date(from: tp.date),
                       let value = kpi.value(tp) else { return nil }
                 return (date: date, value: value)
             }
             return points.isEmpty ? nil
-                : ChartSeries(label: kpi.label, color: ChartPalette.color(for: idx), points: points)
+                : ChartSeries(label: kpi.label,
+                              color: ChartPalette.cgColor(forMetric: kpi.metric), points: points)
         }
         return series.isEmpty ? nil : ChartRenderer.lineChart(series: series, title: "Fleet Trend")
     }

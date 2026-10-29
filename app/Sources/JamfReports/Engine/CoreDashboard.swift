@@ -442,9 +442,11 @@ struct CoreDashboard: Sendable {
             .prefix(5)
         guard ranked.count >= 1 else { return }
 
-        let series: [ChartSeries] = ranked.enumerated().map { (idx, v) in
+        let hexes = ChartPalette.hexes(for: .title, keys: ranked.map(\.title), scheme: .light)
+        let series: [ChartSeries] = zip(ranked, hexes).map { v, hex in
             let points = v.series.map { (date: $0.date, value: $0.adoptionPct) }
-            return ChartSeries(label: v.title, color: ChartPalette.color(for: idx), points: points)
+            return ChartSeries(
+                label: v.title, color: ChartPalette.cgColor(hex: hex), points: points)
         }
         guard let png = ChartRenderer.lineChart(
             series: series,
@@ -3759,7 +3761,9 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
     case protectDisabled
 
-    var errorDescription: String? {
+    var errorDescription: String? { skipReason }
+
+    var skipReason: String {
         switch self {
         case .protectDisabled:
             return "protect.enabled is off"

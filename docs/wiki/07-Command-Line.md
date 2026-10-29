@@ -55,7 +55,7 @@ name as `%2C` and a percent sign as `%25`.
 
 | Command | What it does | Key options |
 |---------|--------------|-------------|
-| `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`); a Jamf School workspace gets the School workbook | `--profile`, `--output <path>`, `--template <id>` |
+| `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`); a Jamf School workspace gets the School workbook | `--profile`, `--output <path>`, `--template <id>`, `--csv-folder` |
 | `collect` | Collect fresh `jamf-cli` snapshots (Jamf Pro, Jamf School, and Jamf Protect when connected) | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
 | `html` | Generate the self-contained HTML report (the Full Instance layout: figures and attention list first, collapsed detail groups, audit appendix); refuses a Jamf School workspace | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`), and Jamf Protect's (`jamf-cli protect backup`) when the workspace has Protect connected and is not on shared storage | `--profile` |
@@ -105,6 +105,11 @@ A few behaviors worth knowing:
   last line on stdout. If the HTML report cannot be written, `generate` still exits `0` with
   the workbook and prints a `[warn] HTML report not written: …` line to stderr. `html` is a
   separate command and always writes one HTML report.
+- `generate --csv-folder` (or `output.csv_folder: true` in `config.yaml`, which scheduled runs
+  follow) also writes one CSV per workbook tab into a folder beside the workbook, named like
+  it with `_csv` added. It holds the rows the workbook tabs hold, honours `sheets.only`,
+  `skip` and `order`, and moves to the archive with its workbook. A failure prints a
+  `[warn] CSV folder not written: …` line and leaves the workbook as it is.
 - A Jamf Pro `collect` runs at most once per profile per day; a second run the same day
   exits successfully without re-collecting. A Jamf School workspace collects each source at
   most every 12 hours instead. Pass `--force` to override either.

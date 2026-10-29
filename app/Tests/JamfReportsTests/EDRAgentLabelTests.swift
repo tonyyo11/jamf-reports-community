@@ -60,20 +60,23 @@ final class EDRAgentLabelTests: XCTestCase {
     }
 
     func testSecurityControlMetricsCarryTheirOwnLabelUnitAndColour() {
-        let expected: [(TrendSeries.Metric, String, UInt32)] = [
-            (.sip, "System Integrity Protection", 0x64D2FF),
-            (.firewall, "Firewall Enabled", 0x5E5CE6),
-            (.gatekeeper, "Gatekeeper Enabled", 0xAC8E68),
+        let expected: [(TrendSeries.Metric, String)] = [
+            (.sip, "System Integrity Protection"),
+            (.firewall, "Firewall Enabled"),
+            (.gatekeeper, "Gatekeeper Enabled"),
         ]
-        for (metric, label, colour) in expected {
+        var colours = Set<UInt32>()
+        for (metric, label) in expected {
             XCTAssertEqual(metric.displayLabel, label)
             XCTAssertEqual(
                 metric.displayLabel(benchmarkLabel: "Benchmark", edrAgentName: "Agent"), label)
             XCTAssertEqual(metric.unit, "%")
             XCTAssertEqual(metric.minY, 60)
             XCTAssertEqual(metric.maxY, 100)
-            XCTAssertEqual(metric.colorHex, colour)
+            XCTAssertEqual(metric.colorHex, ChartPalette.hex(forMetric: metric, scheme: .dark))
+            colours.insert(metric.colorHex)
         }
+        XCTAssertEqual(colours.count, expected.count, "each control has its own colour")
     }
 
     // MARK: - Generic fallback labels (no vendor names)

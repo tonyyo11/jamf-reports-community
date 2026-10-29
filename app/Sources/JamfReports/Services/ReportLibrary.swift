@@ -100,7 +100,7 @@ struct ReportLibrary {
         let archivePath = archiveRoot.path + "/"
         return Stats(
             count: rows.count,
-            totalBytes: rows.reduce(Int64(0)) { $0 + $1.size },
+            totalBytes: rows.reduce(Int64(0)) { $0 + ($1.size ?? 0) },
             archivedCount: rows.filter { $0.url.path.hasPrefix(archivePath) }.count
         )
     }
@@ -136,7 +136,8 @@ struct ReportLibrary {
         }
 
         return entries.compactMap { candidate in
-            guard allowedExtensions.contains(candidate.pathExtension.lowercased()),
+            guard allowedExtensions.contains(candidate.pathExtension.lowercased())
+                    || Self.isCSVFolder(candidate),
                   let validated = WorkspacePathGuard.validate(candidate, underAny: roots),
                   isReadableFile(validated) else {
                 return nil
@@ -156,7 +157,10 @@ struct ReportLibrary {
 
         var urls: [URL] = []
         for case let candidate as URL in enumerator {
-            guard allowedExtensions.contains(candidate.pathExtension.lowercased()),
+            // A CSV folder is one entry; its files are not reports of their own.
+            if Self.isCSVFolder(candidate) { enumerator.skipDescendants() }
+            guard allowedExtensions.contains(candidate.pathExtension.lowercased())
+                    || Self.isCSVFolder(candidate),
                   let validated = WorkspacePathGuard.validate(candidate, underAny: roots),
                   isReadableFile(validated) else {
                 continue
@@ -176,7 +180,7 @@ struct ReportLibrary {
         let name = url.lastPathComponent
         let report = Report(
             name: name,
-            size: FileDisplay.size(metadata.size),
+            size: metadata.size.map(FileDisplay.size) ?? "—",
             date: FileDisplay.date(metadata.mtime),
             source: Self.sourceLabel(forFilename: name, schedule: scheduled[name]),
             sheets: url.pathExtension.lowercased() == "xlsx" ? worksheetCount(in: url) : 0,
@@ -185,22 +189,53 @@ struct ReportLibrary {
         return (report, metadata.mtime)
     }
 
-    private func metadata(for url: URL, roots: [URL]) -> (url: URL, size: Int64, mtime: Date)? {
+    private func metadata(for url: URL, roots: [URL]) -> (url: URL, size: Int64?, mtime: Date)? {
         guard let validated = WorkspacePathGuard.validate(url, underAny: roots),
               isReadableFile(validated),
               let values = try? validated.resourceValues(
                 forKeys: [.fileSizeKey, .contentModificationDateKey]
               ),
-              let size = values.fileSize,
               let mtime = values.contentModificationDate else {
             return nil
         }
-        return (validated, Int64(size), mtime)
+        let size = Self.isCSVFolder(validated) ? folderSize(validated) : values.fileSize
+        return (validated, size.map(Int64.init), mtime)
     }
 
     private func isReadableFile(_ url: URL) -> Bool {
         let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
-        return values?.isRegularFile == true
+        return values?.isRegularFile == true || Self.isCSVFolder(url)
+    }
+
+    /// The CSV folder a workbook run writes (`ReportEngine.csvFolderURL`): a real folder, not a
+    /// link, whose name ends in `_csv`. Told by the name's suffix, never its extension: a
+    /// profile such as `acme.example.com` puts a dot in the name.
+    static func isCSVFolder(_ url: URL) -> Bool {
+        guard ReportEngine.isCSVFolderName(url.lastPathComponent),
+              let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        else { return false }
+        return values.isDirectory == true && values.isSymbolicLink != true
+    }
+
+    /// Most entries of a CSV folder read for its size. A peer on a shared reports folder can
+    /// make any `*_csv` folder, so a bigger one has no size (nil, shown as a dash) instead of
+    /// a listing of everything in it.
+    static let maxFolderEntriesRead = 500
+
+    /// The bytes of the regular files directly in `folder`; nil past `maxFolderEntriesRead`.
+    private func folderSize(_ folder: URL) -> Int? {
+        guard let entries = fileManager.enumerator(
+            at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) else { return nil }
+        var total = 0
+        var read = 0
+        for case let entry as URL in entries {
+            read += 1
+            if read > Self.maxFolderEntriesRead { return nil }
+            let values = try? entry.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            if values?.isRegularFile == true { total += values?.fileSize ?? 0 }
+        }
+        return total
     }
 
     /// The Type column: what the file is, then the schedule that wrote it when `schedule` is
@@ -226,6 +261,7 @@ struct ReportLibrary {
         if let match = exports.first(where: { lowered.hasPrefix($0.prefix) }) {
             return match.label
         }
+        if ReportEngine.isCSVFolderName(lowered) { return "CSV folder" }
         switch URL(fileURLWithPath: lowered).pathExtension {
         case "xlsx": return "Workbook"
         case "html": return "HTML report"
@@ -267,7 +303,7 @@ struct ReportLibrary {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let label = json["label"] as? String, !label.isEmpty else { continue }
             let schedule = RunHistoryService.humanName(from: label)
-            for key in ["xlsx_report_path", "html_report_path", "inventory_csv_path"] {
+            for key in ["xlsx_report_path", "html_report_path", "inventory_csv_path", "csv_folder_path"] {
                 guard let path = json[key] as? String, !path.isEmpty else { continue }
                 named[URL(fileURLWithPath: path).lastPathComponent] = schedule
             }

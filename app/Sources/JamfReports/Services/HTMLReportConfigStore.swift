@@ -14,6 +14,18 @@ enum HTMLReportConfigLoader {
     }
 }
 
+/// Best-effort read of `output.csv_folder` for the Generate sheet, like `HTMLReportConfigLoader`.
+enum CSVFolderConfigLoader {
+    static func isOn(profile: String) -> Bool {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+        let url = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: url.path),
+              let output = (try? ConfigLoader.load(from: url))?.output
+        else { return false }
+        return output.writesCSVFolder
+    }
+}
+
 /// Scoped write-back for `html.with_workbook`, used by the Customize screen. Like
 /// `ChartsConfigWriter` it is deliberately outside `ConfigService.managedTopLevelKeys`, and it
 /// sets the one key on the `html:` block as the file holds it now, so `track_history`,

@@ -55,8 +55,10 @@ enum FleetReportEmitter {
     static func csv(for rollup: FleetRollup) -> String {
         var lines = ["Metric,Current,Previous,Delta"]
         for metric in rollup.metrics {
+            // The label is text; the figures are the app's own number formats, which a delta's
+            // sign must not be guarded out of.
             lines.append([
-                metric.label,
+                StaleDeviceService.csvField(metric.label),
                 format(metric.value, unit: metric.unit),
                 format(metric.previous, unit: metric.unit),
                 formatDelta(metric.delta, unit: metric.unit),

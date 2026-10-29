@@ -8,6 +8,8 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
     case html = "HTML"
     case pdf  = "PDF"
     case csv  = "CSV"
+    /// One CSV per workbook tab, beside the workbook; the workbook is written with it.
+    case csvFolder = "CSV folder"
 
     var description: String {
         switch self {
@@ -15,6 +17,7 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
         case .html: "Executive summary, browser"
         case .pdf:  "Paginated audit artifact"
         case .csv:  "Wide inventory export"
+        case .csvFolder: "One CSV per tab, with the workbook"
         }
     }
 
@@ -24,6 +27,7 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
         case .html: "safari"
         case .pdf:  "doc.richtext"
         case .csv:  "doc.plaintext"
+        case .csvFolder: "folder"
         }
     }
 }
@@ -751,21 +755,19 @@ struct DeviceInventorySnapshot: Sendable {
         let counts = Dictionary(grouping: devices.filter { !$0.osVersion.isEmpty }, by: \.osVersion)
             .mapValues(\.count)
         let total = max(counts.values.reduce(0, +), 1)
-        let colors: [UInt32] = [0xC9970A, 0x3A8A8A, 0x0A84FF, 0xBF5AF2, 0xFF9F0A, 0x7D8794]
-        return counts
-            .sorted { lhs, rhs in
-                if lhs.value == rhs.value { return lhs.key > rhs.key }
-                return lhs.value > rhs.value
-            }
-            .enumerated()
-            .map { idx, item in
-                DeviceOSSummary(
-                    version: item.key,
-                    count: item.value,
-                    pct: Double(item.value) / Double(total) * 100,
-                    colorHex: colors[idx % colors.count]
-                )
-            }
+        let ranked = counts.sorted { lhs, rhs in
+            if lhs.value == rhs.value { return lhs.key > rhs.key }
+            return lhs.value > rhs.value
+        }
+        let colors = ChartPalette.hexes(for: .version, keys: ranked.map(\.key), scheme: .dark)
+        return zip(ranked, colors).map { item, hex in
+            DeviceOSSummary(
+                version: item.key,
+                count: item.value,
+                pct: Double(item.value) / Double(total) * 100,
+                colorHex: hex
+            )
+        }
     }
 }
 
@@ -1276,40 +1278,8 @@ struct TrendSeries: Identifiable, Sendable {
             default:             return 100
             }
         }
-        var colorHex: UInt32 {
-            switch self {
-            case .stability:     return 0xE8B614
-            case .activeDevices: return 0x8E8E93
-            case .compliance:    return 0xC9970A
-            case .fileVault:     return 0x30D158
-            case .osCurrent:     return 0x0A84FF
-            case .edrAgent:      return 0x3A8A8A
-            case .stale:         return 0xFF9F0A
-            case .patch:         return 0xBF5AF2
-            case .securityScore: return 0xFF453A
-            case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
-            case .managedDevices: return 0x4472C4  // Matches the Computers series line
-            case .sip:           return 0x64D2FF
-            case .firewall:      return 0x5E5CE6
-            case .gatekeeper:    return 0xAC8E68
-            case .agent(let name): return Self.agentColor(name)
-            case .mobileManaged: return 0x9B59B6  // Matches the Mobile devices series line
-            case .mobileOSCurrent: return 0x0A84FF
-            case .mobilePasscode: return 0x30D158
-            case .mobileSupervised: return 0x5E5CE6
-            case .mobileDataProtection: return 0x64D2FF
-            case .mobileStale: return 0xFF9F0A
-            case .mobileJailbroken: return 0xFF453A
-            }
-        }
-
-        /// One of a few agent colours, chosen from the name alone so an agent keeps its
-        /// colour on every screen and run.
-        private static func agentColor(_ name: String) -> UInt32 {
-            let palette: [UInt32] = [0x2AA198, 0x6C71C4, 0xCB4B16, 0x859900, 0xD33682, 0x268BD2]
-            let sum = name.utf8.reduce(0) { ($0 &* 31 &+ Int($1)) % 9973 }
-            return palette[sum % palette.count]
-        }
+        /// The in-app colour; `ChartPalette` holds the metric's colour on every screen and report.
+        var colorHex: UInt32 { ChartPalette.hex(forMetric: self, scheme: .dark) }
     }
 
     /// Composite fleet-stability score: compliance 0.4 + patch 0.4 +

@@ -610,15 +610,16 @@ private func scheduledRunSingleBody(
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.
         let template = FullInstanceTemplate()
-        let failures: [SheetFailure]
+        let generated: GeneratedReport
         if isSchool {
-            failures = try await ReportEngine.schoolGenerate(
+            generated = try await ReportEngine.schoolGenerateReport(
                 config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
                 now: runStart, onLine: onLine)
         } else {
-            failures = try await engine.generate(
+            generated = try await engine.generateReport(
                 outputURL: outputURL, template: template, now: runStart, onLine: onLine)
         }
+        let failures = generated.failures
         if !failures.isEmpty {
             let partialMsg = partialRunMarker(sheetFailures: failures.count)
             recorder?.record(partialMsg)
@@ -655,7 +656,8 @@ private func scheduledRunSingleBody(
         ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
         recorder?.finish(
             exitCode: 0, sheetFailures: failures.count,
-            artifacts: [outputURL] + (htmlURL.map { [$0] } ?? []))
+            artifacts: [outputURL] + (htmlURL.map { [$0] } ?? [])
+                + (generated.csvFolder.map { [$0] } ?? []))
         return 0
     } catch {
         let errorDesc = error.localizedDescription

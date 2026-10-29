@@ -29,6 +29,8 @@ final class GenerateSheetState {
     var configuredOutputDir: URL? = nil
     /// `html.with_workbook` as config.yaml holds it. False until the sheet has read it.
     var htmlWithWorkbook: Bool = false
+    /// `output.csv_folder` as config.yaml holds it. False until the sheet has read it.
+    var csvFolderConfigured: Bool = false
     var folderPickerError: String? = nil
     var logLines: [CLIBridge.LogLine] = []
     var isRunning: Bool = false
@@ -47,7 +49,8 @@ final class GenerateSheetState {
     var selectedTemplateID: String = FullInstanceTemplate().identifier
 
     /// A Jamf School workspace (2.10): the School template is the only one with data there,
-    /// and it writes a workbook only (there is no School HTML, PDF or CSV report).
+    /// and it writes a workbook (and its CSV folder) only: there is no School HTML, PDF or
+    /// inventory CSV report.
     var schoolWorkspace = false {
         didSet {
             guard schoolWorkspace else { return }
@@ -57,7 +60,7 @@ final class GenerateSheetState {
     }
 
     var offeredTypes: [GenerateOutputType] {
-        schoolWorkspace ? [.xlsx] : Array(GenerateOutputType.allCases)
+        schoolWorkspace ? [.xlsx, .csvFolder] : Array(GenerateOutputType.allCases)
     }
 
     var offeredTemplates: [any ReportTemplate] {
@@ -148,10 +151,17 @@ final class GenerateSheetState {
     var schoolMode: Bool { selectedTemplateID == SchoolTemplate().identifier }
 
     /// True when this run writes the HTML report because `html.with_workbook` is on: a Jamf Pro
-    /// workbook is asked for and HTML is not, since a chosen HTML format is the one HTML report.
+    /// workbook is written (asked for, or the one the CSV folder comes from) and HTML is not
+    /// asked for, since a chosen HTML format is the one HTML report.
     var writesHTMLWithWorkbook: Bool {
-        htmlWithWorkbook && selectedTypes.contains(.xlsx) && !selectedTypes.contains(.html)
-            && !schoolMode
+        htmlWithWorkbook && !selectedTypes.isDisjoint(with: [.xlsx, .csvFolder])
+            && !selectedTypes.contains(.html) && !schoolMode
+    }
+
+    /// True when this run writes the CSV folder because `output.csv_folder` is on: a workbook is
+    /// asked for and the format is not ticked (ticked, it has its own line).
+    var writesCSVFolderFromConfig: Bool {
+        csvFolderConfigured && selectedTypes.contains(.xlsx) && !selectedTypes.contains(.csvFolder)
     }
 
     /// The "What will be written" line for the HTML report that goes with the workbook.
@@ -165,9 +175,10 @@ final class GenerateSheetState {
     nonisolated static func writtenFiles(
         for type: GenerateOutputType, profile: String, schoolMode: Bool
     ) -> String {
-        let name = ExportNaming.stem(for: type, profile: profile, schoolMode: schoolMode)
-            + "_<date>.\(type.rawValue.lowercased())"
+        let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: schoolMode)
+        let name = stem + "_<date>.\(type.rawValue.lowercased())"
         switch type {
+        case .csvFolder: return stem + "_<date>_csv/ (one .csv per workbook tab, with the workbook)"
         case .xlsx where schoolMode: return name + " + integrity sidecar (.sha256)"
         case .xlsx: return name + " + integrity sidecar (.sha256, manifest)"
         case .html, .pdf: return name + " + integrity manifest"
@@ -458,6 +469,14 @@ struct GenerateSheet: View {
             ForEach(Array(state.selectedTypes.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { type in
                 Text("• " + GenerateSheetState.writtenFiles(
                     for: type, profile: profile, schoolMode: state.schoolMode))
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+
+            if state.writesCSVFolderFromConfig {
+                Text("• " + GenerateSheetState.writtenFiles(
+                    for: .csvFolder, profile: profile, schoolMode: state.schoolMode)
+                    + " (output.csv_folder is on)")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -956,8 +975,8 @@ struct GenerateSheet: View {
         }
     }
 
-    /// `output.output_dir` as the generators resolve it and `html.with_workbook`, off the
-    /// main actor: both read config.yaml. Demo mode reads no workspace.
+    /// `output.output_dir` as the generators resolve it, `html.with_workbook` and
+    /// `output.csv_folder`, off the main actor: all read config.yaml. Demo mode reads no workspace.
     private func readConfiguredOptions() async {
         guard !workspace.demoMode else { return }
         let profile = profile
@@ -966,6 +985,9 @@ struct GenerateSheet: View {
         }.value
         state.htmlWithWorkbook = await Task.detached(priority: .utility) {
             HTMLReportConfigLoader.withWorkbook(profile: profile)
+        }.value
+        state.csvFolderConfigured = await Task.detached(priority: .utility) {
+            CSVFolderConfigLoader.isOn(profile: profile)
         }.value
     }
 

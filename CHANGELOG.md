@@ -9,6 +9,13 @@ versions in this repository map to git tags.
 
 ### Added
 
+- A **CSV folder** report format writes one CSV per workbook tab into a folder beside the
+  workbook, for tools that read CSV. Tick it in Generate, run `jamf-reports generate
+  --csv-folder`, or set `output.csv_folder: true` to get it with every workbook, scheduled runs
+  included. `.xlsx` stays the default; the folder follows the workbook into the archive. Reports,
+  run status files, collect state files, snapshot manifests, the macOS update feed cache and
+  config.yaml are all put in place with one safe replace, so a link someone planted at their
+  name is replaced, never written through. (#305)
 - The setup screen lists the Jamf Pro privileges the commands a collect runs need, each marked
   jamf-cli (read from the installed jamf-cli) or Jamf Reports (added for report and Classic
   commands, where jamf-cli names none), instead of a fixed list. (#305)
@@ -34,6 +41,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Charts now keep one colour for the same thing everywhere: a macOS version, a patch title, a
+  metric or a compliance band is the same colour on the Overview, Trends, Computers, Patch
+  Compliance and Security Posture screens, in the workbook's charts and in the HTML report's
+  bars and history chart. Metrics no longer borrow the red, amber and green used for status,
+  and compliance bands are one colour that reads on both the dark app and a white page. (#305)
 - The daily summary's mobile software update errors now count devices, so a device with errors
   for two products counts once. (#305)
 - When a schedule that covers every profile has a same-day retry, it now re-collects only the
@@ -63,6 +75,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A Jamf School report that leaves a tab out for want of data now says so in plain words
+  (`[skip] Blueprints: No cached school snapshot found for: school-blueprints`) and in the run
+  log, as a Jamf Pro report does, and a few archive and summary warnings no longer print a raw
+  error value. (#305)
 - The Jamf School workbook's Device Inventory, OS Versions, Device Status and Stale Devices
   tabs and its Users tab no longer count devices and users in School's trash, as the Devices
   screen never did, so those counts are lower than before on a tenant with trashed records.
