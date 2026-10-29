@@ -6,9 +6,10 @@
 # Usage: stack-adopt [--dry-run] BRANCH...     (BRANCH... in stack order, bottom first)
 #   --dry-run  fetch, run the checks and list what would be trashed or removed; change nothing
 #              and print the gh stack commands instead of running them.
-# Steps: (1) each local branch head equals origin; (2) trash untracked iCloud duplicates
-# (" 2.swift", " 2.md"); (3) git worktree remove --force each branch's finished worktree once it
-# is clean; (4) gh stack top, gh stack add per branch, gh stack rebase --no-trunk looping
+# Needs a current stack (gh stack init first for a new one). Steps: (0) gh stack view must succeed,
+# before anything changes; (1) each local branch head equals origin; (2) trash untracked iCloud
+# duplicates (" 2.swift", " 2.md"); (3) git worktree remove each branch's finished worktree once it
+# is clean (git ignores ignored files in that check, so no --force); (4) gh stack top, gh stack add per branch, gh stack rebase --no-trunk looping
 # through CHANGELOG-only conflicts with changelog-union; (5) gh stack view.
 set -euo pipefail
 
@@ -44,6 +45,12 @@ gh extension list | grep -q 'gh-stack' || {
 root="$(git rev-parse --show-toplevel)"
 cd "${root}"
 git fetch --quiet origin
+
+print "== 0. current stack"
+if ! gh stack view --short; then
+  print -u2 "stack-adopt: no current stack; run gh stack init (new stack) or gh stack checkout first. Nothing was changed."
+  exit 1
+fi
 
 print "== 1. local head equals origin"
 bad=0
@@ -103,9 +110,9 @@ for b in "${branches[@]}"; do
       print -u2 "${dirty}"
       exit 1
     elif ((dry_run)); then
-      print "  would remove (--force): ${wt}"
+      print "  would remove: ${wt}"
     else
-      git worktree remove --force "${wt}"
+      git worktree remove "${wt}"
       print "  removed: ${wt}"
     fi
   fi
