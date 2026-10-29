@@ -275,13 +275,12 @@ private func scheduledRunSingleBody(
         fputs("[error] Invalid profile '\(ConfigSchema.displayText(profile))'\n", stderr)
         return 1
     }
-    // Before any mode writes a run record, a report or an attention item into the folder: a case
-    // variant's folder is another spelling's.
-    if let refusal = ProfileService.caseVariantRefusal(of: profile) {
-        fputs("[error] \(refusal)\n", stderr)
-        AppLogger.schedule.error("\(LogRedactor.redact(refusal), privacy: .public)")
-        return 1
-    }
+    // A case variant's path is another spelling's folder on a case-insensitive volume: its
+    // config.yaml (and webhook) is not read and nothing is written there. Only a folder named
+    // exactly as the profile, its own on a case-sensitive volume, is.
+    let caseVariant = ProfileService.caseVariantRefusal(of: profile)
+    let ownsFolder = caseVariant == nil || ProfileService
+        .workspaceFolderNames(matching: ProfileName.folderKey(profile)).contains(profile)
     let workspace = WorkspacePaths.workspaceURL(for: workspaceID)
     // `runSchedule` skips a workspace with no jamf-cli profile before this, so it has one now.
     if mode != .jamfCLIOnly { AttentionLog.clear(.jamfCLIProfileMissing) }
@@ -294,7 +293,7 @@ private func scheduledRunSingleBody(
     var configError: Error?
     let routingConfig: ReportConfig?
     do {
-        routingConfig = FileManager.default.fileExists(atPath: configURL.path)
+        routingConfig = ownsFolder && FileManager.default.fileExists(atPath: configURL.path)
             ? try ConfigLoader.load(from: configURL) : nil
     } catch {
         routingConfig = nil
@@ -316,19 +315,22 @@ private func scheduledRunSingleBody(
     // a Jamf Pro schedule, so every retry would fail the same way. Refused before the full
     // recorder opens; like a School backup, it ends the run as a success
     // so the tick does not retry it and no failure webhook is posted. jamf-cli-only reads the
-    // cache and sends no command. A workspace (a folder with a config.yaml) gets a one-line run
-    // record marked refused; a leftover folder or a login with none (Protect) gets nothing
-    // written into it.
-    if mode != .jamfCLIOnly, configError == nil || mode == .backup,
-       let refusal = CollectRouter.proRunRefusal(
-        profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig
-    ) {
+    // cache and sends no command. A case variant (another spelling owns the folder) is refused
+    // the same way in every mode. A workspace (a folder with a config.yaml) gets a one-line run
+    // record marked refused; a leftover folder, a login with none (Protect) and another
+    // spelling's folder get nothing written into them.
+    let productRefusal: () -> String? = {
+        guard mode != .jamfCLIOnly, configError == nil || mode == .backup else { return nil }
+        return CollectRouter.proRunRefusal(
+            profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig)
+    }
+    if let refusal = caseVariant ?? productRefusal() {
         let message = "[skip] scheduled \(mode.rawValue) run skipped for '\(profile)': "
             + "\(refusal). Not a failure. Exclude this profile from the schedule to stop "
             + "scheduling it."
         fputs(message + "\n", stderr)
         AppLogger.schedule.notice("\(LogRedactor.redact(message), privacy: .public)")
-        if FileManager.default.fileExists(atPath: configURL.path),
+        if ownsFolder, FileManager.default.fileExists(atPath: configURL.path),
            let refusedRecorder = ScheduledRunRecorder(workspace: workspace, label: runLabel) {
             refusedRecorder.record(message)
             refusedRecorder.finish(exitCode: 0, refused: true)

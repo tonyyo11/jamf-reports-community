@@ -1389,8 +1389,10 @@ file (legacy import or live run) populates that field.
   becomes active (`WorkspaceStore.setProfile`, `initialProfile`) or a run target
   (`ProfileService.runnableProfiles`, catch-up), because Audit and Refresh write for the
   active profile without binding its workspace; and the binding, collect, backup, every CLI
-  subcommand (`CLIRun.requireValidProfile`) and a scheduled run of any mode (before it writes a
-  record) refuse a profile whose existing folder is spelled differently
+  subcommand (`CLIRun.requireValidProfile`, exit 1) and a scheduled run of any mode (the
+  refused-run convention: `[skip]`, exit 0, no retry, a `refused` record and a failure card only
+  from a folder named exactly as the profile, never the other spelling's) refuse a profile whose
+  existing folder is spelled differently
   (`ProfileService.caseVariantWorkspace`/`caseVariantRefusal`, in `CLIBridge.ensureWorkspace`,
   `CollectRouter.run`, `CLIBridge.backupProfile` and `scheduledRunSingleBody`), judged by the
   folder's own name and never by config.yaml.

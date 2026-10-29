@@ -29,16 +29,48 @@ final class CaseVariantGenerateGuardTests: XCTestCase {
         XCTAssertEqual(CLIRun.profileRefusal("bad\nname"), "invalid profile 'badname'")
     }
 
-    func testAScheduledReportRunOfACaseVariantWritesNothingIntoTheFolder() async throws {
-        let schedule = Schedule(
-            name: "reports", profile: "Prod", schedule: "manual", cadence: "custom",
-            mode: .jamfCLIOnly, next: "—", last: "—", lastStatus: .ok, artifacts: [],
-            enabled: true, launchAgentLabel: nil, multiTarget: nil, tiers: nil,
-            excludedProfiles: nil)
-        let outcome = await runSchedule(schedule, verbose: false)
-        XCTAssertEqual(outcome.exitCode, 1)
+    private func schedule(_ mode: Schedule.RunMode) -> Schedule {
+        Schedule(
+            name: "variant", profile: "Prod", schedule: "Mon 07:00", cadence: "custom",
+            mode: mode, next: "—", last: "—", lastStatus: .ok, artifacts: [], enabled: true,
+            launchAgentLabel: "com.github.tonyyo11.jamf-reports-community.Prod.variant",
+            multiTarget: nil, tiers: nil, excludedProfiles: nil)
+    }
+
+    /// The refused-run convention, in every mode: exit 0 and nothing a retry could fetch.
+    /// `prod/` is the other spelling's workspace, so no record, report or attention item is
+    /// written there (only a folder named `Prod` exactly, its own, would get the record).
+    func testAScheduledRunOfACaseVariantIsRefusedAndWritesNothingIntoTheFolder() async throws {
+        for mode in [Schedule.RunMode.jamfCLIOnly, .snapshotOnly, .jamfCLIFull, .backup] {
+            let outcome = await runSchedule(schedule(mode), verbose: false)
+            XCTAssertEqual(outcome.exitCode, 0, "\(mode)")
+            XCTAssertFalse(outcome.retryCouldHelp, "\(mode)")
+            XCTAssertTrue(outcome.endsRetries, "\(mode)")
+        }
         let folder = root.appendingPathComponent("prod")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path),
                        ["config.yaml"])
     }
+
+    /// The tick reads the refusal as a run that ends its retries, not a failure.
+    func testTheTickDoesNotRetryARefusedCaseVariantRun() async throws {
+        let run = TickScheduler.DueRun(schedule: schedule(.snapshotOnly), reason: .fire)
+        let fire = Date(timeIntervalSince1970: 1_788_000_000)
+        let saved = SavedTickState()
+        _ = await TickLoop.runDue(
+            [run], state: TickState(), runNowLabels: [], clock: { fire },
+            save: { saved.state = $0 }, clearRunNowMarker: { _ in },
+            perform: { await runSchedule($0.schedule, verbose: false) },
+            recordFailure: { _, message in XCTFail(message) }, notifyOverdue: {})
+        let state = try XCTUnwrap(saved.state)
+        for hours in [1.0, 3.0, 9.0] {
+            XCTAssertTrue(TickScheduler.due(
+                schedules: [run.schedule], state: state, runNowLabels: [],
+                now: fire.addingTimeInterval(hours * 3600)).isEmpty, "retry after \(hours) h")
+        }
+    }
+}
+
+private final class SavedTickState: @unchecked Sendable {
+    var state: TickState?
 }
