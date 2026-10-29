@@ -333,6 +333,7 @@ final class CLIBridge {
 
                 do {
                     try process.run()
+                    box.stopIfClosing()
                     // Belt-and-suspenders: if cancellation arrived before run()
                     // (onCancel fired first, read nil, returned without terminating),
                     // terminate the now-running process ourselves.
@@ -537,6 +538,7 @@ final class CLIBridge {
 
                 do {
                     try process.run()
+                    processBox.stopIfClosing()
                     if Task.isCancelled { process.terminate() }
                     if let timeout { processBox.armTimeout(timeout) }
                 } catch {
@@ -943,6 +945,16 @@ final class CLIBridge {
     nonisolated static let backupTimeout: TimeInterval = 2 * 60 * 60
     /// Seconds a child gets to act on the timeout's SIGTERM before `runAndCapture` sends SIGKILL.
     nonisolated static let timeoutKillGrace: TimeInterval = 3
+    /// Stops every jamf-cli (or other) child this process started through `CLIBridge`, then
+    /// returns how many it signalled. The tick's six-hour give-up calls it before exiting, since
+    /// ending the tick leaves a call that never answered running; it blocks up to `grace`.
+    @discardableResult
+    nonisolated static func terminateRunningChildren(
+        grace: TimeInterval = timeoutKillGrace
+    ) -> Int {
+        TimedProcessBox.terminateAllRunning(grace: grace)
+    }
+
     /// Seconds `runAndCapture` waits for pipe EOF after the child exits normally, before it
     /// stops reading: a process the child left running can hold the pipes open indefinitely.
     nonisolated static let eofGraceAfterExit: TimeInterval = timeoutKillGrace
@@ -2406,8 +2418,12 @@ final class CLIBridge {
 
     /// The one environment every jamf-cli child gets; `parent` is the test seam. Add a variable
     /// jamf-cli must see to `jamfCLIAllowedEnvKeys` (verbatim) or here (when it needs a check).
+    /// `proxy` and `noProxy` are the system proxy a background run installed (`SystemProxy`); a
+    /// variable already in the parent environment (a shell, the GUI) wins over them.
     nonisolated static func environmentForJamfCLI(
-        parent: [String: String] = ProcessInfo.processInfo.environment
+        parent: [String: String] = ProcessInfo.processInfo.environment,
+        proxy: String? = SystemProxy.scheduledRun.url,
+        noProxy: String? = SystemProxy.scheduledRun.noProxy
     ) -> [String: String] {
         var env: [String: String] = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -2424,6 +2440,12 @@ final class CLIBridge {
         // same folder (`ProfileService.jamfCLIConfigFileURL`), so a relative value is dropped.
         if let xdg = ProfileService.absoluteXDGConfigHome(in: parent) {
             env["XDG_CONFIG_HOME"] = xdg
+        }
+        if let proxy, env["HTTPS_PROXY"] == nil, env["https_proxy"] == nil {
+            env["HTTPS_PROXY"] = proxy
+            if let noProxy, env["NO_PROXY"] == nil, env["no_proxy"] == nil {
+                env["NO_PROXY"] = noProxy
+            }
         }
         // v1.26.0's daily update notifier can stall PTY-driven onboarding on a
         // restricted network; older binaries ignore this var, so no version gate.

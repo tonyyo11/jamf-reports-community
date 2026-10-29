@@ -70,6 +70,7 @@ enum JamfCLIProbe {
             AppLogger.cli.error("JamfCLIProbe: launch failed: \(reason, privacy: .private)")
             return .launchFailed
         }
+        box.stopIfClosing()
         box.armTimeout(timeout)
 
         // Drain while the child runs, or output past the pipe buffer would block it.

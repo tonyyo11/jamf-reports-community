@@ -25,7 +25,7 @@ import SwiftUI
 /// this runs in the all-profiles path, so the log file is the durable record.
 @Sendable
 private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in }) {
-    let policy = AutomationPolicy.current()
+    let policy = TickEnvironment.storedPolicy()
     guard !policy.reportGroups.isEmpty else { return }
     let lookback: Int = {
         switch policy.reportsCadence {
@@ -111,13 +111,14 @@ private func appendFleetLog(_ message: String) {
 /// confirmed send, so a suppressed day retries on the next run.
 @Sendable
 func notifyOverdueSchedulesHeadless(
-    profiles: [String], excluding excluded: Set<String> = []
+    profiles: [String], excluding excluded: Set<String> = [],
+    policy: AutomationPolicy = TickEnvironment.storedPolicy()
 ) async {
     // Excluded profiles' own per-profile agents drop out of the fleet digest;
     // isMulti (fleet-wide) entries are never filtered — they cover every profile.
     let schedules = WorkspaceStore.loadSchedules(
-        baseProfile: ManagedAutomation.managedBaseProfile(
-            names: profiles, policy: AutomationPolicy.current()))
+        policy: policy,
+        baseProfile: ManagedAutomation.managedBaseProfile(names: profiles, policy: policy))
     let inputs = LaunchAgentService.healthInputs(schedules: schedules, statusProfile: nil)
         .filter { $0.isMulti || !excluded.contains($0.profile) }
     let overdue = AutomationHealth.evaluate(inputs: inputs)
@@ -360,6 +361,11 @@ private func scheduledRunSingleBody(
         if let echo = scheduledRunEcho(line, verbose: verbose) {
             print(isatty(STDOUT_FILENO) == 1 ? CLIRun.terminalSafe(echo) : echo)
         }
+    }
+
+    for line in SystemProxy.scheduledRun.runLines {
+        let level: CLIBridge.LogLevel = line.hasPrefix("[warn]") ? .warn : .info
+        onLine(.init(timestamp: Date(), level: level, text: line))
     }
 
     if retiredCSVAssisted {
@@ -996,10 +1002,12 @@ if cliArgs.count > 1, cliArgs[1] == "--tick" {
     // Run now streams this process's output through a pipe; if the GUI quits mid-run, a write
     // must fail with EPIPE instead of killing the tick (and the collect) with SIGPIPE.
     signal(SIGPIPE, SIG_IGN)
+    SystemProxy.installForScheduledRun()
     let code = Task.detached { await runTick(arguments: cliArgs) }
     exit(await code.value)
 } else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
    let profile = ProfileService.profileArgument(in: cliArgs) {
+    SystemProxy.installForScheduledRun()
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)

@@ -53,6 +53,14 @@ versions in this repository map to git tags.
   asking you to re-authenticate. (#305)
 - A Jamf School or Jamf Protect source refused for a missing permission is now named as such in
   Run History and is not retried every hour, as a Jamf Pro source already was. (#305)
+- Run now and the background item stop the jamf-cli call they are waiting on when they give up
+  after six hours, so a stalled call no longer keeps running beside the next scheduled run.
+  (#305)
+- A scheduled run behind a proxy now uses the HTTPS proxy and bypass list set in System Settings.
+  The background item starts without a shell, so it had none; a proxy with a user name is skipped
+  with a warning. Collects started from the app do not read the System Settings proxy; an app
+  opened from Finder has no proxy variables.
+  (#305)
 
 ### Security
 
