@@ -158,8 +158,7 @@ struct RunManifest: Codable, Equatable, Sendable {
     /// it at `final` through `AtomicInstall`, so a link planted at the name is replaced, never
     /// written through.
     static func install(_ data: Data, at final: URL) throws {
-        let staged = final.deletingLastPathComponent()
-            .appendingPathComponent(".\(final.lastPathComponent).tmp-\(UUID().uuidString)")
+        let staged = AtomicInstall.stagedURL(for: final)
         let descriptor = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
                               0o600)
         guard descriptor >= 0 else {

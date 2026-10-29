@@ -71,8 +71,7 @@ extension Workbook {
         let parent = folder.deletingLastPathComponent()
         try fm.createDirectory(at: parent, withIntermediateDirectories: true)
         AtomicInstall.removeStaleStaging(in: parent, now: now)
-        let staging = parent.appendingPathComponent(
-            ".\(folder.lastPathComponent).tmp-\(UUID().uuidString)", isDirectory: true)
+        let staging = AtomicInstall.stagedURL(for: folder, isDirectory: true)
         try fm.createDirectory(
             at: staging, withIntermediateDirectories: false,
             attributes: [.posixPermissions: 0o700])

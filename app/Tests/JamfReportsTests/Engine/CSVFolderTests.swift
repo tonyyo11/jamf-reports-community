@@ -272,6 +272,7 @@ final class CSVFolderTests: XCTestCase {
         let notStaging = try file(".report_z.xlsx.tmp-notauuid", age: 2 * day)
         let otherTool = try file(".other.tmp-\(UUID().uuidString)", age: 2 * day)
         let visible = try file("report_x.xlsx.tmp-\(UUID().uuidString)", age: 2 * day)
+        let workspaceShape = try file(".status.json.tmp-\(UUID().uuidString)", age: 2 * day)
         let outside = scratchURL("staging-target")
         defer { try? fm.removeItem(at: outside.deletingLastPathComponent()) }
         try fm.createDirectory(at: outside, withIntermediateDirectories: true)
@@ -284,7 +285,7 @@ final class CSVFolderTests: XCTestCase {
 
         XCTAssertFalse(fm.fileExists(atPath: oldFolder.path))
         XCTAssertFalse(fm.fileExists(atPath: oldFile.path), "an old staged workbook goes too")
-        for kept in [freshFolder, otherFolder, freshFile, notStaging, visible, otherTool] {
+        for kept in [freshFolder, otherFolder, freshFile, notStaging, visible, otherTool, workspaceShape] {
             XCTAssertTrue(fm.fileExists(atPath: kept.path), kept.lastPathComponent)
         }
         XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is left alone")
@@ -300,10 +301,9 @@ final class CSVFolderTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: parent.appendingPathComponent("report_w.xlsx").path))
     }
 
-    /// The six remaining `replaceItemAt` callers (status file, state files, manifests, SOFA
-    /// cache, config.yaml, jamf-cli install) rely on it failing closed over a link: it throws
-    /// (as of macOS 27) and neither writes through the link nor removes it. If a future macOS
-    /// replaced the link instead, that is also safe; only a write through it would fail this.
+    /// The jamf-cli install is the one `replaceItemAt` caller left. It refuses a link at its
+    /// target itself (JamfCLIInstallerTests); this pins the backstop: `replaceItemAt` over a
+    /// link never writes through it, whether it throws (as of macOS 27) or replaces the link.
     func testReplaceItemAtNeverWritesThroughALinkAtTheDestination() throws {
         let dir = scratchURL("replace")
         defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }

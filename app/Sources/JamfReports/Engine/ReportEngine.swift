@@ -3873,7 +3873,7 @@ struct ReportEngine: Sendable {
         let core = SchoolDashboard(
             config: config, dataDir: dataDir, workbook: workbook, summaries: summaries)
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
-        let (_, schoolFailures) = core.writeAll(sheets: sheets)
+        let (_, schoolFailures) = core.writeAll(sheets: sheets, onLine: onLine)
 
         workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)

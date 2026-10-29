@@ -464,25 +464,10 @@ enum ConfigService {
         }
     }
 
-    /// Replaces the file at `url` with `encoded` through a temporary file beside it, and
-    /// returns the stamp of what was written.
+    /// Replaces the file at `url` with `encoded` through a staged file beside it (keeping the
+    /// mode of the file it replaces), and returns the stamp of what was written.
     private static func replace(_ url: URL, with encoded: String) throws -> ConfigFileStamp {
-        let manager = FileManager.default
-        let tempURL = url.deletingLastPathComponent()
-            .appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
-        do {
-            if !manager.fileExists(atPath: url.path) {
-                manager.createFile(atPath: url.path, contents: Data())
-            }
-            _ = try manager.replaceItemAt(url, withItemAt: tempURL)
-        } catch {
-            // The temp file holds the unscrubbed text, webhook URL included.
-            do { try manager.removeItem(at: tempURL) } catch {
-                AppLogger.collect.warning("ConfigService: could not remove a temporary config copy")
-            }
-            throw error
-        }
+        try AtomicInstall.write(Data(encoded.utf8), to: url)
         var stamp = ConfigFileStamp.of(url)
         stamp.digest = ConfigFileStamp.digest(encoded)
         return stamp

@@ -12,7 +12,10 @@ versions in this repository map to git tags.
 - A **CSV folder** report format writes one CSV per workbook tab into a folder beside the
   workbook, for tools that read CSV. Tick it in Generate, run `jamf-reports generate
   --csv-folder`, or set `output.csv_folder: true` to get it with every workbook, scheduled runs
-  included. `.xlsx` stays the default; the folder follows the workbook into the archive. (#305)
+  included. `.xlsx` stays the default; the folder follows the workbook into the archive. Reports,
+  run status files, collect state files, snapshot manifests, the macOS update feed cache and
+  config.yaml are all put in place with one safe replace, so a link someone planted at their
+  name is replaced, never written through. (#305)
 - The Platform API region list now has Other, which takes a gateway host such as
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)
@@ -34,6 +37,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A Jamf School report that leaves a tab out for want of data now says so in plain words
+  (`[skip] Blueprints: No cached school snapshot found for: school-blueprints`) and in the run
+  log, as a Jamf Pro report does, and a few archive and summary warnings no longer print a raw
+  error value. (#305)
 - A Jamf School collect that runs past midnight now dates its summary by the day it started, as
   a Jamf Pro collect does. (#305)
 - A collect-and-report run that crosses midnight, scheduled, from Generate or the command line,
