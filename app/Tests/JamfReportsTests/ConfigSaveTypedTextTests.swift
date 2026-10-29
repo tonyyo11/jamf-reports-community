@@ -225,7 +225,7 @@ final class ConfigSaveTypedTextTests: XCTestCase {
                      "provider: teams", "detail: full", "retention:\n  enabled: false"] {
             XCTAssertTrue(copy.contains(kept), kept)
         }
-        XCTAssertTrue(ConfigService.backupOmitsWebhook(backup))
+        XCTAssertEqual(ConfigService.backupOmissions(backup), ["webhook URL"])
         XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("secret-token"),
                       "the live file keeps its URL")
     }

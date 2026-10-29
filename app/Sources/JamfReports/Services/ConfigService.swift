@@ -605,10 +605,13 @@ enum ConfigService {
         return lines.joined(separator: "\n")
     }
 
-    /// Whether the copy at `backup` had its webhook URL taken out (`scrubbedForBackup`).
-    static func backupOmitsWebhook(_ backup: URL) -> Bool {
-        ((try? ConfigLoader.readText(at: backup)) ?? "")
-            .contains("# notify.url removed from this copy")
+    /// What `scrubbedForBackup` took out of the copy at `backup`, worded for a note: the webhook
+    /// URL and the timestamp authority address. Empty when neither was there.
+    static func backupOmissions(_ backup: URL) -> [String] {
+        let text = (try? ConfigLoader.readText(at: backup)) ?? ""
+        return [("notify.url", "webhook URL"), ("output.timestamp_authority",
+                                                "timestamp authority address")]
+            .filter { text.contains("# \($0.0) removed from this copy") }.map(\.1)
     }
 
     /// `<prefix><yyyyMMdd-HHmmss>` names in `directory`; nothing else that shares the prefix.

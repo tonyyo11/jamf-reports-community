@@ -85,10 +85,13 @@ struct Scaffold: AsyncParsableCommand {
     /// On stderr, so stdout stays the one path a script reads.
     private func keepCopy(of url: URL) throws {
         guard let backup = try ConfigService.backUp(url) else { return }
+        let omitted = ConfigService.backupOmissions(backup)
+        let restore = omitted.count > 1 ? "them" : "it"
         FileHandle.standardError.write(
             Data(("note: kept a copy of the existing file at \(backup.path)"
-                + (ConfigService.backupOmitsWebhook(backup)
-                    ? "; its webhook URL is not kept, so enter it again after a restore" : "")
+                + (omitted.isEmpty ? "" : "; its \(omitted.joined(separator: " and ")) "
+                    + "\(omitted.count > 1 ? "are" : "is") not kept, so enter \(restore) again "
+                    + "after a restore")
                 + "\n").utf8))
     }
 }
