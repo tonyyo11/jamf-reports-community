@@ -146,9 +146,13 @@ struct FreshnessChipRow: View {
 
     /// Absolute timestamp for the `.help` tooltip.
     nonisolated static func absoluteLabel(for date: Date) -> String {
+        absoluteFormatter.string(from: date)
+    }
+
+    private nonisolated static let absoluteFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short
-        return f.string(from: date)
-    }
+        return f
+    }()
 }

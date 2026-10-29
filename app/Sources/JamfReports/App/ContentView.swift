@@ -177,6 +177,8 @@ struct ContentView: View {
             if let raw = note.userInfo?["tab"] as? String, let newTab = Tab(rawValue: raw) {
                 workspace.pendingDevicesFilter = DevicesView.DeviceFilter.pending(
                     from: note.userInfo, destination: newTab)
+                workspace.pendingMobileFilter = MobileFinding.pending(
+                    from: note.userInfo, destination: newTab)
                 tab = newTab
             }
         }

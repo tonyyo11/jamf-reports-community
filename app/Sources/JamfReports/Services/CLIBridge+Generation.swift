@@ -80,11 +80,12 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             return "Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact."
         case .invalidProfile(let slug):
             let why = ProfileName.problem(with: slug)?.explanation ?? ""
-            return "Profile name '\(slug)' isn't supported. \(why)"
+            return "Profile name '\(ConfigSchema.displayText(slug))' isn't supported. \(why)"
         case .workspaceMissing(let profile):
             return "Workspace not found for profile '\(profile)'."
         case .profileCaseConflict(let profile, let owner):
-            return "The workspace folder for '\(profile)' belongs to profile '\(owner)', which "
+            return "The workspace folder for '\(profile)' belongs to profile "
+                + "'\(ConfigSchema.displayText(owner))', which "
                 + "differs from it only by letter case. If both name the same Jamf server, set "
                 + "jamf_cli.profile to \(profile) in that folder's config.yaml; otherwise add "
                 + "this profile again in jamf-cli under a name that differs by more than case."
@@ -171,7 +172,7 @@ extension CLIBridge {
                     if schoolMode {
                         return try await self.schoolGenerate(
                             profile: profile, csvFolder: types.contains(.csvFolder),
-                            onLine: onLine)
+                            now: now, onLine: onLine)
                     }
                     // A chosen HTML format is the run's one HTML report; `html.with_workbook`
                     // would write a second.

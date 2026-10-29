@@ -23,11 +23,9 @@ struct OnboardingView: View {
         + "commands that the gateway refuses need a separate Jamf Pro OAuth profile; Jamf "
         + "Reports runs none of them."
 
-    private let privileges = [
-        "Computers: Read", "Mobile Devices: Read", "Mobile Profiles: Read",
-        "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
-        "Mobile Apps: Read", "Software Updates: Read", "Computer Groups: Read",
-    ]
+    /// The privileges for the commands a collect runs, each labelled with its source; the 1.31.1
+    /// list until the installed jamf-cli's catalog has been read.
+    @State private var privileges = CommandCatalog.bundledCollectPrivileges
 
     var body: some View {
         ScrollView {
@@ -983,21 +981,38 @@ struct OnboardingView: View {
         }
     }
 
+    private func privilegeLabel(_ privilege: CommandCatalog.Privilege) -> Text {
+        let name = Text(privilege.name).foregroundStyle(Theme.Colors.fg2)
+        let source = Text(privilege.source.rawValue).foregroundStyle(Theme.Colors.fgMuted)
+        return Text("\(name) \(source)")
+    }
+
     private var privilegesBox: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Required Jamf Pro API privileges")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 6) {
-                ForEach(privileges, id: \.self) { privilege in
+                ForEach(privileges, id: \.name) { privilege in
                     HStack(spacing: 5) {
                         Image(systemName: "checkmark")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Theme.Chart.tealLight)
-                        Text(privilege).font(.caption).foregroundStyle(Theme.Colors.fg2)
+                        privilegeLabel(privilege).font(.caption)
                     }
                 }
             }
+            Text("Names marked jamf-cli come from jamf-cli's command list. It lists none for "
+                + "report and Classic commands, so Jamf Reports adds those from its own "
+                + "permissions page.")
+                .font(.caption2)
+                .foregroundStyle(Theme.Colors.fg2)
+        }
+        .task {
+            let read = await Task.detached {
+                CommandCatalog.installed()?.collectPrivileges()
+            }.value
+            if let read, !read.isEmpty { privileges = read }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -22,6 +22,7 @@ struct ReportConfig: Decodable, Sendable {
     var protect: ProtectConfig?
     var backup: BackupConfig?
     var schoolCli: SchoolCLIConfig?
+    var profiles: ProfilesConfig?
     var notify: NotifyConfig?
     var alerts: AlertsConfig?
     var retention: RetentionConfig?
@@ -45,6 +46,7 @@ struct ReportConfig: Decodable, Sendable {
         case protect
         case backup
         case schoolCli = "school_cli"
+        case profiles
         case notify
         case alerts
         case retention
@@ -809,6 +811,30 @@ struct SchoolCLIConfig: Decodable, Sendable {
     }
 }
 
+// MARK: - profiles
+
+/// `profiles:` — the jamf-cli profile that serves each product in this workspace (environment).
+/// A blank or absent slot is a product the environment does not have. When the block is present
+/// the old keys (`jamf_cli.profile`, `protect.enabled/profile`, `school_cli`) are not read for
+/// profiles; `EnvironmentProfiles.resolve` is the one reader of both forms. Slots decode like
+/// `jamf_cli.profile`: an unquoted number reads as its digits, any other non-text value fails the
+/// decode, which Config Doctor reports.
+struct ProfilesConfig: Decodable, Sendable, Equatable {
+    var jamfPro: String?
+    var platform: String?
+    var jamfSchool: String?
+    var protect: String?
+    var securityCloud: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case jamfPro = "jamf_pro"
+        case platform
+        case jamfSchool = "jamf_school"
+        case protect
+        case securityCloud = "security_cloud"
+    }
+}
+
 // MARK: - notify (opt-in webhook digest)
 
 /// `notify:` block — opt-in scheduled-run webhook digest. OFF by default; the
@@ -1431,6 +1457,12 @@ enum ConfigLoader {
         return node
     }
 
+    /// A raw value as the decoder reads it into a text field: a string, or an unquoted number
+    /// as its digits (the `decodeConfig` retry). Nil for anything else.
+    static func textValue(_ value: Any?) -> String? {
+        (value as? String) ?? (value as? Int).map(String.init)
+    }
+
     // MARK: - YAML → JSON conversion
 
     /// A quoted `"true"`, `"false"` or `"null"` reads as a boolean or null, so a hand-quoted
@@ -1499,9 +1531,11 @@ enum ConfigLoader {
         case .mapping(let mapping):
             var dict: [String: Any] = [:]
             for entry in mapping.entries {
-                // A `profile` value is a jamf-cli profile name, which can be spelled `true` or
-                // `null`. YAMLCodec already types an unquoted token, so a string stays a string.
-                if entry.key == "profile", case .scalar(.string(let name)) = entry.value {
+                // A `profile` value or a `profiles` slot is a jamf-cli profile name, which can be
+                // spelled `true` or `null`. YAMLCodec already types an unquoted token, so a
+                // string stays a string.
+                if entry.key == "profile" || path == ["profiles"],
+                   case .scalar(.string(let name)) = entry.value {
                     dict[entry.key] = name
                 } else {
                     dict[entry.key] = nodeToJSONObject(

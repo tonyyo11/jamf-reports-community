@@ -9,6 +9,20 @@ import XCTest
 /// as the EDR agent.
 final class EDRAgentLabelTests: XCTestCase {
 
+    nonisolated(unsafe) private var defaults: UserDefaults!
+    nonisolated(unsafe) private var suite = ""
+
+    override func setUp() {
+        super.setUp()
+        suite = "EDRAgentLabelTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suite)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suite)
+        super.tearDown()
+    }
+
     // MARK: - Raw-value compatibility
 
     func testTrendMetricKeepsLegacyRawValue() {
@@ -18,13 +32,10 @@ final class EDRAgentLabelTests: XCTestCase {
 
     /// Persisted score-card selections from before the rename must keep working.
     func testPersistedScoreCardSelectionWithLegacyRawValueDecodes() {
-        UserDefaults.standard.set(
-            "stability,crowdstrike,patch", forKey: WorkspaceStore.scoreCardsKey
-        )
-        defer { UserDefaults.standard.removeObject(forKey: WorkspaceStore.scoreCardsKey) }
+        defaults.set("stability,crowdstrike,patch", forKey: WorkspaceStore.scoreCardsKey)
 
         XCTAssertEqual(
-            WorkspaceStore.loadPersistedScoreCards(),
+            WorkspaceStore.loadPersistedScoreCards(defaults: defaults),
             [.stability, .edrAgent, .patch]
         )
     }
@@ -39,13 +50,13 @@ final class EDRAgentLabelTests: XCTestCase {
 
     /// A selection that names a control card persists and reloads as stored.
     func testPersistedSecurityControlSelectionRoundTrips() {
-        defer { UserDefaults.standard.removeObject(forKey: WorkspaceStore.scoreCardsKey) }
+        defaults.set("sip,firewall", forKey: WorkspaceStore.scoreCardsKey)
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(defaults: defaults), [.sip, .firewall])
 
-        UserDefaults.standard.set("sip,firewall", forKey: WorkspaceStore.scoreCardsKey)
-        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), [.sip, .firewall])
-
-        WorkspaceStore.persistScoreCards([.stability, .gatekeeper, .sip])
-        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), [.stability, .gatekeeper, .sip])
+        WorkspaceStore.persistScoreCards([.stability, .gatekeeper, .sip], defaults: defaults)
+        XCTAssertEqual(
+            WorkspaceStore.loadPersistedScoreCards(defaults: defaults),
+            [.stability, .gatekeeper, .sip])
     }
 
     func testSecurityControlMetricsCarryTheirOwnLabelUnitAndColour() {

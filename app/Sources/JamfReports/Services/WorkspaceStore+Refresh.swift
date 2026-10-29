@@ -587,7 +587,7 @@ extension WorkspaceStore {
         let config = ProfileService.workspaceURL(for: profile).flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
-        let protectProfile = ConnectedProducts.read(profile: profile).protectProfile
+        let protectProfile = EnvironmentProfiles.resolve(config: config, workspace: profile).protect
         let protectCollected = protectProfile.map {
             protectPinAllows(profile) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false

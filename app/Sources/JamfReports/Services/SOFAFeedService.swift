@@ -241,6 +241,12 @@ struct SOFAFeedService: Sendable {
         return latest
     }
 
+    /// `latestByMajor` over the iOS / iPadOS rows of `rows`, the feed every mobile figure is
+    /// judged against (`MobileSummary`, the Mobile Devices filters, the Health Audit).
+    static func iOSLatestByMajor(_ rows: [OSFamilyRow]) -> [Int: String] {
+        latestByMajor(rows.filter { $0.platform == platformLabels["ios"] })
+    }
+
     /// Whether `version` is at or past the newest release of its own major.
     /// nil when the feed does not track that major, so "behind" and
     /// "unknown" stay distinct.

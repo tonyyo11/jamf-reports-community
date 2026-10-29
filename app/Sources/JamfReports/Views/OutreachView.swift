@@ -369,9 +369,14 @@ struct OutreachView: View {
     /// Mac whose Days Since has a value.
     static func relativeDate(from dateString: String, now: Date) -> String {
         guard let date = DeviceInventoryService.parseDate(dateString) else { return "Unknown" }
+        return namedRelativeFormatter.localizedString(for: date, relativeTo: now)
+    }
+
+    /// One per process: a row asks for one of these per redraw.
+    nonisolated(unsafe) private static let namedRelativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: date, relativeTo: now)
-    }
+        return formatter
+    }()
 
 }

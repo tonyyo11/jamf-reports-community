@@ -166,7 +166,8 @@ final class SchoolDashboardWriteAllFailureTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let workbook = Workbook()
-        let dash = SchoolDashboard(config: ReportConfig(), dataDir: tmp, workbook: workbook)
+        let dash = SchoolDashboard(
+            config: ReportConfig(), dataDir: tmp, workbook: workbook, now: .testNoon)
         let (written, failures) = dash.writeAll()
 
         XCTAssertTrue(written.isEmpty)
@@ -182,7 +183,7 @@ final class SchoolDashboardWriteAllFailureTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let sink = SkipLineSink()
-        _ = SchoolDashboard(config: ReportConfig(), dataDir: tmp, workbook: Workbook())
+        _ = SchoolDashboard(config: ReportConfig(), dataDir: tmp, workbook: Workbook(), now: Date())
             .writeAll(onLine: sink.append)
 
         let texts = sink.lines.map(\.text)

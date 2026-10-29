@@ -11,6 +11,8 @@ import XCTest
 final class AgentCoverageTests: XCTestCase {
 
     private nonisolated(unsafe) var root: URL!
+    private nonisolated(unsafe) var defaults: UserDefaults!
+    private nonisolated(unsafe) var suite = ""
     /// Unique per test: the backfill remembers a decoded snapshot by profile, day and file name.
     private let profile = "agentcov-" + String(UUID().uuidString.lowercased().prefix(8))
 
@@ -33,11 +35,13 @@ final class AgentCoverageTests: XCTestCase {
             .appendingPathComponent("JRC-AgentCov-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        suite = "AgentCoverageTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suite)
     }
 
     override func tearDownWithError() throws {
         unsetenv("JRC_TEST_WORKSPACES_ROOT")
-        UserDefaults.standard.removeObject(forKey: WorkspaceStore.scoreCardsKey)
+        defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
         try super.tearDownWithError()
     }
@@ -254,13 +258,14 @@ final class AgentCoverageTests: XCTestCase {
 
     func testPersistedSelectionKeepsAgentCardsAndDropsUnknownKeys() {
         WorkspaceStore.persistScoreCards(
-            [.stability, .agent("Nessus Agent, 10%"), .edrAgent, .agent("Splunk UF")])
+            [.stability, .agent("Nessus Agent, 10%"), .edrAgent, .agent("Splunk UF")],
+            defaults: defaults)
         XCTAssertEqual(
-            WorkspaceStore.loadPersistedScoreCards(),
+            WorkspaceStore.loadPersistedScoreCards(defaults: defaults),
             [.stability, .agent("Nessus Agent, 10%"), .edrAgent, .agent("Splunk UF")])
-        UserDefaults.standard.set(
+        defaults.set(
             "stability,from-a-future-build,agent:Splunk UF", forKey: WorkspaceStore.scoreCardsKey)
-        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(),
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(defaults: defaults),
                        [.stability, .agent("Splunk UF")])
     }
 

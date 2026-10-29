@@ -12,11 +12,10 @@ struct SecurityPostureView: View {
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
     @ScaledMetric(relativeTo: .title) private var actionTileSize: CGFloat = 22
     @State private var snapshot: SecurityPostureService.Snapshot = .empty
-    @State private var hasLoaded = false
-    /// Bumped by each reload, so a read that a newer one replaced is dropped.
-    @State private var loadGeneration = 0
-    /// False until the first read lands: until then the screen does not say there is no data.
-    @State private var hasRead = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match, so the
+    /// screen never says there is no data, or shows another profile's, while one loads.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
     var body: some View {
         PageScaffold {
@@ -29,43 +28,51 @@ struct SecurityPostureView: View {
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode && hasRead {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["security"]
-                )
-            }
-
-            if let reason = snapshot.loadError {
-                Card(padding: 24) {
-                    ErrorStateView(
-                        title: "Couldn't read security data",
-                        message: reason,
-                        commands: ["Re-run collection from Data Sources, then Refresh."],
-                        retry: { reload() }
-                    )
-                }
-            } else if snapshot.totalDevices == 0 {
-                if hasRead { emptyState }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "security posture")
             } else {
-                heroScoreCard
-                kpiGrid
-                aiInsightCard
-                actionItemsCard
-                osDistributionCard
+                content
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+        // Suppressed in demo mode (the demo dataset is intentionally static and
+        // not user-perceivably "stale"). Renders nothing when source is .fresh.
+        if !workspace.demoMode {
+            CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
+            // Per-kind file dates are the honest per-screen signal here;
+            // digest-level collectionSources belongs on summary screens only.
+            FreshnessChipRow(
+                sourceDates: snapshot.sourceDates,
+                expectedKinds: ["security"]
+            )
+        }
+
+        if let reason = snapshot.loadError {
+            Card(padding: 24) {
+                ErrorStateView(
+                    title: "Couldn't read security data",
+                    message: reason,
+                    commands: ["Re-run collection from Data Sources, then Refresh."],
+                    retry: { reloads += 1 }
+                )
+            }
+        } else if snapshot.totalDevices == 0 {
+            emptyState
+        } else {
+            heroScoreCard
+            kpiGrid
+            aiInsightCard
+            actionItemsCard
+            osDistributionCard
         }
     }
 
@@ -77,30 +84,25 @@ struct SecurityPostureView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
-        loadGeneration += 1
-        if workspace.demoMode {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        guard !workspace.demoMode else {
             snapshot = DemoData.securityPostureSnapshot
-            hasRead = true
+            loadedSource = source
             return
         }
-        let generation = loadGeneration
         let profile = workspace.profile
-        Task {
-            let loaded = await Task.detached(priority: .userInitiated) {
-                SecurityPostureService.load(profile: profile)
-            }.value
-            // A read that a profile switch or a later refresh replaced must not paint.
-            guard generation == loadGeneration else { return }
-            snapshot = loaded
-            hasRead = true
-        }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { SecurityPostureService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
+        loadedSource = source
     }
 
     // MARK: - Computed values

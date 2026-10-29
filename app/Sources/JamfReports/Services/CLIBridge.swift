@@ -727,6 +727,7 @@ final class CLIBridge {
     func schoolGenerate(
         profile: String,
         csvFolder: Bool = false,
+        now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -774,6 +775,7 @@ final class CLIBridge {
                 outputURL: outputURL,
                 profile: profile,
                 csvFolder: csvFolder,
+                now: now,
                 onLine: onLine
             )
             if failures.isEmpty {
@@ -1142,11 +1144,12 @@ final class CLIBridge {
         return false
     }
 
-    /// The refusal, after one `[error]` line, when `profile` is known to belong to another
-    /// product (Jamf School, Protect, Security Cloud) or is an organization-level integration:
-    /// no `pro` command may run against it. Nil for a Jamf Pro profile and for one that cannot
-    /// be resolved. The lookup can run `jamf-cli config list`, so it runs detached: most
-    /// callers are on the main actor. `resolved` is the test seam.
+    /// The refusal, after one `[error]` line, when the workspace's `profiles:` block cannot run
+    /// (`EnvironmentProfiles.refusal`), or when `profile` is known to belong to another product
+    /// (Jamf School, Protect, Security Cloud) or is an organization-level integration: no `pro`
+    /// command may run against it. Nil for a Jamf Pro profile and for one that cannot be
+    /// resolved. Reading config.yaml and the lookup (which can run `jamf-cli config list`) run
+    /// detached: most callers are on the main actor. `resolved` is the test seam.
     nonisolated static func refusesProCommand(
         profile: String, operation: String, onLine: (@Sendable (LogLine) -> Void)?,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
@@ -1154,11 +1157,19 @@ final class CLIBridge {
         }
     ) async -> String? {
         let refusal = await Task.detached {
-            resolved(profile)?.proRefusal(profile: profile, operation: operation)
+            EnvironmentProfiles.read(workspace: profile).refusal(workspace: profile)
+                ?? resolved(profile)?.proRefusal(profile: profile, operation: operation)
         }.value
         guard let refusal else { return nil }
         onLine?(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
         return refusal
+    }
+
+    /// The `[error]` line for a name that failed `ProfileService.isValid`, filtered like
+    /// `ProfileName.invalidMessage`.
+    nonisolated static func invalidProfileLine(_ profile: String) -> LogLine {
+        .init(timestamp: Date(), level: .fail,
+              text: "[error] invalid profile name: \(ConfigSchema.displayText(profile))")
     }
 
     nonisolated func validateConnection(
@@ -1166,7 +1177,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
@@ -1182,7 +1193,7 @@ final class CLIBridge {
         // because another profile may be the one that failed.
         let (code, stdout) = try await runAndCapture(
             executable: bin,
-            arguments: ["-p", profile, "config", "validate", "--output", "json"],
+            arguments: Self.configValidateArguments(profile: profile),
             environment: Self.environmentForJamfCLI(),
             onLine: { line in
                 if line.text.contains("config validation failed") { return }
@@ -1357,7 +1368,7 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "devices",
-            jamfCLIArgs: { id in ["pro", "device", id] },
+            jamfCLIArgs: Self.computerDetailArguments,
             onLine: onLine
         )
     }
@@ -1380,7 +1391,7 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "mobile-devices",
-            jamfCLIArgs: { id in ["pro", "mobile-devices", "get", id] },
+            jamfCLIArgs: Self.mobileDetailArguments,
             onLine: onLine
         )
     }
@@ -1401,7 +1412,16 @@ final class CLIBridge {
         return !trimmed.isEmpty && !trimmed.hasPrefix("-")
     }
 
+    nonisolated static func computerDetailArguments(_ id: String) -> [String] {
+        ["pro", "device", id]
+    }
+
+    nonisolated static func mobileDetailArguments(_ id: String) -> [String] {
+        ["pro", "mobile-devices", "get", id]
+    }
+
     /// `locateJamfCLI` is a test seam: the default locator finds no jamf-cli under XCTest.
+    /// Callers run `refusesProCommand` first, before `authGuard` probes the profile.
     nonisolated func singleDeviceDetail(
         profile: String,
         deviceID: String,
@@ -1414,11 +1434,6 @@ final class CLIBridge {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.isSafeDeviceIdentifier(trimmedID) else {
             AppLogger.cli.warning("device detail: rejecting leading-dash identifier")
-            return nil
-        }
-        if await Self.refusesProCommand(
-            profile: profile, operation: "Device lookup", onLine: onLine
-        ) != nil {
             return nil
         }
         guard ProfileService.isValid(profile),
@@ -1571,7 +1586,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (exitCode: Int32, payload: Data) {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         if let refusal = await Self.refusesProCommand(
@@ -1601,14 +1616,7 @@ final class CLIBridge {
         // hands back the payload.
         let (exitCode, data) = try await runAndCapture(
             executable: bin,
-            arguments: [
-                "-p", profile,
-                "pro", "diff",
-                "--source", left.path,
-                "--target", right.path,
-                "--output", "json",
-                "--no-input",
-            ],
+            arguments: Self.diffArguments(profile: profile, source: left.path, target: right.path),
             environment: Self.environmentForJamfCLI(),
             onLine: onLine
         )
@@ -1842,7 +1850,7 @@ final class CLIBridge {
         // B-02: defense-in-depth profile validation. Mirrors validateConnection.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("audit: rejecting invalid profile name")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash category. Checked before auth so that the
@@ -1888,7 +1896,7 @@ final class CLIBridge {
         // B-02: defense-in-depth profile validation.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("groupHygiene: rejecting invalid profile name")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         if let refusal = await Self.refusesProCommand(
@@ -1903,7 +1911,7 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
-        let args = ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json", "--no-input"]
+        let args = Self.groupAnalyzeArguments(profile: profile)
         let (code, data) = try await runAndCapture(
             executable: bin,
             arguments: args,
@@ -2026,7 +2034,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> BackupRun {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash labels — would be re-interpreted as a flag by jamf-cli.
@@ -2413,16 +2421,32 @@ final class CLIBridge {
             text: "[warn] backup temp dir could not be removed — delete manually: \(staging.lastPathComponent)"))
     }
 
+    nonisolated static func diffArguments(profile: String, source: String, target: String) -> [String] {
+        ["-p", profile, "pro", "diff", "--source", source, "--target", target,
+         "--output", "json", "--no-input"]
+    }
+
+    nonisolated static func groupAnalyzeArguments(profile: String) -> [String] {
+        ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json",
+         "--no-input"]
+    }
+
+    nonisolated static func configValidateArguments(profile: String) -> [String] {
+        ["-p", profile, "config", "validate", "--output", "json"]
+    }
+
     /// The jamf-cli arguments for a backup of `profile` into `outputDirectory`.
     nonisolated static func backupArguments(profile: String, outputDirectory: String) -> [String] {
         ["-p", profile, "--no-input", "pro", "backup",
          "--format", "json", "--output", outputDirectory]
     }
 
-    /// Compares the workspace's `jamf_cli.profile` with `profile` before a backup. A case
-    /// variant is refused like `CollectRouter.run` refuses it: the two share the folder on a
-    /// case-insensitive volume. Any other name is ignored with one warning, because the
-    /// backup always runs as `profile`. A missing or undecodable config has nothing to compare.
+    /// Compares the workspace's MDM profile (`EnvironmentProfiles.mdm`: `jamf_cli.profile` in an
+    /// old-shape config.yaml) with `profile` before a backup. A case variant is refused like
+    /// `CollectRouter.run` refuses it: the two share the folder on a case-insensitive volume. A
+    /// `profiles:` block that cannot run was already refused by `refusesProCommand`, so any
+    /// other name here is an old-key one, ignored with one warning, because the backup always
+    /// runs as `profile`. A missing or undecodable config has nothing to compare.
     nonisolated static func checkBackupConfigProfile(
         _ profile: String,
         onLine: @Sendable (LogLine) -> Void
@@ -2431,14 +2455,15 @@ final class CLIBridge {
               let config = try? ConfigLoader.load(
                   from: workspace.appendingPathComponent("config.yaml")
               ) else { return }
-        let owner = config.jamfCli?.resolvedProfile ?? ""
-        guard !owner.isEmpty, owner != profile else { return }
-        guard !ProfileService.isCaseVariant(owner, of: profile) else {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        let owner = environment.mdm ?? profile
+        if ProfileService.isCaseVariant(owner, of: profile) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
         }
+        guard owner != profile else { return }
         onLine(.init(
             timestamp: Date(), level: .warn,
             text: "[warn] backup: config.yaml sets jamf_cli.profile to "
@@ -2507,7 +2532,7 @@ final class CLIBridge {
         // trust those strings without re-validation.
         for profile in target.allProfileNames where !ProfileService.isValid(profile) {
             AppLogger.cli.warning("runMulti: rejecting invalid profile name in target")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // Auth guard: probe credentials before dispatching live API calls.
@@ -2630,7 +2655,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         let config = workspace.appendingPathComponent("config.yaml")

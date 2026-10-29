@@ -53,6 +53,11 @@ struct MDMCommandHealthService: Sendable {
 
     static func load(profile: String) -> Snapshot {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return .empty }
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let kindDir = dir.appendingPathComponent(kind, isDirectory: true)
         return load(url: FileManager.newestJSONFile(in: kindDir))
     }
