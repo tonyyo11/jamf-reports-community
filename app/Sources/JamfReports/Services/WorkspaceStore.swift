@@ -81,6 +81,8 @@ final class WorkspaceStore {
     /// held until Devices appears and applies it, since the view does not exist when the
     /// navigation is posted.
     var pendingDevicesFilter: String? = nil
+    /// The same for Mobile Devices (`MobileFinding` raw value), from a Health Audit count.
+    var pendingMobileFilter: String? = nil
     /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
     /// which any screen sets and clears for its own work, so another screen finishing cannot
     /// wipe the line a collect still owns.
