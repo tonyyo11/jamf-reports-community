@@ -324,7 +324,7 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): \(error)"
+            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): \(error.localizedDescription)"
             AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -394,7 +394,7 @@ struct ReportEngine: Sendable {
             try fm.moveItem(at: file, to: dest)
             return true
         } catch {
-            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error)"
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error.localizedDescription)"
             AppLogger.report.warning("\(msg, privacy: .private)")
             if label.isEmpty { print(msg) }
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -435,7 +435,7 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create summaries dir: \(error)"
+            let msg = "[warn] Could not create summaries dir: \(error.localizedDescription)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -3850,7 +3850,7 @@ struct ReportEngine: Sendable {
         let core = SchoolDashboard(
             config: config, dataDir: dataDir, workbook: workbook, summaries: summaries)
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
-        let (_, schoolFailures) = core.writeAll(sheets: sheets)
+        let (_, schoolFailures) = core.writeAll(sheets: sheets, onLine: onLine)
 
         workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)

@@ -14,7 +14,10 @@ import Foundation
 /// Genuine unexpected failures (decode bugs, type mismatches, I/O errors on
 /// data that *is* present) should not conform — they land in `SheetFailure`
 /// and trigger the `[partial]` log line.
-protocol SheetSkippable: Error {}
+///
+/// `LocalizedError`, so every skip reason has one plain-words description and a `[skip]` line
+/// never prints an enum case (`skipLine(sheet:error:)` is the one formatter).
+protocol SheetSkippable: LocalizedError {}
 
 // MARK: - SheetFailure
 
@@ -26,7 +29,7 @@ protocol SheetSkippable: Error {}
 struct SheetFailure: Sendable {
     /// The sheet name as it appears in `sheetPlan`.
     let sheet: String
-    /// Serialized error: `"\(type(of: error)): \(error)"`.
+    /// Serialized error: `"\(type(of: error)): \(error.localizedDescription)"`.
     let error: String
 }
 
@@ -47,6 +50,11 @@ struct SheetFailure: Sendable {
 ///   the registry is built once synchronously, then used read-only within a single
 ///   structured-concurrency task. No concurrent access occurs.
 struct SheetRegistry: @unchecked Sendable {
+
+    /// `[skip] <sheet>: <reason>`, shared by the Jamf Pro and Jamf School sheet loops.
+    static func skipLine(sheet: String, error: any SheetSkippable) -> String {
+        "[skip] \(sheet): \(error.localizedDescription)"
+    }
 
     // MARK: - Types
 
@@ -118,12 +126,11 @@ struct SheetRegistry: @unchecked Sendable {
                 written.append(name)
             } catch let skippable as SheetSkippable {
                 // Data absent or expected-missing — omit sheet, not a failure.
-                let reason = (skippable as? LocalizedError)?.errorDescription ?? "\(skippable)"
-                let msg = "[skip] \(name): \(reason)"
+                let msg = SheetRegistry.skipLine(sheet: name, error: skippable)
                 print("  " + msg)
                 onLine?(.init(timestamp: Date(), level: .info, text: msg))
             } catch {
-                let label = "\(type(of: error)): \(error)"
+                let label = "\(type(of: error)): \(error.localizedDescription)"
                 failures.append(SheetFailure(sheet: name, error: label))
                 print("  [fail] \(name): unexpected error — \(label)")
             }

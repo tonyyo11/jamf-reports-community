@@ -173,6 +173,23 @@ final class SchoolDashboardWriteAllFailureTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty,
                       "noCachedData for school sheets must be treated as skips, not failures")
     }
+
+    /// The School loop words a skip as the Jamf Pro loop does and logs it, never `noCachedData(...)`.
+    func testSchoolBlueprintsSkipLineIsPlainWords() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-school-skip-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sink = SkipLineSink()
+        _ = SchoolDashboard(config: ReportConfig(), dataDir: tmp, workbook: Workbook())
+            .writeAll(onLine: sink.append)
+
+        let texts = sink.lines.map(\.text)
+        XCTAssertTrue(texts.contains(
+            "[skip] Blueprints: No cached school snapshot found for: school-blueprints"), "\(texts)")
+        XCTAssertFalse(texts.contains { $0.contains("noCachedData") || $0.contains("names:") })
+    }
 }
 
 private final class SkipLineSink: @unchecked Sendable {
