@@ -10,8 +10,10 @@ import XCTest
 ///
 /// One source of truth: `AppCommand` lists each place the app builds an argv, and its
 /// `invocations` switch has no `default`, so a new case does not compile until it says what it
-/// runs. A new argv builder in a file `argvSourceFiles` does not know fails
-/// `testNoUnlistedFileBuildsAnArgv`; one more builder in a listed file is for the reviewer.
+/// runs. `testArgvShapedLinesMatchTheEnumeration` pins, per source file, how many lines outside
+/// the command matrices look like an argv, so a new builder in any file fails until it is
+/// enumerated and the count moved. It reads `"pro", "<word>"` pairs, so an argv whose command
+/// words come from a variable (`"pro", name`) is missed.
 @MainActor
 final class CLIHelpContractTests: XCTestCase {
 
@@ -40,22 +42,19 @@ final class CLIHelpContractTests: XCTestCase {
     /// Paths the app reaches through an alias jamf-cli lists on the row of another name.
     private static let reachedByAlias: Set<String> = ["pro computers list"]
 
-    /// Files that build an argv; `testNoUnlistedFileBuildsAnArgv` fails on another.
-    private static let argvSourceFiles: Set<String> = [
-        "Engine/ReportEngine.swift", "Engine/ReportEngine+DeviceScan.swift",
-        "Engine/ReportEngine+ComplianceBenchmarks.swift", "Services/CLIBridge.swift",
-        "Services/CLICommand.swift", "Services/ConnectionCheck.swift",
-        "Services/JamfCLIInstaller.swift", "Services/OnboardingFlow+StartOver.swift",
-        "Services/OnboardingFlow.swift", "Services/PlatformTwin.swift",
-        "Services/ProductSetupChecks.swift", "Services/ProfileService.swift",
-        "Services/ProtectBackup.swift", "Services/SchoolPlatformCheck.swift",
-    ]
-
-    /// Files with a `"config", "<word>"` or `"protect", "<word>"` pair that is a config.yaml key
-    /// path, not an argv.
-    private static let argvLookalikeFiles: Set<String> = [
-        "Engine/BackupDiffModel.swift", "Services/ConfigDoctorService.swift",
-        "Services/ConfigService.swift", "Services/SharedConfigPin.swift",
+    /// Lines per source file (matrix rows excluded) with a command-word pair like
+    /// `"pro", "audit"`. The first group builds an argv the enumeration covers; the second holds
+    /// config.yaml key paths that look the same (`"protect", "profile"`).
+    private static let argvLineCounts: [String: Int] = [
+        "Engine/ReportEngine.swift": 3, "Engine/ReportEngine+DeviceScan.swift": 2,
+        "Engine/ReportEngine+ComplianceBenchmarks.swift": 1, "Services/CLIBridge.swift": 6,
+        "Services/CLICommand.swift": 8, "Services/ConnectionCheck.swift": 2,
+        "Services/JamfCLIInstaller.swift": 1, "Services/OnboardingFlow+StartOver.swift": 1,
+        "Services/OnboardingFlow.swift": 4, "Services/PlatformTwin.swift": 1,
+        "Services/ProductSetupChecks.swift": 3, "Services/ProtectBackup.swift": 1,
+        "Services/SchoolPlatformCheck.swift": 1,
+        "Engine/BackupDiffModel.swift": 1, "Services/ConfigDoctorService.swift": 1,
+        "Services/ConfigService.swift": 1, "Services/SharedConfigPin.swift": 2,
     ]
 
     // MARK: - The enumeration
@@ -65,7 +64,7 @@ final class CLIHelpContractTests: XCTestCase {
         case collectMatrix, protectMatrix, schoolMatrix, dashboard, audit
         case deviceScan, patchDefinitions, benchmarks, authRefreshProbe
         case cliCommand, connectionCheck, schoolPlatformCheck, productSetupCheck
-        case platformTwin, configList, deviceDetail, backupAndDiff, groupAnalysis, configValidate
+        case platformTwin, deviceDetail, backupAndDiff, groupAnalysis, configValidate
         case onboarding, rootFlags
 
         var invocations: [Invocation] {
@@ -147,8 +146,6 @@ final class CLIHelpContractTests: XCTestCase {
             case .platformTwin:
                 return [Invocation(label: "server URL",
                                    argv: PlatformTwin.serverURLArguments(profile: "p"))]
-            case .configList:
-                return [Invocation(label: "config list", argv: ProfileService.configListArguments)]
             case .deviceDetail:
                 return [
                     Invocation(label: "computer detail",
@@ -192,32 +189,50 @@ final class CLIHelpContractTests: XCTestCase {
                                argv: OnboardingFlow.removeProfileArguments(name: "p")),
                 ]
             case .rootFlags:
-                // `Provenance`, `DiagnosticBundleService` and `JamfCLIInstaller.installedVersion`
-                // pass this literal; it is the root command's flag, not a catalog row.
+                // The root command's flag, not a catalog row; three readers share the constant.
                 return [
-                    Invocation(label: "--version", argv: ["--version"], isRootFlag: true),
+                    Invocation(label: "--version", argv: JamfCLIProbe.versionArguments,
+                               isRootFlag: true),
                     Invocation(label: "version -o json",
                                argv: JamfCLIInstaller.versionJSONArguments),
+                    // The command that prints the catalog is not a row of it, and `-o` is short.
+                    Invocation(label: "commands -o json", argv: CommandCatalog.fetchArguments,
+                               isRootFlag: true),
                 ]
             }
         }
     }
 
-    /// One sample of every `CLICommand` case. The switch has no `default`: a new case fails to
-    /// compile until it is listed here.
-    static func cliCommandSamples() -> [CLICommand] {
-        let samples: [CLICommand] = [
-            .proAuthToken(profile: "p"), .configList, .proHelp, .proDoctor(profile: "p"),
-            .schoolDepDevicesList(profile: "p"), .schoolIBeaconsList(profile: "p"),
-        ]
-        for sample in samples {
-            switch sample {
-            case .proAuthToken, .configList, .proHelp, .proDoctor, .schoolDepDevicesList,
-                 .schoolIBeaconsList:
-                break
+    /// One kind per `CLICommand` case. `make` and `kind(of:)` switch without a `default`, so a
+    /// new `CLICommand` case does not compile until it has a kind and a sample here.
+    enum CommandKind: CaseIterable {
+        case proAuthToken, configList, proHelp, proDoctor, schoolDepDevicesList, schoolIBeaconsList
+
+        func make() -> CLICommand {
+            switch self {
+            case .proAuthToken: .proAuthToken(profile: "p")
+            case .configList: .configList
+            case .proHelp: .proHelp
+            case .proDoctor: .proDoctor(profile: "p")
+            case .schoolDepDevicesList: .schoolDepDevicesList(profile: "p")
+            case .schoolIBeaconsList: .schoolIBeaconsList(profile: "p")
             }
         }
-        return samples
+
+        static func kind(of command: CLICommand) -> CommandKind {
+            switch command {
+            case .proAuthToken: .proAuthToken
+            case .configList: .configList
+            case .proHelp: .proHelp
+            case .proDoctor: .proDoctor
+            case .schoolDepDevicesList: .schoolDepDevicesList
+            case .schoolIBeaconsList: .schoolIBeaconsList
+            }
+        }
+    }
+
+    static func cliCommandSamples() -> [CLICommand] {
+        CommandKind.allCases.map { $0.make() }
     }
 
     // MARK: - Tests
@@ -251,7 +266,8 @@ final class CLIHelpContractTests: XCTestCase {
                     XCTFail("not in jamf-cli's catalog — \(shown)")
                     continue
                 }
-                XCTAssertFalse(catalog.isDestructive(path: path), "destructive — \(shown)")
+                XCTAssertEqual(
+                    catalog.isDestructive(path: path), false, "destructive or unknown — \(shown)")
                 XCTAssertEqual(
                     !catalog.isCanonical(path: path), Self.reachedByAlias.contains(name),
                     "alias use changed for \(name)")
@@ -270,7 +286,7 @@ final class CLIHelpContractTests: XCTestCase {
         }
     }
 
-    func testNoUnlistedFileBuildsAnArgv() throws {
+    func testArgvShapedLinesMatchTheEnumeration() throws {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/JamfReports", isDirectory: true)
@@ -278,24 +294,30 @@ final class CLIHelpContractTests: XCTestCase {
             pattern: #""(pro|protect|school|platform|config|doctor|dashboard|version)""#
                 + #"\s*,\s*"-{0,2}[a-z]"#)
         let walker = try XCTUnwrap(FileManager.default.enumerator(atPath: sources.path))
-        var found: Set<String> = []
+        var counts: [String: Int] = [:]
         for case let relative as String in walker where relative.hasSuffix(".swift") {
             let file = sources.appendingPathComponent(relative)
-            let text = try String(contentsOf: file, encoding: .utf8)
-            if pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
-                found.insert(relative)
-            }
+            let lines = try String(contentsOf: file, encoding: .utf8).split(
+                separator: "\n", omittingEmptySubsequences: false)
+            let hits = lines.filter { line in
+                // Matrix rows start `(["`; `ReportEngine`'s functions build them.
+                !line.drop { $0 == " " }.hasPrefix("([\"")
+                    && pattern.firstMatch(
+                        in: String(line), range: NSRange(location: 0, length: line.utf16.count))
+                        != nil
+            }.count
+            if hits > 0 { counts[relative] = hits }
         }
-        let unlisted = found.subtracting(Self.argvSourceFiles).subtracting(Self.argvLookalikeFiles)
-        XCTAssertTrue(
-            unlisted.isEmpty,
-            "\(unlisted.sorted()) build a jamf-cli argv: add it to AppCommand and argvSourceFiles")
-        XCTAssertTrue(
-            Self.argvSourceFiles.isSubset(of: found), "\(Self.argvSourceFiles.subtracting(found))")
+        XCTAssertEqual(
+            counts, Self.argvLineCounts,
+            "a source file builds a jamf-cli argv the enumeration does not know: add it to "
+                + "AppCommand and update argvLineCounts")
     }
 
-    func testCLICommandSamplesCoverEveryCase() {
-        XCTAssertEqual(Self.cliCommandSamples().count, 6)
+    func testEachCommandKindMakesItsOwnCase() {
+        for kind in CommandKind.allCases {
+            XCTAssertEqual(CommandKind.kind(of: kind.make()), kind)
+        }
     }
 
     func testPathReadingSkipsProfileLeadingFlagsAndPositionals() {

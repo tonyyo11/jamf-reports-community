@@ -19,23 +19,30 @@ struct CommandCatalog: Sendable {
         let path: [String]
         let aliases: [String]
         let flags: [String]
-        let privileges: [String]
-        let scopes: [String]
+        /// nil when the row has no `privileges` key (report and Classic rows): "lists none",
+        /// which is not the same as a command that needs none.
+        let privileges: [String]?
+        let scopes: [String]?
         let product: String?
         let api: String?
-        let destructive: Bool
+        /// nil when the key is absent or not a boolean: unknown, never safe.
+        let destructive: Bool?
         let preview: Bool
     }
 
     enum CatalogError: Error, Equatable {
-        case notAnArray
+        /// `reason` is the decoder's message.
+        case notAnArray(reason: String)
     }
 
     private let byPath: [String: Entry]
 
     init(data: Data) throws {
-        guard let rows = try? JSONDecoder().decode([Lossy].self, from: data) else {
-            throw CatalogError.notAnArray
+        let rows: [Lossy]
+        do {
+            rows = try JSONDecoder().decode([Lossy].self, from: data)
+        } catch {
+            throw CatalogError.notAnArray(reason: String(describing: error))
         }
         var entries: [String: Entry] = [:]
         for case let row? in rows.map(\.row) {
@@ -45,11 +52,11 @@ struct CommandCatalog: Sendable {
                 path: path,
                 aliases: row.aliases ?? [],
                 flags: row.flags ?? [],
-                privileges: row.privileges ?? [],
-                scopes: row.scopes ?? [],
+                privileges: row.privileges,
+                scopes: row.scopes,
                 product: row.product,
                 api: row.api,
-                destructive: row.destructive ?? false,
+                destructive: row.destructive,
                 preview: row.preview ?? false)
         }
         byPath = entries
@@ -77,16 +84,22 @@ struct CommandCatalog: Sendable {
     /// The command's own long flags (global flags excluded); empty for an unknown path.
     func flags(for path: [String]) -> [String] { entry(for: path)?.flags ?? [] }
 
-    func privileges(for path: [String]) -> [String] { entry(for: path)?.privileges ?? [] }
+    /// The privileges the row lists. nil when the path is not in the catalog or its row has no
+    /// `privileges` key (every `pro report` and `pro classic-*` row): "lists none", which is not
+    /// a command that needs none.
+    func privilegesListed(for path: [String]) -> [String]? { entry(for: path)?.privileges }
 
-    func scopes(for path: [String]) -> [String] { entry(for: path)?.scopes ?? [] }
+    /// nil when the path is unknown or the row has no `scopes` key.
+    func scopes(for path: [String]) -> [String]? { entry(for: path)?.scopes }
 
     func product(for path: [String]) -> String? { entry(for: path)?.product }
 
     /// `pro` and `pro-classic` for Jamf Pro commands, `platform-gateway` for the Platform API.
     func api(for path: [String]) -> String? { entry(for: path)?.api }
 
-    func isDestructive(path: [String]) -> Bool { entry(for: path)?.destructive ?? false }
+    /// nil when the path is unknown or the row's `destructive` is absent or not a boolean:
+    /// callers treat nil as not known to be safe.
+    func isDestructive(path: [String]) -> Bool? { entry(for: path)?.destructive }
 
     func isPreview(path: [String]) -> Bool { entry(for: path)?.preview ?? false }
 
@@ -121,45 +134,80 @@ struct CommandCatalog: Sendable {
         return (Array(words.dropLast(min(positionals, words.count))), flags)
     }
 
-    /// The Jamf Pro API role privileges the commands in `argvs` list, sorted. Report and Classic
-    /// rows list none in the catalog, so this is the part of the need jamf-cli names, not all of
-    /// it. Gateway permissions (`compliance-benchmarks:read`) belong to a Jamf Account
-    /// integration and are left out.
-    func proPrivileges(forArguments argvs: [(argv: [String], positionals: Int)]) -> [String] {
-        var names: Set<String> = []
-        for (argv, positionals) in argvs {
-            guard let entry = entry(for: Self.invocation(of: argv, positionals: positionals).path),
-                  entry.api == "pro" || entry.api == "pro-classic" else { continue }
-            names.formUnion(entry.privileges)
-        }
-        return names.sorted()
+    /// What `proPrivileges` found for a set of argvs.
+    struct PrivilegeUnion: Sendable, Equatable {
+        /// Privileges the catalog lists, sorted.
+        let listed: [String]
+        /// Jamf Pro commands whose row lists none, as `pro report patch-status`.
+        let unlisted: [String]
+        /// Commands not in the catalog at all (renamed or removed); their need is unknown.
+        let missing: [String]
     }
 
-    /// `proPrivileges` over what a full collect runs: the command matrix, the benchmark listing,
-    /// the per-device scan's two calls and the patch-definition walk.
-    func collectPrivileges() -> [String] {
-        let matrix = ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
-            .map { (argv: $0.args, positionals: 0) }
-        return proPrivileges(forArguments: matrix + [
+    /// The Jamf Pro API role privileges the commands in `argvs` list. A Jamf Pro command is a
+    /// row with product `pro` that is not served by the Platform API (`compliance-benchmarks:read`
+    /// is a Jamf Account permission, not an API role privilege). Report and Classic rows list
+    /// none and are returned in `unlisted`; a path the catalog does not have is returned in
+    /// `missing`, never skipped silently.
+    func proPrivileges(forArguments argvs: [(argv: [String], positionals: Int)]) -> PrivilegeUnion {
+        var names: Set<String> = []
+        var unlisted: Set<String> = []
+        var missing: Set<String> = []
+        for (argv, positionals) in argvs {
+            let path = Self.invocation(of: argv, positionals: positionals).path
+            guard let entry = entry(for: path) else {
+                missing.insert(path.joined(separator: " "))
+                continue
+            }
+            guard entry.product == "pro", entry.api != "platform-gateway" else { continue }
+            if let listed = entry.privileges, !listed.isEmpty {
+                names.formUnion(listed)
+            } else {
+                unlisted.insert(entry.path.joined(separator: " "))
+            }
+        }
+        return PrivilegeUnion(
+            listed: names.sorted(), unlisted: unlisted.sorted(), missing: missing.sorted())
+    }
+
+    /// The argvs a full collect runs: the command matrix, the benchmark listing, the per-device
+    /// scan's two calls and the patch-definition walk.
+    static func collectArguments() -> [(argv: [String], positionals: Int)] {
+        ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
+            .map { (argv: $0.args, positionals: 0) } + [
             (ReportEngine.benchmarkListArguments(profile: "p"), 0),
             (ReportEngine.historyArguments(profile: "p", id: "1"), 1),
             (ReportEngine.statusItemsArguments(profile: "p", managementId: "1"), 1),
             (ReportEngine.patchDefinitionArguments(profile: "p", titleId: "1"), 1),
-        ])
+        ]
+    }
+
+    /// The setup text's list for a full collect: what this catalog lists, plus
+    /// `supplementalPrivileges` for each command it lists none for.
+    func collectPrivileges() -> [Privilege] {
+        let union = proPrivileges(forArguments: Self.collectArguments())
+        return Privilege.merged(
+            listed: union.listed,
+            supplemental: union.unlisted.flatMap { Self.supplementalPrivileges[$0] ?? [] })
     }
 
     // MARK: - Installed jamf-cli
 
-    /// The Jamf Pro privileges for the setup text when no catalog can be read: the collect
-    /// matrix's union over the 1.31.1 catalog (`CommandCatalogTests` keeps it equal to the
-    /// fixture's), so the text is never blank.
-    static let bundledCollectPrivileges = [
-        "Read Advanced Mobile Device Searches", "Read Buildings", "Read Categories",
-        "Read Computer Extension Attributes", "Read Computers", "Read Departments",
-        "Read Device Enrollment Program Instances", "Read Mobile Devices", "Read Packages",
-        "Read Patch Management Software Titles", "Read Scripts", "Read Self Service",
-        "Read Sites", "Read Smart Computer Groups",
-    ]
+    /// The setup text's list when no catalog can be read: the 1.31.1 catalog's names and every
+    /// supplemental one. `CommandCatalogTests` keeps it equal to the fixture's, so the text is
+    /// never blank and never drifts.
+    static let bundledCollectPrivileges = Privilege.merged(
+        listed: [
+            "Read Advanced Mobile Device Searches", "Read Buildings", "Read Categories",
+            "Read Computer Extension Attributes", "Read Computers", "Read Departments",
+            "Read Device Enrollment Program Instances", "Read Mobile Devices", "Read Packages",
+            "Read Patch Management Software Titles", "Read Scripts", "Read Self Service",
+            "Read Sites", "Read Smart Computer Groups",
+        ],
+        supplemental: supplementalPrivileges.values.flatMap { $0 })
+
+    /// What a read of the installed jamf-cli runs.
+    static let fetchArguments = ["commands", "-o", "json"]
 
     nonisolated(unsafe) private static var cached: CommandCatalog?
     private static let cacheLock = NSLock()
@@ -179,7 +227,7 @@ struct CommandCatalog: Sendable {
         guard let binary = locate(),
               CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) == nil,
               let output = JamfCLIProbe.run(
-                executable: binary, arguments: ["commands", "-o", "json"]),
+                executable: binary, arguments: fetchArguments),
               output.exitCode == 0,
               let catalog = try? CommandCatalog(data: output.stdout) else { return nil }
         cacheLock.lock()
