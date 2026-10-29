@@ -668,7 +668,8 @@ struct TickLock: Sendable {
     /// cannot be written runs `body` without it, as a GUI collect does: refusing would turn a
     /// broken Application Support into a dead command, and a tick needs the same file. Past
     /// `limit` the lock is given up and `onGiveUp` runs, as for the tick: a call that never
-    /// answered would otherwise run on beside the next wake's.
+    /// answered would otherwise run on beside the next wake's. A give-up under way finishes
+    /// before this returns, so the caller never races its record or its exit.
     func holdingForRun<T: Sendable>(
         beatEvery interval: Duration = TickLock.heartbeatInterval,
         limit: Duration = TickLock.heartbeatLimit,
@@ -683,11 +684,17 @@ struct TickLock: Sendable {
             return try await body()
         case .acquired(let hold):
             let beats = hold.heartbeat(every: interval, limit: limit, onGiveUp: onGiveUp)
-            defer {
+            defer { hold.release() }
+            do {
+                let result = try await body()
                 beats.cancel()
-                hold.release()
+                await beats.value
+                return result
+            } catch {
+                beats.cancel()
+                await beats.value
+                throw error
             }
-            return try await body()
         }
     }
 
