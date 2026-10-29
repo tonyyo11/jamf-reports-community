@@ -692,9 +692,11 @@ final class RunManifestGenerateTests: XCTestCase {
 /// report) is sealed by itself, and a School Generate run follows the chosen folder.
 @MainActor
 final class RunManifestStandaloneTests: XCTestCase {
-    private var root: URL!
+    private nonisolated(unsafe) var root: URL!
     private let profile = "manifestsolo"
-    private var workspace: URL { root.appendingPathComponent(profile, isDirectory: true) }
+    private nonisolated var workspace: URL {
+        root.appendingPathComponent(profile, isDirectory: true)
+    }
 
     override func setUpWithError() throws {
         // CSV and PDF refuse a folder under /tmp or /var (`isSensitiveAbsolutePath`).
