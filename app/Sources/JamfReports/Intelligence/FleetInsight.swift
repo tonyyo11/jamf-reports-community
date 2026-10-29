@@ -183,11 +183,11 @@ extension FleetInsightInput {
         let proxy = current.complianceIsProxy == true ? " [proxy metric]" : ""
         let candidates: [Fact?] = [
             // The Mac count only: a fleet with no Macs has no Mac fact, and its mobile count
-            // stands in so the digest is never empty.
+            // stands in so the digest is never empty (the `mobile` facts below, when it has them).
             current.totalDevices > 0
                 ? Fact(label: "Managed Macs", value: .count(current.totalDevices),
                        prior: nil, polarity: .neutral)
-                : current.mobileDeviceCount.map {
+                : current.mobile != nil ? nil : current.mobileDeviceCount.map {
                     Fact(label: "Managed mobile devices (no Macs in this fleet)",
                          value: .count($0), prior: previous?.mobileDeviceCount.map(Value.count),
                          polarity: .neutral)
@@ -214,7 +214,9 @@ extension FleetInsightInput {
             count("P2 action items", \.actionItemsP2),
         ]
         let facts = candidates.compactMap { $0 }
+            + mobileFacts(current: current, previous: previous)
         var notes = previous.map { ["Prior period for deltas: \(safeDate($0.date))."] } ?? []
+        if let note = current.mobile.flatMap(mobileNote) { notes.append(note) }
         if !facts.contains(where: { $0.prior != nil }) { notes.append(noEarlierDataNote) }
         return FleetInsightInput(
             title: "Fleet snapshot for \(safeDate(current.date))",
@@ -223,6 +225,57 @@ extension FleetInsightInput {
             facts: facts,
             notes: notes
         )
+    }
+}
+
+// MARK: - Mobile digest
+
+extension FleetInsightInput {
+    /// The mobile devices' facts (mobile spec 3.1): the figures the Overview's Mobile Devices
+    /// section shows, from `DailySummary.mobile`, so a fleet with no mobile devices gets none.
+    /// A figure no device reports is left out, never sent as 0, and `mobileNote` says how many
+    /// devices each share counts.
+    fileprivate static func mobileFacts(current: DailySummary, previous: DailySummary?) -> [Fact] {
+        guard let mobile = current.mobile else { return [] }
+        let before = previous?.mobile
+        func share(
+            _ label: String, _ key: KeyPath<MobileSummary, MobileSummary.Share?>, _ rest: String
+        ) -> Fact? {
+            guard let now = mobile[keyPath: key], let pct = now.pct else { return nil }
+            return Fact(label: label, value: .percent(pct),
+                        prior: before?[keyPath: key]?.pct.map(Value.percent),
+                        polarity: .higherIsBetter, complement: rest)
+        }
+        func count(_ label: String, _ key: KeyPath<MobileSummary, Int?>) -> Fact? {
+            mobile[keyPath: key].map {
+                Fact(label: label, value: .count($0),
+                     prior: before?[keyPath: key].map(Value.count), polarity: .lowerIsBetter)
+            }
+        }
+        let managedLabel = current.totalDevices > 0
+            ? "Managed mobile devices" : "Managed mobile devices (no Macs in this fleet)"
+        return [
+            Fact(label: managedLabel, value: .count(mobile.managed),
+                 prior: before.map { Value.count($0.managed) }, polarity: .neutral),
+            share("Mobile supervised (of managed)", \.supervised, "not supervised"),
+            share("Mobile passcode compliant", \.passcode, "not passcode compliant"),
+            share("Mobile OS current", \.osCurrent,
+                  "behind the newest release of their iOS or iPadOS version"),
+            count("Stale mobile devices (no recent inventory update)", \.stale),
+            count("Jailbroken mobile devices", \.jailbroken),
+        ].compactMap { $0 }
+    }
+
+    /// What each mobile share is over: it counts the devices that report the field, so "of N"
+    /// keeps a small denominator from reading as the fleet.
+    fileprivate static func mobileNote(_ mobile: MobileSummary) -> String? {
+        let counted = [
+            ("supervised, over managed devices", mobile.supervised),
+            ("passcode", mobile.passcode), ("OS current", mobile.osCurrent),
+        ].compactMap { name, share in share.map { "\(name) \($0.of)" } }
+        return counted.isEmpty ? nil
+            : "Mobile shares count only the mobile devices that report each field: "
+                + counted.joined(separator: ", ") + "."
     }
 }
 
