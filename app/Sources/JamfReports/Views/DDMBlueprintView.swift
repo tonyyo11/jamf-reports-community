@@ -10,6 +10,9 @@ struct DDMBlueprintView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: DDMBlueprintService.Snapshot = .empty
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var deviceSnapshot: DDMDeviceStatusService.Snapshot = .empty
     @State private var fleetCounts: (enabled: Int, total: Int)? = (0, 0)
     @State private var showAllIdentifiers = false
@@ -29,21 +32,23 @@ struct DDMBlueprintView: View {
         PageScaffold {
             DDMBlueprintView.header(kicker: showsPlatformSections
                 ? "Platform API" : "Declarative Device Management")
-            if !workspace.demoMode && lockState == .unlockedWithData {
-                CollectNowBanner(source: bannerSource, tiers: [.inventory, .scan])
-                if deviceSnapshot.isDetected {
-                    FreshnessChipRow(sourceDates: deviceSnapshot.sourceDates,
-                                     expectedKinds: ["ddm-device-status"])
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "declarative device management data")
+            } else {
+                if !workspace.demoMode && lockState == .unlockedWithData {
+                    CollectNowBanner(source: bannerSource, tiers: [.inventory, .scan])
+                    if deviceSnapshot.isDetected {
+                        FreshnessChipRow(sourceDates: deviceSnapshot.sourceDates,
+                                         expectedKinds: ["ddm-device-status"])
+                    }
                 }
+                content
             }
-            content
         }
         .tint(Theme.Colors.goldBright)
-        .task(id: workspace.profile) {
-            reload()
-        }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -430,18 +435,41 @@ struct DDMBlueprintView: View {
 
     // MARK: - Helpers
 
-    private func reload() {
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            deviceSnapshot = .empty
+            fleetCounts = (0, 0)
+        }
         if workspace.demoMode {
             // The demo fleet: DDM on every Mac but the 17 on Monterey, with the
             // per-device scan the blueprint counts come from.
             snapshot = DemoData.ddmBlueprintSnapshot
             deviceSnapshot = DemoData.ddmDeviceStatusSnapshot
             fleetCounts = (DemoData.ddmFleetMacs.count, DemoData.fleetMacs.count)
+            loadedSource = source
             return
         }
-        snapshot = DDMBlueprintService.load(profile: workspace.profile)
-        deviceSnapshot = DDMDeviceStatusService.load(profile: workspace.profile)
-        fleetCounts = DDMDeviceStatusService.fleetDDMCounts(profile: workspace.profile)
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { () -> (DDMBlueprintService.Snapshot, DDMDeviceStatusService.Snapshot,
+                           (enabled: Int, total: Int)?) in
+                (DDMBlueprintService.load(profile: profile),
+                 DDMDeviceStatusService.load(profile: profile),
+                 DDMDeviceStatusService.fleetDDMCounts(profile: profile))
+            }
+        ) else { return }
+        snapshot = loaded.0
+        deviceSnapshot = loaded.1
+        fleetCounts = loaded.2
+        loadedSource = source
     }
 
     // MARK: - Static rendering helpers (kept static to keep view body type-check cheap)

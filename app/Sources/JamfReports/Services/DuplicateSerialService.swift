@@ -56,6 +56,11 @@ struct DuplicateSerialService: Sendable {
     /// Returns `.empty` (undecoded) when no snapshot exists.
     static func load(profile: String) -> Snapshot {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return .empty }
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let kindDir = dir.appendingPathComponent("duplicate-serials", isDirectory: true)
         return load(url: FileManager.newestJSONFile(in: kindDir))
     }

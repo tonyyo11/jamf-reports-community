@@ -8,7 +8,9 @@ struct PolicyProfileView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: PolicyHealthService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var selectedTab: Tab = .policies
 
     enum Tab: String, CaseIterable {
@@ -45,47 +47,50 @@ struct PolicyProfileView: View {
                 options: Tab.allCases.map { ($0, $0.label, $0.icon) }
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .inventory])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["policy-status", "profile-status"]
-                )
-            }
-
-            switch selectedTab {
-            case .policies:
-                if snapshot.summary == nil && snapshot.findings.isEmpty {
-                    policyEmptyState
-                } else {
-                    policyKpiGrid
-                    if !snapshot.findings.isEmpty {
-                        findingsCard
-                    }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "policies and profiles")
+            } else {
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .inventory])
+                    // Per-kind file dates are the honest per-screen signal here;
+                    // digest-level collectionSources belongs on summary screens only.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: ["policy-status", "profile-status"]
+                    )
                 }
-            case .profiles:
-                if !snapshot.hasProfileData {
-                    profileEmptyState
-                } else {
-                    profileKpiGrid
-                    if snapshot.profiles.isEmpty {
-                        profileHealthyCard
+
+                switch selectedTab {
+                case .policies:
+                    if snapshot.summary == nil && snapshot.findings.isEmpty {
+                        policyEmptyState
                     } else {
-                        profileStatusCard
+                        policyKpiGrid
+                        if !snapshot.findings.isEmpty {
+                            findingsCard
+                        }
+                    }
+                case .profiles:
+                    if !snapshot.hasProfileData {
+                        profileEmptyState
+                    } else {
+                        profileKpiGrid
+                        if snapshot.profiles.isEmpty {
+                            profileHealthyCard
+                        } else {
+                            profileStatusCard
+                        }
                     }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -105,16 +110,25 @@ struct PolicyProfileView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
-        snapshot = workspace.demoMode
-            ? DemoData.policyHealth
-            : PolicyHealthService.load(profile: workspace.profile)
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        guard !workspace.demoMode else {
+            snapshot = DemoData.policyHealth
+            loadedSource = source
+            return
+        }
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { PolicyHealthService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
+        loadedSource = source
     }
 
     // MARK: - Policy Sections

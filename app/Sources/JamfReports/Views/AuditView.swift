@@ -1071,10 +1071,18 @@ struct AuditView: View {
         lastHygieneDate = nil
         newFindingKeys = []
         resolvedFindings = []
+        duplicateSerials = .empty
+        commandHealth = .empty
         hasPreviousAudit = false
         await loadIntegritySummary()
-        duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
-        commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
+        let loadProfile = workspace.profile
+        guard let integrity = await ScreenLoad.paint(
+            stillCurrent: { loadProfile == workspace.profile && !workspace.demoMode },
+            read: { (DuplicateSerialService.load(profile: loadProfile),
+                     MDMCommandHealthService.load(profile: loadProfile)) }
+        ) else { return }
+        duplicateSerials = integrity.0
+        commandHealth = integrity.1
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)

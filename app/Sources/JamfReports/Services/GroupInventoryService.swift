@@ -108,7 +108,11 @@ struct GroupInventoryService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
 
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         func newest(_ kind: String) -> URL? {
             FileManager.newestJSONFile(in: dir.appendingPathComponent(kind, isDirectory: true))
         }
