@@ -36,4 +36,6 @@ Scrub checklist (apply to every refreshed fixture):
 
 `jamf-cli/commands-<version>.json` is jamf-cli's own command catalog, not demo-tenant data: it is
 the output of `jamf-cli commands -o json`, with no hosts or IDs. Refresh it with
-`app/scripts/capture-jamf-cli-catalog.zsh` when the jamf-cli floor moves.
+`app/scripts/capture-jamf-cli-catalog.zsh` when the jamf-cli floor moves. The script sorts each
+row's `aliases` and rewrites the JSON with 2-space indent (jamf-cli prints aliases in map order),
+and the committed file has that one normalisation applied; nothing else is edited.
