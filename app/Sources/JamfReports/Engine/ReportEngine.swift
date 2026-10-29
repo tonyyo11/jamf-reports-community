@@ -63,6 +63,23 @@ struct ReportEngine: Sendable {
         now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
+        try await generateReport(
+            outputURL: outputURL, template: template, aiNarrative: aiNarrative,
+            csvFolder: csvFolder, locateJamfCLI: locateJamfCLI, now: now, onLine: onLine
+        ).failures
+    }
+
+    /// `generate`, also naming the CSV folder it wrote (nil when none), so a scheduled run can
+    /// record it.
+    func generateReport(
+        outputURL: URL,
+        template: any ReportTemplate = FullInstanceTemplate(),
+        aiNarrative: String? = nil,
+        csvFolder: Bool = false,
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        now: Date = Date(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> GeneratedReport {
         // Every folder this run reads or writes is the run's profile's, so a peer cannot point
         // a shared workspace's generate at another local workspace through config.yaml.
         let profile = try runProfile(onLine: onLine)
@@ -143,14 +160,14 @@ struct ReportEngine: Sendable {
             workbook.firstSheet?.insertLogo(data: logo, filename: "logo.png")
         }
         try workbook.write(to: outputURL)
-        Self.writeCSVFolder(
+        let csvFolderURL = Self.writeCSVFolder(
             of: workbook, besideWorkbook: outputURL, requested: csvFolder, config: config,
             onLine: onLine)
 
         finishWorkbook(at: outputURL, templateID: template.identifier,
                        profile: profile, provenance: prov, day: now, onLine: onLine)
 
-        return coreFailures
+        return GeneratedReport(failures: coreFailures, csvFolder: csvFolderURL)
     }
 
     /// The profile every folder of this run belongs to: the caller's. config.yaml's
@@ -3800,6 +3817,20 @@ struct ReportEngine: Sendable {
         csvFolder: Bool = false,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
+        try await schoolGenerateReport(
+            config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
+            csvFolder: csvFolder, onLine: onLine).failures
+    }
+
+    /// `schoolGenerate`, also naming the CSV folder it wrote (nil when none).
+    static func schoolGenerateReport(
+        config: ReportConfig,
+        dataDir: URL,
+        outputURL: URL,
+        profile: String? = nil,
+        csvFolder: Bool = false,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> GeneratedReport {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
         // generation too. School snapshots live under the same workspace data
         // dir and share the manifest discipline; integrity violations here
@@ -3817,12 +3848,12 @@ struct ReportEngine: Sendable {
 
         workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)
-        writeCSVFolder(
+        let folder = writeCSVFolder(
             of: workbook, besideWorkbook: outputURL, requested: csvFolder, config: config,
             onLine: onLine)
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
         _ = writeSHA256Sidecar(for: outputURL)
-        return schoolFailures
+        return GeneratedReport(failures: schoolFailures, csvFolder: folder)
     }
 
     // MARK: - Convenience: timestamped output path

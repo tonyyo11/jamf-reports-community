@@ -1,5 +1,12 @@
 import Foundation
 
+/// What a generate run produced besides the workbook it wrote.
+struct GeneratedReport: Sendable {
+    let failures: [SheetFailure]
+    /// The CSV folder written beside the workbook, nil when none was.
+    let csvFolder: URL?
+}
+
 /// The CSV folder: one CSV per workbook tab in a folder beside the workbook. It serializes the
 /// cells the tabs' writers already put on the `Workbook`, so no tab has a second row builder, and
 /// `sheets.only/skip/order` have already been applied to the tabs it reads.
@@ -42,63 +49,81 @@ extension Worksheet {
 
 extension Workbook {
     enum CSVFolderError: Error, LocalizedError {
-        case linkedFolder(String)
-        case duplicateFileName(String)
+        case stagingFolderNotMade(String)
 
         var errorDescription: String? {
             switch self {
-            case .linkedFolder(let name):
-                return "\(name) is a symbolic link, so nothing was written there"
-            case .duplicateFileName(let name):
-                return "two tabs would both be written as \(name)"
+            case .stagingFolderNotMade(let name): return "could not make a staging folder for \(name)"
             }
         }
     }
 
+    /// How long a staging folder a crashed run left behind is kept before the next run removes it.
+    static let staleStagingAge: TimeInterval = 24 * 3600
+
     /// Writes one `<tab name>.csv` per tab into `folder`, replacing a folder of that name as a
-    /// whole: the files are staged in a hidden sibling first, so a failure leaves the old folder
-    /// and no half-written one. Returns how many files were written; a workbook whose tabs
-    /// hold no cells writes nothing and leaves `folder` alone.
+    /// whole (`AtomicInstall`): the files are staged in a hidden sibling first, so a failure
+    /// leaves the old folder and no half-written one, and a link at the folder's name is
+    /// replaced, never written through. Returns how many files were written; a workbook whose
+    /// tabs hold no cells writes nothing and leaves `folder` alone. Two tabs whose names differ
+    /// only by case or accents get `_2`, `_3`, ... as tab names do, since the volume would
+    /// otherwise make them one file.
     @discardableResult
-    func writeCSVFolder(to folder: URL) throws -> Int {
+    func writeCSVFolder(to folder: URL, now: Date = Date()) throws -> Int {
         let fm = FileManager.default
         let parent = folder.deletingLastPathComponent()
         try fm.createDirectory(at: parent, withIntermediateDirectories: true)
-        // A link planted at the folder's name would be replaced, not followed, but a person
-        // who put it there did not expect either.
-        if let type = (try? fm.attributesOfItem(atPath: folder.path))?[.type] as? FileAttributeType,
-           type == .typeSymbolicLink {
-            throw CSVFolderError.linkedFolder(folder.lastPathComponent)
-        }
+        Self.removeStaleStagingFolders(in: parent, now: now)
         let staging = parent.appendingPathComponent(
             ".\(folder.lastPathComponent).tmp-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(
             at: staging, withIntermediateDirectories: false,
             attributes: [.posixPermissions: 0o700])
         var installed = false
-        defer { if !installed { try? fm.removeItem(at: staging) } }
+        defer { if !installed { AtomicInstall.discard(staging) } }
 
         var written = 0
+        var used: Set<String> = []
         for sheet in worksheets {
             guard let text = sheet.csvText() else { continue }
-            let name = ProfileName.pathComponent(sheet.name) + ".csv"
+            let name = Self.uniqueFileName(ProfileName.pathComponent(sheet.name), used: &used)
             let target = staging.appendingPathComponent(name)
-            guard !fm.fileExists(atPath: target.path) else {
-                throw CSVFolderError.duplicateFileName(name)
-            }
             try Data(text.utf8).write(to: target, options: .withoutOverwriting)
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
             written += 1
         }
         guard written > 0 else { return 0 }
 
-        if fm.fileExists(atPath: folder.path) {
-            _ = try fm.replaceItemAt(folder, withItemAt: staging)
-        } else {
-            try fm.moveItem(at: staging, to: folder)
-        }
+        try AtomicInstall.install(staging, at: folder)
         installed = true
         return written
+    }
+
+    /// `<base>.csv`, or `<base>_2.csv` and on when the volume would read the name as one
+    /// already used (`ProfileName.folderKey`: case and accents folded).
+    private static func uniqueFileName(_ base: String, used: inout Set<String>) -> String {
+        var candidate = base
+        var suffix = 2
+        while !used.insert(ProfileName.folderKey(candidate + ".csv")).inserted {
+            candidate = "\(base)_\(suffix)"
+            suffix += 1
+        }
+        return candidate + ".csv"
+    }
+
+    /// Removes `.<name>_csv.tmp-*` folders in `parent` that are older than a day: a crash, or the
+    /// tick's give-up exit, can leave one, and in a shared reports folder nothing else would ever
+    /// move it. Only a real folder is removed, never a link.
+    private static func removeStaleStagingFolders(in parent: URL, now: Date) {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: parent.path) else { return }
+        for name in names where name.hasPrefix(".") && name.contains("\(ReportEngine.csvFolderSuffix).tmp-") {
+            let url = parent.appendingPathComponent(name)
+            var info = stat()
+            guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { continue }
+            let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
+            if now.timeIntervalSince(modified) > staleStagingAge { AtomicInstall.discard(url) }
+        }
     }
 }
 
@@ -112,8 +137,14 @@ extension ReportEngine {
     static func csvFolderURL(besideWorkbook workbookURL: URL) -> URL {
         let stem = workbookURL.deletingPathExtension().lastPathComponent
         return workbookURL.deletingLastPathComponent()
-            .appendingPathComponent(stem + "_csv", isDirectory: true)
+            .appendingPathComponent(stem + csvFolderSuffix, isDirectory: true)
     }
+
+    /// What a CSV folder's name ends in. The one test for "is this a CSV folder's name": never
+    /// the extension, since a profile such as `acme.example.com` puts a dot in the name.
+    static let csvFolderSuffix = "_csv"
+
+    static func isCSVFolderName(_ name: String) -> Bool { name.hasSuffix(csvFolderSuffix) }
 
     /// Writes the CSV folder beside `workbookURL` when the caller asked (`requested`: the
     /// Generate sheet's format, the CLI flag) or `output.csv_folder` is on, from the tabs

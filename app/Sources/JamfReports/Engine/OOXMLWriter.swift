@@ -280,14 +280,19 @@ final class Workbook: @unchecked Sendable {
         sheets = typed.applyTo(sheets.map { (name: $0.name, write: $0) }).map(\.write)
     }
 
-    /// Write the workbook to `url` atomically using a temp file + `replaceItem`.
+    /// Write the workbook to `url` atomically: staged beside it, then installed by
+    /// `AtomicInstall`, which replaces a link at `url` instead of writing through it.
     func write(to url: URL) throws {
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempURL = tempDir.appendingPathComponent(UUID().uuidString + ".xlsx")
-        try buildZIP(at: tempURL)
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+        let staged = dir.appendingPathComponent(".\(url.lastPathComponent).tmp-\(UUID().uuidString)")
+        do {
+            try buildZIP(at: staged)
+            try AtomicInstall.install(staged, at: url)
+        } catch {
+            AtomicInstall.discard(staged)
+            throw error
+        }
     }
 
     // MARK: - Private ZIP assembly

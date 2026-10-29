@@ -148,7 +148,8 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     ///
     /// `artifacts` are output files the run produced (workbook, HTML, CSV);
     /// they map to the `xlsx_report_path` / `html_report_path` /
-    /// `inventory_csv_path` keys `LaunchAgentService.artifactLabels` reads.
+    /// `inventory_csv_path` keys `LaunchAgentService.artifactLabels` reads; a CSV folder maps to
+    /// `csv_folder_path`.
     ///
     /// `sheetFailures` is written as an additive `sheet_failures` key in the
     /// status JSON (0 when omitted). Existing parsers that do not read this key
@@ -209,6 +210,12 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         ]
         if refused { payload["refused"] = true }
         for url in artifacts {
+            // A folder is told by its name: a profile such as `acme.example.com` puts a dot in
+            // the name, so the extension says nothing.
+            if ReportEngine.isCSVFolderName(url.lastPathComponent) {
+                payload["csv_folder_path"] = url.path
+                continue
+            }
             switch url.pathExtension.lowercased() {
             case "xlsx": payload["xlsx_report_path"] = url.path
             case "html": payload["html_report_path"] = url.path

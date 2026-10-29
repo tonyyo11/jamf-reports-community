@@ -197,12 +197,14 @@ final class CSVFolderTests: XCTestCase {
         }
     }
 
-    func testALinkAtTheFoldersNameIsNotWrittenThroughAndWarnsOnce() async throws {
+    func testALinkAtTheFoldersNameIsReplacedNotWrittenThrough() async throws {
         try await withScratch { scratch in
             let dataDir = try fixtureData(["overview"], in: scratch)
             let out = scratch.appendingPathComponent("out/report.xlsx")
             let target = scratch.appendingPathComponent("elsewhere", isDirectory: true)
             try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            try "keep".write(to: target.appendingPathComponent("mine.txt"),
+                             atomically: true, encoding: .utf8)
             try FileManager.default.createDirectory(
                 at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.createSymbolicLink(at: folder(of: out), withDestinationURL: target)
@@ -211,11 +213,107 @@ final class CSVFolderTests: XCTestCase {
             try await ReportEngine(config: ReportConfig(), dataDir: dataDir).generate(
                 outputURL: out, csvFolder: true, locateJamfCLI: { nil }, onLine: lines.add)
 
-            XCTAssertEqual(try names(in: target), [], "nothing was written through the link")
-            XCTAssertTrue(FileManager.default.fileExists(atPath: out.path), "the workbook stands")
-            let warnings = lines.all.filter { $0.hasPrefix(ReportEngine.csvFolderFailureMarker) }
-            XCTAssertEqual(warnings.count, 1, "\(lines.all)")
-            XCTAssertFalse(lines.all.contains { $0.hasPrefix("[partial]") })
+            XCTAssertEqual(try names(in: target), ["mine.txt"], "nothing written through, nothing removed")
+            let attributes = try FileManager.default.attributesOfItem(atPath: folder(of: out).path)
+            XCTAssertEqual(attributes[.type] as? FileAttributeType, .typeDirectory,
+                           "the link is gone and a real folder is in its place")
+            XCTAssertTrue(try names(in: folder(of: out)).contains("Cover.csv"))
+            XCTAssertFalse(lines.all.contains { $0.hasPrefix(ReportEngine.csvFolderFailureMarker) })
+        }
+    }
+
+    func testALinkAtTheWorkbooksNameIsReplacedNotWrittenThrough() throws {
+        let root = scratchURL("workbook-link")
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let victim = root.appendingPathComponent("victim.txt")
+        try "keep".write(to: victim, atomically: true, encoding: .utf8)
+        let book = root.appendingPathComponent("report.xlsx")
+        try FileManager.default.createSymbolicLink(at: book, withDestinationURL: victim)
+        let workbook = Workbook()
+        workbook.addSheet("Cover").write("x", row: 0, col: 0)
+
+        try workbook.write(to: book)
+
+        XCTAssertEqual(try String(contentsOf: victim, encoding: .utf8), "keep")
+        XCTAssertEqual(try XLSXReader.tabs(of: book).map(\.name), ["Cover"])
+        XCTAssertEqual(try names(in: root), ["report.xlsx", "victim.txt"], "no staging file left")
+    }
+
+    func testAStagingFolderOlderThanADayIsRemovedAndANewerOrLinkedOneIsNot() throws {
+        let parent = scratchURL("staging")
+        defer { try? FileManager.default.removeItem(at: parent.deletingLastPathComponent()) }
+        let fm = FileManager.default
+        try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+        let noon = Date.testNoon
+        func plant(_ name: String, age: TimeInterval) throws -> URL {
+            let url = parent.appendingPathComponent(name, isDirectory: true)
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            try "x".write(to: url.appendingPathComponent("Cover.csv"), atomically: true, encoding: .utf8)
+            try fm.setAttributes([.modificationDate: noon.addingTimeInterval(-age)],
+                                 ofItemAtPath: url.path)
+            return url
+        }
+        let old = try plant(".report_x_csv.tmp-OLD", age: 2 * 86_400)
+        let fresh = try plant(".report_x_csv.tmp-FRESH", age: 3_600)
+        let unrelated = try plant(".other.tmp-OLD", age: 2 * 86_400)
+        let outside = scratchURL("staging-target")
+        defer { try? fm.removeItem(at: outside.deletingLastPathComponent()) }
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        let link = parent.appendingPathComponent(".report_y_csv.tmp-LINK")
+        try fm.createSymbolicLink(at: link, withDestinationURL: outside)
+
+        let workbook = Workbook()
+        workbook.addSheet("Cover").write("x", row: 0, col: 0)
+        try workbook.writeCSVFolder(to: parent.appendingPathComponent("report_z_csv"), now: noon)
+
+        XCTAssertFalse(fm.fileExists(atPath: old.path))
+        XCTAssertTrue(fm.fileExists(atPath: fresh.path))
+        XCTAssertTrue(fm.fileExists(atPath: unrelated.path), "only a CSV staging folder")
+        XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is left alone")
+        XCTAssertTrue(fm.fileExists(atPath: outside.path))
+    }
+
+    func testTwoTabsThatTheVolumeReadsAsOneNameGetASuffix() throws {
+        let workbook = Workbook()
+        workbook.addSheet("Straße").write("a", row: 0, col: 0)
+        workbook.addSheet("STRASSE").write("b", row: 0, col: 0)
+        workbook.addSheet("strasse").write("c", row: 0, col: 0)
+        let folder = scratchURL("fold_csv")
+        defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
+
+        XCTAssertEqual(try workbook.writeCSVFolder(to: folder), 3)
+        let written = try names(in: folder)
+        XCTAssertEqual(written.count, 3, "\(written)")
+        XCTAssertEqual(Set(written.map(ProfileName.folderKey)).count, 3,
+                       "no two names are one file on the volume: \(written)")
+        XCTAssertTrue(written.contains("Straße.csv") && written.contains("STRASSE_2.csv"),
+                      "\(written)")
+    }
+
+    func testCsvTextWritesNumbersAsTheWorkbookShowsThem() {
+        let sheet = Worksheet(name: "N")
+        sheet.write(7, row: 0, col: 0)
+        sheet.write(2.5, row: 0, col: 1)
+        sheet.write(-3.0, row: 0, col: 2)
+        sheet.write(-0.25, row: 1, col: 0)
+        sheet.write(0.8333, row: 1, col: 1, format: .pct)
+        sheet.write(true, row: 1, col: 2)
+        XCTAssertEqual(sheet.csvText(), "7,2.5,-3\n-0.25,83.3%,true\n")
+    }
+
+    func testGenerateReportNamesTheFolderItWrote() async throws {
+        try await withScratch { scratch in
+            let dataDir = try fixtureData(["overview"], in: scratch)
+            let out = scratch.appendingPathComponent("out/report.xlsx")
+            let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+            let written = try await engine.generateReport(
+                outputURL: out, csvFolder: true, locateJamfCLI: { nil })
+            XCTAssertEqual(written.csvFolder, folder(of: out))
+            let none = try await engine.generateReport(
+                outputURL: scratch.appendingPathComponent("out2/report.xlsx"),
+                locateJamfCLI: { nil })
+            XCTAssertNil(none.csvFolder)
         }
     }
 
@@ -288,6 +386,14 @@ final class CSVFolderTests: XCTestCase {
         let line = GenerateSheetState.writtenFiles(
             for: .csvFolder, profile: "acme", schoolMode: false)
         XCTAssertTrue(line.hasPrefix("report_acme_<date>_csv/"), line)
+        state.csvFolderConfigured = true
+        state.selectedTypes = [.html]
+        XCTAssertFalse(state.writesCSVFolderFromConfig, "no workbook is asked for")
+        state.selectedTypes = [.xlsx]
+        XCTAssertTrue(state.writesCSVFolderFromConfig, "output.csv_folder adds the folder")
+        state.selectedTypes = [.xlsx, .csvFolder]
+        XCTAssertFalse(state.writesCSVFolderFromConfig, "the ticked format has its own line")
+        state.csvFolderConfigured = false
         state.schoolWorkspace = false
         state.selectedTemplateID = FullInstanceTemplate().identifier
         state.selectedTypes = [.csvFolder]
@@ -327,6 +433,78 @@ final class CSVFolderTests: XCTestCase {
         XCTAssertTrue(folderRow.source.hasPrefix("CSV folder"), folderRow.source)
         XCTAssertNil(listed.first { $0.name.hasSuffix(".csv") }, "its files are not reports")
         XCTAssertEqual(ReportsView.profile(fromReportFilename: folderRow.name), "csvfolder")
+    }
+
+    // MARK: - The Reports list, free-text profile names
+
+    @MainActor
+    func testADottedProfilesFolderIsListedByItsSuffixAndReadsBackItsProfile() throws {
+        try withReportsFixture(profile: "acme.jamfcloud.com") { reports, library in
+            let name = "report_acme.jamfcloud.com_2026-10-04_091500_csv"
+            try FileManager.default.createDirectory(
+                at: reports.appendingPathComponent(name), withIntermediateDirectories: true)
+            try "x".write(to: reports.appendingPathComponent("\(name)/Cover.csv"),
+                          atomically: true, encoding: .utf8)
+
+            let rows = library.list(profile: "acme.jamfcloud.com")
+            let row = try XCTUnwrap(rows.first { $0.name == name }, "\(rows.map(\.name))")
+            XCTAssertEqual(row.source, "CSV folder")
+            XCTAssertEqual(row.size, FileDisplay.size(1))
+            XCTAssertEqual(library.url(profile: "acme.jamfcloud.com", reportName: name)?
+                .lastPathComponent, name)
+            XCTAssertEqual(ReportsView.profile(fromReportFilename: name), "acme.jamfcloud.com")
+            XCTAssertEqual(ReportsView.profile(
+                fromReportFilename: "report_acme.jamfcloud.com_2026-10-04_091500.xlsx"),
+                           "acme.jamfcloud.com")
+            XCTAssertEqual(ReportLibrary.kindLabel(forFilename: name), "CSV folder")
+        }
+    }
+
+    @MainActor
+    func testALinkNamedAsAFolderAndAHugeFolderAreHandled() throws {
+        try withReportsFixture(profile: "linked") { reports, library in
+            let fm = FileManager.default
+            let outside = reports.deletingLastPathComponent()
+                .appendingPathComponent("outside", isDirectory: true)
+            try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+            let inside = reports.appendingPathComponent("real", isDirectory: true)
+            try fm.createDirectory(at: inside, withIntermediateDirectories: true)
+            try fm.createSymbolicLink(
+                at: reports.appendingPathComponent("a_2026-10-04_091500_csv"),
+                withDestinationURL: outside)
+            try fm.createSymbolicLink(
+                at: reports.appendingPathComponent("b_2026-10-04_091500_csv"),
+                withDestinationURL: inside)
+            let huge = reports.appendingPathComponent("c_2026-10-04_091500_csv")
+            try fm.createDirectory(at: huge, withIntermediateDirectories: true)
+            for n in 0...ReportLibrary.maxFolderEntriesRead {
+                fm.createFile(atPath: huge.appendingPathComponent("f\(n).csv").path,
+                              contents: Data("x".utf8))
+            }
+
+            let rows = library.list(profile: "linked")
+            XCTAssertEqual(rows.map(\.name), ["c_2026-10-04_091500_csv"])
+            XCTAssertEqual(rows.first?.size, "—", "too many entries to size")
+        }
+    }
+
+    @MainActor
+    private func withReportsFixture(
+        profile: String, _ body: (URL, ReportLibrary) throws -> Void
+    ) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-csv-lib-\(UUID().uuidString)", isDirectory: true)
+        let workspace = root.appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
+        let reports = workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+        try FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        try body(reports, ReportLibrary())
     }
 
     // MARK: - Helpers

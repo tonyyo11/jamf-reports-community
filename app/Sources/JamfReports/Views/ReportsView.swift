@@ -404,7 +404,8 @@ struct ReportsView: View {
     }
 
     private func icon(for name: String) -> String {
-        switch URL(fileURLWithPath: name).pathExtension.lowercased() {
+        if ReportEngine.isCSVFolderName(name) { return "folder" }
+        return switch URL(fileURLWithPath: name).pathExtension.lowercased() {
         case "xlsx": "tablecells"
         case "html": "safari"
         case "pdf": "doc.richtext"
@@ -598,7 +599,10 @@ struct ReportsView: View {
     /// the kinds that save into a reports folder: kinds and profiles both have hyphens.
     /// Nil for an unknown prefix or kind, or when no profile precedes the date.
     nonisolated static func profile(fromReportFilename filename: String) -> String? {
-        let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+        // A CSV folder has no extension to drop, and a dotted profile name must not read as one.
+        let stem = ReportEngine.isCSVFolderName(filename)
+            ? String(filename.dropLast(ReportEngine.csvFolderSuffix.count))
+            : URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         let exportName = #/
             (?: period-report-\d{8}-\d{8} | outreach-stale-devices | patch-compliance
               | audit-findings | devices )
