@@ -16,6 +16,12 @@ struct MobileFleetView: View {
     /// Supervision bucket the devices table is filtered to. Set from a donut
     /// slice or legend row, cleared by the same control or the filter chip.
     @State private var supervisionFilter: MobileFleetService.SupervisionRole?
+    /// Finding the devices table is filtered to (a Health Audit count opens it set); applies
+    /// with `supervisionFilter`, both must hold.
+    @State private var findingFilter: MobileFinding?
+    @State private var findingContext: MobileFinding.Context?
+    /// Devices per finding for `findingContext`; a finding no device reports is absent.
+    @State private var findingCounts: [MobileFinding: Int] = [:]
 
     var body: some View {
         PageScaffold {
@@ -71,6 +77,7 @@ struct MobileFleetView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reloads += 1
         }
+        .onChange(of: workspace.pendingMobileFilter) { applyPendingFilter() }
     }
 
     private var subtitle: String? {
@@ -86,21 +93,52 @@ struct MobileFleetView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            findingFilter = nil
+        }
         guard !workspace.demoMode else {
-            snapshot = Self.demoSnapshot
-            supervisionFilter = nil
-            loadedSource = source
+            let context = DemoData.mobileFindingContext
+            apply(Self.demoSnapshot, context: context,
+                  counts: Self.demoSnapshot.findingCounts(context), source: source)
             return
         }
         let profile = workspace.profile
+        let staleDays = workspace.configState.staleRule.days
         guard let loaded = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
-            read: { MobileFleetService.load(profile: profile) }
+            read: {
+                let loaded = MobileFleetService.load(profile: profile)
+                let context = loaded.findingContext(staleDays: staleDays, now: Date())
+                return (loaded, context, loaded.findingCounts(context))
+            }
         ) else { return }
+        apply(loaded.0, context: loaded.1, counts: loaded.2, source: source)
+    }
+
+    private func apply(
+        _ loaded: MobileFleetService.Snapshot, context: MobileFinding.Context,
+        counts: [MobileFinding: Int], source: String
+    ) {
         snapshot = loaded
+        findingContext = context
+        findingCounts = counts
         supervisionFilter = nil
         loadedSource = source
+        applyPendingFilter()
+    }
+
+    /// Applies the filter a Health Audit count asked for (`MobileFinding.pending`) once the
+    /// snapshot is in, and only for a finding some device reports.
+    private func applyPendingFilter() {
+        guard loadedSource == dataSource, let raw = workspace.pendingMobileFilter else { return }
+        workspace.pendingMobileFilter = nil
+        guard let requested = MobileFinding(rawValue: raw), findingCounts[requested] != nil
+        else { return }
+        findingFilter = requested
+        supervisionFilter = nil
+        selectedDeviceID = nil
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
@@ -478,6 +516,40 @@ struct MobileFleetView: View {
         selectedDeviceID = nil
     }
 
+    private func setFindingFilter(_ finding: MobileFinding?) {
+        findingFilter = finding
+        selectedDeviceID = nil
+    }
+
+    private func findingChipLabel(_ finding: MobileFinding) -> String {
+        "\(finding.filterLabel): \(findingCounts[finding] ?? 0)"
+    }
+
+    /// The Health Audit's findings as table filters, each with its device count. Hidden when
+    /// the snapshot has no inventory sections to judge.
+    @ViewBuilder
+    private var findingMenu: some View {
+        if !findingCounts.isEmpty {
+            Menu {
+                ForEach(MobileFinding.allCases.filter { findingCounts[$0] != nil }) { finding in
+                    Button("\(finding.filterLabel) (\(findingCounts[finding] ?? 0))") {
+                        setFindingFilter(finding)
+                    }
+                }
+                if findingFilter != nil {
+                    Divider()
+                    Button("Show every device") { setFindingFilter(nil) }
+                }
+            } label: {
+                Label("Needs attention", systemImage: "line.3.horizontal.decrease.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Filter devices by a Health Audit finding")
+            .help("Show only the devices behind a Health Audit finding.")
+        }
+    }
+
     /// Blue vs orange stays apart for color-blind readers; warn is a status color, not a series.
     static func supervisionColor(for role: MobileFleetService.SupervisionRole) -> Color {
         switch role {
@@ -656,7 +728,8 @@ struct MobileFleetView: View {
                 HStack(spacing: 10) {
                     SectionHeader(
                         title: "Mobile Devices",
-                        trailing: supervisionFilter != nil || total > rows.count
+                        trailing: supervisionFilter != nil || findingFilter != nil
+                            || total > rows.count
                             ? "\(rows.count) of \(total) shown"
                             : nil
                     )
@@ -665,6 +738,13 @@ struct MobileFleetView: View {
                             toggleSupervisionFilter(supervisionFilter)
                         }
                     }
+                    if let findingFilter {
+                        FilterChip(label: findingChipLabel(findingFilter)) {
+                            setFindingFilter(nil)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    findingMenu
                 }
                 Table(rows, selection: $selectedDeviceID) {
                     TableColumn("Name") { device in
@@ -913,8 +993,12 @@ struct MobileFleetView: View {
     /// fleet's first 50 reach the table.
     private var tableRows: [Either<MobileDeviceListRow, MobileDeviceInventoryItem>] {
         if !snapshot.richDevices.isEmpty {
-            return MobileFleetService.devices(snapshot.richDevices, in: supervisionFilter)
-                .map { .right($0) }
+            var matched = MobileFleetService.devices(snapshot.richDevices, in: supervisionFilter)
+            if let findingFilter, let findingContext {
+                matched = snapshot.devices(
+                    matched, affectedBy: findingFilter, context: findingContext)
+            }
+            return matched.map { .right($0) }
         }
         return snapshot.lightDevices.map { .left($0) }
     }

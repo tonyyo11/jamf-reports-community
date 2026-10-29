@@ -13,8 +13,18 @@ versions in this repository map to git tags.
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)
 
+- The Health Audit has a Mobile Devices card with seven findings: jailbreak detected, not managed,
+  passcode not compliant, data protection off, OS behind the current release, software update
+  errors, and no inventory update within the stale window. Each shows the change since the
+  previous daily summary, and its count opens Mobile Devices filtered to those devices; the
+  devices table has a Needs attention menu with the same filters. The HTML report's Needs
+  attention lists the same conditions. A device that does not report a field is never counted
+  as failing, and the card is hidden when the workspace has no mobile devices. (#305)
+
 ### Changed
 
+- The daily summary's mobile software update errors now count devices, so a device with errors
+  for two products counts once. (#305)
 - When a schedule that covers every profile has a same-day retry, it now re-collects only the
   profiles that failed or came back Partial, not the ones that finished cleanly or failed in a
   way a retry repeats. Run now and each new day's run still cover every profile. (#305)
