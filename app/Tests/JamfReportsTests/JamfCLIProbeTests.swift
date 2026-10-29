@@ -127,6 +127,28 @@ final class JamfCLIProbeTests: XCTestCase {
         XCTAssertEqual(String(decoding: output.stderr, as: UTF8.self), "warn\n")
     }
 
+    /// A child that exits at once must still deliver its whole answer: the drainers start
+    /// before the launch, so `finish()` can never run ahead of them.
+    func testFastExitingChildrenAlwaysDeliverTheirOutput() async throws {
+        let stub = try makeStub("echo answer")
+        for _ in 0..<60 {
+            let sync = try XCTUnwrap(JamfCLIProbe.run(executable: stub, arguments: []))
+            XCTAssertEqual(String(decoding: sync.stdout, as: UTF8.self), "answer\n")
+            let async = await JamfCLIProbe.runAsync(executable: stub, arguments: [])
+            XCTAssertEqual(async.map { String(decoding: $0.stdout, as: UTF8.self) }, "answer\n")
+        }
+    }
+
+    func testCancellingTheCallerStopsTheChild() async throws {
+        let stub = try makeStub("exec sleep 30")
+        let task = Task { await JamfCLIProbe.runOutcomeAsync(executable: stub, arguments: [], timeout: 60) }
+        try await Task.sleep(nanoseconds: 500_000_000)
+        let start = Date()
+        task.cancel()
+        _ = await task.value
+        XCTAssertLessThan(Date().timeIntervalSince(start), Self.slowBound)
+    }
+
     func testAsyncProbeStopsAWedgedChildAtItsDeadline() async throws {
         let stub = try makeStub("exec sleep 30")
         let start = Date()

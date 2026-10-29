@@ -38,7 +38,10 @@ final class ProcessPipeDrainer: Sendable {
 
         return state.withLock { state in
             state.isFinishing = true
-            Self.append(readWithoutBlocking(until: Date().addingTimeInterval(deadline)), to: &state)
+            let room = max(0, Self.maxBytes - state.buffer.count)
+            Self.append(
+                readWithoutBlocking(until: Date().addingTimeInterval(deadline), limit: room),
+                to: &state)
             return state.buffer
         }
     }
@@ -49,7 +52,7 @@ final class ProcessPipeDrainer: Sendable {
 
     /// Reads until the pipe is empty (EAGAIN), at EOF, or at `deadline`, so a grandchild that
     /// keeps writing cannot hold the caller either.
-    private func readWithoutBlocking(until deadline: Date) -> Data {
+    private func readWithoutBlocking(until deadline: Date, limit: Int) -> Data {
         let fd = handle.fileDescriptor
         let flags = fcntl(fd, F_GETFL)
         guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0 else { return Data() }
@@ -58,7 +61,8 @@ final class ProcessPipeDrainer: Sendable {
         while Date() < deadline {
             let count = chunk.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
             if count > 0 {
-                collected.append(contentsOf: chunk[0..<count])
+                // Read on past the budget (to drain the pipe) but keep nothing beyond it.
+                collected.append(contentsOf: chunk[0..<min(count, max(0, limit - collected.count))])
             } else if count < 0 && errno == EINTR {
                 continue
             } else {

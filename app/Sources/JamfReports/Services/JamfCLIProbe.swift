@@ -78,11 +78,16 @@ enum JamfCLIProbe {
         timeout: TimeInterval = defaultTimeout
     ) async -> Outcome {
         let running = Running(executable: executable, arguments: arguments)
-        return await withCheckedContinuation { continuation in
-            let launch = running.start(timeout: timeout) {
-                continuation.resume(returning: running.outcome(timeout: timeout))
+        // A cancelled caller stops the child, as `CLIBridge.run` does.
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let launch = running.start(timeout: timeout) {
+                    continuation.resume(returning: running.outcome(timeout: timeout))
+                }
+                if launch == .launchFailed { continuation.resume(returning: .launchFailed) }
             }
-            if launch == .launchFailed { continuation.resume(returning: .launchFailed) }
+        } onCancel: {
+            running.terminate()
         }
     }
 
@@ -112,7 +117,13 @@ enum JamfCLIProbe {
 
         /// `onExit` runs once the child has exited, including after a timeout; it does not run
         /// when the launch fails.
+        func terminate() { box.terminate() }
+
         func start(timeout: TimeInterval, onExit: @escaping @Sendable () -> Void) -> Launch {
+            // Drain from before the launch, or a child that exits at once reaches `finish()`
+            // before the handler is installed and leaves it spinning at EOF.
+            stdoutDrainer.start()
+            stderrDrainer.start()
             box.set(process)
             process.terminationHandler = { [box] _ in
                 box.disarmTimeout()
@@ -121,15 +132,14 @@ enum JamfCLIProbe {
             do {
                 try process.run()
             } catch {
+                stdoutDrainer.cancel()
+                stderrDrainer.cancel()
                 let reason = error.localizedDescription
                 AppLogger.cli.error("JamfCLIProbe: launch failed: \(reason, privacy: .private)")
                 return .launchFailed
             }
             box.stopIfClosing()
             box.armTimeout(timeout)
-            // Drain while the child runs, or output past the pipe buffer would block it.
-            stdoutDrainer.start()
-            stderrDrainer.start()
             return .running
         }
 
