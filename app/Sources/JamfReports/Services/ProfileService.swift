@@ -113,14 +113,15 @@ enum ProfileService {
         }
     }
 
-    /// Configured profiles Jamf Reports can't use. Of names that differ only by
-    /// case, the one an existing workspace folder records keeps it, matching the
-    /// bind and collect guards; with no folder, the all-lowercase spelling (the
-    /// only one older builds accepted), else the first listed.
-    /// `recordedOwner` maps a `ProfileName.folderKey` to that folder's profile.
+    /// Configured profiles Jamf Reports can't use. Where workspace folders spelled like a name
+    /// (any case) exist, the bind, collect and backup rule decides (`caseVariantWorkspace`): a
+    /// name is unusable when a folder of another spelling exists, judged by the folders' own
+    /// names, never config.yaml. With no folder, of names that differ only by case the
+    /// all-lowercase spelling (the only one older builds accepted) keeps it, else the first
+    /// listed. `folderNames` maps a `ProfileName.folderKey` to the names its folders encode.
     static func unusableProfiles(
         in names: [String],
-        recordedOwner: (String) -> String? = recordedWorkspaceOwner(matching:)
+        folderNames: (String) -> [String] = workspaceFolderNames(matching:)
     ) -> [String: UnusableReason] {
         var reasons: [String: UnusableReason] = [:]
         for name in names {
@@ -129,9 +130,18 @@ enum ProfileService {
             }
         }
         let spellings = Dictionary(grouping: names.filter(isValid), by: ProfileName.folderKey)
-        for (key, group) in spellings where group.count > 1 {
-            let recorded = recordedOwner(key)
-            let owner = group.first { $0 == recorded } ?? group.first { $0 == key } ?? group[0]
+        for (key, group) in spellings {
+            let folders = folderNames(key)
+            if !folders.isEmpty {
+                for name in group {
+                    if let other = caseVariant(of: name, among: folders) {
+                        reasons[name] = .sharesFolder(with: other)
+                    }
+                }
+                continue
+            }
+            guard group.count > 1 else { continue }
+            let owner = group.first { $0 == key } ?? group[0]
             for name in group where name != owner {
                 reasons[name] = .sharesFolder(with: owner)
             }
@@ -139,11 +149,15 @@ enum ProfileService {
         return reasons
     }
 
-    /// The owner of an existing workspace folder spelled like `key` (any case): the name the
-    /// folder itself encodes, case preserved. Never config.yaml, which a peer can write: a
-    /// planted `jamf_cli.profile: Prod` in `prod` must not make `Prod` the folder's owner.
-    static func recordedWorkspaceOwner(matching key: String) -> String? {
-        workspaceFolders(matching: key).first?.name
+    /// The names the existing workspace folders spelled like `key` (any case) encode, case
+    /// preserved. More than one only on a case-sensitive volume.
+    static func workspaceFolderNames(matching key: String) -> [String] {
+        workspaceFolders(matching: key).map(\.name)
+    }
+
+    /// The one folder rule: another spelling's folder `name` would share.
+    private static func caseVariant(of name: String, among folders: [String]) -> String? {
+        folders.first { $0 != name }
     }
 
     /// Workspace folders (holding a `config.yaml`) whose profile has the folder key `key`,
@@ -197,8 +211,8 @@ enum ProfileService {
     /// The profile of an existing workspace folder spelled like `profile` apart from
     /// letter case. On a case-insensitive volume it is `profile`'s folder as well.
     static func caseVariantWorkspace(of profile: String) -> String? {
-        workspaceFolders(matching: ProfileName.folderKey(profile)).map(\.name)
-            .first { $0 != profile }
+        caseVariant(
+            of: profile, among: workspaceFolderNames(matching: ProfileName.folderKey(profile)))
     }
 
     /// Discover real profiles from `jamf-cli config list` first, then merge in

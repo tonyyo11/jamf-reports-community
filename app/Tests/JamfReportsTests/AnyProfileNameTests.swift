@@ -139,7 +139,7 @@ final class AnyProfileNameTests: XCTestCase {
     func testCaseAndAccentVariantsShareOneFolder() {
         XCTAssertEqual(
             ProfileService.unusableProfiles(
-                in: ["Zürich", "zürich"], recordedOwner: { _ in nil }
+                in: ["Zürich", "zürich"], folderNames: { _ in [] }
             ),
             ["Zürich": .sharesFolder(with: "zürich")]
         )

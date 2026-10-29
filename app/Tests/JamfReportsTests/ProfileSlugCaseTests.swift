@@ -56,27 +56,38 @@ final class ProfileSlugCaseTests: XCTestCase {
         // With no workspace folder yet, the lowercase spelling keeps it even when
         // listed second: it is the only one older builds could have created.
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["Prod", "prod"], recordedOwner: { _ in nil }),
+            ProfileService.unusableProfiles(in: ["Prod", "prod"], folderNames: { _ in [] }),
             ["Prod": .sharesFolder(with: "prod")]
         )
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["PROD", "Prod"], recordedOwner: { _ in nil }),
+            ProfileService.unusableProfiles(in: ["PROD", "Prod"], folderNames: { _ in [] }),
             ["Prod": .sharesFolder(with: "PROD")],
             "without a lowercase spelling, the first listed keeps the folder"
         )
     }
 
-    /// Discovery must agree with the bind and collect guards, which follow the
-    /// profile a workspace folder records: that spelling keeps the folder.
-    func testTheSpellingAnExistingWorkspaceRecordsKeepsTheFolder() {
+    /// Discovery follows the bind, collect and backup rule (`caseVariantWorkspace`): where a
+    /// folder exists, a spelling other than the folder's own is unusable.
+    func testTheFoldersOwnSpellingKeepsTheFolder() {
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["Prod", "prod"], recordedOwner: { _ in "Prod" }),
+            ProfileService.unusableProfiles(in: ["Prod", "prod"], folderNames: { _ in ["Prod"] }),
             ["prod": .sharesFolder(with: "Prod")]
         )
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["Prod", "prod"], recordedOwner: { _ in "PROD" }),
-            ["Prod": .sharesFolder(with: "prod")],
-            "a recorded profile no longer configured falls back to the lowercase spelling"
+            ProfileService.unusableProfiles(in: ["Prod", "prod"], folderNames: { _ in ["PROD"] }),
+            ["Prod": .sharesFolder(with: "PROD"), "prod": .sharesFolder(with: "PROD")],
+            "a folder of a spelling no longer configured: every listed spelling would share it"
+        )
+        XCTAssertEqual(
+            ProfileService.unusableProfiles(in: ["prod"], folderNames: { _ in ["Prod"] }),
+            ["prod": .sharesFolder(with: "Prod")],
+            "one spelling alone is unusable when the folder is another's"
+        )
+        XCTAssertEqual(
+            ProfileService.unusableProfiles(
+                in: ["prod", "Prod"], folderNames: { _ in ["prod", "Prod"] }),
+            ["prod": .sharesFolder(with: "Prod"), "Prod": .sharesFolder(with: "prod")],
+            "a case-sensitive volume with both folders: collect refuses both, so does discovery"
         )
     }
 
@@ -402,22 +413,22 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertNil(ProfileService.caseVariantWorkspace(of: "Prod"), "no config.yaml")
     }
 
-    func testRecordedWorkspaceOwnerIsTheFolderName() throws {
+    func testWorkspaceFolderNamesAreTheFoldersOwnNames() throws {
         _ = try writeWorkspace(folder: "Prod", recordedProfile: "Prod")
         _ = try writeWorkspace(folder: "blank", recordedProfile: "")
-        XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "prod"), "Prod")
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "prod"), ["Prod"])
         XCTAssertEqual(
             ProfileService.unusableProfiles(in: ["prod", "Prod"]),
             ["prod": .sharesFolder(with: "Prod")]
         )
-        XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "blank"), "blank",
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "blank"), ["blank"],
                        "the folder's own name")
-        XCTAssertNil(ProfileService.recordedWorkspaceOwner(matching: "absent"))
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "absent"), [])
         try FileManager.default.createDirectory(
             at: tempRoot.appendingPathComponent("Bare"), withIntermediateDirectories: true
         )
-        XCTAssertNil(ProfileService.recordedWorkspaceOwner(matching: "bare"),
-                     "a folder without config.yaml is not a workspace")
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "bare"), [],
+                       "a folder without config.yaml is not a workspace")
     }
 
     /// Audit and Refresh write for the active profile without binding its
@@ -478,7 +489,7 @@ final class ProfileSlugCaseTests: XCTestCase {
         try Data("jamf_cli:\n  profile: \"Prod\"\n".utf8).write(to: configURL)
         let config = try ConfigLoader.load(from: configURL)
 
-        XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "prod"), "prod")
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "prod"), ["prod"])
         XCTAssertEqual(ProfileService.unusableProfiles(in: ["prod", "Prod"]),
                        ["Prod": .sharesFolder(with: "prod")])
         XCTAssertThrowsError(try readingBackupProfile("Prod") { _ in }) { error in
@@ -507,6 +518,22 @@ final class ProfileSlugCaseTests: XCTestCase {
             config: config, proCollect: proCollect, onLine: { _ in }
         )
         XCTAssertTrue(collected.value, "the folder's own profile still collects")
+    }
+
+    /// On disk, discovery and the run guard agree: with only `Prod/`, neither `prod` nor
+    /// `PROD` is offered, and both are refused.
+    func testDiscoveryAndTheRunGuardAgreeOnAFolderOfAThirdSpelling() throws {
+        try FileManager.default.createDirectory(
+            at: tempRoot.appendingPathComponent("Prod"), withIntermediateDirectories: true)
+        try Data("jamf_cli: {}\n".utf8)
+            .write(to: tempRoot.appendingPathComponent("Prod/config.yaml"))
+        let unusable = ProfileService.unusableProfiles(in: ["prod", "PROD"])
+        for name in ["prod", "PROD"] {
+            XCTAssertEqual(unusable[name], .sharesFolder(with: "Prod"), name)
+            XCTAssertEqual(ProfileService.caseVariantWorkspace(of: name), "Prod", name)
+        }
+        XCTAssertNil(ProfileService.unusableProfiles(in: ["Prod"])["Prod"])
+        XCTAssertNil(ProfileService.caseVariantWorkspace(of: "Prod"))
     }
 
     /// Only a case variant is refused: a workspace recording some other name, or
