@@ -87,22 +87,37 @@ struct RunManifest: Codable, Equatable, Sendable {
             .appendingPathComponent(stem).appendingPathExtension(timestampExtension)
     }
 
-    /// The top-level files and folders the manifest at `url` lists, for rotation to move with
-    /// `workbook`: never another workbook (a run has one), the manifest or its `.tsr`. Empty when
-    /// the manifest is absent or unreadable (read bounded, links refused).
+    /// The top-level entries the manifest at `url` lists that rotation may move with `workbook`:
+    /// only what this app's formats write (an `.html`, `.pdf` or `.csv` file, a `_csv` folder),
+    /// no hidden name, never another workbook, the manifest or its `.tsr`, and only a regular file
+    /// or a real `_csv` folder (`lstat`, a link refused). Empty when the manifest is absent or
+    /// unreadable (read bounded, links refused). The manifest is peer-writable, so this is the
+    /// whole of what it can make rotation touch.
     static func listedFiles(manifestAt url: URL, besideWorkbook workbook: URL) -> [URL] {
         guard let data = try? BoundedFile.read(url, limit: maxManifestBytes, followSymlinks: false),
               let manifest = try? JSONDecoder().decode(RunManifest.self, from: data)
         else { return [] }
         let folder = url.deletingLastPathComponent()
-        let own = [url.lastPathComponent, timestampURL(forManifest: url).lastPathComponent]
         var names: [String] = []
         for artifact in manifest.artifacts where isRelativeName(artifact.name) {
             let top = String(artifact.name.split(separator: "/")[0])
-            let isOtherWorkbook = top.hasSuffix(".xlsx") && top != workbook.lastPathComponent
-            if !names.contains(top), !own.contains(top), !isOtherWorkbook { names.append(top) }
+            guard !names.contains(top), top != workbook.lastPathComponent,
+                  let isFolder = rotatableKind(top) else { continue }
+            var info = stat()
+            guard lstat(folder.appendingPathComponent(top).path, &info) == 0,
+                  (info.st_mode & S_IFMT) == (isFolder ? S_IFDIR : S_IFREG) else { continue }
+            names.append(top)
         }
         return names.map { folder.appendingPathComponent($0) }
+    }
+
+    /// Whether `name` is a report format rotation may move: true for a `_csv` folder, false for
+    /// an `.html`, `.pdf` or `.csv` file, nil for anything else.
+    private static func rotatableKind(_ name: String) -> Bool? {
+        guard !name.hasPrefix(".") else { return nil }
+        if name.hasSuffix(ReportEngine.csvFolderSuffix) { return true }
+        let ext = (name as NSString).pathExtension.lowercased()
+        return ["html", "pdf", "csv"].contains(ext) ? false : nil
     }
 
     // MARK: - Writing
@@ -201,7 +216,7 @@ struct RunManifest: Codable, Equatable, Sendable {
         }
         guard let manifest = try? JSONDecoder().decode(RunManifest.self, from: data),
               manifest.format == formatName, manifest.version == 1 else {
-            fail("FAIL  \(url.lastPathComponent) is not a jamf-reports run manifest")
+            fail("FAIL  \(shown(url.lastPathComponent)) is not a jamf-reports run manifest")
             return result
         }
         let digest = SHA256.hash(data: data).hexString
@@ -282,7 +297,9 @@ struct RunManifest: Codable, Equatable, Sendable {
         return found
     }
 
-    /// A field a manifest or token carries, which anyone could have written, as one line.
+    /// A field a manifest or token carries, which anyone could have written, as one line. The
+    /// CLI's tty escape (`CLIRun.terminalSafe`) runs too: this keeps each field on its own line
+    /// for any reader of `lines` (a pipe, a test), that keeps the terminal itself safe.
     private static func shown(_ text: String) -> String {
         let display = ConfigSchema.fullDisplayText(text)
         return display.text + (display.truncated ? " (truncated)" : "")
@@ -293,7 +310,9 @@ struct RunManifest: Codable, Equatable, Sendable {
     ) {
         var info = stat()
         guard lstat(url.path, &info) == 0 else {
-            result.lines.append("Timestamp: none (no \(url.lastPathComponent) beside the manifest)")
+            result.lines.append(
+                "Timestamp: none (no \(shown(url.lastPathComponent)) beside the manifest)")
+            result.lines.append(untimestampedNote)
             return
         }
         let inspection: TimestampToken.Inspection
@@ -301,7 +320,7 @@ struct RunManifest: Codable, Equatable, Sendable {
             let reply = try BoundedFile.read(url, limit: maxReplyBytes, followSymlinks: false)
             inspection = try TimestampToken.inspect(reply: reply)
         } catch {
-            result.lines.append("FAIL  timestamp \(url.lastPathComponent): "
+            result.lines.append("FAIL  timestamp \(shown(url.lastPathComponent)): "
                 + error.localizedDescription)
             result.passed = false
             return
@@ -330,7 +349,16 @@ struct RunManifest: Codable, Equatable, Sendable {
             ? "Timestamp chain: trusted by this Mac"
             : "Timestamp chain: not trusted by this Mac (a self-signed or private authority; "
                 + "the time above is what that authority signed)")
+        if !inspection.chainTrusted { result.lines.append(untrustedChainNote) }
     }
+
+    /// Anyone who can write the folder can write a manifest that matches the files beside it.
+    static let untimestampedNote = "Note: with no timestamp, a match shows only that the files "
+        + "equal this manifest; it holds only if you trust where the manifest came from."
+    /// A self-signed token can name itself anything; its fingerprint is what can be checked.
+    static let untrustedChainNote = "Note: the chain is not trusted, so the timestamp holds only "
+        + "if the signer fingerprint above is the one the authority publishes and you trust "
+        + "where the manifest came from."
 
     /// A name below the manifest's folder: no absolute path, no `.`/`..` or empty component.
     static func isRelativeName(_ name: String) -> Bool {

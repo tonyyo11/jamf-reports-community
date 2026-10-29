@@ -338,17 +338,19 @@ struct ReportEngine: Sendable {
             // formats). A `.html` with no workbook or manifest naming it, such as
             // `jamf-reports html` output, is not a run of this stem and is left where it is.
             let manifest = RunManifest.manifestURL(for: file)
-            let named = [file, Self.htmlURL(besideWorkbook: file),
-                         Self.csvFolderURL(besideWorkbook: file)]
-                + RunManifest.listedFiles(manifestAt: manifest, besideWorkbook: file)
-            let run = named.enumerated()
-                .filter { named.firstIndex(of: $0.element) == $0.offset }.map(\.element)
-                .filter { fm.fileExists(atPath: $0.path) }
+            let own = [file, Self.htmlURL(besideWorkbook: file),
+                       Self.csvFolderURL(besideWorkbook: file)]
+            // What only the peer-writable manifest names never replaces an archive entry.
+            let listed = RunManifest.listedFiles(manifestAt: manifest, besideWorkbook: file)
+                .filter { !own.contains($0) }
+            let run = (own + listed).filter { fm.fileExists(atPath: $0.path) }
             var everyFileMoved = true
             for artifact in run {
                 // Skip sidecars when the move failed: sidecars without their report in the
                 // archive are uninformative.
-                guard Self.moveToArchive(artifact, archiveDir: archiveDir, onLine: onLine) else {
+                guard Self.moveToArchive(
+                    artifact, archiveDir: archiveDir, replacing: !listed.contains(artifact),
+                    onLine: onLine) else {
                     everyFileMoved = false
                     continue
                 }
@@ -393,15 +395,24 @@ struct ReportEngine: Sendable {
                 == .orderedSame
     }
 
-    /// Moves `file` into `archiveDir`, replacing a file of the same name there. A failure is a
-    /// `[warn]` line, and the result is false.
+    /// Moves `file` into `archiveDir`, replacing a file of the same name there unless
+    /// `replacing` is false, when an existing entry (a link included) stops the move. A failure
+    /// is a `[warn]` line, and the result is false.
     @discardableResult
     static func moveToArchive(
-        _ file: URL, archiveDir: URL, label: String = "",
+        _ file: URL, archiveDir: URL, label: String = "", replacing: Bool = true,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) -> Bool {
         let fm = FileManager.default
         let dest = archiveDir.appendingPathComponent(file.lastPathComponent)
+        var held = stat()
+        guard replacing || lstat(dest.path, &held) != 0 else {
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): the archive "
+                + "already holds an entry of that name, so both are left in place."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return false
+        }
         guard !isSameFile(dest, file) else {
             let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): the archive "
                 + "folder is the folder it is in."
