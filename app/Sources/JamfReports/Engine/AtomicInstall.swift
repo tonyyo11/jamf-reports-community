@@ -51,6 +51,32 @@ enum AtomicInstall {
         return lstat(url.path, &info) == 0
     }
 
+    /// How long a staging entry a crashed run left behind is kept before the next run removes it.
+    static let staleStagingAge: TimeInterval = 24 * 3600
+
+    /// Removes the staging entries a crash, or the tick's give-up exit, left in `parent`, older
+    /// than `staleStagingAge`: hidden `.<name>.tmp-<uuid>` regular files (a workbook) and, when
+    /// the name ends in `_csv`, real folders (a CSV folder). In a shared reports folder nothing
+    /// else would move them. Each is `lstat`-checked; a link is never touched.
+    static func removeStaleStaging(in parent: URL, now: Date) {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: parent.path)
+        else { return }
+        for name in names where name.hasPrefix(".") {
+            guard let marker = name.range(of: ".tmp-", options: .backwards),
+                  UUID(uuidString: String(name[marker.upperBound...])) != nil else { continue }
+            let url = parent.appendingPathComponent(name)
+            var info = stat()
+            guard lstat(url.path, &info) == 0 else { continue }
+            switch info.st_mode & S_IFMT {
+            case S_IFREG: break
+            case S_IFDIR where name[..<marker.lowerBound].hasSuffix(ReportEngine.csvFolderSuffix): break
+            default: continue
+            }
+            let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
+            if now.timeIntervalSince(modified) > staleStagingAge { discard(url) }
+        }
+    }
+
     /// Removes what `url` names: a real folder with its contents, anything else (a link
     /// included) as the one entry. Never follows a link.
     static func discard(_ url: URL) {

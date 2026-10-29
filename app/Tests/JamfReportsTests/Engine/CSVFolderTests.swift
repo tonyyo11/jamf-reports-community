@@ -240,38 +240,63 @@ final class CSVFolderTests: XCTestCase {
         XCTAssertEqual(try names(in: root), ["report.xlsx", "victim.txt"], "no staging file left")
     }
 
-    func testAStagingFolderOlderThanADayIsRemovedAndANewerOrLinkedOneIsNot() throws {
+    func testStagingLeftoversOlderThanADayAreRemovedFromBothWriters() throws {
         let parent = scratchURL("staging")
         defer { try? FileManager.default.removeItem(at: parent.deletingLastPathComponent()) }
         let fm = FileManager.default
         try fm.createDirectory(at: parent, withIntermediateDirectories: true)
         let noon = Date.testNoon
-        func plant(_ name: String, age: TimeInterval) throws -> URL {
+        func age(_ url: URL, _ seconds: TimeInterval) throws {
+            try fm.setAttributes([.modificationDate: noon.addingTimeInterval(-seconds)],
+                                 ofItemAtPath: url.path)
+        }
+        func folder(_ name: String, age seconds: TimeInterval) throws -> URL {
             let url = parent.appendingPathComponent(name, isDirectory: true)
             try fm.createDirectory(at: url, withIntermediateDirectories: true)
             try "x".write(to: url.appendingPathComponent("Cover.csv"), atomically: true, encoding: .utf8)
-            try fm.setAttributes([.modificationDate: noon.addingTimeInterval(-age)],
-                                 ofItemAtPath: url.path)
+            try age(url, seconds)
             return url
         }
-        let old = try plant(".report_x_csv.tmp-OLD", age: 2 * 86_400)
-        let fresh = try plant(".report_x_csv.tmp-FRESH", age: 3_600)
-        let unrelated = try plant(".other.tmp-OLD", age: 2 * 86_400)
+        func file(_ name: String, age seconds: TimeInterval) throws -> URL {
+            let url = parent.appendingPathComponent(name)
+            try "x".write(to: url, atomically: true, encoding: .utf8)
+            try age(url, seconds)
+            return url
+        }
+        let day: TimeInterval = 86_400
+        let oldFolder = try folder(".report_x_csv.tmp-\(UUID().uuidString)", age: 2 * day)
+        let freshFolder = try folder(".report_x_csv.tmp-\(UUID().uuidString)", age: 3_600)
+        let otherFolder = try folder(".other.tmp-\(UUID().uuidString)", age: 2 * day)
+        let oldFile = try file(".report_x.xlsx.tmp-\(UUID().uuidString)", age: 2 * day)
+        let freshFile = try file(".report_y.xlsx.tmp-\(UUID().uuidString)", age: 3_600)
+        let notStaging = try file(".report_z.xlsx.tmp-notauuid", age: 2 * day)
+        let visible = try file("report_x.xlsx.tmp-\(UUID().uuidString)", age: 2 * day)
         let outside = scratchURL("staging-target")
         defer { try? fm.removeItem(at: outside.deletingLastPathComponent()) }
         try fm.createDirectory(at: outside, withIntermediateDirectories: true)
-        let link = parent.appendingPathComponent(".report_y_csv.tmp-LINK")
+        let link = parent.appendingPathComponent(".report_y_csv.tmp-\(UUID().uuidString)")
         try fm.createSymbolicLink(at: link, withDestinationURL: outside)
 
         let workbook = Workbook()
         workbook.addSheet("Cover").write("x", row: 0, col: 0)
         try workbook.writeCSVFolder(to: parent.appendingPathComponent("report_z_csv"), now: noon)
 
-        XCTAssertFalse(fm.fileExists(atPath: old.path))
-        XCTAssertTrue(fm.fileExists(atPath: fresh.path))
-        XCTAssertTrue(fm.fileExists(atPath: unrelated.path), "only a CSV staging folder")
+        XCTAssertFalse(fm.fileExists(atPath: oldFolder.path))
+        XCTAssertFalse(fm.fileExists(atPath: oldFile.path), "an old staged workbook goes too")
+        for kept in [freshFolder, otherFolder, freshFile, notStaging, visible] {
+            XCTAssertTrue(fm.fileExists(atPath: kept.path), kept.lastPathComponent)
+        }
         XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is left alone")
         XCTAssertTrue(fm.fileExists(atPath: outside.path))
+
+        // Workbook.write sweeps the same way (its clock is the real one: the planted files are
+        // dated by the test clock, so plant an old one for it by absolute date).
+        let ancient = try file(".report_w.xlsx.tmp-\(UUID().uuidString)", age: 0)
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 0)],
+                             ofItemAtPath: ancient.path)
+        try workbook.write(to: parent.appendingPathComponent("report_w.xlsx"))
+        XCTAssertFalse(fm.fileExists(atPath: ancient.path))
+        XCTAssertTrue(fm.fileExists(atPath: parent.appendingPathComponent("report_w.xlsx").path))
     }
 
     func testTwoTabsThatTheVolumeReadsAsOneNameGetASuffix() throws {

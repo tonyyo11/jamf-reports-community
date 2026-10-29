@@ -58,9 +58,6 @@ extension Workbook {
         }
     }
 
-    /// How long a staging folder a crashed run left behind is kept before the next run removes it.
-    static let staleStagingAge: TimeInterval = 24 * 3600
-
     /// Writes one `<tab name>.csv` per tab into `folder`, replacing a folder of that name as a
     /// whole (`AtomicInstall`): the files are staged in a hidden sibling first, so a failure
     /// leaves the old folder and no half-written one, and a link at the folder's name is
@@ -73,7 +70,7 @@ extension Workbook {
         let fm = FileManager.default
         let parent = folder.deletingLastPathComponent()
         try fm.createDirectory(at: parent, withIntermediateDirectories: true)
-        Self.removeStaleStagingFolders(in: parent, now: now)
+        AtomicInstall.removeStaleStaging(in: parent, now: now)
         let staging = parent.appendingPathComponent(
             ".\(folder.lastPathComponent).tmp-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(
@@ -109,21 +106,6 @@ extension Workbook {
             suffix += 1
         }
         return candidate + ".csv"
-    }
-
-    /// Removes `.<name>_csv.tmp-*` folders in `parent` that are older than a day: a crash, or the
-    /// tick's give-up exit, can leave one, and in a shared reports folder nothing else would ever
-    /// move it. Only a real folder is removed, never a link.
-    private static func removeStaleStagingFolders(in parent: URL, now: Date) {
-        let fm = FileManager.default
-        guard let names = try? fm.contentsOfDirectory(atPath: parent.path) else { return }
-        for name in names where name.hasPrefix(".") && name.contains("\(ReportEngine.csvFolderSuffix).tmp-") {
-            let url = parent.appendingPathComponent(name)
-            var info = stat()
-            guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { continue }
-            let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
-            if now.timeIntervalSince(modified) > staleStagingAge { AtomicInstall.discard(url) }
-        }
     }
 }
 

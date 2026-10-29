@@ -285,6 +285,7 @@ final class Workbook: @unchecked Sendable {
     func write(to url: URL) throws {
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        AtomicInstall.removeStaleStaging(in: dir, now: Date())
         let staged = dir.appendingPathComponent(".\(url.lastPathComponent).tmp-\(UUID().uuidString)")
         do {
             try buildZIP(at: staged)
