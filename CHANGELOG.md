@@ -97,10 +97,12 @@ versions in this repository map to git tags.
 
 ### Security
 
-- Every report run now writes a manifest beside the workbook with the SHA-256 of each file it
-  wrote, and `jamf-reports verify` checks a run against it. Set `output.timestamp_authority`
-  to have each manifest timestamped by an RFC 3161 authority: only the manifest's hash is
-  sent. A failed timestamp is a warning, never a failed run. (#305)
+- Report runs now write a manifest beside their files with the SHA-256 of each workbook, HTML,
+  PDF and CSV file they wrote (chart images and the period and fleet reports are not listed),
+  and `jamf-reports verify` checks a run against it, including files added afterwards. Set
+  `output.timestamp_authority` to have each manifest timestamped by an RFC 3161 authority:
+  only the manifest's hash is sent, and on a shared workspace each Mac sends only once the
+  address is confirmed there. A failed timestamp is a warning, never a failed run. (#305)
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,
   dots, hyphens or parentheses, such as `+44 20 7946 0958` and `+1 (415) 555 0132`. (#305)
 - Mobile device snapshots saved by earlier versions no longer keep lost-mode phone numbers,
