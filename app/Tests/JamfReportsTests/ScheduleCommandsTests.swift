@@ -17,8 +17,8 @@ final class ScheduleCommandsTests: XCTestCase {
         let r = try Schedules.Add.record(
             name: "fleet", profile: "alpha", allProfiles: true, exclude: "dummy, sandbox",
             mode: "jamf-cli-full", cadence: "Mon 07:00", tiers: nil, disabled: true)
-        XCTAssertTrue(r.allProfiles)
-        XCTAssertEqual(r.excludedProfiles, ["dummy", "sandbox"])
+        XCTAssertTrue(r.allWorkspaces)
+        XCTAssertEqual(r.excludedWorkspaces, ["dummy", "sandbox"])
         XCTAssertFalse(r.enabled)
         XCTAssertNil(r.tiers)
     }

@@ -808,7 +808,7 @@ struct ScheduleFormState {
     }
 
     // Multi-profile targeting. The native runner only ever honours
-    // `--all-profiles` + exclusions (`ScheduleRecord.allProfiles` is a Bool),
+    // `--all-profiles` + exclusions (`ScheduleRecord.allWorkspaces` is a Bool),
     // so this stays a two-way choice rather than modeling scopes the store
     // cannot persist.
     enum ProfileMode: String, CaseIterable, Identifiable {

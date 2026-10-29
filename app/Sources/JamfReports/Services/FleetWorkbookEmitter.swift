@@ -22,7 +22,7 @@ enum FleetWorkbookEmitter {
         outputDir: URL? = nil,
         summariesFor: (String) -> [DailySummary] = FleetReportEmitter.defaultSummaries
     ) throws -> URL? {
-        let byProfile = group.profiles.map { (profile: $0, summaries: summariesFor($0)) }
+        let byProfile = group.workspaces.map { (profile: $0, summaries: summariesFor($0)) }
         guard let model = FleetWorkbookModel.build(
             groupName: group.name, summariesByProfile: byProfile,
             lookbackDays: lookbackDays, timestamp: timestamp

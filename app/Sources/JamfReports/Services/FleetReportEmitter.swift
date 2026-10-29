@@ -100,7 +100,7 @@ enum FleetReportEmitter {
         outputDir: URL? = nil,
         summariesFor: (String) -> [DailySummary] = defaultSummaries
     ) throws -> URL? {
-        let lists = group.profiles.map(summariesFor)
+        let lists = group.workspaces.map(summariesFor)
         guard let rollup = rollup(for: group, summariesByProfile: lists, lookbackDays: lookbackDays) else {
             return nil
         }

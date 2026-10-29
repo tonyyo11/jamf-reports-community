@@ -17,7 +17,7 @@ struct Schedules: AsyncParsableCommand {
             let records = ScheduleStore().load()
             if records.isEmpty { print("no hand-built schedules"); return }
             for r in records {
-                let target = r.allProfiles ? "all-profiles" : r.profile
+                let target = r.allWorkspaces ? "all-profiles" : r.workspace
                 let flag = r.enabled ? "" : " (disabled)"
                 print("\(r.label)\t\(target)\t\(Self.effectiveMode(of: r))\t\(r.schedule)\(flag)")
             }

@@ -1030,7 +1030,7 @@ extension WorkspaceStore {
         discovered: [String]
     ) -> [String] {
         guard policy.isManaged, policy.freshnessEnabled else { return [] }
-        let excluded = Set(policy.excludedProfiles)
+        let excluded = Set(policy.excludedWorkspaces)
         return discovered.filter { ProfileService.isValid($0) && !excluded.contains($0) }
     }
 

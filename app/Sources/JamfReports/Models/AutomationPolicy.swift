@@ -44,9 +44,9 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
     /// Shared base run time "HH:mm". Managed agents are staggered off this so
     /// on-prem Jamf Pro is not hit by all of them at once.
     var runTime: String
-    /// Profiles excluded from all managed automation (run-time exclusion —
-    /// discovered set minus these).
-    var excludedProfiles: [String]
+    /// Workspace IDs excluded from all managed automation (run-time exclusion — discovered set
+    /// minus these). Stored under the JSON key `excludedProfiles`, the same values as before 2.12.
+    var excludedWorkspaces: [String]
     /// Report grouping (v2.2.0 Phase 4). Each group's profiles roll up into ONE
     /// consolidated fleet report; profiles in no group get a per-profile report.
     /// Empty (default) → every profile reports on its own, preserving prior
@@ -55,6 +55,13 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
     var reportGroups: [ReportGroup]
 
     static let storageKey = "automationPolicy"
+
+    enum CodingKeys: String, CodingKey {
+        case isManaged, freshnessEnabled, scanEnabled, scanWeekday, reportsCadence
+        case reportsWeekday, reportsDayOfMonth, backupsEnabled, backupsWeekday, runTime
+        case reportGroups
+        case excludedWorkspaces = "excludedProfiles"
+    }
 
     init(
         isManaged: Bool = false,
@@ -67,7 +74,7 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         backupsEnabled: Bool = false,
         backupsWeekday: Int = 0,
         runTime: String = "06:00",
-        excludedProfiles: [String] = [],
+        excludedWorkspaces: [String] = [],
         reportGroups: [ReportGroup] = []
     ) {
         self.isManaged = isManaged
@@ -80,7 +87,7 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         self.backupsEnabled = backupsEnabled
         self.backupsWeekday = backupsWeekday
         self.runTime = runTime
-        self.excludedProfiles = excludedProfiles
+        self.excludedWorkspaces = excludedWorkspaces
         self.reportGroups = reportGroups
     }
 
@@ -99,7 +106,8 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         backupsEnabled = try c.decodeIfPresent(Bool.self, forKey: .backupsEnabled) ?? d.backupsEnabled
         backupsWeekday = try c.decodeIfPresent(Int.self, forKey: .backupsWeekday) ?? d.backupsWeekday
         runTime = try c.decodeIfPresent(String.self, forKey: .runTime) ?? d.runTime
-        excludedProfiles = try c.decodeIfPresent([String].self, forKey: .excludedProfiles) ?? d.excludedProfiles
+        excludedWorkspaces = try c.decodeIfPresent([String].self, forKey: .excludedWorkspaces)
+            ?? d.excludedWorkspaces
         reportGroups = try c.decodeIfPresent([ReportGroup].self, forKey: .reportGroups) ?? d.reportGroups
     }
 
@@ -157,11 +165,17 @@ struct AutomationSetupChoice: Equatable, Sendable {
 struct ReportGroup: Codable, Sendable, Equatable, Identifiable {
     var id: String { name }
     var name: String
-    var profiles: [String]
+    /// Workspace IDs, stored under the JSON key `profiles` as before 2.12.
+    var workspaces: [String]
 
-    init(name: String, profiles: [String]) {
+    init(name: String, workspaces: [String]) {
         self.name = name
-        self.profiles = profiles
+        self.workspaces = workspaces
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case workspaces = "profiles"
     }
 }
 

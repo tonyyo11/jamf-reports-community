@@ -484,7 +484,7 @@ final class WorkspaceStore {
         guard !Self.workspaceHoldsCollectedData(profile: demoProfile) else { return nil }
         let store = ScheduleStore()
         let all = store.load()
-        let kept = all.filter { $0.profile != demoProfile }
+        let kept = all.filter { $0.workspace != demoProfile }
         let removedAgents = all.count - kept.count
         if removedAgents > 0 {
             try? store.save(kept)

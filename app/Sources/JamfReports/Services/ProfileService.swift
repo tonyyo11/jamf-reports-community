@@ -211,7 +211,7 @@ enum ProfileService {
     /// to `DemoData.cliProfiles`.
     static func discoverLocal(keeping active: Set<String> = []) -> [JamfCLIProfile] {
         let scheduleCounts = Dictionary(
-            grouping: ScheduleStore().load().filter { !$0.allProfiles }, by: \.profile
+            grouping: ScheduleStore().load().filter { !$0.allWorkspaces }, by: \.workspace
         ).mapValues(\.count)
 
         var profiles = discoverJamfCLIProfiles(scheduleCounts: scheduleCounts)

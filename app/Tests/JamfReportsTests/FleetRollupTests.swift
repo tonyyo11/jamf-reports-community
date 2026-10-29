@@ -217,7 +217,7 @@ final class FleetRollupTests: XCTestCase {
     }
 
     func testRollupNilWhenNoProfileHasSummaries() {
-        let group = ReportGroup(name: "Empty", profiles: ["a", "b"])
+        let group = ReportGroup(name: "Empty", workspaces: ["a", "b"])
         XCTAssertNil(
             FleetReportEmitter.rollup(for: group, summariesByProfile: [[], []], lookbackDays: 7)
         )
@@ -228,7 +228,7 @@ final class FleetRollupTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
 
-        let group = ReportGroup(name: "Production Fleet", profiles: ["prod", "dev"])
+        let group = ReportGroup(name: "Production Fleet", workspaces: ["prod", "dev"])
         let byProfile: [String: [DailySummary]] = [
             "prod": [
                 summary(date: "2026-05-30", devices: 100, compliance: 88),
@@ -248,7 +248,7 @@ final class FleetRollupTests: XCTestCase {
     }
 
     func testEmitReturnsNilWhenGroupHasNoData() throws {
-        let group = ReportGroup(name: "Empty", profiles: ["x"])
+        let group = ReportGroup(name: "Empty", workspaces: ["x"])
         let url = try FleetReportEmitter.emit(
             group: group, lookbackDays: 7, timestamp: "2026-06-06_120000",
             outputDir: FileManager.default.temporaryDirectory, summariesFor: { _ in [] }

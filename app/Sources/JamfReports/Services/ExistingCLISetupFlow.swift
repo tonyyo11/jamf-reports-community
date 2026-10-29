@@ -298,8 +298,8 @@ final class ExistingCLISetupFlow {
     /// only when the user kept automation enabled.
     func configuredPolicy(basedOn base: AutomationPolicy = .current()) -> AutomationPolicy {
         var policy = base
-        for name in twinsLeftOut where !policy.excludedProfiles.contains(name) {
-            policy.excludedProfiles.append(name)
+        for name in twinsLeftOut where !policy.excludedWorkspaces.contains(name) {
+            policy.excludedWorkspaces.append(name)
         }
         return AutomationSetupChoice(
             enabled: enableAutomation, scanWeekday: scanWeekday,

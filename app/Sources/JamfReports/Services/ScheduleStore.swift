@@ -5,10 +5,12 @@ import Foundation
 struct ScheduleRecord: Codable, Sendable, Equatable {
     var label: String
     var name: String
-    /// Owning profile slug; "" when `allProfiles`.
-    var profile: String
-    var allProfiles: Bool
-    var excludedProfiles: [String]
+    /// The owning workspace ID; "" when `allWorkspaces`. The JSON keys stay `profile`,
+    /// `allProfiles` and `excludedProfiles`, so a file written before 2.12 decodes to the same
+    /// values and an older build still reads one written now.
+    var workspace: String
+    var allWorkspaces: Bool
+    var excludedWorkspaces: [String]
     /// `Schedule.RunMode.rawValue`. Stored as a string so an unknown future
     /// mode decodes and is skipped rather than failing the whole file.
     var mode: String
@@ -23,9 +25,9 @@ struct ScheduleRecord: Codable, Sendable, Equatable {
               !ManagedAutomation.owns(label) else { return nil }
         self.label = label
         self.name = schedule.name
-        self.allProfiles = schedule.isMulti
-        self.profile = schedule.isMulti ? "" : schedule.profile
-        self.excludedProfiles = schedule.excludedProfiles ?? []
+        self.allWorkspaces = schedule.isMulti
+        self.workspace = schedule.isMulti ? "" : schedule.profile
+        self.excludedWorkspaces = schedule.excludedProfiles ?? []
         self.mode = schedule.mode.rawValue
         self.tiers = schedule.tiers.map { $0.map(\.rawValue).sorted() }
         self.schedule = schedule.schedule
@@ -33,16 +35,20 @@ struct ScheduleRecord: Codable, Sendable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case label, name, profile, allProfiles, excludedProfiles, mode, tiers, schedule, enabled
+        case label, name, mode, tiers, schedule, enabled
+        case workspace = "profile"
+        case allWorkspaces = "allProfiles"
+        case excludedWorkspaces = "excludedProfiles"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         label = try c.decode(String.self, forKey: .label)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? label
-        profile = try c.decodeIfPresent(String.self, forKey: .profile) ?? ""
-        allProfiles = try c.decodeIfPresent(Bool.self, forKey: .allProfiles) ?? false
-        excludedProfiles = try c.decodeIfPresent([String].self, forKey: .excludedProfiles) ?? []
+        workspace = try c.decodeIfPresent(String.self, forKey: .workspace) ?? ""
+        allWorkspaces = try c.decodeIfPresent(Bool.self, forKey: .allWorkspaces) ?? false
+        excludedWorkspaces =
+            try c.decodeIfPresent([String].self, forKey: .excludedWorkspaces) ?? []
         mode = try c.decodeIfPresent(String.self, forKey: .mode)
             ?? Schedule.RunMode.jamfCLIOnly.rawValue
         tiers = try c.decodeIfPresent([String].self, forKey: .tiers)
@@ -57,7 +63,7 @@ struct ScheduleRecord: Codable, Sendable, Equatable {
         }
         return Schedule(
             name: name,
-            profile: profile,
+            profile: workspace,
             schedule: schedule,
             cadence: "custom",
             mode: runMode,
@@ -67,9 +73,9 @@ struct ScheduleRecord: Codable, Sendable, Equatable {
             artifacts: [],
             enabled: enabled,
             launchAgentLabel: label,
-            multiTarget: allProfiles ? MultiTarget(scope: .all, sequential: true) : nil,
+            multiTarget: allWorkspaces ? MultiTarget(scope: .all, sequential: true) : nil,
             tiers: tierSet,
-            excludedProfiles: allProfiles ? excludedProfiles : nil,
+            excludedProfiles: allWorkspaces ? excludedWorkspaces : nil,
             retiredCSVAssisted: mode == Schedule.RunMode.retiredCSVAssistedRaw
         )
     }
