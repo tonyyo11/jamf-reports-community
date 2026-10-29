@@ -346,7 +346,7 @@ final class ProfileProductTests: XCTestCase {
     func testDoctorWarnsWhenProtectProfileIsAnotherProduct() throws {
         let config = try decodeConfig("protect:\n  enabled: true\n  profile: prot\n")
         func rows(_ product: JamfCLIProduct?) -> [DoctorRow] {
-            ConfigDoctorService.protectProfileProductRows(config: config) { _ in
+            ConfigDoctorService.protectProfileProductRows(config: config, workspace: "prod") { _ in
                 product.map {
                     .init(authMethod: "oauth2", isTenantLevel: false, isOrganizationLevel: false,
                           product: $0)
@@ -363,7 +363,8 @@ final class ProfileProductTests: XCTestCase {
 
         let off = try decodeConfig("protect:\n  enabled: false\n  profile: prot\n")
         XCTAssertTrue(ConfigDoctorService.protectProfileProductRows(
-            config: off, resolved: { _ in XCTFail("asked"); return nil }).isEmpty)
+            config: off, workspace: "prod",
+            resolved: { _ in XCTFail("asked"); return nil }).isEmpty)
     }
 
     private func decodeConfig(_ yaml: String) throws -> ReportConfig {

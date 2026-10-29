@@ -25,7 +25,6 @@ extension ReportEngine {
             macOSRows: sofaRows.filter { $0.platform == SOFAFeedService.platformLabels["macos"] },
             osCounts: Dictionary(macVersions.map { ($0, 1) }, uniquingKeysWith: +),
             totalDevices: macs)
-        let iOSRows = sofaRows.filter { $0.platform == SOFAFeedService.platformLabels["ios"] }
         return DailySummary(
             date: date, totalDevices: macs, fileVaultPct: nil, compliancePct: nil,
             staleCount: macs > 0 ? staleMacs : nil,
@@ -36,7 +35,7 @@ extension ReportEngine {
             collectedByHost: collectedByHost,
             mobile: MobileSummary.build(
                 mobileDevices.map { MobileSummary.device($0) },
-                latestByMajor: SOFAFeedService.latestByMajor(iOSRows),
+                latestByMajor: SOFAFeedService.iOSLatestByMajor(sofaRows),
                 staleDays: staleDays, now: now))
     }
 

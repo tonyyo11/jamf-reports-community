@@ -581,7 +581,7 @@ final class CollectRouterTests: XCTestCase {
         return { $0 == "my-protect" ? answer($0) : nil }
     }
 
-    /// A blank name is not a connection (ConnectedProducts says so): one `[warn]`, not a
+    /// A blank name is not a connection (EnvironmentProfiles says so): one `[warn]`, not a
     /// `[partial] protect collect failed` on every run.
     func test_router_blankProtectProfile_skipsWithOneWarn() async throws {
         let (spy, lines, thrown) = try await runProtectEnabledProfile(protectProfile: "")

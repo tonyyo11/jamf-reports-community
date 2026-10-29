@@ -58,7 +58,10 @@ final class DashboardCollectTests: XCTestCase {
     func testProtectProfileIsAddedOnlyWhenProtectIsOnWithItsOwnProfile() {
         let base = ["-p", "prod", "dashboard", "--output", "json"]
         func args(_ protect: ProtectConfig?) -> [String] {
-            ReportEngine.dashboardArguments(base: base, profile: "prod", protect: protect)
+            ReportEngine.dashboardArguments(
+                base: base, profile: "prod",
+                protect: EnvironmentProfiles.resolve(
+                    config: ReportConfig(protect: protect), workspace: "prod").protect)
         }
         XCTAssertEqual(args(nil), base)
         XCTAssertEqual(args(ProtectConfig(enabled: false, profile: "prod-protect")), base)
@@ -80,7 +83,7 @@ final class DashboardCollectTests: XCTestCase {
     func testTheDashboardLeavesOutAProtectProfileOfAnotherProduct() async throws {
         ProfileAuthMethod.invalidateCache()
         addTeardownBlock { ProfileAuthMethod.invalidateCache() }
-        let protect = ProtectConfig(enabled: true, profile: "dashprof-protect")
+        let protect = "dashprof-protect"
         let bin = binDir.appendingPathComponent("unused")
 
         try ProductGuardSeed.seed(profile: "dashprof-protect", product: "pro", in: binDir)
@@ -93,11 +96,11 @@ final class DashboardCollectTests: XCTestCase {
         ProfileAuthMethod.invalidateCache()
         try ProductGuardSeed.seed(profile: "dashprof-protect", product: "protect", in: binDir)
         let kept = await ReportEngine.dashboardProtect(protect, bin: bin, onLine: lines.add)
-        XCTAssertEqual(kept?.profile, "dashprof-protect")
+        XCTAssertEqual(kept, "dashprof-protect")
 
         ProfileAuthMethod.invalidateCache()
         let unresolved = await ReportEngine.dashboardProtect(protect, bin: bin, onLine: lines.add)
-        XCTAssertEqual(unresolved?.profile, "dashprof-protect", "could not ask is not a refusal")
+        XCTAssertEqual(unresolved, "dashprof-protect", "could not ask is not a refusal")
         XCTAssertEqual(lines.all.count, 1)
     }
 
@@ -249,8 +252,7 @@ final class DashboardCollectTests: XCTestCase {
         for protectProfile in ["y", "x"] {
             try? FileManager.default.removeItem(at: answers.appendingPathComponent("calls.log"))
             let arguments = ReportEngine.dashboardArguments(
-                base: base, profile: main,
-                protect: ProtectConfig(enabled: true, profile: protectProfile))
+                base: base, profile: main, protect: protectProfile)
             XCTAssertEqual(arguments, base + ["--include-profile=\(protectProfile)"])
             let result = try await collectDashboard(
                 profile: main, arguments: arguments, into: "data-\(protectProfile)")

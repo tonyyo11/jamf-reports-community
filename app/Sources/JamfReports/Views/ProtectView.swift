@@ -8,13 +8,14 @@ struct ProtectView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var selectedTimelineDevice: String?
-    @State private var connectedProducts = ConnectedProducts.none
+    @State private var environment = EnvironmentProfiles.none
     @State private var showingConnect = false
     @State private var proMatch = ProMatchState.pending
-    @State private var proMatchTask: Task<Void, Never>?
 
     /// The "Jamf Pro match" card ("Jamf School match" on a School workspace): nothing until the
     /// match has run, then either the result or the reason there is none.
@@ -22,11 +23,11 @@ struct ProtectView: View {
         case pending, noInventory(ProtectProCorrelation.Inventory), ready(ProtectProCorrelation)
     }
 
-    /// Protect is connected to this workspace (`protect.enabled` with a profile). Before 2.10
+    /// Protect is connected to this workspace (`EnvironmentProfiles.protect`). Before 2.10
     /// the screen decided from snapshots on disk alone, so an unconnected workspace was told
     /// to run jamf-cli commands that write nothing into it.
     private var protectConnected: Bool {
-        workspace.demoMode || connectedProducts.protectProfile != nil
+        workspace.demoMode || environment.protect != nil
     }
 
     /// The demo shows the deep dive: its data is populated, and a locked card on
@@ -47,45 +48,48 @@ struct ProtectView: View {
                 trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode && protectConnected {
-                StaleDataBanner(source: snapshot.cacheSource)
-                // A tenant that doesn't run Protect at all has no expected
-                // kinds — every one of them would render a false-alarm "never"
-                // chip. Only assert expectations once Protect is detected;
-                // present-kind chips still show either way.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: snapshot.isDetected ? [
-                        "protect-overview", "protect-alerts", "protect-computers",
-                        "protect-insights", "protect-plans",
-                    ] : []
-                )
-            }
-
-            if !snapshot.unreadableKinds.isEmpty { unreadableBanner }
-            if !protectConnected && !snapshot.isDetected && snapshot.unreadableKinds.isEmpty {
-                notConnectedState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "Jamf Protect data")
             } else {
-                if !deepDiveEnabled { lockedDeepDiveState }
-                if snapshot.isDetected {
-                    dataSections
-                } else if snapshot.unreadableKinds.isEmpty {
-                    emptyState
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode && protectConnected {
+                    StaleDataBanner(source: snapshot.cacheSource)
+                    // A tenant that doesn't run Protect at all has no expected
+                    // kinds — every one of them would render a false-alarm "never"
+                    // chip. Only assert expectations once Protect is detected;
+                    // present-kind chips still show either way.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: snapshot.isDetected ? [
+                            "protect-overview", "protect-alerts", "protect-computers",
+                            "protect-insights", "protect-plans",
+                        ] : []
+                    )
+                }
+
+                if !snapshot.unreadableKinds.isEmpty { unreadableBanner }
+                if !protectConnected && !snapshot.isDetected && snapshot.unreadableKinds.isEmpty {
+                    notConnectedState
+                } else {
+                    if !deepDiveEnabled { lockedDeepDiveState }
+                    if snapshot.isDetected {
+                        dataSections
+                    } else if snapshot.unreadableKinds.isEmpty {
+                        emptyState
+                    }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onChange(of: dataSource) { _, _ in
             // The picked device belongs to the old source; a real host name must not outlive it.
             selectedTimelineDevice = nil
-            reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -114,41 +118,50 @@ struct ProtectView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
-
-    private func reload() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        let profile = workspace.profile
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            environment = .none
+            proMatch = .pending
+        }
         // The demo's rows are drawn by the same code as a live tenant's, and its
         // counts are taken from those rows.
-        snapshot = workspace.demoMode
-            ? DemoData.protectSnapshot
-            : ProtectDashboardService.load(profile: workspace.profile)
-        connectedProducts = workspace.demoMode
-            ? .none : ConnectedProducts.read(profile: workspace.profile)
-        reloadProMatch()
+        if workspace.demoMode {
+            snapshot = DemoData.protectSnapshot
+            environment = .none
+        } else {
+            guard let loaded = await ScreenLoad.paint(
+                stillCurrent: { source == dataSource },
+                read: { (ProtectDashboardService.load(profile: profile),
+                         EnvironmentProfiles.read(workspace: profile)) }
+            ) else { return }
+            snapshot = loaded.0
+            environment = loaded.1
+        }
+        loadedSource = source
+        await loadProMatch(source: source, profile: profile)
     }
 
-    /// Off the main actor: the `computers` snapshot can be about 13 MB.
-    private func reloadProMatch() {
-        proMatchTask?.cancel()
-        proMatch = .pending
-        guard !snapshot.computers.isEmpty else { return }
+    /// The `computers` snapshot can be about 13 MB, so the match runs after the screen paints.
+    private func loadProMatch(source: String, profile: String) async {
+        guard !snapshot.computers.isEmpty else {
+            proMatch = .pending
+            return
+        }
         let protect = snapshot.computers
-        let profile = workspace.profile
         let demo = workspace.demoMode
         let school = workspace.isSchoolWorkspace
-        proMatchTask = Task {
-            let result = await Task.detached {
-                ProtectProCorrelation.load(
-                    protect: protect, profile: profile, demoMode: demo, school: school)
-            }.value
-            guard !Task.isCancelled else { return }
-            proMatch = result.map(ProMatchState.ready)
-                ?? .noInventory(school ? .jamfSchool : .jamfPro)
-        }
+        guard let result = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { ProtectProCorrelation.load(
+                protect: protect, profile: profile, demoMode: demo, school: school) }
+        ) else { return }
+        proMatch = result.map(ProMatchState.ready)
+            ?? .noInventory(school ? .jamfSchool : .jamfPro)
     }
 
     // MARK: - Sections
@@ -221,7 +234,7 @@ struct ProtectView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingConnect, onDismiss: reload) {
+        .sheet(isPresented: $showingConnect, onDismiss: { reloads += 1 }) {
             ProductConnectSheetView(profileSlug: workspace.profile)
         }
     }
@@ -1036,16 +1049,12 @@ struct ProtectView: View {
     // MARK: - Utilities
 
     private func formatCreatedDate(_ dateString: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
         let date: Date
-        if let parsedDate = formatter.date(from: dateString) {
+        if let parsedDate = Self.isoFractionalFormatter.date(from: dateString) {
             date = parsedDate
         } else {
             // Fallback for simpler ISO format
-            formatter.formatOptions = [.withInternetDateTime]
-            guard let fallbackDate = formatter.date(from: dateString) else {
+            guard let fallbackDate = Self.isoFormatter.date(from: dateString) else {
                 return "Unknown"
             }
             date = fallbackDate
@@ -1057,16 +1066,36 @@ struct ProtectView: View {
 
         if daysSince >= 60 {
             // For spans ≥60 days, use absolute date
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            return formatter.string(from: date)
+            return Self.dayFormatter.string(from: date)
         } else {
             // For spans <60 days, use relative formatting
-            let relativeFormatter = RelativeDateTimeFormatter()
-            relativeFormatter.unitsStyle = .abbreviated
-            return relativeFormatter.localizedString(for: date, relativeTo: now)
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
+
+    // Built once: this runs per table row. Each is configured at creation and never mutated
+    // after, so sharing is safe.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    nonisolated(unsafe) private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
+
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 }
 
 // MARK: - Export-only chart

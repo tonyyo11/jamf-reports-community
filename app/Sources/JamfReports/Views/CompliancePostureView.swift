@@ -12,11 +12,11 @@ struct CompliancePostureView: View {
     @State private var mscpResults: [MSCPComplianceService.BaselineResult] = []
     /// The newest ea-results file exists but could not be read, so the proxy below is a stand-in.
     @State private var mscpUnreadable = false
-    @State private var hasLoaded = false
-    /// Bumped by each reload, so a read that a newer one replaced is dropped.
-    @State private var loadGeneration = 0
-    /// False until the first read lands: until then the screen does not say there is no data.
-    @State private var hasRead = false
+    /// The `dataSource` the snapshot and baselines were read for; the content waits for it to
+    /// match, so the screen never says there is no data, or shows another profile's, while one
+    /// loads.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
     var body: some View {
         PageScaffold {
@@ -29,54 +29,62 @@ struct CompliancePostureView: View {
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode && hasRead {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
-            }
-
-            if mscpUnreadable && hasRead {
-                InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
-                    Text("The newest ea-results file could not be read, so the mSCP baselines "
-                        + "are not shown; the control-gap proxy below stands in. The file is "
-                        + "named in Settings › Logging.")
-                }
-            }
-
-            // Show proxy note only when using proxy compliance (no mSCP baselines)
-            if mscpResults.isEmpty && hasRead {
-                proxyNoteCard
-            }
-
-            if let reason = snapshot.loadError {
-                Card(padding: 24) {
-                    ErrorStateView(
-                        title: "Couldn't read compliance data",
-                        message: reason,
-                        commands: ["Re-run collection from Data Sources, then Refresh."],
-                        retry: { reload() }
-                    )
-                }
-            } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
-                if hasRead { emptyState }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "compliance posture")
             } else {
-                // Show mSCP baseline donuts when available, otherwise proxy bands
-                if !mscpResults.isEmpty {
-                    mscpBaselineDonuts
-                } else {
-                    bandsHeroCard
-                }
-                aiInsightCard
-                controlCoverageCard
-                perOSBreakdownCard
+                content
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+        // Suppressed in demo mode (the demo dataset is intentionally static and
+        // not user-perceivably "stale"). Renders nothing when source is .fresh.
+        if !workspace.demoMode {
+            CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+        }
+
+        if mscpUnreadable {
+            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+                Text("The newest ea-results file could not be read, so the mSCP baselines "
+                    + "are not shown; the control-gap proxy below stands in. The file is "
+                    + "named in Settings › Logging.")
+            }
+        }
+
+        // Show proxy note only when using proxy compliance (no mSCP baselines)
+        if mscpResults.isEmpty {
+            proxyNoteCard
+        }
+
+        if let reason = snapshot.loadError {
+            Card(padding: 24) {
+                ErrorStateView(
+                    title: "Couldn't read compliance data",
+                    message: reason,
+                    commands: ["Re-run collection from Data Sources, then Refresh."],
+                    retry: { reloads += 1 }
+                )
+            }
+        } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
+            emptyState
+        } else {
+            // Show mSCP baseline donuts when available, otherwise proxy bands
+            if !mscpResults.isEmpty {
+                mscpBaselineDonuts
+            } else {
+                bandsHeroCard
+            }
+            aiInsightCard
+            controlCoverageCard
+            perOSBreakdownCard
         }
     }
 
@@ -92,37 +100,39 @@ struct CompliancePostureView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
-        loadGeneration += 1
-        if workspace.demoMode {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            mscpResults = []
+            mscpUnreadable = false
+        }
+        guard !workspace.demoMode else {
             snapshot = DemoData.compliancePostureSnapshot
             mscpResults = DemoData.complianceBaselineResults
             mscpUnreadable = false
-            hasRead = true
+            loadedSource = source
             return
         }
-        let generation = loadGeneration
         let profile = workspace.profile
-        Task {
-            // The security snapshot, the computers snapshot the hardware rule reads and
-            // ea-results are parsed whole; on a large fleet that stalled the screen.
-            let loaded = await Task.detached(priority: .userInitiated) {
+        // The security snapshot, the computers snapshot the hardware rule reads and
+        // ea-results are parsed whole; on a large fleet that stalled the screen.
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: {
                 (CompliancePostureService.load(profile: profile),
                  Self.loadBaselineOutcome(profile: profile))
-            }.value
-            // A read that a profile switch or a later refresh replaced must not paint.
-            guard generation == loadGeneration else { return }
-            snapshot = loaded.0
-            mscpResults = loaded.1.results
-            mscpUnreadable = loaded.1.unreadable
-            hasRead = true
-        }
+            }
+        ) else { return }
+        snapshot = loaded.0
+        mscpResults = loaded.1.results
+        mscpUnreadable = loaded.1.unreadable
+        loadedSource = source
     }
 
     /// The configured mSCP baselines' results; none when config.yaml names none.

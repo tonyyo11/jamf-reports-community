@@ -305,7 +305,56 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(ReportEngine.dashboardArguments(
             base: ["x"], profile: profile,
             protect: SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport)
-                ? config.protect : nil), ["x"])
+                ? config.protect?.profile : nil), ["x"])
+    }
+
+    private func writeBlockConfig(protect: String) throws {
+        try """
+        shared_workspace:
+          enabled: true
+        profiles:
+          jamf_pro: \(profile)
+          protect: \(protect)
+        """.write(to: workspace.appendingPathComponent("config.yaml"),
+                  atomically: true, encoding: .utf8)
+    }
+
+    func testAChangedProfilesProtectSkipsProtectAtTheRouter() async throws {
+        try writeBlockConfig(protect: "protect-a")
+        _ = check()
+        try writeBlockConfig(protect: "someone-elses")
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        let lines = LineBox()
+        let protectRuns = LineBox()
+        try await CollectRouter.run(
+            profile: profile, config: config,
+            proCollect: { _, _, _, _, _, _ in .collected },
+            protectCollect: { name, _, _ in protectRuns.add(name) },
+            onLine: { lines.add($0.text) })
+        XCTAssertTrue(protectRuns.all.isEmpty)
+        XCTAssertTrue(lines.all.contains {
+            $0.hasPrefix("[skip] protect: profiles.protect changed")
+        }, "\(lines.all)")
+    }
+
+    /// An unquoted number decodes as its digits, so it pins as them: a blank pin reads it as
+    /// drift instead of letting the run use a profile nobody confirmed.
+    func testANumericProtectProfilePinsAsTheTextJamfCLIReceives() throws {
+        try writeConfig(protectProfile: "")
+        _ = check()
+        let cases = [
+            ("protect:\n  enabled: true\n  profile: 2024\n", "2024"),
+            ("profiles:\n  jamf_pro: \(profile)\n  protect: 2024\n", "2024"),
+            ("protect:\n  enabled: true\n  profile: \"true\"\n", "true"),
+            ("profiles:\n  jamf_pro: \(profile)\n  protect: \"true\"\n", "true"),
+        ]
+        for (body, expected) in cases {
+            try ("shared_workspace:\n  enabled: true\n" + body).write(
+                to: workspace.appendingPathComponent("config.yaml"),
+                atomically: true, encoding: .utf8)
+            let drift = check().drifts.first { $0.key == .protectProfile }
+            XCTAssertEqual(drift?.current, expected, body)
+        }
     }
 
     @MainActor

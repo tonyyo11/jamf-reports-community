@@ -5,8 +5,19 @@ import XCTest
 /// heavy-tier staleness detection, and the include-audit generate preference.
 final class LaunchFreshnessTests: XCTestCase {
 
+    /// The score-card tests read and write this suite, never `.standard`, which any store that
+    /// changes its selection writes to.
+    nonisolated(unsafe) private var defaults: UserDefaults!
+    nonisolated(unsafe) private var suite = ""
+
+    override func setUp() {
+        super.setUp()
+        suite = "LaunchFreshnessTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suite)
+    }
+
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: WorkspaceStore.scoreCardsKey)
+        defaults.removePersistentDomain(forName: suite)
         UserDefaults.standard.removeObject(forKey: GenerateSheetState.includeAuditKey)
         super.tearDown()
     }
@@ -17,33 +28,31 @@ final class LaunchFreshnessTests: XCTestCase {
         let selection: [TrendSeries.Metric] = [
             .stability, .activeDevices, .fileVault, .patch, .securityScore, .stale,
         ]
-        WorkspaceStore.persistScoreCards(selection)
-        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), selection)
+        WorkspaceStore.persistScoreCards(selection, defaults: defaults)
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(defaults: defaults), selection)
     }
 
     func testScoreCardLoadReturnsNilWhenNothingPersisted() {
-        UserDefaults.standard.removeObject(forKey: WorkspaceStore.scoreCardsKey)
-        XCTAssertNil(WorkspaceStore.loadPersistedScoreCards())
+        XCTAssertNil(WorkspaceStore.loadPersistedScoreCards(defaults: defaults))
     }
 
     func testScoreCardLoadIgnoresUnknownMetrics() {
-        UserDefaults.standard.set(
-            "stability,not-a-real-metric,patch", forKey: WorkspaceStore.scoreCardsKey
-        )
-        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), [.stability, .patch])
+        defaults.set("stability,not-a-real-metric,patch", forKey: WorkspaceStore.scoreCardsKey)
+        XCTAssertEqual(
+            WorkspaceStore.loadPersistedScoreCards(defaults: defaults), [.stability, .patch])
     }
 
     func testScoreCardLoadReturnsNilForAllUnknownMetrics() {
-        UserDefaults.standard.set("bogus,also-bogus", forKey: WorkspaceStore.scoreCardsKey)
-        XCTAssertNil(WorkspaceStore.loadPersistedScoreCards())
+        defaults.set("bogus,also-bogus", forKey: WorkspaceStore.scoreCardsKey)
+        XCTAssertNil(WorkspaceStore.loadPersistedScoreCards(defaults: defaults))
     }
 
     /// More than four metrics must round-trip — the v2.2.0 change removed the
     /// CustomizeView selection cap.
     func testMoreThanFourScoreCardsPersist() {
         let all = TrendSeries.Metric.allCases
-        WorkspaceStore.persistScoreCards(all)
-        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), all)
+        WorkspaceStore.persistScoreCards(all, defaults: defaults)
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(defaults: defaults), all)
         XCTAssertGreaterThan(all.count, 4)
     }
 

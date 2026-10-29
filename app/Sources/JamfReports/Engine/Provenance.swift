@@ -91,7 +91,7 @@ extension Provenance {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let output = JamfCLIProbe.run(
-                    executable: url, arguments: ["--version"], timeout: timeout)
+                    executable: url, arguments: JamfCLIProbe.versionArguments, timeout: timeout)
                 let version = output.flatMap { String(data: $0.stdout, encoding: .utf8) }?
                     .components(separatedBy: .newlines)
                     .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }

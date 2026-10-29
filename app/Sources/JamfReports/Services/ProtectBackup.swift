@@ -170,18 +170,18 @@ enum ProtectBackup {
         sharedStorage: () -> String?,
         syncedStorageAllowed: () -> Bool = { false }
     ) -> Plan {
-        let detected = ProfileProductType.detect(from: config, profile: workspaceProfile)
-        guard detected.type == .jamfPro, detected.runsProtect else { return .notConnected }
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: workspaceProfile)
+        guard !environment.isSchool, environment.runsProtect else { return .notConnected }
+        let key = environment.protectKey
         guard pinAllows() else {
-            return .skip(reason: "protect.profile changed in the shared config.yaml and is not "
+            return .skip(reason: "\(key) changed in the shared config.yaml and is not "
                 + "confirmed on this Mac (Config Doctor)")
         }
-        let protectProfile = config?.protect?.resolvedProfile ?? ""
-        guard !protectProfile.isEmpty else {
+        guard let protectProfile = environment.protect else {
             return .skip(reason: "protect.enabled is set but protect.profile is empty")
         }
         guard ProfileService.isValid(protectProfile) else {
-            return .skip(reason: "protect.profile is not a usable jamf-cli profile name")
+            return .skip(reason: "\(key) is not a usable jamf-cli profile name")
         }
         if let refusal = protectRefusal(protectProfile) { return .skip(reason: refusal) }
         if let place = sharedStorage(), !syncedStorageAllowed() {
@@ -313,9 +313,10 @@ extension CLIBridge {
             return BackupProductResult(state: .skipped, reason: reason)
         }
         let config = read.config
-        let named = config?.protect?.resolvedProfile ?? ""
-        let refusal = config?.protect?.isEnabled == true && !named.isEmpty
-            ? await ProfileAuthMethod.protectRefusal(profile: named) : nil
+        var refusal: String?
+        if let named = EnvironmentProfiles.resolve(config: config, workspace: profile).protect {
+            refusal = await ProfileAuthMethod.protectRefusal(profile: named)
+        }
         var syncedPlace: String?
         let plan = ProtectBackup.plan(
             config: config, workspaceProfile: profile,

@@ -22,17 +22,25 @@ enum WorkspacePathGuard {
 
 enum FileDisplay {
     static func size(_ bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        return formatter.string(fromByteCount: bytes)
+        sizeFormatter.string(fromByteCount: bytes)
     }
 
     static func date(_ date: Date) -> String {
+        dateFormatter.string(from: date)
+    }
+
+    nonisolated(unsafe) private static let sizeFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        return formatter
+    }()
+
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, HH:mm"
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 }
 
 struct ReportLibrary {
