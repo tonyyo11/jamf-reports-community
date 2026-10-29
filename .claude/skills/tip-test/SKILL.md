@@ -14,9 +14,9 @@ line, both exit codes and the log path, and removes the worktree on the way out.
 both steps passed. A full cold run takes minutes; a filtered run is for checking the script or one
 suite. Run only one `swift test` at a time on a Mac.
 
-- The worktree folder (`--dir`, default `$HOME/jr-worktrees/stack-tip`) must not exist and must be
-  on a local disk: a checkout inside an iCloud-synced folder fails the xctest codesign step, so
-  `Mobile Documents` and `CloudStorage` paths are refused.
+- The worktree folder (`--dir`; default `tip-test-<sha>` under `$TMPDIR`, a local disk) must not
+  exist and must be on a local disk: a checkout inside an iCloud-synced folder fails the xctest
+  codesign step, so `Mobile Documents` and `CloudStorage` paths are refused.
 - Report the printed counts as they are ("6877 XCTest, 0 failures; 72 Swift Testing"). A filter
   run prints no Swift Testing line, and the script says so.
 - CI pins older Xcode versions than the host. For changes touching actor isolation or AppKit, also

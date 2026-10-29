@@ -3,8 +3,8 @@
 # worktree. Use it for a branch or stack tip before a PR or merge.
 #
 # Usage: tip-test [--dry-run] [--dir DIR] [--filter PATTERN] REF
-#   --dir      the worktree folder (must not exist); default $HOME/jr-worktrees/stack-tip.
-#              A checkout in an iCloud-synced folder fails the xctest codesign step, so a path
+#   --dir      the worktree folder (must not exist); default a folder under $TMPDIR, which is on
+#              the local disk. A checkout in an iCloud-synced folder fails the xctest codesign step, so a path
 #              under Mobile Documents or CloudStorage is refused.
 #   --filter   passed to swift test --filter (a suite or test name); default the full suite.
 #   --dry-run  check REF and DIR and print the plan; create nothing.
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 dry_run=0
-dir="${HOME}/jr-worktrees/stack-tip"
+dir=""
 filter=""
 while (($#)); do
   case "$1" in
@@ -49,6 +49,10 @@ git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null || {
   print -u2 "tip-test: REF is not a commit: ${ref}"
   exit 2
 }
+if [[ -z "${dir}" ]]; then
+  tmpbase="${TMPDIR:-/tmp}"
+  dir="${tmpbase%/}/tip-test-$(git rev-parse --short "${ref}")"
+fi
 case "${dir}" in
 *"/Mobile Documents/"* | *"/CloudStorage/"*)
   print -u2 "tip-test: ${dir} is in a synced folder; pick a local-disk folder (--dir)"

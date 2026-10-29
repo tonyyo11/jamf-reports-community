@@ -3,11 +3,12 @@
 # A merge that conflicts only in CHANGELOG.md is resolved with the changelog-union script; any
 # other conflict stops the run and names the files. Nothing is pushed and no PR is opened.
 #
-# Usage: bundle-wave [--dry-run] [--dir DIR] BUNDLE_BRANCH BASE_REF BRANCH...
+# Usage: bundle-wave [--dry-run] --dir DIR BUNDLE_BRANCH BASE_REF BRANCH...
 #   BASE_REF   what the bundle branches from, e.g. origin/dev/2-12-0
 #   BRANCH     a branch on origin ("origin/" prefix optional), merged with --no-ff, in order
-#   --dir      the worktree folder; default $HOME/jr-worktrees/<bundle branch, / as ->. Keep it
-#              on a local disk: a build in an iCloud-synced folder fails the xctest codesign step.
+#   --dir      the worktree folder (required; it outlives the run, so it is not defaulted to a
+#              temp folder). Keep it on a local disk: a build in an iCloud-synced folder fails
+#              the xctest codesign step.
 #   --dry-run  fetch, check every ref and predict each merge against BASE_REF; create nothing.
 set -euo pipefail
 
@@ -36,7 +37,7 @@ while (($#)); do
   esac
 done
 if (($# < 3)); then
-  print -u2 "usage: bundle-wave [--dry-run] [--dir DIR] BUNDLE_BRANCH BASE_REF BRANCH..."
+  print -u2 "usage: bundle-wave [--dry-run] --dir DIR BUNDLE_BRANCH BASE_REF BRANCH..."
   exit 2
 fi
 bundle="$1"
@@ -51,7 +52,10 @@ union="${script_dir}/../../changelog-union/scripts/changelog_union.py"
   print -u2 "bundle-wave: changelog-union script not found at ${union}"
   exit 2
 }
-[[ -n "${dir}" ]] || dir="${HOME}/jr-worktrees/${bundle//\//-}"
+[[ -n "${dir}" ]] || {
+  print -u2 "bundle-wave: --dir is required (a local-disk folder for the bundle worktree)"
+  exit 2
+}
 case "${dir}" in
 *"/Mobile Documents/"* | *"/CloudStorage/"*)
   print -u2 "bundle-wave: ${dir} is in a synced folder; use a local-disk folder (--dir)"
