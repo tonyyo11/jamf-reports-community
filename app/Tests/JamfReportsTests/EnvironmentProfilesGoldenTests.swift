@@ -11,7 +11,7 @@ import XCTest
 @MainActor
 final class EnvironmentProfilesGoldenTests: XCTestCase {
     private let workspace = "ws-golden"
-    private var root: URL!
+    private nonisolated(unsafe) var root: URL!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
