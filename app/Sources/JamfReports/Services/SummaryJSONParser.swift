@@ -169,8 +169,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
         return resolved
     }
 
-    var parsedDate: Date {
-        SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
+    /// `date` as a day, parsed once at construction: Trends reads it per point per redraw.
+    /// `.distantPast` for a summary whose date is not a day.
+    let parsedDate: Date
+
+    private static func day(_ text: String) -> Date {
+        SummaryJSONParser.dateFormatter.date(from: text) ?? Date.distantPast
     }
 
     /// This summary with every value it lacks taken from `older`, the same day's earlier
@@ -290,6 +294,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         mobile: MobileSummary? = nil
     ) {
         self.date = date
+        parsedDate = Self.day(date)
         self.totalDevices = totalDevices
         self.fileVaultPct = fileVaultPct
         self.compliancePct = compliancePct
@@ -327,6 +332,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         date = try container.decode(String.self, forKey: .date)
+        parsedDate = Self.day(date)
         totalDevices = try container.decode(Int.self, forKey: .totalDevices)
         fileVaultPct = try container.decodeIfPresent(Double.self, forKey: .fileVaultPct)
         compliancePct = try container.decodeIfPresent(Double.self, forKey: .compliancePct)

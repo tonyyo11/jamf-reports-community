@@ -28,6 +28,10 @@ struct DevicesView: View {
     /// by lowercased device identifiers. Feeds the security-agent risk factor
     /// (v3.5's hardcoded "Nessus" check, now driven by security_agents config).
     @State private var agentStatusLookup: [String: String] = [:]
+    /// Bumped whenever `snapshot` or `agentStatusLookup` is replaced, so the cached list and
+    /// risk ratings rebuild on exactly the changes that can alter them.
+    @State private var dataRevision = 0
+    @State private var listCache = ListCache()
     /// Per-kind newest-file dates for the freshness chip row (Devices merges
     /// several kinds; the snapshot's single generatedDate can't express that).
     @State private var sourceDates: [String: Date] = [:]
@@ -113,41 +117,38 @@ struct DevicesView: View {
     /// past the others.
     static let detailLabelWidth: CGFloat = 112
 
-    private var filteredDevices: [DeviceInventoryRecord] { sortedRows.map(\.device) }
-
-    private var sortedRows: [DeviceSortRow] {
-        DeviceSortRow.sorted(
-            matchingDevices, using: sortOrder,
-            securityGaps: { $0.securityGapCount(policy: activeSnapshot.securityPolicy) },
-            riskScore: { priorityRisk(for: $0).score })
+    private var dataKey: DataKey {
+        DataKey(
+            dataRevision: dataRevision, demoMode: workspace.demoMode, staleDays: staleDays,
+            agentConnectedValue: configuredAgent?.connectedValue,
+            hourBucket: Int(Date().timeIntervalSince1970 / 3600))
     }
 
-    private var matchingDevices: [DeviceInventoryRecord] {
-        activeSnapshot.devices.filter { device in
-            if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               !device.searchableText.contains(query.lowercased()) {
-                return false
-            }
-            if let osFilter, device.osVersion != osFilter { return false }
-            switch filter {
-            case .all:
-                return true
-            case .stale:
-                return isStale(device)
-            case .contactGap:
-                return contactGap(of: device) != nil
-            case .binaryMissing:
-                return device.isBinaryMissing
-            case .patch:
-                return device.patchFailureCount > 0
-            case .security:
-                return device.securityGapCount(policy: activeSnapshot.securityPolicy) > 0
-            case .priorityAction:
-                // The Critical or High band of the same score the Risk pill shows.
-                return priorityRisk(for: device).level >= .high
-            }
+    /// The filtered, sorted list: rebuilt only when `ListKey`'s inputs change, so a redraw
+    /// that changes none of them (a selection, a resize) reuses it.
+    private var derivedList: DerivedList {
+        let data = dataKey
+        let key = ListKey(
+            data: data, query: query, osFilter: osFilter, filter: filter, sortOrder: sortOrder)
+        return listCache.list(for: key) {
+            Self.buildRows(
+                devices: activeSnapshot.devices, query: query, osFilter: osFilter, filter: filter,
+                sortOrder: sortOrder, policy: activeSnapshot.securityPolicy, staleRule: staleRule,
+                contactGapDays: activeSnapshot.contactGapDays,
+                searchableText: { listCache.searchableText(of: $0, key: data) },
+                risk: { priorityRisk(for: $0, key: data) })
         }
     }
+
+    private var figures: Figures {
+        listCache.figures(for: dataKey) {
+            Figures(snapshot: activeSnapshot, rule: staleRule)
+        }
+    }
+
+    private var filteredDevices: [DeviceInventoryRecord] { derivedList.devices }
+
+    private var sortedRows: [DeviceSortRow] { derivedList.rows }
 
     /// Applies the filter another screen asked for (`DeviceFilter.pending`) once, on appear or
     /// when a post arrives while Devices is already showing.
@@ -158,24 +159,31 @@ struct DevicesView: View {
     }
 
     /// The one rating of a Mac, from `RiskScoringService`: the Risk pill, the detail panel,
-    /// the Priority filter and the CSV all read it. Memoizing would help if the filter cost
-    /// showed up in profiling, but the live table re-renders on selection change rather
-    /// than per filter pass.
+    /// the Priority filter and the CSV all read it. Kept in `listCache` until the data, the
+    /// stale window or the agent column changes, so a redraw rates no Mac again.
     private func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
-        RiskScoringService.risk(
-            for: device, agentCheck: agentCheck(for: device),
-            policy: activeSnapshot.securityPolicy, staleRule: staleRule)
+        priorityRisk(for: device, key: dataKey)
+    }
+
+    private func priorityRisk(for device: DeviceInventoryRecord, key: DataKey) -> DeviceRisk {
+        listCache.risk(of: device, key: key) {
+            RiskScoringService.risk(
+                for: device, agentCheck: agentCheck(for: device),
+                policy: activeSnapshot.securityPolicy, staleRule: staleRule)
+        }
+    }
+
+    /// The first security agent with a column, which the agent risk factor follows.
+    private var configuredAgent: ConfigSecurityAgent? {
+        workspace.configState.securityAgents.first {
+            !$0.column.trimmingCharacters(in: .whitespaces).isEmpty
+        }
     }
 
     /// The device's status against the tenant's configured security agent, or
     /// nil when no agent is configured / no EA value exists for this device.
     private func agentCheck(for device: DeviceInventoryRecord) -> RiskScoringService.SecurityAgentCheck? {
-        guard !agentStatusLookup.isEmpty,
-              let agent = workspace.configState.securityAgents.first(where: {
-                  !$0.column.trimmingCharacters(in: .whitespaces).isEmpty
-              }) else {
-            return nil
-        }
+        guard !agentStatusLookup.isEmpty, let agent = configuredAgent else { return nil }
         let keys = [device.serial, device.jamfID ?? "", device.name]
             .map { $0.lowercased() }
             .filter { !$0.isEmpty }
@@ -184,10 +192,8 @@ struct DevicesView: View {
     }
 
     private var selectedDevice: DeviceInventoryRecord? {
-        if let selectedID, let device = filteredDevices.first(where: { $0.id == selectedID }) {
-            return device
-        }
-        return filteredDevices.first
+        let list = derivedList
+        return list.device(withID: selectedID) ?? list.devices.first
     }
 
     private var deviceDetailTaskID: String {
@@ -450,12 +456,12 @@ struct DevicesView: View {
         HStack(spacing: 12) {
             StatTile(label: "Computers", value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
-            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(staleRule))",
+            StatTile(label: "Stale", value: "\(figures.staleCount)",
                      sub: staleTileSub)
-            StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
+            StatTile(label: "Patch Issues", value: "\(figures.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
             StatTile(label: "FileVault",
-                     value: Self.fileVaultTileValue(activeSnapshot.fileVaultPercent),
+                     value: Self.fileVaultTileValue(figures.fileVaultPercent),
                      sub: fileVaultTileSub)
         }
     }
@@ -464,7 +470,7 @@ struct DevicesView: View {
     /// missing (`BinaryMissing`).
     private var staleTileSub: String {
         let rule = ">\(staleDays) days since \(staleRule.basisPhrase)"
-        let missing = activeSnapshot.binaryMissingCount
+        let missing = figures.binaryMissingCount
         return missing == 0 ? rule : rule + " · \(missing) without the Jamf binary not counted"
     }
 
@@ -476,8 +482,8 @@ struct DevicesView: View {
     /// Macs the hardware rule took out of the gaps are named, so the share and the gap
     /// count do not look as if they disagree.
     private var fileVaultTileSub: String {
-        let gaps = activeSnapshot.securityGapCount
-        let moved = activeSnapshot.fileVaultOffHardwareEncryptedCount
+        let gaps = figures.securityGapCount
+        let moved = figures.fileVaultOffHardwareEncryptedCount
         guard moved > 0 else { return "\(gaps) security gaps" }
         return "\(gaps) security gaps · \(moved) more hardware-encrypted, FileVault off"
     }
@@ -804,15 +810,15 @@ struct DevicesView: View {
                 HStack {
                     SectionHeader(title: "macOS Versions")
                     Spacer()
-                    Pill(text: "\(activeSnapshot.osDistribution.count)", tone: .muted)
+                    Pill(text: "\(figures.osDistribution.count)", tone: .muted)
                 }
 
-                if activeSnapshot.osDistribution.isEmpty {
+                if figures.osDistribution.isEmpty {
                     Text("No OS data available.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
-                    Chart(activeSnapshot.osDistribution.prefix(6)) { item in
+                    Chart(figures.osDistribution.prefix(6)) { item in
                         BarMark(
                             x: .value("Computers", item.count),
                             y: .value("Version", item.version)
@@ -831,13 +837,13 @@ struct DevicesView: View {
                     .accessibilityChartDescriptor(BarDistributionChartDescriptor(
                         title: "macOS Version Distribution",
                         unit: " computers",
-                        bars: activeSnapshot.osDistribution.prefix(6).map {
+                        bars: figures.osDistribution.prefix(6).map {
                             .init(label: $0.version, value: Double($0.count))
                         }
                     ))
 
                     VStack(spacing: 0) {
-                        ForEach(activeSnapshot.osDistribution.prefix(5)) { item in
+                        ForEach(figures.osDistribution.prefix(5)) { item in
                             Button {
                                 osFilter = osFilter == item.version ? nil : item.version
                             } label: {
@@ -1287,8 +1293,10 @@ struct DevicesView: View {
     /// Jamf Pro's Last Contact, which counts MDM and declarative device management, written as
     /// the check-in and inventory dates are: an ISO 8601 timestamp.
     nonisolated static func contactText(_ device: DeviceInventoryRecord) -> String {
-        device.contactDate.map { ISO8601DateFormatter().string(from: $0) } ?? ""
+        device.contactDate.map { contactFormatter.string(from: $0) } ?? ""
     }
+
+    nonisolated(unsafe) private static let contactFormatter = ISO8601DateFormatter()
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {
         if let days = device.daysSinceContact {
@@ -1311,7 +1319,7 @@ struct DevicesView: View {
         let loaded = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.load(profile: profile, demoMode: demoMode)
         }.value
-        snapshot = loaded
+        applyLoaded(snapshot: loaded)
         sourceDates = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode)
         }.value
@@ -1334,13 +1342,24 @@ struct DevicesView: View {
             .first { !$0.column.trimmingCharacters(in: .whitespaces).isEmpty }?
             .column ?? ""
         if !demoMode, !agentColumn.isEmpty {
-            agentStatusLookup = await Task.detached(priority: .userInitiated) {
+            applyLoaded(agentStatusLookup: await Task.detached(priority: .userInitiated) {
                 RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
-            }.value
+            }.value)
         } else {
-            agentStatusLookup = [:]
+            applyLoaded(agentStatusLookup: [:])
         }
         isLoading = false
+    }
+
+    /// The one writer of `snapshot` and `agentStatusLookup`: the cached list and ratings are
+    /// keyed on `dataRevision`, so a write that skipped the bump would serve stale rows.
+    private func applyLoaded(
+        snapshot newSnapshot: DeviceInventorySnapshot? = nil,
+        agentStatusLookup newLookup: [String: String]? = nil
+    ) {
+        if let newSnapshot { snapshot = newSnapshot }
+        if let newLookup { agentStatusLookup = newLookup }
+        dataRevision += 1
     }
 
     private func loadSelectedDeviceDetail() async {

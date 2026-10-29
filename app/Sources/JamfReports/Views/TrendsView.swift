@@ -1511,9 +1511,8 @@ extension Array {
 }
 
 enum TrendDemoSeries {
-    static var dates: [Date] {
+    static let dates: [Date] =
         DemoData.trendDates.compactMap { SummaryJSONParser.dateFormatter.date(from: $0) }
-    }
 
     static func values(for metric: TrendSeries.Metric) -> [Double] {
         DemoData.trends[metric] ?? []
