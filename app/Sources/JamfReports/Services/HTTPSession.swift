@@ -5,12 +5,17 @@ import Foundation
 /// a redirect rule where the destination matters.
 enum HTTPSession {
 
+    /// Tests only: URL protocols a session consults first. A protocol registered globally reaches
+    /// `URLSession.shared` but not a session built from a configuration.
+    nonisolated(unsafe) static var testProtocolClasses: [AnyClass]?
+
     static func make(request: TimeInterval, resource: TimeInterval) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = request
         configuration.timeoutIntervalForResource = resource
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
+        if let testProtocolClasses { configuration.protocolClasses = testProtocolClasses }
         return URLSession(configuration: configuration)
     }
 

@@ -1,8 +1,9 @@
 import Foundation
+@testable import JamfReports
 
 /// Answers every request to `captureHost` with 200 and records its body, so a test sees the
-/// webhook cards a run posts without a network. Registered globally, which `URLSession.shared`
-/// consults.
+/// webhook cards a run posts without a network. Reaches the sessions `HTTPSession.make` builds
+/// through `HTTPSession.testProtocolClasses`.
 final class WebhookCapture: URLProtocol, @unchecked Sendable {
     static let captureHost = "hooks.example.test"
     static let webhookURL = "https://\(captureHost)/incoming"
@@ -18,10 +19,10 @@ final class WebhookCapture: URLProtocol, @unchecked Sendable {
 
     static func start() {
         lock.withLock { bodies = []; status = 200 }
-        URLProtocol.registerClass(WebhookCapture.self)
+        HTTPSession.testProtocolClasses = [WebhookCapture.self]
     }
 
-    static func stop() { URLProtocol.unregisterClass(WebhookCapture.self) }
+    static func stop() { HTTPSession.testProtocolClasses = nil }
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == captureHost
