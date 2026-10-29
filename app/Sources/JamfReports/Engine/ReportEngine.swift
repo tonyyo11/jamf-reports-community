@@ -1203,7 +1203,7 @@ struct ReportEngine: Sendable {
     ///
     /// Respects:
     /// - `charts.os_adoption.per_major_charts` — draws the OS adoption chart, one bar per major
-    ///   OS version (using `ChartPalette.majorVersionColors`). On when the key is absent, as
+    ///   OS version (each version in its `ChartPalette` colour). On when the key is absent, as
     ///   the Customize screen shows it; `false` turns it off.
     /// - `charts.compliance_trend.enabled: false` leaves the mSCP/STIG band trend chart out
     ///   (absent is on); the donuts stay.
@@ -1263,8 +1263,9 @@ struct ReportEngine: Sendable {
                 return (s.parsedDate, Double(s.totalDevices))
             }
             if !fleetPoints.isEmpty {
-                let series = ChartSeries(label: "Total Computers",
-                                         color: ChartPalette.color(for: 0), points: fleetPoints)
+                let series = ChartSeries(
+                    label: "Total Computers",
+                    color: ChartPalette.cgColor(forMetric: .managedDevices), points: fleetPoints)
                 if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
                     ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
                     embedRow += 20
@@ -1283,14 +1284,16 @@ struct ReportEngine: Sendable {
             }
             var secSeries: [ChartSeries] = []
             if !fvPoints.isEmpty {
-                secSeries.append(ChartSeries(label: "FileVault %",
-                                             color: ChartPalette.color(for: 1), points: fvPoints))
+                secSeries.append(ChartSeries(
+                    label: "FileVault %",
+                    color: ChartPalette.cgColor(forMetric: .fileVault), points: fvPoints))
             }
             if !patchPoints.isEmpty {
                 // The line-chart legend keeps only 14 characters of a label
                 // (ChartRenderer.drawLegend): "Patch Compliance %" showed as "Patch Complian".
-                secSeries.append(ChartSeries(label: "Patch %",
-                                             color: ChartPalette.color(for: 2), points: patchPoints))
+                secSeries.append(ChartSeries(
+                    label: "Patch %",
+                    color: ChartPalette.cgColor(forMetric: .patch), points: patchPoints))
             }
             if !secSeries.isEmpty {
                 if let png = ChartRenderer.lineChart(series: secSeries,
@@ -1308,8 +1311,9 @@ struct ReportEngine: Sendable {
                     s.staleCount.map { (s.parsedDate, Double($0)) }
                 }
                 if !stalePoints.isEmpty {
-                    let series = ChartSeries(label: "Stale Devices",
-                                             color: ChartPalette.color(for: 3), points: stalePoints)
+                    let series = ChartSeries(
+                        label: "Stale Devices",
+                        color: ChartPalette.cgColor(forMetric: .stale), points: stalePoints)
                     if let png = ChartRenderer.lineChart(series: [series],
                                                           title: "Stale Device Count Trend") {
                         ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
@@ -1342,7 +1346,9 @@ struct ReportEngine: Sendable {
                     let barData = BarChartData(
                         categories: sortedMajor.map(\.key),
                         values: sortedMajor.map(\.value),
-                        colors: sortedMajor.map { ChartPalette.colorForMajorVersion($0.key) }
+                        colors: ChartPalette
+                            .hexes(for: .version, keys: sortedMajor.map(\.key), scheme: .light)
+                            .map(ChartPalette.cgColor(hex:))
                     )
                     if let png = ChartRenderer.barChart(data: barData,
                                                          title: "OS Adoption by Major Version") {

@@ -153,13 +153,18 @@ enum DemoData {
 
     /// Labelled the way the live Overview labels a version ("macOS 15.4"), so the
     /// demo legend reads as a live one does.
-    static let osDistribution: [OSDistribution] = [
-        .init(version: "macOS 15.4",   count: 287, pct: 54.8, colorHex: 0xC9970A, current: true),
-        .init(version: "macOS 15.3.2", count:  98, pct: 18.7, colorHex: 0xA87E08, current: true),
-        .init(version: "macOS 14.7.4", count:  84, pct: 16.0, colorHex: 0x7D8794, current: false),
-        .init(version: "macOS 13.7.6", count:  38, pct:  7.2, colorHex: 0x5A6068, current: false),
-        .init(version: "macOS 12.7.6", count:  17, pct:  3.2, colorHex: 0x4A4F55, current: false),
-    ]
+    static let osDistribution: [OSDistribution] = {
+        let rows: [(version: String, count: Int, pct: Double, current: Bool)] = [
+            ("macOS 15.4", 287, 54.8, true), ("macOS 15.3.2", 98, 18.7, true),
+            ("macOS 14.7.4", 84, 16.0, false), ("macOS 13.7.6", 38, 7.2, false),
+            ("macOS 12.7.6", 17, 3.2, false),
+        ]
+        let colors = ChartPalette.hexes(for: .version, keys: rows.map(\.version), scheme: .dark)
+        return zip(rows, colors).map { row, hex in
+            OSDistribution(version: row.version, count: row.count, pct: row.pct,
+                           colorHex: hex, current: row.current)
+        }
+    }()
 
     static let securityAgents: [SecurityAgent] = [
         .init(name: "CrowdStrike Falcon",  installed: edrInstalled, pct: coverage(edrInstalled),

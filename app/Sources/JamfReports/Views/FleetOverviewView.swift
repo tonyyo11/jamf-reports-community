@@ -201,15 +201,16 @@ struct FleetOverviewView: View {
     }
 
     private func stabilityChart(points: [StabilityTrendPoint]) -> some View {
-        Chart {
+        let stability = Theme.ChartColors.color(forMetric: .stability)
+        return Chart {
             ForEach(points) { point in
                 AreaMark(
                     x: .value("Date", point.date),
                     y: .value("Stability", point.value)
                 )
                 .foregroundStyle(LinearGradient(
-                    colors: [Theme.Colors.tealBright.opacity(0.35),
-                             Theme.Colors.tealBright.opacity(0)],
+                    colors: [stability.opacity(0.35),
+                             stability.opacity(0)],
                     startPoint: .top, endPoint: .bottom
                 ))
                 .interpolationMethod(.catmullRom)
@@ -218,7 +219,7 @@ struct FleetOverviewView: View {
                     x: .value("Date", point.date),
                     y: .value("Stability", point.value)
                 )
-                .foregroundStyle(Theme.Colors.tealBright)
+                .foregroundStyle(stability)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.catmullRom)
             }

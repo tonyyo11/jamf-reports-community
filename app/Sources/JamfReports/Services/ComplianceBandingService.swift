@@ -38,18 +38,8 @@ struct ComplianceBandingService: Sendable {
             }
         }
 
-        /// Aligned to existing Theme tokens (green/info/gold/warn/danger/gray)
-        /// so the donut reads consistently with the rest of the app's bands.
-        var colorHex: UInt32 {
-            switch self {
-            case .pass:   return 0x30D158  // ok / green
-            case .low:    return 0x0A84FF  // info / blue
-            case .medLow: return 0xE8B614  // gold
-            case .medium: return 0xFF9F0A  // warn / orange
-            case .high:   return 0xFF453A  // danger / red
-            case .noData: return 0x8E8E93  // muted gray
-            }
-        }
+        /// One fixed colour per band on every screen and report (`ChartPalette`).
+        var colorHex: UInt32 { ChartPalette.hex(forBand: self) }
 
         /// Returns the band that contains the given failure count, or
         /// `.noData` when `failures` is nil.

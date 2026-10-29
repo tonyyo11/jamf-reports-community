@@ -53,7 +53,7 @@ extension HtmlReport {
         let versions = mobile.osDistribution.map { (label: $0.osVersion, count: $0.count) }
         if !versions.isEmpty {
             body += "\n<p class=\"block-note\">OS versions, iOS and iPadOS together.</p>\n"
-                + f.renderBars(versions, expanded: expandAll)
+                + f.renderBars(versions, expanded: expandAll, colored: .version)
         }
         if !detailed {
             body += "\n<p class=\"block-note\">" + f.escapeHTML(

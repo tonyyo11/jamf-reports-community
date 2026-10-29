@@ -393,7 +393,7 @@ struct HtmlReport: Sendable {
             .map { (label: $0.element.version, count: $0.element.count) }
         return .shown(HtmlSectionFormatters.block(
             id: "os-chart", title: "OS version distribution",
-            body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll)))
+            body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll, colored: .version)))
     }
 
     /// Compliance of the first ten patch titles as bars on a 0–100% track.
@@ -406,7 +406,7 @@ struct HtmlReport: Sendable {
         }
         return .shown(HtmlSectionFormatters.block(
             id: "patch-chart", title: "Patch compliance (first 10 titles)",
-            body: HtmlSectionFormatters.renderPercentBars(rows)))
+            body: HtmlSectionFormatters.renderPercentBars(rows, colored: .title)))
     }
 
     // MARK: - Policies, profiles and apps

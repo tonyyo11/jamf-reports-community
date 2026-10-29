@@ -18,13 +18,6 @@ struct PatchView: View {
     /// history. Empty until a few days of collected history exist.
     @State private var velocity: [TitleVelocity] = []
 
-    /// Distinct colors for up to 5 slowest-title chart series, following the
-    /// TrendsView `.chartForegroundStyleScale` idiom.
-    private static let velocitySeriesColors: [Color] = [
-        Theme.Colors.gold, Theme.Colors.teal, Theme.Colors.purple,
-        Theme.Colors.info, Theme.Colors.danger
-    ]
-
     var body: some View {
         PageScaffold {
             PageHeader(
@@ -407,7 +400,7 @@ struct PatchView: View {
     private var velocityChart: some View {
         let titles = slowestVelocityTitles
         let labels: [String] = titles.map(\.title)
-        let colors: [Color] = Array(Self.velocitySeriesColors.prefix(titles.count))
+        let colors: [Color] = Theme.ChartColors.colors(forTitles: labels)
         return Chart {
             ForEach(titles) { title in
                 ForEach(Array(title.series.enumerated()), id: \.offset) { _, point in
