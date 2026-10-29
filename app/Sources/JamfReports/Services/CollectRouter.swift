@@ -327,10 +327,13 @@ enum CollectRouter {
         return proRunRefusal(profile: profile, operation: "Backup", config: config)
     }
 
-    /// `proRunRefusal` for a schedule, the rule `scheduledRunSingleBody` applies: a per-profile
-    /// schedule that sends commands. A multi schedule and `jamf-cli-only` are never refused here.
+    /// The refusals `scheduledRunSingleBody` applies to a per-profile schedule: a case variant
+    /// whose folder is another spelling's, in every mode, then `proRunRefusal` for a schedule
+    /// that sends commands. A multi schedule is never refused here.
     static func scheduleRunRefusal(_ schedule: Schedule) -> String? {
-        guard !schedule.isMulti, schedule.mode != .jamfCLIOnly else { return nil }
+        guard !schedule.isMulti else { return nil }
+        if let refusal = ProfileService.caseVariantRefusal(of: schedule.profile) { return refusal }
+        guard schedule.mode != .jamfCLIOnly else { return nil }
         return proRunRefusal(
             profile: schedule.profile, operation: "Scheduled \(schedule.mode.rawValue) run",
             config: collectRoutingConfig(profile: schedule.profile))

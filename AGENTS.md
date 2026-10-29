@@ -1390,9 +1390,12 @@ file (legacy import or live run) populates that field.
   (`ProfileService.runnableProfiles`, catch-up), because Audit and Refresh write for the
   active profile without binding its workspace; and the binding, collect, backup, every CLI
   subcommand (`CLIRun.requireValidProfile`, exit 1) and a scheduled run of any mode (the
-  refused-run convention: `[skip]`, exit 0, no retry, a `refused` record and a failure card only
-  from a folder named exactly as the profile, never the other spelling's) refuse a profile whose
-  existing folder is spelled differently
+  refused-run convention: `[skip]`, exit 0, no retry, a `refused` record only in a folder named
+  exactly as the profile, never the other spelling's), `schedules add`, the
+  health reader (`CollectRouter.scheduleRunRefusal`: `.failing` with the reason, never overdue)
+  and every webhook target (`notifyTargets`, the GUI overdue digest; a case variant gets no
+  digest, heartbeat or failure card) refuse a profile whose existing folder is spelled
+  differently
   (`ProfileService.caseVariantWorkspace`/`caseVariantRefusal`, in `CLIBridge.ensureWorkspace`,
   `CollectRouter.run`, `CLIBridge.backupProfile` and `scheduledRunSingleBody`), judged by the
   folder's own name and never by config.yaml.

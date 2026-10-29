@@ -198,12 +198,14 @@ func postOverdueDigest(
 
 /// A target for each profile in `profiles` whose `config.yaml` `notify:` block is
 /// usable, in discovery order. Best-effort per profile — an unreadable config is left out; one
-/// that does not decode still contributes its `notify:` block.
+/// that does not decode still contributes its `notify:` block. A case variant is left out: its
+/// path is another spelling's folder, whose webhook and day stamps are not its own.
 func notifyTargets(
     in profiles: [String], sentToday: (URL) -> Bool
 ) -> [OverdueDigestRouting.Target] {
     profiles.compactMap { profile in
         guard ProfileService.isValid(profile),
+              ProfileService.caseVariantWorkspace(of: profile) == nil,
               let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
         let url = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: url.path),
@@ -335,9 +337,10 @@ private func scheduledRunSingleBody(
             refusedRecorder.record(message)
             refusedRecorder.finish(exitCode: 0, refused: true)
         }
-        // Exit 0 so the tick does not retry it, but not silence: one card a day.
+        // Exit 0 so the tick does not retry it, but not silence: one card a day. Never for a case
+        // variant, whose webhook and stamp folder are another spelling's (`notifyTargets`).
         await ScheduledRunSignals.notifyScheduledRunFailure(
-            config: routingConfig, profile: profile, mode: mode,
+            config: caseVariant == nil ? routingConfig : nil, profile: profile, mode: mode,
             errorDescription: refusal, recorder: nil, scheduleKey: cardKey)
         return 0
     }

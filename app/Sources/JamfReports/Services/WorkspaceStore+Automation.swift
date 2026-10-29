@@ -819,7 +819,9 @@ extension WorkspaceStore {
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
         let overdue = issues.filter { $0.kind == .overdue || $0.kind == .tickerDisabled }
         guard !overdue.isEmpty else { return }
-        guard let notify = SharedConfigPin.effectiveNotify(
+        // A case variant is never active, but its webhook and stamp would be another spelling's.
+        guard ProfileService.caseVariantWorkspace(of: profile) == nil,
+              let notify = SharedConfigPin.effectiveNotify(
                 Self.loadNotifyConfig(profile: profile), profile: profile),
               notify.isUsable,
               let workspace = ProfileService.workspaceURL(for: profile) else { return }
