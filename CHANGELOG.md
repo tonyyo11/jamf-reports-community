@@ -9,6 +9,9 @@ versions in this repository map to git tags.
 
 ### Added
 
+- The setup screen lists the Jamf Pro privileges the commands a collect runs need, each marked
+  jamf-cli (read from the installed jamf-cli) or Jamf Reports (added for report and Classic
+  commands, where jamf-cli names none), instead of a fixed list. (#305)
 - The Platform API region list now has Other, which takes a gateway host such as
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)

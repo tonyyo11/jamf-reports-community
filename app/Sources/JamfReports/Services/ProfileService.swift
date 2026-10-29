@@ -473,7 +473,7 @@ enum ProfileService {
         // stops it at the deadline; a wedged `config list` must not freeze the sidebar load.
         guard let output = JamfCLIProbe.run(
             executable: binary,
-            arguments: ["config", "list", "--output", "json"],
+            arguments: CLICommand.configList.argv,
             timeout: _testTimeout
         ), output.exitCode == 0 else {
             return fallback()

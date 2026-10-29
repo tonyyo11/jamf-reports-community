@@ -172,7 +172,7 @@ enum ProfileAuthMethod {
         }
         guard let output = JamfCLIProbe.run(
             executable: binary,
-            arguments: ["config", "list", "--output", "json"],
+            arguments: CLICommand.configList.argv,
             timeout: timeout
         ), output.exitCode == 0 else { return nil }
         return output.stdout

@@ -65,8 +65,7 @@ enum PlatformTwin {
               CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) == nil,
               let output = JamfCLIProbe.run(
                 executable: binary,
-                arguments: ["-p", profile, "pro", "jamf-pro-server-url", "get",
-                            "--output", "json", "--no-input"],
+                arguments: serverURLArguments(profile: profile),
                 timeout: timeout),
               output.exitCode == 0,
               let url = jamfProURL(inServerURLOutput: output.stdout) else { return nil }
@@ -74,6 +73,10 @@ enum PlatformTwin {
         cache[profile] = url
         cacheLock.unlock()
         return url
+    }
+
+    static func serverURLArguments(profile: String) -> [String] {
+        ["-p", profile, "pro", "jamf-pro-server-url", "get", "--output", "json", "--no-input"]
     }
 
     static func invalidateCache() {

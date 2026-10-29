@@ -84,6 +84,10 @@ extension OnboardingFlow {
         ProfileService.listJamfCLIProfiles(scheduleCounts: [:]).map { Set($0.map(\.name)) }
     }
 
+    nonisolated static func removeProfileArguments(name: String) -> [String] {
+        ["config", "remove-profile", "--", name]
+    }
+
     /// `jamf-cli config remove-profile`, which also deletes the profile's keychain items.
     nonisolated static func removeJamfCLIProfile(_ name: String) async -> String? {
         let manual = "Remove it in Terminal: jamf-cli config remove-profile -- "
@@ -97,7 +101,7 @@ extension OnboardingFlow {
         }
         let outcome = await Task.detached(priority: .userInitiated) {
             JamfCLIProbe.runOutcome(
-                executable: binary, arguments: ["config", "remove-profile", "--", name])
+                executable: binary, arguments: removeProfileArguments(name: name))
         }.value
         switch outcome {
         case .completed(let output) where output.exitCode == 0:
