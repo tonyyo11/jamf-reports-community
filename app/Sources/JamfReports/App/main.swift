@@ -618,15 +618,16 @@ private func scheduledRunSingleBody(
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.
         let template = FullInstanceTemplate()
-        let failures: [SheetFailure]
+        let generated: GeneratedReport
         if isSchool {
-            failures = try await ReportEngine.schoolGenerate(
-                config: config, dataDir: dataDir, outputURL: outputURL,
-                workspace: workspaceID, onLine: onLine)
+            generated = try await ReportEngine.schoolGenerateReport(
+                config: config, dataDir: dataDir, outputURL: outputURL, workspace: workspaceID,
+                now: runStart, onLine: onLine)
         } else {
-            failures = try await engine.generate(
+            generated = try await engine.generateReport(
                 outputURL: outputURL, template: template, now: runStart, onLine: onLine)
         }
+        let failures = generated.failures
         if !failures.isEmpty {
             let partialMsg = partialRunMarker(sheetFailures: failures.count)
             recorder?.record(partialMsg)
@@ -663,7 +664,8 @@ private func scheduledRunSingleBody(
         ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
         recorder?.finish(
             exitCode: 0, sheetFailures: failures.count,
-            artifacts: [outputURL] + (htmlURL.map { [$0] } ?? []))
+            artifacts: [outputURL] + (htmlURL.map { [$0] } ?? [])
+                + (generated.csvFolder.map { [$0] } ?? []))
         return 0
     } catch {
         let errorDesc = error.localizedDescription
@@ -763,9 +765,13 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// schedule's label; a multi schedule fans out over discovered profiles minus
 /// its exclusions and emits the consolidated fleet report for report modes,
 /// and succeeds only when every profile did with none incomplete. The retry
-/// flag leaves out sources whose failure a same-day retry would only repeat.
+/// flag leaves out sources whose failure a same-day retry would only repeat. `skipping` names
+/// profiles of a multi schedule a same-day retry leaves alone (`TickScheduler.DueRun`); the
+/// outcome lists each profile that ran.
 @Sendable
-func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcome {
+func runSchedule(
+    _ schedule: Schedule, verbose: Bool, skipping: Set<String> = []
+) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
     let missing = schedule.mode == .jamfCLIOnly
         ? [] : ProfileService.workspacesMissingJamfCLIProfile()
@@ -797,35 +803,33 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
     }
     guard !profiles.isEmpty else {
         fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
-        return ScheduleRunOutcome(exitCode: 1, incomplete: false)
+        return ScheduleRunOutcome(exitCode: 1, incomplete: false, considered: [])
     }
     if !excluded.isEmpty {
         fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
     }
-    var anyFailed = false
-    var anyIncomplete = false
-    var anyRetryable = false
-    for p in profiles {
-        if await skippedForMissingProfile(p.name, missing: missing) { continue }
+    let result = await TickScheduler.runProfiles(
+        names: profiles.map(\.name), skipping: skipping
+    ) { name in
+        if await skippedForMissingProfile(name, missing: missing) { return nil }
         // One watcher per profile: a shared one would carry profile A's
         // stand-down into profile B's completion line.
         let honesty = CollectHonestyWatcher()
         let start = Date()
         let code = await scheduledRunSingle(
-            profile: p.name, mode: schedule.mode, tiers: schedule.tiers,
+            profile: name, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty,
             retiredCSVAssisted: schedule.retiredCSVAssisted)
-        if code != 0 { anyFailed = true }
-        if honesty.incomplete { anyIncomplete = true }
-        if honesty.retryCouldHelp(profile: p.name, exitCode: code, since: start) {
-            anyRetryable = true
-        }
+        return ProfileOutcome(
+            profile: name, exitCode: code, incomplete: honesty.incomplete,
+            retryCouldHelp: honesty.retryCouldHelp(profile: name, exitCode: code, since: start),
+            started: start, finished: Date())
     }
     if [.jamfCLIOnly, .jamfCLIFull].contains(schedule.mode) {
         emitConsolidatedReports()
     }
     return ScheduleRunOutcome(
-        exitCode: anyFailed ? 1 : 0, incomplete: anyIncomplete, retryCouldHelp: anyRetryable)
+        over: result.ran, ran: result.ran, considered: result.considered)
 }
 
 // MARK: - check subcommand

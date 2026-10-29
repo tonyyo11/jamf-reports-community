@@ -9,11 +9,19 @@ struct MobileFleetView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: MobileFleetService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var selectedDeviceID: String?
     /// Supervision bucket the devices table is filtered to. Set from a donut
     /// slice or legend row, cleared by the same control or the filter chip.
     @State private var supervisionFilter: MobileFleetService.SupervisionRole?
+    /// Finding the devices table is filtered to (a Health Audit count opens it set); applies
+    /// with `supervisionFilter`, both must hold.
+    @State private var findingFilter: MobileFinding?
+    @State private var findingContext: MobileFinding.Context?
+    /// Devices per finding for `findingContext`; a finding no device reports is absent.
+    @State private var findingCounts: [MobileFinding: Int] = [:]
 
     var body: some View {
         PageScaffold {
@@ -25,47 +33,51 @@ struct MobileFleetView: View {
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
-                // A Mac-only tenant has no mobile devices at all, so no
-                // expected kinds — every one of them would render a
-                // false-alarm "never" chip. Only assert expectations once
-                // mobile data is detected; present-kind chips still show
-                // either way.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: snapshot.isDetected ? [
-                        "mobile-devices-list", "classic-ios-profiles",
-                    ] : []
-                )
-            }
-
-            if snapshot.totalDevices == 0 {
-                // Collected and empty reads differently from never collected.
-                if snapshot.collectedWithNoDevices { noDevicesState } else { emptyState }
-                if !snapshot.profiles.isEmpty { profilesTable }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "mobile devices")
             } else {
-                kpiGrid
-                supervisionCard
-                enrollmentMethodCard
-                complianceKpiGrid
-                osDistributionCard
-                devicesTable
-                if let device = selectedRichDevice {
-                    deviceDetailCard(device)
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                    // A Mac-only tenant has no mobile devices at all, so no
+                    // expected kinds — every one of them would render a
+                    // false-alarm "never" chip. Only assert expectations once
+                    // mobile data is detected; present-kind chips still show
+                    // either way.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: snapshot.isDetected ? [
+                            "mobile-devices-list", "classic-ios-profiles",
+                        ] : []
+                    )
                 }
-                profilesTable
+
+                if snapshot.totalDevices == 0 {
+                    // Collected and empty reads differently from never collected.
+                    if snapshot.collectedWithNoDevices { noDevicesState } else { emptyState }
+                    if !snapshot.profiles.isEmpty { profilesTable }
+                } else {
+                    kpiGrid
+                    supervisionCard
+                    enrollmentMethodCard
+                    complianceKpiGrid
+                    osDistributionCard
+                    devicesTable
+                    if let device = selectedRichDevice {
+                        deviceDetailCard(device)
+                    }
+                    profilesTable
+                }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
+        .onChange(of: workspace.pendingMobileFilter) { applyPendingFilter() }
     }
 
     private var subtitle: String? {
@@ -75,17 +87,61 @@ struct MobileFleetView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            findingFilter = nil
+        }
+        guard !workspace.demoMode else {
+            let context = DemoData.mobileFindingContext
+            apply(Self.demoSnapshot, context: context,
+                  counts: Self.demoSnapshot.findingCounts(context), source: source)
+            return
+        }
+        let profile = workspace.profile
+        let staleDays = workspace.configState.staleRule.days
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: {
+                let loaded = MobileFleetService.load(profile: profile)
+                let context = loaded.findingContext(staleDays: staleDays, now: Date())
+                return (loaded, context, loaded.findingCounts(context))
+            }
+        ) else { return }
+        apply(loaded.0, context: loaded.1, counts: loaded.2, source: source)
     }
 
-    private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : MobileFleetService.load(profile: workspace.profile)
+    private func apply(
+        _ loaded: MobileFleetService.Snapshot, context: MobileFinding.Context,
+        counts: [MobileFinding: Int], source: String
+    ) {
+        snapshot = loaded
+        findingContext = context
+        findingCounts = counts
+        // A reload whose data no longer reports the finding must not leave its chip over an
+        // empty table.
+        if let active = findingFilter, counts[active] == nil { findingFilter = nil }
         supervisionFilter = nil
+        loadedSource = source
+        applyPendingFilter()
+    }
+
+    /// Applies the filter a Health Audit count asked for (`MobileFinding.pending`) once the
+    /// snapshot is in, and only for a finding some device reports.
+    private func applyPendingFilter() {
+        guard loadedSource == dataSource, let raw = workspace.pendingMobileFilter else { return }
+        workspace.pendingMobileFilter = nil
+        guard let requested = MobileFinding(rawValue: raw), findingCounts[requested] != nil
+        else { return }
+        findingFilter = requested
+        supervisionFilter = nil
+        selectedDeviceID = nil
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
@@ -145,7 +201,7 @@ struct MobileFleetView: View {
             : "F2LX" + String(0x51C0 + i * 0x3B, radix: 16, uppercase: true) + "N0DV"
         // Inventoried in the week before the demo's "now", never after it.
         let age = TimeInterval((i % 7) * 86_400 + (i * 37 % 300 + 20) * 60)
-        let lastUpdate = ISO8601DateFormatter().string(
+        let lastUpdate = Self.isoFormatter.string(
             from: DemoData.referenceDate.addingTimeInterval(-age))
         let ownership = supervised
             ? "Institutional"
@@ -463,11 +519,45 @@ struct MobileFleetView: View {
         selectedDeviceID = nil
     }
 
+    private func setFindingFilter(_ finding: MobileFinding?) {
+        findingFilter = finding
+        selectedDeviceID = nil
+    }
+
+    private func findingChipLabel(_ finding: MobileFinding) -> String {
+        "\(finding.filterLabel): \(findingCounts[finding] ?? 0)"
+    }
+
+    /// The Health Audit's findings as table filters, each with its device count. Hidden when
+    /// the snapshot has no inventory sections to judge.
+    @ViewBuilder
+    private var findingMenu: some View {
+        if !findingCounts.isEmpty {
+            Menu {
+                ForEach(MobileFinding.allCases.filter { findingCounts[$0] != nil }) { finding in
+                    Button("\(finding.filterLabel) (\(findingCounts[finding] ?? 0))") {
+                        setFindingFilter(finding)
+                    }
+                }
+                if findingFilter != nil {
+                    Divider()
+                    Button("Show every device") { setFindingFilter(nil) }
+                }
+            } label: {
+                Label("Needs attention", systemImage: "line.3.horizontal.decrease.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Filter devices by a Health Audit finding")
+            .help("Show only the devices behind a Health Audit finding.")
+        }
+    }
+
     /// Blue vs orange stays apart for color-blind readers; warn is a status color, not a series.
     static func supervisionColor(for role: MobileFleetService.SupervisionRole) -> Color {
         switch role {
-        case .supervised: return Theme.ChartPalette.supervised
-        case .unsupervised: return Theme.ChartPalette.unsupervised
+        case .supervised: return Theme.ChartColors.supervised
+        case .unsupervised: return Theme.ChartColors.unsupervised
         // A mid grey rather than a hairline tone: at 12% white the slice
         // almost vanished, and selected it read dimmer than the dimmed ones.
         case .unmanaged: return Theme.Colors.fgMuted
@@ -567,8 +657,12 @@ struct MobileFleetView: View {
                         .accessibilityLabel("Export iOS/iPadOS version distribution chart as PNG")
                         .help("Save the iOS/iPadOS version distribution bar chart as a PNG image")
                     }
-                    ForEach(snapshot.osDistribution, id: \.osVersion) { item in
-                        osVersionBar(osVersion: item.osVersion, count: item.count)
+                    let colors = Theme.ChartColors.colors(
+                        forVersions: snapshot.osDistribution.map(\.osVersion))
+                    ForEach(Array(snapshot.osDistribution.enumerated()), id: \.element.osVersion) {
+                        index, item in
+                        osVersionBar(osVersion: item.osVersion, count: item.count,
+                                     color: colors[index])
                     }
                 }
             }
@@ -591,7 +685,7 @@ struct MobileFleetView: View {
         }
     }
 
-    private func osVersionBar(osVersion: String, count: Int) -> some View {
+    private func osVersionBar(osVersion: String, count: Int, color: Color) -> some View {
         let total = snapshot.totalDevices
         let percentage = total > 0 ? (Double(count) / Double(total)) * 100 : 0
 
@@ -615,7 +709,7 @@ struct MobileFleetView: View {
                     .frame(height: 4)
                     .overlay(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(Theme.Colors.goldBright)
+                            .fill(color)
                             .frame(width: geo.size.width * (percentage / 100), height: 4)
                     }
             }
@@ -635,14 +729,15 @@ struct MobileFleetView: View {
         let listRowsByID = snapshot.lightDevicesByID
         let matching = tableRows
         let rows = Array(matching.prefix(50))
-        let total = totalMobileDevices
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     SectionHeader(
                         title: "Mobile Devices",
-                        trailing: supervisionFilter != nil || total > rows.count
-                            ? "\(rows.count) of \(total) shown"
+                        // The denominator is the matching count, so a filter reads "50 of 80".
+                        trailing: supervisionFilter != nil || findingFilter != nil
+                            || matching.count > rows.count
+                            ? "\(rows.count) of \(matching.count) shown"
                             : nil
                     )
                     if let supervisionFilter {
@@ -650,6 +745,13 @@ struct MobileFleetView: View {
                             toggleSupervisionFilter(supervisionFilter)
                         }
                     }
+                    if let findingFilter {
+                        FilterChip(label: findingChipLabel(findingFilter)) {
+                            setFindingFilter(nil)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    findingMenu
                 }
                 Table(rows, selection: $selectedDeviceID) {
                     TableColumn("Name") { device in
@@ -898,8 +1000,12 @@ struct MobileFleetView: View {
     /// fleet's first 50 reach the table.
     private var tableRows: [Either<MobileDeviceListRow, MobileDeviceInventoryItem>] {
         if !snapshot.richDevices.isEmpty {
-            return MobileFleetService.devices(snapshot.richDevices, in: supervisionFilter)
-                .map { .right($0) }
+            var matched = MobileFleetService.devices(snapshot.richDevices, in: supervisionFilter)
+            if let findingFilter, let findingContext {
+                matched = snapshot.devices(
+                    matched, affectedBy: findingFilter, context: findingContext)
+            }
+            return matched.map { .right($0) }
         }
         return snapshot.lightDevices.map { .left($0) }
     }
@@ -967,17 +1073,24 @@ struct MobileFleetView: View {
             return "—"
         case .right(let rich):
             guard let dateString = rich.general?.lastInventoryUpdateDate,
-                  let date = ISO8601DateFormatter().date(from: dateString) else {
+                  let date = Self.isoFormatter.date(from: dateString) else {
                 return "—"
             }
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .abbreviated
             // Demo dates were written against the demo's "now"; measured from
             // today, every one read "1 yr. ago".
             let now = workspace.demoMode ? DemoData.referenceDate : Date()
-            return formatter.localizedString(for: date, relativeTo: now)
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
+
+    // Built once: both run per table row. Configured at creation, never mutated after.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 
     private func pillTone(for deviceType: String) -> Pill.Tone {
         switch deviceType.lowercased() {
@@ -1056,8 +1169,10 @@ private struct MobileFleetOSDistributionExport: View {
     }
 
     var body: some View {
+        let colors = Theme.ChartColors.colors(
+            forVersions: displayRows.map(\.osVersion), scheme: .light)
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(displayRows.enumerated()), id: \.offset) { _, row in
+            ForEach(Array(displayRows.enumerated()), id: \.offset) { offset, row in
                 let pct = totalDevices > 0 ? Double(row.count) / Double(totalDevices) * 100 : 0
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
@@ -1080,7 +1195,7 @@ private struct MobileFleetOSDistributionExport: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color(hex: 0xE2E8F0))
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.ChartPalette.osVersionExport[0]) // Use muted gold export color
+                                .fill(colors[offset])
                                 .frame(width: max(0, geo.size.width * pct / 100))
                         }
                     }

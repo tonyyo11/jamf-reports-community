@@ -16,10 +16,14 @@ struct Generate: AsyncParsableCommand {
         abstract: "Generate an xlsx workbook for a profile.",
         discussion: "With html.with_workbook: true in the profile's config.yaml, the HTML "
             + "report is written beside the workbook, with the same name and a .html extension. "
+            + "--csv-folder (or output.csv_folder: true) also writes one CSV per workbook tab "
+            + "into a folder named like the workbook with _csv added. "
             + "A Jamf School workspace writes the School workbook and ignores --template.")
     @Option(help: "Workspace profile slug.") var profile: String
     @Option(help: "Output .xlsx path (default: the workspace's Generated Reports dir).") var output: String?
     @Option(help: "Report template id (default: full-instance).") var template: String?
+    @Flag(help: "Also write one CSV per workbook tab into a folder beside the workbook.")
+    var csvFolder = false
 
     func run() async throws {
         CLIRun.requireValidProfile(profile)
@@ -69,10 +73,11 @@ struct Generate: AsyncParsableCommand {
             if isSchool {
                 failures = try await ReportEngine.schoolGenerate(
                     config: config, dataDir: dataDir, outputURL: outputURL,
-                    workspace: try WorkspaceID(validating: profile), onLine: onLine)
+                    workspace: try WorkspaceID(validating: profile), csvFolder: csvFolder,
+                    now: signals.startedAt, onLine: onLine)
             } else {
                 failures = try await engine.generate(
-                    outputURL: outputURL, template: resolved, onLine: onLine)
+                    outputURL: outputURL, template: resolved, csvFolder: csvFolder, onLine: onLine)
             }
             // html.with_workbook. Before the path below, which stays the last line of
             // stdout for a script that reads it. There is no School HTML report.

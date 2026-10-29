@@ -572,14 +572,15 @@ final class CLIBridge {
         outputDir: URL? = nil,
         aiNarrative: String? = nil,
         htmlWithWorkbook: Bool = true,
+        csvFolder: Bool = false,
         now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await AttentionLog.recording(profile: profile) {
             try await generateRecording(
                 profile: profile, template: template, outputDir: outputDir,
-                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook, now: now,
-                onLine: onLine)
+                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook,
+                csvFolder: csvFolder, now: now, onLine: onLine)
         }
     }
 
@@ -589,6 +590,7 @@ final class CLIBridge {
         outputDir: URL?,
         aiNarrative: String?,
         htmlWithWorkbook: Bool,
+        csvFolder: Bool,
         now: Date,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
@@ -634,7 +636,7 @@ final class CLIBridge {
         do {
             let failures = try await engine.generate(
                 outputURL: outputURL, template: template,
-                aiNarrative: aiNarrative, now: now, onLine: onLine
+                aiNarrative: aiNarrative, csvFolder: csvFolder, now: now, onLine: onLine
             )
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -725,6 +727,8 @@ final class CLIBridge {
     /// Run school-generate for Jamf School tenants via the Swift engine.
     func schoolGenerate(
         profile: String,
+        csvFolder: Bool = false,
+        now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -772,6 +776,8 @@ final class CLIBridge {
                 dataDir: dataDir,
                 outputURL: outputURL,
                 workspace: try WorkspaceID(validating: profile),
+                csvFolder: csvFolder,
+                now: now,
                 onLine: onLine
             )
             if failures.isEmpty {
@@ -1195,7 +1201,7 @@ final class CLIBridge {
         // because another profile may be the one that failed.
         let (code, stdout) = try await runAndCapture(
             executable: bin,
-            arguments: ["-p", profile, "config", "validate", "--output", "json"],
+            arguments: Self.configValidateArguments(profile: profile),
             environment: Self.environmentForJamfCLI(),
             onLine: { line in
                 if line.text.contains("config validation failed") { return }
@@ -1370,7 +1376,7 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "devices",
-            jamfCLIArgs: { id in ["pro", "device", id] },
+            jamfCLIArgs: Self.computerDetailArguments,
             onLine: onLine
         )
     }
@@ -1393,7 +1399,7 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "mobile-devices",
-            jamfCLIArgs: { id in ["pro", "mobile-devices", "get", id] },
+            jamfCLIArgs: Self.mobileDetailArguments,
             onLine: onLine
         )
     }
@@ -1412,6 +1418,14 @@ final class CLIBridge {
     nonisolated static func isSafeDeviceIdentifier(_ raw: String) -> Bool {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty && !trimmed.hasPrefix("-")
+    }
+
+    nonisolated static func computerDetailArguments(_ id: String) -> [String] {
+        ["pro", "device", id]
+    }
+
+    nonisolated static func mobileDetailArguments(_ id: String) -> [String] {
+        ["pro", "mobile-devices", "get", id]
     }
 
     /// `locateJamfCLI` is a test seam: the default locator finds no jamf-cli under XCTest.
@@ -1610,14 +1624,7 @@ final class CLIBridge {
         // hands back the payload.
         let (exitCode, data) = try await runAndCapture(
             executable: bin,
-            arguments: [
-                "-p", profile,
-                "pro", "diff",
-                "--source", left.path,
-                "--target", right.path,
-                "--output", "json",
-                "--no-input",
-            ],
+            arguments: Self.diffArguments(profile: profile, source: left.path, target: right.path),
             environment: Self.environmentForJamfCLI(),
             onLine: onLine
         )
@@ -1914,7 +1921,7 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
-        let args = ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json", "--no-input"]
+        let args = Self.groupAnalyzeArguments(profile: profile)
         let (code, data) = try await runAndCapture(
             executable: bin,
             arguments: args,
@@ -2436,6 +2443,20 @@ final class CLIBridge {
         )
         onLine(.init(timestamp: Date(), level: .warn,
             text: "[warn] backup temp dir could not be removed — delete manually: \(staging.lastPathComponent)"))
+    }
+
+    nonisolated static func diffArguments(profile: String, source: String, target: String) -> [String] {
+        ["-p", profile, "pro", "diff", "--source", source, "--target", target,
+         "--output", "json", "--no-input"]
+    }
+
+    nonisolated static func groupAnalyzeArguments(profile: String) -> [String] {
+        ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json",
+         "--no-input"]
+    }
+
+    nonisolated static func configValidateArguments(profile: String) -> [String] {
+        ["-p", profile, "config", "validate", "--output", "json"]
     }
 
     /// The jamf-cli arguments for a backup of `profile` into `outputDirectory`.

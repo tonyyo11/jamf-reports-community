@@ -12,6 +12,12 @@ struct AuditFinding: Identifiable, Codable {
     /// The Macs behind the finding, for a finding the app computes from the inventory
     /// (`contactGapFindings`). `pro audit` returns counts only, so its findings have none.
     var devices: [String] = []
+    /// What `devices` lists, for the popover's heading.
+    var deviceNoun = "Macs"
+    /// The `MobileFinding` raw value that opens the Mobile Devices list behind the finding.
+    var mobileFilter: String?
+    /// How the count moved since the previous daily summary ("3 fewer than on 2026-10-18").
+    var change: String?
 
     var driftKey: String {
         [
@@ -106,6 +112,7 @@ struct AuditView: View {
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
     @State private var commandFindings: [AuditFinding] = []
     @State private var contactGapList: [AuditFinding] = []
+    @State private var mobileFindingList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
@@ -531,6 +538,7 @@ struct AuditView: View {
             duplicateSerialsSection
             commandHealthSection
             ContactGapSection(findings: contactGapList)
+            MobileDevicesSection(findings: mobileFindingList)
         }
     }
 
@@ -1062,6 +1070,7 @@ struct AuditView: View {
             commandHealth = .empty
             commandFindings = []
             contactGapList = []
+            mobileFindingList = DemoData.mobileAuditFindings
             return
         }
 
@@ -1071,10 +1080,20 @@ struct AuditView: View {
         lastHygieneDate = nil
         newFindingKeys = []
         resolvedFindings = []
+        duplicateSerials = .empty
+        commandHealth = .empty
+        contactGapList = []
+        mobileFindingList = []
         hasPreviousAudit = false
         await loadIntegritySummary()
-        duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
-        commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
+        let loadProfile = workspace.profile
+        guard let integrity = await ScreenLoad.paint(
+            stillCurrent: { loadProfile == workspace.profile && !workspace.demoMode },
+            read: { (DuplicateSerialService.load(profile: loadProfile),
+                     MDMCommandHealthService.load(profile: loadProfile)) }
+        ) else { return }
+        duplicateSerials = integrity.0
+        commandHealth = integrity.1
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
@@ -1116,6 +1135,11 @@ struct AuditView: View {
             DeviceInventoryService.load(profile: profile, demoMode: false)
         }.value
         contactGapList = contactGapFindings(inventory)
+        let staleDays = workspace.configState.staleRule.days
+        if let mobile = await ScreenLoad.paint(
+            stillCurrent: { profile == workspace.profile && !workspace.demoMode },
+            read: { mobileDevicesFindings(profile: profile, staleDays: staleDays, now: Date()) }
+        ) { mobileFindingList = mobile }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
             profile: workspace.profile,
@@ -1361,6 +1385,9 @@ struct FindingDetailPopover: View {
                                 name: .navigateToTab,
                                 object: nil,
                                 userInfo: ["tab": destination.tab.rawValue]
+                                    .merging(finding.mobileFilter.map {
+                                        [MobileFinding.userInfoKey: $0]
+                                    } ?? [:]) { $1 }
                             )
                         }
                         .help("Open the screen with the records behind this finding.")
@@ -1394,7 +1421,7 @@ struct FindingDetailPopover: View {
     /// not stretch the popover.
     private var deviceList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Kicker(text: "Macs (\(finding.devices.count))")
+            Kicker(text: "\(finding.deviceNoun) (\(finding.devices.count))")
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(finding.devices, id: \.self) { device in
@@ -1632,6 +1659,8 @@ private extension AuditFinding {
 /// Maps a finding to the screen that can show its underlying records — by
 /// finding name first, category as fallback. Internal (not private) for tests.
 func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: Tab)? {
+    // The mobile names carry words ("update", "stale") the checks below send elsewhere.
+    if finding.category == MobileFinding.category { return ("Mobile Devices", .mobileFleet) }
     let name = finding.name.lowercased()
     if name.contains("unencrypted") || name.contains("filevault")
         || name.contains("gatekeeper") || name.contains("sip")

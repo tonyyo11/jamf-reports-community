@@ -400,29 +400,9 @@ struct StateFileStore: Sendable {
         directory.appendingPathComponent("\(report).cause.json", isDirectory: false)
     }
 
-    /// Write `data` to `url` via a temp-file-then-rename so a crash mid-
-    /// write leaves the prior contents intact. `replaceItem` is the
-    /// CLAUDE.md-blessed primitive but it requires the destination to
-    /// already exist; for a first write we fall back to `Data.write`
-    /// (which is already atomic via the `.atomic` option on macOS).
+    /// Write `data` to `url` through a staged sibling and an atomic install, so a crash
+    /// mid-write leaves the prior contents intact and a link at `url` is replaced.
     private func atomicWrite(data: Data, to url: URL) throws {
-        let fm = FileManager.default
-        if fm.fileExists(atPath: url.path) {
-            // Write new content to a sibling temp file, then replaceItem
-            // atomically swaps the inodes — readers either see the old or
-            // the new content, never a half-written line.
-            let tmp = url.deletingLastPathComponent()
-                .appendingPathComponent(".tmp-\(UUID().uuidString)-\(url.lastPathComponent)")
-            try data.write(to: tmp, options: .atomic)
-            do {
-                _ = try fm.replaceItemAt(url, withItemAt: tmp)
-            } catch {
-                // Clean up the temp file if the replace failed.
-                try? fm.removeItem(at: tmp)
-                throw error
-            }
-        } else {
-            try data.write(to: url, options: .atomic)
-        }
+        try AtomicInstall.write(data, to: url)
     }
 }

@@ -241,6 +241,12 @@ struct SOFAFeedService: Sendable {
         return latest
     }
 
+    /// `latestByMajor` over the iOS / iPadOS rows of `rows`, the feed every mobile figure is
+    /// judged against (`MobileSummary`, the Mobile Devices filters, the Health Audit).
+    static func iOSLatestByMajor(_ rows: [OSFamilyRow]) -> [Int: String] {
+        latestByMajor(rows.filter { $0.platform == platformLabels["ios"] })
+    }
+
     /// Whether `version` is at or past the newest release of its own major.
     /// nil when the feed does not track that major, so "behind" and
     /// "unknown" stay distinct.
@@ -321,19 +327,9 @@ struct SOFAFeedService: Sendable {
     }
 
     static func writeCacheAtomic(data: Data, to url: URL) {
-        let tmp = url.deletingLastPathComponent()
-            .appendingPathComponent(".\(url.lastPathComponent).partial")
         do {
-            // Atomic, so a symlink planted at the staging name is replaced, not followed.
-            try data.write(to: tmp, options: .atomic)
-            // replaceItem requires the destination to exist; use move when it doesn't.
-            if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
-            } else {
-                try FileManager.default.moveItem(at: tmp, to: url)
-            }
+            try AtomicInstall.write(data, to: url)
         } catch {
-            try? FileManager.default.removeItem(at: tmp)
             let msg = "SOFAFeedService: could not write cache \(url.lastPathComponent): " +
                       error.localizedDescription
             AppLogger.collect.warning("\(msg, privacy: .private)")

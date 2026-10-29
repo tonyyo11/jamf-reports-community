@@ -265,7 +265,8 @@ struct TrendsView: View {
 
     var body: some View {
         PageScaffold(spacing: 16) {
-            if !workspaceStore.demoMode && trendStore.isLoading && trendStore.isEmpty {
+            if !workspaceStore.demoMode && (!trendStore.isLoaded(for: workspaceStore.profile)
+                || (trendStore.isLoading && trendStore.isEmpty)) {
                 trendsLoadingState
             } else if !workspaceStore.demoMode && trendStore.isEmpty {
                 emptyState
@@ -300,6 +301,11 @@ struct TrendsView: View {
             ensureOfferedMetric()
             Task { await loadTrendsOffMain() }
         }
+        .onChange(of: workspaceStore.demoMode) { _, _ in
+            // A flip under one profile name is no profile change: the store still needs its scan.
+            ensureOfferedMetric()
+            Task { await loadTrendsOffMain() }
+        }
         .onChange(of: range) { _, newValue in
             selectedDate = nil
             // A managed default stays as the profile sets it; the picker changes this view only.
@@ -330,7 +336,6 @@ struct TrendsView: View {
     private func loadTrendsOffMain() async {
         guard !workspaceStore.demoMode else { return }
         let profile = workspaceStore.profile
-        let r = range
         // Profile switch: drop the previous tenant's data so the loading state
         // (not stale data) shows during the new scan; same-profile is a no-op.
         trendStore.clearForProfileSwitch(to: profile)
@@ -338,7 +343,8 @@ struct TrendsView: View {
         let snapshot = await Task.detached(priority: .userInitiated) {
             TrendStore.computeSnapshot(profile: profile)
         }.value
-        trendStore.apply(snapshot, profile: profile, range: r, generation: generation)
+        // The range as it is now: a range picked during the scan already filtered the store.
+        trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
         await trendStore.backfillHistory(profile: profile)
     }
 
@@ -930,9 +936,11 @@ struct TrendsView: View {
                 }
                 multilineComparisonChart
                 HStack(spacing: 14) {
-                    legendDot(color: Theme.Colors.ok, label: "FileVault")
-                    legendDot(color: Theme.Colors.gold, label: workspaceStore.complianceBenchmarkLabel ?? "Compliance")
-                    legendDot(color: Theme.Colors.info, label: "macOS")
+                    legendDot(color: Theme.ChartColors.color(forMetric: .fileVault),
+                              label: "FileVault")
+                    legendDot(color: Theme.ChartColors.color(forMetric: .compliance),
+                              label: workspaceStore.complianceBenchmarkLabel ?? "Compliance")
+                    legendDot(color: Theme.ChartColors.color(forMetric: .osCurrent), label: "macOS")
                 }
             }
         }
@@ -1147,9 +1155,13 @@ struct TrendsView: View {
         Group {
             if let domain = chartDomain {
                 Chart {
-                    series("FileVault", color: Theme.Colors.ok, points: points(for: .fileVault))
-                    series(workspaceStore.complianceBenchmarkLabel ?? "Compliance", color: Theme.Colors.gold, points: points(for: .compliance))
-                    series("macOS Current", color: Theme.Colors.info, points: points(for: .osCurrent))
+                    series("FileVault", color: Theme.ChartColors.color(forMetric: .fileVault),
+                           points: points(for: .fileVault))
+                    series(workspaceStore.complianceBenchmarkLabel ?? "Compliance",
+                           color: Theme.ChartColors.color(forMetric: .compliance),
+                           points: points(for: .compliance))
+                    series("macOS Current", color: Theme.ChartColors.color(forMetric: .osCurrent),
+                           points: points(for: .osCurrent))
                 }
                 .chartXScale(domain: domain)
                 .chartYScale(domain: 0...100)
@@ -1511,9 +1523,8 @@ extension Array {
 }
 
 enum TrendDemoSeries {
-    static var dates: [Date] {
+    static let dates: [Date] =
         DemoData.trendDates.compactMap { SummaryJSONParser.dateFormatter.date(from: $0) }
-    }
 
     static func values(for metric: TrendSeries.Metric) -> [Double] {
         DemoData.trends[metric] ?? []

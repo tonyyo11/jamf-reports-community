@@ -14,7 +14,13 @@ import Foundation
 /// Genuine unexpected failures (decode bugs, type mismatches, I/O errors on
 /// data that *is* present) should not conform — they land in `SheetFailure`
 /// and trigger the `[partial]` log line.
-protocol SheetSkippable: Error {}
+///
+/// Every conformer states its reason in plain words (`skipReason`, no default), so a `[skip]`
+/// line never prints an enum case or a generic "The operation couldn't be completed"
+/// (`SheetRegistry.skipLine(sheet:error:)` is the one formatter).
+protocol SheetSkippable: Error {
+    var skipReason: String { get }
+}
 
 // MARK: - SheetFailure
 
@@ -26,7 +32,7 @@ protocol SheetSkippable: Error {}
 struct SheetFailure: Sendable {
     /// The sheet name as it appears in `sheetPlan`.
     let sheet: String
-    /// Serialized error: `"\(type(of: error)): \(error)"`.
+    /// Serialized error: `"\(type(of: error)): \(error.localizedDescription)"`.
     let error: String
 }
 
@@ -47,6 +53,21 @@ struct SheetFailure: Sendable {
 ///   the registry is built once synchronously, then used read-only within a single
 ///   structured-concurrency task. No concurrent access occurs.
 struct SheetRegistry: @unchecked Sendable {
+
+    /// The failure entry for a sheet that threw an unexpected error. The label carries the
+    /// readable message; `String(reflecting:)` goes to the private log so a decoding error keeps
+    /// its coding path.
+    static func failure(sheet: String, error: any Error) -> SheetFailure {
+        AppLogger.report.error(
+            "sheet \(sheet, privacy: .public) failed: \(String(reflecting: error), privacy: .private)")
+        return SheetFailure(
+            sheet: sheet, error: "\(type(of: error)): \(error.localizedDescription)")
+    }
+
+    /// `[skip] <sheet>: <reason>`, shared by the Jamf Pro and Jamf School sheet loops.
+    static func skipLine(sheet: String, error: any SheetSkippable) -> String {
+        "[skip] \(sheet): \(error.skipReason)"
+    }
 
     // MARK: - Types
 
@@ -118,14 +139,13 @@ struct SheetRegistry: @unchecked Sendable {
                 written.append(name)
             } catch let skippable as SheetSkippable {
                 // Data absent or expected-missing — omit sheet, not a failure.
-                let reason = (skippable as? LocalizedError)?.errorDescription ?? "\(skippable)"
-                let msg = "[skip] \(name): \(reason)"
+                let msg = SheetRegistry.skipLine(sheet: name, error: skippable)
                 print("  " + msg)
                 onLine?(.init(timestamp: Date(), level: .info, text: msg))
             } catch {
-                let label = "\(type(of: error)): \(error)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
+                let failure = SheetRegistry.failure(sheet: name, error: error)
+                failures.append(failure)
+                print("  [fail] \(name): unexpected error — \(failure.error)")
             }
         }
         return (written, failures, unimplemented)

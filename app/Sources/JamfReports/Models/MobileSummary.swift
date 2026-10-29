@@ -35,6 +35,15 @@ struct MobileSummary: Codable, Sendable, Equatable {
         /// An iOS or iPadOS version; nil for a platform the iOS feed does not cover.
         var iOSVersion: String?
         var lastSeen: Date?
+
+        /// Jamf Pro lists the device as unmanaged; an unknown management state is not.
+        var isUnmanaged: Bool { managed == false }
+    }
+
+    /// A device last seen MORE than `staleDays` whole days before `now`: the one stale rule for
+    /// the summary, the Health Audit and the Mobile Devices filter.
+    static func isStale(lastSeen: Date, staleDays: Int, now: Date) -> Bool {
+        max(0, Int(now.timeIntervalSince(lastSeen) / 86_400)) > staleDays
     }
 
     /// The figures for `devices`, nil when there are none. `latestByMajor` is the iOS feed's
@@ -51,23 +60,29 @@ struct MobileSummary: Codable, Sendable, Equatable {
             return Share(met: reported.filter { $0 }.count, of: reported.count)
         }
         func count(_ values: [Bool?]) -> Int? { share(values)?.met }
-        let ages = devices.compactMap(\.lastSeen).map {
-            max(0, Int(now.timeIntervalSince($0) / 86_400))
-        }
+        let seen = devices.compactMap(\.lastSeen)
         let current = devices.compactMap(\.iOSVersion).map {
             SOFAFeedService.isCurrent($0, latestByMajor: latestByMajor)
         }
         return MobileSummary(
             managed: devices.filter { $0.managed == true }.count,
-            unmanaged: devices.filter { $0.managed == false }.count,
+            unmanaged: devices.filter(\.isUnmanaged).count,
             supervised: share(devices.filter { $0.managed == true }.map(\.supervised)),
             passcode: share(devices.map(\.passcodeCompliant)),
             dataProtection: share(devices.map(\.dataProtected)),
             activationLock: share(devices.map(\.activationLock)),
             osCurrent: share(current),
-            stale: ages.isEmpty ? nil : ages.filter { $0 > staleDays }.count,
+            stale: seen.isEmpty ? nil : seen.filter {
+                isStale(lastSeen: $0, staleDays: staleDays, now: now)
+            }.count,
             jailbroken: count(devices.map(\.jailbroken)),
             updateErrors: updateErrors)
+    }
+
+    /// A jailbreak status other than "none" (`MobileFleetService.jailbreakStatus`): the one test
+    /// the summary, the findings and the Mobile Devices tiles share.
+    static func isJailbroken(status: String) -> Bool {
+        !status.localizedCaseInsensitiveContains("none")
     }
 
     /// The Jamf Pro reading of one `mobile-devices-list` row (`MobileFleetService` accessors).
@@ -83,7 +98,7 @@ struct MobileSummary: Codable, Sendable, Equatable {
             dataProtected: MobileFleetService.dataProtected(of: item),
             activationLock: MobileFleetService.activationLockEnabled(of: item),
             jailbroken: MobileFleetService.jailbreakStatus(of: item)
-                .map { !$0.localizedCaseInsensitiveContains("none") },
+                .map { isJailbroken(status: $0) },
             iOSVersion: isTV ? nil : MobileFleetService.firstNonBlank(item.general?.osVersion),
             lastSeen: item.general?.lastInventoryUpdateDate.flatMap(DateParser().parse))
     }
@@ -108,7 +123,7 @@ struct MobileSummary: Codable, Sendable, Equatable {
     ) -> MobileSummary? {
         guard let rows = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
         else { return nil }
-        let devices = rows.filter { $0.general != nil || $0.security != nil }.map { device($0) }
+        let devices = rows.filter(MobileFleetService.reportsPosture).map { device($0) }
         return build(
             devices, latestByMajor: latestByMajor, staleDays: staleDays, now: now,
             updateErrors: updateErrors)

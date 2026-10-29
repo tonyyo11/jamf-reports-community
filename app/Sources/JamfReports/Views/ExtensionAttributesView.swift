@@ -9,7 +9,9 @@ struct ExtensionAttributesView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ExtensionAttributeService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var selectedEA: String?
     @State private var sortOrder: SortOrder = .devices
     @State private var coverageDrift: [EAParseHealthService.CoverageDrift] = []
@@ -56,39 +58,42 @@ struct ExtensionAttributesView: View {
                           : "Pick collected Extension Attributes to track in config.yaml.")
                 )
             }
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["ea-results", "computer-extension-attributes"]
-                )
-            }
-            if snapshot.definedEAs == 0 && snapshot.reportingEAs == 0 {
-                emptyState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "extension attributes")
             } else {
-                kpiGrid
-                driftCard
-                coverageCard
-                if let selectedEA, !selectedEA.isEmpty {
-                    valueDistributionCard(for: selectedEA)
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                    // Per-kind file dates are the honest per-screen signal here;
+                    // digest-level collectionSources belongs on summary screens only.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: ["ea-results", "computer-extension-attributes"]
+                    )
                 }
-                definitionsCard
+                if snapshot.definedEAs == 0 && snapshot.reportingEAs == 0 {
+                    emptyState
+                } else {
+                    kpiGrid
+                    driftCard
+                    coverageCard
+                    if let selectedEA, !selectedEA.isEmpty {
+                        valueDistributionCard(for: selectedEA)
+                    }
+                    definitionsCard
+                }
             }
         }
         .tint(Theme.Colors.goldBright)
         .sheet(isPresented: $showingAdopt) {
             CSVEAWalkthroughSheet(profile: workspace.profile)
         }
-        .onAppear(perform: loadIfNeeded)
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onChange(of: dataSource) { _, _ in
-            // The picked attribute belongs to the old source; reload picks the new default.
+            // The picked attribute belongs to the old source; the load picks the new default.
             selectedEA = nil
-            reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -113,43 +118,41 @@ struct ExtensionAttributesView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
-
-    private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : ExtensionAttributeService.load(profile: workspace.profile)
-
-        // Set default selection to the most-covered EA
-        if selectedEA == nil {
-            selectedEA = snapshot.coverage.max(by: { $0.populatedDevices < $1.populatedDevices })?.eaName
-        }
-
-        loadCoverageDrift()
-    }
-
-    /// Coverage drift needs a directory scan across dated `ea-results` snapshots —
-    /// runs off-main so a large fleet's history never blocks the UI.
-    private func loadCoverageDrift() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty; coverageDrift = [] }
         guard !workspace.demoMode else {
+            snapshot = Self.demoSnapshot
             coverageDrift = []
+            selectDefaultEA()
+            loadedSource = source
             return
         }
         let profile = workspace.profile
-        coverageDrift = []
-        Task {
-            typealias Drift = [EAParseHealthService.CoverageDrift]
-            let drift = await Task.detached(priority: .utility) { () -> Drift in
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { ExtensionAttributeService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
+        selectDefaultEA()
+        loadedSource = source
+        // Coverage drift scans every dated `ea-results` snapshot, so the tables paint first.
+        guard let drift = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { () -> [EAParseHealthService.CoverageDrift] in
                 guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return [] }
                 return EAParseHealthService.coverageDrift(dataDir: dir)
-            }.value
-            guard workspace.profile == profile else { return }
-            coverageDrift = drift
-        }
+            }
+        ) else { return }
+        coverageDrift = drift
+    }
+
+    /// The most-covered EA, until the user picks one.
+    private func selectDefaultEA() {
+        guard selectedEA == nil else { return }
+        selectedEA = snapshot.coverage
+            .max(by: { $0.populatedDevices < $1.populatedDevices })?.eaName
     }
 
     /// The demo's attributes over the 524-Mac fleet: FileVault splits as
@@ -643,10 +646,17 @@ private struct BarChartExportView: View {
 
     private var dateText: String {
         guard let snapshotDate else { return "No snapshot date" }
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return "Snapshot \(f.string(from: snapshotDate))"
+        return "Snapshot \(Self.dayFormatter.string(from: snapshotDate))"
     }
+
+    // Built once, never mutated after creation.
+    nonisolated(unsafe) private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {

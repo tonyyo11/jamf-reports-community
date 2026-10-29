@@ -33,3 +33,11 @@ Scrub checklist (apply to every refreshed fixture):
   `https://example.jamfcloud.com`).
 - Management IDs and similar GUIDs: freshly generated values, never tenant originals.
 - Tenant, org, and location names: clearly fictional placeholders.
+
+`jamf-cli/commands-<version>.json` is jamf-cli's own command catalog, not demo-tenant data: it is
+the output of `jamf-cli commands -o json`, with no hosts or IDs. Refresh it with
+`app/scripts/capture-jamf-cli-catalog.zsh` when the jamf-cli floor moves. The script sorts each
+row's `aliases` and rewrites the JSON with 2-space indent (jamf-cli prints aliases in map order),
+and the committed file has that one normalisation applied; nothing else is edited. Python
+writes Go's HTML escapes (`\u003e` for `>`, and `<`, `&`) as the characters themselves, so the
+text of the descriptions and gateway permissions differs from jamf-cli's raw bytes there.

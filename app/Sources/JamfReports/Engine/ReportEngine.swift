@@ -42,6 +42,8 @@ struct ReportEngine: Sendable {
     ///   - aiNarrative: Optional AI executive narrative (F3). GUI-generate flows pass
     ///                  a pre-generated paragraph; headless callers (scheduled runs,
     ///                  included CLI) leave the default nil and no AI block is written.
+    ///   - csvFolder: Also write the workbook's tabs as a folder of CSVs beside it, as
+    ///                `output.csv_folder` does for every run.
     ///   - locateJamfCLI: Finds the jamf-cli whose version the Cover sheet records; tests
     ///                    pass `{ nil }` so no jamf-cli runs.
     ///   - now: The run's start. The trend summary is dated by it, so a run whose `collect`
@@ -57,10 +59,28 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        csvFolder: Bool = false,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
+        try await generateReport(
+            outputURL: outputURL, template: template, aiNarrative: aiNarrative,
+            csvFolder: csvFolder, locateJamfCLI: locateJamfCLI, now: now, onLine: onLine
+        ).failures
+    }
+
+    /// `generate`, also naming the CSV folder it wrote (nil when none), so a scheduled run can
+    /// record it.
+    func generateReport(
+        outputURL: URL,
+        template: any ReportTemplate = FullInstanceTemplate(),
+        aiNarrative: String? = nil,
+        csvFolder: Bool = false,
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        now: Date = Date(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> GeneratedReport {
         let workspaceName = workspace?.name ?? ""
 
         // PR-10 / threat-model T-11: strict-mode pre-flight. Abort before any
@@ -139,11 +159,14 @@ struct ReportEngine: Sendable {
             workbook.firstSheet?.insertLogo(data: logo, filename: "logo.png")
         }
         try workbook.write(to: outputURL)
+        let csvFolderURL = Self.writeCSVFolder(
+            of: workbook, besideWorkbook: outputURL, requested: csvFolder, config: config,
+            onLine: onLine)
 
         finishWorkbook(at: outputURL, templateID: template.identifier,
                        profile: workspaceName, provenance: prov, day: now, onLine: onLine)
 
-        return coreFailures
+        return GeneratedReport(failures: coreFailures, csvFolder: csvFolderURL)
     }
 
     /// Best effort, like the PNG writes: a folder that cannot be made is logged, not fatal.
@@ -240,8 +263,9 @@ struct ReportEngine: Sendable {
     /// Falls back to file mtime when no date pattern is found.
     ///
     /// A run is a workbook: `keep` counts workbooks, and one that moves takes its companion HTML
-    /// (the same name with `.html`, written by `html.with_workbook`) and its sidecars with it.
-    /// An HTML report with no workbook of the same name beside it is never moved.
+    /// (the same name with `.html`, written by `html.with_workbook`), its CSV folder
+    /// (`csvFolderURL`) and their sidecars with it. An HTML report or CSV folder with no
+    /// workbook of the same name beside it is never moved.
     ///
     /// - Parameter onLine: When provided, warnings are emitted here instead of (only) via
     ///   `print`, so live log views (e.g. GenerateSheet) display side-effect failures.
@@ -282,7 +306,7 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): \(error)"
+            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): \(error.localizedDescription)"
             AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -290,10 +314,12 @@ struct ReportEngine: Sendable {
         }
 
         for file in sorted.dropFirst(keep) {
-            // The workbook's companion HTML (`html.with_workbook`) is part of its run. A
-            // `.html` with no workbook beside it, such as the Generate sheet's HTML format or
-            // `jamf-reports html` output, is not a run of this stem and is left where it is.
-            let run = [file, Self.htmlURL(besideWorkbook: file)]
+            // The workbook's companion HTML (`html.with_workbook`) and CSV folder are part of its
+            // run. A `.html` with no workbook beside it, such as the Generate sheet's HTML
+            // format or `jamf-reports html` output, is not a run of this stem and is left where
+            // it is.
+            let run = [file, Self.htmlURL(besideWorkbook: file),
+                       Self.csvFolderURL(besideWorkbook: file)]
                 .filter { fm.fileExists(atPath: $0.path) }
             for artifact in run {
                 // Skip sidecars when the move failed: sidecars without their report in the
@@ -350,7 +376,7 @@ struct ReportEngine: Sendable {
             try fm.moveItem(at: file, to: dest)
             return true
         } catch {
-            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error)"
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error.localizedDescription)"
             AppLogger.report.warning("\(msg, privacy: .private)")
             if label.isEmpty { print(msg) }
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -391,7 +417,7 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create summaries dir: \(error)"
+            let msg = "[warn] Could not create summaries dir: \(error.localizedDescription)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -978,20 +1004,18 @@ struct ReportEngine: Sendable {
     /// The summary's `mobile` object from a `mobile-devices-list` snapshot, judged now against
     /// the cached iOS feed, with update errors from a `--scan-failures` snapshot when one exists.
     private func mobileFigures(_ data: Data, updateFailures: Data?) -> MobileSummary? {
-        let iOSRows = SOFAFeedService.load(dataDir: dataDir).rows
-            .filter { $0.platform == SOFAFeedService.platformLabels["ios"] }
         return MobileSummary.fromMobileDevicesList(
-            data, latestByMajor: SOFAFeedService.latestByMajor(iOSRows),
+            data, latestByMajor: SOFAFeedService.iOSLatestByMajor(
+                SOFAFeedService.load(dataDir: dataDir).rows),
             staleDays: config.thresholds?.resolvedStaleDays ?? 30, now: Date(),
             updateErrors: updateFailures.flatMap(Self.mobileUpdateErrorCount))
     }
 
-    /// Rows of a `--scan-failures` snapshot's `error_devices` that are not computers; nil for a
-    /// summary-only snapshot, whose empty list says nothing.
+    /// Devices a `--scan-failures` snapshot's `error_devices` lists that are not computers (a
+    /// device with errors for two products counts once); nil for a summary-only snapshot, whose
+    /// empty list says nothing.
     static func mobileUpdateErrorCount(_ data: Data) -> Int? {
-        guard let scan = try? JSONDecoder().decode([UpdateFailuresReport].self, from: data).first
-        else { return nil }
-        return scan.errorDevices.filter { $0.deviceType.uppercased() != "COMPUTER" }.count
+        MobileFinding.updateErrors(in: data)?.count
     }
 
     /// The day's summary for a fleet with no Macs and some mobile devices: `totalDevices` is
@@ -1159,7 +1183,7 @@ struct ReportEngine: Sendable {
     ///
     /// Respects:
     /// - `charts.os_adoption.per_major_charts` — draws the OS adoption chart, one bar per major
-    ///   OS version (using `ChartPalette.majorVersionColors`). On when the key is absent, as
+    ///   OS version (each version in its `ChartPalette` colour). On when the key is absent, as
     ///   the Customize screen shows it; `false` turns it off.
     /// - `charts.compliance_trend.enabled: false` leaves the mSCP/STIG band trend chart out
     ///   (absent is on); the donuts stay.
@@ -1219,8 +1243,9 @@ struct ReportEngine: Sendable {
                 return (s.parsedDate, Double(s.totalDevices))
             }
             if !fleetPoints.isEmpty {
-                let series = ChartSeries(label: "Total Computers",
-                                         color: ChartPalette.color(for: 0), points: fleetPoints)
+                let series = ChartSeries(
+                    label: "Total Computers",
+                    color: ChartPalette.cgColor(forMetric: .managedDevices), points: fleetPoints)
                 if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
                     ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
                     embedRow += 20
@@ -1239,14 +1264,16 @@ struct ReportEngine: Sendable {
             }
             var secSeries: [ChartSeries] = []
             if !fvPoints.isEmpty {
-                secSeries.append(ChartSeries(label: "FileVault %",
-                                             color: ChartPalette.color(for: 1), points: fvPoints))
+                secSeries.append(ChartSeries(
+                    label: "FileVault %",
+                    color: ChartPalette.cgColor(forMetric: .fileVault), points: fvPoints))
             }
             if !patchPoints.isEmpty {
                 // The line-chart legend keeps only 14 characters of a label
                 // (ChartRenderer.drawLegend): "Patch Compliance %" showed as "Patch Complian".
-                secSeries.append(ChartSeries(label: "Patch %",
-                                             color: ChartPalette.color(for: 2), points: patchPoints))
+                secSeries.append(ChartSeries(
+                    label: "Patch %",
+                    color: ChartPalette.cgColor(forMetric: .patch), points: patchPoints))
             }
             if !secSeries.isEmpty {
                 if let png = ChartRenderer.lineChart(series: secSeries,
@@ -1264,8 +1291,9 @@ struct ReportEngine: Sendable {
                     s.staleCount.map { (s.parsedDate, Double($0)) }
                 }
                 if !stalePoints.isEmpty {
-                    let series = ChartSeries(label: "Stale Devices",
-                                             color: ChartPalette.color(for: 3), points: stalePoints)
+                    let series = ChartSeries(
+                        label: "Stale Devices",
+                        color: ChartPalette.cgColor(forMetric: .stale), points: stalePoints)
                     if let png = ChartRenderer.lineChart(series: [series],
                                                           title: "Stale Device Count Trend") {
                         ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
@@ -1298,7 +1326,9 @@ struct ReportEngine: Sendable {
                     let barData = BarChartData(
                         categories: sortedMajor.map(\.key),
                         values: sortedMajor.map(\.value),
-                        colors: sortedMajor.map { ChartPalette.colorForMajorVersion($0.key) }
+                        colors: ChartPalette
+                            .hexes(for: .version, keys: sortedMajor.map(\.key), scheme: .light)
+                            .map(ChartPalette.cgColor(hex:))
                     )
                     if let png = ChartRenderer.barChart(data: barData,
                                                          title: "OS Adoption by Major Version") {
@@ -1858,17 +1888,18 @@ struct ReportEngine: Sendable {
     static let defaultAuthConfirmationProbe: AuthConfirmationProbe =
         authConfirmationProbe(timeout: authProbeTimeout)
 
+    /// `--refresh` forces an exchange; plain `auth token` echoes the cached token file.
+    static func authRefreshArguments(profile: String) -> [String] {
+        ["-p", profile, "pro", "auth", "token", "--refresh", "--output", "json", "--no-input"]
+    }
+
     /// The real probe with a limit; a call that gets no answer in time is `unconfirmed`.
     static func authConfirmationProbe(timeout: TimeInterval) -> AuthConfirmationProbe {
         { profile, bin in
             let probeBridge = CLIBridge()
             guard let (exitCode, _) = try? await probeBridge.runAndCapture(
                 executable: bin,
-                // --refresh forces an exchange; plain `auth token` echoes the cached token file.
-                arguments: [
-                    "-p", profile, "pro", "auth", "token", "--refresh",
-                    "--output", "json", "--no-input",
-                ],
+                arguments: authRefreshArguments(profile: profile),
                 environment: CLIBridge.environmentForJamfCLI(),
                 timeout: timeout,
                 onLine: { _ in }
@@ -3065,6 +3096,11 @@ struct ReportEngine: Sendable {
     /// `patch-release-dates_<ts>.json` snapshot.
     ///
     /// Reads the current patch-status snapshot for the title list, then runs
+    static func patchDefinitionArguments(profile: String, titleId: String) -> [String] {
+        ["-p", profile, "pro", "patch-software-title-configurations",
+         "definitions", titleId, "--page-size", "100", "--output", "json"]
+    }
+
     /// `pro patch-software-title-configurations definitions <id>` for each title.
     /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
     /// Non-fatal: warn and skip titles that fail rather than aborting the run. Calls that time
@@ -3105,8 +3141,7 @@ struct ReportEngine: Sendable {
                              text: "[warn] patch-definitions: skipping title with an unsafe id"))
                 continue
             }
-            let args = ["-p", profile, "pro", "patch-software-title-configurations",
-                        "definitions", titleId, "--page-size", "100", "--output", "json"]
+            let args = patchDefinitionArguments(profile: profile, titleId: titleId)
             let captureResult = try? await bridge.runAndCapture(
                 executable: bin, arguments: args,
                 environment: CLIBridge.environmentForJamfCLI(),
@@ -3765,6 +3800,7 @@ struct ReportEngine: Sendable {
     ///
     /// Mirrors the Python `cmd_school_generate` function.
     ///
+    /// - Parameter now: The run's start, for the sheets' "Generated" stamp and check-in ages.
     /// - Returns: A list of `SheetFailure` entries for school sheets that encountered
     ///            unexpected errors. Absent snapshots (`SchoolDashboardError.noCachedData`)
     ///            are graceful skips and are not included.
@@ -3774,8 +3810,25 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         outputURL: URL,
         workspace: WorkspaceID? = nil,
+        csvFolder: Bool = false,
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
+        try await schoolGenerateReport(
+            config: config, dataDir: dataDir, outputURL: outputURL, workspace: workspace,
+            csvFolder: csvFolder, now: now, onLine: onLine).failures
+    }
+
+    /// `schoolGenerate`, also naming the CSV folder it wrote (nil when none).
+    static func schoolGenerateReport(
+        config: ReportConfig,
+        dataDir: URL,
+        outputURL: URL,
+        workspace: WorkspaceID? = nil,
+        csvFolder: Bool = false,
+        now: Date = Date(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> GeneratedReport {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
         // generation too. School snapshots live under the same workspace data
         // dir and share the manifest discipline; integrity violations here
@@ -3787,15 +3840,19 @@ struct ReportEngine: Sendable {
         let summaries = workspace.flatMap { try? WorkspacePaths.summariesDir(for: $0.name) }
             .map(SummaryJSONParser.parseDirectory) ?? []
         let core = SchoolDashboard(
-            config: config, dataDir: dataDir, workbook: workbook, summaries: summaries)
+            config: config, dataDir: dataDir, workbook: workbook, summaries: summaries,
+            now: now)
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
-        let (_, schoolFailures) = core.writeAll(sheets: sheets)
+        let (_, schoolFailures) = core.writeAll(sheets: sheets, onLine: onLine)
 
         workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)
+        let folder = writeCSVFolder(
+            of: workbook, besideWorkbook: outputURL, requested: csvFolder, config: config,
+            onLine: onLine)
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
         _ = writeSHA256Sidecar(for: outputURL)
-        return schoolFailures
+        return GeneratedReport(failures: schoolFailures, csvFolder: folder)
     }
 
     // MARK: - Convenience: timestamped output path

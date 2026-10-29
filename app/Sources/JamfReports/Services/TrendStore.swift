@@ -28,6 +28,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// summary.json mscpBands (fallback). Rebuilt once per load/reload; never
     /// re-scanned during view rendering. Keyed by baseline name.
     private var cachedBandSeries: [String: [MSCPChartDataBuilder.BandPoint]] = [:]
+    /// `cachedBandSeries` by baseline, then by the day key its points format to, so the mSCP
+    /// trend finds a day's point without formatting every point's date per summary per redraw.
+    /// Written only by `storeBandSeries`.
+    @ObservationIgnored private var bandPointsByDay: [String: [String: MSCPChartDataBuilder.BandPoint]] = [:]
 
     /// Ordered baseline names for the mSCP band trend picker. Config order
     /// (resolvedBaselines) when loaded from disk, or the sorted set of summary
@@ -61,7 +65,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         // In-memory init: build band points from summaries only. The inaccessible
         // dataDir degrades gracefully to summaries-only inside buildAllSeries.
         let built = Self.computeBandPoints(profile: nil, summaries: summaries)
-        cachedBandSeries = built.series
+        storeBandSeries(built.series)
         mscpBaselineNames = built.names
         selectedMSCPBaseline = built.names.first
     }
@@ -71,6 +75,16 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     func selectMSCPBaseline(_ name: String) {
         guard mscpBaselineNames.contains(name) else { return }
         selectedMSCPBaseline = name
+    }
+
+    private func storeBandSeries(_ series: [String: [MSCPChartDataBuilder.BandPoint]]) {
+        cachedBandSeries = series
+        bandPointsByDay = series.mapValues { points in
+            // The first point of a day wins, as the scan this replaces found it.
+            Dictionary(
+                points.map { (SummaryJSONParser.dateFormatter.string(from: $0.date), $0) },
+                uniquingKeysWith: { first, _ in first })
+        }
     }
 
     /// The band series for the currently-selected baseline (or the first).
@@ -120,7 +134,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         allSummaries = snapshot.summaries
         latestSnapshotDate = snapshot.latestSnapshotDate
         hasEverFetchedLive = snapshot.hasEverFetchedLive
-        cachedBandSeries = snapshot.bandSeries
+        storeBandSeries(snapshot.bandSeries)
         mscpBaselineNames = snapshot.baselineNames
         // Preserve a still-valid selection across reloads; else default to first.
         let keepSelection = selectedMSCPBaseline.map(snapshot.baselineNames.contains) ?? false
@@ -154,6 +168,12 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         filterSummaries(range: range)
     }
 
+    /// Whether the held summaries were read for `profile`. False before the first load, after a
+    /// profile switch cleared them, and while another profile's data is held (the store outlives
+    /// the screens), so a screen shows its loading state instead of an empty state or the
+    /// previous profile's data.
+    func isLoaded(for profile: String) -> Bool { currentProfile == profile }
+
     /// Clear displayed data when switching to a DIFFERENT profile, so the loading
     /// overlay shows for the new profile rather than the previous tenant's data
     /// during the scan. A same-profile reload (tab re-entry) is a no-op — data
@@ -162,7 +182,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         guard let current = currentProfile, current != profile else { return }
         allSummaries = []
         filteredSummaries = []
-        cachedBandSeries = [:]
+        storeBandSeries([:])
         mscpBaselineNames = []
         selectedMSCPBaseline = nil
         latestSnapshotDate = nil
@@ -317,9 +337,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             // date matches this summary's date (string-matched), then sum the 5
             // bands. Falls back to that baseline's summary.mscpBands entry.
             let dayKey = summary.date
-            if let pt = selectedBandPoints.first(where: {
-                SummaryJSONParser.dateFormatter.string(from: $0.date) == dayKey
-            }) {
+            if let name = selectedMSCPBaseline ?? mscpBaselineNames.first,
+               let pt = bandPointsByDay[name]?[dayKey] {
                 let total = pt.counts.pass + pt.counts.low + pt.counts.medLow
                     + pt.counts.medium + pt.counts.high
                 return total > 0 ? Double(total) : nil
@@ -351,6 +370,23 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     func offers(_ metric: TrendSeries.Metric) -> Bool {
         if metric.isMobile { return allSummaries.contains { value(for: metric, in: $0) != nil } }
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }
+    }
+
+    /// The newest summary and the one before it, by date, from everything loaded rather than
+    /// the range shown, so a short range cannot hide the day before.
+    var newestTwoSummaries: (newest: DailySummary?, previous: DailySummary?) {
+        var newest: DailySummary?, previous: DailySummary?
+        for summary in allSummaries {
+            if let top = newest, summary.date <= top.date {
+                // A second summary of the newest day is not the day before.
+                let floor = previous?.date ?? ""
+                if top.date > summary.date, summary.date > floor { previous = summary }
+            } else {
+                previous = newest
+                newest = summary
+            }
+        }
+        return (newest, previous)
     }
 
     func dates() -> [Date] {

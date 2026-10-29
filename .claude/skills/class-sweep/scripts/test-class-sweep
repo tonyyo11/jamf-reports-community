@@ -1,0 +1,32 @@
+#!/bin/zsh
+# Self-check for class-sweep on a throwaway repo: the default --limit must complete when a class
+# has more hits than the limit, --limit 0 must list all, and a seam lists every site.
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+tmp="$(mktemp -d -t class-sweep-test)"
+trap 'trash "${tmp}" 2>/dev/null || true' EXIT
+cd "${tmp}"
+git init -q .
+mkdir -p app/Sources/Demo
+for i in {1..30}; do print "let a${i} = value${i} ?? 0" >>app/Sources/Demo/Many.swift; done
+print 'func use() { Reader.read(path) }' >app/Sources/Demo/Seam.swift
+print 'func raw() { Data(contentsOf: url) }' >>app/Sources/Demo/Seam.swift
+
+fail() {
+  print -u2 "test-class-sweep: FAIL: $1"
+  exit 1
+}
+
+out="$("${here}/class-sweep" 'Reader\.read')" || fail "default run exited $?"
+[[ "${out}" == *"## 2: Absent read as zero: 30 site(s)"* ]] || fail "class 2 count"
+[[ "${out}" == *"25 of 30 shown"* ]] || fail "default limit did not cap at 25"
+[[ "${out}" == *"## Seam: 1 site(s)"* ]] || fail "seam count"
+[[ "${out}" == *"## 5: Workspace file read outside the seam: 1 site(s)"* ]] || fail "class 5 count"
+
+all="$("${here}/class-sweep" --limit 0)" || fail "--limit 0 exited $?"
+[[ "${all}" != *"shown;"* ]] || fail "--limit 0 still capped"
+(("$(print -r -- "${all}" | grep -c 'Many.swift:')" == 30)) || fail "--limit 0 did not list all 30"
+
+"${here}/class-sweep" --limit x >/dev/null 2>&1 && fail "bad --limit accepted"
+print "test-class-sweep: ok"

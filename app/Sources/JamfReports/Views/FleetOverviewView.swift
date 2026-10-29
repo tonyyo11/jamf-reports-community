@@ -10,9 +10,15 @@ struct FleetOverviewView: View {
 
     @State private var overview: FleetWorkspaceOverview?
     @State private var isLoading = false
+    /// The `fleetOverviewLoadKey` `overview` was read for.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
-    /// The loaded overview, only while it is the sidebar profile's.
-    private var current: FleetWorkspaceOverview? { overview?.shown(for: workspace.profile) }
+    /// The loaded overview, only while it was read for the current profile and demo mode.
+    private var current: FleetWorkspaceOverview? {
+        loadedSource == workspace.fleetOverviewLoadKey
+            ? overview?.shown(for: workspace.profile) : nil
+    }
 
     var body: some View {
         ScrollView {
@@ -37,7 +43,7 @@ struct FleetOverviewView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .background(Theme.Colors.winBG)
-        .task(id: workspace.fleetOverviewLoadKey) {
+        .task(id: "\(workspace.fleetOverviewLoadKey)|\(reloads)") {
             await load()
         }
     }
@@ -57,7 +63,7 @@ struct FleetOverviewView: View {
                             .accessibilityLabel("Refreshing fleet overview")
                     }
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        Task { await load() }
+                        reloads += 1
                     }
                     .help("Re-read this workspace's latest summary snapshot.")
                 }
@@ -201,15 +207,16 @@ struct FleetOverviewView: View {
     }
 
     private func stabilityChart(points: [StabilityTrendPoint]) -> some View {
-        Chart {
+        let stability = Theme.ChartColors.color(forMetric: .stability)
+        return Chart {
             ForEach(points) { point in
                 AreaMark(
                     x: .value("Date", point.date),
                     y: .value("Stability", point.value)
                 )
                 .foregroundStyle(LinearGradient(
-                    colors: [Theme.Colors.tealBright.opacity(0.35),
-                             Theme.Colors.tealBright.opacity(0)],
+                    colors: [stability.opacity(0.35),
+                             stability.opacity(0)],
                     startPoint: .top, endPoint: .bottom
                 ))
                 .interpolationMethod(.catmullRom)
@@ -218,7 +225,7 @@ struct FleetOverviewView: View {
                     x: .value("Date", point.date),
                     y: .value("Stability", point.value)
                 )
-                .foregroundStyle(Theme.Colors.tealBright)
+                .foregroundStyle(stability)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.catmullRom)
             }
@@ -329,14 +336,20 @@ struct FleetOverviewView: View {
         )
     }
 
+    /// The task is cancelled when the profile, demo mode or `reloads` changes, so a result
+    /// that arrives after is dropped, and the spinner is left to the load that replaced it.
     private func load() async {
         // A reload from disk: nothing is collected, so it neither writes the shared status
         // line (a running collect owns it) nor claims the data was refreshed.
+        let source = workspace.fleetOverviewLoadKey
+        if loadedSource != source { loadedSource = nil; overview = nil }
         isLoading = true
-        defer { isLoading = false }
         let loaded = await workspace.loadFleetOverview()
-        guard !Task.isCancelled, let loaded = loaded.shown(for: workspace.profile) else { return }
+        guard !Task.isCancelled, source == workspace.fleetOverviewLoadKey,
+              let loaded = loaded.shown(for: workspace.profile) else { return }
         overview = loaded
+        loadedSource = source
+        isLoading = false
     }
 }
 

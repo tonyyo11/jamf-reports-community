@@ -580,11 +580,15 @@ struct SettingsView: View {
         if exp <= tokenClock {
             return "Token: expired"
         }
+        return "Token valid until \(Self.mediumShortFormatter.string(from: exp))"
+    }
+
+    private static let mediumShortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return "Token valid until \(formatter.string(from: exp))"
-    }
+        return formatter
+    }()
 
     private func tokenStatusColor(_ status: TokenStatus) -> Color {
         if status.keychainLocked { return Theme.Colors.warn }

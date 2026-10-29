@@ -1,0 +1,154 @@
+#!/bin/zsh
+# List the sites a fix or review has to classify: every sibling of one seam, plus the greps for
+# the twelve classes in docs/superpowers/review-checklist.md. Read-only: it writes nothing.
+#
+# Usage: class-sweep [--changed BASE] [--limit N] [SEAM_REGEX]
+#   SEAM_REGEX   ERE for the symbol the fix routes through (a reader, gate, redactor, ...).
+#                Every match under app/Sources is listed, without a cap.
+#   --changed    Run the class greps over the Swift files changed since BASE (committed or not)
+#                instead of all of app/Sources; the usual review call.
+#   --limit N    Lines shown per class (default 25); the count is always the full count.
+set -euo pipefail
+setopt extended_glob
+
+limit=25
+changed=""
+seam=""
+while (($#)); do
+  case "$1" in
+  --changed)
+    changed="${2:?class-sweep: --changed needs a ref}"
+    shift 2
+    ;;
+  --limit)
+    limit="${2:?class-sweep: --limit needs a number}"
+    shift 2
+    ;;
+  -h | --help)
+    sed -n '2,13p' "$0"
+    exit 0
+    ;;
+  -*)
+    print -u2 "class-sweep: unknown option $1"
+    exit 2
+    ;;
+  *)
+    [[ -z "${seam}" ]] || {
+      print -u2 "class-sweep: one SEAM_REGEX only"
+      exit 2
+    }
+    seam="$1"
+    shift
+    ;;
+  esac
+done
+[[ "${limit}" =~ ^[0-9]+$ ]] || {
+  print -u2 "class-sweep: --limit must be a number, got ${limit}"
+  exit 2
+}
+
+root="$(git rev-parse --show-toplevel)"
+cd "${root}"
+[[ -d app/Sources ]] || {
+  print -u2 "class-sweep: no app/Sources under ${root}"
+  exit 2
+}
+
+scope=()
+if [[ -n "${changed}" ]]; then
+  git rev-parse --verify --quiet "${changed}^{commit}" >/dev/null ||
+    {
+      print -u2 "class-sweep: --changed ${changed} is not a commit"
+      exit 2
+    }
+  changed_files="$(git diff --name-only --diff-filter=AMR "${changed}" -- app/Sources | grep -E '\.swift$' || true)"
+  scope=()
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] && scope+=("${f}")
+  done <<<"${changed_files}"
+  scope_label="${#scope[@]} Swift file(s) changed since ${changed}"
+else
+  scope=(app/Sources)
+  scope_label="all of app/Sources"
+fi
+
+# grep_sites REGEX PATH...: "path:line:text" lines; 1 (no match) is fine, 2 (bad regex) is not.
+grep_sites() {
+  local rx="$1" rc=0
+  shift
+  grep -rnE --include='*.swift' -e "${rx}" "$@" || rc=$?
+  ((rc <= 1)) || {
+    print -u2 "class-sweep: grep failed (exit ${rc}) on: ${rx}"
+    return 2
+  }
+}
+
+# show NAME REGEX NOTE CAP PATH...: print one class or the seam as a checklist
+show() {
+  local name="$1" rx="$2" note="$3" cap="$4"
+  shift 4
+  local out line file rest num text
+  local -a lines shown
+  out="$(grep_sites "${rx}" "$@")" || exit 2
+  lines=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && lines+=("${line}")
+  done < <(print -r -- "${out}" | LC_ALL=C sort -t: -k1,1 -k2,2n)
+  print "## ${name}: ${#lines[@]} site(s)"
+  print -r -- "${note}"
+  print -r -- "grep -E '${rx}'"
+  shown=("${lines[@]}")
+  # shellcheck disable=SC2296 # zsh subscript range; bash's ${arr[@]:0:n} is not valid zsh
+  ((cap && ${#lines[@]} > cap)) && shown=("${(@)lines[1,cap]}")
+  for line in "${shown[@]}"; do
+    file="${line%%:*}"
+    rest="${line#*:}"
+    num="${rest%%:*}"
+    text="${rest#*:}"
+    text="${text##[[:space:]]##}"
+    ((${#text} > 110)) && text="${text:0:107}..."
+    print -r -- "- [ ] ${file}:${num}  ${text}  — moved | left: why"
+  done
+  ((cap && ${#lines[@]} > cap)) && print "  ... ${cap} of ${#lines[@]} shown; re-run with --limit 0 for all"
+  print
+  [[ "${name}" == Seam ]] || counts+=("${name%%:*}=${#lines[@]}")
+}
+
+counts=()
+print "# Class sweep (${scope_label})"
+print
+
+if [[ -n "${seam}" ]]; then
+  show "Seam" "${seam}" "Every site that mentions the seam. A site that does the same job without it is the sibling to fix; classify each: moved (routed through the seam in this change) or left (reason)." 0 app/Sources
+fi
+
+if ((${#scope[@]} == 0)); then
+  print "No Swift files changed under app/Sources since ${changed}; class greps skipped."
+else
+  c() { show "$@" "${scope[@]}"; }
+  c "1: One figure, many calculators" 'StaleRule|fleetCompliancePct|SecurityControlPolicy\.reading|RiskScoringService\.risk|SecurityAgentCheck' "Callers of the shared calculators. A new count, share or rating that is absent here computes the figure itself: ask where else the number is produced." "${limit}"
+  c "2: Absent read as zero" '\?\? *(0(\.0)?|false|"")([^0-9A-Za-z_.]|$)' "Defaults on decoded or computed data. A finding unless a comment says why absent means zero." "${limit}"
+  c "3: New source without the honesty chain" 'knownCollectKinds|collectCommandMatrix|expectedKinds|recordUnlandedAttempt|isCollectDead|retryCouldHelp|CollectSourcesPlan|planCollect' "The chain's anchors. A new source must appear in every link (record, cause, partial/skip, dead, retry, expected kinds, plan, attention, Doctor, appendix, fixture)." "${limit}"
+  c "4: Jamf Pro assumed" 'refusesProCommand|proRunRefusal|proRefusal|backupRefusal|skipsProAuthProbe|isSchoolWorkspace|ProfileProductType' "Product gates. A new entry point that runs a Jamf Pro command and is not here has no gate." "${limit}"
+  c "5: Workspace file read outside the seam" 'Data\(contentsOf|String\(contentsOf|contents\(atPath|contentsOfDirectory' "The checklist's own grep. A workspace path read without BoundedFile or confinedFolder is MUST-FIX." "${limit}"
+  c "6: Setting with no reader" 'ConfigLoader\.(rawMapping|rawValue|textValue)|ConfigSchema\.tree' "Readers outside the decoder. Each new key names its reader and is known to ConfigSchema." "${limit}"
+  c "7: Unbounded child or request" 'Process\(\)|URLSession(\.shared|\(configuration)|URLRequest\(' "Process and request creation. Each names its timeout and drains both pipes." "${limit}"
+  c "8: Unredacted egress" 'redactedForSharing|NSPasteboard|WebhookNotifier\.(send|sendFailed|sendAlert)' "Egress and copy sinks. Each goes through the redactor; a new stored identifier joins the seed." "${limit}"
+  c "9: Launch-time verdict never invalidated" 'credentialsChanged\(|invalidateCache\(|setDemoMode' "Invalidation points. A new cache or per-profile state says which of these clears it." "${limit}"
+  c "10: Demo mode touches the Mac" 'demoMode|liveOnlyHelp' "Demo-mode guards. A new control is disabled with liveOnlyHelp; a new read never runs under demoMode." "${limit}"
+  c "11: Sink interprets text" 'sanitizeForTeams|WebhookNotifier\.sanitize|escapeHTML|csvEscape|neutraliz|xmlEscape|escapeXML' "Escape functions. One per sink, applied once at the sink." "${limit}"
+  c "12: Caps and units" '\.prefix\((max[A-Za-z]*|[0-9_]+)\)' "Caps. A capped list says N of M and sorts by severity before the cap; every count names its unit." "${limit}"
+fi
+
+print "## PR body block"
+print
+print '```'
+print "### Class sweep"
+if [[ -n "${seam}" ]]; then
+  print -r -- "Seam: \`${seam}\`"
+  print -r -- "Grep: \`grep -rnE --include='*.swift' -e '${seam}' app/Sources\`"
+  print "Sites: moved N, left M (each with its reason below)."
+fi
+print "Class greps (docs/superpowers/review-checklist.md) over ${scope_label}: ${counts[*]:-none}"
+print "Classes with a finding: (list class numbers, or none)"
+print '```'

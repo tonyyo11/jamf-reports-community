@@ -290,7 +290,7 @@ final class JamfCLIInstaller {
         }
 
         guard let output = JamfCLIProbe.run(
-            executable: binary, arguments: ["--version"], timeout: timeout
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: timeout
         ) else { return nil }
         let text = [
             String(data: output.stdout, encoding: .utf8),
@@ -301,6 +301,8 @@ final class JamfCLIInstaller {
 
         return parseVersion(from: text)
     }
+
+    nonisolated static let versionJSONArguments = ["version", "-o", "json"]
 
     /// Fetches the `specProVersion` field from `jamf-cli version -o json` (added in v1.18.0).
     ///
@@ -320,7 +322,7 @@ final class JamfCLIInstaller {
         }
 
         guard let output = JamfCLIProbe.run(
-            executable: binary, arguments: ["version", "-o", "json"], timeout: timeout
+            executable: binary, arguments: Self.versionJSONArguments, timeout: timeout
         ), output.exitCode == 0 else { return nil }
 
         let data = output.stdout
@@ -1042,20 +1044,36 @@ final class JamfCLIInstaller {
         )
     }
 
-    private static func replaceDirectBinary(at target: URL, with source: URL) throws {
+    /// Replaces the jamf-cli at `target` with a copy of `source`. `target` is the binary the
+    /// person put on their PATH, in a folder they own, not workspace data, so this is not
+    /// `AtomicInstall`: a link there (to a managed copy) is refused rather than swapped for a file.
+    static func replaceDirectBinary(at target: URL, with source: URL) throws {
         let fm = FileManager.default
+        var info = stat()
+        if lstat(target.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFLNK {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 6,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "jamf-cli at \(target.path) is a link; update the file it points to."]
+            )
+        }
         let directory = target.deletingLastPathComponent()
         let staged = directory.appendingPathComponent(".jamf-cli.\(UUID().uuidString).tmp")
         if fm.fileExists(atPath: staged.path) {
             try fm.removeItem(at: staged)
         }
         try fm.copyItem(at: source, to: staged)
-
-        let existingMode = (try? fm.attributesOfItem(atPath: target.path)[.posixPermissions]) as? NSNumber
-        let mode = existingMode ?? NSNumber(value: Int16(0o755))
-        try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: staged.path)
-
-        _ = try fm.replaceItemAt(target, withItemAt: staged)
+        do {
+            let existingMode = (try? fm.attributesOfItem(atPath: target.path)[.posixPermissions])
+                as? NSNumber
+            let mode = existingMode ?? NSNumber(value: Int16(0o755))
+            try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: staged.path)
+            _ = try fm.replaceItemAt(target, withItemAt: staged)
+        } catch {
+            try? fm.removeItem(at: staged)
+            throw error
+        }
     }
 
     private static func makeTemporaryDirectory() throws -> URL {

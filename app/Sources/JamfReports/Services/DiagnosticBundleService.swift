@@ -1039,7 +1039,7 @@ enum DiagnosticBundleService {
         }
         // The probe drains both pipes while the child runs; nil is a launch failure or timeout.
         guard let result = JamfCLIProbe.run(
-            executable: binary, arguments: ["-p", cliProfile, "doctor", "--output", "json"],
+            executable: binary, arguments: CLICommand.proDoctor(profile: cliProfile).argv,
             timeout: 15), result.exitCode == 0 else { return [] }
         return stageDoctorJSON(result.stdout, into: staging, redactor: redactor)
     }
@@ -1201,7 +1201,7 @@ enum DiagnosticBundleService {
             return "unavailable (codesign gate rejected binary)"
         }
         guard let result = JamfCLIProbe.run(
-            executable: binary, arguments: ["--version"], timeout: 10) else {
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: 10) else {
             return "unavailable (did not run)"
         }
         guard result.exitCode == 0 else { return "unavailable (exit \(result.exitCode))" }

@@ -132,6 +132,11 @@ struct DDMDeviceStatusService: Sendable {
 
     static func load(profile: String) -> Snapshot {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return .empty }
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let kindDir = dir.appendingPathComponent(kind, isDirectory: true)
         return load(url: FileManager.newestJSONFile(in: kindDir))
     }
@@ -161,7 +166,11 @@ struct DDMDeviceStatusService: Sendable {
     /// Nil when the newest `computers` file is there but cannot be read: unknown, not zero.
     static func fleetDDMCounts(profile: String) -> (enabled: Int, total: Int)? {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return (0, 0) }
-        return fleetDDMCounts(computersURL: FileManager.newestJSONFile(
+        return fleetDDMCounts(dataDir: dir)
+    }
+
+    static func fleetDDMCounts(dataDir dir: URL) -> (enabled: Int, total: Int)? {
+        fleetDDMCounts(computersURL: FileManager.newestJSONFile(
             in: dir.appendingPathComponent("computers", isDirectory: true)))
     }
 

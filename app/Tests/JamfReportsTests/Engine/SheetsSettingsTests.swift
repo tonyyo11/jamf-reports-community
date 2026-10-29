@@ -59,7 +59,10 @@ final class SheetsSettingsTests: XCTestCase {
 
     func testTheJamfSchoolWorkbookHonoursSkipAndOrder() async throws {
         try await withScratch { scratch in
-            let dataDir = try fixtureData(["school-ibeacons", "school-dep-devices"], in: scratch)
+            let dataDir = try fixtureData([], in: scratch)
+            try SchoolRows.write([], kind: "school-ibeacons", into: dataDir)
+            try SchoolRows.write([SchoolRows.row("school-dep-devices")],
+                                 kind: "school-dep-devices", into: dataDir)
             let lines = Lines()
             func school(_ yaml: String) async throws -> [String] {
                 let out = scratch.appendingPathComponent("school-\(UUID().uuidString).xlsx")

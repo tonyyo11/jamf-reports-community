@@ -920,6 +920,7 @@ enum LaunchAgentService {
         addArtifact("xlsx_report_path", as: "XLSX", from: payload, root: root, labels: &labels, seen: &seen)
         addArtifact("html_report_path", as: "HTML", from: payload, root: root, labels: &labels, seen: &seen)
         addArtifact("inventory_csv_path", as: "CSV", from: payload, root: root, labels: &labels, seen: &seen)
+        addArtifact("csv_folder_path", as: "CSV folder", from: payload, root: root, labels: &labels, seen: &seen)
         if labels.isEmpty {
             addReportArtifact(from: payload["report_path"], root: root, labels: &labels, seen: &seen)
         }

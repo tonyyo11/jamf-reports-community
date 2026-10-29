@@ -580,9 +580,14 @@ private struct HealthCard: View {
         }
     }
 
-    private func healthDetail(_ issue: AutomationHealthIssue) -> String {
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.dateTimeStyle = .named
+        return formatter
+    }()
+
+    private func healthDetail(_ issue: AutomationHealthIssue) -> String {
+        let formatter = Self.relativeFormatter
         let last = issue.lastRunFinishedAt.map {
             "last run \(formatter.localizedString(for: $0, relativeTo: Date()))"
         } ?? "no run recorded"

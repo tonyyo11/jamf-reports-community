@@ -216,6 +216,21 @@ final class FleetRollupTests: XCTestCase {
         XCTAssertEqual(stale, "Stale Macs,8,12,-4")
     }
 
+    /// A metric label is text, so the CSV guards it like every other CSV writer does.
+    func testCSVGuardsAndQuotesAMetricLabel() {
+        for hostile in ["=cmd", "+1", "-1", "@SUM(A1)"] {
+            let rollup = FleetRollup(
+                groupName: "Fleet", profileCount: 1, totalDevices: 1,
+                metrics: [.init(key: "k", label: hostile, unit: .count, value: 3, previous: 2)])
+            XCTAssertEqual(FleetReportEmitter.csv(for: rollup).split(separator: "\n").last,
+                           "\t\(hostile),3,2,+1", hostile)
+        }
+        let comma = FleetRollup(
+            groupName: "Fleet", profileCount: 1, totalDevices: 1,
+            metrics: [.init(key: "k", label: "a,b", unit: .count, value: 3, previous: 2)])
+        XCTAssertTrue(FleetReportEmitter.csv(for: comma).contains("\"a,b\",3,2,+1"))
+    }
+
     func testRollupNilWhenNoProfileHasSummaries() {
         let group = ReportGroup(name: "Empty", workspaces: ["a", "b"])
         XCTAssertNil(

@@ -587,6 +587,8 @@ struct OutputConfig: Decodable, Sendable {
     var archiveEnabled: Bool?
     var archiveDir: String?
     var keepLatestRuns: Int?        // key is `keep_latest_runs`
+    /// `csv_folder`: write a folder of CSVs, one per workbook tab, beside every report workbook.
+    var csvFolder: Bool?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case outputDir = "output_dir"
@@ -594,6 +596,7 @@ struct OutputConfig: Decodable, Sendable {
         case archiveEnabled = "archive_enabled"
         case archiveDir = "archive_dir"
         case keepLatestRuns = "keep_latest_runs"
+        case csvFolder = "csv_folder"
     }
 
     var resolvedOutputDir: String { outputDir?.trimmingCharacters(in: .whitespaces) ?? "Generated Reports" }
@@ -602,6 +605,7 @@ struct OutputConfig: Decodable, Sendable {
     /// Never below 1: `archiveOldRuns` keeps this many, so 0 archived the report just written
     /// and a negative number trapped in `dropFirst`.
     var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
+    var writesCSVFolder: Bool { csvFolder ?? false }
 }
 
 extension OutputConfig {
@@ -613,6 +617,8 @@ extension OutputConfig {
         archiveEnabled = try c.decodeIfPresent(Bool.self, forKey: .archiveEnabled)
         archiveDir = try c.decodeIfPresent(String.self, forKey: .archiveDir)
         keepLatestRuns = c.wholeNumber(.keepLatestRuns)
+        // A mistyped value reads as off instead of failing the whole config.yaml decode.
+        csvFolder = try? c.decodeIfPresent(Bool.self, forKey: .csvFolder)
     }
 }
 

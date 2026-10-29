@@ -17,7 +17,8 @@ struct TickEnvironment: Sendable {
     var perform: @Sendable (TickScheduler.DueRun) async -> ScheduleRunOutcome = { run in
         // A same-day retry must not be answered by the once-a-day collect guard.
         await ReportEngine.$isSameDayRetry.withValue(run.reason == .retry) {
-            await runSchedule(run.schedule, verbose: false)
+            await runSchedule(
+                run.schedule, verbose: false, skipping: run.skipProfiles)
         }
     }
     var heartbeatEvery: Duration = TickLock.heartbeatInterval
@@ -327,9 +328,17 @@ enum TickLoop {
             // The start is on disk, so the request is honoured. Cleared before the
             // run, never after: see `TickRunner.clearRunNowMarker`.
             if runNowLabels.contains(label) { clearRunNowMarker(label) }
-            let outcome = await perform(run)
+            let ran = await perform(run)
             // A Run now pays no day and ends no retries.
             let scheduled = run.reason != .runNow
+            let outcomesChanged = state.noteProfileOutcomes(
+                label, ran.profiles, considered: ran.considered, reason: run.reason)
+            // A retry of some profiles still answers for all of them, one that ran none included.
+            // Only a multi-profile run answers for stored outcomes; any other result stands alone.
+            let merged = scheduled && ran.considered != nil
+                ? state.profileOutcomes[label] ?? [] : []
+            let outcome = merged.isEmpty
+                ? ran : ScheduleRunOutcome(over: merged, ran: ran.profiles)
             if scheduled, outcome.endsRetries {
                 state.noteSucceeded(label, startedAt: startedAt)
                 do {
@@ -341,11 +350,15 @@ enum TickLoop {
                     reportTickError(message)
                     recordFailure(run.schedule, message)
                 }
-            } else if scheduled, state.noteRetry(label, couldHelp: outcome.retryCouldHelp) {
-                // Best-effort: unrecorded, the hourly retries run as if a retry could help.
-                do { try save(state) } catch {
-                    AppLogger.schedule.warning(
-                        "tick: \(label, privacy: .public) retry verdict not recorded")
+            } else if scheduled {
+                let verdictChanged = state.noteRetry(label, couldHelp: outcome.retryCouldHelp)
+                // Best-effort: unrecorded, the hourly retries run as if a retry could help and
+                // a retry runs every profile.
+                if verdictChanged || outcomesChanged {
+                    do { try save(state) } catch {
+                        AppLogger.schedule.warning(
+                            "tick: \(label, privacy: .public) retry verdict not recorded")
+                    }
                 }
             }
             print(tickResultLine(
