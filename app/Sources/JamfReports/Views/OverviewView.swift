@@ -84,6 +84,7 @@ struct OverviewView: View {
             // The next tenant's sections show loading, never the last one's data.
             live = .empty
             liveLoaded = false
+            checklist = nil
             Task {
                 await loadTrendsOffMain()
                 // Health inputs are now per-profile-filtered — recompute on
@@ -110,11 +111,15 @@ struct OverviewView: View {
             )
             .environment(workspace)
         }
+        .onChange(of: workspace.demoMode) { _, _ in
+            // A flip under one profile name is no profile change: the store still needs its scan.
+            Task { await loadTrendsOffMain() }
+        }
         .onChange(of: defaultTrendRangeRaw) { _, _ in
             // Range change only re-filters cached data — no disk read.
             if !workspace.demoMode { trendStore.setRange(defaultTrendRange) }
         }
-        .task(id: workspace.profile) {
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             guard !workspace.demoMode else { return }
             await reloadChecklist()
         }
@@ -199,7 +204,10 @@ struct OverviewView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .overlay {
-            if !workspace.demoMode, trendStore.isLoading, trendStore.filteredSummaries.isEmpty {
+            // The store outlives this screen: until it holds this profile's data the overlay
+            // shows, not the last profile's figures or an empty first frame.
+            if !workspace.demoMode, (!trendStore.isLoaded(for: workspace.profile)
+                || (trendStore.isLoading && trendStore.filteredSummaries.isEmpty)) {
                 trendsLoadingOverlay
             }
         }
@@ -296,8 +304,7 @@ struct OverviewView: View {
         let failing = issues.filter { $0.kind == .failing }
         // Shared by BOTH branches: the failing branch used to show no timestamp
         // at all while its overdue sibling did (#213).
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
+        let formatter = Self.relativeFormatter
         if let first = overdue.first {
             let when = first.expectedFire.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
@@ -351,7 +358,6 @@ struct OverviewView: View {
     private func loadTrendsOffMain() async {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
-        let range = defaultTrendRange
         // On a profile switch, drop the previous tenant's data so the overlay
         // (not stale data) shows during the new scan; same-profile is a no-op.
         trendStore.clearForProfileSwitch(to: profile)
@@ -359,7 +365,9 @@ struct OverviewView: View {
         let snapshot = await Task.detached(priority: .userInitiated) {
             TrendStore.computeSnapshot(profile: profile)
         }.value
-        trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
+        // The range as it is now: a range changed during the scan already filtered the store.
+        trendStore.apply(
+            snapshot, profile: profile, range: defaultTrendRange, generation: generation)
         await trendStore.backfillHistory(profile: profile)
     }
 
@@ -749,7 +757,9 @@ struct OverviewView: View {
     /// Visible sections that exist in this mode: the AI card needs macOS 27 and
     /// a live profile, and Workspace Status describes a real workspace.
     private var renderedSections: [OverviewSection] {
-        workspace.overviewLayout.visible.filter { section in
+        let composition = workspace.environmentComposition
+        return workspace.overviewLayout.visible.filter { section in
+            guard section.availability(in: composition).isShown else { return false }
             switch section {
             case .aiInsight: return AIInsightCard.isOffered(demoMode: workspace.demoMode)
             case .workspaceStatus: return !workspace.demoMode
@@ -798,6 +808,7 @@ struct OverviewView: View {
             switch section {
             case .aiInsight: aiInsightCard
             case .managedDevices: managedDevicesSection
+            case .mobileDevices: mobileDevicesSection
             case .scoreCards: statRow
             case .osDistribution: osDistributionCard
             case .topFailingRules: failingRulesCard
@@ -817,8 +828,9 @@ struct OverviewView: View {
             }
             if offeredScoreCards.isEmpty {
                 return OverviewUnavailable(
-                    reason: "Every selected score card is a control the security policy "
-                        + "does not count. Its levels are on Config › Scoring.",
+                    reason: "None of the selected score cards applies here: the security policy "
+                        + "does not count its control (Config › Scoring), or this environment "
+                        + "has no devices of its type.",
                     remedy: .config)
             }
         }
@@ -827,6 +839,12 @@ struct OverviewView: View {
         case .managedDevices:
             return trendStore.filteredSummaries.isEmpty
                 ? OverviewUnavailable(reason: "No daily summary yet. A collect writes one.")
+                : nil
+        case .mobileDevices:
+            return mobileSummary == nil
+                ? OverviewUnavailable(
+                    reason: "The latest daily summary has no mobile figures yet. "
+                        + "A collect writes them.")
                 : nil
         case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
             return liveLoaded ? live.unavailable[section] : nil
@@ -902,18 +920,21 @@ struct OverviewView: View {
 
     /// Visible data-driven sections: what the live read covers.
     private var visibleLiveSections: Set<OverviewSection> {
-        Set(workspace.overviewLayout.visible).intersection(OverviewLiveData.sections)
+        Set(renderedSections).intersection(OverviewLiveData.sections)
     }
 
     private var liveTaskID: String {
         let sections = visibleLiveSections.map(\.rawValue).sorted().joined(separator: ",")
-        return "\(workspace.profile)|\(workspace.demoMode)|\(sections)"
+        let loaded = workspace.summariesLoaded
+        return "\(workspace.profile)|\(workspace.demoMode)|\(loaded)|\(sections)"
     }
 
     /// Reads the data-driven sections off the main thread, in the calling task:
     /// `.task(id:)` cancels a read whose profile or sections went out of date.
     private func loadLiveSectionsOffMain() async {
-        guard !workspace.demoMode else { return }
+        // The summaries say which sections this environment has; reading before they load
+        // would start the Mac sections' reads on a mobile-only workspace and then drop them.
+        guard !workspace.demoMode, workspace.summariesLoaded else { return }
         let profile = workspace.profile
         let sections = visibleLiveSections
         let data: OverviewLiveData
@@ -1015,27 +1036,58 @@ struct OverviewView: View {
                 spark: DemoData.totalDevicesTrend
             )
         } else if let latest = trendStore.filteredSummaries.last {
+            // A fleet with no Macs plots its mobile devices; the Mac series has no points there.
+            let sparkMetric: TrendSeries.Metric = latest.totalDevices > 0
+                ? .managedDevices : .mobileManaged
             managedDevicesTile(
                 computers: latest.totalDevices,
                 mobile: latest.mobileDeviceCount,
-                spark: trendStore.values(metric: .managedDevices)
+                spark: trendStore.values(metric: sparkMetric),
+                sparkMetric: sparkMetric
             )
+        }
+    }
+
+    /// The latest summary's mobile figures; the demo fleet's own in demo mode.
+    private var mobileSummary: MobileSummary? {
+        workspace.demoMode ? DemoData.mobileSummary : trendStore.filteredSummaries.last?.mobile
+    }
+
+    private var mobileDevicesSection: some View {
+        let latest = trendStore.filteredSummaries.last
+        let subtitle = workspace.demoMode
+            ? "Demo fleet" : latest.map { "Daily summary \(FleetInsightInput.safeDate($0.date))" }
+                ?? "Daily summary"
+        return Group {
+            if let summary = mobileSummary {
+                MobileOverviewCard(
+                    summary: summary, subtitle: subtitle,
+                    onOpen: { navigate(to: .mobileFleet) },
+                    // M5's Audit mobile card gives this an anchor; until it lands this opens the screen.
+                    onOpenAudit: { navigate(to: .audit) })
+            }
         }
     }
 
     /// The computer count with the optional mobile count beside it — the
     /// app's most basic "how big is the fleet" answer.
-    private func managedDevicesTile(computers: Int, mobile: Int?, spark: [Double]) -> some View {
+    private func managedDevicesTile(
+        computers: Int, mobile: Int?, spark: [Double],
+        sparkMetric: TrendSeries.Metric = .managedDevices
+    ) -> some View {
         let total = computers + (mobile ?? 0)
         let computerLabel = "\(computers) computer\(computers == 1 ? "" : "s")"
-        let caption = mobile.map { "\(computerLabel) · \($0) mobile" } ?? computerLabel
+        // No Macs: the caption names the mobile devices alone, not "0 computers".
+        let caption = computers == 0 && mobile != nil
+            ? "\(mobile ?? 0) mobile"
+            : mobile.map { "\(computerLabel) · \($0) mobile" } ?? computerLabel
 
         return StatTile(
             label: "Managed Devices",
             value: "\(total)",
             sub: caption,
             sparkValues: spark,
-            sparkColor: Color(hex: TrendSeries.Metric.managedDevices.colorHex)
+            sparkColor: Color(hex: sparkMetric.colorHex)
         )
         .lineLimit(1)
         .truncationMode(.tail)
@@ -1067,16 +1119,21 @@ struct OverviewView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// The selection without the cards whose control the security policy does not
-    /// count. The stored selection is not edited, so a card returns with its control.
-    private var offeredScoreCards: [TrendSeries.Metric] {
-        workspace.selectedScoreCards.filter { workspace.isOffered($0) }
-    }
+    /// The selection without the cards the security policy or the environment's device types
+    /// leave out (on a mobile-only environment with none left, the mobile defaults). The stored
+    /// selection is not edited, so a card returns with its control or its devices.
+    private var offeredScoreCards: [TrendSeries.Metric] { workspace.shownScoreCards }
 
     /// Two scores on different definitions (`securityScoreBasis`) have no change between them.
     private func scoreCardComparable(_ metric: TrendSeries.Metric) -> Bool {
         metric != .securityScore || workspace.demoMode || trendStore.latestSecurityScoresComparable
     }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter
+    }()
 
     /// "Aug 20" — short by design; the tile caption has little room and the
     /// year is only ambiguous for comparisons more than a year stale, which
@@ -1950,6 +2007,8 @@ struct OverviewView: View {
             !ReportLibrary().list(profile: profile).isEmpty
         }.value
 
+        // A read for a profile the sidebar has left must not become this one's checklist.
+        guard !Task.isCancelled, profile == workspace.profile, !workspace.demoMode else { return }
         checklist = .build(
             connected: connected,
             collected: collected,

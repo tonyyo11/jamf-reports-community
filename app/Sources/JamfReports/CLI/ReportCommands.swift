@@ -22,7 +22,7 @@ struct Generate: AsyncParsableCommand {
     @Option(help: "Report template id (default: full-instance).") var template: String?
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let output { CLIRun.requireSafeOutput(output) }
         let resolved = try CLIRun.resolveTemplate(template)
         let (config, dataDir) = try CLIRun.loadProfile(profile)
@@ -68,7 +68,7 @@ struct Generate: AsyncParsableCommand {
             if isSchool {
                 failures = try await ReportEngine.schoolGenerate(
                     config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                    onLine: onLine)
+                    now: signals.startedAt, onLine: onLine)
             } else {
                 failures = try await engine.generate(
                     outputURL: outputURL, template: resolved, onLine: onLine)
@@ -115,7 +115,7 @@ struct Collect: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         let config = collectRoutingConfig(profile: profile)
         // Before the run record, the signals and the tick lock: nothing is created for a
         // profile that belongs to another product.
@@ -178,7 +178,7 @@ struct Html: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let output { CLIRun.requireSafeOutput(output) }
         let (config, dataDir) = try CLIRun.loadProfile(profile)
         if let refusal = Self.refusal(config: config, profile: profile) { CLIRun.fail(refusal) }

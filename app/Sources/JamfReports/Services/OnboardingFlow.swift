@@ -1080,9 +1080,9 @@ final class OnboardingFlow {
                 try await CLIBridge().generate(profile: profile, now: now, onLine: onLine)
             }
         },
-        schoolGenerate: @escaping FirstReportStep = { profile, _, onLine in
+        schoolGenerate: @escaping FirstReportStep = { profile, now, onLine in
             try await CLIBridge.holdingGenerate {
-                try await CLIBridge().schoolGenerate(profile: profile, onLine: onLine)
+                try await CLIBridge().schoolGenerate(profile: profile, now: now, onLine: onLine)
             }
         }
     ) async {
@@ -1373,7 +1373,10 @@ final class OnboardingFlow {
     static func writeProductBlock(
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
-        try ConfigService.saveBlock(key: key, profile: profileSlug) { root in
+        let slot = key == "school_cli" ? "jamf_school" : key
+        return try ConfigService.saveBlock(
+            key: key, profile: profileSlug, profilesSlot: slot, slotValue: name
+        ) { root in
             var block = root.value(for: key)?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
             block.set("enabled", value: .scalar(.bool(true)))
             block.set("profile", value: .scalar(.string(name)))

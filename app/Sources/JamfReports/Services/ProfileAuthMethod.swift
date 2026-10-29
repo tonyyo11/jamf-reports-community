@@ -34,7 +34,8 @@ enum ProfileAuthMethod {
         /// to be another one (School, Protect, Security Cloud) or an organization-level
         /// integration refuses. `.pro` and `.unknown` run.
         func proRefusal(profile: String, operation: String) -> String? {
-            let prefix = "\(operation) is a Jamf Pro command; '\(profile)' is "
+            let prefix = "\(operation) is a Jamf Pro command; "
+                + "'\(ConfigSchema.displayText(profile))' is "
             if !product.canBeProWorkspace { return prefix + "a \(product.displayName) profile" }
             if isOrganizationLevel {
                 return prefix + "an organization-level profile. "
@@ -48,7 +49,8 @@ enum ProfileAuthMethod {
         /// default (a hand-made Protect login has no `product:` key and a plain host) run.
         func protectRefusal(profile: String) -> String? {
             guard product != .protect, product != .unknown, !productIsDefaulted else { return nil }
-            return "'\(profile)' is a \(product.displayName) profile, not a Jamf Protect profile"
+            return "'\(ConfigSchema.displayText(profile))' is a \(product.displayName) profile, "
+                + "not a Jamf Protect profile"
         }
     }
 

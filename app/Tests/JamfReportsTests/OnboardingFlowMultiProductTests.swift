@@ -688,7 +688,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         let both = ProfileProductType.detect(from: withProtect, profile: profile)
         XCTAssertEqual(both.type, .jamfSchool)
         XCTAssertTrue(both.runsProtect)
-        XCTAssertEqual(ConnectedProducts.read(profile: profile).protectProfile, "campus-protect")
+        XCTAssertEqual(EnvironmentProfiles.read(workspace: profile).protect, "campus-protect")
     }
 
     // MARK: - Part 1: SecureSecretField onTextChange callback

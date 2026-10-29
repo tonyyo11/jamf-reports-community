@@ -15,9 +15,33 @@ versions in this repository map to git tags.
 - The Platform API region list now has Other, which takes a gateway host such as
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)
+- The Overview has a Mobile Devices section for iPads and iPhones: the managed device count, the
+  current-OS and passcode shares (each saying how many devices it counts, with a dash for a
+  share no device reports) and a Needs attention count of jailbroken, unmanaged and
+  update-error devices that opens the Health Audit. An environment with no Macs leaves out the
+  Mac-only sections (Customize lists them with the reason) and shows mobile score cards; a saved
+  Overview layout gets the new section at the end. (#305)
+- The Health Audit has a Mobile Devices card with seven findings: jailbreak detected, not managed,
+  passcode not compliant, data protection off, OS behind the current release, software update
+  errors, and no inventory update within the stale window. Each shows the change since the
+  previous daily summary, and its count opens Mobile Devices filtered to those devices; the
+  devices table has a Needs attention menu with the same filters. The HTML report's Needs
+  attention lists the same conditions. A device that does not report a field is never counted
+  as failing, and the card is hidden when the workspace has no mobile devices. (#305)
+- config.yaml can name each product's jamf-cli profile in one `profiles:` block (Jamf Pro or
+  Jamf School, Jamf Protect, and the Platform API and Security Cloud profiles for later
+  releases). A workspace without the block keeps working exactly as before. (#305)
 
 ### Changed
 
+- The daily summary's mobile software update errors now count devices, so a device with errors
+  for two products counts once. (#305)
+- When a schedule that covers every profile has a same-day retry, it now re-collects only the
+  profiles that failed or came back Partial, not the ones that finished cleanly or failed in a
+  way a retry repeats. Run now and each new day's run still cover every profile. (#305)
+- The Computers screen no longer filters and sorts the whole inventory again on every redraw, so
+  scrolling, selecting and resizing stay quick on a large fleet; Trends reads each day's date
+  once instead of per chart point. (#305)
 - On a workspace in a sync provider folder, on a network volume or in a shared workspace, the
   Jamf Pro part of a backup is now a choice, as the Jamf Protect part already was: turn on
   **Back up Jamf Pro in this folder** in Backups (or set `backup.pro_on_synced_storage`). A
@@ -25,9 +49,24 @@ versions in this repository map to git tags.
   runs while Needs attention asks, then skips Jamf Pro and shows each backup as Partial until
   you choose; a new workspace asks before its first backup. Choosing no skips Jamf Pro without
   a Partial run. Local storage is unchanged. (#305)
+- Eleven screens no longer block the window while a large snapshot decodes: Mobile Devices,
+  Extension Attributes, Jamf Protect, Patch Compliance, OS Updates, Groups & Searches, Policy &
+  Profile Health, Compliance Benchmarks, Declarative Device Management, Audit and Device Lookup.
+  Nine of them show a loading card until the data is ready, and switching profile or turning demo
+  mode on or off shows the new data only. Security Posture, Compliance Posture, School Devices,
+  School Overview, Trends, Overview, Fleet Overview, Backups and Computers do the same: while a
+  profile loads they show a loading state (Computers keeps its page and shows "Loading
+  inventory"), not the previous profile's data or "nothing collected", and a read that finishes
+  after you have switched is dropped. Backups no longer offers the previous profile's backups
+  for Delete or Diff while it loads, and Config › Scoring waits for the profile's own data
+  before it lets you edit the factor list. (#305)
 
 ### Fixed
 
+- The Jamf School workbook's Device Inventory, OS Versions, Device Status and Stale Devices
+  tabs and its Users tab no longer count devices and users in School's trash, as the Devices
+  screen never did, so those counts are lower than before on a tenant with trashed records.
+  Device Status shows the trashed devices on a line of their own. (#305)
 - A Jamf School collect that runs past midnight now dates its summary by the day it started, as
   a Jamf Pro collect does. (#305)
 - A collect-and-report run that crosses midnight, scheduled, from Generate or the command line,

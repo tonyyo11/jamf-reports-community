@@ -23,11 +23,9 @@ final class SchoolSummaryTests: XCTestCase {
 
     private func day(_ text: String) -> Date { DateParser().parse(text)! }
 
-    private func writeDevices(_ json: String, stamp: String = "20261019T080000") throws {
-        let kind = SchoolFleetService.devicesKind
-        let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try Data(json.utf8).write(to: dir.appendingPathComponent("\(kind)_\(stamp).json"))
+    private func writeDevices(_ rows: [[String: Any]], stamp: String = "20261019T080000") throws {
+        try SchoolRows.write(
+            rows, kind: SchoolFleetService.devicesKind, into: dataDir, stamp: stamp)
     }
 
     @discardableResult
@@ -44,26 +42,30 @@ final class SchoolSummaryTests: XCTestCase {
         return try SummaryJSONParser.decode(Data(contentsOf: file))
     }
 
-    private let fleet = """
-    [{"name":"Lab Mac 01","serialNumber":"M1","model":"MacBook Air","os":"macOS 14.3",
-      "isManaged":true,"isSupervised":false,"lastCheckin":"2026-10-18 09:00:00",
-      "inTrash":false,"udid":"u1"},
-     {"name":"Lab Mac 02","serialNumber":"M2","model":"MacBook Air","os":"macOS 26.6.2",
-      "isManaged":true,"isSupervised":false,"lastCheckin":"2026-08-01 09:00:00",
-      "inTrash":false,"udid":"u2"},
-     {"name":"Cart iPad 01","serialNumber":"I1","model":"iPad (10th generation)",
-      "os":"iPadOS 27.0.1","isManaged":true,"isSupervised":true,
-      "lastCheckin":"2026-10-19 08:00:00","inTrash":false,"udid":"u3"},
-     {"name":"Cart iPad 02","serialNumber":"I2","model":"iPad (9th generation)",
-      "os":"iPadOS 18.1","isManaged":true,"isSupervised":true,
-      "lastCheckin":"2026-07-01 09:00:00","inTrash":false,"udid":"u4"},
-     {"name":"Office iPhone","serialNumber":"I3","os":"iOS 27.0","isManaged":true,
-      "lastCheckin":"2026-10-17 09:00:00","inTrash":false},
-     {"name":"Front Desk TV","serialNumber":"T1","os":"tvOS 18.0","isManaged":true,
-      "inTrash":false},
-     {"name":"Retired iPad","serialNumber":"I4","os":"iPadOS 17.0",
-      "lastCheckin":"2025-01-01 09:00:00","inTrash":true}]
-    """
+    private let fleet: [[String: Any]] = [
+        SchoolRows.device(1, [
+            "name": "Lab Mac 01", "model": "MacBook Air", "os": "macOS 14.3",
+            "isSupervised": false, "lastCheckin": "2026-10-18 09:00:00",
+        ]),
+        SchoolRows.device(2, [
+            "name": "Lab Mac 02", "model": "MacBook Air", "os": "macOS 26.6.2",
+            "isSupervised": false, "lastCheckin": "2026-08-01 09:00:00",
+        ]),
+        SchoolRows.device(3, ["name": "Cart iPad 01", "lastCheckin": "2026-10-19 08:00:00"]),
+        SchoolRows.device(4, [
+            "name": "Cart iPad 02", "model": "iPad (9th generation)", "os": "iPadOS 18.1",
+            "lastCheckin": "2026-07-01 09:00:00",
+        ]),
+        SchoolRows.device(5, [
+            "name": "Office iPhone", "os": "iOS 27.0", "lastCheckin": "2026-10-17 09:00:00",
+        ], omitting: ["isSupervised"]),
+        SchoolRows.device(6, ["name": "Front Desk TV", "os": "tvOS 18.0"],
+                          omitting: ["isSupervised", "lastCheckin"]),
+        SchoolRows.device(7, [
+            "name": "Retired iPad", "os": "iPadOS 17.0", "inTrash": true,
+            "lastCheckin": "2025-01-01 09:00:00",
+        ], omitting: ["isManaged", "isSupervised"]),
+    ]
 
     func testCollectThatLandedDevicesWritesCountsAndLeavesMacSecurityNil() throws {
         try writeDevices(fleet)
@@ -93,7 +95,7 @@ final class SchoolSummaryTests: XCTestCase {
 
     /// A devices source that landed empty is a warning, not a `[partial]`: the source did land.
     func testLandedEmptyDeviceListWarnsAndWritesNothing() throws {
-        try writeDevices("[]")
+        try writeDevices([])
         let lines = LineBox()
         let outcome = ReportEngine.writeSchoolSummary(
             dataDir: dataDir, summariesDir: summariesDir, landedKinds: landed, staleDays: 30,
@@ -111,7 +113,7 @@ final class SchoolSummaryTests: XCTestCase {
             AttentionLog.$current.withValue(log) { write() }
             return log.changes
         }
-        try writeDevices("[]")
+        try writeDevices([])
         XCTAssertEqual(changes(), [.schoolZeroDevices: .raised("Jamf School returned 0 devices")])
         try writeDevices(fleet, stamp: "20261019T090000")
         XCTAssertEqual(changes(), [.schoolZeroDevices: .cleared])
@@ -125,7 +127,7 @@ final class SchoolSummaryTests: XCTestCase {
     func testRunThatLandedNoDevicesLeavesTodaysSummary() throws {
         try writeDevices(fleet)
         write()
-        try writeDevices("[]", stamp: "20261019T100000")
+        try writeDevices([], stamp: "20261019T100000")
         XCTAssertEqual(write(landed: [], at: "2026-10-19 10:00:00"), .nothingToSummarize)
         XCTAssertEqual(try summary().totalDevices, 2)
     }
@@ -133,10 +135,9 @@ final class SchoolSummaryTests: XCTestCase {
     func testLaterSameDayCollectRebuildsTheSummary() throws {
         try writeDevices(fleet)
         write()
-        try writeDevices("""
-        [{"name":"Cart iPad 01","serialNumber":"I1","os":"iPadOS 27.0.1","isManaged":true,
-          "lastCheckin":"2026-10-19 11:00:00","inTrash":false}]
-        """, stamp: "20261019T120000")
+        try writeDevices([
+            SchoolRows.device(3, ["name": "Cart iPad 01", "lastCheckin": "2026-10-19 11:00:00"]),
+        ], stamp: "20261019T120000")
         XCTAssertEqual(write(at: "2026-10-19 12:00:00"), .wrote)
 
         let s = try summary()
@@ -146,10 +147,11 @@ final class SchoolSummaryTests: XCTestCase {
     }
 
     func testIPadOnlyFleetRecordsNoStaleCountEvenWhenIPadsAreStale() throws {
-        try writeDevices("""
-        [{"name":"Cart iPad 01","serialNumber":"I1","os":"iPadOS 18.1",
-          "lastCheckin":"2026-01-01 09:00:00","inTrash":false}]
-        """)
+        try writeDevices([
+            SchoolRows.device(3, [
+                "name": "Cart iPad 01", "os": "iPadOS 18.1", "lastCheckin": "2026-01-01 09:00:00",
+            ], omitting: ["isManaged", "isSupervised"]),
+        ])
         write()
         let s = try summary()
         XCTAssertEqual(s.totalDevices, 0)
@@ -159,10 +161,11 @@ final class SchoolSummaryTests: XCTestCase {
     }
 
     func testStaleIsMoreThanTheThresholdInWholeDays() throws {
-        try writeDevices("""
-        [{"name":"Lab Mac","serialNumber":"M1","os":"macOS 14.3","isManaged":true,
-          "lastCheckin":"2026-10-01 09:00:00","inTrash":false}]
-        """)
+        try writeDevices([
+            SchoolRows.device(1, [
+                "name": "Lab Mac", "os": "macOS 14.3", "lastCheckin": "2026-10-01 09:00:00",
+            ], omitting: ["isSupervised"]),
+        ])
         write(staleDays: 30, at: "2026-10-31 09:00:00")
         XCTAssertEqual(try summary("2026-10-31").staleCount, 0, "exactly 30 days is not stale")
         write(staleDays: 29, at: "2026-10-31 09:00:00")
@@ -170,9 +173,10 @@ final class SchoolSummaryTests: XCTestCase {
     }
 
     func testMacOnlyFleetRecordsNoMobileCount() throws {
-        try writeDevices("""
-        [{"name":"Lab Mac","serialNumber":"M1","os":"macOS 14.3","inTrash":false}]
-        """)
+        try writeDevices([
+            SchoolRows.device(1, ["name": "Lab Mac", "os": "macOS 14.3"],
+                              omitting: ["isManaged", "isSupervised", "lastCheckin"]),
+        ])
         write()
         let s = try summary()
         XCTAssertEqual(s.totalDevices, 1)
@@ -180,9 +184,10 @@ final class SchoolSummaryTests: XCTestCase {
     }
 
     func testEmptyFleetWritesNothing() throws {
-        try writeDevices("""
-        [{"name":"Retired iPad","serialNumber":"I4","os":"iPadOS 17.0","inTrash":true}]
-        """)
+        try writeDevices([
+            SchoolRows.device(7, ["name": "Retired iPad", "os": "iPadOS 17.0", "inTrash": true],
+                              omitting: ["isManaged", "isSupervised", "lastCheckin"]),
+        ])
         XCTAssertEqual(write(), .nothingToSummarize)
         XCTAssertFalse(FileManager.default.fileExists(atPath: summariesDir.path))
     }
@@ -213,12 +218,12 @@ final class SchoolSummaryTests: XCTestCase {
 
     /// Managed Computers counts Macs only, so an iPad-only day is counted by the mobile metric.
     func testIPadOnlyDayIsCountedAsMobileNotAsComputers() throws {
-        try writeDevices("""
-        [{"name":"Cart iPad 01","serialNumber":"I1","os":"iPadOS 27.0.1","isManaged":true,
-          "inTrash":false},
-         {"name":"Cart iPad 02","serialNumber":"I2","os":"iPadOS 27.0.1","isManaged":true,
-          "inTrash":false}]
-        """)
+        try writeDevices([
+            SchoolRows.device(3, ["name": "Cart iPad 01"],
+                              omitting: ["isSupervised", "lastCheckin"]),
+            SchoolRows.device(4, ["name": "Cart iPad 02", "os": "iPadOS 27.0.1"],
+                              omitting: ["isSupervised", "lastCheckin"]),
+        ])
         write()
         let store = TrendStore(summaries: [try summary()], range: .all)
         XCTAssertTrue(store.points(metric: .managedDevices).isEmpty)
@@ -271,10 +276,11 @@ final class SchoolSummaryTests: XCTestCase {
     }
 
     func testAMacOnlyFleetWritesNoMobileObject() throws {
-        try writeDevices("""
-        [{"name":"Lab Mac 01","serialNumber":"M1","os":"macOS 26.6.2","isManaged":true,
-          "isSupervised":true,"lastCheckin":"2026-10-18 09:00:00","inTrash":false}]
-        """)
+        try writeDevices([
+            SchoolRows.device(1, [
+                "name": "Lab Mac 01", "os": "macOS 26.6.2", "lastCheckin": "2026-10-18 09:00:00",
+            ]),
+        ])
         write()
         let s = try summary()
         XCTAssertEqual(s.totalDevices, 1)
@@ -283,10 +289,12 @@ final class SchoolSummaryTests: XCTestCase {
     }
 
     func testAMobileOnlyFleetWritesNoMacFigures() throws {
-        try writeDevices("""
-        [{"name":"Cart iPad 01","serialNumber":"I1","os":"iPadOS 18.1","isManaged":false,
-          "lastCheckin":"2026-10-18 09:00:00","inTrash":false}]
-        """)
+        try writeDevices([
+            SchoolRows.device(3, [
+                "name": "Cart iPad 01", "os": "iPadOS 18.1", "isManaged": false,
+                "lastCheckin": "2026-10-18 09:00:00",
+            ], omitting: ["isSupervised"]),
+        ])
         try cacheSOFA()
         write()
         let s = try summary()

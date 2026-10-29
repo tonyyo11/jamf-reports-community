@@ -22,7 +22,7 @@ enum DiagnosticBundleError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidProfile(let p): "Invalid profile: \(p)"
+        case .invalidProfile(let p): ProfileName.invalidMessage(p)
         case .archiveFailed(let msg): "Could not create diagnostic archive: \(msg)"
         }
     }

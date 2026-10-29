@@ -80,6 +80,7 @@ jamf_cli:
   # Optional jamf-cli profile name, equivalent to passing -p/--profile to
   # jamf-cli. When you use multiple profiles, point data_dir at a profile-
   # specific folder so cached snapshots do not mix between tenants.
+  # Not read when the profiles block below is set.
   profile: ""
 
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
@@ -111,6 +112,29 @@ jamf_cli:
   # a cached feed stays in use.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
+
+
+# =============================================================================
+# ENVIRONMENT PROFILES (optional)
+# =============================================================================
+# The jamf-cli profile that serves each product in this workspace. Leave the
+# block out and the app reads jamf_cli.profile, protect.enabled/profile and
+# school_cli.enabled/profile as before. When the block is set those keys are not
+# read for profiles, and:
+#   - a blank or absent slot is a product this workspace does not have;
+#   - set jamf_pro or jamf_school, not both (one workspace has one MDM);
+#   - jamf_pro or jamf_school must be this workspace's own profile, or nothing
+#     runs and the run log says why;
+#   - protect is collected after each Jamf Pro or Jamf School collect, as
+#     protect.profile is; platform and security_cloud are recorded for later
+#     releases and not used yet.
+#
+# profiles:
+#   jamf_pro: "Example"           # the Jamf Pro profile (any auth method)
+#   platform: "Example-API"       # a Platform API profile for the same Jamf Pro
+#   jamf_school: ""               # the Jamf School profile; never with jamf_pro
+#   protect: "Example-Protect"    # a `jamf-cli protect setup` profile
+#   security_cloud: ""            # a `jamf-cli security setup` profile
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +268,8 @@ protect:
   enabled: false
   # jamf-cli protect profile name. Required: a blank name, or one that names a Jamf Pro,
   # Jamf School or Security Cloud login, skips Protect with a warning.
-  # Distinct from jamf_cli.profile (the Pro profile).
+  # Distinct from jamf_cli.profile (the Pro profile). enabled and profile are not
+  # read when the profiles block is set (see ENVIRONMENT PROFILES).
   profile: ""
   # Back up Jamf Protect even when this workspace is on storage other Macs reach
   # (a sync provider, a network volume, a shared workspace). A Protect backup
@@ -872,4 +897,5 @@ school_cli:
   # are stored under jamf_cli.data_dir with the rest.
   enabled: false
   # Profile name configured via: jamf-cli school setup --profile-name <name>
+  # Not read when the profiles block is set (see ENVIRONMENT PROFILES).
   profile: "school"
