@@ -190,11 +190,8 @@ final class RefreshCoordinator {
                 return false
             case (.some(let probe), .some(let threshold)):
                 let dir = dataDir.appendingPathComponent(probe, isDirectory: true)
-                guard let entries = try? FileManager.default.contentsOfDirectory(
-                    at: dir,
-                    includingPropertiesForKeys: [.contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                ) else {
+                // A kind folder that is a link lists nothing: stale, the safe side.
+                guard let entries = FileManager.snapshotFolderEntries(in: dir) else {
                     return true
                 }
 

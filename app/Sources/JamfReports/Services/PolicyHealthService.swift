@@ -117,7 +117,7 @@ struct PolicyHealthService: Sendable {
 
         // Load policy data
         if let policyURL, FileManager.default.fileExists(atPath: policyURL.path) {
-            if let policyData = try? Data(contentsOf: policyURL) {
+            if let policyData = BoundedFile.readLogged(policyURL) {
                 if let policyReports = try? JSONDecoder().decode(
                     [PolicyStatusReport].self, from: policyData
                 ), let firstReport = policyReports.first {
@@ -132,16 +132,12 @@ struct PolicyHealthService: Sendable {
                         "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .public)"
                     )
                 }
-            } else {
-                AppLogger.collect.info(
-                    "PolicyHealthService: could not read policy-status file \(policyURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 
         // Load profile data
         if let profileURL, FileManager.default.fileExists(atPath: profileURL.path) {
-            if let profileData = try? Data(contentsOf: profileURL) {
+            if let profileData = BoundedFile.readLogged(profileURL) {
                 if let envelopes = try? JSONDecoder().decode(
                     [ProfileStatusEnvelope].self, from: profileData
                 ) {
@@ -166,10 +162,6 @@ struct PolicyHealthService: Sendable {
                         "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .public)"
                     )
                 }
-            } else {
-                AppLogger.collect.warning(
-                    "PolicyHealthService: could not read profile-status file \(profileURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 

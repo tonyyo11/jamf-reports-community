@@ -759,7 +759,7 @@ struct HtmlReport: Sendable {
     }
 
     func loadJSONData(kind: String) -> Data? {
-        newestSnapshotURL(kind: kind).flatMap { try? Data(contentsOf: $0) }
+        newestSnapshotURL(kind: kind).flatMap { BoundedFile.readLogged($0, inside: dataDir) }
     }
 
     /// The newest snapshot file for `kind`, from its subdirectory and the flat
@@ -770,12 +770,7 @@ struct HtmlReport: Sendable {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
-        if fm.fileExists(atPath: subdir.path),
-           let files = try? fm.contentsOfDirectory(
-            at: subdir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-           ) {
+        if let files = FileManager.snapshotFolderEntries(in: subdir) {
             candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
         }
         if let files = try? fm.contentsOfDirectory(

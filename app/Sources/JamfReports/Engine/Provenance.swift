@@ -108,12 +108,7 @@ extension Provenance {
         let candidates: [URL] = {
             var result: [URL] = []
             let subdir = dataDir.appendingPathComponent("overview", isDirectory: true)
-            if fm.fileExists(atPath: subdir.path),
-               let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-               ) {
+            if let files = FileManager.snapshotFolderEntries(in: subdir) {
                 result.append(contentsOf: files.filter {
                     $0.pathExtension == "json"
                     && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
@@ -129,7 +124,7 @@ extension Provenance {
                 forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             return lMod < rMod
         }),
-              let data = try? Data(contentsOf: newest),
+              let data = BoundedFile.readLogged(newest, inside: dataDir),
               let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return nil }
 

@@ -554,11 +554,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         of kind: String, in dataDir: URL
     ) -> [(url: URL, date: Date)] {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
+        guard let files = FileManager.snapshotFolderEntries(in: dir) else { return [] }
         return files
             .filter { $0.pathExtension.lowercased() == "json" }
             .filter(FileManager.isSelectableSnapshot)
@@ -628,7 +624,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         }
         var recomputed: [String: Double] = [:]
         for (day, urls) in newestFirstByDay {
-            guard let rows = urls.lazy.compactMap(decodePatchRows).first else { continue }
+            guard let rows = urls.lazy.compactMap { decodePatchRows(at: $0, inside: dataDir) }.first else { continue }
             if let pct = PatchStatusService.fleetCompliancePct(rows) {
                 recomputed[day] = (pct * 10).rounded() / 10
             }
@@ -636,9 +632,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return recomputed
     }
 
-    private nonisolated static func decodePatchRows(at url: URL) -> [PatchStatusRow]? {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .report) else { return nil }
+    private nonisolated static func decodePatchRows(at url: URL, inside root: URL) -> [PatchStatusRow]? {
+        guard let data = BoundedFile.readLogged(url, inside: root, category: .report) else {
+            return nil
+        }
         return try? JSONDecoder().decode([PatchStatusRow].self, from: data)
     }
 }

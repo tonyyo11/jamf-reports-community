@@ -1681,12 +1681,9 @@ struct CoreDashboard: Sendable {
             ["mobile-devices-list", "mobile_devices_list"],
             ["mobile-device-inventory-details", "mobile_device_inventory_details"],
         ].compactMap { FileManager.newestSnapshot(among: snapshotCandidates(names: $0)) }
-        guard let source = MobileFleetService.inventorySource(among: newestPerKind) else {
-            return []
-        }
-        if let data = try? Data(contentsOf: source.url) {
-            SnapshotManifest.verify(snapshot: source.url, data: data)
-        }
+        guard let source = MobileFleetService.inventorySource(
+            among: newestPerKind, inside: dataDir) else { return [] }
+        SnapshotManifest.verify(snapshot: source.url, data: source.data)
         return source.devices
     }
 
@@ -3467,7 +3464,10 @@ struct CoreDashboard: Sendable {
         else {
             throw CoreDashboardError.noCachedData(names: names)
         }
-        let data = try Data(contentsOf: newest)
+        // An unreadable newest file is "no snapshot" (logged by name), not a thrown I/O error.
+        guard let data = BoundedFile.readLogged(newest, inside: dataDir) else {
+            throw CoreDashboardError.noCachedData(names: names)
+        }
         SnapshotManifest.verify(snapshot: newest, data: data)
         return data
     }
@@ -3479,12 +3479,7 @@ struct CoreDashboard: Sendable {
         let fm = FileManager.default
         for name in names {
             let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
-            if fm.fileExists(atPath: subdir.path),
-               let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-               ) {
+            if let files = FileManager.snapshotFolderEntries(in: subdir) {
                 candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
             }
             if fm.fileExists(atPath: dataDir.path),
@@ -3515,12 +3510,7 @@ struct CoreDashboard: Sendable {
         var candidates: [URL] = []
         for name in names {
             let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
-            if fm.fileExists(atPath: subdir.path),
-               let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-               ) {
+            if let files = FileManager.snapshotFolderEntries(in: subdir) {
                 candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
             }
         }

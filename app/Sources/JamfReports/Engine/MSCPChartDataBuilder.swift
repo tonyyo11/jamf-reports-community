@@ -140,11 +140,7 @@ struct MSCPChartDataBuilder: Sendable {
         // --- Source 2: ea-results snapshots (preferred — full fidelity backfill) ---
         let eaResultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: eaResultsDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard let files = FileManager.snapshotFolderEntries(in: eaResultsDir) else {
             return sortedByBaseline(byBaseline)
         }
 
@@ -155,7 +151,7 @@ struct MSCPChartDataBuilder: Sendable {
             .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
             .sorted { dateFromSnapshotFilename($0) < dateFromSnapshotFilename($1) }
         for url in jsonFiles {
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = BoundedFile.readLogged(url, inside: dataDir) else { continue }
             let decoded = EAResultRow.decodeSnapshot(data)
             guard let rows = decoded.rows else {
                 // `.notice` (not `.debug`) so the shape surfaces without verbose

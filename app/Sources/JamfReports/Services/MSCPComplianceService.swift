@@ -68,34 +68,31 @@ struct MSCPComplianceService: Sendable {
         }
     }
 
-    /// Convenience: load the newest `ea-results` snapshot from the workspace
-    /// and evaluate all configured baselines.
-    ///
-    /// Returns `[]` when no snapshot is available (pre-first-collect).
-    static func load(
+    /// Loads the newest `ea-results` snapshot from the workspace and evaluates all configured
+    /// baselines; `[]` when no snapshot is available (pre-first-collect). Also says when the
+    /// newest file is there but could not be read, so a screen does not fall back to the proxy
+    /// as if nothing had been collected.
+    static func loadChecked(
         profile: String,
         baselines: [ComplianceBaselineConfig]
-    ) -> [BaselineResult] {
+    ) -> (results: [BaselineResult], unreadable: Bool) {
         guard !baselines.isEmpty,
               let dataDir = try? WorkspacePaths.dataDir(for: profile)
-        else { return [] }
+        else { return ([], false) }
         let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
-        guard let url = FileManager.newestSnapshotFile(in: resultsDir) else { return [] }
+        guard let url = FileManager.newestSnapshotFile(in: resultsDir) else { return ([], false) }
 
-        guard let data = try? Data(contentsOf: url) else {
-            AppLogger.platform.warning(
-                "MSCPComplianceService: could not read ea-results file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
+        guard let data = BoundedFile.readLogged(url, inside: dataDir) else {
+            return ([], FileManager.default.fileExists(atPath: url.path))
         }
         let decoded = EAResultRow.decodeSnapshot(data)
         guard let rows = decoded.rows else {
             AppLogger.platform.notice(
                 "MSCPComplianceService: ea-results \(url.lastPathComponent, privacy: .public) undecodable — \(decoded.reason, privacy: .public)"
             )
-            return []
+            return ([], true)
         }
-        return evaluate(rows: rows, baselines: baselines)
+        return (evaluate(rows: rows, baselines: baselines), false)
     }
 
     // MARK: - Internals

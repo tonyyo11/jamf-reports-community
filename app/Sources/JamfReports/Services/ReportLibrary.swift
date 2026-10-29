@@ -241,18 +241,21 @@ struct ReportLibrary {
         ) else {
             return [:]
         }
-        let statusFiles = entries
-            .filter { $0.lastPathComponent.hasSuffix("_status.json") }
-            .compactMap { WorkspacePathGuard.validate($0, underAny: roots) }
-        return Self.scheduledFiles(statusFiles: statusFiles)
+        // The guard only vets the entry; the unresolved URL is read, so a link is refused there.
+        let statusFiles = entries.filter {
+            $0.lastPathComponent.hasSuffix("_status.json")
+                && WorkspacePathGuard.validate($0, underAny: roots) != nil
+        }
+        return Self.scheduledFiles(statusFiles: statusFiles, inside: automation)
     }
 
     /// Testable core of `scheduledFiles(profile:roots:)`: reads each status file's label and
     /// the report paths `ScheduledRunRecorder` wrote into it.
-    static func scheduledFiles(statusFiles: [URL]) -> [String: String] {
+    static func scheduledFiles(statusFiles: [URL], inside root: URL? = nil) -> [String: String] {
         var named: [String: String] = [:]
         for url in statusFiles {
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(
+                    url, limit: BoundedFile.documentLimit, inside: root),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let label = json["label"] as? String, !label.isEmpty else { continue }
             let schedule = RunHistoryService.humanName(from: label)
@@ -315,7 +318,8 @@ struct ReportLibrary {
         let summaryURL = summariesDir.appendingPathComponent("summary_\(dateString).json")
 
         guard FileManager.default.fileExists(atPath: summaryURL.path),
-              let data = try? Data(contentsOf: summaryURL),
+              let data = BoundedFile.readLogged(
+                  summaryURL, limit: SummaryJSONParser.maxSummaryFileBytes),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
@@ -339,14 +343,14 @@ struct ReportLibrary {
     }
 
     private func hasZipMagic(_ url: URL) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        guard let handle = try? BoundedFile.openChecked(url) else { return false }
         defer { try? handle.close() }
         let data = (try? handle.read(upToCount: 4)) ?? Data()
         return data == Data([0x50, 0x4B, 0x03, 0x04])
     }
 
     private func readCentralDirectory(from url: URL) -> Data? {
-        guard let handle = try? FileHandle(forReadingFrom: url),
+        guard let handle = try? BoundedFile.openChecked(url),
               let size = try? handle.seekToEnd() else {
             return nil
         }

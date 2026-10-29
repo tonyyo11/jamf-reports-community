@@ -569,26 +569,20 @@ struct SchoolDashboard: Sendable {
         var candidates: [URL] = []
         for name in names {
             let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
-            if fm.fileExists(atPath: subdir.path),
-               let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-               ) {
+            if let files = FileManager.snapshotFolderEntries(in: subdir) {
                 candidates.append(contentsOf: files.filter {
                     $0.pathExtension == "json"
                     && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
                 })
             }
         }
-        func modified(_ url: URL) -> Date {
-            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
-                .flatMap(\.contentModificationDate) ?? .distantPast
-        }
-        guard let newest = candidates.max(by: { modified($0) < modified($1) }) else {
+        // The shared rule: filename stamp first, conflict copies and staging files excluded.
+        guard let newest = FileManager.newestSnapshot(among: candidates) else {
             throw SchoolDashboardError.noCachedData(names: names)
         }
-        let data = try Data(contentsOf: newest)
+        guard let data = BoundedFile.readLogged(newest, inside: dataDir) else {
+            throw SchoolDashboardError.noCachedData(names: names)
+        }
         return try JSONSerialization.jsonObject(with: data)
     }
 

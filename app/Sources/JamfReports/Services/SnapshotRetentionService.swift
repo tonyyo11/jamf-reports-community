@@ -219,10 +219,18 @@ enum SnapshotRetentionService {
             at: dataDir, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles
         )) ?? []
         for subdir in subdirs {
-            guard (try? subdir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-            else { continue }
             let name = subdir.lastPathComponent
             if nonSnapshotSubdirs.contains(name) || name.hasPrefix("_") { continue }
+            // A link here is a peer's, and sweeping it would move or delete in its target.
+            // (`isDirectoryKey` reports the link itself, so the check below would skip it
+            // without a word.)
+            if FileManager.isLink(subdir) {
+                onLine(.init(timestamp: Date(), level: .warn, text:
+                    "[warn] retention: \(ConfigSchema.displayText(name)) is a link, not swept"))
+                continue
+            }
+            guard (try? subdir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else { continue }
             let dirResult = sweepDirectory(
                 subdir, archiveSubpath: "jamf-cli-data/\(name)",
                 archiveRoot: archiveRoot, policy: policy, now: now, fm: fm,
@@ -267,8 +275,8 @@ enum SnapshotRetentionService {
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) -> SweepResult {
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
-        guard let entries = try? fm.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: keys, options: .skipsHiddenFiles
+        guard let entries = FileManager.snapshotFolderEntries(
+            in: dir, includingPropertiesForKeys: keys
         ) else { return SweepResult(acted: 0, failed: 0) }
 
         // Ranked and aged by the date in the name, as every snapshot picker orders: a sync

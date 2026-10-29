@@ -316,9 +316,13 @@ final class DiagnosticRedactor {
         jsonFiles.sort { $0.path < $1.path }
         var sets: [String: Set<String>] = [:]
         for url in jsonFiles {
-            guard let data = try? Data(contentsOf: url),
-                  let obj = try? JSONSerialization.jsonObject(with: data) else { continue }
-            harvest(obj, into: &sets)
+            // Each file is parsed whole; release it before the next, or a workspace of large
+            // snapshots holds them all until the loop ends.
+            autoreleasepool {
+                guard let data = BoundedFile.readLogged(url),
+                      let obj = try? JSONSerialization.jsonObject(with: data) else { return }
+                harvest(obj, into: &sets)
+            }
         }
         let total = sets.values.reduce(0) { $0 + $1.count }
         for (category, values) in sets { compileSeededRegex(category, from: values) }
@@ -816,7 +820,7 @@ enum DiagnosticBundleService {
 
     // MARK: - Collectors
 
-    private static func collectLogs(
+    static func collectLogs(
         from logsDir: URL, into staging: URL, redactor: DiagnosticRedactor?,
         days: Int, now: Date
     ) -> [ManifestEntry] {
@@ -838,7 +842,8 @@ enum DiagnosticBundleService {
             if let mtime = values?.contentModificationDate, mtime < cutoff { continue }
             let relative = relativePath(of: url, under: logsDir)
             let arcname = "logs/\(redactor?.redactWorkspaceNames(in: relative) ?? relative)"
-            guard let data = try? Data(contentsOf: url) else {
+            // The tail of a log past the limit, as Run History reads it, not a skipped file.
+            guard let data = (try? BoundedFile.readTail(url, limit: 5 * 1024 * 1024))?.data else {
                 entries.append(.skipped(path: arcname, reason: "could not read log"))
                 continue
             }
@@ -865,7 +870,8 @@ enum DiagnosticBundleService {
         let summaries = contents
             .filter { $0.lastPathComponent.hasPrefix("summary_")
                 && $0.pathExtension.lowercased() == "json" }
-            .sorted { lhs, rhs in modified(lhs) > modified(rhs) }
+            .filter(FileManager.isSelectableSnapshot)
+            .sorted { FileManager.isOlderSnapshot($1, than: $0) }
             .prefix(limit)
         var entries: [ManifestEntry] = []
         for url in summaries {
@@ -874,7 +880,8 @@ enum DiagnosticBundleService {
                 entries.append(.skipped(path: arcname, reason: "symlink — skipped"))
                 continue
             }
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(
+                    url, limit: SummaryJSONParser.maxSummaryFileBytes),
                   let obj = try? JSONSerialization.jsonObject(with: data) else {
                 entries.append(.skipped(path: arcname, reason: "could not parse summary"))
                 continue

@@ -151,9 +151,9 @@ final class DDMDeviceStatusServiceTests: XCTestCase {
          {"id":"3","general":{"name":"C","managementId":"m3"}}]
         """
         try Data(json.utf8).write(to: url)
-        let counts = DDMDeviceStatusService.fleetDDMCounts(computersURL: url)
+        let counts = try XCTUnwrap(DDMDeviceStatusService.fleetDDMCounts(computersURL: url))
         XCTAssertEqual(counts.enabled, 1)
         XCTAssertEqual(counts.total, 3)
-        XCTAssertEqual(DDMDeviceStatusService.fleetDDMCounts(computersURL: nil).total, 0)
+        XCTAssertEqual(DDMDeviceStatusService.fleetDDMCounts(computersURL: nil)?.total, 0)
     }
 }

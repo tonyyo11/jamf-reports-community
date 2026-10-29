@@ -126,19 +126,14 @@ final class CLIBridge {
                 return []
             }
             let dir = dataDir.appendingPathComponent(type, isDirectory: true)
-            let entries: [URL]
-            do {
-                entries = try FileManager.default.contentsOfDirectory(
-                    at: dir,
-                    includingPropertiesForKeys: [.contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                )
-            } catch let error as NSError where error.code == NSFileReadNoSuchFileError {
-                return []  // Expected on first run before any snapshots exist
-            } catch {
-                AppLogger.cli.warning(
-                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
+            guard let entries = FileManager.snapshotFolderEntries(in: dir) else {
+                // Missing is expected on first run before any snapshots exist; a folder that is
+                // there but refused (a link) or unreadable is named.
+                if FileManager.default.fileExists(atPath: dir.path) {
+                    AppLogger.cli.warning(
+                        "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public): not a readable snapshot folder"
+                    )
+                }
                 return []
             }
 
@@ -156,7 +151,8 @@ final class CLIBridge {
                     let data: Data
                     do {
                         data = try BoundedFile.read(
-                            item.url, limit: BoundedFile.snapshotLimit, followSymlinks: false)
+                            item.url, limit: BoundedFile.snapshotLimit, followSymlinks: false,
+                            inside: dataDir)
                     } catch {
                         let name = item.url.lastPathComponent
                         let reason = String(describing: error)

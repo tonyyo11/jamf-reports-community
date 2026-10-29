@@ -494,7 +494,7 @@ struct MobileFleetService: Sendable {
         }
         let listURL = newest(deviceKind)
         let candidates = [listURL, newest(legacyInventoryKind)].compactMap { $0 }
-        let source = inventorySource(among: candidates)
+        let source = inventorySource(among: candidates, inside: dir)
         return assemble(
             listURL: listURL, inventoryURL: source?.url, inventoryRows: source?.devices,
             profilesURL: newest("classic-ios-profiles"))
@@ -504,7 +504,7 @@ struct MobileFleetService: Sendable {
     static func load(listURL: URL?, inventoryURL: URL?, profilesURL: URL?) -> Snapshot {
         assemble(
             listURL: listURL, inventoryURL: inventoryURL,
-            inventoryRows: inventoryURL.flatMap(inventoryRows(at:)), profilesURL: profilesURL)
+            inventoryRows: inventoryURL.flatMap { inventoryRows(at: $0) }, profilesURL: profilesURL)
     }
 
     /// Whether a decoded row has any inventory section. The flat list older jamf-cli
@@ -518,15 +518,18 @@ struct MobileFleetService: Sendable {
     }
 
     /// The inventory rows in `url`, or nil when the file cannot be read or decoded.
-    static func inventoryRows(at url: URL) -> [MobileDeviceInventoryItem]? {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.inventoryLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read \(url.lastPathComponent, privacy: .public)"
-            )
-            return nil
-        }
+    static func inventoryRows(
+        at url: URL, inside root: URL? = nil
+    ) -> [MobileDeviceInventoryItem]? {
+        inventoryRead(at: url, inside: root)?.rows
+    }
+
+    /// The rows and the bytes they came from, so a caller that verifies the file does not read
+    /// it twice.
+    private static func inventoryRead(
+        at url: URL, inside root: URL?
+    ) -> (rows: [MobileDeviceInventoryItem], data: Data)? {
+        guard let data = BoundedFile.readLogged(url, inside: root) else { return nil }
         guard let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
         else {
             AppLogger.collect.info(
@@ -534,7 +537,7 @@ struct MobileFleetService: Sendable {
             )
             return nil
         }
-        return devices.filter(carriesInventory)
+        return (devices.filter(carriesInventory), data)
     }
 
     /// The newest of `candidates` that holds inventory rows, by filename stamp. A newer
@@ -542,17 +545,17 @@ struct MobileFleetService: Sendable {
     /// candidate has rows, the newest readable one is returned empty, so an empty
     /// snapshot still counts as detected.
     static func inventorySource(
-        among candidates: [URL]
-    ) -> (url: URL, devices: [MobileDeviceInventoryItem])? {
+        among candidates: [URL], inside root: URL? = nil
+    ) -> (url: URL, devices: [MobileDeviceInventoryItem], data: Data)? {
         let newestFirst = candidates.filter(FileManager.isSelectableSnapshot)
             .sorted { FileManager.isOlderSnapshot($1, than: $0) }
-        var readableButEmpty: URL?
+        var readableButEmpty: (url: URL, data: Data)?
         for url in newestFirst {
-            guard let rows = inventoryRows(at: url) else { continue }
-            if !rows.isEmpty { return (url, rows) }
-            readableButEmpty = readableButEmpty ?? url
+            guard let read = inventoryRead(at: url, inside: root) else { continue }
+            if !read.rows.isEmpty { return (url, read.rows, read.data) }
+            readableButEmpty = readableButEmpty ?? (url, read.data)
         }
-        return readableButEmpty.map { (url: $0, devices: []) }
+        return readableButEmpty.map { (url: $0.url, devices: [], data: $0.data) }
     }
 
     private static func assemble(
@@ -644,14 +647,7 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileDeviceListRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.inventoryLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read mobile-devices-list file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readLogged(url) else { return [] }
         guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
             AppLogger.collect.info(
                 "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .public)"
@@ -666,14 +662,7 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileConfigProfileRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read classic-ios-profiles file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readLogged(url) else { return [] }
         if let profiles = try? JSONDecoder().decode([MobileConfigProfileRow].self, from: data) {
             success = true
             return profiles

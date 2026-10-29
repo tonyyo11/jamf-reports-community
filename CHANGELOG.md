@@ -94,6 +94,10 @@ versions in this repository map to git tags.
   fresh, or makes Generate skip its collect. jamf-cli's config file, which
   `XDG_CONFIG_HOME` can move to a folder anyone can write, is now read with a size limit
   everywhere, including the diagnostic bundle and Start a connection. (#305)
+- Snapshots, daily summaries, status files and the device cache another Mac can write are now
+  read with a size limit, and a link, a pipe or an oversize file in their place is skipped with a
+  log line naming it instead of freezing the app or a report run. A screen whose newest file
+  cannot be read now says so, where it used to show "not detected" or zero. (#305)
 
 ## [2.11.0] - 2026-10-27
 

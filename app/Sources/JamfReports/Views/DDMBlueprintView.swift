@@ -11,7 +11,7 @@ struct DDMBlueprintView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: DDMBlueprintService.Snapshot = .empty
     @State private var deviceSnapshot: DDMDeviceStatusService.Snapshot = .empty
-    @State private var fleetCounts: (enabled: Int, total: Int) = (0, 0)
+    @State private var fleetCounts: (enabled: Int, total: Int)? = (0, 0)
     @State private var showAllIdentifiers = false
     /// A Platform API profile, as profile discovery read it from jamf-cli.
     private var platformAvailable: Bool {
@@ -57,7 +57,8 @@ struct DDMBlueprintView: View {
             platformAvailable: platformAvailable,
             hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0,
             hasDeviceData: !deviceSnapshot.records.isEmpty,
-            ddmEnabledCount: fleetCounts.enabled,
+            // An unreadable computers file (nil) unlocks nothing: only a count can.
+            ddmEnabledCount: fleetCounts?.enabled ?? 0,
             hasDeviceSnapshot: deviceSnapshot.isDetected)
     }
 
@@ -157,7 +158,7 @@ struct DDMBlueprintView: View {
     private var unlockedEmptyCard: some View {
         Card(padding: 24) {
             VStack(alignment: .leading, spacing: 14) {
-                if deviceSnapshot.isDetected && fleetCounts.enabled == 0 {
+                if deviceSnapshot.isDetected && fleetCounts?.enabled == 0 {
                     EmptyStateView(
                         systemImage: "checkmark.circle",
                         title: "No DDM-enabled Macs",
@@ -260,10 +261,10 @@ struct DDMBlueprintView: View {
             HStack(spacing: 10) {
                 DDMBlueprintView.declarationCounter(
                     label: "DDM enabled",
-                    value: fleetCounts.enabled, color: Theme.Colors.teal)
+                    value: fleetCounts?.enabled, color: Theme.Colors.teal)
                 DDMBlueprintView.declarationCounter(
                     label: "Macs in inventory",
-                    value: fleetCounts.total, color: Theme.Colors.fgMuted)
+                    value: fleetCounts?.total, color: Theme.Colors.fgMuted)
                 DDMBlueprintView.declarationCounter(
                     label: "Reported", value: deviceSnapshot.ddmReportedCount,
                     color: Theme.Colors.ok)
@@ -596,13 +597,13 @@ struct DDMBlueprintView: View {
         return "\(name), \(state), \(succeeded), \(failed), \(pending)"
     }
 
-    private static func declarationCounter(label: String, value: Int, color: Color) -> some View {
+    private static func declarationCounter(label: String, value: Int?, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
                 .font(.caption2.monospaced().weight(.semibold))
                 .tracking(1.0)
                 .foregroundStyle(color)
-            Text("\(value)")
+            Text(value.map(String.init) ?? "\u{2014}")
                 .font(Theme.Fonts.mono(20, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()

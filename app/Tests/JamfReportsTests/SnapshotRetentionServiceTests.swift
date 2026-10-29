@@ -50,6 +50,43 @@ final class SnapshotRetentionServiceTests: XCTestCase {
               keepCount: keepCount, includeSummaries: includeSummaries)
     }
 
+    // MARK: - Linked kind folder
+
+    private final class Lines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+        func add(_ text: String) { lock.lock(); stored.append(text); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+    }
+
+    /// A peer-planted `<data>/<kind>` link is not swept (retention would move or delete in its
+    /// target) and is named once; the real folders beside it are swept as usual.
+    func testALinkedKindFolderIsNeitherSweptNorWarnedMoreThanOnce() throws {
+        let now = Date(timeIntervalSince1970: 1_780_272_000)
+        let oldName = "computers_20250101T000000.json"
+        let real = dataDir.appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try "[]".write(to: real.appendingPathComponent(oldName), atomically: true, encoding: .utf8)
+
+        let target = root.appendingPathComponent("elsewhere/policy-status", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let targetFile = target.appendingPathComponent("policy-status_20250101T000000.json")
+        try "[]".write(to: targetFile, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: dataDir.appendingPathComponent("policy-status"), withDestinationURL: target)
+
+        let lines = Lines()
+        let acted = SnapshotRetentionService.sweep(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(), now: now, onLine: { lines.add($0.text) })
+
+        XCTAssertEqual(acted, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: real.appendingPathComponent(oldName).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: targetFile.path),
+                      "the link's target must not be swept")
+        XCTAssertEqual(lines.all.filter { $0.contains("policy-status") && $0.contains("link") }.count, 1)
+    }
+
     // MARK: - Default off
 
     func testDisabledPolicyIsNoOp() throws {

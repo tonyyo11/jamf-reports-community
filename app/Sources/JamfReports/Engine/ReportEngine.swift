@@ -199,12 +199,14 @@ struct ReportEngine: Sendable {
         provenance prov: Provenance, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) {
         // Write a SHA-256 manifest alongside the artifact for federal compliance.
-        writeManifest(for: outputURL, profile: profile, template: templateID)
+        // One pass over the file feeds the manifest, the sidecar and the log line.
+        let hash = BoundedFile.sha256Hex(outputURL)
+        writeManifest(for: outputURL, profile: profile, template: templateID, hash: hash)
 
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar in
         // `shasum -a 256` output format. The hash is also surfaced to the UI
         // via the log stream so GenerateSheet can show it in the toast.
-        if let hash = Self.writeSHA256Sidecar(for: outputURL) {
+        if let hash = Self.writeSHA256Sidecar(for: outputURL, hash: hash) {
             onLine?(Self.sha256LogLine(hash: hash, artifact: outputURL))
         }
 
@@ -4270,11 +4272,7 @@ struct ReportEngine: Sendable {
     ) throws -> Data {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ), !files.isEmpty else {
+        guard let files = FileManager.snapshotFolderEntries(in: dir), !files.isEmpty else {
             throw ReportEngineError.snapshotParseError(kind)
         }
         // Order and age snapshots by the timestamp encoded in the FILENAME
@@ -4305,7 +4303,8 @@ struct ReportEngine: Sendable {
                 throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
             }
         }
-        return try BoundedFile.read(url, limit: BoundedFile.snapshotLimit, followSymlinks: false)
+        return try BoundedFile.read(
+            url, limit: BoundedFile.limit(for: url), followSymlinks: false, inside: dataDir)
     }
 
     /// Merge `ea-results` snapshot into computer rows.
@@ -4378,8 +4377,11 @@ struct ReportEngine: Sendable {
     // MARK: - SHA-256 manifest helpers (Finding #8)
 
     /// Instance-method shim that forwards to the static implementation.
-    private func writeManifest(for artifactURL: URL, profile: String, template: String = "") {
-        Self.writeManifestStatic(for: artifactURL, profile: profile, template: template)
+    private func writeManifest(
+        for artifactURL: URL, profile: String, template: String = "", hash: String? = nil
+    ) {
+        Self.writeManifestStatic(
+            for: artifactURL, profile: profile, template: template, hash: hash)
     }
 
     /// T-13 integrity envelope: write a `<file>.sha256` sidecar in
@@ -4393,14 +4395,12 @@ struct ReportEngine: Sendable {
     /// be read or the sidecar could not be written. Errors are logged and
     /// swallowed — a sidecar write must never abort artifact delivery.
     @discardableResult
-    static func writeSHA256Sidecar(for artifactURL: URL) -> String? {
-        guard let data = try? Data(contentsOf: artifactURL) else {
+    static func writeSHA256Sidecar(for artifactURL: URL, hash: String? = nil) -> String? {
+        guard let hex = hash ?? BoundedFile.sha256Hex(artifactURL) else {
             fputs("[warn] sha256 sidecar: could not read \(artifactURL.lastPathComponent)\n",
                   stderr)
             return nil
         }
-        let digest = SHA256.hash(data: data)
-        let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
         let sidecarURL = artifactURL.appendingPathExtension("sha256")
         let line = "\(hex)  \(artifactURL.lastPathComponent)\n"
         do {
@@ -4432,14 +4432,13 @@ struct ReportEngine: Sendable {
     static func writeManifestStatic(
         for artifactURL: URL,
         profile: String,
-        template: String = ""
+        template: String = "",
+        hash: String? = nil
     ) -> String? {
-        guard let data = try? Data(contentsOf: artifactURL) else {
+        guard let hex = hash ?? BoundedFile.sha256Hex(artifactURL) else {
             fputs("[warn] manifest: could not read \(artifactURL.lastPathComponent)\n", stderr)
             return nil
         }
-        let digest = SHA256.hash(data: data)
-        let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
 
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
@@ -4477,8 +4476,7 @@ struct ReportEngine: Sendable {
 
     /// The same line for a file hashed from disk; nil when the file cannot be read.
     static func sha256LogLine(for artifact: URL) -> CLIBridge.LogLine? {
-        guard let data = try? Data(contentsOf: artifact) else { return nil }
-        let hex = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        guard let hex = BoundedFile.sha256Hex(artifact) else { return nil }
         return sha256LogLine(hash: hex, artifact: artifact)
     }
 

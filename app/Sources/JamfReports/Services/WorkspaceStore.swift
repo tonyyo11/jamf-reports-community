@@ -963,7 +963,8 @@ final class WorkspaceStore {
                 return aDate > bDate
             }
         guard let newest = jsons.first,
-              let data = try? Data(contentsOf: newest),
+              let data = BoundedFile.readLogged(
+                  newest, limit: SummaryJSONParser.maxSummaryFileBytes),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let count = dict["total_devices"] as? Int else { return 0 }
         return count

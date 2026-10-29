@@ -48,6 +48,8 @@ final class DeviceLookupIndex {
     private(set) var loadedAt: Date?
     private(set) var sourceFiles: [String] = []
     private(set) var lastError: String?
+    /// The data folder being read, so a snapshot read refuses a kind folder that is a link.
+    private var dataRoot: URL?
 
     /// Reload from the active profile's cached list snapshots. Safe to call
     /// repeatedly; later calls replace earlier state.
@@ -63,6 +65,7 @@ final class DeviceLookupIndex {
         let dataDir = (try? WorkspacePaths.dataDir(for: profile))
             ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
 
+        dataRoot = dataDir
         var collected: [Candidate] = []
         var sources: [String] = []
         var newestDate: Date?
@@ -95,9 +98,7 @@ final class DeviceLookupIndex {
         var candidates: [URL] = []
         for name in names {
             let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
-            if let entries = try? fm.contentsOfDirectory(
-                at: subdir, includingPropertiesForKeys: [.contentModificationDateKey], options: []
-            ) {
+            if let entries = FileManager.snapshotFolderEntries(in: subdir, options: []) {
                 candidates.append(contentsOf: entries.filter {
                     $0.pathExtension.lowercased() == "json"
                     && !$0.lastPathComponent.contains(".partial")
@@ -195,7 +196,7 @@ final class DeviceLookupIndex {
     }
 
     private func decodeArray(_ url: URL) -> [[String: Any]]? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = BoundedFile.readLogged(url, inside: dataRoot),
               let raw = try? JSONSerialization.jsonObject(with: data) else { return nil }
         if let array = raw as? [[String: Any]] { return array }
         if let envelope = raw as? [String: Any],

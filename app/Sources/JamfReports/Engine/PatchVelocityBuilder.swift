@@ -143,11 +143,7 @@ enum PatchVelocityBuilder {
     private static func loadDailyRows(dataDir: URL) -> [DayRows] {
         let dir = dataDir.appendingPathComponent("patch-status", isDirectory: true)
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard let files = FileManager.snapshotFolderEntries(in: dir) else {
             return []
         }
 
@@ -163,7 +159,7 @@ enum PatchVelocityBuilder {
 
         var byDay: [String: DayRows] = [:]
         for url in jsonFiles {
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = BoundedFile.readLogged(url, inside: dataDir) else { continue }
             guard let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: data) else {
                 AppLogger.platform.notice(
                     "PatchVelocityBuilder: patch-status \(url.lastPathComponent, privacy: .public) undecodable — skipped"

@@ -105,12 +105,7 @@ struct PatchStatusService: Sendable {
             return nil
         }
 
-        guard let titlesData = try? Data(contentsOf: titlesURL) else {
-            AppLogger.collect.info(
-                "PatchStatusService: could not read patch-status file \(titlesURL.lastPathComponent, privacy: .public)"
-            )
-            return nil
-        }
+        guard let titlesData = BoundedFile.readLogged(titlesURL) else { return nil }
 
         guard let titles = (try? JSONDecoder().decode([PatchStatusRow].self, from: titlesData)) else {
             AppLogger.collect.info(
@@ -121,7 +116,7 @@ struct PatchStatusService: Sendable {
 
         var failures: [PatchFailureRow] = []
         if let failuresURL, FileManager.default.fileExists(atPath: failuresURL.path) {
-            if let failuresData = try? Data(contentsOf: failuresURL) {
+            if let failuresData = BoundedFile.readLogged(failuresURL) {
                 if let decodedFailures = try? JSONDecoder().decode(
                     [PatchFailureRow].self, from: failuresData
                 ) {
@@ -131,10 +126,6 @@ struct PatchStatusService: Sendable {
                         "PatchStatusService: failed to decode patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
                     )
                 }
-            } else {
-                AppLogger.collect.warning(
-                    "PatchStatusService: could not read patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 

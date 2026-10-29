@@ -558,7 +558,7 @@ struct DeviceLookupView: View {
 internal func freshnessTimestamp(for cacheURL: URL?) -> Date? {
     guard let cacheURL else { return nil }
     let sidecar = cacheURL.appendingPathExtension("meta")
-    if let raw = try? Data(contentsOf: sidecar),
+    if let raw = BoundedFile.readLogged(sidecar, limit: BoundedFile.documentLimit),
        let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: String],
        let isoString = obj["generated_at"] {
         let formatter = ISO8601DateFormatter()

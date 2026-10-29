@@ -35,6 +35,9 @@ struct ProtectDashboardService: Sendable {
         /// `protect-computers`, `protect-insights`, `protect-plans`); a kind
         /// absent from disk is absent from the map.
         var sourceDates: [String: Date] = [:]
+        /// Kinds whose newest file exists but could not be read or decoded (a planted link or
+        /// pipe, an oversize file, bad JSON); never shown as "not detected" or as zero rows.
+        var unreadableKinds: [String] = []
 
         /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
         /// threshold as TrendStore to align with the standard daily-schedule cadence.
@@ -78,7 +81,8 @@ struct ProtectDashboardService: Sendable {
             lhs.plans.count == rhs.plans.count &&
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate &&
-            lhs.sourceDates == rhs.sourceDates
+            lhs.sourceDates == rhs.sourceDates &&
+            lhs.unreadableKinds == rhs.unreadableKinds
         }
     }
 
@@ -111,11 +115,30 @@ struct ProtectDashboardService: Sendable {
         // array). A readable empty file is "detected" so the view renders
         // its sections instead of the empty state.
         var readSomething = false
-        let overview = loadOverview(from: overviewURL, success: &readSomething)
-        let alerts = loadAlerts(from: alertsURL, success: &readSomething)
-        let computers = loadComputers(from: computersURL, success: &readSomething)
-        let insights = loadInsights(from: insightsURL, success: &readSomething)
-        let plans = loadPlans(from: plansURL, success: &readSomething)
+        var unreadable: [String] = []
+        func track(_ kind: String, _ url: URL?, _ read: (inout Bool) -> Void) {
+            var read1 = false
+            read(&read1)
+            if read1 {
+                readSomething = true
+            } else if let url, FileManager.default.fileExists(atPath: url.path) {
+                unreadable.append(kind)
+            }
+        }
+        var overview: [ProtectOverviewItem] = []
+        var alerts: [ProtectAlertRow] = []
+        var computers: [ProtectComputerRow] = []
+        var insights: [ProtectInsightRow] = []
+        var plans: [ProtectPlanRow] = []
+        track("protect-overview", overviewURL) { overview = loadOverview(from: overviewURL, success: &$0) }
+        track("protect-alerts", alertsURL) { alerts = loadAlerts(from: alertsURL, success: &$0) }
+        track("protect-computers", computersURL) {
+            computers = loadComputers(from: computersURL, success: &$0)
+        }
+        track("protect-insights", insightsURL) {
+            insights = loadInsights(from: insightsURL, success: &$0)
+        }
+        track("protect-plans", plansURL) { plans = loadPlans(from: plansURL, success: &$0) }
 
         let hasData = readSomething
 
@@ -174,7 +197,8 @@ struct ProtectDashboardService: Sendable {
             failingInsights: failingInsights,
             sourceFile: sourceFile,
             snapshotDate: snapshotDate,
-            sourceDates: sourceDates
+            sourceDates: sourceDates,
+            unreadableKinds: unreadable
         )
     }
 
@@ -183,7 +207,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadOverview(
         from url: URL?, success: inout Bool
     ) -> [ProtectOverviewItem] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectOverviewItem].self, from: data)
         else { return [] }
         success = true
@@ -193,7 +217,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadAlerts(
         from url: URL?, success: inout Bool
     ) -> [ProtectAlertRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectAlertRow].self, from: data)
         else { return [] }
         success = true
@@ -203,7 +227,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadComputers(
         from url: URL?, success: inout Bool
     ) -> [ProtectComputerRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectComputerRow].self, from: data)
         else { return [] }
         success = true
@@ -213,7 +237,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadInsights(
         from url: URL?, success: inout Bool
     ) -> [ProtectInsightRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectInsightRow].self, from: data)
         else { return [] }
         success = true
@@ -223,7 +247,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadPlans(
         from url: URL?, success: inout Bool
     ) -> [ProtectPlanRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectPlanRow].self, from: data)
         else { return [] }
         success = true

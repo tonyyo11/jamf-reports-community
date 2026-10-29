@@ -63,10 +63,7 @@ struct DuplicateSerialService: Sendable {
     /// Test seam: load directly from an arbitrary file URL.
     static func load(url: URL?) -> Snapshot {
         guard let url else { return .empty }
-        guard let data = try? Data(contentsOf: url) else {
-            AppLogger.collect.warning(
-                "DuplicateSerialService: could not read duplicate-serials file \(url.lastPathComponent, privacy: .public)"
-            )
+        guard let data = BoundedFile.readLogged(url) else {
             return FileManager.default.fileExists(atPath: url.path) ? .unreadable : .empty
         }
         guard let rows = try? JSONDecoder().decode([DuplicateSerialRow].self, from: data) else {

@@ -72,23 +72,39 @@ extension FileManager {
         return newestSnapshot(among: candidates).flatMap(snapshotDate(of:))
     }
 
-    /// Shared body: enumerate, confine to `dir`, filter, order.
+    /// Shared body: enumerate, confine to `dir`, filter, order. The candidate comes back as
+    /// `dir` as given plus the entry's name, never as the resolved target, so a link at the
+    /// newest name reaches the reader as a link and is refused there (`BoundedFile` opens with
+    /// `O_NOFOLLOW`). A `dir` that is itself a link is no snapshot folder at all.
     private static func newestSnapshot(inDirectory dir: URL, extensions: Set<String>) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
+        guard let files = snapshotFolderEntries(in: dir) else { return nil }
         let dirPrefix = dir.resolvingSymlinksInPath().standardizedFileURL.path + "/"
         let confined = files
             .filter { extensions.contains($0.pathExtension.lowercased()) }
-            .compactMap { url -> URL? in
-                let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-                return resolved.path.hasPrefix(dirPrefix) ? resolved : nil
+            .filter {
+                $0.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(dirPrefix)
             }
+            .map { dir.appendingPathComponent($0.lastPathComponent) }
         return newestSnapshot(among: confined)
+    }
+
+    /// The entries of a snapshot kind folder: nil when `dir` is missing, unreadable or itself a
+    /// link, so every listing of a kind folder applies the one rule the pickers do. (The data
+    /// folder above the kind folders may be a link; a kind folder may not.)
+    static func snapshotFolderEntries(
+        in dir: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]? = [.contentModificationDateKey],
+        options: DirectoryEnumerationOptions = [.skipsHiddenFiles]
+    ) -> [URL]? {
+        guard !isLink(dir) else { return nil }
+        return try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: keys, options: options)
+    }
+
+    /// `lstat` says `url` is a symbolic link.
+    static func isLink(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK
     }
 
     /// Newest of an arbitrary candidate list, applying the same exclusions and

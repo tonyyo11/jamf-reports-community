@@ -78,8 +78,7 @@ struct SOFAFeedService: Sendable {
         for platform in allPlatforms {
             let cacheURL = sofaDir.appendingPathComponent("\(platform)_data_feed.json")
             guard FileManager.default.fileExists(atPath: cacheURL.path) else { continue }
-            guard let data = BoundedFile.readLogged(
-                cacheURL, limit: BoundedFile.snapshotLimit, category: .collect),
+            guard let data = BoundedFile.readLogged(cacheURL),
                   let feed = try? JSONDecoder().decode(SOFAFeed.self, from: data)
             else {
                 warnings.append("Could not decode SOFA cache for \(platform)")
@@ -93,8 +92,7 @@ struct SOFAFeedService: Sendable {
 
     /// Load from a single fixture file for tests.
     static func load(from url: URL, platform: String, referenceDate: Date = Date()) -> [OSFamilyRow] {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .collect),
+        guard let data = BoundedFile.readLogged(url),
               let feed = try? JSONDecoder().decode(SOFAFeed.self, from: data)
         else { return [] }
         return normalizeFeed(platform: platform, feed: feed, referenceDate: referenceDate)
@@ -157,8 +155,7 @@ struct SOFAFeedService: Sendable {
                 warnings.append(msg)
                 // Fall back to existing cache.
                 let cacheURL = sofaDir.appendingPathComponent("\(platform)_data_feed.json")
-                if let data = BoundedFile.readLogged(
-                    cacheURL, limit: BoundedFile.snapshotLimit, category: .collect),
+                if let data = BoundedFile.readLogged(cacheURL),
                    let feed = try? JSONDecoder().decode(SOFAFeed.self, from: data) {
                     rows.append(contentsOf: normalizeFeed(platform: platform, feed: feed,
                                                           referenceDate: referenceDate))
