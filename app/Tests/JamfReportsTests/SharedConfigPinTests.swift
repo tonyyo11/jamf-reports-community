@@ -342,13 +342,18 @@ final class SharedConfigPinTests: XCTestCase {
     func testANumericProtectProfilePinsAsTheTextJamfCLIReceives() throws {
         try writeConfig(protectProfile: "")
         _ = check()
-        for body in ["protect:\n  enabled: true\n  profile: 2024\n",
-                     "profiles:\n  jamf_pro: \(profile)\n  protect: 2024\n"] {
+        let cases = [
+            ("protect:\n  enabled: true\n  profile: 2024\n", "2024"),
+            ("profiles:\n  jamf_pro: \(profile)\n  protect: 2024\n", "2024"),
+            ("protect:\n  enabled: true\n  profile: \"true\"\n", "true"),
+            ("profiles:\n  jamf_pro: \(profile)\n  protect: \"true\"\n", "true"),
+        ]
+        for (body, expected) in cases {
             try ("shared_workspace:\n  enabled: true\n" + body).write(
                 to: workspace.appendingPathComponent("config.yaml"),
                 atomically: true, encoding: .utf8)
             let drift = check().drifts.first { $0.key == .protectProfile }
-            XCTAssertEqual(drift?.current, "2024", body)
+            XCTAssertEqual(drift?.current, expected, body)
         }
     }
 

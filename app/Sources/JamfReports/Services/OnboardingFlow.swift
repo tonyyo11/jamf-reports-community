@@ -1375,7 +1375,7 @@ final class OnboardingFlow {
     ) throws -> ConfigSaveReport {
         let slot = key == "school_cli" ? "jamf_school" : key
         return try ConfigService.saveBlock(
-            key: key, profile: profileSlug, profilesSlot: slot
+            key: key, profile: profileSlug, profilesSlot: slot, slotValue: name
         ) { root in
             var block = root.value(for: key)?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
             block.set("enabled", value: .scalar(.bool(true)))

@@ -1407,6 +1407,7 @@ final class CLIBridge {
     }
 
     /// `locateJamfCLI` is a test seam: the default locator finds no jamf-cli under XCTest.
+    /// Callers run `refusesProCommand` first, before `authGuard` probes the profile.
     nonisolated func singleDeviceDetail(
         profile: String,
         deviceID: String,
@@ -1419,11 +1420,6 @@ final class CLIBridge {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.isSafeDeviceIdentifier(trimmedID) else {
             AppLogger.cli.warning("device detail: rejecting leading-dash identifier")
-            return nil
-        }
-        if await Self.refusesProCommand(
-            profile: profile, operation: "Device lookup", onLine: onLine
-        ) != nil {
             return nil
         }
         guard ProfileService.isValid(profile),

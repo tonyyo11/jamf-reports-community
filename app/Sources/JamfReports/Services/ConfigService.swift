@@ -352,9 +352,10 @@ enum ConfigService {
     /// the file's stamp afterwards, for a screen that loaded the file to adopt the write.
     /// `profilesSlot` names the `profiles:` slot that replaces the block's old product keys:
     /// under a `profiles:` mapping the write would change nothing the app reads, so it throws
-    /// `profilesBlock` instead.
+    /// `profilesBlock` instead, or writes nothing when that slot already names `slotValue`.
     static func saveBlock(
         key: String, profile: String, workspaceRoot: URL? = nil, profilesSlot: String? = nil,
+        slotValue: String? = nil,
         apply: (inout YAMLCodec.YAMLMapping) -> Void
     ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
         let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
@@ -371,8 +372,13 @@ enum ConfigService {
             try rejectCredentialKeys(in: document.root)
         }
         guard case .mapping(var root) = document.root else { throw ConfigError.invalidTopLevel }
-        if let profilesSlot, root.value(for: "profiles")?.mapping != nil {
-            throw ConfigError.profilesBlock(slot: profilesSlot)
+        if let profilesSlot, let slots = root.value(for: "profiles")?.mapping {
+            let named = slots.value(for: profilesSlot)?.stringValue?
+                .trimmingCharacters(in: .whitespaces)
+            guard let slotValue, named == slotValue.trimmingCharacters(in: .whitespaces) else {
+                throw ConfigError.profilesBlock(slot: profilesSlot)
+            }
+            return (stamp, ConfigSaveReport())
         }
         let before = root.value(for: key)
         if let before, before.mapping == nil, before != .scalar(.null) {

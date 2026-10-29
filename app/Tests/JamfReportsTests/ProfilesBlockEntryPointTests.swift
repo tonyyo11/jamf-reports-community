@@ -93,11 +93,6 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
                 profile: self.ws, deviceID: "1", onLine: $0.add) }),
             ("mobile", { await bridge.mobileDeviceDetailWithProvenance(
                 profile: self.ws, deviceID: "1", onLine: $0.add) }),
-            ("single", { await bridge.singleDeviceDetail(
-                profile: self.ws, deviceID: "1", cacheSubdir: "computers",
-                jamfCLIArgs: { ["pro", "computers", "get", $0] },
-                locateJamfCLI: { XCTFail("looked for jamf-cli"); return nil },
-                onLine: $0.add) }),
         ]
         for (name, lookup) in lookups {
             let lines = ProductGuardLines()
@@ -149,6 +144,20 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
         try assertWriteRefused(slot: "jamf_school") {
             _ = try OnboardingFlow.writeProductBlock("school_cli", profile: ws, for: ws)
         }
+    }
+
+    /// The block already names this login: connecting it again changes nothing and is not an
+    /// error. Another login is still refused.
+    @MainActor
+    func testConnectingTheLoginTheBlockNamesWritesNothingAndSucceeds() throws {
+        try writeConfig("profiles:\n  jamf_pro: blockws\n  protect: blockws-protect\n")
+        let before = try String(contentsOf: configURL, encoding: .utf8)
+        let report = try OnboardingFlow.writeProductBlock(
+            "protect", profile: " blockws-protect ", for: ws)
+        XCTAssertNil(report.backupName)
+        XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), before)
+        XCTAssertThrowsError(
+            try OnboardingFlow.writeProductBlock("protect", profile: "other", for: ws))
     }
 
     func testOldShapeWritersStillWrite() throws {
