@@ -199,7 +199,10 @@ struct OverviewView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .overlay {
-            if !workspace.demoMode, trendStore.isLoading, trendStore.filteredSummaries.isEmpty {
+            // The store outlives this screen: until it holds this profile's data the overlay
+            // shows, not the last profile's figures or an empty first frame.
+            if !workspace.demoMode, (!trendStore.isLoaded(for: workspace.profile)
+                || (trendStore.isLoading && trendStore.filteredSummaries.isEmpty)) {
                 trendsLoadingOverlay
             }
         }
@@ -350,7 +353,6 @@ struct OverviewView: View {
     private func loadTrendsOffMain() async {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
-        let range = defaultTrendRange
         // On a profile switch, drop the previous tenant's data so the overlay
         // (not stale data) shows during the new scan; same-profile is a no-op.
         trendStore.clearForProfileSwitch(to: profile)
@@ -358,7 +360,9 @@ struct OverviewView: View {
         let snapshot = await Task.detached(priority: .userInitiated) {
             TrendStore.computeSnapshot(profile: profile)
         }.value
-        trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
+        // The range as it is now: a range changed during the scan already filtered the store.
+        trendStore.apply(
+            snapshot, profile: profile, range: defaultTrendRange, generation: generation)
         await trendStore.backfillHistory(profile: profile)
     }
 

@@ -336,6 +336,22 @@ final class ScreenLoadTests: XCTestCase {
         XCTAssertTrue(store.isLoaded(for: "a"))
     }
 
+    /// The Overview shows its loading overlay until the shared store holds its profile's data,
+    /// and a profile with no summaries at all still ends the wait (an empty scan is a load).
+    func testOverviewTrendsOverlayEndsWhenAnEmptyProfileLoads() {
+        let store = TrendStore()
+        XCTAssertFalse(store.isLoaded(for: "new"), "the first frame waits")
+        let empty = TrendStore.TrendSnapshot(
+            summaries: [], latestSnapshotDate: nil, hasEverFetchedLive: false,
+            bandSeries: [:], baselineNames: [])
+        let scan = store.beginLoading()
+        store.setRange(.w12)
+        store.apply(empty, profile: "new", range: .w12, generation: scan)
+        XCTAssertTrue(store.isLoaded(for: "new"))
+        XCTAssertFalse(store.isLoading)
+        XCTAssertEqual(store.currentRange, .w12, "the range chosen during the scan stands")
+    }
+
     func testFleetOverviewIsReadForTheKeyItIsShownUnder() {
         let live = WorkspaceStore(
             demoMode: false, tickerRegistrar: StubTickerRegistrar(), jamfCLIProfileNames: { [] })
