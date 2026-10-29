@@ -42,6 +42,12 @@ versions in this repository map to git tags.
   "Needs attention" in the app, as a scheduled run does, and clears it when a later run passes
   the check. (#305)
 
+- A scheduled run that is skipped because the profile belongs to another product now shows in
+  Run History with the reason, and the schedule's last run reads as a warning, not a success.
+  Automation still shows it as failing with the reason. (#305)
+- When the background item cannot record that a wake was turned away, or cannot read that
+  record, it now logs a warning naming the file instead of staying silent. (#305)
+
 ### Security
 
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,

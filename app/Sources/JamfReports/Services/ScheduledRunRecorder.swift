@@ -27,6 +27,10 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     /// pruned — legacy `.out.log` / `.err.log` files are never touched.
     static let maxRunLogs = 50
 
+    /// The line a refused run's log ends on, before the exit footer; Run History reads it as a
+    /// warning, not an OK.
+    static let refusedLine = "[warn] run refused by the product guard; nothing ran"
+
     let logURL: URL
     let statusURL: URL
 
@@ -149,8 +153,14 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     /// `sheetFailures` is written as an additive `sheet_failures` key in the
     /// status JSON (0 when omitted). Existing parsers that do not read this key
     /// are unaffected.
-    func finish(exitCode: Int32, sheetFailures: Int = 0, artifacts: [URL] = []) {
+    ///
+    /// `refused` marks a run the product guard ended before it began: exit 0 so the tick does
+    /// not retry, but readers of the status file must not take it for a success.
+    func finish(
+        exitCode: Int32, sheetFailures: Int = 0, artifacts: [URL] = [], refused: Bool = false
+    ) {
         let seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
+        if refused { record(Self.refusedLine) }
         record("[info] exit \(exitCode) after \(seconds)s")
 
         lock.lock()
@@ -158,7 +168,9 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         handle = nil
         lock.unlock()
 
-        writeStatusJSON(exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts)
+        writeStatusJSON(
+            exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts,
+            refused: refused)
         Self.pruneRunLogs(in: logURL.deletingLastPathComponent(), keep: Self.maxRunLogs)
     }
 
@@ -184,7 +196,9 @@ final class ScheduledRunRecorder: @unchecked Sendable {
 
     // MARK: - Status JSON
 
-    private func writeStatusJSON(exitCode: Int32, sheetFailures: Int, artifacts: [URL]) {
+    private func writeStatusJSON(
+        exitCode: Int32, sheetFailures: Int, artifacts: [URL], refused: Bool
+    ) {
         var payload: [String: Any] = [
             "finished_at": ISO8601DateFormatter().string(from: Date()),
             "success": exitCode == 0,
@@ -193,6 +207,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             // Additive key — parsers that don't read it are unaffected.
             "sheet_failures": sheetFailures,
         ]
+        if refused { payload["refused"] = true }
         for url in artifacts {
             switch url.pathExtension.lowercased() {
             case "xlsx": payload["xlsx_report_path"] = url.path

@@ -146,6 +146,21 @@ final class ScheduledRunRecorderTests: XCTestCase {
         XCTAssertNotNil(ISO8601DateFormatter().date(from: finishedAt))
     }
 
+    func testRefusedFinishMarksTheStatusFile() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        recorder.finish(exitCode: 0, refused: true)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: recorder.statusURL)) as? [String: Any])
+        XCTAssertEqual(payload["refused"] as? Bool, true)
+        XCTAssertEqual(payload["exit_code"] as? Int, 0)
+        let plain = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        plain.finish(exitCode: 0)
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: plain.statusURL)) as? [String: Any])
+        XCTAssertNil(after["refused"], "a later normal run clears the marker")
+    }
+
     func testFailedRunStatusJSONReportsFailure() throws {
         let workspace = try makeWorkspace()
         let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
