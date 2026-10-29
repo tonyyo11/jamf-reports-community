@@ -1876,17 +1876,18 @@ struct ReportEngine: Sendable {
     static let defaultAuthConfirmationProbe: AuthConfirmationProbe =
         authConfirmationProbe(timeout: authProbeTimeout)
 
+    /// `--refresh` forces an exchange; plain `auth token` echoes the cached token file.
+    static func authRefreshArguments(profile: String) -> [String] {
+        ["-p", profile, "pro", "auth", "token", "--refresh", "--output", "json", "--no-input"]
+    }
+
     /// The real probe with a limit; a call that gets no answer in time is `unconfirmed`.
     static func authConfirmationProbe(timeout: TimeInterval) -> AuthConfirmationProbe {
         { profile, bin in
             let probeBridge = CLIBridge()
             guard let (exitCode, _) = try? await probeBridge.runAndCapture(
                 executable: bin,
-                // --refresh forces an exchange; plain `auth token` echoes the cached token file.
-                arguments: [
-                    "-p", profile, "pro", "auth", "token", "--refresh",
-                    "--output", "json", "--no-input",
-                ],
+                arguments: authRefreshArguments(profile: profile),
                 environment: CLIBridge.environmentForJamfCLI(),
                 timeout: timeout,
                 onLine: { _ in }
@@ -3081,6 +3082,11 @@ struct ReportEngine: Sendable {
     /// `patch-release-dates_<ts>.json` snapshot.
     ///
     /// Reads the current patch-status snapshot for the title list, then runs
+    static func patchDefinitionArguments(profile: String, titleId: String) -> [String] {
+        ["-p", profile, "pro", "patch-software-title-configurations",
+         "definitions", titleId, "--page-size", "100", "--output", "json"]
+    }
+
     /// `pro patch-software-title-configurations definitions <id>` for each title.
     /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
     /// Non-fatal: warn and skip titles that fail rather than aborting the run. Calls that time
@@ -3121,8 +3127,7 @@ struct ReportEngine: Sendable {
                              text: "[warn] patch-definitions: skipping title with an unsafe id"))
                 continue
             }
-            let args = ["-p", profile, "pro", "patch-software-title-configurations",
-                        "definitions", titleId, "--page-size", "100", "--output", "json"]
+            let args = patchDefinitionArguments(profile: profile, titleId: titleId)
             let captureResult = try? await bridge.runAndCapture(
                 executable: bin, arguments: args,
                 environment: CLIBridge.environmentForJamfCLI(),

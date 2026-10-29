@@ -302,6 +302,8 @@ final class JamfCLIInstaller {
         return parseVersion(from: text)
     }
 
+    nonisolated static let versionJSONArguments = ["version", "-o", "json"]
+
     /// Fetches the `specProVersion` field from `jamf-cli version -o json` (added in v1.18.0).
     ///
     /// Returns "unknown" when the binary reports it has no live tenant connection.
@@ -320,7 +322,7 @@ final class JamfCLIInstaller {
         }
 
         guard let output = JamfCLIProbe.run(
-            executable: binary, arguments: ["version", "-o", "json"], timeout: timeout
+            executable: binary, arguments: Self.versionJSONArguments, timeout: timeout
         ), output.exitCode == 0 else { return nil }
 
         let data = output.stdout

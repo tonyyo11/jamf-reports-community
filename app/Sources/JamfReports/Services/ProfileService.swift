@@ -435,6 +435,9 @@ enum ProfileService {
             _testTimeout: _testTimeout, _testConfigURL: _testConfigURL) ?? []
     }
 
+    /// What every `config list` read passes (`ProfileAuthMethod`, `listJamfCLIProfiles`).
+    static let configListArguments = ["config", "list", "--output", "json"]
+
     /// `discoverJamfCLIProfiles`, but nil when neither `config list` nor jamf-cli's config file
     /// could be read: "could not ask", which is not the same answer as "has no profiles". A
     /// caller that acts on a profile being absent (Start over's "was this profile new?") must
@@ -474,7 +477,7 @@ enum ProfileService {
         // stops it at the deadline; a wedged `config list` must not freeze the sidebar load.
         guard let output = JamfCLIProbe.run(
             executable: binary,
-            arguments: ["config", "list", "--output", "json"],
+            arguments: configListArguments,
             timeout: _testTimeout
         ), output.exitCode == 0 else {
             return fallback()

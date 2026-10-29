@@ -1039,7 +1039,7 @@ enum DiagnosticBundleService {
         }
         // The probe drains both pipes while the child runs; nil is a launch failure or timeout.
         guard let result = JamfCLIProbe.run(
-            executable: binary, arguments: ["-p", cliProfile, "doctor", "--output", "json"],
+            executable: binary, arguments: CLICommand.proDoctor(profile: cliProfile).argv,
             timeout: 15), result.exitCode == 0 else { return [] }
         return stageDoctorJSON(result.stdout, into: staging, redactor: redactor)
     }
