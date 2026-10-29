@@ -409,6 +409,15 @@ final class ScreenLoadTests: XCTestCase {
         }
     }
 
+    /// The Computers screen sends every load phase through `ScreenLoad.paint`, so this is the
+    /// drop it uses: off main, a source change mid-load, a cancelled task.
+    func testComputersLoadOffMain() async throws {
+        try workspaceWithComputer(serial: "C02TEST0001")
+        await assertScreenLoad("Computers", loaded: { !$0.devices.isEmpty }) {
+            DeviceInventoryService.load(profile: "match", demoMode: false)
+        }
+    }
+
     func testDeviceLookupIndexLoadsOffMain() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)

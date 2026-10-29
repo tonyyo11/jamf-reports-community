@@ -185,6 +185,7 @@ struct BackupsView: View {
                     }
                     .disabled(
                         workspace.demoMode || isRunningBackup || isRunningDiff
+                            || loadedSource != dataSource
                             || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     PNPButton(

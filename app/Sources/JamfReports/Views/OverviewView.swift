@@ -119,7 +119,7 @@ struct OverviewView: View {
             // Range change only re-filters cached data — no disk read.
             if !workspace.demoMode { trendStore.setRange(defaultTrendRange) }
         }
-        .task(id: workspace.profile) {
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             guard !workspace.demoMode else { return }
             await reloadChecklist()
         }
