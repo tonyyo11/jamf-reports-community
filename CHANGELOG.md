@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- A Jamf School collect that runs past midnight now dates its summary by the day it started, as
+  a Jamf Pro collect does. (#305)
+
 ## [2.11.0] - 2026-10-27
 
 2.11.0 brings Jamf School workspaces up to Jamf Pro's: their own Devices screen, daily summaries

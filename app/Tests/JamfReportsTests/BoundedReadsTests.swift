@@ -352,7 +352,7 @@ final class BoundedReadsTests: XCTestCase {
         let today = DateFormatter()
         today.dateFormat = "yyyy-MM-dd"
         let target = root.appendingPathComponent("today.txt")
-        try today.string(from: Date()).write(to: target, atomically: true, encoding: .utf8)
+        try today.string(from: .testNoon).write(to: target, atomically: true, encoding: .utf8)
         try link(ws.appendingPathComponent(".retention-last"), to: target)
         // An old snapshot is archived only when the sweep runs.
         let dir = ws.appendingPathComponent("jamf-cli-data/computers", isDirectory: true)
@@ -361,7 +361,7 @@ final class BoundedReadsTests: XCTestCase {
         try "[]".write(to: old, atomically: true, encoding: .utf8)
         try fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -90 * 86_400)],
                              ofItemAtPath: old.path)
-        SnapshotRetentionService.sweepIfDue(profile: profile)
+        SnapshotRetentionService.sweepIfDue(profile: profile, now: .testNoon)
         XCTAssertFalse(fm.fileExists(atPath: old.path), "a linked marker is not a record")
     }
 

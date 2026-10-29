@@ -47,8 +47,8 @@ extension CLIBridge {
     /// through. Task-local, so a collect started from anywhere else is still refused.
     @TaskLocal private static var generateHoldID: Int?
 
-    /// When the last hold ended.
-    private(set) static var tickLockReleasedAt: Date?
+    /// When the last hold ended. Settable so a test can put it on its own fixed clock.
+    static var tickLockReleasedAt: Date?
 
     /// Whether another live process holds `tickLock`. False for this process's own hold.
     static func tickLockHeldElsewhere() -> Bool {

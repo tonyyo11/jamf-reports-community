@@ -143,7 +143,7 @@ final class DeviceScanCollectTests: XCTestCase {
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.scan], skipExpensive: skipExpensive, force: force,
             authConfirmationProbe: probe, locateJamfCLI: { stub },
-            deviceLimits: deviceLimits, onLine: collector.append)
+            deviceLimits: deviceLimits, now: .testNoon, onLine: collector.append)
         return collector.texts
     }
 
@@ -409,7 +409,7 @@ final class DeviceScanCollectTests: XCTestCase {
         try writeComputers([("1", "A", "m1", false)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))
         let watcher = try await scanWithTodaysSummaryWritten()
-        XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile, now: .testNoon))
     }
 
     /// A scan stopped by rejected credentials is retried: its cadence floor leaves exit 3
@@ -418,7 +418,7 @@ final class DeviceScanCollectTests: XCTestCase {
         try writeComputers([("1", "A", "m1", false)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeUnauthorized))
         let watcher = try await scanWithTodaysSummaryWritten(probe: { _, _ in false })
-        XCTAssertTrue(watcher.retryCouldHelp(profile: profile))
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile, now: .testNoon))
     }
 
     /// Runs the scan after today's summary is on disk, as the day's freshness run leaves it
@@ -429,7 +429,7 @@ final class DeviceScanCollectTests: XCTestCase {
     ) async throws -> CollectHonestyWatcher {
         let summaries = try WorkspacePaths.summariesDir(for: profile)
         try FileManager.default.createDirectory(at: summaries, withIntermediateDirectories: true)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         try #"{"date":"\#(today)","totalDevices":1,"source":"jamf-cli"}"#.write(
             to: summaries.appendingPathComponent("summary_\(today).json"),
             atomically: true, encoding: .utf8)

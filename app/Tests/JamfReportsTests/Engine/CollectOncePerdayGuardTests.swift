@@ -54,7 +54,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         do {
             try await ReportEngine.collect(
                 profile: testProfile, workspacePaths: WorkspacePaths.self, tiers: tiers,
-                force: force, locateJamfCLI: { nil }, onLine: onLine)
+                force: force, locateJamfCLI: { nil }, now: .testNoon, onLine: onLine)
             XCTFail("with no jamf-cli a collect past the guard throws jamfCLINotFound")
         } catch ReportEngineError.jamfCLINotFound {
         } catch {
@@ -66,7 +66,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
 
     /// Write a minimal valid `summary_<today>.json` to the test summaries dir.
     private func writeTodaySummary() throws {
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let file = summariesDir.appendingPathComponent("summary_\(today).json")
         let payload: [String: Any] = [
             "date": today,
@@ -95,7 +95,8 @@ final class CollectOncePerdayGuardTests: XCTestCase {
             profile: testProfile,
             workspacePaths: WorkspacePaths.self,
             force: false,
-            locateJamfCLI: { nil }
+            locateJamfCLI: { nil },
+            now: .testNoon
         ) { line in
             collector.append(line.text)
         }
@@ -125,7 +126,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
 
     /// A summary that is a link, or past the size cap, is not proof of a collect.
     func testLinkedOrOversizedSummaryDoesNotSatisfyTheGuard() async throws {
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let file = summariesDir.appendingPathComponent("summary_\(today).json")
         let real = root.appendingPathComponent("real.json")
         try JSONSerialization.data(withJSONObject: [

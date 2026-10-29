@@ -335,7 +335,8 @@ enum ScheduledRunSignals {
         config: ReportConfig?,
         profile: String,
         workspace: URL,
-        recorder: ScheduledRunRecorder?
+        recorder: ScheduledRunRecorder?,
+        now: Date = Date()
     ) async {
         guard let config, let alerts = config.alerts, alerts.isEnabled else { return }
         let rules = alerts.resolvedRules
@@ -361,7 +362,7 @@ enum ScheduledRunSignals {
         // Only evaluate a summary this run actually wrote today. A day that
         // produced no fresh summary (e.g. no source landed) leaves an older
         // newest-summary that would be carded as if it were today's — skip it.
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: now)
         guard current.date == today else {
             AppLogger.event(.webhook, .notice,
                 "metric alerts skipped — newest summary \(current.date) is not today (\(today))")

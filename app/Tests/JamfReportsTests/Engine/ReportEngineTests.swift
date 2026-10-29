@@ -363,9 +363,9 @@ final class ReportEngineTests: XCTestCase {
 
         let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: summaryFile.path),
                       "Summary JSON must be written")
@@ -422,9 +422,9 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
         let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
         let obj = try XCTUnwrap(
             try JSONSerialization.jsonObject(
@@ -464,9 +464,9 @@ final class ReportEngineTests: XCTestCase {
         let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         ReportEngine(config: ReportConfig(), dataDir: dataDir)
-            .emitSummaryJSON(summariesDir: summariesDir)
+            .emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let obj = try XCTUnwrap(
             try JSONSerialization.jsonObject(
                 with: Data(contentsOf: summariesDir.appendingPathComponent("summary_\(today).json"))
@@ -602,7 +602,7 @@ final class ReportEngineTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dataDir) }
 
         // Seed today's summary so emit will short-circuit.
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let existing = summariesDir.appendingPathComponent("summary_\(today).json")
         let payload: [String: Any] = [
             "date": today, "totalDevices": 42, "source": "jamf-cli",
@@ -611,7 +611,7 @@ final class ReportEngineTests: XCTestCase {
 
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
         let captured = LogCapture()
-        engine.emitSummaryJSON(summariesDir: summariesDir) { line in
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon) { line in
             captured.append(line)
         }
 
@@ -637,7 +637,7 @@ final class ReportEngineTests: XCTestCase {
         // will return nil because every kind comes back empty.
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
         let captured = LogCapture()
-        engine.emitSummaryJSON(summariesDir: summariesDir) { line in
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon) { line in
             captured.append(line)
         }
 
@@ -648,7 +648,7 @@ final class ReportEngineTests: XCTestCase {
         )
 
         // No file should have been written.
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: summaryFile.path),
@@ -826,9 +826,9 @@ final class ReportEngineTests: XCTestCase {
         let liveKinds: Set<String> = ["security"]
 
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
-        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: liveKinds)
+        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: liveKinds, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryURL = summariesDir.appendingPathComponent("summary_\(today).json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: summaryURL.path))
 

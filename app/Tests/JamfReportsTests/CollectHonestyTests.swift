@@ -614,6 +614,39 @@ final class CollectHonestyTests: XCTestCase {
                        "the scheduled caller must not claim Trends updated for this run")
     }
 
+    /// The seam `collect(now:)` adds, through the whole collect and a stub jamf-cli that answers
+    /// the security report: a run started 30 s before local midnight dates its summary by that
+    /// start, whatever the wall clock says when the summary is written.
+    func testCollectDatesItsSummaryByTheStartTimeItIsGiven() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let report = binDir.appendingPathComponent("security.json")
+        try JSONSerialization.data(withJSONObject: GoldenFleetWorkspace.securitySummaryPayload(
+            total: 10, filevault: 10, sip: 10, firewall: 10, gatekeeper: 10)).write(to: report)
+        let stub = binDir.appendingPathComponent("stub-cli")
+        try """
+        #!/bin/sh
+        case "$*" in
+          *"config list"*) printf '%s' '[{"name":"\(profile)"}]' ;;
+          *--version*) echo "jamf-cli version 1.31.1" ;;
+          *"report security"*) cat "\(report.path)" ;;
+          *) printf '[]' ;;
+        esac
+        exit 0
+        """.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let lateEvening = try XCTUnwrap(Calendar.current.date(
+            from: DateComponents(year: 2026, month: 6, day: 15, hour: 23, minute: 59, second: 30)))
+        let collector = LogTextCollector()
+
+        try await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
+            force: true, locateJamfCLI: { stub }, now: lateEvening, onLine: collector.append)
+
+        let summaries = try WorkspacePaths.summariesDir(for: profile)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: summaries.path),
+                       ["summary_2026-06-15.json"], "\(collector.texts)")
+    }
+
     /// A snapshot from yesterday sits on disk and every attempted source fails: writing a
     /// summary would chart yesterday's numbers as today's trend point.
     func testNothingLandedDoesNotStampCachedDataAsToday() async throws {

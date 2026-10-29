@@ -1956,6 +1956,7 @@ struct ReportEngine: Sendable {
         deviceLimits: DeviceCallLimits = DeviceCallLimits(),
         patchDefinitionLimits: DeviceCallLimits = DeviceCallLimits(
             timeout: patchDefinitionTimeout),
+        now: Date = Date(),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> CollectDisposition {
         guard ProfileService.isValid(profile) else {
@@ -1963,7 +1964,7 @@ struct ReportEngine: Sendable {
         }
         // The day is fixed at the start: the guard below and the summary at the end must name
         // the same one, or a collect that crosses midnight leaves the next day looking done.
-        let collectDay = Date()
+        let collectDay = now
 
         // Snapshot retention (v2.2.0): config-driven, OFF by default, once per
         // calendar day. Placed before the early-return guard so it runs on any
@@ -3448,6 +3449,7 @@ struct ReportEngine: Sendable {
         force: Bool = false,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         refreshSOFA: SOFARefresh = defaultSOFARefresh,
+        now: Date = Date(),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         guard let bin = locateJamfCLI() else {
@@ -3464,7 +3466,8 @@ struct ReportEngine: Sendable {
         if stateStore != nil, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
             backfillSchoolHistoryOnce(
                 dataDir: dataDir, summariesDir: summariesDir,
-                staleDays: { schoolStaleDays(profile: profile, onLine: onLine) }, onLine: onLine)
+                staleDays: { schoolStaleDays(profile: profile, onLine: onLine) }, now: now,
+                onLine: onLine)
         }
         // nil (could not ask) collects: only a profile known to lack Platform fields skips.
         let resolved = ProfileAuthMethod.resolve(profile: profile, binary: bin)
@@ -3575,7 +3578,7 @@ struct ReportEngine: Sendable {
             refreshSOFA: refreshSOFA, stateStore: stateStore, onLine: onLine)
         writeSchoolSummaryAfterCollect(
             profile: profile, dataDir: dataDir, workspacePaths: workspacePaths,
-            landedKinds: schoolSaved, onLine: onLine)
+            landedKinds: schoolSaved, day: now, onLine: onLine)
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
     }
 
@@ -3614,7 +3617,8 @@ struct ReportEngine: Sendable {
     /// a `[warn]` and the default 30 applies, since the summary should still advance.
     private static func writeSchoolSummaryAfterCollect(
         profile: String, dataDir: URL, workspacePaths: WorkspacePaths.Type,
-        landedKinds: Set<String>, onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+        landedKinds: Set<String>, day: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) {
         let staleDays = schoolStaleDays(profile: profile, onLine: onLine)
         guard let summariesDir = try? workspacePaths.summariesDir(for: profile) else {
@@ -3626,7 +3630,7 @@ struct ReportEngine: Sendable {
         }
         writeSchoolSummary(
             dataDir: dataDir, summariesDir: summariesDir, landedKinds: landedKinds,
-            staleDays: staleDays, onLine: onLine)
+            staleDays: staleDays, day: day, onLine: onLine)
     }
 
     /// The `[partial]` line for sources a School or Protect collect did not land, so the run

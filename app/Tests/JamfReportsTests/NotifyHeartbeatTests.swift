@@ -103,7 +103,7 @@ final class NotifyHeartbeatTests: XCTestCase {
 
     func testOneCardADayPerWorkspaceAndAgainTheNextDay() async throws {
         try writeNotify("  heartbeat: true\n")
-        let today = Date()
+        let today = Date.testNoon
         for _ in 0..<3 { await beat(on: today) }
         XCTAssertEqual(WebhookCapture.posted.count, 1)
         XCTAssertTrue(WebhookCapture.posted[0].contains("Background item ran"))
@@ -129,11 +129,11 @@ final class NotifyHeartbeatTests: XCTestCase {
 
     func testNothingIsSentUnlessHeartbeatAndNotifyAreOn() async throws {
         try writeNotify()
-        await beat(on: Date())
+        await beat(on: .testNoon)
         try writeNotify("  heartbeat: true\n", enabled: false)
-        await beat(on: Date())
+        await beat(on: .testNoon)
         try writeNotify("  heartbeat: true\n")
-        await beat(on: Date(), excluding: [profile])
+        await beat(on: .testNoon, excluding: [profile])
         XCTAssertTrue(WebhookCapture.posted.isEmpty)
     }
 
@@ -145,10 +145,10 @@ final class NotifyHeartbeatTests: XCTestCase {
         }
         XCTAssertEqual(SummaryJSONParser.newestSummaryDay(profile: profile), "2026-10-17")
         try writeNotify("  heartbeat: true\n")
-        await beat(on: Date())
+        await beat(on: .testNoon)
         XCTAssertTrue(WebhookCapture.posted.first?.contains("2026-10-17") == true)
         try writeNotify("  heartbeat: true\n  detail: minimal\n")
-        await beat(on: Date().addingTimeInterval(86_400))
+        await beat(on: .testNoon.addingTimeInterval(86_400))
         XCTAssertEqual(WebhookCapture.posted.count, 2)
         XCTAssertFalse(WebhookCapture.posted[1].contains("2026-10-17"))
     }

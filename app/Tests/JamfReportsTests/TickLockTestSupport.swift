@@ -28,6 +28,15 @@ extension XCTestCase {
         return lock
     }
 
+    /// Sets when the last hold in this process ended and restores it at teardown. The stamp is
+    /// per process, so a test on a fixed clock pins it to that clock.
+    @MainActor
+    func pinTickLockReleasedAt(_ date: Date?) {
+        let saved = CLIBridge.tickLockReleasedAt
+        CLIBridge.tickLockReleasedAt = date
+        addTeardownBlock { @MainActor in CLIBridge.tickLockReleasedAt = saved }
+    }
+
     /// Runs `body` while a spawned process — a tick, as far as this process can tell —
     /// holds `lock`, then frees the lock and kills the process.
     @MainActor
