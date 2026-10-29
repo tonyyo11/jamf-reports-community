@@ -568,6 +568,9 @@ struct SettingsView: View {
     }
 
     private func tokenStatusText(_ status: TokenStatus) -> String {
+        if status.keychainLocked {
+            return "Token: login keychain is locked. " + FailureCause.keychainLockedHint
+        }
         guard status.isValid else {
             return "Token: not authenticated"
         }
@@ -584,6 +587,7 @@ struct SettingsView: View {
     }
 
     private func tokenStatusColor(_ status: TokenStatus) -> Color {
+        if status.keychainLocked { return Theme.Colors.warn }
         guard status.isValid else { return Theme.Text.tertiary(contrast) }
         if let exp = status.expiresAt, exp <= tokenClock { return Theme.Colors.warn }
         return Theme.Colors.ok

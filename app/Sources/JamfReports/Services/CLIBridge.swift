@@ -964,7 +964,17 @@ final class CLIBridge {
         code == 0 || code == exitCodePartialFailure
     }
 
-    nonisolated static func explainExit(_ code: Int32, operation: String) -> String {
+    /// The sentence for a locked login keychain, shared by `explainExit` and the auth probe.
+    nonisolated static let keychainLockedDetail = "the login keychain is locked, so jamf-cli "
+        + "could not read this profile's stored credentials. "
+        + FailureCause.keychainLockedHint + "."
+
+    /// `cause` (from `FailureCause.classify`) names a failure the exit code alone cannot: a
+    /// locked keychain exits 1, like a network error.
+    nonisolated static func explainExit(
+        _ code: Int32, operation: String, cause: FailureCause? = nil
+    ) -> String {
+        if cause?.kind == .keychainLocked { return "\(operation) failed: \(keychainLockedDetail)" }
         let detail: String
         switch code {
         case exitCodeUnauthorized:
@@ -1035,11 +1045,17 @@ final class CLIBridge {
                 return explainExit(1, operation: operation)                   // all kinds failed
             case .noPermission:
                 return explainExit(exitCodePermissionDenied, operation: operation)
+            case .keychainLocked:
+                return "\(operation) failed: \(keychainLockedDetail)"
             case .rejectedID:
                 return "\(operation) failed: the Jamf Platform gateway rejected this profile's "
                     + "environment or tenant ID. Correct it with Update credentials in Data "
                     + "Sources; the environment ID is in the integration's details in Jamf Account."
             }
+        }
+        // An error that carries jamf-cli's own text (a launch or decode failure quoting it).
+        if FailureCause.mentionsLockedKeychain(error.localizedDescription) {
+            return "\(operation) failed: \(keychainLockedDetail)"
         }
         return "\(operation) failed — \(error.localizedDescription)"
     }
@@ -1078,6 +1094,12 @@ final class CLIBridge {
             AppLogger.auth.warning("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             return true
+        case .keychainLocked:
+            let msg = "[error] auth check failed for profile '\(profile)': "
+                + Self.keychainLockedDetail
+            AppLogger.auth.error("\(msg, privacy: .public)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            return false
         case .status(let result):
             status = result
         }
@@ -1191,6 +1213,8 @@ final class CLIBridge {
     enum TokenProbe: Sendable {
         case status(TokenStatus?)
         case timedOut
+        /// jamf-cli could not read the profile's credentials from a locked keychain.
+        case keychainLocked
     }
 
     /// Fetch the token status for `profile` using `jamf-cli pro auth token --output json`.
@@ -1210,6 +1234,7 @@ final class CLIBridge {
         switch await probeToken(for: profile, executable: nil, timeout: Self.tokenProbeTimeout) {
         case .status(let status): return status
         case .timedOut: return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
+        case .keychainLocked: return TokenStatus.keychainLocked(profile: profile)
         }
     }
 
@@ -1229,13 +1254,16 @@ final class CLIBridge {
         let args = CLICommand.proAuthToken(profile: profile).argv
         let exitCode: Int32
         let data: Data
+        // A keychain error may be printed on stderr, which `runAndCapture` keeps out of `data`.
+        let stderrWatcher = StderrSignalWatcher()
         do {
             (exitCode, data) = try await runAndCapture(
                 executable: bin,
                 arguments: args,
                 environment: Self.environmentForJamfCLI(),
-                timeout: timeout
-            ) { _ in }
+                timeout: timeout,
+                onLine: stderrWatcher.forwarding(to: { _ in })
+            )
         } catch {
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
@@ -1246,6 +1274,10 @@ final class CLIBridge {
         }
         if exitCode == Self.exitCodeTimedOut { return .timedOut }
         guard exitCode == 0, !data.isEmpty else {
+            let cause = FailureCause.classify(
+                exitCode: exitCode, stdout: data,
+                sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked)
+            if cause.kind == .keychainLocked { return .keychainLocked }
             return .status(TokenStatus.make(profile: profile, token: nil, expiresAt: nil))
         }
         return .status(parseTokenStatus(profile: profile, data: data))
@@ -2372,8 +2404,11 @@ final class CLIBridge {
         }
     }
 
-    nonisolated static func environmentForJamfCLI() -> [String: String] {
-        let parent = ProcessInfo.processInfo.environment
+    /// The one environment every jamf-cli child gets; `parent` is the test seam. Add a variable
+    /// jamf-cli must see to `jamfCLIAllowedEnvKeys` (verbatim) or here (when it needs a check).
+    nonisolated static func environmentForJamfCLI(
+        parent: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
         var env: [String: String] = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
@@ -2384,6 +2419,11 @@ final class CLIBridge {
             if let value = parent[key], !value.isEmpty {
                 env[key] = value
             }
+        }
+        // jamf-cli keeps its profiles under $XDG_CONFIG_HOME when it is set; the app reads the
+        // same folder (`ProfileService.jamfCLIConfigFileURL`), so a relative value is dropped.
+        if let xdg = ProfileService.absoluteXDGConfigHome(in: parent) {
+            env["XDG_CONFIG_HOME"] = xdg
         }
         // v1.26.0's daily update notifier can stall PTY-driven onboarding on a
         // restricted network; older binaries ignore this var, so no version gate.

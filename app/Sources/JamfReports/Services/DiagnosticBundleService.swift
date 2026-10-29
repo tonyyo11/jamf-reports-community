@@ -616,8 +616,7 @@ enum DiagnosticBundleService {
     /// added: they identify the same organisation. connections.json itself is never bundled.
     static func scopeIDs(
         profile: String,
-        configURL: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml"),
+        configURL: URL = ProfileService.jamfCLIConfigFileURL(),
         connections: ConnectionStore = ConnectionStore()
     ) -> [String] {
         let siblings = connections.scopeIDs(sharingConnectionWith: profile)
@@ -637,8 +636,7 @@ enum DiagnosticBundleService {
     /// none.
     static func serverHosts(
         profile: String,
-        configURL: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml")
+        configURL: URL = ProfileService.jamfCLIConfigFileURL()
     ) -> [String] {
         (ProfileService.readConfigFile(at: configURL) ?? []).flatMap { entry in
             entry.url.map(hostForms(ofURL:)) ?? []

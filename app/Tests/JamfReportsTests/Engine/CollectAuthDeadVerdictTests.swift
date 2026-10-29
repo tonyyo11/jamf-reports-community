@@ -441,4 +441,23 @@ final class CollectDeadVerdictTests: XCTestCase {
             [failed("security", ReportEngine.launchFailureExitCode, nil)]), .outage)
         XCTAssertEqual(ReportEngine.deadRunCause([]), .outage)
     }
+
+    /// A locked keychain fails every kind with exit 1, which would read as an outage.
+    func testALockedKeychainNamesTheDeadRunAndItsMessagesGiveTheUnlockHint() {
+        let outcomes = [failed("security", 1, .keychainLocked),
+                        failed("computers", 1, .keychainLocked)]
+        let cause = ReportEngine.deadRunCause(outcomes)
+        XCTAssertEqual(cause, .keychainLocked)
+        let error = ReportEngineError.collectDead(profile: "p", failedCount: 2, cause: cause)
+        XCTAssertTrue(error.errorDescription?.contains(FailureCause.keychainLockedHint) == true)
+        XCTAssertFalse(error.errorDescription?.contains("unreachable") == true)
+        let explained = CLIBridge.explainOperationError(error, operation: "Collect")
+        XCTAssertTrue(explained.contains(FailureCause.keychainLockedHint), explained)
+        XCTAssertFalse(explained.contains("network"), explained)
+        XCTAssertEqual(
+            CLIBridge.explainOperationError(
+                ReportEngineError.collectDead(profile: "p", failedCount: 2, cause: .outage),
+                operation: "Collect"),
+            CLIBridge.explainExit(1, operation: "Collect"))
+    }
 }

@@ -70,6 +70,7 @@ extension ReportEngine {
         let capture: (exitCode: Int32, stdout: Data)?
         let page: Data
         let sawForbidden: Bool
+        var sawKeychainLocked = false
 
         /// jamf-cli stopped before collecting anything: an unknown profile, missing
         /// credentials or a product clash exits 1 or 2 and leaves the page empty.
@@ -134,6 +135,7 @@ extension ReportEngine {
             return try Self.recordUnlandedAttempt(
                 kind: kind, exitCode: exitCode, data: stdout,
                 sawForbidden: attempt.sawForbidden,
+                sawKeychainLocked: attempt.sawKeychainLocked,
                 useCachedData: useCachedData, dataDir: dataDir,
                 stateStore: stateStore, collectStart: collectStart, onLine: onLine
             )
@@ -189,7 +191,8 @@ extension ReportEngine {
         return DashboardAttempt(
             capture: capture.map { (exitCode: $0.0, stdout: $0.1) },
             page: (try? Data(contentsOf: staging)) ?? Data(),
-            sawForbidden: stderrWatcher.sawForbidden
+            sawForbidden: stderrWatcher.sawForbidden,
+            sawKeychainLocked: stderrWatcher.sawKeychainLocked
         )
     }
 }

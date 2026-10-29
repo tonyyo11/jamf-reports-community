@@ -808,7 +808,8 @@ struct GenerateSheet: View {
     }
 
     private var authWarningBanner: some View {
-        InlineBanner(
+        let keychainLocked = workspace.authStatus?.keychainLocked == true
+        return InlineBanner(
             icon: "key.slash",
             tone: .warn,
             action: InlineBannerAction(label: "Re-check") {
@@ -816,16 +817,22 @@ struct GenerateSheet: View {
             }
         ) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Auth may be expired for profile '\(profile)'")
+                Text(keychainLocked
+                    ? "The login keychain is locked"
+                    : "Auth may be expired for profile '\(profile)'")
                     .font(Theme.Fonts.label.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                Text("Collecting fresh data will fail. Re-authenticate or disable \u{201C}Collect fresh data\u{201D}.")
+                Text(keychainLocked
+                    ? FailureCause.keychainLockedHint + ", or disable \u{201C}Collect fresh data\u{201D}."
+                    : "Collecting fresh data will fail. Re-authenticate or disable \u{201C}Collect fresh data\u{201D}.")
                     .font(Theme.Fonts.label)
                     .foregroundStyle(Theme.Text.secondary)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Warning: auth may be expired for profile '\(profile)'. Re-authenticate or disable collect fresh data.")
+        .accessibilityLabel(keychainLocked
+            ? "Warning: the login keychain is locked. Unlock it or disable collect fresh data."
+            : "Warning: auth may be expired for profile '\(profile)'. Re-authenticate or disable collect fresh data.")
     }
 
     private func errorBanner(_ message: String) -> some View {
