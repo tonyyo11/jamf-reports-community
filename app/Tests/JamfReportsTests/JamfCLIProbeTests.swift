@@ -116,6 +116,34 @@ final class JamfCLIProbeTests: XCTestCase {
         XCTAssertLessThan(took, 15)
     }
 
+    // MARK: - Async twins
+
+    func testAsyncProbeReturnsTheOutputOfAChildThatAnswers() async throws {
+        let stub = try makeStub("echo 'jamf-cli version 1.31.1'\necho warn >&2\nexit 3")
+        let result = await JamfCLIProbe.runAsync(executable: stub, arguments: [])
+        let output = try XCTUnwrap(result)
+        XCTAssertEqual(output.exitCode, 3)
+        XCTAssertEqual(String(decoding: output.stdout, as: UTF8.self), "jamf-cli version 1.31.1\n")
+        XCTAssertEqual(String(decoding: output.stderr, as: UTF8.self), "warn\n")
+    }
+
+    func testAsyncProbeStopsAWedgedChildAtItsDeadline() async throws {
+        let stub = try makeStub("exec sleep 30")
+        let start = Date()
+        let outcome = await JamfCLIProbe.runOutcomeAsync(
+            executable: stub, arguments: [], timeout: 1)
+        guard case .timedOut = outcome else { return XCTFail("expected .timedOut, got \(outcome)") }
+        XCTAssertLessThan(Date().timeIntervalSince(start), Self.slowBound)
+    }
+
+    func testAsyncProbeReportsALaunchFailure() async {
+        let missing = dir.appendingPathComponent("not-here")
+        let outcome = await JamfCLIProbe.runOutcomeAsync(executable: missing, arguments: [])
+        guard case .launchFailed = outcome else {
+            return XCTFail("expected .launchFailed, got \(outcome)")
+        }
+    }
+
     func testProbeReturnsTheOutputOfAChildThatAnswers() throws {
         let stub = try makeStub("echo 'jamf-cli version 1.31.1'\necho warn >&2\nexit 3")
         let output = try XCTUnwrap(JamfCLIProbe.run(executable: stub, arguments: []))
