@@ -117,7 +117,7 @@ enum SystemProxy {
         installed.set(reading)
         if case .skipped = reading, let line = reading.runLines.first {
             fputs(line + "\n", stderr)
-            AppLogger.schedule.warning("\(line, privacy: .public)")
+            AppLogger.schedule.warning("\(line, privacy: .private)")
         }
     }
 

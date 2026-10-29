@@ -97,7 +97,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             if !hasWarnedHandleGone {
                 hasWarnedHandleGone = true
                 AppLogger.schedule.warning(
-                    "ScheduledRunRecorder: log handle gone for \(self.label, privacy: .public) — line dropped"
+                    "ScheduledRunRecorder: log handle gone for \(self.label, privacy: .private) — line dropped"
                 )
             }
             return
@@ -137,8 +137,8 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             warned = true
             AppLogger.schedule.warning(
                 """
-                ScheduledRunRecorder: log write failed for \(label, privacy: .public) \
-                — further lines dropped: \(error.localizedDescription, privacy: .public)
+                ScheduledRunRecorder: log write failed for \(label, privacy: .private) \
+                — further lines dropped: \(error.localizedDescription, privacy: .private)
                 """
             )
         }
@@ -188,8 +188,8 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         } catch {
             AppLogger.schedule.warning(
                 """
-                ScheduledRunRecorder: could not discard \(self.label, privacy: .public): \
-                \(error.localizedDescription, privacy: .public)
+                ScheduledRunRecorder: could not discard \(self.label, privacy: .private): \
+                \(error.localizedDescription, privacy: .private)
                 """
             )
         }
@@ -237,12 +237,12 @@ final class ScheduledRunRecorder: @unchecked Sendable {
                     try fm.removeItem(at: statusURL)
                 } catch let removeError {
                     AppLogger.schedule.error(
-                        "ScheduledRunRecorder: failed to remove stale status JSON for \(self.label, privacy: .public): \(removeError.localizedDescription, privacy: .public)"
+                        "ScheduledRunRecorder: failed to remove stale status JSON for \(self.label, privacy: .private): \(removeError.localizedDescription, privacy: .private)"
                     )
                 }
             }
             AppLogger.schedule.error(
-                "ScheduledRunRecorder: writeStatusJSON failed for \(self.label, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "ScheduledRunRecorder: writeStatusJSON failed for \(self.label, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
         }
     }
@@ -263,7 +263,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         guard flock(handle.fileDescriptor, LOCK_EX | LOCK_NB) != 0 else { return }
         AppLogger.schedule.info(
             """
-            ScheduledRunRecorder: no run lock for \(label, privacy: .public) \
+            ScheduledRunRecorder: no run lock for \(label, privacy: .private) \
             (errno \(errno, privacy: .public)) — Run History cannot show it as running
             """
         )

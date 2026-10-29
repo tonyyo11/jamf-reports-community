@@ -69,7 +69,7 @@ struct MDMCommandHealthService: Sendable {
         }
         guard let rows = try? JSONDecoder().decode([MDMCommandHealthRecord].self, from: data) else {
             AppLogger.collect.warning(
-                "MDMCommandHealthService: decode failed \(url.lastPathComponent, privacy: .public)"
+                "MDMCommandHealthService: decode failed \(url.lastPathComponent, privacy: .private)"
             )
             return .unreadable
         }

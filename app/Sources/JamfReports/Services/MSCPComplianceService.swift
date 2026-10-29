@@ -88,7 +88,7 @@ struct MSCPComplianceService: Sendable {
         let decoded = EAResultRow.decodeSnapshot(data)
         guard let rows = decoded.rows else {
             AppLogger.platform.notice(
-                "MSCPComplianceService: ea-results \(url.lastPathComponent, privacy: .public) undecodable — \(decoded.reason, privacy: .public)"
+                "MSCPComplianceService: ea-results \(url.lastPathComponent, privacy: .private) undecodable — \(decoded.reason, privacy: .private)"
             )
             return ([], true)
         }

@@ -168,7 +168,7 @@ struct ExtensionAttributeService: Sendable {
                 } else {
                     // `reason` is keys-only (PII-safe).
                     AppLogger.collect.warning(
-                        "ExtensionAttributeService: failed to decode results at \(resultsURL.lastPathComponent, privacy: .public): \(decoded.reason, privacy: .public)"
+                        "ExtensionAttributeService: failed to decode results at \(resultsURL.lastPathComponent, privacy: .private): \(decoded.reason, privacy: .private)"
                     )
                 }
             }
@@ -277,7 +277,7 @@ struct ExtensionAttributeService: Sendable {
                 """
                 ExtensionAttributeService: duplicate extension-attribute display \
                 names; the first definition wins and the rest are dropped: \
-                \(names, privacy: .public)
+                \(names, privacy: .private)
                 """
             )
         }

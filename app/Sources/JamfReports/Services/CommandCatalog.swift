@@ -188,7 +188,7 @@ struct CommandCatalog: Sendable {
         let union = proPrivileges(forArguments: Self.collectArguments())
         if !union.missing.isEmpty {
             let names = union.missing.joined(separator: ", ")
-            AppLogger.cli.warning("catalog lacks commands the app runs: \(names, privacy: .public)")
+            AppLogger.cli.warning("catalog lacks commands the app runs: \(names, privacy: .private)")
         }
         return Privilege.merged(
             listed: union.listed,
@@ -238,7 +238,7 @@ struct CommandCatalog: Sendable {
             catalog = try CommandCatalog(data: output.stdout)
         } catch {
             let reason = String(describing: error)
-            AppLogger.cli.warning("command catalog unreadable: \(reason, privacy: .public)")
+            AppLogger.cli.warning("command catalog unreadable: \(reason, privacy: .private)")
             return nil
         }
         cacheLock.lock()

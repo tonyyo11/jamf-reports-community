@@ -51,7 +51,7 @@ enum WorkspaceMigration {
         } else {
             let failed = result.failedProfiles.joined(separator: ", ")
             AppLogger.collect.error(
-                "WorkspaceMigration: sentinel NOT stamped — failures: \(failed, privacy: .public)"
+                "WorkspaceMigration: sentinel NOT stamped — failures: \(failed, privacy: .private)"
             )
         }
         return true
@@ -139,7 +139,7 @@ enum WorkspaceMigration {
                 )
                 if vals?.isSymbolicLink == true {
                     AppLogger.collect.warning(
-                        "WorkspaceMigration: skipping symlink entry \(url.lastPathComponent, privacy: .public)"
+                        "WorkspaceMigration: skipping symlink entry \(url.lastPathComponent, privacy: .private)"
                     )
                     return false
                 }

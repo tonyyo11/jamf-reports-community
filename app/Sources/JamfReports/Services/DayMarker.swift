@@ -76,9 +76,9 @@ struct DayMarker: Sendable {
 
     private func log(_ message: String, _ onLine: (@Sendable (String) -> Void)?) {
         if message.hasPrefix("[warn]") {
-            AppLogger.webhook.warning("\(message, privacy: .public)")
+            AppLogger.webhook.warning("\(message, privacy: .private)")
         } else {
-            AppLogger.webhook.notice("\(message, privacy: .public)")
+            AppLogger.webhook.notice("\(message, privacy: .private)")
         }
         onLine?(message)
     }

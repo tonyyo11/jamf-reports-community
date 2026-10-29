@@ -93,7 +93,7 @@ enum NotifyConfigWriter {
         } catch {
             let reason = error.localizedDescription
             AppLogger.webhook.warning(
-                "SharedConfigPin: could not confirm after save: \(reason, privacy: .public)")
+                "SharedConfigPin: could not confirm after save: \(reason, privacy: .private)")
         }
         return saved
     }

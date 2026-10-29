@@ -148,7 +148,7 @@ struct DDMDeviceStatusService: Sendable {
         }
         guard let rows = try? JSONDecoder().decode([DDMDeviceStatusRecord].self, from: data) else {
             AppLogger.collect.warning(
-                "DDMDeviceStatusService: decode failed \(url.lastPathComponent, privacy: .public)"
+                "DDMDeviceStatusService: decode failed \(url.lastPathComponent, privacy: .private)"
             )
             return .unreadable
         }

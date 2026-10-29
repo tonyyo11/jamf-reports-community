@@ -157,7 +157,7 @@ struct MSCPChartDataBuilder: Sendable {
                 // `.notice` (not `.debug`) so the shape surfaces without verbose
                 // logging; `reason` is keys-only (PII-safe).
                 AppLogger.platform.notice(
-                    "MSCPChartDataBuilder: ea-results \(url.lastPathComponent, privacy: .public) undecodable — \(decoded.reason, privacy: .public)"
+                    "MSCPChartDataBuilder: ea-results \(url.lastPathComponent, privacy: .private) undecodable — \(decoded.reason, privacy: .private)"
                 )
                 continue
             }

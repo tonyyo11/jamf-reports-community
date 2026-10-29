@@ -320,7 +320,7 @@ extension WorkspaceStore {
                 AppLogger.schedule.error(
                     """
                     ticker \(wantsTicker ? "register" : "unregister", privacy: .public) failed: \
-                    \(error.localizedDescription, privacy: .public)
+                    \(error.localizedDescription, privacy: .private)
                     """
                 )
             }
@@ -629,7 +629,7 @@ extension WorkspaceStore {
         AppLogger.collect.notice(
             """
             Auto-remediating \(remediable.count, privacy: .public) stale/failing kind(s) \
-            for \(profile, privacy: .public) — tiers \
+            for \(profile, privacy: .private) — tiers \
             \(tiers.map(\.rawValue).sorted().joined(separator: ","), privacy: .public)
             """
         )
@@ -653,7 +653,7 @@ extension WorkspaceStore {
             AppLogger.collect.info(
                 """
                 Automatic collect deferred: a collect is already running for \
-                \(busy, privacy: .public)
+                \(busy, privacy: .private)
                 """
             )
             return true
@@ -696,7 +696,7 @@ extension WorkspaceStore {
             Skipping remediation for \(permanent.count, privacy: .public) kind(s) whose last \
             failure cannot succeed on retry (usage gate, rejected credentials, policy refusal, \
             scope or permission): \
-            \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .public)
+            \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .private)
             """
         )
         let skip = Set(permanent.map(\.snapshotKind))
@@ -757,8 +757,8 @@ extension WorkspaceStore {
                 if CLIBridgeError.isCollectRefusal(error) {
                     AppLogger.collect.info(
                         """
-                        Auto-remediation stood down for \(profile, privacy: .public): \
-                        \(error.localizedDescription, privacy: .public)
+                        Auto-remediation stood down for \(profile, privacy: .private): \
+                        \(error.localizedDescription, privacy: .private)
                         """
                     )
                     return true
@@ -768,7 +768,7 @@ extension WorkspaceStore {
                 // the banner escalates rather than resetting.
                 AppLogger.collect.warning(
                     """
-                    Auto-remediation collect failed for \(profile, privacy: .public) \
+                    Auto-remediation collect failed for \(profile, privacy: .private) \
                     tier \(tier.rawValue, privacy: .public): \
                     \(error.localizedDescription, privacy: .private)
                     """
@@ -856,7 +856,7 @@ extension WorkspaceStore {
         if outcome == .failed {
             let reason = failure.reason ?? "unknown"
             AppLogger.webhook.warning(
-                "Overdue dead-man digest failed to send for \(profile, privacy: .public): \(reason, privacy: .public) — day not claimed, will retry (distinct from a routine run digest failure)"
+                "Overdue dead-man digest failed to send for \(profile, privacy: .private): \(reason, privacy: .private) — day not claimed, will retry (distinct from a routine run digest failure)"
             )
         }
     }
@@ -1063,8 +1063,8 @@ extension WorkspaceStore {
             if CLIBridgeError.isCollectRefusal(error) {
                 AppLogger.collect.info(
                     """
-                    Catch-up stood down for \(profile, privacy: .public): \
-                    \(error.localizedDescription, privacy: .public)
+                    Catch-up stood down for \(profile, privacy: .private): \
+                    \(error.localizedDescription, privacy: .private)
                     """
                 )
                 return true

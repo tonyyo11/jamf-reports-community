@@ -547,7 +547,7 @@ struct MobileFleetService: Sendable {
         guard let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
         else {
             AppLogger.collect.info(
-                "MobileFleetService: failed to decode \(url.lastPathComponent, privacy: .public)"
+                "MobileFleetService: failed to decode \(url.lastPathComponent, privacy: .private)"
             )
             return nil
         }
@@ -664,7 +664,7 @@ struct MobileFleetService: Sendable {
         guard let data = BoundedFile.readLogged(url) else { return [] }
         guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
             AppLogger.collect.info(
-                "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .public)"
+                "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .private)"
             )
             return []
         }
@@ -682,7 +682,7 @@ struct MobileFleetService: Sendable {
             return profiles
         }
         AppLogger.collect.info(
-            "MobileFleetService: failed to decode classic-ios-profiles at \(url.lastPathComponent, privacy: .public)"
+            "MobileFleetService: failed to decode classic-ios-profiles at \(url.lastPathComponent, privacy: .private)"
         )
         return []
     }

@@ -6,6 +6,11 @@ import OSLog
 /// Central logging entry point. Subsystem and categories match the bundle identifier prefix.
 /// Usage: `AppLogger.ui.debug("view appeared")`
 ///
+/// Privacy: dynamic strings reach the unified log as `.private` (Console.app and `log show` read
+/// `<private>`) unless a logging profile enables private data, which the bundled one does not.
+/// Mark `.public` only a static or non-identifying value (kind, tier, count, exit code), never a
+/// profile, label, path, host or error text. The in-app `LogBuffer` keeps the raw text.
+///
 /// Level convention — apply consistently:
 ///   .error   actionable failure the operator must address
 ///   .warning degraded but continuing (a fallback fired / a non-fatal skip)
@@ -59,7 +64,7 @@ enum AppLogger {
     /// PII-bearing logs keep using the category `Logger`s directly with
     /// `privacy: .private`; those never reach the buffer.
     static func event(_ category: Category, _ level: LogEntry.Level, _ message: String) {
-        logger(for: category).log(level: osType(level), "\(message, privacy: .public)")
+        logger(for: category).log(level: osType(level), "\(message, privacy: .private)")
         LogBuffer.shared.append(
             LogEntry(date: Date(), category: category.rawValue, level: level, message: message)
         )

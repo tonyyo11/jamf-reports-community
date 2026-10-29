@@ -79,7 +79,7 @@ private func appendFleetLog(_ message: String) {
         try FleetReportEmitter.appendLog(message, in: try FleetReportEmitter.consolidatedDir())
     } catch {
         AppLogger.schedule.warning(
-            "appendFleetLog: could not write fleet-reports.log: \(error.localizedDescription, privacy: .public)"
+            "appendFleetLog: could not write fleet-reports.log: \(error.localizedDescription, privacy: .private)"
         )
     }
 }
@@ -142,7 +142,7 @@ func notifyOverdueSchedulesHeadless(
             .sorted().joined(separator: ", ")
         let message = "[warn] \(routing.undeliverable.count) overdue schedule(s) for \(owners) "
             + "but no usable notify webhook — overdue digest cannot be delivered"
-        AppLogger.webhook.warning("\(message, privacy: .public)")
+        AppLogger.webhook.warning("\(message, privacy: .private)")
         fputs(message + "\n", stderr)
     }
 
@@ -190,7 +190,7 @@ func postOverdueDigest(
         let message = "[warn] overdue digest notification failed for \(names): "
             + (failure.reason ?? "unknown")
         fputs(message + "\n", stderr)
-        AppLogger.webhook.error("\(message, privacy: .public)")
+        AppLogger.webhook.error("\(message, privacy: .private)")
     case .skipped: break
     }
     return outcome
@@ -232,7 +232,7 @@ private func skippedForMissingProfile(_ profile: String, missing: Set<String>) a
     let line = "[warn] skipping \(profile): jamf-cli has no profile of that name. Finish its "
         + "setup, exclude it in Automation, or remove its workspace folder."
     fputs(line + "\n", stderr)
-    AppLogger.schedule.warning("\(line, privacy: .public)")
+    AppLogger.schedule.warning("\(line, privacy: .private)")
     await AttentionLog.recording(profile: profile) {
         AttentionLog.raise(.jamfCLIProfileMissing,
             "jamf-cli has no profile for this workspace, so scheduled runs skip it")
@@ -305,7 +305,7 @@ private func scheduledRunSingleBody(
     let routingNotify = configError == nil ? nil : NotifyConfigLoader.scoped(at: configURL)
     if routingConfig == nil {
         AppLogger.schedule.warning(
-            "[routing] no usable config for \(profile, privacy: .public) — treating as Jamf Pro")
+            "[routing] no usable config for \(profile, privacy: .private) — treating as Jamf Pro")
     }
 
     let labelProfile = workspaceID.labelComponent
@@ -331,7 +331,7 @@ private func scheduledRunSingleBody(
             + "\(refusal). Not a failure. Exclude this profile from the schedule to stop "
             + "scheduling it."
         fputs(message + "\n", stderr)
-        AppLogger.schedule.notice("\(LogRedactor.redact(message), privacy: .public)")
+        AppLogger.schedule.notice("\(LogRedactor.redact(message), privacy: .private)")
         if ownsFolder, FileManager.default.fileExists(atPath: configURL.path),
            let refusedRecorder = ScheduledRunRecorder(workspace: workspace, label: runLabel) {
             refusedRecorder.record(message)
@@ -802,7 +802,7 @@ func runSchedule(
         fputs("[info] skipping \(p.name): \(reason)\n", stderr)
         // The background item's stderr goes nowhere; the log keeps the reason.
         AppLogger.schedule.notice(
-            "skipping \(p.name, privacy: .public): \(reason, privacy: .public)"
+            "skipping \(p.name, privacy: .private): \(reason, privacy: .private)"
         )
     }
     guard !profiles.isEmpty else {

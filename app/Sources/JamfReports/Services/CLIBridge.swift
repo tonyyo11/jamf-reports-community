@@ -121,7 +121,7 @@ final class CLIBridge {
             guard ProfileService.isValid(profile),
                   let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
                 AppLogger.cli.warning(
-                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public)"
+                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .private)"
                 )
                 return []
             }
@@ -131,7 +131,7 @@ final class CLIBridge {
                 // there but refused (a link) or unreadable is named.
                 if FileManager.default.fileExists(atPath: dir.path) {
                     AppLogger.cli.warning(
-                        "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public): not a readable snapshot folder"
+                        "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .private): not a readable snapshot folder"
                     )
                 }
                 return []
@@ -157,7 +157,7 @@ final class CLIBridge {
                         let name = item.url.lastPathComponent
                         let reason = String(describing: error)
                         AppLogger.cli.warning(
-                            "snapshot skipped \(name, privacy: .public): \(reason, privacy: .public)"
+                            "snapshot skipped \(name, privacy: .private): \(reason, privacy: .private)"
                         )
                         return nil
                     }
@@ -172,7 +172,7 @@ final class CLIBridge {
                     // or object, so a fragment is by definition truncated.
                     guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
                         AppLogger.cli.warning(
-                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .public)"
+                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .private)"
                         )
                         return nil
                     }
@@ -724,7 +724,7 @@ final class CLIBridge {
         let result = WorkspacePermissionHardener.tighten(profile: profile)
         AppLogger.cli.info(
             """
-            tightenOnSuccess profile=\(profile, privacy: .public) \
+            tightenOnSuccess profile=\(profile, privacy: .private) \
             exit=\(exitCode) touched=\(result.touched) \
             failed=\(result.failed) enumerated=\(result.enumerated)
             """
@@ -876,7 +876,7 @@ final class CLIBridge {
             let loaded = try? ConfigLoader.load(from: url)
             if loaded == nil {
                 AppLogger.cli.warning(
-                    "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+                    "[routing] could not load config for \(profile, privacy: .private) — defaulting to Jamf Pro"
                 )
             }
             return loaded
@@ -1124,7 +1124,7 @@ final class CLIBridge {
         _testExecutable: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Bool {
-        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .public)")
+        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .private)")
         guard !ProfileAuthMethod.skipsProAuthProbe(profile: profile) else { return true }
         let probe = await probeToken(
             for: profile, executable: _testExecutable, timeout: probeTimeout
@@ -1135,13 +1135,13 @@ final class CLIBridge {
             let msg = "[warn] auth check timed out after \(Int(probeTimeout.rounded(.up))) s for "
                 + "profile '\(profile)'; could not confirm the credentials. Continuing; the "
                 + "command reports a rejected credential itself."
-            AppLogger.auth.warning("\(msg, privacy: .public)")
+            AppLogger.auth.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             return true
         case .keychainLocked:
             let msg = "[error] auth check failed for profile '\(profile)': "
                 + Self.keychainLockedDetail
-            AppLogger.auth.error("\(msg, privacy: .public)")
+            AppLogger.auth.error("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             return false
         case .status(let result):

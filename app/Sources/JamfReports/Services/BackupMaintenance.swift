@@ -336,7 +336,7 @@ enum BackupMaintenance {
                 try fm.removeItem(at: url)
                 removed.append(name)
                 AppLogger.cli.info(
-                    "BackupMaintenance: removed abandoned staging dir \(name, privacy: .public)"
+                    "BackupMaintenance: removed abandoned staging dir \(name, privacy: .private)"
                 )
             } catch {
                 AppLogger.cli.warning(

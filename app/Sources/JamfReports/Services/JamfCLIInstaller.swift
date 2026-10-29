@@ -666,7 +666,7 @@ final class JamfCLIInstaller {
                 // SF-7: surface the skip in install-audit logs so reviewers can
                 // confirm which gate was off (the feature flag, or the team ID).
                 AppLogger.collect.info(
-                    "JamfCLIInstaller: codesign verification skipped (enforce=\(Self.enforceCodesignVerification, privacy: .public), teamID=\(Self.expectedJamfTeamID.isEmpty ? "empty" : "set", privacy: .public))"
+                    "JamfCLIInstaller: codesign verification skipped (enforce=\(Self.enforceCodesignVerification, privacy: .public), teamID=\(Self.expectedJamfTeamID.isEmpty ? "empty" : "set", privacy: .private))"
                 )
             }
             try ensureParentDirectoryExists(for: target)

@@ -267,7 +267,7 @@ extension WorkspaceStore {
             ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
         guard let refusal else { return false }
         AppLogger.collect.notice(
-            "Manual collect refused: \(refusal.localizedDescription, privacy: .public)")
+            "Manual collect refused: \(refusal.localizedDescription, privacy: .private)")
         toast = Self.collectFailureToast(refusal, operation: "Refresh")
         return true
     }

@@ -285,7 +285,7 @@ enum TickScheduler {
                   let fire = LaunchAgentService.lastScheduledFireDate(from: entries, before: now)
             else {
                 AppLogger.schedule.warning(
-                    "tick: \(label, privacy: .public) has an unreadable cadence and was skipped")
+                    "tick: \(label, privacy: .private) has an unreadable cadence and was skipped")
                 return runNow
             }
             let daily = schedule.mode.runsAtLoad && isDaily(entries)
@@ -574,7 +574,7 @@ struct TickLock: Sendable {
             try protect(fd)
         } catch {
             AppLogger.schedule.warning(
-                "tick lock permissions not set: \(error.localizedDescription, privacy: .public)")
+                "tick lock permissions not set: \(error.localizedDescription, privacy: .private)")
         }
         return .acquired(TickLockHold(fd: fd))
     }
@@ -582,7 +582,7 @@ struct TickLock: Sendable {
     private func failed(_ what: String, _ code: Int32) -> Claim {
         let reason = String(cString: strerror(code))
         AppLogger.schedule.error(
-            "tick lock could not be \(what, privacy: .public): \(reason, privacy: .public)")
+            "tick lock could not be \(what, privacy: .public): \(reason, privacy: .private)")
         return .writeFailed
     }
 
@@ -712,7 +712,7 @@ struct TickLock: Sendable {
 
     /// Logged when the stamp cannot be written or read; a test swaps it to capture the line.
     static let defaultStampWarning: @Sendable (String) -> Void = { message in
-        AppLogger.schedule.warning("\(message, privacy: .public)")
+        AppLogger.schedule.warning("\(message, privacy: .private)")
     }
 
     /// The stamp's lines. A missing file is no stamp and no warning; a file that cannot be read

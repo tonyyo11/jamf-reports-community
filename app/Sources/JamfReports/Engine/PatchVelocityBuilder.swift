@@ -162,7 +162,7 @@ enum PatchVelocityBuilder {
             guard let data = BoundedFile.readLogged(url, inside: dataDir) else { continue }
             guard let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: data) else {
                 AppLogger.platform.notice(
-                    "PatchVelocityBuilder: patch-status \(url.lastPathComponent, privacy: .public) undecodable — skipped"
+                    "PatchVelocityBuilder: patch-status \(url.lastPathComponent, privacy: .private) undecodable — skipped"
                 )
                 continue
             }

@@ -105,7 +105,7 @@ struct CompliancePostureService: Sendable {
         guard let data = BoundedFile.readLogged(url) else { return nil }
         guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
             AppLogger.platform.warning(
-                "CompliancePostureService: failed to decode security file \(url.lastPathComponent, privacy: .public)"
+                "CompliancePostureService: failed to decode security file \(url.lastPathComponent, privacy: .private)"
             )
             return nil
         }

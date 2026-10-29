@@ -201,7 +201,7 @@ enum ScheduledRunSignals {
                 + (failure.reason ?? "unknown")
             fputs(message + "\n", stderr)
             recorder?.record(message)
-            AppLogger.webhook.error("\(message, privacy: .public)")
+            AppLogger.webhook.error("\(message, privacy: .private)")
         }
         noteWebhook(outcome, failure: failure)
     }
@@ -259,7 +259,7 @@ enum ScheduledRunSignals {
                 let message = "[warn] heartbeat notification failed for '\(target.profile)': "
                     + (failure.reason ?? "unknown")
                 fputs(message + "\n", stderr)
-                AppLogger.webhook.error("\(message, privacy: .public)")
+                AppLogger.webhook.error("\(message, privacy: .private)")
             }
         }
     }
@@ -306,7 +306,7 @@ enum ScheduledRunSignals {
 
         let headline = "[warn] \(failures.count) config check(s) failing — data may be "
             + "unreliable until fixed"
-        AppLogger.collect.warning("\(headline, privacy: .public)")
+        AppLogger.collect.warning("\(headline, privacy: .private)")
         print(headline)
         recorder?.record(headline)
         for row in failures {
@@ -350,7 +350,7 @@ enum ScheduledRunSignals {
         // Run History) so a misconfigured URL isn't discovered only by absence.
         guard let configured = config.notify, configured.isUsable else {
             let message = "[warn] alerts enabled but no usable notify webhook — alerts cannot be delivered"
-            AppLogger.webhook.warning("\(message, privacy: .public)")
+            AppLogger.webhook.warning("\(message, privacy: .private)")
             recorder?.record(message)
             return
         }
@@ -466,7 +466,7 @@ enum ScheduledRunSignals {
             let whenStr = rule.when ?? "(none)"
             let message = "[warn] alert rule ignored — metric='\(metricStr)' when='\(whenStr)': "
                 + "unknown metric/operator or invalid threshold"
-            AppLogger.webhook.warning("\(message, privacy: .public)")
+            AppLogger.webhook.warning("\(message, privacy: .private)")
             recorder?.record(message)
         }
     }

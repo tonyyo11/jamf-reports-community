@@ -68,7 +68,7 @@ enum DashboardChartExport {
               let bitmap = NSBitmapImageRep(data: tiff),
               let pngData = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
             AppLogger.ui.error(
-                "DashboardChartExport: render pipeline returned nil for '\(title, privacy: .public)'"
+                "DashboardChartExport: render pipeline returned nil for '\(title, privacy: .private)'"
             )
             return .failure(.renderFailed)
         }
@@ -113,7 +113,7 @@ enum DashboardChartExport {
               let bitmap = NSBitmapImageRep(data: tiff),
               let pngData = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
             AppLogger.ui.error(
-                "DashboardChartExport.render: render pipeline returned nil for '\(suggestedFilename, privacy: .public)'"
+                "DashboardChartExport.render: render pipeline returned nil for '\(suggestedFilename, privacy: .private)'"
             )
             return .failure(.renderFailed)
         }

@@ -671,7 +671,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         } catch {
             let reason = error.localizedDescription
             AppLogger.collect.warning(
-                "SharedConfigPin: did not confirm \(key.rawValue): \(reason, privacy: .public)")
+                "SharedConfigPin: did not confirm \(key.rawValue): \(reason, privacy: .private)")
         }
     }
 
@@ -683,7 +683,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         } catch {
             let reason = error.localizedDescription
             AppLogger.collect.warning(
-                "SharedConfigPin: could not confirm the written config: \(reason, privacy: .public)")
+                "SharedConfigPin: could not confirm the written config: \(reason, privacy: .private)")
         }
     }
 
@@ -853,7 +853,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         guard let workspace = result.workspace else { return result }
         invalidateOverrides(for: workspace)
         for note in result.notes {
-            AppLogger.collect.warning("\(note, privacy: .public)")
+            AppLogger.collect.warning("\(note, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: note))
         }
         let id = overrideID(workspace)
@@ -865,7 +865,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         for drift in fresh {
             let text = "[warn] shared config changed \(drift.key.rawValue): "
                 + "confirm on this Mac (Config Doctor)"
-            AppLogger.collect.warning("\(text, privacy: .public)")
+            AppLogger.collect.warning("\(text, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: text))
         }
         return result

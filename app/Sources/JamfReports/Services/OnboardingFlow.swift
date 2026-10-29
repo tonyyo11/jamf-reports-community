@@ -1214,7 +1214,7 @@ final class OnboardingFlow {
         } else {
             // SF-7: audit-log the skip so reviewers can confirm which gate was off.
             AppLogger.auth.info(
-                "OnboardingFlow: codesign verification skipped (enforce=false, teamID=\(expectedTeamID == nil ? "nil" : "set", privacy: .public))"
+                "OnboardingFlow: codesign verification skipped (enforce=false, teamID=\(expectedTeamID == nil ? "nil" : "set", privacy: .private))"
             )
         }
     }
