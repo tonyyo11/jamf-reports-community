@@ -1,33 +1,36 @@
 import CryptoKit
 import Foundation
 
-/// The run manifest and its optional RFC 3161 timestamp, written after every artifact of a
-/// generate run is on disk. One function does the step, and every path that writes a profile's
-/// workbook calls it after the companion HTML: the GUI (`CLIBridge.generate`,
-/// `schoolGenerate`), the scheduled run and the included CLI's `generate`.
+/// The run manifest and its optional RFC 3161 timestamp, written once every file of a generate
+/// run is on disk. One function does the step: `CLIBridge.generateAll` calls it after its last
+/// format, and the single-workbook paths (`CLIBridge.generate` and `schoolGenerate` called on
+/// their own, the scheduled run, the included CLI's `generate`) after the companion HTML.
 extension ReportEngine {
 
     static let runManifestFailureMarker = "[warn] run manifest not written: "
     static let timestampFailureMarker = "[warn] report timestamp not saved: "
 
-    /// Writes `<stem>.manifest.json` for `workbook` and `artifacts` (the companion HTML, the CSV
-    /// folder), then, with `output.timestamp_authority` set and not drifted from this Mac's pin,
-    /// asks that authority to time-stamp the manifest's SHA-256 and saves the reply as
-    /// `<stem>.tsr`. Only that hash and a random nonce leave the Mac. Every failure is one
-    /// `[warn]` line naming the step, never `[partial]`: the reports are written and the run's
-    /// result stands. Returns the manifest, nil when it was not written.
+    /// Writes `<stem>.manifest.json` over `artifacts`, named after the first (the workbook,
+    /// when the run wrote one), then, with `output.timestamp_authority` set and confirmed on this
+    /// Mac, asks that authority to time-stamp the manifest's SHA-256 and saves the reply as
+    /// `<stem>.tsr`. Only that hash, a random nonce and fixed headers leave the Mac. A `.tsr`
+    /// left by an earlier run of the same name is removed when no new one is saved, so it never
+    /// sits beside a manifest it does not sign. Every failure is one `[warn]` line naming the
+    /// step, never `[partial]`: the reports are written and the run's result stands. Returns the
+    /// manifest, nil when it was not written.
     @discardableResult
     static func sealRun(
-        workbook: URL, artifacts: [URL], config: ReportConfig, profile: String?,
+        artifacts: [URL], config: ReportConfig?, profile: String?,
         now: Date = Date(), session: URLSessionConfiguration = .ephemeral,
+        appSupport: URL = AppSupport.directory(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) async -> URL? {
-        let manifestURL = RunManifest.manifestURL(besideWorkbook: workbook)
+        guard let primary = artifacts.first else { return nil }
+        let manifestURL = RunManifest.manifestURL(for: primary)
         let data: Data
         do {
             data = try RunManifest.build(
-                artifacts: [workbook] + artifacts, in: workbook.deletingLastPathComponent(),
-                now: now).encoded()
+                artifacts: artifacts, in: primary.deletingLastPathComponent(), now: now).encoded()
             try RunManifest.install(data, at: manifestURL)
         } catch {
             warn(runManifestFailureMarker + error.localizedDescription, onLine: onLine)
@@ -35,22 +38,26 @@ extension ReportEngine {
         }
         onLine?(.init(timestamp: Date(), level: .ok,
                       text: "[ok] run manifest written: \(manifestURL.lastPathComponent)"))
-        if let authority = timestampAuthority(config, profile: profile) {
-            await saveTimestamp(
-                of: data, at: RunManifest.timestampURL(besideWorkbook: workbook),
-                authority: authority, session: session, onLine: onLine)
+        let tsrURL = RunManifest.timestampURL(for: primary)
+        var saved = false
+        if let config, let authority = timestampAuthority(
+            config, profile: profile, appSupport: appSupport) {
+            saved = await saveTimestamp(
+                of: data, at: tsrURL, authority: authority, session: session, onLine: onLine)
         }
+        if !saved { AtomicInstall.discard(tsrURL) }
         return manifestURL
     }
 
     /// Sends `manifest`'s SHA-256 to `authority` and saves the checked reply at `tsrURL`. A
-    /// failure is one `[warn]` line naming the step.
+    /// failure is one `[warn]` line naming the step. True when the reply was saved.
+    @discardableResult
     static func saveTimestamp(
         of manifest: Data, at tsrURL: URL, authority: URL,
         session: URLSessionConfiguration = .ephemeral,
         nonce: [UInt8] = TimestampToken.randomNonce(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
-    ) async {
+    ) async -> Bool {
         do {
             let reply = try await TimestampAuthority.stamp(
                 sha256: Array(SHA256.hash(data: manifest)), authority: authority,
@@ -60,13 +67,16 @@ extension ReportEngine {
                     step: "saving \(tsrURL.lastPathComponent)", reason: error.localizedDescription)
             }
         } catch let failure as TimestampAuthority.Failure {
-            return warn(timestampFailureMarker + failure.text, onLine: onLine)
+            warn(timestampFailureMarker + failure.text, onLine: onLine)
+            return false
         } catch {
-            return warn(timestampFailureMarker + error.localizedDescription, onLine: onLine)
+            warn(timestampFailureMarker + error.localizedDescription, onLine: onLine)
+            return false
         }
         onLine?(.init(timestamp: Date(), level: .ok,
                       text: "[ok] report timestamp saved: \(tsrURL.lastPathComponent) "
                         + "(\(authority.host ?? ""))"))
+        return true
     }
 
     /// `output.timestamp_authority` as this Mac may use it: nil when unset, not https, or
@@ -75,8 +85,8 @@ extension ReportEngine {
         _ config: ReportConfig, profile: String?, appSupport: URL = AppSupport.directory()
     ) -> URL? {
         guard let url = config.output?.timestampAuthorityURL else { return nil }
-        if let profile,
-           !SharedConfigPin.timestampAuthorityAllowed(profile: profile, appSupport: appSupport) {
+        if let profile, !SharedConfigPin.timestampAuthorityAllowed(
+            config.output?.timestampAuthority ?? "", profile: profile, appSupport: appSupport) {
             return nil
         }
         return url
@@ -97,6 +107,16 @@ extension ReportEngine {
 enum TimestampAuthority {
     static let timeout: TimeInterval = 15
 
+    /// Every header the app sets. CFNetwork still adds Host, Accept-Encoding, Content-Length
+    /// and Connection; a fixed User-Agent and Accept-Language replace its defaults, which name
+    /// the app build, the Darwin version and the Mac's languages.
+    static let headers = [
+        "Content-Type": "application/timestamp-query",
+        "Accept": "application/timestamp-reply",
+        "User-Agent": "JamfReports",
+        "Accept-Language": "*",
+    ]
+
     /// Which step failed, and why, in words that never carry the authority's URL (it can hold a
     /// token); the host is named.
     struct Failure: Error, Equatable {
@@ -115,9 +135,9 @@ enum TimestampAuthority {
         var request = URLRequest(
             url: authority, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         request.httpMethod = "POST"
-        request.setValue("application/timestamp-query", forHTTPHeaderField: "Content-Type")
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
         request.httpBody = TimestampToken.request(sha256: sha256, nonce: nonce)
-        let reply = try await send(request, host: host, configuration: configuration)
+        let reply = try await send(request, to: authority, configuration: configuration)
         let inspection: TimestampToken.Inspection
         do {
             inspection = try TimestampToken.inspect(reply: reply)
@@ -125,7 +145,7 @@ enum TimestampAuthority {
             throw Failure(step: "reading the reply from \(host)",
                           reason: error.localizedDescription)
         }
-        let expected = sha256.map { String(format: "%02x", $0) }.joined()
+        let expected = sha256.hexString
         guard inspection.imprint == expected,
               inspection.nonce == DER.unsignedMagnitude(nonce[...]),
               inspection.signatureValid else {
@@ -136,14 +156,14 @@ enum TimestampAuthority {
     }
 
     private static func send(
-        _ request: URLRequest, host: String, configuration: URLSessionConfiguration
+        _ request: URLRequest, to authority: URL, configuration: URLSessionConfiguration
     ) async throws -> Data {
-        let step = "sending the request to \(host)"
+        let step = "sending the request to \(authority.host ?? "")"
         let fetch: AppUpdateCheck.Fetch = { request in
             let session = URLSession(configuration: configuration)
             defer { session.invalidateAndCancel() }
             let (bytes, response) = try await session.bytes(
-                for: request, delegate: SameHostRedirects(host: host))
+                for: request, delegate: SameHostRedirects(authority: authority))
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<300).contains(status) else {
                 throw AppUpdateCheck.CheckError.httpStatus(status)
@@ -174,18 +194,22 @@ enum TimestampAuthority {
         }
     }
 
-    /// Follows a redirect only to https on the authority's own host, so the query never goes to
-    /// a host config.yaml did not name.
+    /// Follows a redirect only to https on the authority's own host and port, so the query
+    /// never goes to an address config.yaml did not name.
     private final class SameHostRedirects: NSObject, URLSessionTaskDelegate, Sendable {
         let host: String
-        init(host: String) { self.host = host }
+        let port: Int
+        init(authority: URL) {
+            host = authority.host?.lowercased() ?? ""
+            port = authority.port ?? 443
+        }
 
         func urlSession(
             _ session: URLSession, task: URLSessionTask,
             willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest
         ) async -> URLRequest? {
             guard let url = request.url, url.scheme?.lowercased() == "https",
-                  url.host?.lowercased() == host.lowercased() else { return nil }
+                  url.host?.lowercased() == host, (url.port ?? 443) == port else { return nil }
             return request
         }
     }

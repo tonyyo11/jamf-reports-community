@@ -633,7 +633,7 @@ private func scheduledRunSingleBody(
         }
         // The run manifest (and its timestamp when configured); a failure is one [warn] line.
         await ReportEngine.sealRun(
-            workbook: outputURL, artifacts: [htmlURL, generated.csvFolder].compactMap { $0 },
+            artifacts: [outputURL, htmlURL, generated.csvFolder].compactMap { $0 },
             config: config, profile: profile, onLine: onLine)
         let message = "[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)"
         print(message)

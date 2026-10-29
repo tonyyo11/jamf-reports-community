@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 
@@ -27,8 +28,12 @@ enum TimestampToken {
         let nonce: [UInt8]?
         /// TSTInfo `genTime`: when the authority signed.
         let signedAt: Date
-        /// The signer certificate's subject summary, as the token carries it.
+        /// The signer certificate's subject summary, as the token carries it: any text a
+        /// self-signed certificate chose.
         let signer: String?
+        /// SHA-256 of the signer certificate's DER, to compare with the authority's published
+        /// fingerprint; unlike the subject, it cannot be chosen.
+        let signerSHA256: String?
         /// The signature verifies against the certificate in the token.
         let signatureValid: Bool
         /// The signer's chain validates against this Mac's trust settings at `signedAt`.
@@ -79,8 +84,9 @@ enum TimestampToken {
         let info = try TSTInfo(der: decoded.content)
         let trust = decoded.chainTrusted(at: info.genTime)
         return Inspection(
-            imprint: info.imprint.map { String(format: "%02x", $0) }.joined(),
+            imprint: info.imprint.hexString,
             nonce: info.nonce, signedAt: info.genTime, signer: decoded.signer,
+            signerSHA256: decoded.signerSHA256,
             signatureValid: decoded.signatureValid,
             chainTrusted: trust)
     }
@@ -121,6 +127,7 @@ enum TimestampToken {
         let content: [UInt8]
         let signatureValid: Bool
         let signer: String?
+        let signerSHA256: String?
         private let trust: SecTrust?
 
         init(token: Data) throws {
@@ -150,8 +157,13 @@ enum TimestampToken {
             signatureValid = status == .valid
             self.trust = trust
             var certificate: SecCertificate?
-            signer = CMSDecoderCopySignerCert(decoder, 0, &certificate) == errSecSuccess
-                ? certificate.flatMap { SecCertificateCopySubjectSummary($0) as String? } : nil
+            if CMSDecoderCopySignerCert(decoder, 0, &certificate) != errSecSuccess {
+                certificate = nil
+            }
+            signer = certificate.flatMap { SecCertificateCopySubjectSummary($0) as String? }
+            signerSHA256 = certificate.map {
+                SHA256.hash(data: SecCertificateCopyData($0) as Data).hexString
+            }
         }
 
         private static func decoder(_ token: Data, detached: CFData?) throws -> CMSDecoder {

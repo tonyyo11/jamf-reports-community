@@ -1,10 +1,11 @@
 import CryptoKit
 import Foundation
 
-/// The per-run manifest: every artifact a generate run wrote beside its workbook (the workbook,
-/// its companion HTML, each file of its CSV folder) with its size and SHA-256, as
-/// `<stem>.manifest.json` beside the workbook. `jamf-reports verify` recomputes it, and the
-/// optional RFC 3161 reply (`<stem>.tsr`) dates the manifest's own SHA-256.
+/// The per-run manifest: every file a generate run wrote (the workbook, its companion HTML, each
+/// file of its CSV folder, and the HTML, PDF and CSV formats a Generate run also chose) with its
+/// size and SHA-256, as `<stem>.manifest.json` named after the workbook (else the run's first
+/// file). `jamf-reports verify` recomputes it, and the optional RFC 3161 reply (`<stem>.tsr`)
+/// dates the manifest's own SHA-256.
 struct RunManifest: Codable, Equatable, Sendable {
     static let formatName = "jamf-reports-run-manifest"
     static let manifestSuffix = ".manifest.json"
@@ -48,18 +49,32 @@ struct RunManifest: Codable, Equatable, Sendable {
                 "\(ConfigSchema.displayText(name)) holds more than \(RunManifest.maxFolderEntries) "
                     + "entries"
             case .notBeside(let name):
-                "\(ConfigSchema.displayText(name)) is not in the workbook's folder"
+                "\(ConfigSchema.displayText(name)) is not in the run's report folder"
             }
         }
     }
 
-    static func manifestURL(besideWorkbook workbook: URL) -> URL {
-        workbook.deletingLastPathComponent().appendingPathComponent(
-            workbook.deletingPathExtension().lastPathComponent + manifestSuffix)
+    /// The manifest of the run whose first file (the workbook, when there is one) is `primary`.
+    static func manifestURL(for primary: URL) -> URL {
+        primary.deletingLastPathComponent().appendingPathComponent(
+            primary.deletingPathExtension().lastPathComponent + manifestSuffix)
     }
 
-    static func timestampURL(besideWorkbook workbook: URL) -> URL {
-        workbook.deletingPathExtension().appendingPathExtension(timestampExtension)
+    static func timestampURL(for primary: URL) -> URL {
+        primary.deletingPathExtension().appendingPathExtension(timestampExtension)
+    }
+
+    /// Finder's folder metadata is the one entry a folder of report files may hold that the
+    /// run did not write; `build` leaves it out and `verify` does not call it extra.
+    static func isIgnored(_ name: String) -> Bool { name == ".DS_Store" }
+
+    /// Each entry of `directory` but `isIgnored` ones, by the one listing rule for a folder a
+    /// peer can write (`snapshotFolderEntries`: nil when it is a link or unreadable).
+    static func entries(of directory: URL) -> [URL]? {
+        FileManager.snapshotFolderEntries(
+            in: directory, includingPropertiesForKeys: nil, options: [])?
+            .filter { !isIgnored($0.lastPathComponent) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
     /// The `.tsr` that belongs to `manifest`: the same stem.
@@ -70,6 +85,24 @@ struct RunManifest: Codable, Equatable, Sendable {
                 .lastPathComponent
         return manifest.deletingLastPathComponent()
             .appendingPathComponent(stem).appendingPathExtension(timestampExtension)
+    }
+
+    /// The top-level files and folders the manifest at `url` lists, for rotation to move with
+    /// `workbook`: never another workbook (a run has one), the manifest or its `.tsr`. Empty when
+    /// the manifest is absent or unreadable (read bounded, links refused).
+    static func listedFiles(manifestAt url: URL, besideWorkbook workbook: URL) -> [URL] {
+        guard let data = try? BoundedFile.read(url, limit: maxManifestBytes, followSymlinks: false),
+              let manifest = try? JSONDecoder().decode(RunManifest.self, from: data)
+        else { return [] }
+        let folder = url.deletingLastPathComponent()
+        let own = [url.lastPathComponent, timestampURL(forManifest: url).lastPathComponent]
+        var names: [String] = []
+        for artifact in manifest.artifacts where isRelativeName(artifact.name) {
+            let top = String(artifact.name.split(separator: "/")[0])
+            let isOtherWorkbook = top.hasSuffix(".xlsx") && top != workbook.lastPathComponent
+            if !names.contains(top), !own.contains(top), !isOtherWorkbook { names.append(top) }
+        }
+        return names.map { folder.appendingPathComponent($0) }
     }
 
     // MARK: - Writing
@@ -102,11 +135,9 @@ struct RunManifest: Codable, Equatable, Sendable {
 
     private static func folderEntries(_ directory: URL, in folder: URL) throws -> [Artifact] {
         let name = directory.lastPathComponent
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            atPath: directory.path).filter({ !$0.hasPrefix(".") }).sorted()
-        else { throw Failure.unreadable(name) }
+        guard let files = entries(of: directory) else { throw Failure.unreadable(name) }
         guard files.count <= maxFolderEntries else { throw Failure.tooManyFiles(name) }
-        return try files.map { try entry("\(name)/\($0)", in: folder) }
+        return try files.map { try entry("\(name)/\($0.lastPathComponent)", in: folder) }
     }
 
     private static func entry(_ name: String, in folder: URL) throws -> Artifact {
@@ -174,33 +205,88 @@ struct RunManifest: Codable, Equatable, Sendable {
             fail("FAIL  \(url.lastPathComponent) is not a jamf-reports run manifest")
             return result
         }
-        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        result.lines.append("Manifest \(url.lastPathComponent)  sha256 \(digest)")
-        result.lines.append("Written \(manifest.generatedAt) by \(manifest.generator)")
+        let digest = SHA256.hash(data: data).hexString
+        result.lines.append("Manifest \(shown(url.lastPathComponent))  sha256 \(digest)")
+        result.lines.append(
+            "Written \(shown(manifest.generatedAt)) by \(shown(manifest.generator))")
         let folder = url.deletingLastPathComponent()
         var matched = 0
         for artifact in manifest.artifacts {
+            let name = shown(artifact.name)
             guard isRelativeName(artifact.name) else {
-                fail("FAIL     \(artifact.name): not a name inside the manifest's folder")
+                fail("FAIL     \(name): not a name inside the manifest's folder")
                 continue
             }
             let file = folder.appendingPathComponent(artifact.name)
             guard let print = BoundedFile.fingerprint(file, inside: folder) else {
                 var info = stat()
                 let gone = lstat(file.path, &info) != 0 && errno == ENOENT
-                fail("\(gone ? "MISSING" : "UNREADABLE") \(artifact.name)")
+                fail("\(gone ? "MISSING" : "UNREADABLE") \(name)")
                 continue
             }
             if print.sha256 == artifact.sha256.lowercased(), print.size == artifact.size {
                 matched += 1
-                result.lines.append("OK       \(artifact.name)")
+                result.lines.append("OK       \(name)")
             } else {
-                fail("CHANGED  \(artifact.name)")
+                fail("CHANGED  \(name)")
             }
         }
+        for extra in extras(of: manifest, in: folder) { fail("EXTRA    \(shown(extra))") }
         result.lines.append("\(matched) of \(manifest.artifacts.count) artifacts match.")
         verifyTimestamp(at: timestampURL(forManifest: url), manifestSHA256: digest, into: &result)
         return result
+    }
+
+    /// Most entries `extras` looks at, and how deep, in the folders a manifest lists.
+    static let maxExtraEntriesRead = 500
+    private static let maxExtraDepth = 8
+
+    /// What sits in the manifest's folders (a CSV folder) that the manifest does not list: each
+    /// file, and an empty subfolder as `<name>/`. Links are not followed; a link counts as an
+    /// entry. The manifest's own top-level folder is not checked, since other runs share it.
+    static func extras(of manifest: RunManifest, in folder: URL) -> [String] {
+        let listed = Set(manifest.artifacts.map(\.name))
+        let folders = Set(manifest.artifacts.compactMap { artifact -> String? in
+            let parts = artifact.name.split(separator: "/")
+            return isRelativeName(artifact.name) && parts.count > 1 ? String(parts[0]) : nil
+        })
+        var budget = maxExtraEntriesRead
+        var found: [String] = []
+        for name in folders.sorted() {
+            found += unlisted(in: folder.appendingPathComponent(name), named: name,
+                              listed: listed, depth: 1, budget: &budget)
+        }
+        return found
+    }
+
+    private static func unlisted(
+        in directory: URL, named prefix: String, listed: Set<String>, depth: Int,
+        budget: inout Int
+    ) -> [String] {
+        guard let children = entries(of: directory) else { return [] }
+        var found: [String] = []
+        for child in children {
+            budget -= 1
+            guard budget >= 0 else { return found + ["(more entries not checked)"] }
+            let name = "\(prefix)/\(child.lastPathComponent)"
+            var info = stat()
+            let isFolder = lstat(child.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
+            if isFolder, depth < maxExtraDepth {
+                let inner = unlisted(in: child, named: name, listed: listed, depth: depth + 1,
+                                     budget: &budget)
+                let holdsListed = listed.contains { $0.hasPrefix(name + "/") }
+                found += inner.isEmpty && !holdsListed ? [name + "/"] : inner
+            } else if !listed.contains(name) {
+                found.append(isFolder ? name + "/" : name)
+            }
+        }
+        return found
+    }
+
+    /// A field a manifest or token carries, which anyone could have written, as one line.
+    private static func shown(_ text: String) -> String {
+        let display = ConfigSchema.fullDisplayText(text)
+        return display.text + (display.truncated ? " (truncated)" : "")
     }
 
     private static func verifyTimestamp(
@@ -234,9 +320,13 @@ struct RunManifest: Codable, Equatable, Sendable {
         }
         let stamp = ISO8601DateFormatter()
         stamp.formatOptions = [.withInternetDateTime]
-        let signer = inspection.signer.map { " by \"\($0)\"" } ?? ""
+        let signer = inspection.signer.map { " by \"\(shown($0))\"" } ?? ""
         result.lines.append("Timestamp: manifest signed \(stamp.string(from: inspection.signedAt))"
             + signer)
+        if let fingerprint = inspection.signerSHA256 {
+            result.lines.append("Timestamp signer certificate SHA-256: \(fingerprint) (compare "
+                + "it with the fingerprint the authority publishes)")
+        }
         result.lines.append(inspection.chainTrusted
             ? "Timestamp chain: trusted by this Mac"
             : "Timestamp chain: not trusted by this Mac (a self-signed or private authority; "

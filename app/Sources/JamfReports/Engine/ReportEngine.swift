@@ -334,20 +334,24 @@ struct ReportEngine: Sendable {
 
         for file in sorted.dropFirst(keep) {
             // The workbook's companion HTML (`html.with_workbook`) and CSV folder are part of its
-            // run. A `.html` with no workbook beside it, such as the Generate sheet's HTML
-            // format or `jamf-reports html` output, is not a run of this stem and is left where
-            // it is.
-            let run = [file, Self.htmlURL(besideWorkbook: file),
-                       Self.csvFolderURL(besideWorkbook: file)]
+            // run, as is every file its run manifest lists (a Generate run's HTML, PDF and CSV
+            // formats). A `.html` with no workbook or manifest naming it, such as
+            // `jamf-reports html` output, is not a run of this stem and is left where it is.
+            let manifest = RunManifest.manifestURL(for: file)
+            let named = [file, Self.htmlURL(besideWorkbook: file),
+                         Self.csvFolderURL(besideWorkbook: file)]
+                + RunManifest.listedFiles(manifestAt: manifest, besideWorkbook: file)
+            let run = named.enumerated()
+                .filter { named.firstIndex(of: $0.element) == $0.offset }.map(\.element)
                 .filter { fm.fileExists(atPath: $0.path) }
-            var workbookMoved = false
+            var everyFileMoved = true
             for artifact in run {
                 // Skip sidecars when the move failed: sidecars without their report in the
                 // archive are uninformative.
                 guard Self.moveToArchive(artifact, archiveDir: archiveDir, onLine: onLine) else {
+                    everyFileMoved = false
                     continue
                 }
-                if artifact == file { workbookMoved = true }
                 // Sibling sidecar files (sha256 + manifest.txt) move with their report so
                 // they don't accumulate as orphans in the reports root. Failures are
                 // best-effort: warn and continue rather than block rotation.
@@ -358,11 +362,18 @@ struct ReportEngine: Sendable {
                         sidecar, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
                 }
             }
-            // The run manifest and its timestamp follow the workbook; they are never runs.
-            guard workbookMoved else { continue }
-            for record in [RunManifest.manifestURL(besideWorkbook: file),
-                           RunManifest.timestampURL(besideWorkbook: file)]
-            where fm.fileExists(atPath: record.path) {
+            // The run manifest and its timestamp follow their run, whole; they are never runs.
+            let records = [manifest, RunManifest.timestampURL(for: file)]
+                .filter { fm.fileExists(atPath: $0.path) }
+            guard !records.isEmpty else { continue }
+            guard everyFileMoved else {
+                let msg = "[warn] Run manifest \(manifest.lastPathComponent) left in the report "
+                    + "folder: not every file of its run could be archived."
+                AppLogger.report.warning("\(msg, privacy: .private)")
+                onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                continue
+            }
+            for record in records {
                 Self.moveToArchive(
                     record, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
             }

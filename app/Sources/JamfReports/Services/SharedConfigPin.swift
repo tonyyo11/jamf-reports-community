@@ -195,10 +195,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     static let unreadableNote = "(pin unreadable)"
 
     /// The pin for a workspace seen for the first time. What is already in the shared file may
-    /// have been written by a peer, so a folder outside the workspace, a `delete` retention and
-    /// Protect backups on synced storage turned on are pinned as unconfirmed: every run uses
-    /// the safe value for them until one Confirm. The webhook host and the other keys are
-    /// trust-on-first-use.
+    /// have been written by a peer, so a folder outside the workspace, a `delete` retention,
+    /// Protect backups on synced storage turned on and a timestamp authority are pinned as
+    /// unconfirmed: every run uses the safe value for them until one Confirm. The webhook host
+    /// and the other keys are trust-on-first-use.
     static func firstPin(current: SharedConfigPin, workspace: URL) -> SharedConfigPin {
         var pin = current
         pin.pinnedKeys = Key.allCases.map(\.rawValue)
@@ -230,6 +230,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
         if current.protectBackupOnSyncedStorage { waiting.append(.protectBackupOnSyncedStorage) }
         if current.proBackupOnSyncedStorage { waiting.append(.proBackupOnSyncedStorage) }
+        // An address this Mac would send to is never taken on first sight.
+        if !current.timestampAuthorityHash.isEmpty { waiting.append(.timestampAuthority) }
         return waiting.filter(keys.contains)
     }
 
@@ -677,12 +679,18 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return safe
     }
 
-    /// False when `output.timestamp_authority` differs from the pinned one: the run's manifest
-    /// is written but not sent for a timestamp.
+    /// Whether this run may send to the authority it loaded, `typed` (`output.timestamp_authority`
+    /// as the run's config holds it): always on a workspace that is not pinned; on a pinned one
+    /// only when `typed` is the confirmed pinned value (same SHA-256), so neither a peer's edit
+    /// nor one made after the run loaded its config is used.
     static func timestampAuthorityAllowed(
-        profile: String, appSupport: URL = AppSupport.directory()
+        _ typed: String, profile: String, appSupport: URL = AppSupport.directory()
     ) -> Bool {
-        !check(profile: profile, appSupport: appSupport).isDrifted(.timestampAuthority)
+        let result = check(profile: profile, appSupport: appSupport)
+        guard let pin = result.pinned else { return result.drifts.isEmpty }
+        let value = typed.trimmingCharacters(in: .whitespaces)
+        return !result.isDrifted(.timestampAuthority)
+            && pin.timestampAuthorityHash == (value.isEmpty ? "" : sha256Hex(value))
     }
 
     /// False when `protect.profile` differs from the pinned one: Protect is not collected and

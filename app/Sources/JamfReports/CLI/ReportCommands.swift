@@ -87,7 +87,7 @@ struct Generate: AsyncParsableCommand {
                     besideWorkbook: outputURL, template: resolved, onLine: onLine)
             }
             await ReportEngine.sealRun(
-                workbook: outputURL, artifacts: [htmlURL, generated.csvFolder].compactMap { $0 },
+                artifacts: [outputURL, htmlURL, generated.csvFolder].compactMap { $0 },
                 config: config, profile: profile, onLine: onLine)
             // The workbook is written even when some sheets error, so always emit
             // the path (scripts can still find the artifact); exit non-zero to

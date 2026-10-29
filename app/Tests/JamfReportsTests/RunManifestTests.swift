@@ -18,9 +18,13 @@ final class TSAStub: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var answer = Answer.reply(200, Data())
     nonisolated(unsafe) private static var seen: [(host: String, body: Data)] = []
+    nonisolated(unsafe) private static var seenHeaders: [[String: String]] = []
 
-    static func answer(_ next: Answer) { lock.withLock { answer = next; seen = [] } }
+    static func answer(_ next: Answer) {
+        lock.withLock { answer = next; seen = []; seenHeaders = [] }
+    }
     static var requests: [(host: String, body: Data)] { lock.withLock { seen } }
+    static var headers: [[String: String]] { lock.withLock { seenHeaders } }
 
     static var session: URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
@@ -47,6 +51,7 @@ final class TSAStub: URLProtocol, @unchecked Sendable {
         let url = request.url ?? URL(fileURLWithPath: "/")
         let next = Self.lock.withLock {
             Self.seen.append((url.host ?? "", body))
+            Self.seenHeaders.append(request.allHTTPHeaderFields ?? [:])
             return Self.answer
         }
         switch next {
@@ -152,6 +157,9 @@ final class RunManifestTests: XCTestCase {
         XCTAssertTrue(inspection.signatureValid)
         XCTAssertFalse(inspection.chainTrusted, "FreeTSA's root is not in the system trust")
         XCTAssertEqual(inspection.signer.map { $0.lowercased().contains("freetsa") }, true)
+        // openssl x509 -fingerprint -sha256 of the TSA certificate the token carries.
+        XCTAssertEqual(inspection.signerSHA256,
+                       "32e841a95cc1164101ffde41298ef2fc75c1c4372ef095e88a6bbd47dfb191fc")
     }
 
     /// A reply whose signed TSTInfo was edited (here its serial number) no longer verifies.
@@ -189,6 +197,45 @@ final class RunManifestTests: XCTestCase {
         XCTAssertTrue(result.lines.contains { $0.hasPrefix(
             "Timestamp: manifest signed 2026-10-29T06:38:24Z") }, "\(result.lines)")
         XCTAssertTrue(result.lines.contains { $0.hasPrefix("Timestamp chain: not trusted") })
+        XCTAssertTrue(result.lines.contains { $0.hasPrefix(
+            "Timestamp signer certificate SHA-256: 32e841a95cc1164101ffde41298ef2fc") })
+    }
+
+    /// A file added to the CSV folder, at its top or in a folder inside it, is not part of the
+    /// run; Finder's `.DS_Store` is the one entry left alone.
+    func testVerifyNamesAnExtraFileInTheCSVFolderAndFails() throws {
+        try layOutFixtureRun()
+        let csv = folder.appendingPathComponent("\(stem)_csv", isDirectory: true)
+        try Data("x".utf8).write(to: csv.appendingPathComponent(".DS_Store"))
+        var result = RunManifest.verify(manifestAt: folder.appendingPathComponent(manifestName))
+        XCTAssertTrue(result.passed, "\(result.lines)")
+
+        try Data("=cmd".utf8).write(to: csv.appendingPathComponent("Added.csv"))
+        let nested = csv.appendingPathComponent("more", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: nested.appendingPathComponent("Hidden.csv"))
+        try FileManager.default.createDirectory(
+            at: csv.appendingPathComponent("empty"), withIntermediateDirectories: true)
+        result = RunManifest.verify(manifestAt: folder.appendingPathComponent(manifestName))
+        XCTAssertFalse(result.passed)
+        XCTAssertEqual(result.lines.filter { $0.hasPrefix("EXTRA") }, [
+            "EXTRA    \(stem)_csv/Added.csv", "EXTRA    \(stem)_csv/empty/",
+            "EXTRA    \(stem)_csv/more/Hidden.csv",
+        ])
+        XCTAssertTrue(result.lines.contains("3 of 3 artifacts match."))
+    }
+
+    /// What a manifest says is shown on one line, whoever wrote it.
+    func testVerifyShowsManifestTextOnOneLine() throws {
+        try layOutFixtureRun(withReply: false)
+        let forged = RunManifest(
+            generatedAt: "2026\nOK       everything", generator: "x\u{1b}[2Jy", artifacts: [])
+        let url = folder.appendingPathComponent("forged" + RunManifest.manifestSuffix)
+        try forged.encoded().write(to: url)
+        let result = RunManifest.verify(manifestAt: url)
+        XCTAssertTrue(result.lines.contains("Written 2026OK       everything by x[2Jy"),
+                      "\(result.lines)")
+        XCTAssertFalse(result.lines.contains { $0.contains("\n") || $0.contains("\u{1b}") })
     }
 
     func testVerifyNamesAChangedArtifactAndFails() throws {
@@ -243,7 +290,9 @@ final class RunManifestTests: XCTestCase {
         try forged.encoded().write(to: url)
         result = RunManifest.verify(manifestAt: url)
         XCTAssertFalse(result.passed)
-        let refused = result.lines.filter { $0.hasSuffix("not a name inside the manifest's folder") }
+        let refused = result.lines.filter {
+            $0.hasSuffix("not a name inside the manifest's folder")
+        }
         XCTAssertEqual(refused.count, 2)
     }
 
@@ -256,7 +305,7 @@ final class RunManifestTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: workbook, withDestinationURL: target)
         let lines = ManifestLines()
         let written = await ReportEngine.sealRun(
-            workbook: workbook, artifacts: [], config: ReportConfig(), profile: nil,
+            artifacts: [workbook], config: ReportConfig(), profile: nil,
             now: Date(timeIntervalSince1970: 1_793_264_400), onLine: lines.add)
         XCTAssertNil(written)
         XCTAssertEqual(lines.all.filter { $0.hasPrefix(ReportEngine.runManifestFailureMarker) }
@@ -280,6 +329,11 @@ final class RunManifestTests: XCTestCase {
         XCTAssertEqual(TSAStub.requests.map(\.host), [TSAStub.host])
         XCTAssertEqual(TSAStub.requests.first?.body, try fixture("freetsa.tsq"),
                        "the manifest's SHA-256 and the nonce are all that leave the Mac")
+        // CFNetwork adds Host, Accept-Encoding, Content-Length and Connection after this point.
+        XCTAssertEqual(TSAStub.headers.first?.filter { $0.key != "Content-Length" },
+                       TimestampAuthority.headers)
+        XCTAssertEqual(TimestampAuthority.headers["User-Agent"], "JamfReports")
+        XCTAssertEqual(TimestampAuthority.headers["Accept-Language"], "*")
         XCTAssertEqual(try Data(contentsOf: tsr), try fixture("freetsa.tsr"))
         XCTAssertTrue(lines.all.contains(
             "[ok] report timestamp saved: \(stem).tsr (\(TSAStub.host))"))
@@ -320,15 +374,42 @@ final class RunManifestTests: XCTestCase {
         }
     }
 
-    func testARedirectToAnotherHostIsNotFollowed() async throws {
-        TSAStub.answer(.redirect(to: URL(string: "https://collector.attacker.test/tsr")!))
+    func testARedirectToAnotherHostOrPortIsNotFollowed() async throws {
+        for target in ["https://collector.attacker.test/tsr", "https://\(TSAStub.host):8443/tsr",
+                       "http://\(TSAStub.host)/tsr"] {
+            TSAStub.answer(.redirect(to: try XCTUnwrap(URL(string: target))))
+            let lines = ManifestLines()
+            await ReportEngine.saveTimestamp(
+                of: try fixture(manifestName), at: folder.appendingPathComponent("x.tsr"),
+                authority: authority, session: TSAStub.session, onLine: lines.add)
+            XCTAssertEqual(TSAStub.requests.count, 1, "\(target): \(lines.all)")
+            XCTAssertEqual(lines.all.filter { $0.hasPrefix(ReportEngine.timestampFailureMarker) }
+                .count, 1, "\(lines.all)")
+        }
+    }
+
+    /// The whole step with the authority set: a failing authority leaves the manifest, no
+    /// `.tsr` (the one an earlier run of the same name left is removed) and no `[partial]`.
+    func testASealWhoseAuthorityFailsKeepsTheManifestAndDropsAStaleReply() async throws {
+        try layOutFixtureRun(withReply: true)
+        let config = try ConfigLoader.loadFromString(
+            "output:\n  timestamp_authority: \"\(authority.absoluteString)\"\n")
+        TSAStub.answer(.reply(503, Data()))
         let lines = ManifestLines()
-        await ReportEngine.saveTimestamp(
-            of: try fixture(manifestName), at: folder.appendingPathComponent("x.tsr"),
-            authority: authority, session: TSAStub.session, onLine: lines.add)
-        XCTAssertEqual(TSAStub.requests.map(\.host), [TSAStub.host], "\(lines.all)")
+        let workbook = folder.appendingPathComponent("\(stem).xlsx")
+        let manifest = await ReportEngine.sealRun(
+            artifacts: [workbook], config: config, profile: nil,
+            now: Date(timeIntervalSince1970: 1_793_264_400), session: TSAStub.session,
+            onLine: lines.add)
+        XCTAssertEqual(manifest?.lastPathComponent, manifestName)
+        XCTAssertEqual(TSAStub.requests.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent("\(stem).tsr").path),
+            "the earlier run's reply does not sign this manifest")
         XCTAssertEqual(lines.all.filter { $0.hasPrefix(ReportEngine.timestampFailureMarker) }
             .count, 1, "\(lines.all)")
+        XCTAssertFalse(lines.all.contains { $0.contains("[partial]") })
+        XCTAssertTrue(RunManifest.verify(manifestAt: try XCTUnwrap(manifest)).passed)
     }
 
     // MARK: Rotation and retention
@@ -350,6 +431,56 @@ final class RunManifestTests: XCTestCase {
         XCTAssertTrue(kept.isSuperset(of: ["\(new).xlsx", "\(new).manifest.json", "\(new).tsr",
                                            "report_p_2026-09-01_090000.tsr"]),
                       "a reply with no workbook of its name stays where it is")
+    }
+
+    /// A Generate run's own HTML, PDF and CSV, listed in the workbook's manifest, move with it.
+    func testRotationMovesWhatTheManifestListsWithTheWorkbook() throws {
+        let archive = folder.appendingPathComponent("archive", isDirectory: true)
+        let old = "report_p_2026-10-01_090000"
+        let new = "report_p_2026-10-02_090000"
+        let page = "jamf_report_p_2026-10-01_090001.html"
+        for name in ["\(old).xlsx", page, "\(new).xlsx"] {
+            try Data(name.utf8).write(to: folder.appendingPathComponent(name))
+        }
+        let manifest = try RunManifest.build(
+            artifacts: [folder.appendingPathComponent("\(old).xlsx"),
+                        folder.appendingPathComponent(page)],
+            in: folder, now: Date(timeIntervalSince1970: 1_793_264_400))
+        try manifest.encoded().write(to: folder.appendingPathComponent("\(old).manifest.json"))
+        ReportEngine(config: ReportConfig(), dataDir: folder).archiveOldRuns(
+            outputDir: folder, archiveDir: archive, stem: "report_p", keep: 1)
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: archive.path)),
+                       ["\(old).xlsx", page, "\(old).manifest.json"])
+        XCTAssertTrue(RunManifest.verify(
+            manifestAt: archive.appendingPathComponent("\(old).manifest.json")).passed)
+    }
+
+    /// When a file of the run cannot be archived, its manifest stays with the files left.
+    func testRotationLeavesTheManifestWhenAFileOfItsRunDidNotMove() throws {
+        let archive = folder.appendingPathComponent("archive", isDirectory: true)
+        let old = "report_p_2026-10-01_090000"
+        for name in ["\(old).xlsx", "\(old).html", "\(old).manifest.json",
+                     "report_p_2026-10-02_090000.xlsx"] {
+            try Data("x".utf8).write(to: folder.appendingPathComponent(name))
+        }
+        // A read-only folder at the HTML's name in the archive cannot be replaced.
+        let blocker = archive.appendingPathComponent("\(old).html", isDirectory: true)
+        try FileManager.default.createDirectory(at: blocker, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: blocker.appendingPathComponent("held"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o500],
+                                              ofItemAtPath: blocker.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                   ofItemAtPath: blocker.path)
+        }
+        let lines = ManifestLines()
+        ReportEngine(config: ReportConfig(), dataDir: folder).archiveOldRuns(
+            outputDir: folder, archiveDir: archive, stem: "report_p", keep: 1, onLine: lines.add)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent("\(old).manifest.json").path))
+        XCTAssertTrue(lines.all.contains {
+            $0.hasPrefix("[warn] Run manifest \(old).manifest.json left in the report folder")
+        }, "\(lines.all)")
     }
 
     /// A rotation failure reads in plain words, never a Swift error's description.
@@ -462,6 +593,54 @@ final class RunManifestGenerateTests: XCTestCase {
         XCTAssertTrue(RunManifest.verify(manifestAt: manifestURL).passed)
         XCTAssertFalse(names.contains { $0.hasSuffix(".tsr") }, "no authority, no request")
     }
+
+    /// A Generate run with every format: one manifest, named after the workbook, listing the
+    /// workbook and the HTML, PDF and CSV formats the run also wrote, all in one folder.
+    func testAGenerateOfEveryFormatSealsTheRunOnce() async throws {
+        // PDF and CSV refuse a folder under /tmp or /var (`isSensitiveAbsolutePath`).
+        let root = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("jrc-manifest-all-\(UUID().uuidString)", isDirectory: true)
+        let profile = "manifestall"
+        let workspace = root.appendingPathComponent(profile, isDirectory: true)
+        let chosen = root.appendingPathComponent("Chosen", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: chosen, withIntermediateDirectories: true)
+        try "output:\n  timestamp_outputs: true\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        // The inventory CSV needs a computers snapshot.
+        let computers = workspace.appendingPathComponent("jamf-cli-data/computers")
+        try FileManager.default.createDirectory(at: computers, withIntermediateDirectories: true)
+        try TestFixtures.copyFile(
+            TestFixtures.dir("jamf-cli-data/computers-v4/computers-v4.json"),
+            to: computers.appendingPathComponent("computers_20261029T090000.json"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let lines = ManifestLines()
+        let result = await CLIBridge().generateAll(
+            types: [.xlsx, .html, .pdf, .csv], outputDir: chosen, profile: profile,
+            onLine: lines.add)
+        let names = try FileManager.default.contentsOfDirectory(atPath: chosen.path)
+        let manifests = names.filter { $0.hasSuffix(RunManifest.manifestSuffix) }
+        XCTAssertEqual(manifests.count, 1, "\(names) \(lines.all)")
+        let manifestURL = chosen.appendingPathComponent(try XCTUnwrap(manifests.first))
+        let manifest = try JSONDecoder().decode(
+            RunManifest.self, from: try Data(contentsOf: manifestURL))
+        let listed = manifest.artifacts.map(\.name)
+        XCTAssertEqual(listed.first.map { $0.hasSuffix(".xlsx") }, true, "\(listed)")
+        XCTAssertEqual(manifestURL.lastPathComponent,
+                       listed.first.map { String($0.dropLast(5)) + RunManifest.manifestSuffix })
+        let written = Set(result.succeeded)
+        for (type, ext) in [(GenerateOutputType.html, ".html"), (.pdf, ".pdf"), (.csv, ".csv")]
+        where written.contains(type) {
+            XCTAssertEqual(listed.filter { $0.hasSuffix(ext) }.count, 1, "\(ext): \(listed)")
+        }
+        XCTAssertEqual(written, [.xlsx, .html, .pdf, .csv], "\(lines.all)")
+        XCTAssertEqual(lines.all.filter { $0.hasPrefix("[ok] run manifest written") }.count, 1)
+        XCTAssertTrue(RunManifest.verify(manifestAt: manifestURL).passed)
+    }
 }
 
 /// A shared workspace's peer can change `output.timestamp_authority`; this Mac then sends no
@@ -494,17 +673,24 @@ final class TimestampAuthorityPinTests: XCTestCase {
         return try ConfigLoader.load(from: url)
     }
 
-    func testAChangedAuthorityReadsAsUnsetUntilConfirmed() throws {
+    /// An address in the shared file, even at this Mac's first sight of it, is used only once
+    /// confirmed here.
+    func testAnAuthorityIsUnsetUntilConfirmedEvenAtFirstSight() throws {
         let first = try config(authority: "https://tsa.example.test/tsr")
+        XCTAssertNil(ReportEngine.timestampAuthority(first, profile: profile,
+                                                     appSupport: appSupport))
+        var drift = try XCTUnwrap(SharedConfigPin.check(profile: profile, appSupport: appSupport)
+            .drifts.first { $0.key == .timestampAuthority })
+        try SharedConfigPin.confirm(profile: profile, drifts: [drift], appSupport: appSupport)
         XCTAssertEqual(ReportEngine.timestampAuthority(first, profile: profile,
                                                        appSupport: appSupport),
-                       URL(string: "https://tsa.example.test/tsr"), "trusted on first sight")
+                       URL(string: "https://tsa.example.test/tsr"))
 
         let changed = try config(authority: "https://collector.attacker.test/tsr?k=1")
         XCTAssertNil(ReportEngine.timestampAuthority(changed, profile: profile,
                                                      appSupport: appSupport))
-        let check = SharedConfigPin.check(profile: profile, appSupport: appSupport)
-        let drift = try XCTUnwrap(check.drifts.first { $0.key == .timestampAuthority })
+        drift = try XCTUnwrap(SharedConfigPin.check(profile: profile, appSupport: appSupport)
+            .drifts.first { $0.key == .timestampAuthority })
         XCTAssertTrue(drift.current.hasPrefix("collector.attacker.test (URL fingerprint "))
         XCTAssertFalse(drift.current.contains("k=1"), "the URL itself is never shown")
 
@@ -512,5 +698,87 @@ final class TimestampAuthorityPinTests: XCTestCase {
         XCTAssertEqual(ReportEngine.timestampAuthority(changed, profile: profile,
                                                        appSupport: appSupport),
                        URL(string: "https://collector.attacker.test/tsr?k=1"))
+        // A run that loaded the earlier address does not send there now.
+        XCTAssertNil(ReportEngine.timestampAuthority(first, profile: profile,
+                                                     appSupport: appSupport))
+    }
+
+    /// A shared workspace whose authority was never confirmed here sends nothing.
+    func testASealOnAnUnconfirmedAuthoritySendsNothing() async throws {
+        let config = try config(authority: "https://\(TSAStub.host)/tsr")
+        let reports = root.appendingPathComponent(profile).appendingPathComponent("Reports")
+        try FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
+        let workbook = reports.appendingPathComponent("report_a.xlsx")
+        try Data("x".utf8).write(to: workbook)
+        TSAStub.answer(.reply(200, Data()))
+        let manifest = await ReportEngine.sealRun(
+            artifacts: [workbook], config: config, profile: profile,
+            now: Date(timeIntervalSince1970: 1_793_264_400), session: TSAStub.session,
+            appSupport: appSupport, onLine: nil)
+        XCTAssertNotNil(manifest)
+        XCTAssertTrue(TSAStub.requests.isEmpty)
+    }
+}
+
+/// `output.timestamp_authority` can carry a token, as `notify.url` does: every place that shows,
+/// copies or bundles config.yaml or a log treats it the same way.
+final class TimestampAuthorityRedactionTests: XCTestCase {
+    private let address = "https://tsa.example.test/tsr?token=tsa-secret-4417"
+
+    func testTheFromFileTabShowsOnlyThatItIsSet() {
+        let value = YAMLCodec.YAMLValue.scalar(.string(address))
+        XCTAssertEqual(ConfigFileSections.displayValue(
+            value, keyPath: "output.timestamp_authority"), "(set)")
+    }
+
+    func testAConfigBackupHoldsNeitherTheTokenNorTheAddress() throws {
+        let yaml = "output:\n  csv_folder: true\n  timestamp_authority: \"\(address)\"\n"
+            + "# old: \(address)\n"
+        let copy = String(decoding: ConfigService.scrubbedForBackup(Data(yaml.utf8)), as: UTF8.self)
+        XCTAssertFalse(copy.contains("tsa-secret-4417"), copy)
+        XCTAssertTrue(copy.contains("  timestamp_authority: \"\""), copy)
+        XCTAssertTrue(copy.contains(
+            "# output.timestamp_authority removed from this copy "
+                + "(was https://tsa.example.test/…)"))
+        XCTAssertTrue(copy.contains("  csv_folder: true"))
+    }
+
+    func testABundledConfigOrLogHoldsNoAuthorityAddress() {
+        let text = DiagnosticRedactor().redactText("timestamp_authority: \"\(address)\"")
+        XCTAssertFalse(text.contains("tsa-secret-4417"), text)
+        XCTAssertFalse(text.contains("tsa.example.test"), text)
+    }
+
+    /// The configured host joins the hosts a shared log or bundle masks.
+    func testTheAuthorityHostIsMaskedInSharedText() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-tsa-redact-\(UUID().uuidString)", isDirectory: true)
+        let workspace = root.appendingPathComponent("tsaredact", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try "output:\n  timestamp_authority: \"https://tsa.example.test:8443/tsr\"\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let none = root.appendingPathComponent("no-jamf-cli-config.yaml")
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(profile: "tsaredact", configURL: none),
+                       ["tsa.example.test:8443", "tsa.example.test"])
+        let shared = LogRedactor.redactedForSharing(
+            "[warn] report timestamp not saved: sending the request to tsa.example.test: "
+                + "the authority answered HTTP 500",
+            profile: "tsaredact", scopeIDs: { _ in [] },
+            serverHosts: { DiagnosticBundleService.serverHosts(profile: $0, configURL: none) })
+        XCTAssertFalse(shared.contains("tsa.example.test"), shared)
+    }
+
+    func testConfigDoctorNamesAnAuthorityThatIsNotText() throws {
+        let yaml = "output:\n  timestamp_authority: 5\n"
+        let rows = ConfigDoctorService.valueRows(
+            try ConfigLoader.loadFromString(yaml), raw: try ConfigLoader.rawMapping(fromYAML: yaml),
+            profile: "p")
+        let row = try XCTUnwrap(rows.first { $0.title == "output.timestamp_authority" })
+        XCTAssertTrue(row.detail.contains("is not text"), row.detail)
     }
 }

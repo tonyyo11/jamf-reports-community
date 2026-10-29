@@ -124,6 +124,35 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+/// The files one Generate run wrote, in the order its formats wrote them (the workbook first),
+/// and the config the first of them loaded, so `generateAll` seals the run once.
+final class RunArtifacts: Sendable {
+    private let state = Mutex<(urls: [URL], config: ReportConfig?)>(([], nil))
+
+    var urls: [URL] { state.withLock { $0.urls } }
+    var config: ReportConfig? { state.withLock { $0.config } }
+
+    func add(_ urls: [URL], config: ReportConfig) {
+        state.withLock {
+            $0.urls += urls
+            if $0.config == nil { $0.config = config }
+        }
+    }
+
+    /// `files` added to `run`, or, for a step that runs on its own (no `run`), sealed now.
+    static func record(
+        _ files: [URL], in run: RunArtifacts?, config: ReportConfig, profile: String,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async {
+        if let run {
+            run.add(files, config: config)
+        } else {
+            await ReportEngine.sealRun(
+                artifacts: files, config: config, profile: profile, onLine: onLine)
+        }
+    }
+}
+
 /// Per-type result of a `generateAll` run.
 /// Tracks successful and failed output types independently so the UI
 /// can report partial success (e.g. "XLSX written, HTML failed").
@@ -161,17 +190,19 @@ extension CLIBridge {
     ) async -> GenerateAllResult {
         // Each format resolves the report folder; a refused `output_dir` is said once per run.
         let onLine = Self.droppingRepeatedFolderWarnings(rawOnLine)
+        // Every format adds what it wrote; the run is sealed once, after the last one.
+        let written = RunArtifacts()
         // The workbook step's `generate` checkpoints too; the run names each drift once.
         return await SharedConfigPin.announcingOnce {
             SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
-            return await Self.runGenerateAll(
+            let result = await Self.runGenerateAll(
                 types: types,
                 onLine: onLine,
                 generateXLSX: {
                     if schoolMode {
                         return try await self.schoolGenerate(
                             profile: profile, csvFolder: types.contains(.csvFolder),
-                            onLine: onLine)
+                            written: written, onLine: onLine)
                     }
                     // A chosen HTML format is the run's one HTML report; `html.with_workbook`
                     // would write a second.
@@ -179,7 +210,8 @@ extension CLIBridge {
                         profile: profile, template: template,
                         outputDir: outputDir, aiNarrative: aiNarrative,
                         htmlWithWorkbook: !types.contains(.html),
-                        csvFolder: types.contains(.csvFolder), now: now, onLine: onLine
+                        csvFolder: types.contains(.csvFolder), now: now, written: written,
+                        onLine: onLine
                     )
                 },
                 generateHTML: {
@@ -187,23 +219,35 @@ extension CLIBridge {
                         profile: profile, outputDir: outputDir, type: .html, onLine: onLine)
                     return try await self.generateHTML(
                         profile: profile, outFile: outURL.path, template: template,
-                        aiNarrative: aiNarrative, onLine: onLine
+                        aiNarrative: aiNarrative, written: written, onLine: onLine
                     )
                 },
                 generatePDF: {
                     let outURL = try self.reportFileURL(
                         profile: profile, outputDir: outputDir, type: .pdf, onLine: onLine)
                     return try await self.generatePDF(
-                        profile: profile, outFile: outURL.path, template: template, onLine: onLine
+                        profile: profile, outFile: outURL.path, template: template,
+                        written: written, onLine: onLine
                     )
                 },
                 generateCSV: {
+                    // A chosen folder takes the CSV too, so the run's files share one folder.
+                    let outURL = try outputDir.map { _ in
+                        try self.reportFileURL(
+                            profile: profile, outputDir: outputDir, type: .csv, onLine: onLine)
+                    }
                     return try await self.exportInventoryCSV(
-                        profile: profile, outFile: nil, onLine: onLine
+                        profile: profile, outFile: outURL?.path, written: written, onLine: onLine
                     )
                 },
                 tighten: { WorkspacePermissionHardener.tighten(profile: profile) }
             )
+            let files = written.urls
+            if !files.isEmpty {
+                await ReportEngine.sealRun(
+                    artifacts: files, config: written.config, profile: profile, onLine: onLine)
+            }
+            return result
         }
     }
 

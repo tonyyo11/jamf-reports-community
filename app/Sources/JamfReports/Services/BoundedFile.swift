@@ -206,7 +206,7 @@ enum BoundedFile {
             hasher.update(data: chunk)
             remaining -= chunk.count
         }
-        return (hasher.finalize().map { String(format: "%02x", $0) }.joined(), size)
+        return (hasher.finalize().hexString, size)
     }
 
     /// The one reader of a snapshot, summary, cache or log file the picker chose: `read` refusing a
@@ -257,4 +257,9 @@ enum BoundedFile {
     ) -> String? {
         stateData(url, limit: limit, inside: root).flatMap { String(data: $0, encoding: .utf8) }
     }
+}
+
+extension Sequence where Element == UInt8 {
+    /// Lowercase hex, two digits a byte: how a SHA-256 or fingerprint is written and compared.
+    var hexString: String { map { String(format: "%02x", $0) }.joined() }
 }
