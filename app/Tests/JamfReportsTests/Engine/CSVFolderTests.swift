@@ -301,10 +301,9 @@ final class CSVFolderTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: parent.appendingPathComponent("report_w.xlsx").path))
     }
 
-    /// The one remaining `replaceItemAt` caller (the jamf-cli install) relies on it failing
-    /// closed over a link: it throws (as of macOS 27) and neither writes through the link nor
-    /// removes it. If a future macOS replaced the link instead, that is also safe; only a write
-    /// through it would fail this.
+    /// The jamf-cli install is the one `replaceItemAt` caller left. It refuses a link at its
+    /// target itself (JamfCLIInstallerTests); this pins the backstop: `replaceItemAt` over a
+    /// link never writes through it, whether it throws (as of macOS 27) or replaces the link.
     func testReplaceItemAtNeverWritesThroughALinkAtTheDestination() throws {
         let dir = scratchURL("replace")
         defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }

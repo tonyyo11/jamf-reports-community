@@ -50,9 +50,9 @@ struct SchoolDashboard: Sendable {
                 print("  " + msg)
                 onLine?(.init(timestamp: Date(), level: .info, text: msg))
             } catch {
-                let label = "\(type(of: error)): \(error.localizedDescription)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
+                let failure = SheetRegistry.failure(sheet: name, error: error)
+                failures.append(failure)
+                print("  [fail] \(name): unexpected error — \(failure.error)")
             }
         }
         return (written, failures)
@@ -653,7 +653,9 @@ struct SchoolDashboard: Sendable {
 enum SchoolDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
 
-    var errorDescription: String? {
+    var errorDescription: String? { skipReason }
+
+    var skipReason: String {
         switch self {
         case .noCachedData(let names):
             return "No cached school snapshot found for: \(names.joined(separator: ", "))"

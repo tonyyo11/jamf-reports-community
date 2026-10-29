@@ -18,7 +18,7 @@ import XCTest
 // MARK: - Test error types
 
 /// Simulates a "data absent" condition that should be silently skipped.
-private struct TestSkippableError: Error, SheetSkippable {}
+private struct TestSkippableError: Error, SheetSkippable { let skipReason = "test skip" }
 
 /// Simulates an unexpected runtime error that should be reported as a failure.
 private struct TestRealError: Error {

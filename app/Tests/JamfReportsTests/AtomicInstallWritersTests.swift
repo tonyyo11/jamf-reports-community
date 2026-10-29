@@ -159,4 +159,53 @@ final class AtomicInstallWritersTests: XCTestCase {
         }
         XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is kept")
     }
+
+    func testAFailedWriteLeavesNoStagingFile() throws {
+        let dest = root.appendingPathComponent("locked.json")
+        try Data("old".utf8).write(to: dest)
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: dest.path)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: dest.path) }
+
+        XCTAssertThrowsError(try AtomicInstall.write(Data("new".utf8), to: dest))
+
+        XCTAssertEqual(try String(contentsOf: dest, encoding: .utf8), "old")
+        let left = try FileManager.default.contentsOfDirectory(atPath: root.path)
+            .filter { $0.contains(".tmp-") }
+        XCTAssertEqual(left, [])
+    }
+
+    func testAFirstWriteGetsTheProcessDefaultMode() throws {
+        let dest = root.appendingPathComponent("fresh.json")
+        let mask = umask(0)
+        umask(mask)
+        try AtomicInstall.write(Data("new".utf8), to: dest)
+        XCTAssertEqual(try mode(of: dest), Int16(0o666 & ~mask))
+    }
+
+    func testKeepingAModeDropsSetuidAndStickyBits() throws {
+        let dest = root.appendingPathComponent("suid.json")
+        try Data("old".utf8).write(to: dest)
+        chmod(dest.path, 0o4755)
+        try AtomicInstall.write(Data("new".utf8), to: dest)
+        XCTAssertEqual(try mode(of: dest), 0o755)
+    }
+
+    func testTheSweepRunsOncePerFolderPerProcess() throws {
+        let fm = FileManager.default
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func plantOld() throws -> URL {
+            let url = root.appendingPathComponent(".x.json.tmp-\(UUID().uuidString)")
+            try Data("x".utf8).write(to: url)
+            try fm.setAttributes([.modificationDate: now.addingTimeInterval(-172_800)],
+                                 ofItemAtPath: url.path)
+            return url
+        }
+        let first = try plantOld()
+        try AtomicInstall.write(Data("a".utf8), to: root.appendingPathComponent("a.json"), now: now)
+        XCTAssertFalse(fm.fileExists(atPath: first.path))
+
+        let second = try plantOld()
+        try AtomicInstall.write(Data("b".utf8), to: root.appendingPathComponent("a.json"), now: now)
+        XCTAssertTrue(fm.fileExists(atPath: second.path), "the folder was swept once already")
+    }
 }

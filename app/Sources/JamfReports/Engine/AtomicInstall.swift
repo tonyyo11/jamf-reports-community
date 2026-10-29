@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Puts a staged file or folder at its final name in one step, never following a link at that
 /// name: `renamex_np` swaps the two entries (or, with nothing there, links the staged one in
@@ -29,6 +30,10 @@ enum AtomicInstall {
         throw POSIXError(POSIXErrorCode(rawValue: lastError) ?? .EIO)
     }
 
+    /// Folders `write` has already swept in this process: a crash leftover is from an earlier
+    /// run, so one sweep per folder is enough and a busy writer does not list it every time.
+    private static let sweptFolders = OSAllocatedUnfairLock(initialState: Set<String>())
+
     /// Writes `data` to `final` through a hidden sibling opened exclusively (`O_EXCL|O_NOFOLLOW`),
     /// then `install`s it, so a link planted at `final` is replaced and a crash leaves the old
     /// file or the new one. `mode` is the file's permission bits; nil keeps those of a regular
@@ -36,10 +41,13 @@ enum AtomicInstall {
     static func write(
         _ data: Data, to final: URL, mode: mode_t? = nil, now: Date = Date()
     ) throws {
-        removeStaleStaging(in: final.deletingLastPathComponent(), now: now, scope: .workspace)
+        let folder = final.deletingLastPathComponent()
+        if sweptFolders.withLock({ $0.insert(folder.path).inserted }) {
+            removeStaleStaging(in: folder, now: now, scope: .workspace)
+        }
         var existing = stat()
         let held = lstat(final.path, &existing) == 0 && (existing.st_mode & S_IFMT) == S_IFREG
-            ? existing.st_mode & 0o7777 : nil
+            ? existing.st_mode & 0o777 : nil
         let exact = mode ?? held
         let staged = stagedURL(for: final)
         let fd = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, exact ?? 0o666)
@@ -63,6 +71,8 @@ enum AtomicInstall {
         }
         let aside = stagedURL(for: final, isDirectory: false)
         guard rename(final.path, aside.path) == 0 else { throw posixError() }
+        // A rename keeps the old mtime, which a sweep would read as stale at once.
+        lutimes(aside.path, nil)
         guard rename(staged.path, final.path) == 0 else {
             let failure = posixError()
             _ = rename(aside.path, final.path)
@@ -97,7 +107,8 @@ enum AtomicInstall {
 
     /// Which staged shapes a sweep removes. `reports`: the folder a person chose for reports,
     /// so only what the report writers stage (a `.xlsx` file, a `_csv` folder). `workspace`: a
-    /// folder the app confines and owns, so any staged regular file (`.json`, `.last`, config).
+    /// folder the app confines and owns, so any staged regular file (`.json`, `.last`, config);
+    /// a staged folder is a `_csv` one in both scopes.
     enum StagingScope: Sendable {
         case reports, workspace
 
