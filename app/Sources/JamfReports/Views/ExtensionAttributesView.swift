@@ -390,6 +390,11 @@ struct ExtensionAttributesView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            "\(coverage.eaName) extension attribute, "
+                                + "\(coverage.populatedDevices) devices reporting a value")
+                        .accessibilityHint("Shows its value distribution")
+                        .accessibilityAddTraits(selectedEA == coverage.eaName ? .isSelected : [])
                     }
 
                     if snapshot.coverage.count > 30 {
@@ -424,13 +429,6 @@ struct ExtensionAttributesView: View {
             in: RoundedRectangle(cornerRadius: 6)
         )
         .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(coverage.eaName) extension attribute, \(coverage.populatedDevices) devices reporting a value")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "View distribution") {
-            selectedEA = coverage.eaName
-        }
-        .focusable()
     }
 
     @ViewBuilder

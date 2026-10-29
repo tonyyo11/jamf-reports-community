@@ -137,6 +137,7 @@ struct RunsView: View {
         .buttonStyle(.plain)
         .contextMenu { runListItemContextMenu(run) }
         .accessibilityLabel(runListItemAccessibilityLabel(run))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     @ViewBuilder
