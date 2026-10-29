@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 
 /// Root of the included `jamf-reports` command-line interface (v2.4.0). The same
-/// binary launches the GUI on no-args; `App/main.swift` routes here when
+/// binary launches the GUI on no-args; `runJamfReports()` routes here when
 /// `routesToCLI` accepts the first argument. Each subcommand is a thin shell over
 /// an existing engine entry point. xlsx + HTML only — PDF stays a GUI feature
 /// (WKWebView needs an AppKit run loop a headless CLI lacks).
@@ -36,7 +36,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
         subcommandNames.contains(arg) || ["help", "--help", "-h", "--version"].contains(arg)
     }
 
-    /// `App/main.swift`'s CLI-vs-GUI test for `argv[1]`: a known subcommand or help flag, or
+    /// `runJamfReports()`'s CLI-vs-GUI test for `argv[1]`: a known subcommand or help flag, or
     /// any word that is not a flag, so ArgumentParser rejects a removed or mistyped subcommand
     /// instead of the app opening (#207 G31). Launch Services arguments (`-psn_…`, `-NS…`,
     /// `-Apple…`) start with `-` and still open the GUI.

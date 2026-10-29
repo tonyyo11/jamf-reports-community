@@ -832,7 +832,7 @@ final class CLIBridge {
     /// For a narrower set — e.g. `RefreshCoordinator`'s `[.refresh]` — that
     /// guard never applies regardless; what `force: true` bypasses there is
     /// the per-kind cadence filter, so ad-hoc Refresh calls still always
-    /// fetch fresh data. Scheduled collects (via `main.swift --scheduled-run`)
+    /// fetch fresh data. Scheduled collects (via `--scheduled-run`)
     /// pass `force: false` (the default).
     ///
     /// Holds the tick lock throughout (`holdingTickLock`), and throws
@@ -865,7 +865,7 @@ final class CLIBridge {
         try await ensureWorkspace(profile: profile, onLine: onLine)
         // Honor the Settings "Skip expensive collections" toggle. UserDefaults
         // backs the @AppStorage in SettingsView, so this is a direct read.
-        // Scheduled collects run from main.swift and pass skipExpensive=false
+        // Scheduled collects run from HeadlessRun.swift and pass skipExpensive=false
         // unconditionally — the toggle only affects manual GUI refreshes.
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
         // Load config for product-type routing. Failure degrades to Jamf Pro

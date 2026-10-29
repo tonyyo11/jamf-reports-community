@@ -262,7 +262,7 @@ final class ScheduledRunRecorderTests: XCTestCase {
     func testFinishWithSheetFailuresRecordsPartialLineInLog() throws {
         let workspace = try makeWorkspace()
         let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
-        // Simulate the main.swift partial-line path: record it before finish.
+        // Simulate the HeadlessRun.swift partial-line path: record it before finish.
         recorder.record("[partial] 2 sheet failure(s) — see lines above")
         recorder.finish(exitCode: 0, sheetFailures: 2)
 

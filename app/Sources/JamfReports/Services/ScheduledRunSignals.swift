@@ -6,7 +6,7 @@ import Foundation
 // These three fact builders are top-level (not namespaced) so both the
 // scheduled-run senders below and `WebhookNotifierTests` can call them
 // directly. Moving them changes no behavior — the payloads are byte-identical
-// to the pre-extraction main.swift versions.
+// to the pre-extraction HeadlessRun.swift versions.
 
 /// Facts for a success/partial digest. `full` mode is byte-identical to the
 /// pre-2.6 payload (Profile/Run/Status, plus "Sheets failed" and "Report" when
@@ -104,15 +104,15 @@ func scheduledRunEcho(_ line: CLIBridge.LogLine, verbose: Bool) -> String? {
 // MARK: - Scheduled-run trust signals (webhook digests + metric alerts)
 
 /// Reusable trust machinery shared by the headless `--scheduled-run` path
-/// (`App/main.swift`) and the included `jamf-reports` CLI (`CLI/ReportCommands`).
+/// (`App/HeadlessRun.swift`) and the included `jamf-reports` CLI (`CLI/ReportCommands`).
 ///
-/// Extracted verbatim from main.swift so a self-scheduled CLI `collect`/
+/// Extracted verbatim from HeadlessRun.swift so a self-scheduled CLI `collect`/
 /// `generate` surfaces the same signals a scheduled run does. Every member is
 /// best-effort: a webhook or summary-load failure logs a warning and never
 /// throws into (or changes the exit code of) the run.
 ///
 /// Scheduled-run-only context — the fleet dead-man overdue digest and its
-/// per-profile notify resolution — deliberately stays in main.swift; it has no
+/// per-profile notify resolution — deliberately stays in HeadlessRun.swift; it has no
 /// meaning for a single CLI invocation.
 enum ScheduledRunSignals {
 
@@ -473,7 +473,7 @@ enum ScheduledRunSignals {
 }
 
 /// The "[partial] N sheet failure(s)…" marker text kept byte-identical to the
-/// scheduled path's (main.swift), so `RunHistoryService.isPartialRun`'s
+/// scheduled path's (HeadlessRun.swift), so `RunHistoryService.isPartialRun`'s
 /// `contains("[partial]")` scan recognizes a partially-failed CLI `generate`
 /// the same way it does a scheduled one.
 func partialRunMarker(sheetFailures: Int) -> String {
@@ -671,14 +671,14 @@ struct CLIRunSignals: Sendable {
 
     static func evaluatesAlerts(for kind: Kind) -> Bool { kind == .collect }
 
-    /// The gate, per kind, mirroring what `main.swift` does for each mode.
+    /// The gate, per kind, mirroring what `HeadlessRun.swift` does for each mode.
     ///
     /// A `collect`'s entire product is the day's summary, so either marker
     /// suppresses the card: a stand-down collected nothing, and a failed summary
-    /// write left Trends where it was (`main.swift:480`). A `generate` renders a
+    /// write left Trends where it was (`HeadlessRun.swift:480`). A `generate` renders a
     /// real workbook whether or not the summary write that follows it succeeded
     /// — `ReportEngine.generate` emits the same marker — so only a stand-down
-    /// suppresses it, matching the scheduled twin at `main.swift:547`/`:558`.
+    /// suppresses it, matching the scheduled twin at `HeadlessRun.swift:547`/`:558`.
     static func announcesSuccess(for kind: Kind, honesty: CollectHonestyWatcher) -> Bool {
         kind == .collect ? honesty.producedFreshSnapshot : !honesty.stoodDown
     }
@@ -784,7 +784,7 @@ struct CLIRunSignals: Sendable {
     func finishFailure(_ error: Error) async {
         let desc = error.localizedDescription
         // Redaction boundary: the local Run History log gets the raw error
-        // (operator's own workspace, matching main.swift's scheduled path);
+        // (operator's own workspace, matching HeadlessRun.swift's scheduled path);
         // only the webhook egress below is LogRedactor/DiagnosticRedactor-
         // scrubbed, inside notifyScheduledRunFailure.
         recorder?.record("[error] \(desc)")

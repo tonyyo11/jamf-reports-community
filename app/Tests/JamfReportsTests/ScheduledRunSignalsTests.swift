@@ -167,7 +167,7 @@ final class ScheduledRunSignalsTests: XCTestCase {
     // MARK: - partialRunMarker
 
     func testPartialRunMarkerMatchesScheduledPathFormat() {
-        // Kept byte-identical to main.swift's scheduledRunSingle marker so
+        // Kept byte-identical to HeadlessRun.swift's scheduledRunSingle marker so
         // RunHistoryService.isPartialRun's "[partial]" scan recognizes both.
         XCTAssertEqual(
             partialRunMarker(sheetFailures: 3),

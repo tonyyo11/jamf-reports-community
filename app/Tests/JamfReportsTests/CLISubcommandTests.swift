@@ -3,7 +3,7 @@ import XCTest
 @testable import JamfReports
 
 /// `check` and `school-check` run through the real `runCheck` / `runSchoolCheck` from
-/// `main.swift`, in a workspaces root of their own.
+/// `HeadlessRun.swift`, in a workspaces root of their own.
 final class CLISubcommandTests: XCTestCase {
     nonisolated(unsafe) private var root: URL!
 

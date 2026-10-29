@@ -280,7 +280,7 @@ enum BackupMaintenance {
     }
 
     /// Post-success housekeeping run by both the `jamf-reports backup` command
-    /// (`UtilityCommands`) and the headless `--scheduled-run` path (`main.swift`).
+    /// (`UtilityCommands`) and the headless `--scheduled-run` path (`HeadlessRun.swift`).
     /// Prunes old scheduled backups and sweeps abandoned `.tmp-*` staging dirs.
     /// Both paths must call this and nothing else — do not inline the two steps
     /// at call sites or they will diverge again. `justFinished` is the folder the run wrote,

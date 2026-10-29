@@ -493,7 +493,7 @@ enum LaunchAgentService {
     /// Parse `--tiers <csv>` into a `CollectionTier` set (PR-23 T-19).
     ///
     /// Returns `nil` when the flag is absent — pre-PR-23 plists omit it and
-    /// `main.swift` defaults a missing tier set to all tiers.
+    /// `HeadlessRun.swift` defaults a missing tier set to all tiers.
     ///
     /// Unknown tier tokens are dropped with a warning rather than failing
     /// the parse, so a plist written by a newer build still loads on an

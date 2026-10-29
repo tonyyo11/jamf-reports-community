@@ -104,7 +104,7 @@ func makeReportNarrativeGenerator(
 
 /// HARD POLICY (F3): the model is invoked ONLY from GUI-initiated generate
 /// flows (OverviewView.runGenerate, GenerateSheet.runGenerate). Headless paths
-/// — `main.swift --scheduled-run`, the included `jamf-reports` CLI, and the
+/// — `--scheduled-run`, the included `jamf-reports` CLI, and the
 /// Schedules "Run now" dispatcher — never call this; their engine calls leave
 /// `aiNarrative` at its `nil` default and the section is omitted.
 enum ReportNarrative {

@@ -252,7 +252,7 @@ struct Schedule: Identifiable, Sendable {
     var multiTarget: MultiTarget? = nil
     /// Which `CollectionTier`s this schedule's collect step fetches (PR-23
     /// T-17). `nil` means "not specified" — legacy plists written before
-    /// PR-23 omit the `--tiers` flag, and `main.swift` defaults a missing
+    /// PR-23 omit the `--tiers` flag, and `HeadlessRun.swift` defaults a missing
     /// value to all tiers so their behavior is unchanged.
     var tiers: Set<CollectionTier>? = nil
     /// Profiles excluded from a multi-profile (`--all-profiles`) run, so the

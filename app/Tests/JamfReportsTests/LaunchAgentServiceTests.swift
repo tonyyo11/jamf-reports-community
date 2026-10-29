@@ -144,7 +144,7 @@ final class LaunchAgentServiceTests: XCTestCase {
     }
 
     func testParseNativePlistWithoutTiersFlagYieldsNil() throws {
-        // Pre-PR-23 plists omit --tiers; parse must yield nil so main.swift
+        // Pre-PR-23 plists omit --tiers; parse must yield nil so HeadlessRun.swift
         // applies the all-tiers default.
         let label = "\(prefix).dummy.legacy-collect"
         let plistURL = try writePlist([
