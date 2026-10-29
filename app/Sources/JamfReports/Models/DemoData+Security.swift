@@ -462,6 +462,17 @@ extension DemoData {
         ]
     }()
 
+    /// The demo's Mobile Devices findings, counted from the Mobile Devices demo fleet through
+    /// the same rules the screen filters with. The iOS feed is the newest of each demo version;
+    /// no update scan ran, so that finding is left out.
+    static var mobileAuditFindings: [AuditFinding] {
+        mobileDevicesFindings(MobileFleetView.makeDemoSnapshot(), context: mobileFindingContext)
+    }
+
+    /// What the demo's Mobile Devices filters and Audit findings judge devices against.
+    static let mobileFindingContext = MobileFinding.Context(
+        latestByMajor: [18: "18.2.1", 17: "17.6.1"], staleDays: 30, now: referenceDate)
+
     /// Computer groups no policy or profile references.
     static let unusedGroups: [UnusedGroup] = [
         UnusedGroup(
