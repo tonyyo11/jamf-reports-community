@@ -486,6 +486,9 @@ final class DiagnosticRedactor {
         // https value. `\b` keeps this off `webhook_url`/`base_url` (no word
         // boundary after an underscore), so it lands on `notify.url` and peers.
         add(#"(\burl\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#, "$1REDACTED_URL$3")
+        // `output.timestamp_authority`, an address that can carry a token like the webhook's.
+        add(#"(\btimestamp_authority\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#,
+            "$1REDACTED_URL$3")
         return patterns
     }
 
@@ -634,17 +637,29 @@ enum DiagnosticBundleService {
     }
 
     /// Every server in the user's own jamf-cli config file, as `host:port` and `host` (just
-    /// `host` when no port is set): the workspace's config.yaml is peer-writable on a shared
-    /// folder, so it never decides which hosts are redacted, and over-redacting another
-    /// profile's host costs nothing. `profile` is kept for callers. No file or no `url` gives
-    /// none.
+    /// `host` when no port is set), plus `profile`'s `output.timestamp_authority` host. The
+    /// workspace's config.yaml is peer-writable on a shared folder, so it only ever adds a host
+    /// to redact, never removes one, and over-redacting costs nothing. No file or no `url`
+    /// gives none.
     static func serverHosts(
         profile: String,
         configURL: URL = ProfileService.jamfCLIConfigFileURL()
     ) -> [String] {
         (ProfileService.readConfigFile(at: configURL) ?? []).flatMap { entry in
             entry.url.map(hostForms(ofURL:)) ?? []
-        }
+        } + timestampAuthorityHosts(profile: profile)
+    }
+
+    /// `hostForms` of `profile`'s `output.timestamp_authority`, read bounded from its config.yaml.
+    static func timestampAuthorityHosts(profile: String) -> [String] {
+        guard let workspace = ProfileService.workspaceURL(for: profile),
+              let text = try? ConfigLoader.readText(
+                at: workspace.appendingPathComponent("config.yaml")),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text),
+              let url = ConfigLoader.rawValue(
+                at: ["output", "timestamp_authority"], in: root) as? String
+        else { return [] }
+        return hostForms(ofURL: url)
     }
 
     /// Pure: `host:port` and `host` of a configured server URL, scheme, credentials and path
