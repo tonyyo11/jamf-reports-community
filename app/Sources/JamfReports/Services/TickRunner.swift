@@ -74,8 +74,8 @@ enum TickRunner {
             }
             return 0
         }
-        // Detached, so cancelling the caller (a view going away) stops the wait, not the child:
-        // a Run now keeps running, as it did before.
+        // Detached, so cancelling the caller (a view going away) never reaches the child: a Run
+        // now keeps running, as it did before, and the wait still returns its exit code.
         let run = Task.detached {
             do {
                 return try await bridge.run(

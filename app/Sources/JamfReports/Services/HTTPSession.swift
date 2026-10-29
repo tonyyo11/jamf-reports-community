@@ -15,6 +15,9 @@ enum HTTPSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = request
         configuration.timeoutIntervalForResource = resource
+        #if DEBUG
+        if let testProtocolClasses { configuration.protocolClasses = testProtocolClasses }
+        #endif
         return make(configuration: configuration)
     }
 
@@ -23,9 +26,6 @@ enum HTTPSession {
     static func make(configuration: URLSessionConfiguration) -> URLSession {
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
-        #if DEBUG
-        if let testProtocolClasses { configuration.protocolClasses = testProtocolClasses }
-        #endif
         return URLSession(configuration: configuration)
     }
 

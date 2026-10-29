@@ -18,12 +18,20 @@ jr_team_id_from_subject() {
 }
 
 # jr_identity_team_id <signing identity name>
-# Prints the team ID from the named identity's certificate, or nothing when it cannot be read.
+# Prints the team ID from the named identity's certificate, else from a trailing "(TEAMID)" in
+# the name, or nothing when neither gives one (a SHA-1 hash identity with no keychain match).
 jr_identity_team_id() {
-  local pem subject
-  pem="$(security find-certificate -c "${1-}" -p 2>/dev/null)" || return 0
-  subject="$(printf '%s\n' "$pem" | openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null)" || return 0
-  jr_team_id_from_subject "$subject"
+  local pem subject team trailing='\(([A-Z0-9]{10})\)$'
+  pem="$(security find-certificate -c "${1-}" -p 2>/dev/null)"
+  if [[ -n "$pem" ]]; then
+    subject="$(printf '%s\n' "$pem" | openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null)"
+    team="$(jr_team_id_from_subject "$subject")"
+  fi
+  if [[ -z "$team" && "${1-}" =~ $trailing ]]; then
+    team="${1##*\(}"
+    team="${team%\)}"
+  fi
+  printf '%s\n' "$team"
 }
 
 # jr_add_spawn_constraint <plist> <team ID> <signing identifier>

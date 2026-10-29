@@ -85,6 +85,8 @@ enum JamfCLIProbe {
                     continuation.resume(returning: running.outcome(timeout: timeout))
                 }
                 if launch == .launchFailed { continuation.resume(returning: .launchFailed) }
+                // onCancel ran before the launch when the caller was already cancelled.
+                if launch == .running, Task.isCancelled { running.terminate() }
             }
         } onCancel: {
             running.terminate()
