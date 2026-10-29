@@ -33,3 +33,7 @@ Scrub checklist (apply to every refreshed fixture):
   `https://example.jamfcloud.com`).
 - Management IDs and similar GUIDs: freshly generated values, never tenant originals.
 - Tenant, org, and location names: clearly fictional placeholders.
+
+`jamf-cli/commands-<version>.json` is jamf-cli's own command catalog, not demo-tenant data: it is
+the output of `jamf-cli commands -o json`, with no hosts or IDs. Refresh it with
+`app/scripts/capture-jamf-cli-catalog.zsh` when the jamf-cli floor moves.
