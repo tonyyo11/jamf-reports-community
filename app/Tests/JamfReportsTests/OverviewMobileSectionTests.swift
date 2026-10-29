@@ -22,12 +22,12 @@ final class OverviewMobileSectionTests: XCTestCase {
         supervised: MobileSummary.Share? = .init(met: 100, of: 118),
         passcode: MobileSummary.Share? = .init(met: 110, of: 115),
         osCurrent: MobileSummary.Share? = .init(met: 90, of: 112),
-        stale: Int? = 6, jailbroken: Int? = 0
+        stale: Int? = 6, jailbroken: Int? = 0, updateErrors: Int? = nil
     ) -> MobileSummary {
         MobileSummary(
             managed: 118, unmanaged: 2, supervised: supervised, passcode: passcode,
             dataProtection: nil, activationLock: nil, osCurrent: osCurrent, stale: stale,
-            jailbroken: jailbroken, updateErrors: nil)
+            jailbroken: jailbroken, updateErrors: updateErrors)
     }
 
     // MARK: - Composition from the newest summary
@@ -51,6 +51,20 @@ final class OverviewMobileSectionTests: XCTestCase {
         XCTAssertEqual(EnvironmentComposition(summary: summary(macs: 0, mobileCount: 0)), .unknown)
         XCTAssertEqual(EnvironmentComposition(summary: summary(macs: 0)), .unknown)
         XCTAssertEqual(EnvironmentComposition(summary: nil), .unknown)
+    }
+
+    /// The writer gives `totalDevices` 0 on a day a mixed fleet's Mac sources are past the cache
+    /// age while the mobile list landed; that one day must not read as mobile only.
+    func testOneDayWithNoMacsAfterADayWithMacsStaysMixed() {
+        let mobileDay = summary(macs: 0, mobileCount: 30)
+        XCTAssertEqual(
+            EnvironmentComposition(summary: mobileDay, previous: summary(macs: 40, mobileCount: 30)),
+            .mixed)
+        XCTAssertEqual(
+            EnvironmentComposition(summary: mobileDay, previous: summary(macs: 0, mobileCount: 30)),
+            .mobileOnly, "Two days in a row with no Macs is mobile only")
+        XCTAssertEqual(EnvironmentComposition(summary: mobileDay, previous: nil), .mobileOnly,
+                       "A first summary has no earlier day to disagree")
     }
 
     func testCompositionOfTheSummaryTheWriterProducesForAMobileOnlyFleet() {
@@ -87,7 +101,8 @@ final class OverviewMobileSectionTests: XCTestCase {
         }
         XCTAssertEqual(OverviewSection.mobileDevices.availability(in: .mixed), .shown)
         XCTAssertEqual(OverviewSection.mobileDevices.availability(in: .mobileOnly), .shown)
-        XCTAssertNotNil(OverviewSection.mobileDevices.availability(in: .macsOnly).reason)
+        XCTAssertEqual(OverviewSection.mobileDevices.availability(in: .macsOnly).reason,
+                       "No mobile devices in the latest daily summary.")
         XCTAssertNotNil(OverviewSection.mobileDevices.availability(in: .unknown).reason,
                         "No evidence of mobile devices yet: nothing to draw")
     }
@@ -202,6 +217,16 @@ final class OverviewMobileSectionTests: XCTestCase {
             [])
     }
 
+    func testOnlyTheLastShownCardOnAMobileOnlyEnvironmentIsHeld() {
+        let one: [Metric] = [.mobileStale]
+        XCTAssertTrue(OverviewScoreCards.isLastOnMobileOnly(
+            .mobileStale, shown: one, composition: .mobileOnly))
+        XCTAssertFalse(OverviewScoreCards.isLastOnMobileOnly(
+            .mobileStale, shown: one + [.mobilePasscode], composition: .mobileOnly))
+        XCTAssertFalse(OverviewScoreCards.isLastOnMobileOnly(
+            .mobileStale, shown: one, composition: .mixed), "A mixed fleet may show none")
+    }
+
     func testScoreCardRowsListMobileCardsOnlyWhereTheEnvironmentHasMobileDevices() {
         let mobile = Metric.mobileMetrics
         let mixed = OverviewCustomizeSheet.scoreCardRows(
@@ -222,28 +247,39 @@ final class OverviewMobileSectionTests: XCTestCase {
 
     // MARK: - Tiles
 
-    func testTilesShowEachFigureWithWhatItCounts() {
-        let tiles = mobileFigures().overviewTiles
+    func testTheSectionHasTheSpecsFourLinesWithWhatEachCounts() {
+        let tiles = mobileFigures(jailbroken: 1, updateErrors: 3).overviewTiles
 
         XCTAssertEqual(tiles.map(\.label), [
-            "Managed", "Supervised", "Passcode compliant", "OS current", "Stale", "Jailbroken",
+            "Devices", "OS current", "Passcode compliant", "Needs attention",
         ])
         XCTAssertEqual(tiles[0].value, "118")
-        XCTAssertEqual(tiles[0].caption, "2 unmanaged")
-        XCTAssertEqual(tiles[1].value, "84.7%")
-        XCTAssertEqual(tiles[1].caption, "100 of 118 managed devices")
+        XCTAssertEqual(tiles[0].caption, "managed mobile devices")
+        XCTAssertEqual(tiles[1].value, "80.4%")
+        XCTAssertEqual(tiles[1].caption, "90 of 112 devices with a listed version")
+        XCTAssertEqual(tiles[2].value, "95.7%")
         XCTAssertEqual(tiles[2].caption, "110 of 115 devices reporting")
-        XCTAssertEqual(tiles[3].caption, "90 of 112 devices with a listed version")
-        XCTAssertEqual(tiles[4].value, "6")
-        XCTAssertEqual(tiles[5].value, "0", "A measured zero is a zero")
+        XCTAssertEqual(tiles[3].value, "6", "1 jailbroken + 2 unmanaged + 3 update errors")
+        XCTAssertEqual(tiles[3].caption, "2 unmanaged, 1 jailbroken, 3 update errors")
+        XCTAssertEqual(tiles.map(\.opensAudit), [false, false, false, true])
     }
 
-    func testAFigureNoDeviceReportsIsADashNeverZero() {
-        let tiles = mobileFigures(
-            supervised: nil, passcode: .init(met: 0, of: 0), osCurrent: nil,
-            stale: nil, jailbroken: nil).overviewTiles
+    /// Each absent part contributes nothing, and a total of 0 hides the line.
+    func testNeedsAttentionCountsOnlyWhatIsReportedAndHidesAtZero() {
+        var figures = mobileFigures(jailbroken: nil, updateErrors: nil)
+        XCTAssertEqual(figures.needsAttentionCount, 2, "Only the unmanaged devices are known")
+        XCTAssertEqual(figures.overviewTiles.last?.caption, "2 unmanaged")
 
-        for index in [1, 2, 3, 4, 5] {
+        figures.unmanaged = 0
+        XCTAssertEqual(figures.needsAttentionCount, 0)
+        XCTAssertEqual(figures.overviewTiles.map(\.label),
+                       ["Devices", "OS current", "Passcode compliant"])
+    }
+
+    func testAShareNoDeviceReportsIsADashNeverZero() {
+        let tiles = mobileFigures(passcode: .init(met: 0, of: 0), osCurrent: nil).overviewTiles
+
+        for index in [1, 2] {
             XCTAssertEqual(tiles[index].value, MobileOverviewTile.dash, tiles[index].label)
             XCTAssertEqual(tiles[index].caption, MobileOverviewTile.unreported, tiles[index].label)
         }
@@ -298,6 +334,21 @@ final class OverviewMobileSectionTests: XCTestCase {
         })
     }
 
+    func testTheFleetInsightCountsUnmanagedAndUpdateErrorsLowerIsBetter() {
+        let before = mobileFigures(updateErrors: 1)
+        let input = FleetInsightInput.fleet(
+            current: summary(
+                macs: 40, mobileCount: 120, mobile: mobileFigures(updateErrors: 3)),
+            previous: summary(macs: 40, mobileCount: 120, mobile: before))
+        let text = lines(input)
+
+        XCTAssertTrue(text.contains("- Unmanaged mobile devices: 2 (unchanged vs prior)"))
+        XCTAssertTrue(text.contains {
+            $0.hasPrefix("- Mobile devices with software update errors: 3")
+                && $0.contains("up 2 vs prior, worse")
+        })
+    }
+
     func testTheFleetInsightLeavesOutAMobileFigureNoDeviceReports() {
         let input = FleetInsightInput.fleet(
             current: summary(
@@ -311,6 +362,7 @@ final class OverviewMobileSectionTests: XCTestCase {
         XCTAssertFalse(joined.contains("Mobile OS current"))
         XCTAssertFalse(joined.contains("Stale mobile devices"))
         XCTAssertFalse(joined.contains("Jailbroken"))
+        XCTAssertFalse(joined.contains("update errors"), "No scan ran: not 0 errors")
         XCTAssertTrue(joined.contains("Mobile passcode compliant"))
     }
 

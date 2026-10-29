@@ -1,25 +1,40 @@
 import SwiftUI
 
-/// The Overview's Mobile Devices section: the day's `MobileSummary` figures as tiles. The
-/// caller wraps it in its drill-down button, so a click opens Mobile Devices.
+/// The Overview's Mobile Devices section: the day's `MobileSummary` as four lines. The header
+/// button opens Mobile Devices; the Needs attention line opens the Health Audit.
 struct MobileOverviewCard: View {
     let summary: MobileSummary
     /// "Daily summary 2026-10-28": which snapshot the figures come from.
     let subtitle: String
+    let onOpen: () -> Void
+    let onOpenAudit: () -> Void
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    SectionHeader(title: "Mobile Devices")
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        SectionHeader(title: "Mobile Devices")
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    Spacer(minLength: 8)
+                    PNPButton(title: "Open", icon: "chevron.right", size: .sm, action: onOpen)
+                        .help("Open Mobile Devices")
                 }
                 // Two columns fit a half-width card at the minimum window width.
                 EqualHeightTileGrid(minTileWidth: 120, spacing: 10, idealColumns: 2) {
-                    ForEach(summary.overviewTiles) { MobileOverviewTileView(tile: $0) }
+                    ForEach(summary.overviewTiles) { tile in
+                        if tile.opensAudit {
+                            Button(action: onOpenAudit) { MobileOverviewTileView(tile: tile) }
+                                .buttonStyle(.plain)
+                                .help("Open Health Audit")
+                        } else {
+                            MobileOverviewTileView(tile: tile)
+                        }
+                    }
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)

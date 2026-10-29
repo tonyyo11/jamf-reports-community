@@ -1,12 +1,14 @@
 import Foundation
 
-/// One figure of the Overview's Mobile Devices section (mobile spec 3.1), worded from a
-/// `MobileSummary`. A figure no device reports shows a dash and says so, never 0 or 0%.
+/// One line of the Overview's Mobile Devices section (mobile spec 3.1, decision M-D1: four
+/// lines and nothing more). A figure no device reports shows a dash and says so, never 0 or 0%.
 struct MobileOverviewTile: Identifiable, Equatable, Sendable {
     let label: String
     let value: String
     /// What the figure counts, so a share never reads as a share of the whole fleet.
     let caption: String
+    /// True for the Needs attention line, which opens the Health Audit.
+    var opensAudit = false
 
     var id: String { label }
 
@@ -15,18 +17,34 @@ struct MobileOverviewTile: Identifiable, Equatable, Sendable {
 }
 
 extension MobileSummary {
-    /// The section's tiles in display order: managed, supervised, passcode and OS current
-    /// shares, then stale and jailbroken counts.
+    /// The jailbroken, unmanaged and update-error devices as one number. A part no device or
+    /// scan reports contributes nothing, so the number never counts an unknown as a device.
+    var needsAttentionCount: Int { (jailbroken ?? 0) + unmanaged + (updateErrors ?? 0) }
+
+    /// The section's lines in display order: Devices, the OS current and passcode shares, then
+    /// Needs attention, which is left out when it is 0.
+    ///
+    /// Devices is the managed mobile device count. It stands in for the spec's iPad, iPhone and
+    /// Apple TV counts until the summary carries a form-factor map (environment spec P9).
     var overviewTiles: [MobileOverviewTile] {
-        [
+        var tiles = [
             MobileOverviewTile(
-                label: "Managed", value: "\(managed)", caption: "\(unmanaged) unmanaged"),
-            Self.shareTile("Supervised", supervised, of: "managed devices"),
-            Self.shareTile("Passcode compliant", passcode, of: "devices reporting"),
+                label: "Devices", value: "\(managed)", caption: "managed mobile devices"),
             Self.shareTile("OS current", osCurrent, of: "devices with a listed version"),
-            Self.countTile("Stale", stale, caption: "no recent inventory update"),
-            Self.countTile("Jailbroken", jailbroken, caption: "jailbreak detected"),
+            Self.shareTile("Passcode compliant", passcode, of: "devices reporting"),
         ]
+        if let attention = needsAttentionTile { tiles.append(attention) }
+        return tiles
+    }
+
+    private var needsAttentionTile: MobileOverviewTile? {
+        guard needsAttentionCount > 0 else { return nil }
+        let parts = [(unmanaged, "unmanaged"), (jailbroken ?? 0, "jailbroken"),
+                     (updateErrors ?? 0, "update errors")]
+        return MobileOverviewTile(
+            label: "Needs attention", value: "\(needsAttentionCount)",
+            caption: parts.filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }.joined(separator: ", "),
+            opensAudit: true)
     }
 
     private static func shareTile(
@@ -41,16 +59,5 @@ extension MobileSummary {
         return MobileOverviewTile(
             label: label, value: String(format: "%.1f%%", pct),
             caption: "\(share.met) of \(share.of) \(population)")
-    }
-
-    private static func countTile(
-        _ label: String, _ count: Int?, caption: String
-    ) -> MobileOverviewTile {
-        guard let count else {
-            return MobileOverviewTile(
-                label: label, value: MobileOverviewTile.dash,
-                caption: MobileOverviewTile.unreported)
-        }
-        return MobileOverviewTile(label: label, value: "\(count)", caption: caption)
     }
 }

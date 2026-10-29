@@ -916,13 +916,16 @@ struct OverviewView: View {
 
     private var liveTaskID: String {
         let sections = visibleLiveSections.map(\.rawValue).sorted().joined(separator: ",")
-        return "\(workspace.profile)|\(workspace.demoMode)|\(sections)"
+        let loaded = workspace.summariesLoaded
+        return "\(workspace.profile)|\(workspace.demoMode)|\(loaded)|\(sections)"
     }
 
     /// Reads the data-driven sections off the main thread, in the calling task:
     /// `.task(id:)` cancels a read whose profile or sections went out of date.
     private func loadLiveSectionsOffMain() async {
-        guard !workspace.demoMode else { return }
+        // The summaries say which sections this environment has; reading before they load
+        // would start the Mac sections' reads on a mobile-only workspace and then drop them.
+        guard !workspace.demoMode, workspace.summariesLoaded else { return }
         let profile = workspace.profile
         let sections = visibleLiveSections
         let data: OverviewLiveData
@@ -1046,16 +1049,15 @@ struct OverviewView: View {
         let subtitle = workspace.demoMode
             ? "Demo fleet" : latest.map { "Daily summary \(FleetInsightInput.safeDate($0.date))" }
                 ?? "Daily summary"
-        return Button {
-            navigate(to: .mobileFleet)
-        } label: {
+        return Group {
             if let summary = mobileSummary {
-                MobileOverviewCard(summary: summary, subtitle: subtitle)
-                    .drillDownChrome()
+                MobileOverviewCard(
+                    summary: summary, subtitle: subtitle,
+                    onOpen: { navigate(to: .mobileFleet) },
+                    // M5's Audit mobile card gives this an anchor; until it lands this opens the screen.
+                    onOpenAudit: { navigate(to: .audit) })
             }
         }
-        .buttonStyle(.plain)
-        .help("Open Mobile Devices")
     }
 
     /// The computer count with the optional mobile count beside it — the

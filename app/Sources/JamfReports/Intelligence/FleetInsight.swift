@@ -263,6 +263,9 @@ extension FleetInsightInput {
                   "behind the newest release of their iOS or iPadOS version"),
             count("Stale mobile devices (no recent inventory update)", \.stale),
             count("Jailbroken mobile devices", \.jailbroken),
+            Fact(label: "Unmanaged mobile devices", value: .count(mobile.unmanaged),
+                 prior: before.map { Value.count($0.unmanaged) }, polarity: .lowerIsBetter),
+            count("Mobile devices with software update errors", \.updateErrors),
         ].compactMap { $0 }
     }
 

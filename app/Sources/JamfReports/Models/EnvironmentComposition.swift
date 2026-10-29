@@ -12,14 +12,20 @@ enum EnvironmentComposition: Equatable, Sendable {
 
     /// A summary with no Macs (`totalDevices` 0, as `mobileOnlySummary` writes it) holds none.
     /// Mobile devices are there when the summary carries the `mobile` figures or a count above
-    /// 0; an absent count is not evidence of any, and is not read as 0 devices either way: it
+    /// 0; an absent count is no evidence of any, and is not read as 0 devices either way: it
     /// only means the Mobile Devices section has nothing to draw.
-    init(summary: DailySummary?) {
+    ///
+    /// A day with no Macs reads as mobile only when `previous`, the summary before it, had
+    /// none either. The writer also produces `totalDevices` 0 for a mixed fleet on a day its
+    /// Mac sources are older than `jamf_cli.max_cache_age_hours` while the mobile list landed,
+    /// and one such day must not drop the Mac sections and cards. A real change to mobile only
+    /// shows one summary later.
+    init(summary: DailySummary?, previous: DailySummary? = nil) {
         guard let summary else {
             self = .unknown
             return
         }
-        let macs = summary.totalDevices > 0
+        let macs = summary.totalDevices > 0 || (previous?.totalDevices ?? 0) > 0
         let mobile = summary.mobile != nil || (summary.mobileDeviceCount ?? 0) > 0
         switch (macs, mobile) {
         case (true, true): self = .mixed

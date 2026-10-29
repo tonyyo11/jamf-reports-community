@@ -206,9 +206,14 @@ final class WorkspaceStore {
     /// The device types the active environment holds, from its newest daily summary; the demo
     /// fleet has both. The Overview's sections and score cards follow it (mobile spec 3.2).
     var environmentComposition: EnvironmentComposition {
-        demoMode ? DemoData.composition
-            : EnvironmentComposition(summary: trendStore.filteredSummaries.last)
+        guard !demoMode else { return DemoData.composition }
+        let recent = trendStore.filteredSummaries.suffix(2)
+        return EnvironmentComposition(summary: recent.last, previous: recent.dropLast().last)
     }
+
+    /// False until the trend store has read this profile's summaries, so a screen can tell
+    /// "not loaded yet" from "loaded and empty" before it acts on the composition.
+    var summariesLoaded: Bool { demoMode || trendStore.currentProfile == profile }
 
     /// The score cards the Overview draws: the saved selection that is offered here, or on a
     /// mobile-only environment with none of it offered, the mobile defaults.
@@ -223,6 +228,9 @@ final class WorkspaceStore {
     /// the cards on screen instead of a list that was never shown.
     func setScoreCard(_ metric: TrendSeries.Metric, shown: Bool) {
         adoptShownScoreCards()
+        let onScreen = shownScoreCards
+        if !shown, OverviewScoreCards.isLastOnMobileOnly(
+            metric, shown: onScreen, composition: environmentComposition) { return }
         if shown {
             if !selectedScoreCards.contains(metric) { selectedScoreCards.append(metric) }
         } else {

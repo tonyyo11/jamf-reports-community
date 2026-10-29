@@ -205,6 +205,8 @@ struct OverviewCustomizeSheet: View {
         // Positions follow the cards on the Overview; the selection keeps the hidden ones.
         let shown = workspace.shownScoreCards
         let position = shown.firstIndex(of: metric)
+        let isLast = OverviewScoreCards.isLastOnMobileOnly(
+            metric, shown: shown, composition: workspace.environmentComposition)
         let label = metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,
             edrAgentName: workspace.edrAgentName
@@ -223,6 +225,11 @@ struct OverviewCustomizeSheet: View {
                 if !metricHasData(metric) {
                     unavailableNote("No value in the loaded summaries. \(metric.dataRequirement)")
                 }
+                if isLast {
+                    Text("Hide the Score Cards section to remove them.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
             }
             Spacer(minLength: 8)
             if let position {
@@ -235,6 +242,7 @@ struct OverviewCustomizeSheet: View {
                 )
             }
             PNPToggle(isOn: isOn, label: "Show \(label)")
+                .disabled(isLast)
         }
         .padding(.vertical, 8)
     }

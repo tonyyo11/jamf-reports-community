@@ -88,7 +88,7 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
         case .mobileDevices:
             switch composition {
             case .mobileOnly, .mixed: return .shown
-            case .macsOnly: return .leftOut("No mobile devices in this environment.")
+            case .macsOnly: return .leftOut("No mobile devices in the latest daily summary.")
             case .unknown: return .leftOut("No daily summary lists mobile devices yet.")
             }
         case .aiInsight, .managedDevices, .scoreCards, .workspaceStatus:
@@ -234,6 +234,16 @@ enum OverviewScoreCards {
             return offered
         }
         return mobileDefaults.filter(isOffered)
+    }
+
+    /// True for the only card a mobile-only environment shows. Switching it off would leave the
+    /// saved selection with nothing offered, and the mobile defaults would stand in again, so the
+    /// switch is held on; the Score Cards section's own switch is how to remove them.
+    static func isLastOnMobileOnly(
+        _ metric: TrendSeries.Metric, shown: [TrendSeries.Metric],
+        composition: EnvironmentComposition
+    ) -> Bool {
+        composition == .mobileOnly && shown == [metric]
     }
 
     /// The selection with the cards `shown` drew in its place made part of it, for the first
