@@ -198,8 +198,62 @@ final class WorkspaceStore {
     /// security policy. A stored selection naming one that is not offered is kept, and shows
     /// again when it is.
     func isOffered(_ metric: TrendSeries.Metric) -> Bool {
+        // The demo history has no mobile series, as Trends offers none in demo mode.
+        if metric.isMobile, demoMode { return false }
+        guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
+            return false
+        }
         if case .agent = metric { return agentMetrics.contains(metric) }
-        return metric.isOffered(under: securityPolicy)
+        return true
+    }
+
+    /// The device types the active environment holds, from its newest daily summary; the demo
+    /// fleet has both. The Overview's sections and score cards follow it (mobile spec 3.2).
+    var environmentComposition: EnvironmentComposition {
+        guard !demoMode else { return DemoData.composition }
+        let (newest, previous) = trendStore.newestTwoSummaries
+        return EnvironmentComposition(summary: newest, previous: previous)
+    }
+
+    /// False until the trend store has read this profile's summaries, so a screen can tell
+    /// "not loaded yet" from "loaded and empty" before it acts on the composition. It turns
+    /// true when `apply` publishes the summaries, before `backfillHistory` fills older days.
+    var summariesLoaded: Bool { demoMode || trendStore.currentProfile == profile }
+
+    /// The score cards the Overview draws: the saved selection that is offered here, or on a
+    /// mobile-only environment with none of it offered, the mobile defaults.
+    var shownScoreCards: [TrendSeries.Metric] {
+        OverviewScoreCards.shown(
+            selected: selectedScoreCards, composition: environmentComposition,
+            isOffered: isOffered)
+    }
+
+    /// Turns a card on or off in the saved selection. Where the mobile defaults stand in for a
+    /// selection with nothing offered, they become the selection first, so the change edits
+    /// the cards on screen instead of a list that was never shown.
+    func setScoreCard(_ metric: TrendSeries.Metric, shown: Bool) {
+        // Refused before anything is adopted, so a refusal never edits the stored selection.
+        if !shown, OverviewScoreCards.isLastOnMobileOnly(
+            metric, shown: shownScoreCards, composition: environmentComposition) { return }
+        adoptShownScoreCards()
+        if shown {
+            if !selectedScoreCards.contains(metric) { selectedScoreCards.append(metric) }
+        } else {
+            selectedScoreCards.removeAll { $0 == metric }
+        }
+    }
+
+    /// Moves `metric` to where `neighbour` sits among the saved cards.
+    func moveScoreCard(_ metric: TrendSeries.Metric, to neighbour: TrendSeries.Metric) {
+        adoptShownScoreCards()
+        selectedScoreCards = selectedScoreCards.moving(metric, to: neighbour)
+    }
+
+    private func adoptShownScoreCards() {
+        let adopted = OverviewScoreCards.adopting(
+            selected: selectedScoreCards, composition: environmentComposition,
+            isOffered: isOffered)
+        if adopted != selectedScoreCards { selectedScoreCards = adopted }
     }
 
     /// The connections screens group by: the demo's own in demo mode, else this Mac's store.

@@ -12,6 +12,12 @@ versions in this repository map to git tags.
 - The Platform API region list now has Other, which takes a gateway host such as
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)
+- The Overview has a Mobile Devices section for iPads and iPhones: the managed device count, the
+  current-OS and passcode shares (each saying how many devices it counts, with a dash for a
+  share no device reports) and a Needs attention count of jailbroken, unmanaged and
+  update-error devices that opens the Health Audit. An environment with no Macs leaves out the
+  Mac-only sections (Customize lists them with the reason) and shows mobile score cards; a saved
+  Overview layout gets the new section at the end. (#305)
 
 ### Changed
 
