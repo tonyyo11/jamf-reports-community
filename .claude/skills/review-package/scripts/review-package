@@ -50,7 +50,7 @@ if ((dry_run)); then
   exit 0
 fi
 
-mkdir -p "${out%/*}"
+mkdir -p "$(dirname "${out}")"
 {
   print "# Review package: ${base}..${head}"
   print
@@ -58,10 +58,10 @@ mkdir -p "${out%/*}"
   git log --oneline "${base}..${head}"
   print
   print "## Files changed"
-  git diff --stat "${base}..${head}"
+  git diff --no-color --no-ext-diff --stat "${base}..${head}"
   print
   print "## Diff"
-  git diff -U10 "${base}..${head}"
+  git diff --no-color --no-ext-diff -U10 "${base}..${head}"
 } >"${out}"
 
 print "wrote ${out}: ${commits} commit(s), $(wc -c <"${out}" | tr -d ' ') bytes"
