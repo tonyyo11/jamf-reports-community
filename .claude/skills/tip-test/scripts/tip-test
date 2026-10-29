@@ -1,0 +1,102 @@
+#!/bin/zsh
+# Build and test a ref from a detached worktree on a local disk, print the totals, remove the
+# worktree. Use it for a branch or stack tip before a PR or merge.
+#
+# Usage: tip-test [--dry-run] [--dir DIR] [--filter PATTERN] REF
+#   --dir      the worktree folder (must not exist); default $HOME/jr-worktrees/stack-tip.
+#              A checkout in an iCloud-synced folder fails the xctest codesign step, so a path
+#              under Mobile Documents or CloudStorage is refused.
+#   --filter   passed to swift test --filter (a suite or test name); default the full suite.
+#   --dry-run  check REF and DIR and print the plan; create nothing.
+# Exit: 0 build and tests passed, 1 build or tests failed, 2 usage or setup.
+set -euo pipefail
+
+dry_run=0
+dir="${HOME}/jr-worktrees/stack-tip"
+filter=""
+while (($#)); do
+  case "$1" in
+  --dry-run)
+    dry_run=1
+    shift
+    ;;
+  --dir)
+    dir="${2:?tip-test: --dir needs a folder}"
+    shift 2
+    ;;
+  --filter)
+    filter="${2:?tip-test: --filter needs a pattern}"
+    shift 2
+    ;;
+  -h | --help)
+    sed -n '2,13p' "$0"
+    exit 0
+    ;;
+  -*)
+    print -u2 "tip-test: unknown option $1"
+    exit 2
+    ;;
+  *) break ;;
+  esac
+done
+if (($# != 1)); then
+  print -u2 "usage: tip-test [--dry-run] [--dir DIR] [--filter PATTERN] REF"
+  exit 2
+fi
+ref="$1"
+
+git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null || {
+  print -u2 "tip-test: REF is not a commit: ${ref}"
+  exit 2
+}
+case "${dir}" in
+*"/Mobile Documents/"* | *"/CloudStorage/"*)
+  print -u2 "tip-test: ${dir} is in a synced folder; pick a local-disk folder (--dir)"
+  exit 2
+  ;;
+esac
+[[ ! -e "${dir}" ]] || {
+  print -u2 "tip-test: ${dir} already exists; remove it or pass another --dir"
+  exit 2
+}
+
+sha="$(git rev-parse --short "${ref}")"
+test_cmd="swift test"
+[[ -z "${filter}" ]] || test_cmd="swift test --filter ${filter}"
+if ((dry_run)); then
+  print "dry run: would add a detached worktree at ${dir} on ${ref} (${sha}),"
+  print "  run 'swift build --build-tests' then '${test_cmd}' in ${dir}/app,"
+  print "  print the 'Executed N tests' and 'Test run with' lines and both exit codes,"
+  print "  and remove the worktree."
+  exit 0
+fi
+
+log="$(mktemp -t tip-test.XXXXXX)"
+git worktree add --detach "${dir}" "${ref}"
+cleanup() { git worktree remove --force "${dir}" >/dev/null 2>&1 || print -u2 "tip-test: could not remove ${dir}; git worktree remove --force it"; }
+trap cleanup EXIT
+
+build_rc=0
+test_rc=0
+print "== swift build --build-tests (${ref} @ ${sha})"
+(cd "${dir}/app" && swift build --build-tests) >"${log}" 2>&1 || build_rc=$?
+if ((build_rc == 0)); then
+  print "== ${test_cmd}"
+  # shellcheck disable=SC2086 # the command string is deliberately word-split
+  (cd "${dir}/app" && ${=test_cmd}) >>"${log}" 2>&1 || test_rc=$?
+else
+  print -u2 "tip-test: build failed; last errors:"
+  grep -E 'error:' "${log}" | tail -n 15 || true
+fi
+
+print
+print "ref: ${ref} (${sha})"
+print "build exit: ${build_rc}"
+if ((build_rc == 0)); then
+  print "test exit: ${test_rc}"
+  grep -E 'Executed [0-9]+ tests?,' "${log}" | tail -n 1 || print "no 'Executed N tests' line (XCTest did not run)"
+  grep -E 'Test run with [0-9]+ tests?' "${log}" | tail -n 1 || print "no 'Test run with' line (Swift Testing did not run)"
+  grep -E ' failed|: error: ' "${log}" | grep -vE 'Executed|Test run with' | head -n 15 || true
+fi
+print "full log: ${log}"
+((build_rc == 0 && test_rc == 0)) || exit 1

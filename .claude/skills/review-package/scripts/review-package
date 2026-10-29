@@ -1,0 +1,67 @@
+#!/bin/zsh
+# Write a review package: commit list, stat summary and the net diff with 10 lines of context,
+# in one file a reviewer reads in a single call. The recorded per-task BASE (not HEAD~1) keeps
+# multi-commit tasks intact.
+#
+# Usage: review-package [--dry-run] PLAN_FILE BASE HEAD [OUTFILE]
+# Default OUTFILE: <repo-root>/.superpowers/sdd/<plan basename>/review-<base7>..<head7>.diff,
+# named per range so a re-review after fixes gets a fresh file. --dry-run writes nothing.
+set -euo pipefail
+
+dry_run=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+  dry_run=1
+  shift
+fi
+
+if (($# < 3 || $# > 4)); then
+  print -u2 "usage: review-package [--dry-run] PLAN_FILE BASE HEAD [OUTFILE]"
+  exit 2
+fi
+
+plan="$1" base="$2" head="$3"
+[[ -f "${plan}" ]] || {
+  print -u2 "review-package: no such plan file: ${plan}"
+  exit 2
+}
+git rev-parse --verify --quiet "${base}^{commit}" >/dev/null ||
+  {
+    print -u2 "review-package: BASE is not a commit: ${base}"
+    exit 2
+  }
+git rev-parse --verify --quiet "${head}^{commit}" >/dev/null ||
+  {
+    print -u2 "review-package: HEAD is not a commit: ${head}"
+    exit 2
+  }
+
+if (($# == 4)); then
+  out="$4"
+else
+  root="$(git rev-parse --show-toplevel)"
+  name="${plan##*/}"
+  dir="${root}/.superpowers/sdd/${name%.md}"
+  out="${dir}/review-$(git rev-parse --short "${base}")..$(git rev-parse --short "${head}").diff"
+fi
+
+commits="$(git rev-list --count "${base}..${head}")"
+if ((dry_run)); then
+  print "dry run: would write ${out}: ${commits} commit(s), $(git diff --name-only "${base}..${head}" | wc -l | tr -d ' ') file(s) changed"
+  exit 0
+fi
+
+mkdir -p "${out%/*}"
+{
+  print "# Review package: ${base}..${head}"
+  print
+  print "## Commits"
+  git log --oneline "${base}..${head}"
+  print
+  print "## Files changed"
+  git diff --stat "${base}..${head}"
+  print
+  print "## Diff"
+  git diff -U10 "${base}..${head}"
+} >"${out}"
+
+print "wrote ${out}: ${commits} commit(s), $(wc -c <"${out}" | tr -d ' ') bytes"
