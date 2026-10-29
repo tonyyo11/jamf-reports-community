@@ -78,7 +78,7 @@ enum DashboardChartExport {
             return .success(url)
         } catch {
             AppLogger.ui.error(
-                "DashboardChartExport: write failed for chart '\(title, privacy: .public)' — \(error.localizedDescription, privacy: .private)"
+                "DashboardChartExport: write failed for chart '\(title, privacy: .private)' — \(error.localizedDescription, privacy: .private)"
             )
             return .failure(.writeFailed(underlying: error))
         }
@@ -123,7 +123,7 @@ enum DashboardChartExport {
             return .success(url)
         } catch {
             AppLogger.ui.error(
-                "DashboardChartExport.render: write failed for '\(suggestedFilename, privacy: .public)' — \(error.localizedDescription, privacy: .private)"
+                "DashboardChartExport.render: write failed for '\(suggestedFilename, privacy: .private)' — \(error.localizedDescription, privacy: .private)"
             )
             return .failure(.writeFailed(underlying: error))
         }

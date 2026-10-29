@@ -147,7 +147,7 @@ struct ExtensionAttributeService: Sendable {
                     readSomething = true
                 } catch {
                     AppLogger.collect.warning(
-                        "ExtensionAttributeService: failed to decode definitions at \(definitionsURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                        "ExtensionAttributeService: failed to decode definitions at \(definitionsURL.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
                     )
                 }
             }

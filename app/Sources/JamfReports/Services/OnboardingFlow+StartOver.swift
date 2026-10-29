@@ -99,10 +99,8 @@ extension OnboardingFlow {
             return "jamf-cli failed its signature check, so the profile \(name) was not "
                 + "removed. \(manual)"
         }
-        let outcome = await Task.detached(priority: .userInitiated) {
-            JamfCLIProbe.runOutcome(
-                executable: binary, arguments: removeProfileArguments(name: name))
-        }.value
+        let outcome = await JamfCLIProbe.runOutcomeAsync(
+            executable: binary, arguments: removeProfileArguments(name: name))
         switch outcome {
         case .completed(let output) where output.exitCode == 0:
             return nil

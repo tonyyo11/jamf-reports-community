@@ -87,18 +87,12 @@ extension Provenance {
         if CLIBridge.codesignGate(executable: url, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
-        // The probe blocks its thread until the child exits or the deadline stops it.
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let output = JamfCLIProbe.run(
-                    executable: url, arguments: JamfCLIProbe.versionArguments, timeout: timeout)
-                let version = output.flatMap { String(data: $0.stdout, encoding: .utf8) }?
-                    .components(separatedBy: .newlines)
-                    .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                continuation.resume(returning: version)
-            }
-        }
+        let output = await JamfCLIProbe.runAsync(
+            executable: url, arguments: JamfCLIProbe.versionArguments, timeout: timeout)
+        return output.flatMap { String(data: $0.stdout, encoding: .utf8) }?
+            .components(separatedBy: .newlines)
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     /// Reads the tenant URL from the cached `overview` JSON snapshot in `dataDir`.

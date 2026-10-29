@@ -340,7 +340,7 @@ enum BackupMaintenance {
                 )
             } catch {
                 AppLogger.cli.warning(
-                    "BackupMaintenance: could not remove \(name, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                    "BackupMaintenance: could not remove \(name, privacy: .private): \(error.localizedDescription, privacy: .private)"
                 )
             }
         }

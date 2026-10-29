@@ -97,9 +97,8 @@ enum ProductSetupChecks {
         let previous = previous.name
         guard let arguments = setDefaultArguments(previous: previous, setUp: setUp),
               let previous else { return nil }
-        let outcome = await Task.detached(priority: .userInitiated) {
-            JamfCLIProbe.runOutcome(executable: binary, arguments: arguments)
-        }.value
+        let outcome = await JamfCLIProbe.runOutcomeAsync(
+            executable: binary, arguments: arguments)
         if case .completed(let output) = outcome, output.exitCode == 0 { return nil }
         return "jamf-cli now uses \(setUp) as its default profile. To use \(previous) again: "
             + "jamf-cli config set-default -- " + ProfileName.shellWord(previous)

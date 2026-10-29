@@ -1070,7 +1070,7 @@ extension WorkspaceStore {
                 return true
             }
             AppLogger.cli.warning(
-                "Catch-up collect failed for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "Catch-up collect failed for \(profile, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
         }
         return false

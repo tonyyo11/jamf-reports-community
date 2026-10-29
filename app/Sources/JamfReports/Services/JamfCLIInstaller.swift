@@ -292,14 +292,13 @@ final class JamfCLIInstaller {
         guard let output = JamfCLIProbe.run(
             executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: timeout
         ) else { return nil }
-        let text = [
-            String(data: output.stdout, encoding: .utf8),
-            String(data: output.stderr, encoding: .utf8),
-        ]
-        .compactMap { $0 }
-        .joined(separator: "\n")
+        return parseVersion(from: versionText(output))
+    }
 
-        return parseVersion(from: text)
+    private nonisolated static func versionText(_ output: JamfCLIProbe.Output) -> String {
+        [String(data: output.stdout, encoding: .utf8), String(data: output.stderr, encoding: .utf8)]
+            .compactMap { $0 }
+            .joined(separator: "\n")
     }
 
     nonisolated static let versionJSONArguments = ["version", "-o", "json"]
@@ -349,14 +348,18 @@ final class JamfCLIInstaller {
         }.value
     }
 
-    /// `installedVersion(at:)` off the main actor: it blocks for up to `timeout` on a wedged
-    /// binary, and the install and update paths are main-actor statics.
+    /// `installedVersion(at:)` for an async caller: the exit arrives on a termination handler,
+    /// so no thread waits on a wedged binary.
     nonisolated static func installedVersionOffMain(
         at binary: URL, timeout: TimeInterval = JamfCLIProbe.defaultTimeout
     ) async -> String? {
-        await Task.detached(priority: .userInitiated) {
-            installedVersion(at: binary, timeout: timeout)
-        }.value
+        if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
+            return nil
+        }
+        guard let output = await JamfCLIProbe.runAsync(
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: timeout
+        ) else { return nil }
+        return parseVersion(from: versionText(output))
     }
 
     func checkForUpdate() async -> UpdateResult {

@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Observation
 
 @MainActor
@@ -1513,7 +1514,13 @@ final class OnboardingFlow {
             process.standardError = slaveHandle
             let box = TimedProcessBox()
             box.set(process)
-            process.terminationHandler = { [box] _ in box.disarmTimeout() }
+            // Buffered, so an exit before the wait below is not lost.
+            let (exits, exitSignal) = AsyncStream<Void>.makeStream()
+            process.terminationHandler = { [box] _ in
+                box.disarmTimeout()
+                exitSignal.yield()
+                exitSignal.finish()
+            }
 
             do {
                 try signatureGate(
@@ -1544,15 +1551,21 @@ final class OnboardingFlow {
             // slave end is open), because closing the handle under a blocked
             // reader raises NSFileHandleOperationException on macOS 26.
             let collector = PTYOutputCollector()
-            let drain = Task.detached(priority: .userInitiated) {
-                var buffer = [UInt8](repeating: 0, count: 4096)
-                while true {
-                    let count = buffer.withUnsafeMutableBytes {
-                        Darwin.read(master, $0.baseAddress, $0.count)
+            // read(2) blocks, so it runs on a dispatch thread, not the cooperative pool.
+            let drain = Task {
+                await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        var buffer = [UInt8](repeating: 0, count: 4096)
+                        while true {
+                            let count = buffer.withUnsafeMutableBytes {
+                                Darwin.read(master, $0.baseAddress, $0.count)
+                            }
+                            if count < 0 && errno == EINTR { continue }
+                            guard count > 0 else { break }
+                            collector.append(Data(buffer[0..<count]))
+                        }
+                        done.resume()
                     }
-                    if count < 0 && errno == EINTR { continue }
-                    guard count > 0 else { break }
-                    await collector.append(Data(buffer[0..<count]))
                 }
             }
 
@@ -1563,19 +1576,19 @@ final class OnboardingFlow {
             for line in ptyLines(stdin) {
                 let deadline = Date().addingTimeInterval(ptyPromptGrace)
                 while process.isRunning, !box.didTimeOut, Date() < deadline,
-                    await collector.byteCount() <= seenBytes {
+                    collector.byteCount() <= seenBytes {
                     try? await Task.sleep(nanoseconds: 50_000_000)
                 }
                 guard process.isRunning, !box.didTimeOut else { break }
                 // Counted before the write, so a prompt that arrives during it still counts.
-                seenBytes = await collector.byteCount()
+                seenBytes = collector.byteCount()
                 line.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
                     guard let base = bytes.baseAddress, !bytes.isEmpty else { return }
                     _ = Darwin.write(master, base, bytes.count)
                 }
             }
 
-            process.waitUntilExit()
+            for await _ in exits { break }
             // The child's exit closes the last slave end, which ends the drain.
             await drain.value
             try? masterHandle.close()
@@ -1584,26 +1597,20 @@ final class OnboardingFlow {
                     "jamf-cli did not finish within \(Int(timeout.rounded())) s")
             }
 
-            let combined = await collector.snapshot()
+            let combined = collector.snapshot()
             return PTYResult(exitCode: process.terminationStatus, combined: combined)
         }.value
     }
 }
 
-private actor PTYOutputCollector {
-    private var buffer = Data()
+private final class PTYOutputCollector: Sendable {
+    private let buffer = Mutex(Data())
 
-    func append(_ data: Data) {
-        buffer.append(data)
-    }
+    func append(_ data: Data) { buffer.withLock { $0.append(data) } }
 
-    func byteCount() -> Int {
-        buffer.count
-    }
+    func byteCount() -> Int { buffer.withLock { $0.count } }
 
-    func snapshot() -> String {
-        String(data: buffer, encoding: .utf8) ?? ""
-    }
+    func snapshot() -> String { String(data: buffer.withLock { $0 }, encoding: .utf8) ?? "" }
 }
 
 private extension String {

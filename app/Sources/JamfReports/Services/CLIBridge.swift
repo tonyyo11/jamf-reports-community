@@ -1327,7 +1327,7 @@ final class CLIBridge {
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
             AppLogger.auth.warning(
-                "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "tokenStatus: runAndCapture threw for \(profile, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
             return .status(TokenStatus.make(profile: profile, token: nil, expiresAt: nil))
         }
@@ -2323,7 +2323,7 @@ final class CLIBridge {
             )
         } catch {
             AppLogger.cli.warning(
-                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] backup manifest write failed — backup was created but BackupsView may show no label or stats"))
@@ -2657,7 +2657,7 @@ final class CLIBridge {
             return nil
         case .failure(let error):
             AppLogger.cli.error(
-                "CLIBridge: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+                "CLIBridge: codesign gate rejected \(executable.path, privacy: .private): \(String(describing: error), privacy: .private)"
             )
             onLine(.init(
                 timestamp: Date(),
@@ -2865,7 +2865,7 @@ func runDeviceDetailProcess(
     timeout: TimeInterval = deviceDetailTimeout,
     onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 ) async -> Int32 {
-    await Task.detached(priority: .userInitiated) {
+    await Task.detached(priority: .userInitiated) { () async -> Int32 in
         // M-01: this path bypasses CLIBridge.run / runAndCapture (it
         // builds its own Process for high-throughput per-device detail
         // fetches), so it has to invoke the codesign gate directly.
@@ -2875,7 +2875,7 @@ func runDeviceDetailProcess(
                 break
             case .failure(let error):
                 AppLogger.cli.error(
-                    "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+                    "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .private): \(String(describing: error), privacy: .private)"
                 )
                 onLine?(.init(
                     timestamp: Date(), level: .fail,
@@ -2896,7 +2896,7 @@ func runDeviceDetailProcess(
             )
             // One lookup may wait on several slow API calls; the limit only backstops a wedged
             // jamf-cli, and the caller falls back to the cached copy on any non-zero exit.
-            switch JamfCLIProbe.runOutcome(
+            switch await JamfCLIProbe.runOutcomeAsync(
                 executable: executable, arguments: arguments, timeout: timeout
             ) {
             case .launchFailed:

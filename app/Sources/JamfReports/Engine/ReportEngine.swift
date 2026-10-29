@@ -2128,7 +2128,7 @@ struct ReportEngine: Sendable {
         let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
 
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
-        let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
+        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
         // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
         if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
             onLine(.init(timestamp: Date(), level: .fail,
@@ -3576,7 +3576,7 @@ struct ReportEngine: Sendable {
                 text: "[skip] \(kind): \(CollectSkipReason.collectSkip.skipDetail ?? "")"))
         }
         // Same gate as the Pro loop.
-        let quiet = JamfCLIInstaller.installedVersion(at: bin).map {
+        let quiet = await JamfCLIInstaller.installedVersionOffMain(at: bin).map {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
         let commands = plan.filter { $0.skip == nil }.map {
@@ -3981,7 +3981,7 @@ struct ReportEngine: Sendable {
                 try fm.setAttributes(attrs, ofItemAtPath: url.path)
             } catch {
                 AppLogger.collect.warning(
-                    "initializeWorkspace: setAttributes failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                    "initializeWorkspace: setAttributes failed for \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
                 )
             }
         }
@@ -4301,7 +4301,7 @@ struct ReportEngine: Sendable {
             )
         } catch {
             AppLogger.collect.warning(
-                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
         }
         // 2.6 accuracy track: stamp the sibling manifest.json so strict-mode
@@ -4318,7 +4318,7 @@ struct ReportEngine: Sendable {
                 // the "no unverified data" promise. Also surfaced on the collect
                 // stream (onLine) so it lands in Run History, not just Console.app.
                 AppLogger.collect.error(
-                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
                 )
                 onLine(.init(
                     timestamp: Date(), level: .warn,
