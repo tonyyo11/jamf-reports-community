@@ -1318,29 +1318,29 @@ struct DevicesView: View {
     /// Changes when the profile does, and when demo mode flips under the same profile name.
     private var dataSource: String { "\(workspace.profile)-\(workspace.demoMode)" }
 
-    /// Each phase paints only while `source` is still the screen's: the key task is cancelled
-    /// on a switch, but a refresh task and the detached reads are not, so a read for another
-    /// profile would otherwise land on this one.
+    /// Each phase goes through `ScreenLoad.paint` and paints only while `source` is still the
+    /// screen's: the key task is cancelled on a switch, but a refresh task is not, so a read
+    /// for another profile would otherwise land on this one.
     private func reload() async {
         let source = dataSource
         let profile = workspace.profile
         let demoMode = workspace.demoMode
         if loadedSource != source { clearForNewSource() }
         isLoading = true
-        let loaded = await Task.detached(priority: .userInitiated) {
-            DeviceInventoryService.load(profile: profile, demoMode: demoMode)
-        }.value
-        guard isCurrent(source) else { return }
+        let current: @MainActor () -> Bool = { source == dataSource }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: current,
+            read: { DeviceInventoryService.load(profile: profile, demoMode: demoMode) }
+        ) else { return }
         applyLoaded(snapshot: loaded)
         loadedSource = source
-        let dates = await Task.detached(priority: .userInitiated) {
-            DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode)
-        }.value
-        guard isCurrent(source) else { return }
+        guard let dates = await ScreenLoad.paint(
+            stillCurrent: current,
+            read: { DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode) }
+        ) else { return }
         sourceDates = dates
-        guard await loadDeviceHealth(source: source, profile: profile, demoMode: demoMode) else {
-            return
-        }
+        guard await loadDeviceHealth(stillCurrent: current, profile: profile, demoMode: demoMode)
+        else { return }
         if selectedID == nil || !loaded.devices.contains(where: { $0.id == selectedID }) {
             selectedID = loaded.devices.first?.id
         }
@@ -1351,19 +1351,13 @@ struct DevicesView: View {
         let agentColumn = workspace.configState.securityAgents
             .first { !$0.column.trimmingCharacters(in: .whitespaces).isEmpty }?
             .column ?? ""
-        var lookup: [String: String] = [:]
-        if !demoMode, !agentColumn.isEmpty {
-            lookup = await Task.detached(priority: .userInitiated) {
-                RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
-            }.value
-        }
-        guard isCurrent(source) else { return }
+        guard let lookup = await ScreenLoad.paint(stillCurrent: current, read: {
+            demoMode || agentColumn.isEmpty
+                ? [:]
+                : RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
+        }) else { return }
         applyLoaded(agentStatusLookup: lookup)
         isLoading = false
-    }
-
-    private func isCurrent(_ source: String) -> Bool {
-        !Task.isCancelled && source == dataSource
     }
 
     /// Nothing of the previous profile stays on screen while the new one loads.
@@ -1373,22 +1367,21 @@ struct DevicesView: View {
         sourceDates = [:]
         ddmSnapshot = .empty
         healthSnapshot = .empty
+        osFilter = nil
     }
 
     /// The DDM and MDM command-health snapshots; false when the source changed while they read.
-    private func loadDeviceHealth(source: String, profile: String, demoMode: Bool) async -> Bool {
-        guard !demoMode else {
-            ddmSnapshot = .empty
-            healthSnapshot = .empty
-            return true
-        }
-        let ddm = await Task.detached(priority: .userInitiated) {
-            DDMDeviceStatusService.load(profile: profile) }.value
-        let health = await Task.detached(priority: .userInitiated) {
-            MDMCommandHealthService.load(profile: profile) }.value
-        guard isCurrent(source) else { return false }
-        ddmSnapshot = ddm
-        healthSnapshot = health
+    private func loadDeviceHealth(
+        stillCurrent: @MainActor () -> Bool, profile: String, demoMode: Bool
+    ) async -> Bool {
+        guard let read = await ScreenLoad.paint(stillCurrent: stillCurrent, read: {
+            demoMode
+                ? (DDMDeviceStatusService.Snapshot.empty, MDMCommandHealthService.Snapshot.empty)
+                : (DDMDeviceStatusService.load(profile: profile),
+                   MDMCommandHealthService.load(profile: profile))
+        }) else { return false }
+        ddmSnapshot = read.0
+        healthSnapshot = read.1
         return true
     }
 

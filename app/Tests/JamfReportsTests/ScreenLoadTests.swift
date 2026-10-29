@@ -352,7 +352,7 @@ final class ScreenLoadTests: XCTestCase {
         XCTAssertEqual(store.currentRange, .w12, "the range chosen during the scan stands")
     }
 
-    func testFleetOverviewIsReadForTheKeyItIsShownUnder() {
+    func testFleetOverviewIsReadOffMainAndTaggedWithItsProfile() async {
         let live = WorkspaceStore(
             demoMode: false, tickerRegistrar: StubTickerRegistrar(), jamfCLIProfileNames: { [] })
         let demo = WorkspaceStore(
@@ -361,15 +361,51 @@ final class ScreenLoadTests: XCTestCase {
         demo.profile = "alpha"
         XCTAssertNotEqual(live.fleetOverviewLoadKey, demo.fleetOverviewLoadKey,
                           "demo mode under the same profile name reloads")
-        let overview = FleetWorkspaceOverview(profile: "alpha", summary: nil)
+
+        let probe = ReadProbe()
+        let overview = await live.loadFleetOverview(readSummaries: { _ in
+            probe.didRun()
+            return []
+        })
+        XCTAssertTrue(probe.ran)
+        XCTAssertFalse(probe.ranOnMain, "the summaries were read on the main thread")
+        XCTAssertEqual(overview.profile, "alpha")
         XCTAssertNotNil(overview.shown(for: "alpha"))
-        XCTAssertNil(overview.shown(for: "beta"))
+        XCTAssertNil(overview.shown(for: "beta"), "a late load does not show under another profile")
     }
 
-    func testComputersLoadOffMain() async throws {
-        try workspaceWithComputer(serial: "C02TEST0001")
-        await assertScreenLoad("Computers", loaded: { !$0.devices.isEmpty }) {
-            DeviceInventoryService.load(profile: "match", demoMode: false)
+    /// The Scoring card writes the whole default list on an edit: until this profile's read has
+    /// landed, the previous profile's baselines must not shape it.
+    func testScoreFactorsCardIgnoresAnotherProfilesRead() {
+        let read = ScoreFactorsSnapshot(agents: ["Falcon"], baselines: ["cis_lvl1"])
+        func defaults(_ shown: ScoreFactorsSnapshot) -> [SecurityScoreFactor] {
+            SecurityScoreFactor.defaults(agents: [], hasBaseline: !shown.baselines.isEmpty)
+        }
+        let own = ScoreFactorsCard.visible(read, loadedProfile: "a", for: "a")
+        XCTAssertEqual(own.baselines, ["cis_lvl1"])
+        XCTAssertTrue(defaults(own).contains { $0.kind == .mscp })
+
+        for profile in ["b", "a"] {
+            let before = ScoreFactorsCard.visible(read, loadedProfile: nil, for: profile)
+            XCTAssertEqual(before, ScoreFactorsSnapshot(), "nothing is read for \(profile) yet")
+        }
+        let other = ScoreFactorsCard.visible(read, loadedProfile: "a", for: "b")
+        XCTAssertTrue(other.baselines.isEmpty)
+        XCTAssertFalse(defaults(other).contains { $0.kind == .mscp })
+    }
+
+    func testBackupsLoadOffMain() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)
+        let backup = root.appendingPathComponent("saves/backups/20260601T214020")
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        await assertScreenLoad("Backups", loaded: { $0.count == 1 }) {
+            BackupLibrary().list(profile: "saves")
         }
     }
 

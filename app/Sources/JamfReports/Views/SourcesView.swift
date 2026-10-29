@@ -101,6 +101,8 @@ struct SourcesView: View {
         }
         .onChange(of: workspace.profile) { _, _ in
             schoolResolved = nil
+            sourcesPlan = nil
+            cachedAt = [:]
             schoolPlatformCheck = nil
             doctorOutcome = nil
             doctorRunning = false

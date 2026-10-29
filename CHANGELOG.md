@@ -33,9 +33,12 @@ versions in this repository map to git tags.
   Profile Health, Compliance Benchmarks, Declarative Device Management, Audit and Device Lookup.
   Nine of them show a loading card until the data is ready, and switching profile or turning demo
   mode on or off shows the new data only. Security Posture, Compliance Posture, School Devices,
-  School Overview, Trends, Fleet Overview and Computers do the same: while a profile loads they
-  show a loading state, not the previous profile's data or "nothing collected", and a read that
-  finishes after you have switched is dropped. (#305)
+  School Overview, Trends, Overview, Fleet Overview, Backups and Computers do the same: while a
+  profile loads they show a loading state (Computers keeps its page and shows "Loading
+  inventory"), not the previous profile's data or "nothing collected", and a read that finishes
+  after you have switched is dropped. Backups no longer offers the previous profile's backups
+  for Delete or Diff while it loads, and Config › Scoring waits for the profile's own data
+  before it lets you edit the factor list. (#305)
 
 ### Fixed
 

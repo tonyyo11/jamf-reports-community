@@ -84,6 +84,7 @@ struct OverviewView: View {
             // The next tenant's sections show loading, never the last one's data.
             live = .empty
             liveLoaded = false
+            checklist = nil
             Task {
                 await loadTrendsOffMain()
                 // Health inputs are now per-profile-filtered — recompute on
@@ -109,6 +110,10 @@ struct OverviewView: View {
                 metricHasData: { !metricValues($0).isEmpty }
             )
             .environment(workspace)
+        }
+        .onChange(of: workspace.demoMode) { _, _ in
+            // A flip under one profile name is no profile change: the store still needs its scan.
+            Task { await loadTrendsOffMain() }
         }
         .onChange(of: defaultTrendRangeRaw) { _, _ in
             // Range change only re-filters cached data — no disk read.
@@ -1959,6 +1964,8 @@ struct OverviewView: View {
             !ReportLibrary().list(profile: profile).isEmpty
         }.value
 
+        // A read for a profile the sidebar has left must not become this one's checklist.
+        guard !Task.isCancelled, profile == workspace.profile, !workspace.demoMode else { return }
         checklist = .build(
             connected: connected,
             collected: collected,

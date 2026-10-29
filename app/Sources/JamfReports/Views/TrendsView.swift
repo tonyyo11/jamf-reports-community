@@ -301,6 +301,11 @@ struct TrendsView: View {
             ensureOfferedMetric()
             Task { await loadTrendsOffMain() }
         }
+        .onChange(of: workspaceStore.demoMode) { _, _ in
+            // A flip under one profile name is no profile change: the store still needs its scan.
+            ensureOfferedMetric()
+            Task { await loadTrendsOffMain() }
+        }
         .onChange(of: range) { _, newValue in
             selectedDate = nil
             // A managed default stays as the profile sets it; the picker changes this view only.
