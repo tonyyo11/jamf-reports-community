@@ -115,7 +115,8 @@ A few behaviors worth knowing:
   writes `<name>.manifest.json`, named after the workbook (else the run's first file): the size
   and SHA-256 of the workbook, its HTML report, each CSV in its CSV folder, and the HTML, PDF
   and CSV formats the Generate run wrote with it. Chart PNGs and the period and fleet reports
-  are not listed. `jamf-reports verify <manifest>` prints `OK`, `CHANGED`, `MISSING` or
+  are not listed; `jamf-reports html` and the Reports screen's PDF and CSV exports write a
+  manifest for their one file. `jamf-reports verify <manifest>` prints `OK`, `CHANGED`, `MISSING` or
   `UNREADABLE` for each, `EXTRA` for a file added to a listed folder (Finder's `.DS_Store`
   excepted), and exits `1` unless all match. With `output.timestamp_authority: "https://…"`
   the manifest's SHA-256, a random nonce and fixed request headers (`User-Agent: JamfReports`)
@@ -123,7 +124,9 @@ A few behaviors worth knowing:
   `<name>.tsr`; `verify` then checks the reply signs this manifest and prints the authority's
   time, its certificate's SHA-256 fingerprint and whether this Mac trusts its certificate
   chain. Compare that fingerprint with the one the authority publishes: a self-signed
-  certificate can name itself anything. A failed request is a `[warn] report timestamp not
+  certificate can name itself anything. With no `.tsr`, or an untrusted chain, `verify` adds a
+  note: anyone who can write the folder can write a matching manifest, so a match holds only if
+  you trust where the manifest (and the signer fingerprint) came from. A failed request is a `[warn] report timestamp not
   saved: …` line; the reports stand. On a shared workspace the address is used on a Mac only
   once it is confirmed there (Config Doctor). `https://freetsa.org/tsr` is a free test service,
   not a qualified authority. To check a reply without this app, macOS's own LibreSSL (3.3.6,

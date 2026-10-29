@@ -197,6 +197,7 @@ final class RunManifestTests: XCTestCase {
         XCTAssertTrue(result.lines.contains { $0.hasPrefix(
             "Timestamp: manifest signed 2026-10-29T06:38:24Z") }, "\(result.lines)")
         XCTAssertTrue(result.lines.contains { $0.hasPrefix("Timestamp chain: not trusted") })
+        XCTAssertTrue(result.lines.contains(RunManifest.untrustedChainNote))
         XCTAssertTrue(result.lines.contains { $0.hasPrefix(
             "Timestamp signer certificate SHA-256: 32e841a95cc1164101ffde41298ef2fc") })
     }
@@ -281,6 +282,7 @@ final class RunManifestTests: XCTestCase {
         var result = RunManifest.verify(manifestAt: folder.appendingPathComponent(manifestName))
         XCTAssertTrue(result.passed)
         XCTAssertTrue(result.lines.contains { $0.hasPrefix("Timestamp: none") })
+        XCTAssertTrue(result.lines.contains(RunManifest.untimestampedNote))
 
         let forged = RunManifest(generatedAt: "x", generator: "x", artifacts: [
             .init(name: "../escape.txt", size: 1, sha256: "00"),
@@ -483,6 +485,44 @@ final class RunManifestTests: XCTestCase {
         }, "\(lines.all)")
     }
 
+    /// A planted manifest can name only this app's report formats, and never displaces an
+    /// archive entry: `notes.txt` and the archive's own `notes.txt` and `kept.html` stay put.
+    func testAPlantedManifestCannotMakeRotationMoveOrDeleteOtherFiles() throws {
+        let archive = folder.appendingPathComponent("archive", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        let old = "report_p_2026-10-01_090000"
+        for name in ["\(old).xlsx", "report_p_2026-10-02_090000.xlsx", "notes.txt", "kept.html",
+                     ".hidden.pdf", "target.pdf"] {
+            try Data(name.utf8).write(to: folder.appendingPathComponent(name))
+        }
+        try FileManager.default.createSymbolicLink(
+            at: folder.appendingPathComponent("link.pdf"),
+            withDestinationURL: folder.appendingPathComponent("target.pdf"))
+        try Data("archived notes".utf8).write(to: archive.appendingPathComponent("notes.txt"))
+        try Data("archived page".utf8).write(to: archive.appendingPathComponent("kept.html"))
+        let planted = RunManifest(generatedAt: "x", generator: "x", artifacts: [
+            "notes.txt", "kept.html", ".hidden.pdf", "link.pdf",
+        ].map { .init(name: $0, size: 1, sha256: "00") })
+        try planted.encoded().write(to: folder.appendingPathComponent("\(old).manifest.json"))
+        let lines = ManifestLines()
+        ReportEngine(config: ReportConfig(), dataDir: folder).archiveOldRuns(
+            outputDir: folder, archiveDir: archive, stem: "report_p", keep: 1, onLine: lines.add)
+
+        for name in ["notes.txt", "kept.html", ".hidden.pdf", "link.pdf"] {
+            XCTAssertTrue(FileManager.default.fileExists(
+                atPath: folder.appendingPathComponent(name).path), name)
+        }
+        XCTAssertEqual(try String(contentsOf: archive.appendingPathComponent("notes.txt"),
+                                  encoding: .utf8), "archived notes")
+        XCTAssertEqual(try String(contentsOf: archive.appendingPathComponent("kept.html"),
+                                  encoding: .utf8), "archived page")
+        XCTAssertEqual(lines.all.filter { $0.contains("already holds an entry") }.count, 1,
+                       "\(lines.all)")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent("\(old).manifest.json").path),
+            "a run that did not move whole keeps its manifest")
+    }
+
     /// A rotation failure reads in plain words, never a Swift error's description.
     func testARotationFailureWarnsInPlainWords() throws {
         for name in ["report_p_2026-10-01_090000.xlsx", "report_p_2026-10-02_090000.xlsx"] {
@@ -643,6 +683,70 @@ final class RunManifestGenerateTests: XCTestCase {
     }
 }
 
+/// A report file written on its own (the Reports screen's PDF and CSV exports, a lone HTML
+/// report) is sealed by itself, and a School Generate run follows the chosen folder.
+@MainActor
+final class RunManifestStandaloneTests: XCTestCase {
+    private var root: URL!
+    private let profile = "manifestsolo"
+    private var workspace: URL { root.appendingPathComponent(profile, isDirectory: true) }
+
+    override func setUpWithError() throws {
+        // CSV and PDF refuse a folder under /tmp or /var (`isSensitiveAbsolutePath`).
+        root = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("jrc-manifest-solo-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+    }
+
+    override func tearDownWithError() throws {
+        unsetenv("JRC_TEST_WORKSPACES_ROOT")
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func manifests(in folder: URL) throws -> [RunManifest] {
+        try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .filter { $0.hasSuffix(RunManifest.manifestSuffix) }
+            .map { try JSONDecoder().decode(
+                RunManifest.self, from: Data(contentsOf: folder.appendingPathComponent($0))) }
+    }
+
+    func testAnExportedCSVAndALoneHTMLReportAreEachSealed() async throws {
+        let computers = workspace.appendingPathComponent("jamf-cli-data/computers")
+        try FileManager.default.createDirectory(at: computers, withIntermediateDirectories: true)
+        try TestFixtures.copyFile(
+            TestFixtures.dir("jamf-cli-data/computers-v4/computers-v4.json"),
+            to: computers.appendingPathComponent("computers_20261029T090000.json"))
+        let exports = root.appendingPathComponent("Exports", isDirectory: true)
+        try FileManager.default.createDirectory(at: exports, withIntermediateDirectories: true)
+        let bridge = CLIBridge()
+        let csv = exports.appendingPathComponent("inventory.csv")
+        let csvCode = try await bridge.exportInventoryCSV(
+            profile: profile, outFile: csv.path, onLine: CLIBridge.noOpOnLine)
+        let page = exports.appendingPathComponent("page.html")
+        let htmlCode = try await bridge.generateHTML(
+            profile: profile, outFile: page.path, onLine: CLIBridge.noOpOnLine)
+        XCTAssertEqual([csvCode, htmlCode], [0, 0])
+        let names = Set(try manifests(in: exports).flatMap { $0.artifacts.map(\.name) })
+        XCTAssertEqual(names, ["inventory.csv", "page.html"])
+    }
+
+    func testASchoolGenerateIntoAChosenFolderSealsThere() async throws {
+        try "school_cli:\n  enabled: true\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let chosen = root.appendingPathComponent("Chosen", isDirectory: true)
+        try FileManager.default.createDirectory(at: chosen, withIntermediateDirectories: true)
+        let lines = ManifestLines()
+        let result = await CLIBridge().generateAll(
+            types: [.xlsx], outputDir: chosen, profile: profile, schoolMode: true,
+            onLine: lines.add)
+        XCTAssertEqual(result.succeeded, [.xlsx], "\(lines.all)")
+        let names = try FileManager.default.contentsOfDirectory(atPath: chosen.path)
+        XCTAssertEqual(names.filter { $0.hasSuffix(".xlsx") }.count, 1, "\(names)")
+        XCTAssertEqual(try manifests(in: chosen).count, 1, "\(names)")
+    }
+}
+
 /// A shared workspace's peer can change `output.timestamp_authority`; this Mac then sends no
 /// hash anywhere until its operator confirms the new authority.
 final class TimestampAuthorityPinTests: XCTestCase {
@@ -671,6 +775,85 @@ final class TimestampAuthorityPinTests: XCTestCase {
         let url = root.appendingPathComponent(profile).appendingPathComponent("config.yaml")
         try yaml.write(to: url, atomically: true, encoding: .utf8)
         return try ConfigLoader.load(from: url)
+    }
+
+    private var configURL: URL {
+        root.appendingPathComponent(profile).appendingPathComponent("config.yaml")
+    }
+
+    /// A pinned workspace with `authority` confirmed on this Mac.
+    private func confirmed(_ authority: String) throws -> ReportConfig {
+        let config = try config(authority: authority)
+        try SharedConfigPin.confirm(
+            profile: profile,
+            drifts: SharedConfigPin.check(profile: profile, appSupport: appSupport).drifts,
+            appSupport: appSupport)
+        XCTAssertNotNil(ReportEngine.timestampAuthority(
+            config, profile: profile, appSupport: appSupport))
+        return config
+    }
+
+    /// A peer plants an address, the run loads it, then the peer removes config.yaml before the
+    /// seal: with nothing to compare, the pinned workspace fails closed and nothing is sent.
+    func testASealAfterConfigYamlIsRemovedSendsNothing() async throws {
+        _ = try confirmed("https://tsa.example.test/tsr")
+        let planted = try config(authority: "https://collector.attacker.test/tsr")
+        try FileManager.default.removeItem(at: configURL)
+        let workbook = root.appendingPathComponent(profile).appendingPathComponent("r.xlsx")
+        try Data("x".utf8).write(to: workbook)
+        TSAStub.answer(.reply(200, Data()))
+        let manifest = await ReportEngine.sealRun(
+            artifacts: [workbook], config: planted, profile: profile,
+            now: Date(timeIntervalSince1970: 1_793_264_400), session: TSAStub.session,
+            appSupport: appSupport, onLine: nil)
+        XCTAssertNotNil(manifest)
+        XCTAssertTrue(TSAStub.requests.isEmpty)
+    }
+
+    /// Unreadable rather than gone (over the 4 MB config limit): the same.
+    func testAnOversizedConfigYamlFailsClosedForTheConfirmedAddressToo() throws {
+        let config = try confirmed("https://tsa.example.test/tsr")
+        try Data(count: ConfigLoader.maxConfigBytes + 1).write(to: configURL)
+        XCTAssertNil(ReportEngine.timestampAuthority(
+            config, profile: profile, appSupport: appSupport))
+        XCTAssertFalse(SharedConfigPin.timestampAuthorityAllowed(
+            "https://tsa.example.test/tsr", profile: profile, appSupport: appSupport))
+    }
+
+    /// The other pinned values fail closed by the same rule, in `check`.
+    func testEveryPinnedValueFailsClosedWhenConfigYamlCannotBeRead() throws {
+        let yaml = "shared_workspace:\n  enabled: true\nnotify:\n  enabled: true\n"
+            + "  url: \"https://hooks.example.com/a\"\nprotect:\n  enabled: true\n"
+            + "  profile: \"protect-a\"\n  backup_on_synced_storage: true\n"
+            + "backup:\n  pro_on_synced_storage: true\n"
+        try yaml.write(to: configURL, atomically: true, encoding: .utf8)
+        let notify = try ConfigLoader.load(from: configURL).notify
+        try SharedConfigPin.confirm(
+            profile: profile,
+            drifts: SharedConfigPin.check(profile: profile, appSupport: appSupport).drifts,
+            appSupport: appSupport)
+        XCTAssertNotNil(SharedConfigPin.effectiveNotify(
+            notify, profile: profile, appSupport: appSupport))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+
+        try FileManager.default.removeItem(at: configURL)
+        XCTAssertNil(SharedConfigPin.effectiveNotify(
+            notify, profile: profile, appSupport: appSupport))
+        XCTAssertFalse(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertFalse(SharedConfigPin.protectBackupOnSyncedStorage(
+            true, profile: profile, appSupport: appSupport))
+        XCTAssertEqual(SharedConfigPin.proBackupSetting(
+            true, profile: profile, appSupport: appSupport), .awaitingConfirmation)
+        XCTAssertThrowsError(try SharedConfigPin.confirm(
+            profile: profile,
+            drifts: SharedConfigPin.check(profile: profile, appSupport: appSupport).drifts,
+            appSupport: appSupport), "nothing to compare, so nothing is confirmed")
+    }
+
+    /// A workspace that is neither shared nor pinned keeps its address with no config.yaml read.
+    func testALocalWorkspaceIsNotHeldBack() throws {
+        XCTAssertTrue(SharedConfigPin.timestampAuthorityAllowed(
+            "https://tsa.example.test/tsr", profile: profile, appSupport: appSupport))
     }
 
     /// An address in the shared file, even at this Mac's first sight of it, is used only once
