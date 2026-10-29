@@ -86,9 +86,9 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
         case .profileCaseConflict(let profile, let owner):
             return "The workspace folder for '\(profile)' belongs to profile "
                 + "'\(ConfigSchema.displayText(owner))', which "
-                + "differs from it only by letter case. If both name the same Jamf server, set "
-                + "jamf_cli.profile to \(profile) in that folder's config.yaml; otherwise add "
-                + "this profile again in jamf-cli under a name that differs by more than case."
+                + "differs from it only by letter case, so nothing runs for '\(profile)'. Use "
+                + "'\(ConfigSchema.displayText(owner))', or add this profile again in jamf-cli "
+                + "under a name that differs by more than case."
         case .configLoadFailed(_, let detail):
             // Path omitted: may contain the home directory. The detail is a
             // YAML key path from the decoder, safe to display.

@@ -208,6 +208,14 @@ enum ProfileService {
         WorkspaceID(profile).map { WorkspacePaths.workspaceURL(for: $0) }
     }
 
+    /// Why nothing may run for `profile`: its workspace folder is another spelling's
+    /// (`caseVariantWorkspace`), whatever config.yaml says. Nil when the folder is its own.
+    static func caseVariantRefusal(of profile: String) -> String? {
+        caseVariantWorkspace(of: profile).map {
+            CLIBridgeError.profileCaseConflict(profile: profile, owner: $0).localizedDescription
+        }
+    }
+
     /// The profile of an existing workspace folder spelled like `profile` apart from
     /// letter case. On a case-insensitive volume it is `profile`'s folder as well.
     static func caseVariantWorkspace(of profile: String) -> String? {

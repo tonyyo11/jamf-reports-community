@@ -275,6 +275,13 @@ private func scheduledRunSingleBody(
         fputs("[error] Invalid profile '\(ConfigSchema.displayText(profile))'\n", stderr)
         return 1
     }
+    // Before any mode writes a run record, a report or an attention item into the folder: a case
+    // variant's folder is another spelling's.
+    if let refusal = ProfileService.caseVariantRefusal(of: profile) {
+        fputs("[error] \(refusal)\n", stderr)
+        AppLogger.schedule.error("\(LogRedactor.redact(refusal), privacy: .public)")
+        return 1
+    }
     let workspace = WorkspacePaths.workspaceURL(for: workspaceID)
     // `runSchedule` skips a workspace with no jamf-cli profile before this, so it has one now.
     if mode != .jamfCLIOnly { AttentionLog.clear(.jamfCLIProfileMissing) }
