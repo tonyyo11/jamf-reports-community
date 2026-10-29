@@ -121,6 +121,7 @@ struct OverviewCustomizeSheet: View {
             get: { workspace.overviewLayout.isVisible(section) },
             set: { workspace.overviewLayout.setVisible(section, $0) }
         )
+        let isLeftOut = !section.availability(in: workspace.environmentComposition).isShown
         return HStack(alignment: .top, spacing: 12) {
             Image(systemName: section.sfSymbol)
                 .font(.system(size: 14, weight: .medium))
@@ -136,7 +137,9 @@ struct OverviewCustomizeSheet: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let why = unavailable(section) {
+                if let reason = section.availability(in: workspace.environmentComposition).reason {
+                    leftOutNote(reason)
+                } else if let why = unavailable(section) {
                     unavailableNote(why.reason)
                 }
             }
@@ -151,6 +154,8 @@ struct OverviewCustomizeSheet: View {
             PNPToggle(isOn: isOn, label: "Show \(section.title)")
         }
         .padding(.vertical, 8)
+        // The switch still saves the choice for when the environment has the devices.
+        .opacity(isLeftOut ? 0.55 : 1)
     }
 
     // MARK: Score cards
@@ -159,13 +164,14 @@ struct OverviewCustomizeSheet: View {
     /// does not offer is left out of both.
     static func scoreCardRows(
         selected: [TrendSeries.Metric], policy: SecurityControlPolicy,
-        agents: [TrendSeries.Metric] = []
+        agents: [TrendSeries.Metric] = [], mobile: [TrendSeries.Metric] = [],
+        composition: EnvironmentComposition = .unknown
     ) -> [TrendSeries.Metric] {
-        let all = TrendSeries.Metric.allCases + agents
+        let all = TrendSeries.Metric.allCases + mobile + agents
         let rows = selected + all.filter { !selected.contains($0) }
         return rows.filter { metric in
-            if case .agent = metric { return agents.contains(metric) }
-            return metric.isOffered(under: policy)
+            if case .agent = metric, !agents.contains(metric) { return false }
+            return metric.isOffered(under: policy, in: composition)
         }
     }
 
@@ -181,8 +187,10 @@ struct OverviewCustomizeSheet: View {
                     .padding(.top, 2)
                     .padding(.bottom, 8)
                 let rows = Self.scoreCardRows(
-                    selected: workspace.selectedScoreCards, policy: workspace.securityPolicy,
-                    agents: workspace.agentMetrics)
+                    selected: workspace.selectedScoreCards,
+                    policy: workspace.securityPolicy, agents: workspace.agentMetrics,
+                    mobile: workspace.demoMode ? [] : TrendSeries.Metric.mobileMetrics,
+                    composition: workspace.environmentComposition)
                 ForEach(Array(rows.enumerated()), id: \.element) { index, metric in
                     scoreCardRow(metric)
                     if index < rows.count - 1 {
@@ -194,25 +202,16 @@ struct OverviewCustomizeSheet: View {
     }
 
     private func scoreCardRow(_ metric: TrendSeries.Metric) -> some View {
-        let selected = workspace.selectedScoreCards
-        // Positions follow the listed cards; the selection keeps the hidden ones.
-        let shown = selected.filter { workspace.isOffered($0) }
+        // Positions follow the cards on the Overview; the selection keeps the hidden ones.
+        let shown = workspace.shownScoreCards
         let position = shown.firstIndex(of: metric)
         let label = metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,
             edrAgentName: workspace.edrAgentName
         )
         let isOn = Binding<Bool>(
-            get: { workspace.selectedScoreCards.contains(metric) },
-            set: { on in
-                if on {
-                    if !workspace.selectedScoreCards.contains(metric) {
-                        workspace.selectedScoreCards.append(metric)
-                    }
-                } else {
-                    workspace.selectedScoreCards.removeAll { $0 == metric }
-                }
-            }
+            get: { shown.contains(metric) },
+            set: { workspace.setScoreCard(metric, shown: $0) }
         )
         return HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -242,10 +241,22 @@ struct OverviewCustomizeSheet: View {
 
     private func moveScoreCard(_ metric: TrendSeries.Metric, to neighbour: TrendSeries.Metric?) {
         guard let neighbour else { return }
-        workspace.selectedScoreCards = workspace.selectedScoreCards.moving(metric, to: neighbour)
+        workspace.moveScoreCard(metric, to: neighbour)
     }
 
     // MARK: Shared pieces
+
+    /// A section this environment cannot fill: informational, not a warning.
+    private func leftOutNote(_ reason: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "minus.circle")
+                .accessibilityHidden(true)
+            Text("Left out: \(reason)")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption)
+        .foregroundStyle(Theme.Text.tertiary(contrast))
+    }
 
     private func unavailableNote(_ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
