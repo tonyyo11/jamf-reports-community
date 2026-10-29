@@ -996,20 +996,18 @@ struct ReportEngine: Sendable {
     /// The summary's `mobile` object from a `mobile-devices-list` snapshot, judged now against
     /// the cached iOS feed, with update errors from a `--scan-failures` snapshot when one exists.
     private func mobileFigures(_ data: Data, updateFailures: Data?) -> MobileSummary? {
-        let iOSRows = SOFAFeedService.load(dataDir: dataDir).rows
-            .filter { $0.platform == SOFAFeedService.platformLabels["ios"] }
         return MobileSummary.fromMobileDevicesList(
-            data, latestByMajor: SOFAFeedService.latestByMajor(iOSRows),
+            data, latestByMajor: SOFAFeedService.iOSLatestByMajor(
+                SOFAFeedService.load(dataDir: dataDir).rows),
             staleDays: config.thresholds?.resolvedStaleDays ?? 30, now: Date(),
             updateErrors: updateFailures.flatMap(Self.mobileUpdateErrorCount))
     }
 
-    /// Rows of a `--scan-failures` snapshot's `error_devices` that are not computers; nil for a
-    /// summary-only snapshot, whose empty list says nothing.
+    /// Devices a `--scan-failures` snapshot's `error_devices` lists that are not computers (a
+    /// device with errors for two products counts once); nil for a summary-only snapshot, whose
+    /// empty list says nothing.
     static func mobileUpdateErrorCount(_ data: Data) -> Int? {
-        guard let scan = try? JSONDecoder().decode([UpdateFailuresReport].self, from: data).first
-        else { return nil }
-        return scan.errorDevices.filter { $0.deviceType.uppercased() != "COMPUTER" }.count
+        MobileFinding.updateErrors(in: data)?.count
     }
 
     /// The day's summary for a fleet with no Macs and some mobile devices: `totalDevices` is

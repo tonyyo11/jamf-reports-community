@@ -180,7 +180,7 @@ extension HtmlReport {
         .securityTiles: "security-controls", .agentHealth: "agent-health",
         .patchQueue: "patch-queue", .interventionList: "intervention-list",
         .profileTable: "profile-status", .appTable: "app-status",
-        .recentFailures: "recent-failures",
+        .recentFailures: "recent-failures", .mobileFleet: "mobile-fleet",
     ]
 
     /// Where a line about `id` links: its own block when the report has it, else its group
@@ -200,7 +200,10 @@ extension HtmlReport {
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
     /// - devices with failed patch or software update runs,
-    /// - security agents installed on fewer than every Mac.
+    /// - security agents installed on fewer than every Mac,
+    /// - mobile devices a `MobileFinding` rule counts (jailbreak, not managed, passcode, data
+    ///   protection, OS behind, update errors, stale), from the newest summary's `mobile`
+    ///   figures, the counts the Health Audit's Mobile Devices card shows.
     func attentionItems(
         _ inputs: Inputs, shown: Set<SectionID>
     ) -> [(text: String, anchor: String?)] {
@@ -261,6 +264,12 @@ extension HtmlReport {
             let list = partial.map { "\($0.name) \(String(format: "%.1f%%", $0.pct))" }
             add(.agentHealth, .security,
                 "Security agents are not on every Mac: \(list.joined(separator: ", ")).")
+        }
+        if let mobile = latest?.mobile {
+            for finding in MobileFinding.allCases {
+                guard let count = finding.count(in: mobile), count > 0 else { continue }
+                add(.mobileFleet, .mobile, finding.sentence(count: count, staleDays: rule.days))
+            }
         }
         return items
     }
