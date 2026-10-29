@@ -574,7 +574,7 @@ struct HtmlReport: Sendable {
         return fallback
     }
 
-    private func warn(_ msg: String) {
+    func warn(_ msg: String) {
         AppLogger.report.warning("\(msg, privacy: .private)")
         onLine?(.init(timestamp: Date(), level: .warn, text: msg))
     }
