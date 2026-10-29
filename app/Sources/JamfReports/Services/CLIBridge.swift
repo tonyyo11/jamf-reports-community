@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Resolve CLI binaries from GUI launches, where `Process` does not inherit a
 /// login-shell PATH. `jamf-cli` may be installed by Homebrew or directly from a
@@ -209,59 +210,7 @@ final class CLIBridge {
         // to process termination. Resuming in terminationHandler alone races the final
         // readabilityHandler deliveries — they run on different GCD queues, so under
         // load the last stdout/stderr chunk can drop from the live Runs feed (same race
-        // fixed in runAndCapture via CaptureCompletion).
-        final class RunCompletion: @unchecked Sendable {
-            private let lock = NSLock()
-            private var stdoutAtEOF = false
-            private var stderrAtEOF = false
-            private var exitCode: Int32?
-            private var resumed = false
-            private let continuation: CheckedContinuation<Int32, Error>
-
-            init(_ continuation: CheckedContinuation<Int32, Error>) {
-                self.continuation = continuation
-            }
-
-            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
-            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
-            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
-
-            /// Process never spawned — resume with a thrown error immediately,
-            /// bypassing the EOF wait (no child means pipes never deliver EOF).
-            func failWithLaunchError(_ error: CLIBridgeError) {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(throwing: error) }
-            }
-
-            /// Timeout path only: a grandchild may hold the pipes after the child is gone,
-            /// so stop waiting for their EOF. Shares the single-resume flag with `finish`.
-            @discardableResult
-            func forceResume(_ code: Int32) -> Bool {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(returning: code) }
-                return shouldResume
-            }
-
-            private func finish(_ mutate: (RunCompletion) -> Void) {
-                var pending: Int32?
-                lock.lock()
-                mutate(self)
-                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
-                    resumed = true
-                    pending = exitCode
-                }
-                lock.unlock()
-                if let pending { continuation.resume(returning: pending) }
-            }
-        }
+        // fixed in runAndCapture via the same ProcessCompletion).
 
         // Lock-protected box so the task-cancellation handler's terminate() call
         // never races against the continuation body's set() call. onCancel fires
@@ -275,7 +224,7 @@ final class CLIBridge {
 
         let code = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-                let completion = RunCompletion(continuation)
+                let completion = ProcessCompletion(continuation)
                 let process = Process()
                 box.set(process)
                 process.executableURL = executable
@@ -367,21 +316,6 @@ final class CLIBridge {
         timeout: TimeInterval? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (Int32, Data) {
-        final class DataBox: @unchecked Sendable {
-            private var data = Data()
-            private let lock = NSLock()
-            func append(_ newData: Data) {
-                lock.lock()
-                data.append(newData)
-                lock.unlock()
-            }
-            /// A timed-out call resumes without waiting for EOF, so a readability block can
-            /// still be appending while the result is copied.
-            func snapshot() -> Data {
-                lock.lock(); defer { lock.unlock() }
-                return data
-            }
-        }
         let box = DataBox()
 
         // M-01: same gate as `run` — verify before spawn.
@@ -397,68 +331,12 @@ final class CLIBridge {
         // is appended, truncating the captured payload to empty (Epic #102). The
         // same race on stderr dropped the lines collect's `StderrSignalWatcher`
         // classifies a command that exits 0 without data from (#207 G24).
-        final class CaptureCompletion: @unchecked Sendable {
-            private let lock = NSLock()
-            private var stdoutAtEOF = false
-            private var stderrAtEOF = false
-            private var exitCode: Int32?
-            private var resumed = false
-            private let continuation: CheckedContinuation<Int32, Error>
-
-            init(_ continuation: CheckedContinuation<Int32, Error>) {
-                self.continuation = continuation
-            }
-
-            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
-
-            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
-
-            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
-
-            /// Process never spawned — resume with a thrown error immediately,
-            /// bypassing the EOF wait (no child means the pipes will never
-            /// deliver EOF).
-            func failWithLaunchError(_ error: CLIBridgeError) {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(throwing: error) }
-            }
-
-            /// Timeout path only: the child has exited but a grandchild may still hold the
-            /// pipes, so do not wait for their EOF. Shares the single-resume flag with
-            /// `finish`, so whichever arrives first is the only resume.
-            @discardableResult
-            func forceResume(_ code: Int32) -> Bool {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(returning: code) }
-                return shouldResume
-            }
-
-            private func finish(_ mutate: (CaptureCompletion) -> Void) {
-                var pending: Int32?
-                lock.lock()
-                mutate(self)
-                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
-                    resumed = true
-                    pending = exitCode
-                }
-                lock.unlock()
-                if let pending { continuation.resume(returning: pending) }
-            }
-        }
 
         let processBox = TimedProcessBox()
 
         let code = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-                let completion = CaptureCompletion(continuation)
+                let completion = ProcessCompletion(continuation)
                 let process = Process()
                 processBox.set(process)
                 process.executableURL = executable
@@ -2975,4 +2853,67 @@ private func stableDeviceHash(_ value: String) -> String {
         hash &*= 1_099_511_628_211
     }
     return String(format: "%016llx", hash)
+}
+
+/// Captured stdout of `CLIBridge.runAndCapture`. A timed-out call resumes without waiting for
+/// EOF, so a readability block can still be appending while the result is copied.
+private final class DataBox: Sendable {
+    private let data = Mutex(Data())
+    func append(_ newData: Data) { data.withLock { $0.append(newData) } }
+    func snapshot() -> Data { data.withLock { $0 } }
+}
+
+/// Resumes the continuation exactly once: when the child has exited and both pipes have reached
+/// EOF (resuming on termination alone races the last readability deliveries, which run on other
+/// queues and would drop the final lines), or at once on a launch failure or a timeout.
+private final class ProcessCompletion: Sendable {
+    private struct State {
+        var stdoutAtEOF = false
+        var stderrAtEOF = false
+        var exitCode: Int32?
+        var resumed = false
+    }
+    private let state = Mutex(State())
+    private let continuation: CheckedContinuation<Int32, Error>
+
+    init(_ continuation: CheckedContinuation<Int32, Error>) {
+        self.continuation = continuation
+    }
+
+    func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
+    func markStderrEOF() { finish { $0.stderrAtEOF = true } }
+    func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
+
+    /// The process never spawned: throw now, since no pipe will deliver EOF.
+    func failWithLaunchError(_ error: CLIBridgeError) {
+        if claim() { continuation.resume(throwing: error) }
+    }
+
+    /// Timeout path only: the child has exited but a grandchild may still hold the pipes, so do
+    /// not wait for their EOF. Shares the single-resume flag with `finish`.
+    @discardableResult
+    func forceResume(_ code: Int32) -> Bool {
+        guard claim() else { return false }
+        continuation.resume(returning: code)
+        return true
+    }
+
+    private func claim() -> Bool {
+        state.withLock { state in
+            guard !state.resumed else { return false }
+            state.resumed = true
+            return true
+        }
+    }
+
+    private func finish(_ mutate: (inout State) -> Void) {
+        let pending: Int32? = state.withLock { state in
+            mutate(&state)
+            guard !state.resumed, state.stdoutAtEOF, state.stderrAtEOF,
+                  let exitCode = state.exitCode else { return nil }
+            state.resumed = true
+            return exitCode
+        }
+        if let pending { continuation.resume(returning: pending) }
+    }
 }

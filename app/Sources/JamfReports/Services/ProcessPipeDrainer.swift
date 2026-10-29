@@ -1,14 +1,21 @@
 import Foundation
+import Synchronization
 
 /// Reads a child's pipe on a background handler so a child that writes past the pipe buffer
 /// never blocks, and `finish()` returns what the child wrote, including what the handler had
 /// not yet delivered when the child exited. `finish()` never waits for EOF, which a grandchild
 /// that inherited the pipe can hold open long after the child is gone.
-final class ProcessPipeDrainer: @unchecked Sendable {
+final class ProcessPipeDrainer: Sendable {
+    /// Bytes kept per pipe; output past it is read and dropped, so a runaway child cannot grow
+    /// memory without bound. A probe or tool answer (a version, `config list`) is far smaller.
+    static let maxBytes = 64 * 1_024 * 1_024
+
+    private struct State {
+        var buffer = Data()
+        var isFinishing = false
+    }
     private let handle: FileHandle
-    private let lock = NSLock()
-    private var buffer = Data()
-    private var isFinishing = false
+    private let state = Mutex(State())
 
     init(pipe: Pipe) {
         handle = pipe.fileHandleForReading
@@ -29,13 +36,15 @@ final class ProcessPipeDrainer: @unchecked Sendable {
     func finish(deadline: TimeInterval = CLIBridge.timeoutKillGrace) -> Data {
         handle.readabilityHandler = nil
 
-        lock.lock()
-        isFinishing = true
-        buffer.append(readWithoutBlocking(until: Date().addingTimeInterval(deadline)))
-        let data = buffer
-        lock.unlock()
+        return state.withLock { state in
+            state.isFinishing = true
+            Self.append(readWithoutBlocking(until: Date().addingTimeInterval(deadline)), to: &state)
+            return state.buffer
+        }
+    }
 
-        return data
+    private static func append(_ data: Data, to state: inout State) {
+        state.buffer.append(data.prefix(max(0, maxBytes - state.buffer.count)))
     }
 
     /// Reads until the pipe is empty (EAGAIN), at EOF, or at `deadline`, so a grandchild that
@@ -60,17 +69,16 @@ final class ProcessPipeDrainer: @unchecked Sendable {
     }
 
     private func drainAvailableData(from fileHandle: FileHandle) {
-        lock.lock()
-        defer { lock.unlock() }
+        state.withLock { state in
+            guard !state.isFinishing else { return }
 
-        guard !isFinishing else { return }
+            let data = fileHandle.availableData
+            guard !data.isEmpty else {
+                fileHandle.readabilityHandler = nil
+                return
+            }
 
-        let data = fileHandle.availableData
-        guard !data.isEmpty else {
-            fileHandle.readabilityHandler = nil
-            return
+            Self.append(data, to: &state)
         }
-
-        buffer.append(data)
     }
 }

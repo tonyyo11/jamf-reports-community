@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// jamf-cli's own list of its commands (`jamf-cli commands -o json`): one row per command path
 /// with its long flags, the Jamf Pro privileges it needs, its API and whether it is destructive
@@ -213,8 +214,7 @@ struct CommandCatalog: Sendable {
     /// What a read of the installed jamf-cli runs.
     static let fetchArguments = ["commands", "-o", "json"]
 
-    nonisolated(unsafe) private static var cached: CommandCatalog?
-    private static let cacheLock = NSLock()
+    private static let cached = Mutex<CommandCatalog?>(nil)
 
     /// The installed jamf-cli's catalog, read once per process; nil when jamf-cli is absent,
     /// fails its signature check, does not answer within `JamfCLIProbe.defaultTimeout` or prints
@@ -224,9 +224,7 @@ struct CommandCatalog: Sendable {
     static func installed(
         locate: () -> URL? = { ExecutableLocator.locate("jamf-cli") }
     ) -> CommandCatalog? {
-        cacheLock.lock()
-        let hit = cached
-        cacheLock.unlock()
+        let hit = cached.withLock { $0 }
         if let hit { return hit }
         guard let binary = locate(),
               CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) == nil,
@@ -241,9 +239,7 @@ struct CommandCatalog: Sendable {
             AppLogger.cli.warning("command catalog unreadable: \(reason, privacy: .private)")
             return nil
         }
-        cacheLock.lock()
-        cached = catalog
-        cacheLock.unlock()
+        cached.withLock { $0 = catalog }
         return catalog
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import CryptoKit
 
 // MARK: - CoreDashboard
@@ -3777,18 +3778,16 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
 
 /// The hardware index and the computers' dates read and parse the `computers` snapshot, so a
 /// dashboard builds each once however many sheets grade by it.
-private final class OnceCache<Value: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Value?
-    private var isStored = false
+private final class OnceCache<Value: Sendable>: Sendable {
+    private let stored = Mutex<Value?>(nil)
 
+    /// `make` runs under the lock, so concurrent callers build the value once.
     func value(_ make: () -> Value) -> Value {
-        lock.lock()
-        defer { lock.unlock() }
-        if isStored, let stored { return stored }
-        let made = make()
-        stored = made
-        isStored = true
-        return made
+        stored.withLock { stored in
+            if let stored { return stored }
+            let made = make()
+            stored = made
+            return made
+        }
     }
 }

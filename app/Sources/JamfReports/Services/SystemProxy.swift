@@ -1,5 +1,6 @@
 import CFNetwork
 import Foundation
+import Synchronization
 
 /// The system HTTPS proxy, for the background runs only. launchd gives the tick no shell proxy
 /// variables, so a scheduled collect behind a proxy has none; `--tick` and `--scheduled-run`
@@ -123,10 +124,9 @@ enum SystemProxy {
 
     static var scheduledRun: Reading { installed.get() }
 
-    private final class Installed: @unchecked Sendable {
-        private let lock = NSLock()
-        private var reading = Reading.none
-        func set(_ value: Reading) { lock.withLock { reading = value } }
-        func get() -> Reading { lock.withLock { reading } }
+    private final class Installed: Sendable {
+        private let reading = Mutex(Reading.none)
+        func set(_ value: Reading) { reading.withLock { $0 = value } }
+        func get() -> Reading { reading.withLock { $0 } }
     }
 }

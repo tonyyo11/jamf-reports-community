@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import OSLog
 
 /// Writes the per-run artifacts that Run History and the Schedules screen read.
@@ -19,8 +20,8 @@ import OSLog
 ///   `LaunchAgentService.parse` for the "Last Run" date and status pill.
 ///
 /// Thread safety: log lines arrive from `@Sendable` stream callbacks; an
-/// `NSLock` guards the file handle (same pattern as `LaunchAgentWriter`).
-final class ScheduledRunRecorder: @unchecked Sendable {
+/// a `Mutex` guards the file handle.
+final class ScheduledRunRecorder: Sendable {
 
     /// Per-run log files beyond this count are pruned, oldest first. Only
     /// files matching this recorder's `<label>.<timestamp>.log` pattern are
@@ -34,14 +35,16 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     let logURL: URL
     let statusURL: URL
 
-    private let lock = NSLock()
-    private var handle: FileHandle?
+    private struct State {
+        var handle: FileHandle?
+        /// Guards the one-time "dropped line" warning so we emit it only once per
+        /// recorder instance rather than flooding the log on every subsequent line.
+        var hasWarnedHandleGone = false
+        var hasWarnedWriteFailed = false
+    }
+    private let state = Mutex(State())
     private let started: Date
     private let label: String
-    /// Guards the one-time "dropped line" warning so we emit it only once per
-    /// recorder instance rather than flooding the log on every subsequent line.
-    private var hasWarnedHandleGone = false
-    private var hasWarnedWriteFailed = false
 
     /// Returns nil when the label is not a valid LaunchAgent label, when the
     /// automation directories cannot be created, or when the log file cannot
@@ -82,7 +85,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         ), let fh = try? FileHandle(forWritingTo: logURL) else {
             return nil
         }
-        self.handle = fh
+        state.withLock { $0.handle = fh }
         Self.markRunInProgress(fh, label: label)
         record("[info] run started \(ISO8601DateFormatter().string(from: now)) for \(label)")
     }
@@ -91,24 +94,25 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     /// closed by `finish`), emits one `AppLogger.schedule.warning` per recorder
     /// instance so the loss is visible in Console.app.
     func record(_ text: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let handle else {
-            if !hasWarnedHandleGone {
-                hasWarnedHandleGone = true
-                AppLogger.schedule.warning(
-                    "ScheduledRunRecorder: log handle gone for \(self.label, privacy: .private) — line dropped"
-                )
-            }
-            return
-        }
         // One record is one line: jamf-cli error text rides in some lines, and a
         // newline inside it would forge a second entry for the reversed tail scan.
         let flat = text.replacingOccurrences(of: #"\p{Cc}"#, with: " ", options: .regularExpression)
         // The log syncs on a shared workspace and may be tailed into a SIEM, so credentials
         // are scrubbed at write time, not only when Run History displays the line.
-        guard let data = (LogRedactor.redact(flat) + "\n").data(using: .utf8) else { return }
-        Self.appendOrDrop(data, to: handle, label: label, warned: &hasWarnedWriteFailed)
+        let data = (LogRedactor.redact(flat) + "\n").data(using: .utf8)
+        state.withLock { state in
+            guard let handle = state.handle else {
+                if !state.hasWarnedHandleGone {
+                    state.hasWarnedHandleGone = true
+                    AppLogger.schedule.warning(
+                        "ScheduledRunRecorder: log handle gone for \(self.label, privacy: .private) — line dropped"
+                    )
+                }
+                return
+            }
+            guard let data else { return }
+            Self.appendOrDrop(data, to: handle, label: label, warned: &state.hasWarnedWriteFailed)
+        }
     }
 
     /// Append to a log handle without letting a write failure kill the process.
@@ -164,10 +168,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         if refused { record(Self.refusedLine) }
         record("[info] exit \(exitCode) after \(seconds)s")
 
-        lock.lock()
-        try? handle?.close()
-        handle = nil
-        lock.unlock()
+        closeHandle()
 
         writeStatusJSON(
             exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts,
@@ -175,14 +176,18 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         Self.pruneRunLogs(in: logURL.deletingLastPathComponent(), keep: Self.maxRunLogs)
     }
 
+    private func closeHandle() {
+        state.withLock {
+            try? $0.handle?.close()
+            $0.handle = nil
+        }
+    }
+
     /// Close the log and delete it, leaving the previous status file as it was. For a run
     /// that never began, such as a collect that was refused: nothing ran, so Run
     /// History should not list it.
     func discard() {
-        lock.lock()
-        try? handle?.close()
-        handle = nil
-        lock.unlock()
+        closeHandle()
         do {
             try FileManager.default.removeItem(at: logURL)
         } catch {

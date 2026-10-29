@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Per-label "last started" / "last succeeded" stamps plus the retry count for
 /// the current fire. Lives beside the schedule store, not in a workspace: the
@@ -386,11 +387,10 @@ enum TickScheduler {
 /// An acquired tick lock: the open descriptor holding the kernel's exclusive `flock` on the
 /// lock file. The kernel drops the lock when the descriptor closes or the process dies, so a
 /// holder that exits, crashes or is killed never leaves a lock behind.
-final class TickLockHold: @unchecked Sendable {
-    private let state = NSLock()
-    private var fd: Int32
+final class TickLockHold: Sendable {
+    private let fd: Mutex<Int32>
 
-    fileprivate init(fd: Int32) { self.fd = fd }
+    fileprivate init(fd: Int32) { self.fd = Mutex(fd) }
 
     deinit { release() }
 
@@ -398,29 +398,27 @@ final class TickLockHold: @unchecked Sendable {
     /// file stays: unlinking it would let a claimer holding the old inode and one creating a
     /// new file both think they hold the lock.
     func release() {
-        state.lock()
-        defer { state.unlock() }
-        guard fd >= 0 else { return }
-        _ = fremovexattr(fd, TickLock.startAttribute, 0)
-        _ = ftruncate(fd, 0)
-        close(fd)
-        fd = -1
+        fd.withLock { fd in
+            guard fd >= 0 else { return }
+            _ = fremovexattr(fd, TickLock.startAttribute, 0)
+            _ = ftruncate(fd, 0)
+            close(fd)
+            fd = -1
+        }
     }
 
     /// Still holding the lock: false once released or given up.
     var isHeld: Bool {
-        state.lock()
-        defer { state.unlock() }
-        return fd >= 0
+        fd.withLock { $0 >= 0 }
     }
 
     /// Sets the lock file's mtime to now, which the read-only probe judges staleness by.
     /// Best-effort.
     func touch() {
-        state.lock()
-        defer { state.unlock() }
-        guard fd >= 0 else { return }
-        _ = futimens(fd, nil)
+        fd.withLock { fd in
+            guard fd >= 0 else { return }
+            _ = futimens(fd, nil)
+        }
     }
 
     /// Runs `body` while touching the lock every `interval`; beats stop after `limit`, which

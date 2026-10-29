@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Per-agent history for days the app recorded before it wrote `securityAgentCoverage`,
 /// rebuilt from the dated `ea-results` snapshots the way `resolvingMobile` rebuilds
@@ -96,20 +97,14 @@ extension TrendStore {
 /// Per-session memory of what each dated `ea-results` snapshot said about the agents, so the
 /// 13 MB files are decoded once however often the Overview and Trends reload. An empty entry
 /// records a snapshot that could not be used, which is not retried either.
-private final class AgentBackfillCache: @unchecked Sendable {
+private final class AgentBackfillCache: Sendable {
     static let shared = AgentBackfillCache()
-    private let lock = NSLock()
-    private var entries: [String: [String: Int]] = [:]
+    private let entries = Mutex<[String: [String: Int]]>([:])
 
     func counts(for key: String, compute: () -> [String: Int]) -> [String: Int] {
-        lock.lock()
-        let hit = entries[key]
-        lock.unlock()
-        if let hit { return hit }
+        if let hit = entries.withLock({ $0[key] }) { return hit }
         let value = compute()
-        lock.lock()
-        entries[key] = value
-        lock.unlock()
+        entries.withLock { $0[key] = value }
         return value
     }
 }

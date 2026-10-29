@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 // MARK: - Webhook fact assembly (detail-mode reduction + egress redaction)
 //
@@ -504,19 +505,21 @@ let deviceScanNotWrittenMarkerSuffix = "— not written"
 /// is already reading. A locked box
 /// rather than a captured `var` because `onLine` is `@Sendable` and the engine
 /// calls it from its process-reader queues.
-final class CollectHonestyWatcher: @unchecked Sendable {
-    private let lock = NSLock()
-    private var standDown = false
-    /// The stand-down was for a peer's recent collect, not its live claim.
-    private var freshnessStandDown = false
-    private var summaryFailed = false
-    private var partial = false
-    /// Sources the `[partial]` lines named as not landed.
-    private var unlanded: Set<String> = []
-    /// A `[partial]` line that names no source, so no failure record can explain it.
-    private var unexplainedPartial = false
-    /// A `[partial]` line for a failure a retry repeats and no failure record can explain.
-    private var permanentPartial = false
+final class CollectHonestyWatcher: Sendable {
+    private struct Flags {
+        var standDown = false
+        /// The stand-down was for a peer's recent collect, not its live claim.
+        var freshnessStandDown = false
+        var summaryFailed = false
+        var partial = false
+        /// Sources the `[partial]` lines named as not landed.
+        var unlanded: Set<String> = []
+        /// A `[partial]` line that names no source, so no failure record can explain it.
+        var unexplainedPartial = false
+        /// A `[partial]` line for a failure a retry repeats and no failure record can explain.
+        var permanentPartial = false
+    }
+    private let flags = Mutex(Flags())
 
     init() {}
 
@@ -525,10 +528,10 @@ final class CollectHonestyWatcher: @unchecked Sendable {
         if line.hasPrefix(ReportEngine.standDownMarker) {
             // A peer's live claim may end before the same-day retry; "collected recently" won't.
             let liveClaim = line.hasSuffix(ReportEngine.liveClaimStandDownSuffix)
-            lock.withLock {
-                standDown = true
-                if liveClaim { partial = true; unexplainedPartial = true } else {
-                    freshnessStandDown = true
+            flags.withLock {
+                $0.standDown = true
+                if liveClaim { $0.partial = true; $0.unexplainedPartial = true } else {
+                    $0.freshnessStandDown = true
                 }
             }
             return
@@ -542,13 +545,13 @@ final class CollectHonestyWatcher: @unchecked Sendable {
         // Follows from the sources line before it, which names them.
         let noSourceLanded = line.hasPrefix(
             "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason)")
-        lock.withLock {
-            partial = true
-            if summary { summaryFailed = true }
-            if let kinds { unlanded.formUnion(kinds) } else if protectThrew {
-                permanentPartial = true
+        flags.withLock {
+            $0.partial = true
+            if summary { $0.summaryFailed = true }
+            if let kinds { $0.unlanded.formUnion(kinds) } else if protectThrew {
+                $0.permanentPartial = true
             } else if !noSourceLanded {
-                unexplainedPartial = true
+                $0.unexplainedPartial = true
             }
         }
     }
@@ -569,22 +572,22 @@ final class CollectHonestyWatcher: @unchecked Sendable {
 
     /// The run deferred to another machine — no snapshot, no summary, nothing
     /// to announce. Still a successful outcome, just not a productive one.
-    var stoodDown: Bool { lock.withLock { standDown } }
+    var stoodDown: Bool { flags.withLock { $0.standDown } }
 
     /// The summary write failed, so the trend chart did not advance.
-    var summaryWriteFailed: Bool { lock.withLock { summaryFailed } }
+    var summaryWriteFailed: Bool { flags.withLock { $0.summaryFailed } }
 
     /// A source or the summary did not land, or the run stood down for a peer's live claim. A
     /// stand-down because a peer collected recently, a report's sheet failures and a device
     /// scan that landed with gaps are not missing data a retry would fetch, and never set it. Whether a same-day retry is worth it is `retryCouldHelp`.
-    var incomplete: Bool { lock.withLock { partial } }
+    var incomplete: Bool { flags.withLock { $0.partial } }
 
     /// `incomplete` for the background item's same-day retry: false when the `[partial]`
     /// lines only name sources whose last failure a retry would repeat. Run History still
     /// reads such a run as Partial from its log.
     func retryCouldHelp(lastFailureRepeats: (String) -> Bool) -> Bool {
-        let (partial, unexplained, permanent, kinds) = lock.withLock {
-            (self.partial, unexplainedPartial, permanentPartial, unlanded)
+        let (partial, unexplained, permanent, kinds) = flags.withLock {
+            ($0.partial, $0.unexplainedPartial, $0.permanentPartial, $0.unlanded)
         }
         guard partial else { return false }
         if unexplained { return true }
@@ -599,7 +602,7 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     /// no summary for today: if that peer is off, a later wake finds its data older than the
     /// window and collects.
     func retryCouldHelp(profile: String, now: Date = Date()) -> Bool {
-        if lock.withLock({ freshnessStandDown }),
+        if flags.withLock({ $0.freshnessStandDown }),
            !SummaryJSONParser.hasSummary(profile: profile, on: now) { return true }
         guard let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return incomplete }
         let store = StateFileStore(directory: stateDir)

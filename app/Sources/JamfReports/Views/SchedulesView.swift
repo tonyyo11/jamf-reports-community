@@ -1,12 +1,12 @@
 import SwiftUI
+import Synchronization
 import Combine
 
 // Thread-safe accumulator for streaming log lines from CLIBridge callbacks.
-private final class LineBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _lines: [CLIBridge.LogLine] = []
-    func append(_ line: CLIBridge.LogLine) { lock.withLock { _lines.append(line) } }
-    var lines: [CLIBridge.LogLine] { lock.withLock { _lines } }
+private final class LineBuffer: Sendable {
+    private let stored = Mutex<[CLIBridge.LogLine]>([])
+    func append(_ line: CLIBridge.LogLine) { stored.withLock { $0.append(line) } }
+    var lines: [CLIBridge.LogLine] { stored.withLock { $0 } }
 }
 
 struct SchedulesView: View {

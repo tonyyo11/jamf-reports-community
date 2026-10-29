@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// A single diagnostic event for the in-app log viewer. Carries its own
 /// `Sendable` level so views need not import OSLog.
@@ -43,20 +44,18 @@ struct LogEntry: Identifiable, Sendable {
 /// — the same posture the export path already used. The buffer is capped (oldest
 /// dropped) so a long session can't grow it without bound. Thread-safe: events
 /// arrive from any thread; the viewer reads a snapshot on appear/refresh.
-final class LogBuffer: @unchecked Sendable {
+final class LogBuffer: Sendable {
     static let shared = LogBuffer()
 
-    private let lock = NSLock()
     private let capacity: Int
-    private var entries: [LogEntry] = []
+    private let entries = Mutex<[LogEntry]>([])
 
     init(capacity: Int = 2000) { self.capacity = max(1, capacity) }
 
     func append(_ entry: LogEntry) {
-        lock.lock(); defer { lock.unlock() }
-        entries.append(entry)
-        if entries.count > capacity {
-            entries.removeFirst(entries.count - capacity)
+        entries.withLock {
+            $0.append(entry)
+            if $0.count > capacity { $0.removeFirst($0.count - capacity) }
         }
     }
 
@@ -65,7 +64,7 @@ final class LogBuffer: @unchecked Sendable {
     func snapshot(minLevel: LogEntry.Level = .debug,
                   since: Date? = nil,
                   limit: Int = 1000) -> [LogEntry] {
-        lock.lock(); let all = entries; lock.unlock()
+        let all = entries.withLock { $0 }
         return Self.select(all, minLevel: minLevel, since: since, limit: limit)
     }
 
@@ -81,7 +80,6 @@ final class LogBuffer: @unchecked Sendable {
     }
 
     func clear() {
-        lock.lock(); defer { lock.unlock() }
-        entries.removeAll()
+        entries.withLock { $0.removeAll() }
     }
 }
