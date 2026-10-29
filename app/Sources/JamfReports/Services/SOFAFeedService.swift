@@ -128,10 +128,8 @@ struct SOFAFeedService: Sendable {
         var rows: [OSFamilyRow] = []
         var warnings: [String] = []
 
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = timeout
-        config.timeoutIntervalForResource = timeout + 5
-        let session = URLSession(configuration: config)
+        let session = HTTPSession.make(request: timeout, resource: timeout + 5)
+        defer { session.finishTasksAndInvalidate() }
 
         for platform in allPlatforms {
             let urlString = "\(feedBaseURL)/\(platform)_data_feed.json"
@@ -140,7 +138,9 @@ struct SOFAFeedService: Sendable {
                 continue
             }
             do {
-                let (data, response) = try await session.data(from: url)
+                let (data, response) = try await session.data(
+                    for: URLRequest(url: url),
+                    delegate: HTTPSession.RedirectRule.sameHost(as: url))
                 if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                     throw URLError(.badServerResponse)
                 }

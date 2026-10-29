@@ -164,7 +164,7 @@ enum TimestampAuthority {
     ) async throws -> Data {
         let step = "sending the request to \(authority.host ?? "")"
         let fetch: AppUpdateCheck.Fetch = { request in
-            let session = URLSession(configuration: configuration)
+            let session = HTTPSession.make(configuration: configuration)
             defer { session.invalidateAndCancel() }
             let (bytes, response) = try await session.bytes(
                 for: request, delegate: HTTPSession.RedirectRule.sameHost(as: authority))
