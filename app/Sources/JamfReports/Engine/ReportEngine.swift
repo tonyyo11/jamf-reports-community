@@ -343,7 +343,8 @@ struct ReportEngine: Sendable {
                     let sidecar = artifact.appendingPathExtension(ext)
                     guard fm.fileExists(atPath: sidecar.path) else { continue }
                     Self.moveToArchive(
-                        sidecar, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
+                        sidecar, archiveDir: archiveDir, label: "sidecar ",
+                        replacing: !listed.contains(artifact), onLine: onLine)
                 }
             }
             // The run manifest and its timestamp follow their run, whole; they are never runs.

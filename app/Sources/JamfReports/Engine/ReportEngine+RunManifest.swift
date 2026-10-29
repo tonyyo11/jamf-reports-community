@@ -45,7 +45,11 @@ extension ReportEngine {
             saved = await saveTimestamp(
                 of: data, at: tsrURL, authority: authority, session: session, onLine: onLine)
         }
-        if !saved { AtomicInstall.discard(tsrURL) }
+        // A stale reply from an earlier run of the name; never a folder a person put there.
+        var held = stat()
+        if !saved, lstat(tsrURL.path, &held) == 0, (held.st_mode & S_IFMT) != S_IFDIR {
+            unlink(tsrURL.path)
+        }
         return manifestURL
     }
 

@@ -381,6 +381,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         func isDrifted(_ key: Key) -> Bool { drifts.contains { $0.key == key } }
     }
 
+    /// The token an unreadable config.yaml's drifts carry: no real value has it, so a Confirm shown
+    /// while the file could not be read never matches an unset key once it can.
+    static let unreadableToken = "\u{0}unreadable"
+
     /// Compares config.yaml with this Mac's pin. A shared workspace with no pin yet pins what it
     /// holds now (the values the operator set up with) and reports no drift. `persist: false`
     /// writes nothing: the pin a first sight or an upgrade would write is only compared against.
@@ -401,7 +405,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             // oversized, not a file) has no value to compare, so every key reads as changed.
             let drifts = Key.allCases.map {
                 Drift(key: $0, pinned: configUnreadableNote, current: configUnreadableNote,
-                      currentToken: "", pinnedIsNote: true)
+                      currentToken: unreadableToken, pinnedIsNote: true)
             }
             return Check(workspace: workspace, pinned: nil, drifts: drifts)
         case .readable(let read): current = read

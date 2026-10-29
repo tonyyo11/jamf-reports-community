@@ -492,7 +492,7 @@ final class RunManifestTests: XCTestCase {
         try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
         let old = "report_p_2026-10-01_090000"
         for name in ["\(old).xlsx", "report_p_2026-10-02_090000.xlsx", "notes.txt", "kept.html",
-                     ".hidden.pdf", "target.pdf"] {
+                     ".hidden.pdf", "target.pdf", "fresh.html", "fresh.html.sha256"] {
             try Data(name.utf8).write(to: folder.appendingPathComponent(name))
         }
         try FileManager.default.createSymbolicLink(
@@ -500,8 +500,10 @@ final class RunManifestTests: XCTestCase {
             withDestinationURL: folder.appendingPathComponent("target.pdf"))
         try Data("archived notes".utf8).write(to: archive.appendingPathComponent("notes.txt"))
         try Data("archived page".utf8).write(to: archive.appendingPathComponent("kept.html"))
+        try Data("archived sidecar".utf8).write(
+            to: archive.appendingPathComponent("fresh.html.sha256"))
         let planted = RunManifest(generatedAt: "x", generator: "x", artifacts: [
-            "notes.txt", "kept.html", ".hidden.pdf", "link.pdf",
+            "notes.txt", "kept.html", ".hidden.pdf", "link.pdf", "fresh.html",
         ].map { .init(name: $0, size: 1, sha256: "00") })
         try planted.encoded().write(to: folder.appendingPathComponent("\(old).manifest.json"))
         let lines = ManifestLines()
@@ -516,7 +518,10 @@ final class RunManifestTests: XCTestCase {
                                   encoding: .utf8), "archived notes")
         XCTAssertEqual(try String(contentsOf: archive.appendingPathComponent("kept.html"),
                                   encoding: .utf8), "archived page")
-        XCTAssertEqual(lines.all.filter { $0.contains("already holds an entry") }.count, 1,
+        XCTAssertEqual(try String(contentsOf: archive.appendingPathComponent("fresh.html.sha256"),
+                                  encoding: .utf8), "archived sidecar",
+                       "a listed file's sidecar never replaces an archive entry")
+        XCTAssertEqual(lines.all.filter { $0.contains("already holds an entry") }.count, 2,
                        "\(lines.all)")
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: folder.appendingPathComponent("\(old).manifest.json").path),
@@ -848,6 +853,16 @@ final class TimestampAuthorityPinTests: XCTestCase {
             profile: profile,
             drifts: SharedConfigPin.check(profile: profile, appSupport: appSupport).drifts,
             appSupport: appSupport), "nothing to compare, so nothing is confirmed")
+
+        // A Confirm shown while the file was unreadable must not match the unset keys once it is
+        // readable again: the person never saw their values.
+        let shownWhileUnreadable = SharedConfigPin.check(profile: profile, appSupport: appSupport)
+            .drifts
+        try "shared_workspace:\n  enabled: true\n".write(
+            to: configURL, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try SharedConfigPin.confirm(
+            profile: profile, drifts: shownWhileUnreadable, appSupport: appSupport),
+            "blank keys such as protect.profile must not match the unreadable rows")
     }
 
     /// A workspace that is neither shared nor pinned keeps its address with no config.yaml read.
