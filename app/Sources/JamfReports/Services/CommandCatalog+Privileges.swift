@@ -63,9 +63,8 @@ extension CommandCatalog {
             "Read Computer PreStage Enrollments", "View MDM command information in Jamf Pro API",
             "Read Computers",
         ],
-        "pro classic-computer-history get": [
-            "Read Computers", "View MDM command information in Jamf Pro API",
-        ],
+        // Its only caller is the weekly scan behind `mdm-command-health`.
+        "pro classic-computer-history get": ["Read Computers", "Read Mobile Devices"],
     ]
 
     private static let computers = ["Read Computers"]

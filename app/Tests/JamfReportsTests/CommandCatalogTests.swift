@@ -130,6 +130,21 @@ final class CommandCatalogTests: XCTestCase {
         XCTAssertEqual(privileges.map(\.name), privileges.map(\.name).sorted())
     }
 
+    /// The supplement is hand data from the wiki's by-report table; every name in it must still
+    /// be written there.
+    func testEverySupplementalNameAppearsInTheWikiPermissionsPage() throws {
+        let wiki = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("docs/wiki/13-Permissions-and-Access.md")
+        let text = try String(contentsOf: wiki, encoding: .utf8)
+        let names = Set(CommandCatalog.supplementalPrivileges.values.flatMap { $0 })
+        XCTAssertFalse(names.isEmpty)
+        for name in names.sorted() {
+            XCTAssertTrue(text.contains(name), "\(name) is not on the wiki permissions page")
+        }
+    }
+
     func testBundledPrivilegesMatchTheCapturedCatalog() throws {
         XCTAssertEqual(CommandCatalog.bundledCollectPrivileges, try fixture().collectPrivileges())
     }

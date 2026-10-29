@@ -186,6 +186,10 @@ struct CommandCatalog: Sendable {
     /// `supplementalPrivileges` for each command it lists none for.
     func collectPrivileges() -> [Privilege] {
         let union = proPrivileges(forArguments: Self.collectArguments())
+        if !union.missing.isEmpty {
+            let names = union.missing.joined(separator: ", ")
+            AppLogger.cli.warning("catalog lacks commands the app runs: \(names, privacy: .public)")
+        }
         return Privilege.merged(
             listed: union.listed,
             supplemental: union.unlisted.flatMap { Self.supplementalPrivileges[$0] ?? [] })
@@ -228,8 +232,15 @@ struct CommandCatalog: Sendable {
               CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) == nil,
               let output = JamfCLIProbe.run(
                 executable: binary, arguments: fetchArguments),
-              output.exitCode == 0,
-              let catalog = try? CommandCatalog(data: output.stdout) else { return nil }
+              output.exitCode == 0 else { return nil }
+        let catalog: CommandCatalog
+        do {
+            catalog = try CommandCatalog(data: output.stdout)
+        } catch {
+            let reason = String(describing: error)
+            AppLogger.cli.warning("command catalog unreadable: \(reason, privacy: .public)")
+            return nil
+        }
         cacheLock.lock()
         cached = catalog
         cacheLock.unlock()

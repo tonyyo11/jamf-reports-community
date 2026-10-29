@@ -300,8 +300,9 @@ final class CLIHelpContractTests: XCTestCase {
             let lines = try String(contentsOf: file, encoding: .utf8).split(
                 separator: "\n", omittingEmptySubsequences: false)
             let hits = lines.filter { line in
-                // Matrix rows start `(["`; `ReportEngine`'s functions build them.
-                !line.drop { $0 == " " }.hasPrefix("([\"")
+                // Matrix rows start `(["`; only `ReportEngine`'s matrix functions build them.
+                !(relative == "Engine/ReportEngine.swift"
+                    && line.drop { $0 == " " }.hasPrefix("([\""))
                     && pattern.firstMatch(
                         in: String(line), range: NSRange(location: 0, length: line.utf16.count))
                         != nil
