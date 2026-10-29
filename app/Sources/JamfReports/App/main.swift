@@ -271,14 +271,11 @@ private func scheduledRunSingleBody(
 ) async -> Int32 {
     // The run's day for its summary and its metric alerts, however long the collect takes.
     let runStart = Date()
-    guard ProfileService.isValid(profile) else {
+    guard let workspaceID = WorkspaceID(profile) else {
         fputs("[error] Invalid profile '\(ConfigSchema.displayText(profile))'\n", stderr)
         return 1
     }
-    guard let workspace = ProfileService.workspaceURL(for: profile) else {
-        fputs("[error] No workspace for profile '\(profile)'\n", stderr)
-        return 1
-    }
+    let workspace = WorkspacePaths.workspaceURL(for: workspaceID)
     // `runSchedule` skips a workspace with no jamf-cli profile before this, so it has one now.
     if mode != .jamfCLIOnly { AttentionLog.clear(.jamfCLIProfileMissing) }
 
@@ -303,7 +300,7 @@ private func scheduledRunSingleBody(
             "[routing] no usable config for \(profile, privacy: .public) — treating as Jamf Pro")
     }
 
-    let labelProfile = ProfileName.labelComponent(profile)
+    let labelProfile = workspaceID.labelComponent
     let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(labelProfile).\(mode.rawValue)"
     // One failure card a day per schedule and profile for the same failure (hourly retries).
     let cardKey = "\(runLabel).\(labelProfile)"
@@ -599,7 +596,7 @@ private func scheduledRunSingleBody(
         }
         defer { if holdsGenerateClaim { SharedWorkspace.release(profile: profile) } }
 
-        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: workspaceID)
         // A School workspace has no Jamf Pro snapshots: the Pro engine would write a
         // workbook with every sheet skipped.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
@@ -613,7 +610,7 @@ private func scheduledRunSingleBody(
         if isSchool {
             failures = try await ReportEngine.schoolGenerate(
                 config: config, dataDir: dataDir, outputURL: outputURL,
-                workspace: WorkspaceID(profile), onLine: onLine)
+                workspace: workspaceID, onLine: onLine)
         } else {
             failures = try await engine.generate(
                 outputURL: outputURL, template: template, now: runStart, onLine: onLine)

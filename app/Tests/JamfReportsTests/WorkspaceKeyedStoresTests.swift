@@ -86,7 +86,8 @@ final class WorkspaceKeyedStoresTests: XCTestCase {
             LaunchAgentWriter.label(for: schedule),
             "com.github.tonyyo11.jamf-reports-community.acme%20prod.nightly")
         XCTAssertEqual(
-            CLIRunSignals.cliLabel(profile: "acme prod", kind: .collect),
+            CLIRunSignals.cliLabel(
+                workspace: try XCTUnwrap(WorkspaceID("acme prod")), kind: .collect),
             "com.github.tonyyo11.jamf-reports-community.acme%20prod.cli-collect")
         XCTAssertEqual(
             ProfileName.name(fromLabelComponent: try XCTUnwrap(WorkspaceID("acme prod"))

@@ -49,7 +49,8 @@ struct Generate: AsyncParsableCommand {
     private func writeRecording(
         config: ReportConfig, dataDir: URL, template resolved: any ReportTemplate
     ) async throws -> Int {
-        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         // A School workspace writes the School workbook whatever the template: the Pro
         // engine would skip every sheet.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
@@ -68,7 +69,7 @@ struct Generate: AsyncParsableCommand {
             if isSchool {
                 failures = try await ReportEngine.schoolGenerate(
                     config: config, dataDir: dataDir, outputURL: outputURL,
-                    workspace: WorkspaceID(profile), onLine: onLine)
+                    workspace: try WorkspaceID(validating: profile), onLine: onLine)
             } else {
                 failures = try await engine.generate(
                     outputURL: outputURL, template: resolved, onLine: onLine)
@@ -185,7 +186,7 @@ struct Html: AsyncParsableCommand {
         // Reuse the xlsx naming convention (timestamp + profile attribution),
         // swapping the extension — there's no HTML-specific path resolver.
         let defaultURL = try ReportEngine(
-            config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
             .resolveOutputURL(stem: "report",
                               onLine: output == nil ? CLIRun.printLogLine : nil)
             .deletingPathExtension().appendingPathExtension("html")
@@ -196,7 +197,7 @@ struct Html: AsyncParsableCommand {
             try await AttentionLog.recording(profile: profile) {
                 _ = try await ReportEngine.generateHTML(
                     config: config, dataDir: dataDir, outputURL: outputURL,
-                    workspace: WorkspaceID(profile), onLine: CLIRun.printLogLine)
+                    workspace: try WorkspaceID(validating: profile), onLine: CLIRun.printLogLine)
             }
         }
         print(outputURL.path)

@@ -28,11 +28,9 @@ struct BackupsView: View {
     @State private var syncedChoice: ProtectBackup.SyncedStorageChoice?
     @State private var proChoice: ProBackup.SyncedStorageChoice?
 
-    private var backupsDirectory: URL {
-        let root = ProfileService.workspaceURL(for: workspace.profile)
-            ?? ProfileService.workspacesRoot()
-                .appendingPathComponent(ProfileName.pathComponent(workspace.profile))
-        return root.appendingPathComponent("backups", isDirectory: true)
+    private var backupsDirectory: URL? {
+        ProfileService.workspaceURL(for: workspace.profile)?
+            .appendingPathComponent("backups", isDirectory: true)
     }
 
     /// The header's folder. Demo mode names the demo workspace, not this Mac's
@@ -51,7 +49,7 @@ struct BackupsView: View {
     // real workspace's: nothing below opens, runs or deletes in demo mode.
 
     private func revealBackupsFolder() {
-        guard !workspace.demoMode else { return }
+        guard !workspace.demoMode, let backupsDirectory else { return }
         SystemActions.openFolder(backupsDirectory)
     }
 

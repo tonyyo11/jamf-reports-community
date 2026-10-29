@@ -116,8 +116,13 @@ struct EnvironmentProfiles: Equatable, Sendable {
     static func read(
         workspace: String, under root: URL = ProfileService.workspacesRoot()
     ) -> EnvironmentProfiles {
-        read(configURL: root.appendingPathComponent(ProfileName.pathComponent(workspace))
-            .appendingPathComponent("config.yaml"), workspace: workspace)
+        guard let id = WorkspaceID(workspace) else {
+            return resolve(config: nil, workspace: workspace)
+        }
+        return read(
+            configURL: WorkspacePaths.workspaceURL(for: id, under: root)
+                .appendingPathComponent("config.yaml"),
+            workspace: workspace)
     }
 
     private static func named(_ value: String?) -> String? {

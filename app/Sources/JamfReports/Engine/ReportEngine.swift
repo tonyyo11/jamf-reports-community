@@ -3871,12 +3871,8 @@ struct ReportEngine: Sendable {
         seedConfigURL: URL?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) throws {
-        guard ProfileService.isValid(profile) else {
-            throw ReportEngineError.invalidProfile(profile)
-        }
-        let workspace = workspacesRoot.appendingPathComponent(
-            ProfileName.pathComponent(profile), isDirectory: true
-        )
+        let workspace = WorkspacePaths.workspaceURL(
+            for: try WorkspaceID(validating: profile), under: workspacesRoot)
         let fm = FileManager.default
         let attrs: [FileAttributeKey: Any] = [.posixPermissions: NSNumber(value: Int16(0o700))]
         let paths = [

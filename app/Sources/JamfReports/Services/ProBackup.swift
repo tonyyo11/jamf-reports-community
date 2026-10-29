@@ -158,15 +158,19 @@ enum ProBackup {
 /// How many scheduled Jamf Pro backups ran on this Mac while the choice was still open. Per
 /// Mac, in Application Support, never in a workspace that other Macs write.
 enum ProBackupGrace {
-    static func url(profile: String, appSupport: URL) -> URL {
-        appSupport.appendingPathComponent(
-            "pro-backup-grace-\(ProfileName.pathComponent(profile)).json")
+    /// Named by `WorkspaceID.pathComponent`; nil for a name that is no workspace ID.
+    static func url(profile: String, appSupport: URL) -> URL? {
+        WorkspaceID(profile).map {
+            appSupport.appendingPathComponent("pro-backup-grace-\($0.pathComponent).json")
+        }
     }
 
     /// Runs counted so far. An unreadable record reads as used up: failing toward a skip keeps
     /// secrets off shared storage, and keeping them there is the direction that cannot be undone.
     static func used(profile: String, appSupport: URL = AppSupport.directory()) -> Int {
-        let url = url(profile: profile, appSupport: appSupport)
+        guard let url = url(profile: profile, appSupport: appSupport) else {
+            return BackupMaintenance.graceRunsBeforeAsking
+        }
         guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
         guard let data = try? BoundedFile.read(url, limit: 512, followSymlinks: false),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -179,8 +183,8 @@ enum ProBackupGrace {
     /// cannot buy more runs. Best effort; the count read fails toward skipping anyway.
     static func exhaust(profile: String, appSupport: URL = AppSupport.directory()) {
         guard used(profile: profile, appSupport: appSupport)
-                < BackupMaintenance.graceRunsBeforeAsking else { return }
-        let url = url(profile: profile, appSupport: appSupport)
+                < BackupMaintenance.graceRunsBeforeAsking,
+              let url = url(profile: profile, appSupport: appSupport) else { return }
         guard let data = try? JSONSerialization.data(
                 withJSONObject: ["runs": BackupMaintenance.graceRunsBeforeAsking]),
               (try? data.write(to: url, options: .atomic)) != nil else {
@@ -192,7 +196,9 @@ enum ProBackupGrace {
 
     /// Counts one run. Throws when the count cannot be saved; the caller then skips.
     static func record(profile: String, appSupport: URL = AppSupport.directory()) throws {
-        let url = url(profile: profile, appSupport: appSupport)
+        guard let url = url(profile: profile, appSupport: appSupport) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         let next = used(profile: profile, appSupport: appSupport) + 1
         let data = try JSONSerialization.data(withJSONObject: ["runs": next])
         try data.write(to: url, options: .atomic)

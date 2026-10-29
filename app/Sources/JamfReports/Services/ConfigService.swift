@@ -633,16 +633,14 @@ enum ConfigService {
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
         // ProfileName.pathComponent is the path-traversal control: it encodes `/`, and the
         // leading `.` of `.` and `..`, so the name is always one folder under the root.
-        guard ProfileService.isValid(profile) else {
+        guard let id = WorkspaceID(profile) else {
             throw ConfigError.invalidProfile(profile)
         }
 
         let root = (workspaceRoot ?? ProfileService.workspacesRoot())
             .resolvingSymlinksInPath()
             .standardizedFileURL
-        let workspace = root
-            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
-            .standardizedFileURL
+        let workspace = WorkspacePaths.workspaceURL(for: id, under: root).standardizedFileURL
         let config = workspace
             .appendingPathComponent("config.yaml", isDirectory: false)
             .standardizedFileURL

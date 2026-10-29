@@ -187,12 +187,10 @@ enum WorkspacePaths {
         for profile: String,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws -> URL {
-        guard ProfileService.workspaceURL(for: profile) != nil else {
-            throw PathError.invalidProfile(profile)
-        }
+        guard let id = WorkspaceID(profile) else { throw PathError.invalidProfile(profile) }
         return home
             .appendingPathComponent("Library/Logs/JamfReports/diagnostics", isDirectory: true)
-            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
+            .appendingPathComponent(id.pathComponent, isDirectory: true)
     }
 
     /// A fixed folder below a workspace (or below a config-derived folder such as `data_dir`),
