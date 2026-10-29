@@ -3,7 +3,7 @@ import Foundation
 /// Installs a `jamf-reports` symlink into a PATH directory pointing at this
 /// app's in-bundle executable, so the GUI binary doubles as the included CLI
 /// (the `code`/`subl` pattern). When invoked as `jamf-reports <subcommand>`,
-/// `App/main.swift` routes to the CLI before any GUI init.
+/// `runJamfReports()` routes to the CLI before any GUI init.
 ///
 /// No privilege escalation: the app only writes the symlink itself when the
 /// target directory is already writable. Otherwise it returns the exact

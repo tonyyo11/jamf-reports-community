@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-// Entry point lives in main.swift (top-level code) which dispatches to either
+// Entry point is runJamfReports() (App/HeadlessRun.swift), which dispatches to either
 // the SwiftUI UI path or the --scheduled-run / --check CLI paths. The @main
-// attribute on this App struct conflicts with main.swift's top-level code.
+// attribute on this App struct conflicts with JamfReportsMain/main.swift's top-level code.
 struct JamfReportsApp: App {
     /// Narrowest supported window width (points). 960 satisfies WCAG 1.4.10
     /// Reflow at 200% Dynamic Type and lets the app run on a 13" MacBook.

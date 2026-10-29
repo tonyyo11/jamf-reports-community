@@ -788,7 +788,7 @@ final class CollectHonestyTests: XCTestCase {
 
     /// `ReportEngine.generate` emits the summary marker too — it writes the
     /// day's summary after the workbook. The workbook is still real, and the
-    /// scheduled twin posts its card regardless (`main.swift:547`), so the CLI
+    /// scheduled twin posts its card regardless (`HeadlessRun.swift`), so the CLI
     /// must not suppress a generate digest over a summary write it never
     /// promised. Gating `generate` on `producedFreshSnapshot` is the mistake
     /// this pins against.

@@ -96,7 +96,7 @@ struct Generate: AsyncParsableCommand {
             // flag partial.
             print(outputURL.path)
             if !failures.isEmpty {
-                // Same marker text the scheduled path records (main.swift), so
+                // Same marker text the scheduled path records (HeadlessRun.swift), so
                 // RunHistoryService.isPartialRun recognizes a partially-failed
                 // CLI generate the same way it does a scheduled one.
                 signals.recorder?.record(partialRunMarker(sheetFailures: failures.count))

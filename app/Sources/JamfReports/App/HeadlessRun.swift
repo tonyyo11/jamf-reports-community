@@ -1004,43 +1004,50 @@ func runIncludedCLI(_ arguments: [String]) async {
 
 // MARK: - Entry point
 
-// Run through the `jamf-reports` link, re-exec the bundled executable (same pid, arguments and
-// streams) so every preference read, `--scheduled-run` and the CLI included, uses the app's domain.
-if let realPath = CLIInstaller.relaunchPath(
-    bundleIdentifier: Bundle.main.bundleIdentifier, executablePath: Bundle.main.executablePath) {
-    var argv: [UnsafeMutablePointer<CChar>?] = CommandLine.arguments.map { strdup($0) } + [nil]
-    execv(realPath, &argv)
-    fputs("[warn] could not run \(realPath): \(String(cString: strerror(errno))); "
-        + "preferences are read from the jamf-reports domain\n", stderr)
-}
+/// The process entry point. The `JamfReports` executable's `main.swift` calls this and nothing
+/// else, so every screen and service lives in this library, where Xcode can preview it.
+@MainActor
+package func runJamfReports() async {
+    // Run through the `jamf-reports` link, re-exec the bundled executable (same pid, arguments
+    // and streams) so every preference read, `--scheduled-run` and the CLI included, uses the
+    // app's domain.
+    if let realPath = CLIInstaller.relaunchPath(
+        bundleIdentifier: Bundle.main.bundleIdentifier,
+        executablePath: Bundle.main.executablePath) {
+        var argv: [UnsafeMutablePointer<CChar>?] = CommandLine.arguments.map { strdup($0) } + [nil]
+        execv(realPath, &argv)
+        fputs("[warn] could not run \(realPath): \(String(cString: strerror(errno))); "
+            + "preferences are read from the jamf-reports domain\n", stderr)
+    }
 
-// Install uncaught-exception handler before any UI or CLI work. Crash logs land at
-// ~/Library/Logs/JamfReports/crash_<timestamp>.log.
-CrashReporter.install()
+    // Install uncaught-exception handler before any UI or CLI work. Crash logs land at
+    // ~/Library/Logs/JamfReports/crash_<timestamp>.log.
+    CrashReporter.install()
 
-let cliArgs = CommandLine.arguments
-// Anchored to position (not a whole-array `contains`) so an option VALUE that
-// happens to equal "--scheduled-run" can't divert the process — mirrors
-// LaunchAgentWriter's plist parser (`args[1] == "--scheduled-run"`) and the
-// routesToCLI check below (`cliArgs[1]`).
-if cliArgs.count > 1, cliArgs[1] == "--tick" {
-    // Run now streams this process's output through a pipe; if the GUI quits mid-run, a write
-    // must fail with EPIPE instead of killing the tick (and the collect) with SIGPIPE.
-    signal(SIGPIPE, SIG_IGN)
-    SystemProxy.installForScheduledRun()
-    let code = Task.detached { await runTick(arguments: cliArgs) }
-    exit(await code.value)
-} else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
-   let profile = ProfileService.profileArgument(in: cliArgs) {
-    SystemProxy.installForScheduledRun()
-    let code = Task.detached { await scheduledRun(profile: profile) }
-    let exitCode = await code.value
-    exit(exitCode)
-} else if cliArgs.count > 1, JamfReportsCLI.routesToCLI(cliArgs[1]) {
-    // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/). Any word
-    // lands here, so ArgumentParser rejects a removed or mistyped subcommand.
-    await runIncludedCLI(Array(cliArgs.dropFirst()))
-} else {
-    // No arguments, or a launch argument starting with `-` (double-click) → the GUI.
-    JamfReportsApp.main()
+    let cliArgs = CommandLine.arguments
+    // Anchored to position (not a whole-array `contains`) so an option VALUE that
+    // happens to equal "--scheduled-run" can't divert the process — mirrors
+    // LaunchAgentWriter's plist parser (`args[1] == "--scheduled-run"`) and the
+    // routesToCLI check below (`cliArgs[1]`).
+    if cliArgs.count > 1, cliArgs[1] == "--tick" {
+        // Run now streams this process's output through a pipe; if the GUI quits mid-run, a write
+        // must fail with EPIPE instead of killing the tick (and the collect) with SIGPIPE.
+        signal(SIGPIPE, SIG_IGN)
+        SystemProxy.installForScheduledRun()
+        let code = Task.detached { await runTick(arguments: cliArgs) }
+        exit(await code.value)
+    } else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
+       let profile = ProfileService.profileArgument(in: cliArgs) {
+        SystemProxy.installForScheduledRun()
+        let code = Task.detached { await scheduledRun(profile: profile) }
+        let exitCode = await code.value
+        exit(exitCode)
+    } else if cliArgs.count > 1, JamfReportsCLI.routesToCLI(cliArgs[1]) {
+        // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/). Any word
+        // lands here, so ArgumentParser rejects a removed or mistyped subcommand.
+        await runIncludedCLI(Array(cliArgs.dropFirst()))
+    } else {
+        // No arguments, or a launch argument starting with `-` (double-click) → the GUI.
+        JamfReportsApp.main()
+    }
 }

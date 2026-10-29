@@ -1581,7 +1581,7 @@ struct ReportEngine: Sendable {
     /// Per-device commands that hit every device under management and are
     /// expensive on on-prem Jamf servers. The Settings "Skip expensive
     /// collections" toggle filters these out of the manual refresh path.
-    /// Scheduled collects (run via LaunchAgent → main.swift) ignore the
+    /// Scheduled collects (run via the background item → HeadlessRun.swift) ignore the
     /// toggle and always include them.
     /// Kinds that ran this cycle and served stale cache: present in `outcomes`
     /// (so they were actually attempted, not filtered out by tier or cadence)

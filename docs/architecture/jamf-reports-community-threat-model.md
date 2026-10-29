@@ -33,7 +33,7 @@ Operator-facing version of the controls below: [Security & Operational Considera
 | Component | Where | Runtime role |
 |---|---|---|
 | `JamfReports` (GUI) | `app/Sources/JamfReports/App` | User-facing SwiftUI app; spawns `jamf-cli` |
-| `main.swift` (headless modes) | `app/Sources/JamfReports/App/main.swift`, `App/Tick.swift` | Entry for `--tick` (the bundled background item, woken every 300 s), `--scheduled-run` (external scheduler) and the `jamf-reports` CLI; collects + generates |
+| `HeadlessRun.swift` (headless modes) | `app/Sources/JamfReports/App/HeadlessRun.swift`, `app/Sources/JamfReportsMain/main.swift`, `App/Tick.swift` | Entry for `--tick` (the bundled background item, woken every 300 s), `--scheduled-run` (external scheduler) and the `jamf-reports` CLI; collects + generates |
 | `ReportEngine` (native engine) | `app/Sources/JamfReports/Engine/*` | Reads cached JSON, writes XLSX/HTML/CSV |
 | `CLIBridge` | `app/Sources/JamfReports/Services/CLIBridge*.swift` | `Process`-based async wrapper for `jamf-cli`; environment hardening; codesign gate (`codesignGate`) |
 | `LogRedactor` | `app/Sources/JamfReports/Services/LogRedactor.swift` | Free-text + JSON credential redaction (`LogRedactor.patterns` plus webhook URL patterns) |
@@ -121,8 +121,8 @@ When the app is shipped to external organizations via notarized DMG or PKG insta
 | Entry point | Component | Notes |
 |---|---|---|
 | GUI invocation (`JamfReports.app`) | App | Trusted; same-user only |
-| CLI subcommand invocation (`jamf-reports <cmd>`) | `main.swift` → `JamfReportsCLI` (`CLI/`) | Same-user, same trust as GUI; thin shells over existing engine entry points, args parsed by `swift-argument-parser`. Profile slugs validated via `ProfileService.isValid`; user-supplied `--output`/`--out` paths run through the same `WorkspacePaths.isSensitiveAbsolutePath` deny-list the GUI uses (`CLIRun.requireSafeOutput`), so a CLI write can't clobber `~/.ssh`/`~/Library`. No new privileged operation |
-| Headless invocation by the bundled background item or an external scheduler | `main.swift`, `App/Tick.swift` | `--tick` (the background item) and `--scheduled-run` (an external scheduler); `--tick --now <label>` is how the GUI and `jamf-reports schedules run` start a schedule immediately |
+| CLI subcommand invocation (`jamf-reports <cmd>`) | `HeadlessRun.swift` → `JamfReportsCLI` (`CLI/`) | Same-user, same trust as GUI; thin shells over existing engine entry points, args parsed by `swift-argument-parser`. Profile slugs validated via `ProfileService.isValid`; user-supplied `--output`/`--out` paths run through the same `WorkspacePaths.isSensitiveAbsolutePath` deny-list the GUI uses (`CLIRun.requireSafeOutput`), so a CLI write can't clobber `~/.ssh`/`~/Library`. No new privileged operation |
+| Headless invocation by the bundled background item or an external scheduler | `HeadlessRun.swift`, `App/Tick.swift` | `--tick` (the background item) and `--scheduled-run` (an external scheduler); `--tick --now <label>` is how the GUI and `jamf-reports schedules run` start a schedule immediately |
 | `config.yaml` parsing | `YAMLCodec` (Swift) | Untrusted-ish: user-edited, but could be replaced by A1 |
 | Cached JSON parsed by `ReportEngine` | `app/Sources/JamfReports/Engine/*` | Source-of-truth originates from Jamf, but file is replaceable by A1; **integrity-checked against manifest** (PR-7) for files under `jamf-cli-data/<kind>/` when `jamf_cli.require_manifest` is true |
 | `summary.json` parsed by `RunHistoryService.isPartialRun` + `LaunchAgentService.checkSummaryFileForPartialStatus` | partial-status authoritative source | **Not manifest-covered** (T-12) |
