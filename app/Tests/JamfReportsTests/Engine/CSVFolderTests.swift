@@ -300,10 +300,10 @@ final class CSVFolderTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: parent.appendingPathComponent("report_w.xlsx").path))
     }
 
-    /// The six remaining `replaceItemAt` callers (status file, state files, manifests, SOFA
-    /// cache, config.yaml, jamf-cli install) rely on it failing closed over a link: it throws
-    /// (as of macOS 27) and neither writes through the link nor removes it. If a future macOS
-    /// replaced the link instead, that is also safe; only a write through it would fail this.
+    /// The one remaining `replaceItemAt` caller (the jamf-cli install) relies on it failing
+    /// closed over a link: it throws (as of macOS 27) and neither writes through the link nor
+    /// removes it. If a future macOS replaced the link instead, that is also safe; only a write
+    /// through it would fail this.
     func testReplaceItemAtNeverWritesThroughALinkAtTheDestination() throws {
         let dir = scratchURL("replace")
         defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }

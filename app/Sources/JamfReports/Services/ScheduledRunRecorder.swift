@@ -247,30 +247,10 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         }
     }
 
-    /// Writes `payload` to `statusURL` through a 0600 temp file and an atomic replace.
+    /// Writes `payload` to `statusURL` as a 0600 file, replacing a link at that name.
     static func replaceStatusFile(at statusURL: URL, with payload: [String: Any]) throws {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        let fm = FileManager.default
-        let tempURL = statusURL.deletingLastPathComponent()
-            .appendingPathComponent(".\(statusURL.lastPathComponent).\(UUID().uuidString).tmp")
-        do {
-            try data.write(to: tempURL, options: .atomic)
-            try fm.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: tempURL.path
-            )
-            if !fm.fileExists(atPath: statusURL.path) {
-                fm.createFile(
-                    atPath: statusURL.path,
-                    contents: Data(),
-                    attributes: [.posixPermissions: NSNumber(value: Int16(0o600))]
-                )
-            }
-            _ = try fm.replaceItemAt(statusURL, withItemAt: tempURL)
-        } catch {
-            try? fm.removeItem(at: tempURL)
-            throw error
-        }
+        try AtomicInstall.write(data, to: statusURL, mode: 0o600)
     }
 
     // MARK: - In progress

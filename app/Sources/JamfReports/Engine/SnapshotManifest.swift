@@ -103,7 +103,7 @@ enum SnapshotManifest {
     /// the lowercase hex digest. A pre-existing but UNPARSEABLE manifest is
     /// tolerated — it is logged and replaced with a fresh one rather than
     /// aborting the collect (a corrupt manifest must not block data capture).
-    /// The write is atomic (temp file + `replaceItem`) with `0o600` perms.
+    /// The write is atomic (`AtomicInstall`) with `0o600` perms.
     ///
     /// **Concurrency note:** this read-modify-write has no cross-process lock.
     /// If the GUI and a LaunchAgent collect the SAME kind at the same moment,
@@ -141,28 +141,10 @@ enum SnapshotManifest {
         try writeAtomically(payload, to: manifestURL)
     }
 
-    /// Atomic manifest write: stage to a sibling temp file with `0o600`, then
-    /// `replaceItem` into place (falling back to `.atomic` write when there is
-    /// no existing file to replace). Keeps a half-written manifest from ever
-    /// being observed by `verify`.
+    /// Atomic manifest write at `0o600`: a half-written manifest is never observed by `verify`,
+    /// and a link at the manifest name is replaced, not written through.
     private static func writeAtomically(_ data: Data, to url: URL) throws {
-        let fm = FileManager.default
-        let dir = url.deletingLastPathComponent()
-        let tmp = dir.appendingPathComponent(".\(fileName).\(UUID().uuidString).tmp")
-        try data.write(to: tmp, options: [.atomic])
-        try? fm.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))],
-            ofItemAtPath: tmp.path
-        )
-        if fm.fileExists(atPath: url.path) {
-            _ = try fm.replaceItemAt(url, withItemAt: tmp)
-        } else {
-            try fm.moveItem(at: tmp, to: url)
-        }
-        try? fm.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))],
-            ofItemAtPath: url.path
-        )
+        try AtomicInstall.write(data, to: url, mode: 0o600)
     }
 
     // MARK: - Workspace scan (PR-10, T-11)

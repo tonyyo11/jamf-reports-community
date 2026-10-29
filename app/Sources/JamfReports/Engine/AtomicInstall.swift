@@ -29,6 +29,31 @@ enum AtomicInstall {
         throw POSIXError(POSIXErrorCode(rawValue: lastError) ?? .EIO)
     }
 
+    /// Writes `data` to `final` through a hidden sibling opened exclusively (`O_EXCL|O_NOFOLLOW`),
+    /// then `install`s it, so a link planted at `final` is replaced and a crash leaves the old
+    /// file or the new one. `mode` is the file's permission bits; nil keeps those of a regular
+    /// file already at `final` (as `replaceItemAt` did), else the process default.
+    static func write(_ data: Data, to final: URL, mode: mode_t? = nil) throws {
+        var existing = stat()
+        let held = lstat(final.path, &existing) == 0 && (existing.st_mode & S_IFMT) == S_IFREG
+            ? existing.st_mode & 0o7777 : nil
+        let exact = mode ?? held
+        let staged = final.deletingLastPathComponent()
+            .appendingPathComponent(".\(final.lastPathComponent).tmp-\(UUID().uuidString)")
+        let fd = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, exact ?? 0o666)
+        guard fd >= 0 else { throw posixError() }
+        do {
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            if let exact, fchmod(fd, exact) != 0 { throw posixError() }
+            try handle.write(contentsOf: data)
+            try handle.close()
+            try install(staged, at: final)
+        } catch {
+            discard(staged)
+            throw error
+        }
+    }
+
     private static func installByRename(_ staged: URL, at final: URL) throws {
         guard isEntry(final) else {
             guard rename(staged.path, final.path) == 0 else { throw posixError() }

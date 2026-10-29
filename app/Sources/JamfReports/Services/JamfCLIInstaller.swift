@@ -1055,6 +1055,9 @@ final class JamfCLIInstaller {
         let mode = existingMode ?? NSNumber(value: Int16(0o755))
         try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: staged.path)
 
+        // Not `AtomicInstall`: `target` is the jamf-cli the person put on their PATH, in a folder
+        // they own, not workspace data. Swapping it would replace a link they keep there (to a
+        // managed copy) with a file; `replaceItemAt` leaves that link and fails, which is wanted.
         _ = try fm.replaceItemAt(target, withItemAt: staged)
     }
 
