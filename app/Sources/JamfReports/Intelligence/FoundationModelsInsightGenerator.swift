@@ -1,6 +1,6 @@
-// The entire file is gated: it references macOS-27-only FoundationModels types
-// (LanguageModel, SystemLanguageModel, LanguageModelSession, ContextOptions,
-// LanguageModelError, Prompt). `compiler(>=6.4)`
+// The entire file is gated: it references FoundationModels types new in macOS 27
+// (LanguageModel, ContextOptions, LanguageModelError; the rest are macOS 26+).
+// `compiler(>=6.4)`
 // is the real discriminator — Xcode 27 is the only toolchain shipping Swift 6.4;
 // on the default toolchain (Swift 6.3) this whole block elides and the seam is
 // served by StubInsightGenerator. NOT compile-checked by the default toolchain;
@@ -43,7 +43,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     private func storePrewarmedSession(model: some LanguageModel) {
         let session = LanguageModelSession(
             model: model, instructions: FleetInsightInput.instructions)
-        session.prewarm(promptPrefix: Prompt(FleetInsightInput.instructions))
+        session.prewarm()
         sessionLock.lock()
         prewarmedSession = session
         sessionLock.unlock()
@@ -64,24 +64,6 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
             ?? LanguageModelSession(model: model, instructions: FleetInsightInput.instructions)
     }
 
-    // MARK: - Prompt budgeting
-
-    /// First pass is the char/4 heuristic; then verify with the model's real
-    /// tokenizer (`tokenCount(for:)` is SystemLanguageModel-only) and re-render
-    /// at half the budget if the rendered context exceeds the context window.
-    /// Best-effort: a tokenCount failure keeps the heuristic result.
-    private static func verifiedPrompt(
-        for input: FleetInsightInput, model: SystemLanguageModel
-    ) async -> String {
-        let budget = model.contextSize / 4
-        let prompt = input.promptContext(maxApproxTokens: budget)
-        guard let tokens = try? await model.tokenCount(for: prompt),
-              tokens > model.contextSize else {
-            return prompt
-        }
-        return input.promptContext(maxApproxTokens: budget / 2)
-    }
-
     func generate(_ input: FleetInsightInput) async throws -> FleetInsight {
         // Audit trail: a successful generation otherwise leaves no log evidence.
         AppLogger.platform.notice(
@@ -92,8 +74,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
             guard case .available = model.availability else {
                 throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
             }
-            let prompt = await Self.verifiedPrompt(for: input, model: model)
-            return try await respond(model: model, prompt: prompt)
+            return try await respond(model: model, input: input)
         } catch let error as FleetInsightError {
             throw error
         } catch {
@@ -108,32 +89,38 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     /// capabilities needed for this operation"). Probe first: apply a reasoning
     /// level only when supported, and fall back to plain text when the model
     /// can't do guided (structured) generation at all.
-    private func respond<M: LanguageModel>(model: M, prompt: String) async throws -> FleetInsight {
+    private func respond(
+        model: SystemLanguageModel, input: FleetInsightInput
+    ) async throws -> FleetInsight {
         let caps = model.capabilities
-        let session = makeSession(for: model)
-
-        guard caps.contains(.guidedGeneration) else {
-            let response = try await session.respond(to: prompt)
-            return FleetInsight(headline: response.content, bullets: [])
-        }
-
-        if caps.contains(.reasoning) {
-            let options = ContextOptions(
-                reasoningLevel: config.resolvedReasoningLevel.asContextReasoningLevel
-            )
+        let guided = caps.contains(.guidedGeneration)
+        return try await PromptFit.run(
+            model: model, instructions: FleetInsightInput.instructions,
+            schema: guided ? FleetIntelligence.GeneratedFleetInsight.generationSchema : nil,
+            render: { input.promptContext(maxApproxTokens: $0) }
+        ) { prompt in
+            let session = self.makeSession(for: model)
+            guard guided else {
+                let response = try await session.respond(to: prompt, options: PromptFit.options)
+                return FleetInsight(headline: response.content, bullets: [])
+            }
+            if caps.contains(.reasoning) {
+                let response = try await session.respond(
+                    to: prompt,
+                    generating: FleetIntelligence.GeneratedFleetInsight.self,
+                    options: PromptFit.options,
+                    contextOptions: ContextOptions(
+                        reasoningLevel: self.config.resolvedReasoningLevel.asContextReasoningLevel)
+                )
+                return FleetIntelligence.map(response.content)
+            }
             let response = try await session.respond(
                 to: prompt,
                 generating: FleetIntelligence.GeneratedFleetInsight.self,
-                contextOptions: options
+                options: PromptFit.options
             )
             return FleetIntelligence.map(response.content)
         }
-
-        let response = try await session.respond(
-            to: prompt,
-            generating: FleetIntelligence.GeneratedFleetInsight.self
-        )
-        return FleetIntelligence.map(response.content)
     }
 
     // MARK: - Streaming
@@ -171,47 +158,56 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         guard case .available = model.availability else {
             throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
         }
-        let prompt = await Self.verifiedPrompt(for: input, model: model)
-        try await stream(model: model, prompt: prompt, into: continuation)
+        try await stream(model: model, input: input, into: continuation)
     }
 
     /// Streaming twin of `respond`, with the same capability probes: plain-text
     /// stream when guided generation is unsupported, reasoning options only when
     /// advertised. Snapshots carry all-optional `PartiallyGenerated` content;
     /// `mapPartial` fills the gaps leniently.
-    private func stream<M: LanguageModel>(
-        model: M, prompt: String,
+    private func stream(
+        model: SystemLanguageModel, input: FleetInsightInput,
         into continuation: AsyncThrowingStream<FleetInsight, Error>.Continuation
     ) async throws {
         let caps = model.capabilities
-        let session = makeSession(for: model)
-
-        guard caps.contains(.guidedGeneration) else {
-            for try await snapshot in session.streamResponse(to: prompt) {
-                continuation.yield(FleetInsight(headline: snapshot.content, bullets: []))
+        let guided = caps.contains(.guidedGeneration)
+        var yielded = false
+        try await PromptFit.run(
+            model: model, instructions: FleetInsightInput.instructions,
+            schema: guided ? FleetIntelligence.GeneratedFleetInsight.generationSchema : nil,
+            render: { input.promptContext(maxApproxTokens: $0) },
+            canRetry: { !yielded }
+        ) { prompt in
+            let session = self.makeSession(for: model)
+            guard guided else {
+                for try await snapshot in session.streamResponse(
+                    to: prompt, options: PromptFit.options) {
+                    yielded = true
+                    continuation.yield(FleetInsight(headline: snapshot.content, bullets: []))
+                }
+                return
             }
-            return
-        }
-
-        if caps.contains(.reasoning) {
-            let options = ContextOptions(
-                reasoningLevel: config.resolvedReasoningLevel.asContextReasoningLevel
-            )
+            if caps.contains(.reasoning) {
+                for try await snapshot in session.streamResponse(
+                    to: prompt,
+                    generating: FleetIntelligence.GeneratedFleetInsight.self,
+                    options: PromptFit.options,
+                    contextOptions: ContextOptions(
+                        reasoningLevel: self.config.resolvedReasoningLevel.asContextReasoningLevel)
+                ) {
+                    yielded = true
+                    continuation.yield(FleetIntelligence.mapPartial(snapshot.content))
+                }
+                return
+            }
             for try await snapshot in session.streamResponse(
                 to: prompt,
                 generating: FleetIntelligence.GeneratedFleetInsight.self,
-                contextOptions: options
+                options: PromptFit.options
             ) {
+                yielded = true
                 continuation.yield(FleetIntelligence.mapPartial(snapshot.content))
             }
-            return
-        }
-
-        for try await snapshot in session.streamResponse(
-            to: prompt,
-            generating: FleetIntelligence.GeneratedFleetInsight.self
-        ) {
-            continuation.yield(FleetIntelligence.mapPartial(snapshot.content))
         }
     }
 
@@ -251,7 +247,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
 extension FleetIntelligence {
     /// Map a streaming snapshot's all-optional `PartiallyGenerated` content into
     /// the portable seam model: nil headline renders empty, bullets without text
-    /// are skipped, unknown severity falls back to `.info`.
+    /// are skipped; a severity not yet streamed reads `.info`.
     static func mapPartial(
         _ partial: GeneratedFleetInsight.PartiallyGenerated
     ) -> FleetInsight {
@@ -261,9 +257,7 @@ extension FleetIntelligence {
                 guard let text = bullet.text, !text.isEmpty else { return nil }
                 return InsightBullet(
                     text: text,
-                    severity: InsightBullet.Severity(
-                        rawValue: (bullet.severity ?? "").lowercased()
-                    ) ?? .info
+                    severity: bullet.severity?.portable ?? .info
                 )
             }
         )

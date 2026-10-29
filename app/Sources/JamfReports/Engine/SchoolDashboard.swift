@@ -103,7 +103,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 24)
         var row = ws.writeSheetHeader(
             title: "School Overview",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 2
         )
         ws.write("Resource", row: row, col: 0, format: .header)
@@ -127,7 +127,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 2, 50)
         var row = ws.writeSheetHeader(
             title: "Device Groups",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 3
         )
         let hdrs = ["Group Name", "Device Count", "Location ID"]
@@ -157,7 +157,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(4, 5, 24)
         var row = ws.writeSheetHeader(
             title: "Users",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 6
         )
         // jamf-cli has no user role, only an account status.
@@ -185,7 +185,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 3, 20)
         var row = ws.writeSheetHeader(
             title: "Classes",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         // jamf-cli has a teacher headcount, not teacher names.
@@ -213,7 +213,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 3, 20)
         var row = ws.writeSheetHeader(
             title: "Apps",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         // jamf-cli has no install or managed count per app.
@@ -241,7 +241,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 3, 16)
         var row = ws.writeSheetHeader(
             title: "Profiles",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         // jamf-cli has no category, device count or enabled flag per profile.
@@ -267,7 +267,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 2, 20)
         var row = ws.writeSheetHeader(
             title: "Locations",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 3
         )
         // jamf-cli has no device count or street address per location.
@@ -293,7 +293,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 4, 20)
         var row = ws.writeSheetHeader(
             title: "DEP Devices",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 5
         )
         let hdrs = ["Serial", "Device Name", "Model", "Status", "Profile"]
@@ -323,7 +323,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(3, 4, 12)
         var row = ws.writeSheetHeader(
             title: "iBeacons",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 5
         )
         let hdrs = ["Name", "UUID", "Description", "Major", "Minor"]
@@ -350,7 +350,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 4, 24)
         var row = ws.writeSheetHeader(
             title: "Blueprints",
-            subtitle: "Experimental. Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Experimental. Generated: \(ISO8601Time.string(now))",
             ncols: 5
         )
         let hdrs = ["Name", "State", "Last deployed", "Created", "Updated"]
@@ -384,7 +384,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(4, 5, 22)
         var row = ws.writeSheetHeader(
             title: "Device Inventory",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 6
         )
         let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin"]
@@ -417,7 +417,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 14)
         var row = ws.writeSheetHeader(
             title: "OS Versions",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 2
         )
         ws.write("OS Version", row: row, col: 0, format: .header)
@@ -451,7 +451,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 14)
         var row = ws.writeSheetHeader(
             title: "Device Status",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 2
         )
         ws.write("Status", row: row, col: 0, format: .header)
@@ -491,7 +491,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(3, 3, 18)
         var row = ws.writeSheetHeader(
             title: "Stale Devices (>\(staleThreshold) days)",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         let hdrs = ["Device Name", "Serial", "Last Checkin", "Days Since Checkin"]
@@ -521,7 +521,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 10, 18)
         var row = ws.writeSheetHeader(
             title: "Trends",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: now))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: Self.trendColumns.count)
         for (col, title) in Self.trendColumns.enumerated() {
             ws.write(title, row: row, col: col, format: .header)

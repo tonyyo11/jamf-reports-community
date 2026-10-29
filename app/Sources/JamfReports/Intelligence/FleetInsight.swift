@@ -86,15 +86,17 @@ struct FleetInsightInput: Sendable, Equatable {
     /// "down" with its size, in percentage points for shares, whole numbers for counts and
     /// one decimal for numbers, then "better" or "worse" when it has a good direction.
     ///
-    /// `maxApproxTokens` bounds the size: tokens are approximated at 4 chars per
-    /// token (the widely-used rough heuristic; the generator additionally caps
-    /// the budget at the live model's `contextSize / 4`). If the rendered
-    /// context exceeds the budget it is truncated on a line boundary so a
-    /// partial fact is never emitted.
+    /// `maxApproxTokens` bounds the size at `charsPerToken` characters per token;
+    /// the generator sizes it from the live model's room and tokenizer. An over-budget
+    /// context is cut on a line boundary so a partial fact is never emitted.
     func promptContext(maxApproxTokens: Int = 1_500) -> String {
         let lines = [clean(title), "Focus: \(clean(focus))"] + facts.map(\.line) + notes.map(clean)
         return Self.budget(lines, maxApproxTokens: maxApproxTokens)
     }
+
+    /// Latin text runs three to four characters per token; the low end keeps the
+    /// heuristic from undercounting hex placeholders, paths and exit codes.
+    static let charsPerToken = 3
 
     /// The most characters any one field (title, focus, label, text value, note) sends.
     static let fieldLimit = 200
@@ -144,10 +146,10 @@ struct FleetInsightInput: Sendable, Equatable {
         return SummaryJSONParser.dateFormatter.string(from: parsed)
     }
 
-    /// Truncate the context to `maxApproxTokens` on a line boundary. ~4 chars
-    /// per token; drops whole trailing lines so no partial fact is emitted.
+    /// Truncate the context to `maxApproxTokens` on a line boundary, dropping whole
+    /// trailing lines so no partial fact is emitted.
     static func budget(_ lines: [String], maxApproxTokens: Int) -> String {
-        let maxChars = max(0, maxApproxTokens) * 4
+        let maxChars = max(0, maxApproxTokens) * charsPerToken
         var kept: [String] = []
         var used = 0
         for line in lines {
@@ -347,21 +349,21 @@ extension FleetInsightInput.Fact {
     }
 }
 
-// MARK: - Gated @Generable companion (macOS 27 only)
+// MARK: - Gated @Generable companion
 
 #if canImport(FoundationModels) && compiler(>=6.4)   // 6.4 ships with Xcode 27 only
 import FoundationModels
 
 @available(macOS 27, *)
 extension FleetIntelligence {
-    /// Structured-output companion for guided generation. Lives INSIDE the gate
-    /// because `@Generable`/`@Guide` are macOS-27-only macros. Maps 1:1 to the
-    /// portable `FleetInsight`; never referenced outside this gate.
+    /// Structured-output companion for guided generation. `@Generable`/`@Guide` are
+    /// macOS 26+; they sit inside the macOS 27 gate with the rest of the layer. Maps 1:1 to
+    /// the portable `FleetInsight`; never referenced outside this gate.
     @Generable
     struct GeneratedFleetInsight {
         @Guide(description: "One sentence, plain-language summary of overall fleet health.")
         var headline: String
-        @Guide(description: "3 to 6 prioritized findings, each with a severity.")
+        @Guide(description: "Prioritized findings, each with a severity.", .count(3...6))
         var bullets: [GeneratedBullet]
     }
 
@@ -370,8 +372,21 @@ extension FleetIntelligence {
         @Guide(description: "A single concrete, actionable finding in plain language: one or two "
                + "short sentences under 40 words, ending in a full stop.")
         var text: String
-        @Guide(description: "One of: info, warning, critical.")
-        var severity: String
+        var severity: GeneratedSeverity
+    }
+
+    /// An enum, so the model can only emit one of the three; there is no text to parse.
+    @Generable
+    enum GeneratedSeverity {
+        case info, warning, critical
+
+        var portable: InsightBullet.Severity {
+            switch self {
+            case .info: return .info
+            case .warning: return .warning
+            case .critical: return .critical
+            }
+        }
     }
 
     /// Map the guided-generation value into the portable seam model.
@@ -379,10 +394,7 @@ extension FleetIntelligence {
         FleetInsight(
             headline: generated.headline,
             bullets: generated.bullets.map {
-                InsightBullet(
-                    text: $0.text,
-                    severity: InsightBullet.Severity(rawValue: $0.severity.lowercased()) ?? .info
-                )
+                InsightBullet(text: $0.text, severity: $0.severity.portable)
             }
         )
     }

@@ -495,16 +495,14 @@ struct UpdatesView: View {
     }
 
     private func formatDate(_ dateString: String) -> String {
-        guard let date = Self.isoFormatter.date(from: dateString) else {
+        guard let date = ISO8601Time.parse(dateString) else {
             return dateString
         }
         return Self.shortFormatter.string(from: date)
     }
 
     // Built once: this runs per table row, and neither is mutated after creation.
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
-
-    nonisolated(unsafe) private static let shortFormatter: DateFormatter = {
+    nonisolated private static let shortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short

@@ -638,27 +638,16 @@ extension DeviceInventoryService {
     /// with or without a fraction of any length, then the CSV export forms.
     static func parseDate(_ text: String) -> Date? {
         guard !text.isEmpty else { return nil }
-        if let date = isoFormatter.date(from: text) { return date }
         // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
-        // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
-        // Mac had no contact age unless device-compliance supplied a day count.
-        if let date = isoFractionalFormatter.date(from: text) { return date }
+        // "2015-02-17T21:33:23.712Z"); a Mac that failed here had no contact age.
+        if let date = ISO8601Time.parse(text) { return date }
         for formatter in exportDateFormatters {
             if let date = formatter.date(from: text) { return date }
         }
         return nil
     }
 
-    // Built once: this runs several times per computer. As for
-    // `StateFileStore.formatter`, a configured formatter's `date(from:)` is safe to share.
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
-
-    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
+    // Built once: this runs several times per computer.
     private static let exportDateFormatters: [DateFormatter] = [
         "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy",
     ].map { format in

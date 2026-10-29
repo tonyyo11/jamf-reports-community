@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Resolve CLI binaries from GUI launches, where `Process` does not inherit a
 /// login-shell PATH. `jamf-cli` may be installed by Homebrew or directly from a
@@ -121,7 +122,7 @@ final class CLIBridge {
             guard ProfileService.isValid(profile),
                   let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
                 AppLogger.cli.warning(
-                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public)"
+                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .private)"
                 )
                 return []
             }
@@ -131,7 +132,7 @@ final class CLIBridge {
                 // there but refused (a link) or unreadable is named.
                 if FileManager.default.fileExists(atPath: dir.path) {
                     AppLogger.cli.warning(
-                        "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public): not a readable snapshot folder"
+                        "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .private): not a readable snapshot folder"
                     )
                 }
                 return []
@@ -157,7 +158,7 @@ final class CLIBridge {
                         let name = item.url.lastPathComponent
                         let reason = String(describing: error)
                         AppLogger.cli.warning(
-                            "snapshot skipped \(name, privacy: .public): \(reason, privacy: .public)"
+                            "snapshot skipped \(name, privacy: .private): \(reason, privacy: .private)"
                         )
                         return nil
                     }
@@ -172,7 +173,7 @@ final class CLIBridge {
                     // or object, so a fragment is by definition truncated.
                     guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
                         AppLogger.cli.warning(
-                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .public)"
+                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .private)"
                         )
                         return nil
                     }
@@ -209,59 +210,7 @@ final class CLIBridge {
         // to process termination. Resuming in terminationHandler alone races the final
         // readabilityHandler deliveries — they run on different GCD queues, so under
         // load the last stdout/stderr chunk can drop from the live Runs feed (same race
-        // fixed in runAndCapture via CaptureCompletion).
-        final class RunCompletion: @unchecked Sendable {
-            private let lock = NSLock()
-            private var stdoutAtEOF = false
-            private var stderrAtEOF = false
-            private var exitCode: Int32?
-            private var resumed = false
-            private let continuation: CheckedContinuation<Int32, Error>
-
-            init(_ continuation: CheckedContinuation<Int32, Error>) {
-                self.continuation = continuation
-            }
-
-            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
-            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
-            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
-
-            /// Process never spawned — resume with a thrown error immediately,
-            /// bypassing the EOF wait (no child means pipes never deliver EOF).
-            func failWithLaunchError(_ error: CLIBridgeError) {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(throwing: error) }
-            }
-
-            /// Timeout path only: a grandchild may hold the pipes after the child is gone,
-            /// so stop waiting for their EOF. Shares the single-resume flag with `finish`.
-            @discardableResult
-            func forceResume(_ code: Int32) -> Bool {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(returning: code) }
-                return shouldResume
-            }
-
-            private func finish(_ mutate: (RunCompletion) -> Void) {
-                var pending: Int32?
-                lock.lock()
-                mutate(self)
-                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
-                    resumed = true
-                    pending = exitCode
-                }
-                lock.unlock()
-                if let pending { continuation.resume(returning: pending) }
-            }
-        }
+        // fixed in runAndCapture via the same ProcessCompletion).
 
         // Lock-protected box so the task-cancellation handler's terminate() call
         // never races against the continuation body's set() call. onCancel fires
@@ -275,7 +224,7 @@ final class CLIBridge {
 
         let code = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-                let completion = RunCompletion(continuation)
+                let completion = ProcessCompletion(continuation)
                 let process = Process()
                 box.set(process)
                 process.executableURL = executable
@@ -367,21 +316,6 @@ final class CLIBridge {
         timeout: TimeInterval? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (Int32, Data) {
-        final class DataBox: @unchecked Sendable {
-            private var data = Data()
-            private let lock = NSLock()
-            func append(_ newData: Data) {
-                lock.lock()
-                data.append(newData)
-                lock.unlock()
-            }
-            /// A timed-out call resumes without waiting for EOF, so a readability block can
-            /// still be appending while the result is copied.
-            func snapshot() -> Data {
-                lock.lock(); defer { lock.unlock() }
-                return data
-            }
-        }
         let box = DataBox()
 
         // M-01: same gate as `run` — verify before spawn.
@@ -397,68 +331,12 @@ final class CLIBridge {
         // is appended, truncating the captured payload to empty (Epic #102). The
         // same race on stderr dropped the lines collect's `StderrSignalWatcher`
         // classifies a command that exits 0 without data from (#207 G24).
-        final class CaptureCompletion: @unchecked Sendable {
-            private let lock = NSLock()
-            private var stdoutAtEOF = false
-            private var stderrAtEOF = false
-            private var exitCode: Int32?
-            private var resumed = false
-            private let continuation: CheckedContinuation<Int32, Error>
-
-            init(_ continuation: CheckedContinuation<Int32, Error>) {
-                self.continuation = continuation
-            }
-
-            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
-
-            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
-
-            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
-
-            /// Process never spawned — resume with a thrown error immediately,
-            /// bypassing the EOF wait (no child means the pipes will never
-            /// deliver EOF).
-            func failWithLaunchError(_ error: CLIBridgeError) {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(throwing: error) }
-            }
-
-            /// Timeout path only: the child has exited but a grandchild may still hold the
-            /// pipes, so do not wait for their EOF. Shares the single-resume flag with
-            /// `finish`, so whichever arrives first is the only resume.
-            @discardableResult
-            func forceResume(_ code: Int32) -> Bool {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(returning: code) }
-                return shouldResume
-            }
-
-            private func finish(_ mutate: (CaptureCompletion) -> Void) {
-                var pending: Int32?
-                lock.lock()
-                mutate(self)
-                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
-                    resumed = true
-                    pending = exitCode
-                }
-                lock.unlock()
-                if let pending { continuation.resume(returning: pending) }
-            }
-        }
 
         let processBox = TimedProcessBox()
 
         let code = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-                let completion = CaptureCompletion(continuation)
+                let completion = ProcessCompletion(continuation)
                 let process = Process()
                 processBox.set(process)
                 process.executableURL = executable
@@ -724,7 +602,7 @@ final class CLIBridge {
         let result = WorkspacePermissionHardener.tighten(profile: profile)
         AppLogger.cli.info(
             """
-            tightenOnSuccess profile=\(profile, privacy: .public) \
+            tightenOnSuccess profile=\(profile, privacy: .private) \
             exit=\(exitCode) touched=\(result.touched) \
             failed=\(result.failed) enumerated=\(result.enumerated)
             """
@@ -876,7 +754,7 @@ final class CLIBridge {
             let loaded = try? ConfigLoader.load(from: url)
             if loaded == nil {
                 AppLogger.cli.warning(
-                    "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+                    "[routing] could not load config for \(profile, privacy: .private) — defaulting to Jamf Pro"
                 )
             }
             return loaded
@@ -1124,7 +1002,7 @@ final class CLIBridge {
         _testExecutable: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Bool {
-        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .public)")
+        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .private)")
         guard !ProfileAuthMethod.skipsProAuthProbe(profile: profile) else { return true }
         let probe = await probeToken(
             for: profile, executable: _testExecutable, timeout: probeTimeout
@@ -1135,13 +1013,13 @@ final class CLIBridge {
             let msg = "[warn] auth check timed out after \(Int(probeTimeout.rounded(.up))) s for "
                 + "profile '\(profile)'; could not confirm the credentials. Continuing; the "
                 + "command reports a rejected credential itself."
-            AppLogger.auth.warning("\(msg, privacy: .public)")
+            AppLogger.auth.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             return true
         case .keychainLocked:
             let msg = "[error] auth check failed for profile '\(profile)': "
                 + Self.keychainLockedDetail
-            AppLogger.auth.error("\(msg, privacy: .public)")
+            AppLogger.auth.error("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             return false
         case .status(let result):
@@ -1327,7 +1205,7 @@ final class CLIBridge {
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
             AppLogger.auth.warning(
-                "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "tokenStatus: runAndCapture threw for \(profile, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
             return .status(TokenStatus.make(profile: profile, token: nil, expiresAt: nil))
         }
@@ -1354,9 +1232,7 @@ final class CLIBridge {
         }
         let expiresAt: Date?
         if let rawDate = payload.expires_at {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            expiresAt = formatter.date(from: rawDate)
+            expiresAt = ISO8601Time.parse(rawDate)
         } else {
             expiresAt = nil
         }
@@ -1584,9 +1460,7 @@ final class CLIBridge {
     ///   (done in `singleDeviceDetail` alongside `removeItem(at: cache)`).
     nonisolated static func writeDeviceDetailFreshnessSidecar(for cache: URL) {
         let sidecar = cache.appendingPathExtension("meta")
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let isoString = formatter.string(from: Date())
+        let isoString = ISO8601Time.string(Date())
         guard let data = try? JSONSerialization.data(
             withJSONObject: ["generated_at": isoString]
         ) else {
@@ -2255,7 +2129,7 @@ final class CLIBridge {
         }
 
         // Rename temp dir to a timestamped final name.
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "")
             .prefix(15)
@@ -2296,7 +2170,7 @@ final class CLIBridge {
         let effectiveLabel = trimmedLabel ?? ""
         var manifest: [String: Any] = [
             "label": effectiveLabel,
-            "created_at": ISO8601DateFormatter().string(from: Date()),
+            "created_at": ISO8601Time.string(Date()),
             "file_count": stats.fileCount,
             "size_bytes": stats.sizeBytes,
         ]
@@ -2323,7 +2197,7 @@ final class CLIBridge {
             )
         } catch {
             AppLogger.cli.warning(
-                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] backup manifest write failed — backup was created but BackupsView may show no label or stats"))
@@ -2657,7 +2531,7 @@ final class CLIBridge {
             return nil
         case .failure(let error):
             AppLogger.cli.error(
-                "CLIBridge: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+                "CLIBridge: codesign gate rejected \(executable.path, privacy: .private): \(String(describing: error), privacy: .private)"
             )
             onLine(.init(
                 timestamp: Date(),
@@ -2865,7 +2739,7 @@ func runDeviceDetailProcess(
     timeout: TimeInterval = deviceDetailTimeout,
     onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 ) async -> Int32 {
-    await Task.detached(priority: .userInitiated) {
+    await Task.detached(priority: .userInitiated) { () async -> Int32 in
         // M-01: this path bypasses CLIBridge.run / runAndCapture (it
         // builds its own Process for high-throughput per-device detail
         // fetches), so it has to invoke the codesign gate directly.
@@ -2875,7 +2749,7 @@ func runDeviceDetailProcess(
                 break
             case .failure(let error):
                 AppLogger.cli.error(
-                    "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+                    "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .private): \(String(describing: error), privacy: .private)"
                 )
                 onLine?(.init(
                     timestamp: Date(), level: .fail,
@@ -2896,7 +2770,7 @@ func runDeviceDetailProcess(
             )
             // One lookup may wait on several slow API calls; the limit only backstops a wedged
             // jamf-cli, and the caller falls back to the cached copy on any non-zero exit.
-            switch JamfCLIProbe.runOutcome(
+            switch await JamfCLIProbe.runOutcomeAsync(
                 executable: executable, arguments: arguments, timeout: timeout
             ) {
             case .launchFailed:
@@ -2975,4 +2849,67 @@ private func stableDeviceHash(_ value: String) -> String {
         hash &*= 1_099_511_628_211
     }
     return String(format: "%016llx", hash)
+}
+
+/// Captured stdout of `CLIBridge.runAndCapture`. A timed-out call resumes without waiting for
+/// EOF, so a readability block can still be appending while the result is copied.
+private final class DataBox: Sendable {
+    private let data = Mutex(Data())
+    func append(_ newData: Data) { data.withLock { $0.append(newData) } }
+    func snapshot() -> Data { data.withLock { $0 } }
+}
+
+/// Resumes the continuation exactly once: when the child has exited and both pipes have reached
+/// EOF (resuming on termination alone races the last readability deliveries, which run on other
+/// queues and would drop the final lines), or at once on a launch failure or a timeout.
+private final class ProcessCompletion: Sendable {
+    private struct State {
+        var stdoutAtEOF = false
+        var stderrAtEOF = false
+        var exitCode: Int32?
+        var resumed = false
+    }
+    private let state = Mutex(State())
+    private let continuation: CheckedContinuation<Int32, Error>
+
+    init(_ continuation: CheckedContinuation<Int32, Error>) {
+        self.continuation = continuation
+    }
+
+    func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
+    func markStderrEOF() { finish { $0.stderrAtEOF = true } }
+    func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
+
+    /// The process never spawned: throw now, since no pipe will deliver EOF.
+    func failWithLaunchError(_ error: CLIBridgeError) {
+        if claim() { continuation.resume(throwing: error) }
+    }
+
+    /// Timeout path only: the child has exited but a grandchild may still hold the pipes, so do
+    /// not wait for their EOF. Shares the single-resume flag with `finish`.
+    @discardableResult
+    func forceResume(_ code: Int32) -> Bool {
+        guard claim() else { return false }
+        continuation.resume(returning: code)
+        return true
+    }
+
+    private func claim() -> Bool {
+        state.withLock { state in
+            guard !state.resumed else { return false }
+            state.resumed = true
+            return true
+        }
+    }
+
+    private func finish(_ mutate: (inout State) -> Void) {
+        let pending: Int32? = state.withLock { state in
+            mutate(&state)
+            guard !state.resumed, state.stdoutAtEOF, state.stderrAtEOF,
+                  let exitCode = state.exitCode else { return nil }
+            state.resumed = true
+            return exitCode
+        }
+        if let pending { continuation.resume(returning: pending) }
+    }
 }

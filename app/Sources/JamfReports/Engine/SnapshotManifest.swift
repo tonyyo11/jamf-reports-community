@@ -60,7 +60,7 @@ enum SnapshotManifest {
         }
         guard let manifest = try? JSONDecoder().decode(Manifest.self, from: manifestData) else {
             AppLogger.report.warning(
-                "SnapshotManifest: manifest.json present but unparseable for \(snapshot.lastPathComponent, privacy: .public)"
+                "SnapshotManifest: manifest.json present but unparseable for \(snapshot.lastPathComponent, privacy: .private)"
             )
             return .corrupt
         }
@@ -70,7 +70,7 @@ enum SnapshotManifest {
         let actual = sha256Hex(data)
         if actual.lowercased() != expected.lowercased() {
             AppLogger.report.warning(
-                "SnapshotManifest: SHA-256 mismatch for \(snapshot.lastPathComponent, privacy: .public) — expected \(String(expected.prefix(12)), privacy: .public)…, got \(String(actual.prefix(12)), privacy: .public)…"
+                "SnapshotManifest: SHA-256 mismatch for \(snapshot.lastPathComponent, privacy: .private) — expected \(String(expected.prefix(12)), privacy: .private)…, got \(String(actual.prefix(12)), privacy: .private)…"
             )
             return .mismatch
         }
@@ -124,7 +124,7 @@ enum SnapshotManifest {
                 files = existing.files
             } else {
                 AppLogger.collect.warning(
-                    "SnapshotManifest: existing manifest.json unparseable in \(dir.lastPathComponent, privacy: .public) — starting fresh"
+                    "SnapshotManifest: existing manifest.json unparseable in \(dir.lastPathComponent, privacy: .private) — starting fresh"
                 )
             }
         }

@@ -142,7 +142,7 @@ enum WorkspaceRootStore {
         guard WorkspacePaths.isSensitiveAbsolutePath(url, workspaceRoot: true) else { return url }
         AppLogger.platform.error(
             """
-            workspace root \(url.path, privacy: .public) is a reserved location \
+            workspace root \(url.path, privacy: .private) is a reserved location \
             — using the default
             """
         )
@@ -291,7 +291,7 @@ enum WorkspaceRootStore {
 
         defaults.set(resolved.path, forKey: defaultsKey)
         AppLogger.platform.notice(
-            "workspace root set to \(resolved.path, privacy: .public)"
+            "workspace root set to \(resolved.path, privacy: .private)"
         )
         return resolved
     }

@@ -73,7 +73,7 @@ struct DuplicateSerialService: Sendable {
         }
         guard let rows = try? JSONDecoder().decode([DuplicateSerialRow].self, from: data) else {
             AppLogger.collect.warning(
-                "DuplicateSerialService: failed to decode duplicate-serials at \(url.lastPathComponent, privacy: .public)"
+                "DuplicateSerialService: failed to decode duplicate-serials at \(url.lastPathComponent, privacy: .private)"
             )
             return .unreadable
         }

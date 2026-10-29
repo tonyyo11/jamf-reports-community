@@ -136,7 +136,7 @@ struct UpdateStatusService: Sendable {
         }
 
         AppLogger.collect.warning(
-            "UpdateStatusService: failed to decode update-status file \(url.lastPathComponent, privacy: .public)"
+            "UpdateStatusService: failed to decode update-status file \(url.lastPathComponent, privacy: .private)"
         )
         return nil
     }

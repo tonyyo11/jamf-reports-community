@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Typed representation of a single jamf-cli invocation.
 ///
@@ -221,21 +222,12 @@ struct DefaultCLIExecutor: CLIExecutor {
 /// invokes `onLine` from a background `readabilityHandler` queue, so the buffer
 /// is locked on append. `snapshot()` joins lines back with newlines for pattern
 /// matching by the typed-error classifiers.
-private final class StderrAccumulator: @unchecked Sendable {
-    private var lines: [String] = []
-    private let lock = NSLock()
+private final class StderrAccumulator: Sendable {
+    private let lines = Mutex<[String]>([])
 
-    func append(_ line: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        lines.append(line)
-    }
+    func append(_ line: String) { lines.withLock { $0.append(line) } }
 
-    func snapshot() -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        return lines.joined(separator: "\n")
-    }
+    func snapshot() -> String { lines.withLock { $0.joined(separator: "\n") } }
 }
 
 extension CLICommand {

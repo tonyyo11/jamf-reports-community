@@ -666,7 +666,7 @@ struct OverviewView: View {
                     skipMessage = "[info] snapshots are fresh — skipped collect"
                 }
                 await MainActor.run { workspace.globalStatus = skipMessage }
-                AppLogger.cli.info("\(skipMessage, privacy: .public)")
+                AppLogger.cli.info("\(skipMessage, privacy: .private)")
 
                 // The report is built from snapshots a collect would replace, so it holds
                 // the lock from the narrative on, as `collectThenGenerate` does.

@@ -97,7 +97,7 @@ enum HardwareEncryption {
               let items = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
         else {
             AppLogger.report.warning("""
-                Hardware encryption: could not read \(url.lastPathComponent, privacy: .public) \
+                Hardware encryption: could not read \(url.lastPathComponent, privacy: .private) \
                 as a list of computers, so the FileVault hardware rule is not applied
                 """)
             return [:]

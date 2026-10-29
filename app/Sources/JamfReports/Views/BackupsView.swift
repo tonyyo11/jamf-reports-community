@@ -909,10 +909,8 @@ struct BackupLibrary {
 
     private func parseDate(_ text: String?) -> Date? {
         guard let text else { return nil }
-        return Self.isoFormatter.date(from: text)
+        return ISO8601Time.parse(text)
     }
-
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
 
     private struct BackupManifest {
         var label = ""

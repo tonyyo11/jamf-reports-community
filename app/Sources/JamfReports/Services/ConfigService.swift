@@ -287,7 +287,7 @@ enum ConfigService {
         let document = try YAMLCodec.decode(text)
         if !document.repairedKeys.isEmpty {
             AppLogger.collect.warning(
-                "ConfigService: repaired malformed sequence(s) under \(document.repairedKeys.sorted().joined(separator: ", "), privacy: .public) in config.yaml — saving from the Config screen heals the file"
+                "ConfigService: repaired malformed sequence(s) under \(document.repairedKeys.sorted().joined(separator: ", "), privacy: .private) in config.yaml — saving from the Config screen heals the file"
             )
         }
         try rejectCredentialKeys(in: document.root)
@@ -445,7 +445,7 @@ enum ConfigService {
         if !removed.isEmpty {
             let named = removed.joined(separator: ", ")
             AppLogger.collect.notice(
-                "ConfigService: removed retired keys \(named, privacy: .public)")
+                "ConfigService: removed retired keys \(named, privacy: .private)")
         }
         return removed
     }

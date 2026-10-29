@@ -1297,10 +1297,8 @@ struct DevicesView: View {
     /// Jamf Pro's Last Contact, which counts MDM and declarative device management, written as
     /// the check-in and inventory dates are: an ISO 8601 timestamp.
     nonisolated static func contactText(_ device: DeviceInventoryRecord) -> String {
-        device.contactDate.map { contactFormatter.string(from: $0) } ?? ""
+        device.contactDate.map(ISO8601Time.string) ?? ""
     }
-
-    nonisolated(unsafe) private static let contactFormatter = ISO8601DateFormatter()
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {
         if let days = device.daysSinceContact {

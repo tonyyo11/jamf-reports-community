@@ -77,4 +77,10 @@ if ! codesign --verify --strict --deep "$APP_PATH"; then
   exit 1
 fi
 
+# The tick plist's SpawnConstraint names the team build-app.sh signed with; a re-sign under
+# another identity would make launchd refuse every tick.
+# shellcheck source-path=SCRIPTDIR source=lib/spawn-constraint.zsh
+source "$(cd -- "$(dirname -- "$0")" && pwd -P)/lib/spawn-constraint.zsh"
+jr_verify_spawn_constraint "$APP_PATH" required || exit 1
+
 echo "✓ Signature valid"

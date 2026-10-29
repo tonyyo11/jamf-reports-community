@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// jamf-cli's JSON error envelope. With `--output json` a failing command writes it to stdout
 /// (`formatErrorTo`); `--no-hints` does not remove `hint`.
@@ -242,35 +243,29 @@ struct FailureCause: Codable, Equatable, Sendable {
 /// Watches one kind's streamed stderr for the jamf-cli lines that explain an exit 0 without
 /// data (spec §9.1): a swallowed 403, an empty blueprint listing, no declaration data,
 /// Managed Software Update Plans turned off, or no managed software update data.
-final class StderrSignalWatcher: @unchecked Sendable {
-    private let lock = NSLock()
-    private var forbidden = false
-    private var noBlueprints = false
-    private var noDeclarationData = false
-    private var softwareUpdatePlansOff = false
-    private var noUpdateData = false
-    private var updateFetchWarning = false
-    private var keychainLocked = false
+final class StderrSignalWatcher: Sendable {
+    private struct Flags {
+        var forbidden = false
+        var noBlueprints = false
+        var noDeclarationData = false
+        var softwareUpdatePlansOff = false
+        var noUpdateData = false
+        var updateFetchWarning = false
+        var keychainLocked = false
+    }
+    private let flags = Mutex(Flags())
 
-    var sawKeychainLocked: Bool { lock.withLock { keychainLocked } }
-    var sawForbidden: Bool { lock.withLock { forbidden } }
-    var sawNoBlueprints: Bool { lock.withLock { noBlueprints } }
-    var sawNoDeclarationData: Bool { lock.withLock { noDeclarationData } }
-    var sawSoftwareUpdatePlansOff: Bool { lock.withLock { softwareUpdatePlansOff } }
+    var sawKeychainLocked: Bool { flags.withLock { $0.keychainLocked } }
+    var sawForbidden: Bool { flags.withLock { $0.forbidden } }
+    var sawNoBlueprints: Bool { flags.withLock { $0.noBlueprints } }
+    var sawNoDeclarationData: Bool { flags.withLock { $0.noDeclarationData } }
+    var sawSoftwareUpdatePlansOff: Bool { flags.withLock { $0.softwareUpdatePlansOff } }
     /// jamf-cli's "no update data" line with no fetch warning before or after it.
-    var sawNoUpdateData: Bool { lock.withLock { noUpdateData && !updateFetchWarning } }
+    var sawNoUpdateData: Bool { flags.withLock { $0.noUpdateData && !$0.updateFetchWarning } }
 
     /// A retried attempt is classified on its own stderr, not the first attempt's.
     func reset() {
-        lock.withLock {
-            forbidden = false
-            noBlueprints = false
-            noDeclarationData = false
-            softwareUpdatePlansOff = false
-            noUpdateData = false
-            updateFetchWarning = false
-            keychainLocked = false
-        }
+        flags.withLock { $0 = Flags() }
     }
 
     func forwarding(
@@ -278,24 +273,24 @@ final class StderrSignalWatcher: @unchecked Sendable {
     ) -> @Sendable (CLIBridge.LogLine) -> Void {
         { line in
             let text = line.text
-            self.lock.withLock {
-                if text.contains(FailureCause.forbiddenStderrMarker) { self.forbidden = true }
+            self.flags.withLock { flags in
+                if text.contains(FailureCause.forbiddenStderrMarker) { flags.forbidden = true }
                 if text.contains(FailureCause.noBlueprintsStderrMarker) {
-                    self.noBlueprints = true
+                    flags.noBlueprints = true
                 }
                 if text.contains(FailureCause.noDeclarationDataStderrMarker) {
-                    self.noDeclarationData = true
+                    flags.noDeclarationData = true
                 }
                 if text.contains(FailureCause.softwareUpdatePlansOffStderrMarker) {
-                    self.softwareUpdatePlansOff = true
+                    flags.softwareUpdatePlansOff = true
                 }
                 if text.contains(FailureCause.noUpdateDataStderrMarker) {
-                    self.noUpdateData = true
+                    flags.noUpdateData = true
                 }
                 if text.contains(FailureCause.updateFetchWarningStderrMarker) {
-                    self.updateFetchWarning = true
+                    flags.updateFetchWarning = true
                 }
-                if FailureCause.mentionsLockedKeychain(text) { self.keychainLocked = true }
+                if FailureCause.mentionsLockedKeychain(text) { flags.keychainLocked = true }
             }
             onLine(line)
         }

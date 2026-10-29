@@ -133,7 +133,7 @@ struct PolicyHealthService: Sendable {
                         .contentModificationDate
                 } else {
                     AppLogger.collect.info(
-                        "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .public)"
+                        "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .private)"
                     )
                 }
             }
@@ -163,7 +163,7 @@ struct PolicyHealthService: Sendable {
                     }
                 } else {
                     AppLogger.collect.warning(
-                        "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .public)"
+                        "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .private)"
                     )
                 }
             }

@@ -164,10 +164,10 @@ enum TimestampAuthority {
     ) async throws -> Data {
         let step = "sending the request to \(authority.host ?? "")"
         let fetch: AppUpdateCheck.Fetch = { request in
-            let session = URLSession(configuration: configuration)
+            let session = HTTPSession.make(configuration: configuration)
             defer { session.invalidateAndCancel() }
             let (bytes, response) = try await session.bytes(
-                for: request, delegate: SameHostRedirects(authority: authority))
+                for: request, delegate: HTTPSession.RedirectRule.sameHost(as: authority))
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<300).contains(status) else {
                 throw AppUpdateCheck.CheckError.httpStatus(status)
@@ -195,26 +195,6 @@ enum TimestampAuthority {
             default: "network error \(error.code.rawValue)"
             }
             throw Failure(step: step, reason: reason)
-        }
-    }
-
-    /// Follows a redirect only to https on the authority's own host and port, so the query
-    /// never goes to an address config.yaml did not name.
-    private final class SameHostRedirects: NSObject, URLSessionTaskDelegate, Sendable {
-        let host: String
-        let port: Int
-        init(authority: URL) {
-            host = authority.host?.lowercased() ?? ""
-            port = authority.port ?? 443
-        }
-
-        func urlSession(
-            _ session: URLSession, task: URLSessionTask,
-            willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest
-        ) async -> URLRequest? {
-            guard let url = request.url, url.scheme?.lowercased() == "https",
-                  url.host?.lowercased() == host, (url.port ?? 443) == port else { return nil }
-            return request
         }
     }
 }

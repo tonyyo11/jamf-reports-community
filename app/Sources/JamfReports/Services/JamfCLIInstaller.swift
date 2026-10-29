@@ -100,7 +100,7 @@ final class JamfCLIInstaller {
     /// the download (`validateAsset`) and again on the URL that answered
     /// (`isTrustedFinalURL`), because a tampered API response or a redirect
     /// could otherwise point the download at an attacker-controlled origin.
-    static let trustedAssetHosts: Set<String> = [
+    nonisolated static let trustedAssetHosts: Set<String> = [
         "github.com",
         "objects.githubusercontent.com",
         "release-assets.githubusercontent.com",
@@ -211,7 +211,7 @@ final class JamfCLIInstaller {
 
     /// Whether the URL that answered a download is an https URL on the allow-list. `nil` (no
     /// response URL) is untrusted.
-    static func isTrustedFinalURL(_ url: URL?) -> Bool {
+    nonisolated static func isTrustedFinalURL(_ url: URL?) -> Bool {
         guard let url, url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased() else { return false }
         return trustedAssetHosts.contains(host)
@@ -292,14 +292,13 @@ final class JamfCLIInstaller {
         guard let output = JamfCLIProbe.run(
             executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: timeout
         ) else { return nil }
-        let text = [
-            String(data: output.stdout, encoding: .utf8),
-            String(data: output.stderr, encoding: .utf8),
-        ]
-        .compactMap { $0 }
-        .joined(separator: "\n")
+        return parseVersion(from: versionText(output))
+    }
 
-        return parseVersion(from: text)
+    private nonisolated static func versionText(_ output: JamfCLIProbe.Output) -> String {
+        [String(data: output.stdout, encoding: .utf8), String(data: output.stderr, encoding: .utf8)]
+            .compactMap { $0 }
+            .joined(separator: "\n")
     }
 
     nonisolated static let versionJSONArguments = ["version", "-o", "json"]
@@ -349,14 +348,18 @@ final class JamfCLIInstaller {
         }.value
     }
 
-    /// `installedVersion(at:)` off the main actor: it blocks for up to `timeout` on a wedged
-    /// binary, and the install and update paths are main-actor statics.
+    /// `installedVersion(at:)` for an async caller: the exit arrives on a termination handler,
+    /// so no thread waits on a wedged binary.
     nonisolated static func installedVersionOffMain(
         at binary: URL, timeout: TimeInterval = JamfCLIProbe.defaultTimeout
     ) async -> String? {
-        await Task.detached(priority: .userInitiated) {
-            installedVersion(at: binary, timeout: timeout)
-        }.value
+        if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
+            return nil
+        }
+        guard let output = await JamfCLIProbe.runAsync(
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: timeout
+        ) else { return nil }
+        return parseVersion(from: versionText(output))
     }
 
     func checkForUpdate() async -> UpdateResult {
@@ -666,7 +669,7 @@ final class JamfCLIInstaller {
                 // SF-7: surface the skip in install-audit logs so reviewers can
                 // confirm which gate was off (the feature flag, or the team ID).
                 AppLogger.collect.info(
-                    "JamfCLIInstaller: codesign verification skipped (enforce=\(Self.enforceCodesignVerification, privacy: .public), teamID=\(Self.expectedJamfTeamID.isEmpty ? "empty" : "set", privacy: .public))"
+                    "JamfCLIInstaller: codesign verification skipped (enforce=\(Self.enforceCodesignVerification, privacy: .public), teamID=\(Self.expectedJamfTeamID.isEmpty ? "empty" : "set", privacy: .private))"
                 )
             }
             try ensureParentDirectoryExists(for: target)
@@ -816,7 +819,10 @@ final class JamfCLIInstaller {
         var request = URLRequest(url: githubLatestReleaseURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let session = HTTPSession.make(request: 15, resource: 60)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await session.data(
+            for: request, delegate: HTTPSession.RedirectRule.sameHost(as: githubLatestReleaseURL))
         try validateHTTP(response)
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
     }
@@ -843,9 +849,13 @@ final class JamfCLIInstaller {
         var request = URLRequest(url: asset.browserDownloadURL)
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
-        let (downloaded, response) = try await URLSession.shared.download(for: request)
-        // URLSession follows redirects; the host that actually served the bytes is checked
-        // here, before the file leaves URLSession's temp location.
+        let session = HTTPSession.make(request: 60, resource: 600)
+        defer { session.finishTasksAndInvalidate() }
+        // Redirects are refused off the allow-list; the host that served the bytes is checked
+        // again below, before the file leaves URLSession's temp location.
+        let (downloaded, response) = try await session.download(
+            for: request,
+            delegate: HTTPSession.RedirectRule { isTrustedFinalURL($0) })
         guard isTrustedFinalURL(response.url) else {
             try? FileManager.default.removeItem(at: downloaded)
             throw AssetValidationError.untrustedHost(response.url?.host)

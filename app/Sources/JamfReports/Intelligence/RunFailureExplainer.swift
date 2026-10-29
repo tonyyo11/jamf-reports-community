@@ -89,11 +89,11 @@ struct RunFailureInput: Sendable {
         )
     }
 
-    /// ~4 chars/token heuristic (same as `FleetInsightInput.budget`), but keeps
+    /// `FleetInsightInput.charsPerToken` heuristic (as `FleetInsightInput.budget`), but keeps
     /// trailing excerpt lines and drops from the FRONT; always keeps at least
     /// one excerpt line so the failure line is never budgeted away.
     static func budgetTail(header: [String], excerpt: [String], maxApproxTokens: Int) -> String {
-        let maxChars = max(0, maxApproxTokens) * 4
+        let maxChars = max(0, maxApproxTokens) * FleetInsightInput.charsPerToken
         var used = header.reduce(0) { $0 + $1.count + 1 }
         var kept: [String] = []
         for line in excerpt.reversed() {
@@ -181,10 +181,9 @@ struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
         guard case .available = model.availability else {
             throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
         }
-        let prompt = input.promptContext(maxApproxTokens: model.contextSize / 4)
 
         do {
-            return try await respond(model: model, prompt: prompt)
+            return try await respond(model: model, input: input)
         } catch let error as FleetInsightError {
             throw error
         } catch {
@@ -199,33 +198,38 @@ struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
     /// plain text when guided generation is unsupported (whole response into
     /// `summary`), reasoning options only when advertised.
     private func respond(
-        model: SystemLanguageModel, prompt: String
+        model: SystemLanguageModel, input: RunFailureInput
     ) async throws -> RunFailureExplanation {
         let caps = model.capabilities
-        let session = LanguageModelSession(model: model, instructions: Self.instructions)
-
-        guard caps.contains(.guidedGeneration) else {
-            let response = try await session.respond(to: prompt)
-            return RunFailureExplanation(summary: response.content, likelyCause: "", firstStep: "")
-        }
-
-        if caps.contains(.reasoning) {
-            let options = ContextOptions(
-                reasoningLevel: config.resolvedReasoningLevel.asContextReasoningLevel
-            )
+        let guided = caps.contains(.guidedGeneration)
+        return try await PromptFit.run(
+            model: model, instructions: Self.instructions,
+            schema: guided ? FleetIntelligence.GeneratedRunFailureExplanation.generationSchema : nil,
+            render: { input.promptContext(maxApproxTokens: $0) }
+        ) { prompt in
+            let session = LanguageModelSession(model: model, instructions: Self.instructions)
+            guard guided else {
+                let response = try await session.respond(to: prompt, options: PromptFit.options)
+                return RunFailureExplanation(
+                    summary: response.content, likelyCause: "", firstStep: "")
+            }
+            if caps.contains(.reasoning) {
+                let response = try await session.respond(
+                    to: prompt,
+                    generating: FleetIntelligence.GeneratedRunFailureExplanation.self,
+                    options: PromptFit.options,
+                    contextOptions: ContextOptions(
+                        reasoningLevel: config.resolvedReasoningLevel.asContextReasoningLevel)
+                )
+                return FleetIntelligence.map(response.content)
+            }
             let response = try await session.respond(
                 to: prompt,
                 generating: FleetIntelligence.GeneratedRunFailureExplanation.self,
-                contextOptions: options
+                options: PromptFit.options
             )
             return FleetIntelligence.map(response.content)
         }
-
-        let response = try await session.respond(
-            to: prompt,
-            generating: FleetIntelligence.GeneratedRunFailureExplanation.self
-        )
-        return FleetIntelligence.map(response.content)
     }
 }
 
@@ -234,7 +238,7 @@ struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
 @available(macOS 27, *)
 extension FleetIntelligence {
     /// Structured-output companion for guided generation. Lives inside the gate
-    /// (`@Generable`/`@Guide` are macOS-27-only macros); maps 1:1 to the
+    /// (`@Generable`/`@Guide` are macOS 26+; the layer is gated at 27); maps 1:1 to the
     /// portable `RunFailureExplanation`.
     @Generable
     struct GeneratedRunFailureExplanation {

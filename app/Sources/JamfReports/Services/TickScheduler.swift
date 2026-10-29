@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Per-label "last started" / "last succeeded" stamps plus the retry count for
 /// the current fire. Lives beside the schedule store, not in a workspace: the
@@ -285,7 +286,7 @@ enum TickScheduler {
                   let fire = LaunchAgentService.lastScheduledFireDate(from: entries, before: now)
             else {
                 AppLogger.schedule.warning(
-                    "tick: \(label, privacy: .public) has an unreadable cadence and was skipped")
+                    "tick: \(label, privacy: .private) has an unreadable cadence and was skipped")
                 return runNow
             }
             let daily = schedule.mode.runsAtLoad && isDaily(entries)
@@ -386,11 +387,10 @@ enum TickScheduler {
 /// An acquired tick lock: the open descriptor holding the kernel's exclusive `flock` on the
 /// lock file. The kernel drops the lock when the descriptor closes or the process dies, so a
 /// holder that exits, crashes or is killed never leaves a lock behind.
-final class TickLockHold: @unchecked Sendable {
-    private let state = NSLock()
-    private var fd: Int32
+final class TickLockHold: Sendable {
+    private let fd: Mutex<Int32>
 
-    fileprivate init(fd: Int32) { self.fd = fd }
+    fileprivate init(fd: Int32) { self.fd = Mutex(fd) }
 
     deinit { release() }
 
@@ -398,29 +398,27 @@ final class TickLockHold: @unchecked Sendable {
     /// file stays: unlinking it would let a claimer holding the old inode and one creating a
     /// new file both think they hold the lock.
     func release() {
-        state.lock()
-        defer { state.unlock() }
-        guard fd >= 0 else { return }
-        _ = fremovexattr(fd, TickLock.startAttribute, 0)
-        _ = ftruncate(fd, 0)
-        close(fd)
-        fd = -1
+        fd.withLock { fd in
+            guard fd >= 0 else { return }
+            _ = fremovexattr(fd, TickLock.startAttribute, 0)
+            _ = ftruncate(fd, 0)
+            close(fd)
+            fd = -1
+        }
     }
 
     /// Still holding the lock: false once released or given up.
     var isHeld: Bool {
-        state.lock()
-        defer { state.unlock() }
-        return fd >= 0
+        fd.withLock { $0 >= 0 }
     }
 
     /// Sets the lock file's mtime to now, which the read-only probe judges staleness by.
     /// Best-effort.
     func touch() {
-        state.lock()
-        defer { state.unlock() }
-        guard fd >= 0 else { return }
-        _ = futimens(fd, nil)
+        fd.withLock { fd in
+            guard fd >= 0 else { return }
+            _ = futimens(fd, nil)
+        }
     }
 
     /// Runs `body` while touching the lock every `interval`; beats stop after `limit`, which
@@ -574,7 +572,7 @@ struct TickLock: Sendable {
             try protect(fd)
         } catch {
             AppLogger.schedule.warning(
-                "tick lock permissions not set: \(error.localizedDescription, privacy: .public)")
+                "tick lock permissions not set: \(error.localizedDescription, privacy: .private)")
         }
         return .acquired(TickLockHold(fd: fd))
     }
@@ -582,7 +580,7 @@ struct TickLock: Sendable {
     private func failed(_ what: String, _ code: Int32) -> Claim {
         let reason = String(cString: strerror(code))
         AppLogger.schedule.error(
-            "tick lock could not be \(what, privacy: .public): \(reason, privacy: .public)")
+            "tick lock could not be \(what, privacy: .public): \(reason, privacy: .private)")
         return .writeFailed
     }
 
@@ -712,7 +710,7 @@ struct TickLock: Sendable {
 
     /// Logged when the stamp cannot be written or read; a test swaps it to capture the line.
     static let defaultStampWarning: @Sendable (String) -> Void = { message in
-        AppLogger.schedule.warning("\(message, privacy: .public)")
+        AppLogger.schedule.warning("\(message, privacy: .private)")
     }
 
     /// The stamp's lines. A missing file is no stamp and no warning; a file that cannot be read
@@ -753,11 +751,10 @@ struct TickLock: Sendable {
         url: URL = defaultBlockedURL, now: Date = Date(),
         warn: (String) -> Void = defaultStampWarning
     ) {
-        let formatter = ISO8601DateFormatter()
-        let stamp = formatter.string(from: now)
+        let stamp = ISO8601Time.string(now)
         let lines = stampLines(at: url, warn: warn) ?? []
         var afterGap = lines.count > 2 ? lines[2] : nil
-        if let latest = (lines.count > 1 ? lines[1] : lines.first).flatMap(formatter.date),
+        if let latest = (lines.count > 1 ? lines[1] : lines.first).flatMap(ISO8601Time.parse),
            now.timeIntervalSince(latest) > TickScheduler.offGap {
             afterGap = stamp
         }
@@ -779,8 +776,7 @@ struct TickLock: Sendable {
     ) -> Refusals? {
         guard let lines = stampLines(at: url, warn: warn) else { return nil }
         try? FileManager.default.removeItem(at: url)
-        let formatter = ISO8601DateFormatter()
-        let stamps = lines.map { formatter.date(from: $0.trimmingCharacters(in: .whitespaces)) }
+        let stamps = lines.map { ISO8601Time.parse($0) }
         guard let parsed = stamps.first, let first = parsed else { return nil }
         let latest = stamps.count > 1 ? stamps[1] : nil
         return (first, latest ?? first, stamps.count > 2 ? stamps[2] : nil)

@@ -113,9 +113,8 @@ extension HtmlReport {
     static func versionNumber(in text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let pattern = #"\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.]+)?"#
-        if let range = trimmed.range(of: pattern, options: .regularExpression) {
-            return String(trimmed[range])
+        if let match = trimmed.firstMatch(of: #/\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.]+)?/#) {
+            return String(match.0)
         }
         return trimmed
     }

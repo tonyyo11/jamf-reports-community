@@ -174,7 +174,7 @@ enum ProfileService {
         } catch {
             AppLogger.collect.error(
                 """
-                workspaceFolders: enumeration failed at \(root.path, privacy: .public): \
+                workspaceFolders: enumeration failed at \(root.path, privacy: .private): \
                 \(error.localizedDescription, privacy: .private)
                 """
             )

@@ -128,10 +128,8 @@ struct SOFAFeedService: Sendable {
         var rows: [OSFamilyRow] = []
         var warnings: [String] = []
 
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = timeout
-        config.timeoutIntervalForResource = timeout + 5
-        let session = URLSession(configuration: config)
+        let session = HTTPSession.make(request: timeout, resource: timeout + 5)
+        defer { session.finishTasksAndInvalidate() }
 
         for platform in allPlatforms {
             let urlString = "\(feedBaseURL)/\(platform)_data_feed.json"
@@ -140,7 +138,9 @@ struct SOFAFeedService: Sendable {
                 continue
             }
             do {
-                let (data, response) = try await session.data(from: url)
+                let (data, response) = try await session.data(
+                    for: URLRequest(url: url),
+                    delegate: HTTPSession.RedirectRule.sameHost(as: url))
                 if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                     throw URLError(.badServerResponse)
                 }
@@ -174,21 +174,18 @@ struct SOFAFeedService: Sendable {
     static func parseSOFADate(_ raw: String) -> Date? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        // Try full ISO 8601 first.
-        let isoFull = ISO8601DateFormatter()
-        isoFull.formatOptions = [.withInternetDateTime]
-        if let d = isoFull.date(from: trimmed) { return d }
-        // Alternate: no fractional seconds.
-        let isoAlt = ISO8601DateFormatter()
-        isoAlt.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime, .withTimeZone]
-        if let d = isoAlt.date(from: trimmed) { return d }
+        if let d = ISO8601Time.parse(trimmed) { return d }
         // Date-only ("2026-05-11").
+        return utcDayFormatter.date(from: String(trimmed.prefix(10)))
+    }
+
+    private static let utcDayFormatter: DateFormatter = {
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyy-MM-dd"
         df.timeZone = TimeZone(identifier: "UTC")
-        return df.date(from: String(trimmed.prefix(10)))
-    }
+        return df
+    }()
 
     /// Parse a dotted version string into an array of Int components for comparison.
     /// "15.7.10" → [15, 7, 10]. Non-numeric leading chars become 0.

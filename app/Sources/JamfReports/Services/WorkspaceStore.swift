@@ -874,7 +874,7 @@ final class WorkspaceStore {
         } catch {
             let reason = error.localizedDescription
             AppLogger.collect.warning(
-                "SharedConfigPin: could not confirm after save: \(reason, privacy: .public)")
+                "SharedConfigPin: could not confirm after save: \(reason, privacy: .private)")
         }
     }
 

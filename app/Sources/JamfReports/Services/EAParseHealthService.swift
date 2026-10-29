@@ -295,7 +295,7 @@ struct EAParseHealthService {
             if EAResultRow.isSalvageReason(decoded.reason) {
                 sawSalvage = true
                 AppLogger.platform.notice(
-                    "EAParseHealthService.coverageDrift: skipping salvaged snapshot \(url.lastPathComponent, privacy: .public) — a truncated day fabricates drift"
+                    "EAParseHealthService.coverageDrift: skipping salvaged snapshot \(url.lastPathComponent, privacy: .private) — a truncated day fabricates drift"
                 )
                 continue
             }

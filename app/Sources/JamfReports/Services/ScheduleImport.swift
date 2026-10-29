@@ -77,20 +77,20 @@ enum ScheduleImport {
                 failed = true
                 AppLogger.schedule.error(
                     """
-                    import of \(record.label, privacy: .public) failed: \
-                    \(error.localizedDescription, privacy: .public)
+                    import of \(record.label, privacy: .private) failed: \
+                    \(error.localizedDescription, privacy: .private)
                     """
                 )
             }
         }
         for name in result.unparseable {
-            AppLogger.schedule.warning("import skipped unparseable plist \(name, privacy: .public)")
+            AppLogger.schedule.warning("import skipped unparseable plist \(name, privacy: .private)")
         }
         for refusal in result.refused {
             AppLogger.schedule.warning(
                 """
-                import refused \(refusal.label, privacy: .public): \
-                \(refusal.reason, privacy: .public); the plist is left in place, \
+                import refused \(refusal.label, privacy: .private): \
+                \(refusal.reason, privacy: .private); the plist is left in place, \
                 rebuild the schedule in the app
                 """
             )

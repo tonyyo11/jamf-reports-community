@@ -1,4 +1,5 @@
 import SwiftUI
+import Synchronization
 
 /// Single-device lookup screen. Search by serial, hostname/display name, asset
 /// tag, or any identifier `jamf-cli pro device <id>` (computers) or
@@ -564,9 +565,7 @@ internal func freshnessTimestamp(for cacheURL: URL?) -> Date? {
     if let raw = BoundedFile.readLogged(sidecar, limit: BoundedFile.documentLimit),
        let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: String],
        let isoString = obj["generated_at"] {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: isoString) {
+        if let date = ISO8601Time.parse(isoString) {
             return date
         }
     }
@@ -578,20 +577,13 @@ internal func freshnessTimestamp(for cacheURL: URL?) -> Date? {
 /// Thread-safe collector for `.fail`-level LogLines produced by `runDeviceDetailProcess`.
 /// Captured into the `@Sendable` `onLine` closure; read back on MainActor after the
 /// await returns. Mirrors the `LogLineCollector` pattern from CLIBridgeCodesignGateTests.
-private final class FailLineCollector: @unchecked Sendable {
-    private var first: String?
-    private let lock = NSLock()
+private final class FailLineCollector: Sendable {
+    private let first = Mutex<String?>(nil)
 
     func capture(_ line: CLIBridge.LogLine) {
         guard line.level == .fail else { return }
-        lock.lock()
-        defer { lock.unlock() }
-        if first == nil { first = line.text }
+        first.withLock { if $0 == nil { $0 = line.text } }
     }
 
-    func firstFail() -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return first
-    }
+    func firstFail() -> String? { first.withLock { $0 } }
 }

@@ -51,7 +51,7 @@ enum WorkspacePermissionHardener {
         if resolved != workspacesRoot,
            !resolved.hasPrefix(workspacesRoot + "/") {
             AppLogger.collect.error(
-                "WorkspacePermissionHardener: refusing sweep — profile=\(profile, privacy: .public) resolves outside workspaces root"
+                "WorkspacePermissionHardener: refusing sweep — profile=\(profile, privacy: .private) resolves outside workspaces root"
             )
             return SweepResult(touched: 0, failed: 0, enumerated: false)
         }
@@ -60,7 +60,7 @@ enum WorkspacePermissionHardener {
         // because the slug is also visible in LaunchAgent labels and is not
         // itself a secret.
         AppLogger.collect.info(
-            "WorkspacePermissionHardener.tighten profile=\(profile, privacy: .public)"
+            "WorkspacePermissionHardener.tighten profile=\(profile, privacy: .private)"
         )
         return tighten(directory: workspace)
     }
@@ -84,7 +84,7 @@ enum WorkspacePermissionHardener {
             // this loudly: a CLI run that completes "successfully" without a
             // matching tighten leaves files at 0644.
             AppLogger.collect.error(
-                "WorkspacePermissionHardener: cannot enumerate \(root.lastPathComponent, privacy: .public) — sweep skipped"
+                "WorkspacePermissionHardener: cannot enumerate \(root.lastPathComponent, privacy: .private) — sweep skipped"
             )
             return SweepResult(touched: 0, failed: 0, enumerated: false)
         }

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Finds an oauth2 profile that reaches the same Jamf Pro instance as a Platform API profile.
 ///
@@ -45,8 +46,7 @@ enum PlatformTwin {
         return url
     }
 
-    nonisolated(unsafe) private static var cache: [String: String] = [:]
-    private static let cacheLock = NSLock()
+    private static let cache = Mutex<[String: String]>([:])
 
     /// Asks Jamf Pro, through `profile`'s gateway credential, for its own URL. Blocks, so call it
     /// off the main actor. nil on any failure (no jamf-cli, the probe failed or timed out, a
@@ -57,9 +57,7 @@ enum PlatformTwin {
         binary: URL? = ExecutableLocator.locate("jamf-cli"),
         timeout: TimeInterval = JamfCLIProbe.defaultTimeout
     ) -> String? {
-        cacheLock.lock()
-        let cached = cache[profile]
-        cacheLock.unlock()
+        let cached = cache.withLock { $0[profile] }
         if let cached { return cached }
         guard let binary,
               CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) == nil,
@@ -69,9 +67,7 @@ enum PlatformTwin {
                 timeout: timeout),
               output.exitCode == 0,
               let url = jamfProURL(inServerURLOutput: output.stdout) else { return nil }
-        cacheLock.lock()
-        cache[profile] = url
-        cacheLock.unlock()
+        cache.withLock { $0[profile] = url }
         return url
     }
 
@@ -80,9 +76,7 @@ enum PlatformTwin {
     }
 
     static func invalidateCache() {
-        cacheLock.lock()
-        cache.removeAll()
-        cacheLock.unlock()
+        cache.withLock { $0.removeAll() }
     }
 
     /// The oauth2 twins of one platform profile, from its learned Jamf Pro URL.

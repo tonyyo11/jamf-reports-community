@@ -154,6 +154,12 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A webhook that answers with a redirect to another host now fails, with the HTTP status in the
+  log, instead of the app following the redirect with the report data.
+- The unified log (Console.app, `log show`) now shows `<private>` for profile names, paths and
+  error text the app logs; the in-app log viewer and exports are unchanged. In a signed release
+  the background item's launch agent is also restricted to this app's own signature, so launchd
+  will not start a different or altered executable in its place.
 - Report runs now write a manifest beside their files with the SHA-256 of each workbook, HTML,
   PDF and CSV file they wrote (chart images and the period and fleet reports are not listed),
   and `jamf-reports verify` checks a run against it, including files added afterwards. Set
