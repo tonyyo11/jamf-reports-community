@@ -9,7 +9,7 @@ final class WorkspaceStoreMobileCompositionTests: XCTestCase {
 
     private typealias Metric = TrendSeries.Metric
 
-    private var savedCards: String?
+    private nonisolated(unsafe) var savedCards: String?
 
     override func setUp() {
         super.setUp()
