@@ -215,7 +215,8 @@ final class CLIBridgeBackupTests: XCTestCase {
     func test_backupConfigProfile_silentWithoutConfig() throws {
         let profile = try makeWorkspace(configYAML: nil)
         let collector = LineCollector()
-        XCTAssertNoThrow(try CLIBridge.backupProfile(for: profile) { collector.append($0) })
+        XCTAssertNoThrow(try CLIBridge.backupProfile(
+            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) })
         XCTAssertTrue(collector.lines.isEmpty)
     }
 
@@ -227,7 +228,8 @@ final class CLIBridgeBackupTests: XCTestCase {
         for profile in [matching, empty] {
             let collector = LineCollector()
             XCTAssertNoThrow(
-                try CLIBridge.backupProfile(for: profile) { collector.append($0) })
+                try CLIBridge.backupProfile(
+            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) })
             XCTAssertTrue(collector.lines.isEmpty, "\(collector.lines.map(\.text))")
         }
     }
@@ -237,7 +239,8 @@ final class CLIBridgeBackupTests: XCTestCase {
     func test_backupConfigProfile_warnsOnceAndKeepsWorkspaceProfileForAnotherTenant() throws {
         let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"tenant-b\"\n")
         let collector = LineCollector()
-        XCTAssertEqual(try CLIBridge.backupProfile(for: profile) { collector.append($0) }, profile)
+        XCTAssertEqual(try CLIBridge.backupProfile(
+            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) }, profile)
         XCTAssertEqual(collector.lines.count, 1)
         let line = try XCTUnwrap(collector.lines.first)
         XCTAssertEqual(line.level, .warn)
@@ -252,7 +255,8 @@ final class CLIBridgeBackupTests: XCTestCase {
         let profile = try makeWorkspace(configYAML: nil)
         try writeConfig("jamf_cli:\n  profile: \"\(profile.uppercased())\"\n", for: profile)
         let collector = LineCollector()
-        XCTAssertEqual(try CLIBridge.backupProfile(for: profile) { collector.append($0) }, profile)
+        XCTAssertEqual(try CLIBridge.backupProfile(
+            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) }, profile)
         XCTAssertEqual(collector.lines.map(\.level), [.warn])
     }
 
@@ -264,7 +268,8 @@ final class CLIBridgeBackupTests: XCTestCase {
         try writeConfig("jamf_cli:\n  profile: \"\(variant)\"\n", for: folder)
         let collector = LineCollector()
         XCTAssertThrowsError(
-            try CLIBridge.backupProfile(for: variant) { collector.append($0) }
+            try CLIBridge.backupProfile(
+            for: variant, environment: EnvironmentProfiles.read(workspace: variant)) { collector.append($0) }
         ) { error in
             XCTAssertEqual(
                 error as? CLIBridgeError, .profileCaseConflict(profile: variant, owner: folder))
@@ -315,13 +320,46 @@ final class CLIBridgeBackupTests: XCTestCase {
         try writeConfig("jamf_cli:\n  profile: other\nprofiles:\n  jamf_pro: \"\(profile)\"\n",
                         for: profile)
         let quiet = LineCollector()
-        XCTAssertNoThrow(try CLIBridge.backupProfile(for: profile) { quiet.append($0) })
+        XCTAssertNoThrow(try CLIBridge.backupProfile(
+            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { quiet.append($0) })
         XCTAssertTrue(quiet.lines.isEmpty, "jamf_cli.profile is not read under the block")
 
-        // `-p` is the slot (the block refusal in `refusesProCommand` runs before this).
-        let slot = profile.uppercased()
-        try writeConfig("profiles:\n  jamf_pro: \"\(slot)\"\n", for: profile)
-        XCTAssertEqual(try CLIBridge.backupProfile(for: profile) { _ in }, slot)
+        // A slot naming another profile is refused here too, not only by `refusesProCommand`.
+        try writeConfig("profiles:\n  jamf_pro: tenant-b\n", for: profile)
+        let refused = LineCollector()
+        XCTAssertThrowsError(try CLIBridge.backupProfile(
+            for: profile, environment: EnvironmentProfiles.read(workspace: profile)
+        ) { refused.append($0) }) { error in
+            guard case .wrongProduct = error as? CLIBridgeError else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(refused.lines.filter { $0.text.hasPrefix("[error]") }.count, 1)
+    }
+
+    /// One read of config.yaml serves the product check and the launch: a peer that rewrites
+    /// the file while the check asks jamf-cli (up to 60 s) does not change the `-p` that runs.
+    func test_backup_launchesWithTheProfileTheCheckRead() async throws {
+        let profile = try makeWorkspace(configYAML: nil)
+        try writeConfig("profiles:\n  jamf_pro: \"\(profile)\"\n", for: profile)
+        let configURL = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+            .appendingPathComponent("config.yaml")
+        let dir = try makeTempDir()
+        let calls = dir.appendingPathComponent("calls.log")
+        let stub = dir.appendingPathComponent("stub-cli")
+        try "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"\(calls.path)\"\nexit 0\n"
+            .write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+
+        _ = try? await CLIBridge().backup(
+            profile: profile, label: nil, _testExecutable: stub,
+            resolved: { _ in
+                try? "profiles:\n  jamf_pro: tenant-b\n"
+                    .write(to: configURL, atomically: true, encoding: .utf8)
+                return nil
+            }) { _ in }
+
+        let argv = try String(contentsOf: calls, encoding: .utf8)
+        XCTAssertTrue(argv.contains("-p \(profile) --no-input pro backup"), argv)
+        XCTAssertFalse(argv.contains("tenant-b"), argv)
     }
 
     private func makeWorkspace(configYAML: String?) throws -> String {

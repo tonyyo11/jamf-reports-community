@@ -466,7 +466,8 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "prod"), "prod")
         XCTAssertEqual(ProfileService.unusableProfiles(in: ["prod", "Prod"]),
                        ["Prod": .sharesFolder(with: "prod")])
-        XCTAssertThrowsError(try CLIBridge.backupProfile(for: "Prod") { _ in }) { error in
+        XCTAssertThrowsError(try CLIBridge.backupProfile(
+            for: "Prod", environment: EnvironmentProfiles.read(workspace: "Prod")) { _ in }) { error in
             XCTAssertEqual(
                 error as? CLIBridgeError, .profileCaseConflict(profile: "Prod", owner: "prod"))
         }
