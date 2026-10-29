@@ -193,6 +193,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
 
     static let firstSightNote = "(first seen, not confirmed)"
     static let unreadableNote = "(pin unreadable)"
+    static let configUnreadableNote = "(config.yaml unreadable)"
 
     /// The pin for a workspace seen for the first time. What is already in the shared file may
     /// have been written by a peer, so a folder outside the workspace, a `delete` retention,
@@ -368,6 +369,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let drifts: [Drift]
         /// Lines for the run log about the check itself, such as a pin that could not be saved.
         var notes: [String] = []
+        /// No pin applies: the workspace is not shared and this Mac holds no pin for it (or the
+        /// profile has no workspace). Only then is a nil `pinned` with no drifts a clean answer.
+        var isLocal = false
 
         func isDrifted(_ key: Key) -> Bool { drifts.contains { $0.key == key } }
     }
@@ -380,12 +384,22 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         syncProbe: CloudStorage.SyncProbe = .live
     ) -> Check {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            return Check(workspace: nil, pinned: nil, drifts: [])
+            return Check(workspace: nil, pinned: nil, drifts: [], isLocal: true)
         }
-        guard let current = sharedCurrent(
-            profile: profile, workspace: workspace, appSupport: appSupport, syncProbe: syncProbe)
-        else {
-            return Check(workspace: workspace, pinned: nil, drifts: [])
+        let current: SharedConfigPin
+        switch sharedCurrent(
+            profile: profile, workspace: workspace, appSupport: appSupport, syncProbe: syncProbe) {
+        case .local:
+            return Check(workspace: workspace, pinned: nil, drifts: [], isLocal: true)
+        case .unreadable:
+            // Fail closed: a pinned or shared workspace whose config.yaml cannot be read now (gone,
+            // oversized, not a file) has no value to compare, so every key reads as changed.
+            let drifts = Key.allCases.map {
+                Drift(key: $0, pinned: configUnreadableNote, current: configUnreadableNote,
+                      currentToken: "", pinnedIsNote: true)
+            }
+            return Check(workspace: workspace, pinned: nil, drifts: drifts)
+        case .readable(let read): current = read
         }
         switch read(profile: profile, appSupport: appSupport) {
         case .absent:
@@ -469,10 +483,21 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         sharedEnabled == true || onSharedStorage || pinExists
     }
 
-    /// `current(workspace:)` for a workspace that is pinned; nil for a local one.
+    private enum SharedRead {
+        case local, unreadable
+        case readable(SharedConfigPin)
+
+        var readable: SharedConfigPin? {
+            if case .readable(let pin) = self { return pin }
+            return nil
+        }
+    }
+
+    /// `current(workspace:)` for a workspace that is pinned; `.local` for a local one, and
+    /// `.unreadable` for a pinned or shared one whose config.yaml cannot be read.
     private static func sharedCurrent(
         profile: String, workspace: URL, appSupport: URL, syncProbe: CloudStorage.SyncProbe = .live
-    ) -> SharedConfigPin? {
+    ) -> SharedRead {
         let sharedConfig = (try? ConfigLoader.load(
             from: workspace.appendingPathComponent("config.yaml")))?.sharedWorkspace
         guard appliesTo(
@@ -480,8 +505,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             onSharedStorage: CloudStorage.isSharedStorage(workspace, syncProbe: syncProbe),
             pinExists: FileManager.default.fileExists(
                 atPath: storeURL(profile: profile, appSupport: appSupport).path))
-        else { return nil }
-        return current(workspace: workspace)
+        else { return .local }
+        return current(workspace: workspace).map(SharedRead.readable) ?? .unreadable
     }
 
     enum ConfirmError: Error, LocalizedError {
@@ -498,10 +523,11 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     static func confirm(
         profile: String, drifts: [Drift], appSupport: URL = AppSupport.directory()
     ) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile),
-              let current = sharedCurrent(
-                profile: profile, workspace: workspace, appSupport: appSupport)
-        else { return }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return }
+        let shared = sharedCurrent(profile: profile, workspace: workspace, appSupport: appSupport)
+        // No value to compare with what the row showed, so nothing is confirmed.
+        if case .unreadable = shared, !drifts.isEmpty { throw ConfirmError.changedSinceShown }
+        guard let current = shared.readable else { return }
         var pin: SharedConfigPin
         var unreadable = false
         switch read(profile: profile, appSupport: appSupport) {
@@ -530,7 +556,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     ) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let current = sharedCurrent(
-                profile: profile, workspace: workspace, appSupport: appSupport)
+                profile: profile, workspace: workspace, appSupport: appSupport).readable
         else { return }
         var pin: SharedConfigPin
         switch read(profile: profile, appSupport: appSupport) {
@@ -692,7 +718,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         _ typed: String, profile: String, appSupport: URL = AppSupport.directory()
     ) -> Bool {
         let result = check(profile: profile, appSupport: appSupport)
-        guard let pin = result.pinned else { return result.drifts.isEmpty }
+        guard let pin = result.pinned else { return result.isLocal }
         let value = typed.trimmingCharacters(in: .whitespaces)
         return !result.isDrifted(.timestampAuthority)
             && pin.timestampAuthorityHash == (value.isEmpty ? "" : sha256Hex(value))
