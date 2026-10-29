@@ -270,6 +270,7 @@ final class CSVFolderTests: XCTestCase {
         let oldFile = try file(".report_x.xlsx.tmp-\(UUID().uuidString)", age: 2 * day)
         let freshFile = try file(".report_y.xlsx.tmp-\(UUID().uuidString)", age: 3_600)
         let notStaging = try file(".report_z.xlsx.tmp-notauuid", age: 2 * day)
+        let otherTool = try file(".other.tmp-\(UUID().uuidString)", age: 2 * day)
         let visible = try file("report_x.xlsx.tmp-\(UUID().uuidString)", age: 2 * day)
         let outside = scratchURL("staging-target")
         defer { try? fm.removeItem(at: outside.deletingLastPathComponent()) }
@@ -283,7 +284,7 @@ final class CSVFolderTests: XCTestCase {
 
         XCTAssertFalse(fm.fileExists(atPath: oldFolder.path))
         XCTAssertFalse(fm.fileExists(atPath: oldFile.path), "an old staged workbook goes too")
-        for kept in [freshFolder, otherFolder, freshFile, notStaging, visible] {
+        for kept in [freshFolder, otherFolder, freshFile, notStaging, visible, otherTool] {
             XCTAssertTrue(fm.fileExists(atPath: kept.path), kept.lastPathComponent)
         }
         XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is left alone")
@@ -297,6 +298,27 @@ final class CSVFolderTests: XCTestCase {
         try workbook.write(to: parent.appendingPathComponent("report_w.xlsx"))
         XCTAssertFalse(fm.fileExists(atPath: ancient.path))
         XCTAssertTrue(fm.fileExists(atPath: parent.appendingPathComponent("report_w.xlsx").path))
+    }
+
+    /// The six remaining `replaceItemAt` callers (status file, state files, manifests, SOFA
+    /// cache, config.yaml, jamf-cli install) rely on it failing closed over a link: it throws
+    /// (as of macOS 27) and neither writes through the link nor removes it. If a future macOS
+    /// replaced the link instead, that is also safe; only a write through it would fail this.
+    func testReplaceItemAtNeverWritesThroughALinkAtTheDestination() throws {
+        let dir = scratchURL("replace")
+        defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
+        let fm = FileManager.default
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let victim = dir.appendingPathComponent("victim.txt")
+        try "keep".write(to: victim, atomically: true, encoding: .utf8)
+        let destination = dir.appendingPathComponent("status.json")
+        try fm.createSymbolicLink(at: destination, withDestinationURL: victim)
+        let staged = dir.appendingPathComponent("staged.tmp")
+        try "new".write(to: staged, atomically: true, encoding: .utf8)
+
+        _ = try? fm.replaceItemAt(destination, withItemAt: staged)
+
+        XCTAssertEqual(try String(contentsOf: victim, encoding: .utf8), "keep")
     }
 
     func testTwoTabsThatTheVolumeReadsAsOneNameGetASuffix() throws {

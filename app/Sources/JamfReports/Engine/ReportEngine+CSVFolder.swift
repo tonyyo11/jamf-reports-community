@@ -79,21 +79,40 @@ extension Workbook {
         var installed = false
         defer { if !installed { AtomicInstall.discard(staging) } }
 
+        // Files are created through the staging folder's descriptor, so swapping the folder for
+        // a link after it was made cannot send them elsewhere.
+        let directory = open(staging.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard directory >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(directory) }
         var written = 0
         var used: Set<String> = []
         for sheet in worksheets {
             guard let text = sheet.csvText() else { continue }
             let name = Self.uniqueFileName(ProfileName.pathComponent(sheet.name), used: &used)
-            let target = staging.appendingPathComponent(name)
-            try Data(text.utf8).write(to: target, options: .withoutOverwriting)
-            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+            try Self.createFile(Data(text.utf8), named: name, inFolder: directory)
             written += 1
         }
         guard written > 0 else { return 0 }
+        // The folder installed is the one written to.
+        var held = stat(), named = stat()
+        guard fstat(directory, &held) == 0, lstat(staging.path, &named) == 0,
+              held.st_ino == named.st_ino, held.st_dev == named.st_dev else {
+            throw CSVFolderError.stagingFolderNotMade(folder.lastPathComponent)
+        }
 
         try AtomicInstall.install(staging, at: folder)
         installed = true
         return written
+    }
+
+    /// Creates `name` (0600) in the folder open as `directory`, exclusively and never through a
+    /// link, and writes `data` to that one descriptor.
+    private static func createFile(_ data: Data, named name: String, inFolder directory: Int32) throws {
+        let fd = openat(directory, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        try handle.write(contentsOf: data)
+        try handle.close()
     }
 
     /// `<base>.csv`, or `<base>_2.csv` and on when the volume would read the name as one

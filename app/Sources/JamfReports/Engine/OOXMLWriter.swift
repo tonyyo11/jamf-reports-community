@@ -280,7 +280,8 @@ final class Workbook: @unchecked Sendable {
         sheets = typed.applyTo(sheets.map { (name: $0.name, write: $0) }).map(\.write)
     }
 
-    /// Write the workbook to `url` atomically: staged beside it, then installed by
+    /// Write the workbook to `url` atomically: built in memory, written once to a staged file
+    /// beside it (one exclusive create, one descriptor, no reopen by path), then installed by
     /// `AtomicInstall`, which replaces a link at `url` instead of writing through it.
     func write(to url: URL) throws {
         let dir = url.deletingLastPathComponent()
@@ -288,7 +289,7 @@ final class Workbook: @unchecked Sendable {
         AtomicInstall.removeStaleStaging(in: dir, now: Date())
         let staged = dir.appendingPathComponent(".\(url.lastPathComponent).tmp-\(UUID().uuidString)")
         do {
-            try buildZIP(at: staged)
+            try buildZIP().write(to: staged, options: .withoutOverwriting)
             try AtomicInstall.install(staged, at: url)
         } catch {
             AtomicInstall.discard(staged)
@@ -318,8 +319,8 @@ final class Workbook: @unchecked Sendable {
         }
     }
 
-    private func buildZIP(at url: URL) throws {
-        let archive = try Archive(url: url, accessMode: .create)
+    private func buildZIP() throws -> Data {
+        let archive = try Archive(accessMode: .create)
 
         try Self.addData(Data(contentTypesXML().utf8), path: "[Content_Types].xml", to: archive)
         try Self.addData(Data(rootRelsXML().utf8), path: "_rels/.rels", to: archive)
@@ -379,6 +380,8 @@ final class Workbook: @unchecked Sendable {
                 )
             }
         }
+        guard let data = archive.data else { throw CocoaError(.fileWriteUnknown) }
+        return data
     }
 
     // MARK: - XML generators
