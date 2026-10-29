@@ -36,8 +36,17 @@ struct Generate: AsyncParsableCommand {
         }
     }
 
-    /// Returns how many sheets failed to write.
-    private func write(
+    /// Returns how many sheets failed to write. Internal for tests, which reach it without the
+    /// tick lock.
+    func write(
+        config: ReportConfig, dataDir: URL, template resolved: any ReportTemplate
+    ) async throws -> Int {
+        try await AttentionLog.recording(profile: profile) {
+            try await writeRecording(config: config, dataDir: dataDir, template: resolved)
+        }
+    }
+
+    private func writeRecording(
         config: ReportConfig, dataDir: URL, template resolved: any ReportTemplate
     ) async throws -> Int {
         let engine = ReportEngine(config: config, dataDir: dataDir, profile: profile)
@@ -48,6 +57,7 @@ struct Generate: AsyncParsableCommand {
         // additive, and mode-consistent with a scheduled jamf-cli-only run.
         // generate does not collect, so it never evaluates metric alerts.
         let signals = CLIRunSignals.begin(profile: profile, kind: .generate, config: config)
+        signals.bindAttention()
         let outputURL = try output.map { URL(fileURLWithPath: $0) }
             ?? engine.resolveOutputURL(
                 stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool), profile: profile,
@@ -110,11 +120,23 @@ struct Collect: AsyncParsableCommand {
         // Before the run record, the signals and the tick lock: nothing is created for a
         // profile that belongs to another product.
         if let refusal = Self.refusal(profile: profile, config: config) { CLIRun.fail(refusal) }
+        let tiers = CLIRun.parseTiers(tiers)
         try await CLIRun.exclusively {
+            try await Self.perform(profile: profile, tiers: tiers, force: force, config: config)
+        }
+    }
+
+    /// The collect itself, in a Needs attention scope of its own. `proCollect` is the test seam.
+    static func perform(
+        profile: String, tiers: Set<CollectionTier>, force: Bool, config: ReportConfig?,
+        proCollect: CollectRouter.ProCollect = CollectRouter.defaultProCollect
+    ) async throws {
+        try await AttentionLog.recording(profile: profile) {
             // Trust signals — a CLI collect now records to Run History, evaluates
             // metric alerts, and posts the notify digest exactly like a snapshot-only
             // scheduled run. All best-effort; the exit code and stdout are unchanged.
             let signals = CLIRunSignals.begin(profile: profile, kind: .collect, config: config)
+            signals.bindAttention()
             do {
                 // Route through CollectRouter — not ReportEngine.collect directly —
                 // so a Jamf School profile collects via schoolCollect and a
@@ -122,10 +144,11 @@ struct Collect: AsyncParsableCommand {
                 // every other production collect entry point.
                 try await CollectRouter.run(
                     profile: profile,
-                    tiers: CLIRun.parseTiers(tiers),
+                    tiers: tiers,
                     force: force,
                     config: config,
                     workspacePaths: WorkspacePaths.self,
+                    proCollect: proCollect,
                     onLine: signals.teeing(CLIRun.printLogLine)
                 )
                 print("[ok] collect complete for \(profile)")
@@ -166,9 +189,13 @@ struct Html: AsyncParsableCommand {
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
         try await CLIRun.exclusively {
-            _ = try await ReportEngine.generateHTML(
-                config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                onLine: CLIRun.printLogLine)
+            // No run record opens here, so its items land in the app record with no run log,
+            // like the GUI's manual collect.
+            try await AttentionLog.recording(profile: profile) {
+                _ = try await ReportEngine.generateHTML(
+                    config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
+                    onLine: CLIRun.printLogLine)
+            }
         }
         print(outputURL.path)
     }

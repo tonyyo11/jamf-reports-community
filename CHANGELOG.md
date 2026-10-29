@@ -38,6 +38,10 @@ versions in this repository map to git tags.
   announces its result, animations stay still with Reduce Motion on, page titles follow text
   size and read as headings, and loading spinners are named. (#305)
 
+- The `jamf-reports` command-line tool now adds a warning from `collect`, `generate` or `html` to
+  "Needs attention" in the app, as a scheduled run does, and clears it when a later run passes
+  the check. (#305)
+
 ### Security
 
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,

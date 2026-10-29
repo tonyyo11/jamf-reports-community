@@ -714,6 +714,15 @@ struct CLIRunSignals: Sendable {
         )
     }
 
+    /// Commit the run's Needs attention items into this run's status file, naming its log, as a
+    /// scheduled run does; without a recorder they land in the app record. Call inside
+    /// `AttentionLog.recording`.
+    func bindAttention() {
+        guard let recorder else { return }
+        AttentionLog.current?.record(
+            into: recorder.statusURL, runLog: recorder.logURL.lastPathComponent)
+    }
+
     /// Wrap the CLI's own log-line router so every engine line is also recorded
     /// to Run History and watched for the honesty markers. The recorder and
     /// watcher sides are best-effort; `downstream` (the CLI's stdout/stderr
