@@ -293,7 +293,7 @@ struct Sidebar: View {
                             .foregroundStyle(Theme.Colors.fg)
                             .lineLimit(1)
                         Text(workspace.lastSyncedRelative(for: workspace.profile))
-                            .font(Theme.Fonts.mono(9.5))
+                            .font(Theme.Fonts.mono(10))
                             .tracking(0.4)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -399,7 +399,7 @@ struct Sidebar: View {
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ))
             Text(monogram)
-                .font(Theme.Fonts.mono(9, weight: .bold))
+                .font(Theme.Fonts.mono(10, weight: .bold))
                 .foregroundStyle(.white)
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .strokeBorder(

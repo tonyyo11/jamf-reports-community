@@ -553,40 +553,38 @@ struct OverviewView: View {
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspace.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    PNPButton(title: "Customize", icon: "slider.horizontal.3") {
-                        showCustomize = true
-                    }
-                    .help("Choose the Overview's sections and score cards, and their order.")
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        workspace.reloadFromDisk()
-                        Task {
-                            // Off-main scan so the explicit Refresh doesn't freeze
-                            // the UI; picks up any newly-written summaries.
-                            await loadTrendsOffMain()
-                            await loadLiveSectionsOffMain()
-                            await reloadChecklist()
-                        }
-                    }
-                    .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
-                    PNPButton(
-                        title: isRunning ? "Running…" : "Generate Report",
-                        icon: isRunning ? "hourglass" : "play.fill",
-                        style: .gold
-                    ) {
-                        guard !isRunning else { return }
-                        Task { await runGenerate() }
-                    }
-                    // Generating runs jamf-cli against the selected profile; in demo
-                    // mode that is the fictional meridian-prod, so it would create a
-                    // real workspace for it.
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode
-                          ? "Demo data is fixed. Generating a report needs a live profile."
-                          : "Collect if the data is stale, then build this profile's report.")
+            HStack(spacing: 8) {
+                PNPButton(title: "Customize", icon: "slider.horizontal.3") {
+                    showCustomize = true
                 }
-            )
+                .help("Choose the Overview's sections and score cards, and their order.")
+                PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                    workspace.reloadFromDisk()
+                    Task {
+                        // Off-main scan so the explicit Refresh doesn't freeze
+                        // the UI; picks up any newly-written summaries.
+                        await loadTrendsOffMain()
+                        await loadLiveSectionsOffMain()
+                        await reloadChecklist()
+                    }
+                }
+                .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
+                PNPButton(
+                    title: isRunning ? "Running…" : "Generate Report",
+                    icon: isRunning ? "hourglass" : "play.fill",
+                    style: .gold
+                ) {
+                    guard !isRunning else { return }
+                    Task { await runGenerate() }
+                }
+                // Generating runs jamf-cli against the selected profile; in demo
+                // mode that is the fictional meridian-prod, so it would create a
+                // real workspace for it.
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? "Demo data is fixed. Generating a report needs a live profile."
+                      : "Collect if the data is stale, then build this profile's report.")
+            }
         }
     }
 

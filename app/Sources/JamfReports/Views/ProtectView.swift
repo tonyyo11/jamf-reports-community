@@ -45,7 +45,7 @@ struct ProtectView: View {
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate,
-                trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
+                trailing: { if deepDiveEnabled { ExperimentalBadge() } }
             )
 
             if loadedSource != dataSource {

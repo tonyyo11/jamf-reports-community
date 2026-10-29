@@ -69,23 +69,21 @@ struct RunsView: View {
             title: "Run History",
             subtitle: "\(runs.count) log\(runs.count == 1 ? "" : "s") · \(workspace.profile)"
         ) {
-            AnyView(
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
-                            .help("Reload run logs from disk")
-                        PNPButton(title: "Reveal", icon: "folder") { revealLog() }
-                            .disabled(workspace.demoMode)
-                            .help(revealHelp)
-                        PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
-                            .disabled(selectedRun == nil)
-                            .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
-                        PNPButton(title: "Export", icon: "arrow.down.circle") { exportLog() }
-                            .disabled(selectedRun == nil || workspace.demoMode)
-                            .help(exportHelp)
-                    }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
+                        .help("Reload run logs from disk")
+                    PNPButton(title: "Reveal", icon: "folder") { revealLog() }
+                        .disabled(workspace.demoMode)
+                        .help(revealHelp)
+                    PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
+                        .disabled(selectedRun == nil)
+                        .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
+                    PNPButton(title: "Export", icon: "arrow.down.circle") { exportLog() }
+                        .disabled(selectedRun == nil || workspace.demoMode)
+                        .help(exportHelp)
                 }
-            )
+            }
         }
     }
 
@@ -128,16 +126,17 @@ struct RunsView: View {
 
     private func runListItem(_ run: RunHistoryService.RunSummary) -> some View {
         let selected = selectedRun?.id == run.id
-        return runListItemContent(run, selected: selected)
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(runListItemBackground(selected: selected))
-            .overlay(runListItemBorder(selected: selected))
-            .contentShape(Rectangle())
-            .onTapGesture { selectRun(run) }
-            .contextMenu { runListItemContextMenu(run) }
-            .accessibilityLabel(runListItemAccessibilityLabel(run))
-            .accessibilityAddTraits(.isButton)
+        return Button { selectRun(run) } label: {
+            runListItemContent(run, selected: selected)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(runListItemBackground(selected: selected))
+                .overlay(runListItemBorder(selected: selected))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu { runListItemContextMenu(run) }
+        .accessibilityLabel(runListItemAccessibilityLabel(run))
     }
 
     @ViewBuilder

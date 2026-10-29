@@ -56,18 +56,16 @@ struct FleetOverviewView: View {
             subtitle: current?.summary.map { "Latest summary \($0.date)" }
                 ?? "No successful summary found for this workspace"
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    if isLoading {
-                        ProgressView().controlSize(.small)
-                            .accessibilityLabel("Refreshing fleet overview")
-                    }
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        reloads += 1
-                    }
-                    .help("Re-read this workspace's latest summary snapshot.")
+            HStack(spacing: 8) {
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel("Refreshing fleet overview")
                 }
-            )
+                PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                    reloads += 1
+                }
+                .help("Re-read this workspace's latest summary snapshot.")
+            }
         }
     }
 

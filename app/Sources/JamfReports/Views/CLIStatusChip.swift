@@ -77,7 +77,7 @@ struct CLIStatusChip: View {
     private var chipPopover: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("JAMF-CLI PATH")
-                .font(Theme.Fonts.mono(9, weight: .semibold))
+                .font(Theme.Fonts.mono(10, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Text(popoverPathText)

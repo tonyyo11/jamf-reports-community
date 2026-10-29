@@ -151,15 +151,15 @@ enum DashboardChartExport {
 /// Shared export header used by both `DashboardExportCanvas` and other custom
 /// export views like `BarChartExportView`. Provides consistent title typography
 /// across all export templates.
-public struct DashboardExportHeader: View {
+public struct DashboardExportHeader<Trailing: View>: View {
     let title: String
     let subtitle: String?
-    let headerTrailing: AnyView?
+    let headerTrailing: Trailing
 
-    public init(title: String, subtitle: String? = nil, headerTrailing: (() -> AnyView)? = nil) {
+    public init(title: String, subtitle: String? = nil, @ViewBuilder headerTrailing: () -> Trailing) {
         self.title = title
         self.subtitle = subtitle
-        self.headerTrailing = headerTrailing?()
+        self.headerTrailing = headerTrailing()
     }
 
     public var body: some View {
@@ -180,6 +180,12 @@ public struct DashboardExportHeader: View {
             Spacer()
             headerTrailing
         }
+    }
+}
+
+extension DashboardExportHeader where Trailing == EmptyView {
+    public init(title: String, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
     }
 }
 

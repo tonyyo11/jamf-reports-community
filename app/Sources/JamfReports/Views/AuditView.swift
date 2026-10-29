@@ -259,62 +259,60 @@ struct AuditView: View {
             // for as long as the demo stays open. "Last run" below still shows them.
             lastModified: workspace.demoMode ? nil : auditTabLastModified(selectedTab)
         ) {
-            AnyView(
-                VStack(alignment: .trailing, spacing: 6) {
-                    if selectedTab != 2 {
-                        Mono(
-                            text: selectedTab == 0
-                                ? lastRunLabel(lastAuditDate, empty: "Last audit: Never")
-                                : lastRunLabel(lastHygieneDate, empty: "Last analysis: Never"),
-                            size: 10.5
-                        )
-                    }
-                    HStack(spacing: 8) {
-                        if selectedTab == 0 {
-                            PNPButton(
-                                title: isRunningAudit ? "Audit running…" : "Run Audit",
-                                icon: isRunningAudit ? "hourglass" : "play.fill",
-                                style: .gold
-                            ) {
-                                runAudit()
-                            }
-                            .disabled(isRunningAudit || workspace.demoMode)
-                            .help("Run a fresh audit against this workspace.")
-                            PNPButton(title: "Export Findings", icon: "square.and.arrow.up", style: .neutral) {
-                                Task { await exportFindings() }
-                            }
-                            .disabled(findings.isEmpty || workspace.demoMode)
-                            .help("Export all audit findings to a CSV file")
-                        } else if selectedTab == 1 {
-                            PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
-                                copyGroupIDs()
-                            }
-                            .disabled(unusedGroups.isEmpty)
-                            .help("Copy the comma-separated list of unused group IDs to the clipboard.")
-                            PNPButton(title: "Copy All", icon: "doc.on.clipboard", style: .neutral) {
-                                copyAllGroups()
-                            }
-                            .disabled(sortedHygiene.isEmpty)
-                            .help("Copy all unused group IDs and names as tab-separated values")
-                            PNPButton(
-                                title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
-                                icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
-                                style: .gold
-                            ) {
-                                runHygiene()
-                            }
-                            .disabled(isRunningHygiene || workspace.demoMode)
-                            .help("Find computer groups not referenced by any policy or profile.")
-                        } else {
-                            PNPButton(title: "Re-check", icon: "arrow.clockwise", style: .gold) {
-                                loadDoctorReport()
-                            }
-                            .disabled(workspace.demoMode)
-                            .help("Re-validate config.yaml against the newest CSV and cached EA results.")
+            VStack(alignment: .trailing, spacing: 6) {
+                if selectedTab != 2 {
+                    Mono(
+                        text: selectedTab == 0
+                            ? lastRunLabel(lastAuditDate, empty: "Last audit: Never")
+                            : lastRunLabel(lastHygieneDate, empty: "Last analysis: Never"),
+                        size: 10.5
+                    )
+                }
+                HStack(spacing: 8) {
+                    if selectedTab == 0 {
+                        PNPButton(
+                            title: isRunningAudit ? "Audit running…" : "Run Audit",
+                            icon: isRunningAudit ? "hourglass" : "play.fill",
+                            style: .gold
+                        ) {
+                            runAudit()
                         }
+                        .disabled(isRunningAudit || workspace.demoMode)
+                        .help("Run a fresh audit against this workspace.")
+                        PNPButton(title: "Export Findings", icon: "square.and.arrow.up", style: .neutral) {
+                            Task { await exportFindings() }
+                        }
+                        .disabled(findings.isEmpty || workspace.demoMode)
+                        .help("Export all audit findings to a CSV file")
+                    } else if selectedTab == 1 {
+                        PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
+                            copyGroupIDs()
+                        }
+                        .disabled(unusedGroups.isEmpty)
+                        .help("Copy the comma-separated list of unused group IDs to the clipboard.")
+                        PNPButton(title: "Copy All", icon: "doc.on.clipboard", style: .neutral) {
+                            copyAllGroups()
+                        }
+                        .disabled(sortedHygiene.isEmpty)
+                        .help("Copy all unused group IDs and names as tab-separated values")
+                        PNPButton(
+                            title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
+                            icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
+                            style: .gold
+                        ) {
+                            runHygiene()
+                        }
+                        .disabled(isRunningHygiene || workspace.demoMode)
+                        .help("Find computer groups not referenced by any policy or profile.")
+                    } else {
+                        PNPButton(title: "Re-check", icon: "arrow.clockwise", style: .gold) {
+                            loadDoctorReport()
+                        }
+                        .disabled(workspace.demoMode)
+                        .help("Re-validate config.yaml against the newest CSV and cached EA results.")
                     }
                 }
-            )
+            }
         }
     }
 

@@ -41,6 +41,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Small monospaced labels (the sidebar's sync time and workspace monogram, the Security Score
+  "of 100", the schedule mode tag and the jamf-cli path heading) are 10 pt, the macOS minimum.
 - A workspace whose config.yaml names a different `jamf_cli.profile` than its own, such as a
   copied or renamed workspace folder, now generates reports instead of refusing; every command
   runs as the workspace's own profile, and Config Doctor still points the stale name out.
