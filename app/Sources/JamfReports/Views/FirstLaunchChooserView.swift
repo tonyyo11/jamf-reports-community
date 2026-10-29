@@ -55,6 +55,7 @@ struct FirstLaunchChooserView: View {
             Text("Welcome to Jamf Reports.")
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Text("Connect Jamf Cloud, a Jamf Pro server or Jamf School to build your first workspace, or open the app with demo data to see every screen first.")
                 .font(.body)
                 .foregroundStyle(Theme.Text.tertiary(contrast))

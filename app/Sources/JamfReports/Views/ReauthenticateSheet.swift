@@ -178,6 +178,7 @@ struct ReauthenticateSheet: View {
                 Text("Update credentials")
                     .font(Theme.Fonts.serif(22, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button {
                     close()

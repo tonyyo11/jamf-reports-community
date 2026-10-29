@@ -314,6 +314,7 @@ struct RunsView: View {
             } else if isExplaining {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
+                        .accessibilityLabel("Explaining run")
                     Text("Explaining run…")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))

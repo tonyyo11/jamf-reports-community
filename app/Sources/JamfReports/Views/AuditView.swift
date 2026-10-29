@@ -490,7 +490,7 @@ struct AuditView: View {
                                         .transition(.scale.combined(with: .opacity))
                                 }
                             }
-                            .animation(.spring(response: 0.35, dampingFraction: 0.7),
+                            .motionSafeAnimation(.spring(response: 0.35, dampingFraction: 0.7),
                                        value: newFindingKeys.contains(f.driftKey))
                         }
                         TableColumn("Severity", value: \.severity) { f in
@@ -745,7 +745,8 @@ struct AuditView: View {
                     }
                 }
             }
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
+            .motionSafeAnimation(
+                .spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
         }
     }
 

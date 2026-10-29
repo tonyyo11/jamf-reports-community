@@ -28,6 +28,7 @@ struct ConnectionRenameSheet: View {
             Text("Rename connection")
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Text("Names and labels are shown in the sidebar and Fleet Overview. The jamf-cli "
                 + "profiles and workspaces keep their names.")
                 .font(.callout)

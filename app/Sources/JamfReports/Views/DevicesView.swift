@@ -404,7 +404,7 @@ struct DevicesView: View {
                     isSearchFocused ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
                     lineWidth: isSearchFocused ? 1 : 0.5
                 )
-                .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+                .motionSafeAnimation(.easeInOut(duration: 0.2), value: isSearchFocused)
         )
     }
 
@@ -740,6 +740,7 @@ struct DevicesView: View {
                 case .loading:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
+                            .accessibilityLabel("Loading computer detail")
                         Text("Loading computer detail...")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -1458,7 +1459,7 @@ private struct PatchClearPill: View {
             .scaleEffect(pulsed ? 1.0 : 1.05)
             .opacity(pulsed ? 1.0 : 0.6)
             .onAppear {
-                withAnimation(.easeOut(duration: 0.45)) { pulsed = true }
+                withMotionSafeAnimation(.easeOut(duration: 0.45)) { pulsed = true }
             }
             .transition(.scale.combined(with: .opacity))
     }

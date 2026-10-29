@@ -72,6 +72,9 @@ struct CSVEAWalkthroughSheet: View {
         .frame(minWidth: 460, idealWidth: 540, minHeight: 420, idealHeight: 600)
         .background(Theme.Colors.winBG)
         .task { await load() }
+        // A banner appears mid-screen with no focus change, so VoiceOver would not say it.
+        .onChange(of: adoptError) { _, text in announce(text) }
+        .onChange(of: confirmation) { _, text in announce(text) }
         // Esc dismisses. Hidden zero-size button with .cancelAction is the
         // canonical SwiftUI pattern (see OverviewView's drill-down dismissal).
         .background {
@@ -94,6 +97,7 @@ struct CSVEAWalkthroughSheet: View {
             Text(importedCSVName == nil ? "Adopt EAs" : "Set up EA tracking")
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Text.primary)
+                .accessibilityAddTraits(.isHeader)
             if let importedCSVName {
                 Mono(text: importedCSVName)
             }
@@ -332,6 +336,7 @@ struct CSVEAWalkthroughSheet: View {
     private var loadingState: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
+                .accessibilityLabel("Reading the collected Extension Attributes")
             Text("Reading the collected Extension Attributes…")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -534,6 +539,10 @@ struct CSVEAWalkthroughSheet: View {
         return ([head].compactMap { $0 } + notes).joined(separator: " ")
     }
 
+    private func announce(_ text: String?) {
+        if let text { AccessibilityNotification.Announcement(text).post() }
+    }
+
     private func adopt() {
         adoptError = nil
         let eas = selectedProposals.filter { !agentTargets.contains($0.id) }
@@ -547,12 +556,6 @@ struct CSVEAWalkthroughSheet: View {
             confirmationHasNotes = !notes.isEmpty
             confirmation = Self.adoptionMessage(
                 eas: result.eas, agents: result.agents, notes: notes, profile: profile)
-            // Brief confirmation, then dismiss; a save note stays until Close.
-            guard notes.isEmpty else { return }
-            Task {
-                try? await Task.sleep(for: .milliseconds(900))
-                dismiss()
-            }
         } catch {
             adoptError = "Couldn't write the selections to config.yaml: "
                 + "\(error.localizedDescription). Verify the workspace config isn't open "

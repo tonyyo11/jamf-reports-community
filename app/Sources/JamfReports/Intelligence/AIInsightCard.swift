@@ -95,6 +95,7 @@ struct AIInsightCard: View {
         } else if model.isGenerating {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
+                    .accessibilityLabel("Generating insight")
                 Text("Generating insight…")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))

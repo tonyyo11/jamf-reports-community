@@ -156,6 +156,7 @@ struct OnboardingView: View {
             Text(headerTitle)
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Text(headerSubtitle)
                 .font(.body)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -366,6 +367,7 @@ struct OnboardingView: View {
         if flow.isCheckingJamfCLI {
             ProgressView()
                 .controlSize(.small)
+                .accessibilityLabel("Checking for jamf-cli")
                 .frame(width: 34)
         } else {
             statusIcon(ok: flow.jamfCLIInstalled)

@@ -384,6 +384,7 @@ struct SchedulesView: View {
                 Spacer()
                 if isRunning {
                     ProgressView().scaleEffect(0.6)
+                        .accessibilityLabel("Schedule running")
                 } else if let msg = lastRunMessage, let exitCode = Self.extractExitCode(from: msg) {
                     Pill(
                         text: "EXIT \(exitCode)",
@@ -733,7 +734,7 @@ private struct RunLogConsole: View {
             )
             .onChange(of: lines.count) { _, _ in
                 guard isScrolledToBottom else { return }
-                withAnimation(.easeOut(duration: 0.15)) {
+                withMotionSafeAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
                 }
             }

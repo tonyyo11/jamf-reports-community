@@ -140,6 +140,7 @@ struct DeviceLookupView: View {
                 Card(padding: 18) {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
+                            .accessibilityLabel("Resolving \(submittedTerm) via jamf-cli")
                         Text("Resolving \(submittedTerm) via jamf-cli…")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))

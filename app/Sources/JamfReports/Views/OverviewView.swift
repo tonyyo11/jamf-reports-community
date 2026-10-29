@@ -368,6 +368,7 @@ struct OverviewView: View {
     private var trendsLoadingOverlay: some View {
         VStack(spacing: 12) {
             ProgressView().controlSize(.large)
+                .accessibilityLabel("Loading fleet data")
             Text("Loading fleet data…")
                 .font(.callout)
                 .foregroundStyle(Theme.Colors.fg2)
@@ -418,6 +419,7 @@ struct OverviewView: View {
                 Spacer(minLength: 12)
                 if workspace.isInitializingWorkspace {
                     ProgressView().controlSize(.small)
+                        .accessibilityLabel("Setting up the workspace")
                 } else {
                     PNPButton(title: "Choose existing folder…", icon: "folder", size: .sm) {
                         chooseExistingRoot()
@@ -888,6 +890,7 @@ struct OverviewView: View {
         Card(padding: 14) {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
+                    .accessibilityLabel("Loading \(section.title)")
                 Text("Loading \(section.title)…")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -1045,7 +1048,9 @@ struct OverviewView: View {
         EqualHeightTileGrid(minTileWidth: 220) {
             ForEach(offeredScoreCards) { metric in
                 let hasData = !metricValues(metric).isEmpty
-                let isDanger = hasData && scoreCardTrend(for: metric) == .down && metric != .stale
+                let isDanger = hasData && Self.tileIsDanger(
+                    metric: metric, values: metricValues(metric),
+                    comparable: scoreCardComparable(metric))
                 Button {
                     drill = .metric(metric.rawValue)
                 } label: {
@@ -1068,16 +1073,9 @@ struct OverviewView: View {
         workspace.selectedScoreCards.filter { workspace.isOffered($0) }
     }
 
-    private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
-        let values: [Double] = workspace.demoMode ?
-            (DemoData.trends[metric] ?? []) :
-            trendStore.values(metric: metric)
-        guard let last = values.last else { return .flat }
-        let prev = values.count > 1 ? values[values.count - 2] : last
-        let diff = last - prev
-        if diff == 0 { return .flat }
-        if metric == .stale { return diff < 0 ? .up : .down }
-        return diff > 0 ? .up : .down
+    /// Two scores on different definitions (`securityScoreBasis`) have no change between them.
+    private func scoreCardComparable(_ metric: TrendSeries.Metric) -> Bool {
+        metric != .securityScore || workspace.demoMode || trendStore.latestSecurityScoresComparable
     }
 
     /// "Aug 20" — short by design; the tile caption has little room and the
@@ -1105,9 +1103,7 @@ struct OverviewView: View {
         let lastValue = values.last
         let current = lastValue ?? 0
         let prev = values.count > 1 ? values[values.count - 2] : current
-        // Two scores on different definitions (`securityScoreBasis`) have no change between them.
-        let comparable = metric != .securityScore || workspace.demoMode
-            || trendStore.latestSecurityScoresComparable
+        let comparable = scoreCardComparable(metric)
         let diff = comparable ? current - prev : 0
 
         let valueStr: String = {
@@ -1130,14 +1126,8 @@ struct OverviewView: View {
             }
         }()
 
-        let trend: StatTile.Trend = {
-            guard lastValue != nil else { return .flat }
-            if diff == 0 { return .flat }
-            if metric == .stale {
-                return diff < 0 ? .up : .down // lower stale is good (up)
-            }
-            return diff > 0 ? .up : .down
-        }()
+        let trend = Self.tileTrend(metric: metric, previous: prev, current: current,
+                                   comparable: comparable && lastValue != nil)
 
         // DRAFT — needs visual verification. Two captions share this line:
         // the Active Devices clarification (redefined 2.6 to exclude stale
@@ -1191,6 +1181,31 @@ struct OverviewView: View {
         // rather than growing the row. The caption keeps to one line.
         .lineLimit(1)
         .truncationMode(.tail)
+    }
+
+    /// The tile's good/bad verdict, from the same rule as the Trends hero (`TrendChange`,
+    /// `Metric.polarity`): a metric with no good direction, or no comparison, is flat.
+    static func tileTrend(
+        metric: TrendSeries.Metric, previous: Double, current: Double, comparable: Bool
+    ) -> StatTile.Trend {
+        guard comparable else { return .flat }
+        switch TrendChange(metric: metric, first: previous, last: current).verdict {
+        case .better: return .up
+        case .worse: return .down
+        case .neutral: return .flat
+        }
+    }
+
+    /// The red chrome around a card follows the tile's verdict (`tileTrend`), so the border
+    /// and the delta colour never disagree. Not limited to Stale: a rising Stale count is
+    /// as much "worse" as a rising mobile stale or jailbroken count.
+    static func tileIsDanger(
+        metric: TrendSeries.Metric, values: [Double], comparable: Bool
+    ) -> Bool {
+        guard let current = values.last else { return false }
+        let previous = values.count > 1 ? values[values.count - 2] : current
+        return tileTrend(metric: metric, previous: previous, current: current,
+                         comparable: comparable) == .down
     }
 
     /// Lines a score card's title may take: two for the fixed titles, one for the compliance
@@ -2000,7 +2015,7 @@ private struct DrillDownChromeModifier: ViewModifier {
             )
             .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
             .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.15)) {
+                withMotionSafeAnimation(.easeOut(duration: 0.15)) {
                     isHovering = hovering
                 }
             }
@@ -2087,7 +2102,7 @@ struct AgentCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .shadow(color: .black.opacity(isHovering ? 0.25 : 0), radius: isHovering ? 8 : 0, y: isHovering ? 4 : 0)
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
+            withMotionSafeAnimation(.easeOut(duration: 0.15)) {
                 isHovering = hovering
             }
         }

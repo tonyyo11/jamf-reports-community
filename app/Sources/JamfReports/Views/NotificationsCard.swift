@@ -101,7 +101,10 @@ struct NotificationsCard: View {
                             Task { await sendTestNotification() }
                         }
                         .disabled(notifyTesting || !currentNotifyConfig.isUsable)
-                        if notifyTesting { ProgressView().controlSize(.small) }
+                        if notifyTesting {
+                            ProgressView().controlSize(.small)
+                                .accessibilityLabel("Sending test notification")
+                        }
                     }
 
                     if let notifyTestResult {

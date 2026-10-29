@@ -33,6 +33,11 @@ versions in this repository map to git tags.
   is there but cannot be opened (a link, a folder or a read error), instead of "not collected
   yet", and logs a warning. (#305)
 
+- VoiceOver and Reduce Motion fixes: score cards say whether a change is better or worse (a
+  falling stale count reads "down, better"), the Adopt EAs sheet no longer closes itself and
+  announces its result, animations stay still with Reduce Motion on, page titles follow text
+  size and read as headings, and loading spinners are named. (#305)
+
 ### Security
 
 - Shared logs and diagnostic bundles now mask international phone numbers written with spaces,

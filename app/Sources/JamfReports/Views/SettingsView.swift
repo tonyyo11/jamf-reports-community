@@ -53,8 +53,9 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Kicker(text: "Application", tone: .gold)
                     Text("Settings")
-                        .font(Theme.Fonts.serif(26, weight: .bold))
+                        .font(Theme.Fonts.serifTitle())
                         .foregroundStyle(Theme.Text.primary)
+                        .accessibilityAddTraits(.isHeader)
                 }
                 .padding(.bottom, 8)
 
@@ -378,6 +379,7 @@ struct SettingsView: View {
         HStack(spacing: 8) {
             if workspace.isUpdatingJamfCLI {
                 ProgressView().controlSize(.small)
+                    .accessibilityLabel("Updating jamf-cli")
             } else {
                 PNPButton(title: "Check", size: .sm) {
                     guard !workspace.demoMode else { return }
@@ -483,6 +485,7 @@ struct SettingsView: View {
             if testingProfile == profileName {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
+                        .accessibilityLabel("Testing the connection to \(profileName)")
                     if testingTooLong {
                         Text("Taking longer than usual…")
                             .font(.caption)
@@ -858,6 +861,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     if isGeneratingBundle {
                         ProgressView().controlSize(.small)
+                            .accessibilityLabel("Generating diagnostic bundle")
                         Text("Generating bundle…")
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))

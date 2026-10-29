@@ -13,6 +13,8 @@ struct Kicker: View {
     let text: String
     var tone: Tone = .muted
     var breadcrumbs: [Breadcrumb] = []
+    /// False where the caption sits above a title that is the heading (`PageHeader`).
+    var isHeading = true
 
     var body: some View {
         HStack(spacing: 4) {
@@ -36,12 +38,14 @@ struct Kicker: View {
                 Text("/")
                     .font(Theme.Fonts.mono(10, weight: .bold))
                     .foregroundStyle(Theme.Colors.hairlineStrong)
+                    .accessibilityHidden(true)
             }
 
             Text(text.uppercased())
                 .font(Theme.Fonts.mono(10.5, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(color)
+                .accessibilityAddTraits(isHeading ? .isHeader : [])
         }
     }
 
@@ -115,11 +119,13 @@ struct PageHeader: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs)
+                Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs,
+                       isHeading: false)
                 if let ageLabel = stalenessLabel {
                     Text("·")
                         .font(Theme.Fonts.mono(10.5, weight: .bold))
                         .foregroundStyle(Theme.Colors.hairlineStrong)
+                        .accessibilityHidden(true)
                     Text(ageLabel.uppercased())
                         .font(Theme.Fonts.mono(10.5, weight: .semibold))
                         .tracking(1.5)
@@ -129,8 +135,10 @@ struct PageHeader: View {
                 }
             }
             Text(title)
-                .font(Theme.Fonts.serif(26, weight: .bold))
+                .font(Theme.Fonts.serifTitle())
                 .foregroundStyle(Theme.Colors.fg)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
                     .font(.callout)
@@ -348,15 +356,9 @@ struct PNPToggle: View {
     @Binding var isOn: Bool
     var label: String = ""
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         Button {
-            if reduceMotion {
-                isOn.toggle()
-            } else {
-                withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
-            }
+            withMotionSafeAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
@@ -475,7 +477,8 @@ struct StatTile: View {
                 if let delta {
                     HStack(spacing: 3) {
                         if deltaTrend != .flat {
-                            Image(systemName: deltaPointsUp(delta) ? "arrow.up" : "arrow.down")
+                            Image(systemName: Self.deltaPointsUp(delta, trend: deltaTrend)
+                                    ? "arrow.up" : "arrow.down")
                                 .font(.system(size: 10, weight: .bold))
                         }
                         Text(delta)
@@ -526,11 +529,19 @@ struct StatTile: View {
         sub: String?
     ) -> String {
         var parts = ["\(label): \(value)"]
+        // The direction word follows the number; "better"/"worse" is the tile's verdict, so a
+        // stale count that fell reads "down, better" and one that rose reads "up, worse".
         if let delta {
-            switch deltaTrend {
-            case .up:   parts.append("up \(delta)")
-            case .down: parts.append("down \(delta)")
-            case .flat: break
+            let verdict = switch deltaTrend {
+            case .up: ", better"
+            case .down: ", worse"
+            case .flat: ""
+            }
+            // A flat tile still draws a signed delta, so it is announced without a verdict;
+            // "No Data", "Not comparable" and a zero change stay silent.
+            if deltaTrend != .flat || Self.isSignedChange(delta) {
+                let direction = deltaPointsUp(delta, trend: deltaTrend) ? "up" : "down"
+                parts.append("\(direction) \(delta)\(verdict)")
             }
         }
         if let sub { parts.append(sub) }
@@ -545,15 +556,22 @@ struct StatTile: View {
         }
     }
 
-    /// Arrow glyph reflects the delta's literal numeric sign ("+"/"−" prefix),
-    /// independent of `deltaTrend`'s good/bad color. A metric like Stale
-    /// Devices can trend "bad" (red, `deltaTrend == .down`) while the raw
-    /// count still went up — the arrow must say up, matching the number,
-    /// while the color still says bad.
-    private func deltaPointsUp(_ delta: String) -> Bool {
+    /// A signed, non-zero change such as "+12" or "−1.5pp"; "+0", "+0.0pp" and text with no
+    /// sign are not.
+    nonisolated private static func isSignedChange(_ delta: String) -> Bool {
+        guard ["+", "−", "-"].contains(where: { delta.hasPrefix($0) }) else { return false }
+        let magnitude = delta.dropFirst().filter { $0.isNumber || $0 == "." }
+        return (Double(magnitude) ?? 0) != 0
+    }
+
+    /// Arrow glyph and VoiceOver direction reflect the delta's literal numeric sign
+    /// ("+"/"−" prefix), independent of `deltaTrend`'s good/bad color. A metric like Stale
+    /// Devices can trend "bad" (red, `deltaTrend == .down`) while the raw count still
+    /// went up — the arrow must say up, matching the number, while the color says bad.
+    nonisolated static func deltaPointsUp(_ delta: String, trend: Trend) -> Bool {
         if delta.hasPrefix("+") { return true }
         if delta.hasPrefix("−") || delta.hasPrefix("-") { return false }
-        return deltaTrend == .up
+        return trend == .up
     }
 
     private var defaultSparklineColor: Color {
@@ -710,6 +728,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack {
             Text(title).font(.system(style, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
 
             // Handle legacy trailing parameter
@@ -744,6 +763,7 @@ struct StatusBar: View {
                 if status.contains("...") || status.lowercased().contains("running") || status.lowercased().contains("collecting") {
                     ProgressView().controlSize(.small)
                         .scaleEffect(0.7)
+                        .accessibilityLabel(status)
                 } else {
                     Image(systemName: "info.circle")
                         .font(.system(size: 10))

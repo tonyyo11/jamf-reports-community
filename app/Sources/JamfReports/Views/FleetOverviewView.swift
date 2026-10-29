@@ -26,6 +26,7 @@ struct FleetOverviewView: View {
                     workspaceDetail(overview)
                 } else {
                     ProgressView()
+                        .accessibilityLabel("Loading fleet overview")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 48)
                 }
@@ -53,6 +54,7 @@ struct FleetOverviewView: View {
                 HStack(spacing: 8) {
                     if isLoading {
                         ProgressView().controlSize(.small)
+                            .accessibilityLabel("Refreshing fleet overview")
                     }
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         Task { await load() }

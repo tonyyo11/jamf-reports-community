@@ -39,7 +39,7 @@ struct CLIStatusChip: View {
                 .shadow(color: dotColor.opacity(0.6), radius: 3)
                 .scaleEffect(isWarn && breathing ? 1.0 : (isWarn ? 0.85 : 1.0))
                 .opacity(isWarn && breathing ? 1.0 : (isWarn ? 0.7 : 1.0))
-                .animation(
+                .motionSafeAnimation(
                     isWarn
                         ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true)
                         : .default,

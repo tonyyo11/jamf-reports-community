@@ -482,7 +482,7 @@ struct ConfigView: View {
                 changedOnDisk = false
                 // A save rewrites the blocks this screen edits; re-read what the card lists.
                 refreshEngineParseStatus()
-                withAnimation { saveStatus = .saved }
+                withMotionSafeAnimation { saveStatus = .saved }
             } catch ConfigService.ConfigError.changedOnDisk {
                 // Nothing was written: the notice says why and offers Reload.
                 changedOnDisk = true
@@ -491,12 +491,12 @@ struct ConfigView: View {
             } catch {
                 let message = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription
-                withAnimation { saveStatus = .error(message) }
+                withMotionSafeAnimation { saveStatus = .error(message) }
                 workspace.toast = Toast(message: "Save failed: \(message)", style: .danger)
             }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
-            withAnimation { saveStatus = .idle }
+            withMotionSafeAnimation { saveStatus = .idle }
         }
     }
 }

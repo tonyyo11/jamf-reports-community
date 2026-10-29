@@ -131,8 +131,9 @@ struct SourcesView: View {
         VStack(alignment: .leading, spacing: 4) {
             Kicker(text: "Inputs to the workbook", tone: .gold)
             Text("Data Sources")
-                .font(Theme.Fonts.serif(26, weight: .bold))
+                .font(Theme.Fonts.serifTitle())
                 .foregroundStyle(Theme.Text.primary)
+                .accessibilityAddTraits(.isHeader)
             Text("Live API · cached snapshots · historical archives")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
