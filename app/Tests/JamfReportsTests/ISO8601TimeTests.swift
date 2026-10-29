@@ -30,7 +30,8 @@ final class ISO8601TimeTests: XCTestCase {
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let inputs = [
             "2026-10-29T12:34:56Z", "2026-10-29T12:34:56+00:00", "2026-10-29T12:34:56-0500",
-            "2026-10-29T12:34:56.712Z", "2015-02-17T21:33:23.7Z", "  2026-10-29T12:34:56Z",
+            "2026-10-29T12:34:56.712Z", "2015-02-17T21:33:23.7Z", "2026-10-29T12:34:56.71Z",
+            "2026-10-29T12:34:56.712+00:00", "  2026-10-29T12:34:56Z",
             "1969-12-31T23:59:59Z",
         ]
         for text in inputs {

@@ -14,17 +14,19 @@ enum PromptFit {
     static let options = GenerationOptions(temperature: 0.1)
 
     /// Renders the prompt for `render(maxApproxTokens)` so it fits, then runs `body`; on
-    /// `contextSizeExceeded` it renders at half the room and runs `body` once more.
+    /// `contextSizeExceeded` it renders at half the room and runs `body` once more, unless
+    /// `canRetry` says output was already delivered (a stream that has yielded).
     static func run<T>(
         model: SystemLanguageModel, instructions: String, schema: GenerationSchema?,
-        render: (Int) -> String, body: (String) async throws -> T
+        render: (Int) -> String, canRetry: () -> Bool = { true },
+        body: (String) async throws -> T
     ) async throws -> T {
         var room = await room(model: model, instructions: instructions, schema: schema)
         for attempt in 0..<2 {
             let prompt = await fitted(model: model, room: room, render: render)
             do {
                 return try await body(prompt)
-            } catch LanguageModelError.contextSizeExceeded where attempt == 0 {
+            } catch LanguageModelError.contextSizeExceeded where attempt == 0 && canRetry() {
                 AppLogger.platform.notice("Prompt exceeded the context window; retrying smaller")
                 room /= 2
             }

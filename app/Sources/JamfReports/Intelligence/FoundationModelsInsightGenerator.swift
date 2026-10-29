@@ -171,15 +171,18 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     ) async throws {
         let caps = model.capabilities
         let guided = caps.contains(.guidedGeneration)
+        var yielded = false
         try await PromptFit.run(
             model: model, instructions: FleetInsightInput.instructions,
             schema: guided ? FleetIntelligence.GeneratedFleetInsight.generationSchema : nil,
-            render: { input.promptContext(maxApproxTokens: $0) }
+            render: { input.promptContext(maxApproxTokens: $0) },
+            canRetry: { !yielded }
         ) { prompt in
             let session = self.makeSession(for: model)
             guard guided else {
                 for try await snapshot in session.streamResponse(
                     to: prompt, options: PromptFit.options) {
+                    yielded = true
                     continuation.yield(FleetInsight(headline: snapshot.content, bullets: []))
                 }
                 return
@@ -192,6 +195,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
                     contextOptions: ContextOptions(
                         reasoningLevel: self.config.resolvedReasoningLevel.asContextReasoningLevel)
                 ) {
+                    yielded = true
                     continuation.yield(FleetIntelligence.mapPartial(snapshot.content))
                 }
                 return
@@ -201,6 +205,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
                 generating: FleetIntelligence.GeneratedFleetInsight.self,
                 options: PromptFit.options
             ) {
+                yielded = true
                 continuation.yield(FleetIntelligence.mapPartial(snapshot.content))
             }
         }
