@@ -12,6 +12,9 @@ versions in this repository map to git tags.
 - The Platform API region list now has Other, which takes a gateway host such as
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)
+- config.yaml can name each product's jamf-cli profile in one `profiles:` block (Jamf Pro or
+  Jamf School, Jamf Protect, and the Platform API and Security Cloud profiles for later
+  releases). A workspace without the block keeps working exactly as before. (#305)
 
 ### Changed
 

@@ -2173,7 +2173,7 @@ struct ReportEngine: Sendable {
                 )
             } else if kind == Self.dashboardKind {
                 let dashboardProtect = await Self.dashboardProtect(
-                    SharedConfigPin.protectAllowed(profile: profile) ? loadedConfig?.protect : nil,
+                    Self.dashboardProtectProfile(config: loadedConfig, profile: profile),
                     bin: bin, onLine: onLine)
                 result = try await Self.collectDashboard(
                     profile: profile,
@@ -4583,7 +4583,7 @@ enum ReportEngineError: Error, LocalizedError {
                 + "\(JamfCLIInstaller.minimumSupportedVersion), the oldest Jamf Reports can run. "
                 + "Update jamf-cli in Settings."
         case .invalidProfile(let p):
-            return "Invalid profile name '\(p)'."
+            return "Invalid profile name '\(ConfigSchema.displayText(p))'."
         case .profileMismatch(let named, let run):
             return "config.yaml sets jamf_cli.profile to "
                 + "'\(ConfigSchema.displayText(named))' but this run is for "

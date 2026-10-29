@@ -2,19 +2,12 @@ import Foundation
 
 // MARK: - ProfileProductType
 
-/// The product type a jamf-cli profile serves, derived from config.yaml.
-///
-/// Routing rules:
-/// - `school_cli.enabled == true` and `school_cli.profile` blank or the workspace's own
-///   profile → `.jamfSchool` (school collect only, never pro).
-/// - Otherwise → `.jamfPro`. That includes a `school_cli.profile` naming some other jamf-cli
-///   profile: a School login recorded in a Jamf Pro workspace (written by builds before 2.10)
-///   is not used there.
-/// - Either way, `protect?.enabled == true` means Protect augments the run (2.11: Jamf Protect
-///   works with Jamf School too, Experimental).
-///
-/// Protect is an ADD-ON to a Jamf Pro or Jamf School workspace, not a standalone product type;
-/// it runs with its own `protect.profile` login.
+/// The product type a jamf-cli profile serves, from `EnvironmentProfiles`: Jamf School when
+/// School is the environment's MDM (`profiles.jamf_school`, or `school_cli.enabled` with a blank
+/// `school_cli.profile` or the workspace's own), otherwise Jamf Pro. A School login recorded in a
+/// Jamf Pro workspace by builds before 2.10 is not used there. Either way Protect augments the run
+/// when the environment has it (2.11: Jamf Protect works with Jamf School too, Experimental),
+/// with its own login.
 enum ProfileProductType: Equatable, Sendable {
     case jamfPro
     case jamfSchool
@@ -37,17 +30,12 @@ extension ProfileProductType {
     ///   - config: The loaded config for the profile. When nil (load failure),
     ///     defaults to `.jamfPro` with `runsProtect: false` — same behaviour as before
     ///     the router existed, and loud: callers log the nil case before calling this.
-    ///   - profile: The workspace's own profile, which `school_cli.profile` must equal
-    ///     (exactly, as jamf-cli names are case-sensitive) or leave blank for School.
+    ///   - profile: The workspace's own profile (`EnvironmentProfiles.resolve`).
     static func detect(from config: ReportConfig?, profile: String) -> DetectedProduct {
-        guard let config else {
-            return DetectedProduct(type: .jamfPro, runsProtect: false)
-        }
-        if config.schoolCli?.isPrimary(forWorkspace: profile) == true {
-            return DetectedProduct(
-                type: .jamfSchool, runsProtect: config.protect?.isEnabled == true)
-        }
-        return DetectedProduct(type: .jamfPro, runsProtect: config.protect?.isEnabled == true)
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        return DetectedProduct(
+            type: environment.isSchool ? .jamfSchool : .jamfPro,
+            runsProtect: environment.runsProtect)
     }
 }
 
@@ -179,6 +167,7 @@ enum CollectRouter {
         // the command's product, so a Protect, Security Cloud or organization-level profile
         // would send Jamf Pro commands. A Jamf School workspace is routed to School collect
         // below and is not a Pro run.
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         let detected = ProfileProductType.detect(from: config, profile: profile)
         if detected.type == .jamfPro, let refusal = await CLIBridge.refusesProCommand(
             profile: profile, operation: "Collect", onLine: onLine, resolved: resolved
@@ -187,19 +176,22 @@ enum CollectRouter {
         }
         // Every collect path passes through here; the GUI's also checks when it
         // binds the workspace, but the CLI and schedules load config directly.
-        if let owner = config?.jamfCli?.resolvedProfile,
-           ProfileService.isCaseVariant(owner, of: profile) {
+        if let owner = environment.mdm, ProfileService.isCaseVariant(owner, of: profile) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
+        }
+        if let refusal = environment.refusal(workspace: profile) {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
+            throw CLIBridgeError.wrongProduct(refusal)
         }
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
         SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
         func followWithProtect(_ disposition: ReportEngine.CollectDisposition) async {
             await collectProtect(
-                detected: detected, config: config, profile: profile, disposition: disposition,
+                environment: environment, profile: profile, disposition: disposition,
                 workspacePaths: workspacePaths, protectCollect: protectCollect,
                 resolved: resolved, onLine: onLine)
         }
@@ -235,8 +227,7 @@ enum CollectRouter {
     /// The Protect half of a Jamf Pro or Jamf School run. Never throws: a Protect failure is a
     /// `[partial]` line and the Pro or School run's result stands.
     private static func collectProtect(
-        detected: DetectedProduct,
-        config: ReportConfig?,
+        environment: EnvironmentProfiles,
         profile: String,
         disposition: ReportEngine.CollectDisposition,
         workspacePaths: WorkspacePaths.Type,
@@ -244,10 +235,10 @@ enum CollectRouter {
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async {
-        guard detected.runsProtect else { return }
+        guard environment.runsProtect else { return }
         guard SharedConfigPin.protectAllowed(profile: profile) else {
             onLine(.init(timestamp: Date(), level: .info,
-                         text: "[skip] protect: protect.profile changed in the shared "
+                         text: "[skip] protect: \(environment.protectKey) changed in the shared "
                             + "config.yaml and is not confirmed on this Mac — "
                             + "Protect not collected"))
             return
@@ -261,9 +252,9 @@ enum CollectRouter {
             return
         }
         // Protect augments Pro: a failure does not fail the run, but reads as Partial.
-        // A blank name is not a connection (`ConnectedProducts`); a login of another product
-        // would send Protect commands to the wrong API.
-        let protectProfile = config?.protect?.resolvedProfile ?? ""
+        // A blank name is not a connection; a login of another product would send Protect
+        // commands to the wrong API.
+        let protectProfile = environment.protect ?? ""
         let notCollected: String? = if protectProfile.isEmpty {
             "protect.profile is blank"
         } else {
@@ -291,11 +282,13 @@ enum CollectRouter {
 
     /// Why a Jamf Pro run on `profile` must not start, or nil. For entry points that name a
     /// profile themselves (a schedule, the CLI) and must refuse before they create anything in
-    /// its workspace. A Jamf School workspace (`school_cli`) is not a Pro run; `run` applies the
-    /// same rule. Can spawn `jamf-cli config list`.
+    /// its workspace. A `profiles:` block that cannot run (`EnvironmentProfiles.refusal`) refuses
+    /// any product; a Jamf School workspace is otherwise not a Pro run. `run` applies the same
+    /// rules. Can spawn `jamf-cli config list`.
     static func proRunRefusal(profile: String, operation: String, config: ReportConfig?) -> String? {
-        guard ProfileProductType.detect(from: config, profile: profile).type == .jamfPro
-        else { return nil }
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        if let refusal = environment.refusal(workspace: profile) { return refusal }
+        guard !environment.isSchool else { return nil }
         return ProfileAuthMethod.refusal(profile: profile, operation: operation)
     }
 
@@ -309,7 +302,9 @@ enum CollectRouter {
     /// Why a backup of `profile` must not run, or nil: a Jamf School workspace (decided from
     /// config.yaml, so it holds without a readable jamf-cli) or any `proRunRefusal`.
     static func backupRefusal(profile: String, config: ReportConfig?) -> String? {
-        if ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        if let refusal = environment.refusal(workspace: profile) { return refusal }
+        if environment.isSchool {
             return schoolBackupReason(profile: profile)
         }
         return proRunRefusal(profile: profile, operation: "Backup", config: config)

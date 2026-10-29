@@ -233,6 +233,7 @@ enum ConfigSchema {
         "protect": Node(ProtectConfig.CodingKeys.self),
         "backup": Node(BackupConfig.CodingKeys.self),
         "school_cli": Node(SchoolCLIConfig.CodingKeys.self),
+        "profiles": Node(ProfilesConfig.CodingKeys.self),
         "notify": Node(NotifyConfig.CodingKeys.self),
         "alerts": Node(AlertsConfig.CodingKeys.self, [
             "rules": Node(AlertRule.CodingKeys.self, list: true),
