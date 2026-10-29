@@ -1049,16 +1049,7 @@ struct ProtectView: View {
     // MARK: - Utilities
 
     private func formatCreatedDate(_ dateString: String) -> String {
-        let date: Date
-        if let parsedDate = Self.isoFractionalFormatter.date(from: dateString) {
-            date = parsedDate
-        } else {
-            // Fallback for simpler ISO format
-            guard let fallbackDate = Self.isoFormatter.date(from: dateString) else {
-                return "Unknown"
-            }
-            date = fallbackDate
-        }
+        guard let date = ISO8601Time.parse(dateString) else { return "Unknown" }
 
         // Demo ages are measured from the demo's own "now", not today's date.
         let now = workspace.demoMode ? DemoData.referenceDate : Date()
@@ -1075,15 +1066,7 @@ struct ProtectView: View {
 
     // Built once: this runs per table row. Each is configured at creation and never mutated
     // after, so sharing is safe.
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
-
-    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    nonisolated(unsafe) private static let dayFormatter: DateFormatter = {
+    nonisolated private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         // A formatter built per call read the zone at that moment; this one follows changes.

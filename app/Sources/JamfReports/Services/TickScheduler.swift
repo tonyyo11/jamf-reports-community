@@ -751,11 +751,10 @@ struct TickLock: Sendable {
         url: URL = defaultBlockedURL, now: Date = Date(),
         warn: (String) -> Void = defaultStampWarning
     ) {
-        let formatter = ISO8601DateFormatter()
-        let stamp = formatter.string(from: now)
+        let stamp = ISO8601Time.string(now)
         let lines = stampLines(at: url, warn: warn) ?? []
         var afterGap = lines.count > 2 ? lines[2] : nil
-        if let latest = (lines.count > 1 ? lines[1] : lines.first).flatMap(formatter.date),
+        if let latest = (lines.count > 1 ? lines[1] : lines.first).flatMap(ISO8601Time.parse),
            now.timeIntervalSince(latest) > TickScheduler.offGap {
             afterGap = stamp
         }
@@ -777,8 +776,7 @@ struct TickLock: Sendable {
     ) -> Refusals? {
         guard let lines = stampLines(at: url, warn: warn) else { return nil }
         try? FileManager.default.removeItem(at: url)
-        let formatter = ISO8601DateFormatter()
-        let stamps = lines.map { formatter.date(from: $0.trimmingCharacters(in: .whitespaces)) }
+        let stamps = lines.map { ISO8601Time.parse($0) }
         guard let parsed = stamps.first, let first = parsed else { return nil }
         let latest = stamps.count > 1 ? stamps[1] : nil
         return (first, latest ?? first, stamps.count > 2 ? stamps[2] : nil)

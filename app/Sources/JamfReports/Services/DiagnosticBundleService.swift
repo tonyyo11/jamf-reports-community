@@ -1258,8 +1258,6 @@ enum DiagnosticBundleService {
     }
 
     private static func iso8601(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        ISO8601Time.string(date)
     }
 }
