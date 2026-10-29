@@ -97,6 +97,7 @@ final class OnboardingFlow {
         case invalidProfile
         case profileCaseConflict(existing: String)
         case invalidJamfURL
+        case invalidGatewayHost(String)
         case invalidScopeID
         case missingJamfCLI
         case missingWorkspace
@@ -112,6 +113,8 @@ final class OnboardingFlow {
                     + "only by letter case would share its folder. Choose a different name."
             case .invalidJamfURL:
                 "Jamf Pro URL must start with https:// and include a valid host."
+            case .invalidGatewayHost(let problem):
+                problem
             case .invalidScopeID:
                 OnboardingFlow.scopeIDProblemText
             case .missingJamfCLI:
@@ -170,6 +173,9 @@ final class OnboardingFlow {
 
     // Platform Gateway additional fields
     var gatewayURL = "https://us.api.jamfcloud.com"
+    /// The picker is on Other. Kept apart from `gatewayURL` so typing a host that names a region
+    /// does not switch the picker under the field.
+    var gatewayOtherSelected = false
     var platformScope: PlatformScope = .environment
     var platformScopeID = ""
     var platformClientID = ""
@@ -574,11 +580,14 @@ final class OnboardingFlow {
     }
 
     private func registerPlatformGatewayProfile() async throws {
+        guard let gatewayURL = normalizedGatewayURL else {
+            throw FlowError.invalidGatewayHost(
+                GatewayRegion.problem(with: self.gatewayURL) ?? GatewayRegion.invalidHostText)
+        }
         guard isPlatformScopeIDValid else { throw FlowError.invalidScopeID }
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
         try Self.signatureGate(binary: binary)
         guard isProfileNameValid else { throw FlowError.invalidProfile }
-        guard isGatewayURLValid else { throw FlowError.invalidJamfURL }
 
         isRegisteringProfile = true
         defer { isRegisteringProfile = false }
@@ -589,7 +598,7 @@ final class OnboardingFlow {
         try await Self.registerPlatformProfile(
             binary: binary,
             profile: profileName.trimmed,
-            gatewayURL: gatewayURL.trimmed,
+            gatewayURL: gatewayURL,
             scope: platformScope,
             scopeID: platformScopeID.trimmed,
             clientID: platformClientID.trimmed,
@@ -1015,7 +1024,7 @@ final class OnboardingFlow {
         do {
             try connectionStore.recordMember(
                 profile: profile, scopeID: scopeID, product: product,
-                region: .region(forGatewayURL: gatewayURL.trimmed),
+                region: .region(forGatewayURL: normalizedGatewayURL ?? gatewayURL.trimmed),
                 level: platformScope == .tenant ? .tenant : .environment)
         } catch {
             AppLogger.auth.warning(
@@ -1206,7 +1215,7 @@ final class OnboardingFlow {
         }
     }
 
-    var isGatewayURLValid: Bool { normalizedURL(gatewayURL.trimmed) != nil }
+    var isGatewayURLValid: Bool { normalizedGatewayURL != nil }
 
     /// The ID goes to `config add-profile` as a flag value, so it passes the check Add
     /// environments applies to each ID.

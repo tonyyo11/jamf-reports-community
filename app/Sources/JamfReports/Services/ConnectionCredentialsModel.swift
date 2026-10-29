@@ -37,6 +37,8 @@ final class ConnectionCredentialsModel {
         /// behind: recorded by the store, in no connection and with no workspace folder, so
         /// registering it again loses nothing.
         var canReRegister: @MainActor (String) -> Bool = { _ in false }
+        /// The server a jamf-cli profile stores, as the profile list shows it; nil when unknown.
+        var storedURL: @MainActor (String) -> String? = { _ in nil }
     }
 
     enum Outcome: Equatable {
@@ -113,9 +115,29 @@ final class ConnectionCredentialsModel {
 
     // MARK: - Gateway
 
-    /// The gateway URL of the connection's region; nil for a region this build has no host for.
+    /// What an Other region's host is: every member of one connection shares the gateway, so the
+    /// first member whose stored profile URL is readable decides. Nil when none is.
+    private var otherHostCheck: GatewayURLCheck? {
+        connection.members.lazy
+            .compactMap { self.deps.storedURL($0.profile) }
+            .compactMap { GatewayRegion.startingURL(fromStored: $0) }
+            .first.map { GatewayRegion.check($0) }
+    }
+
+    /// The gateway URL of the connection's region, or the host its members' profiles store for
+    /// an Other region; nil when there is none or it is not usable (a retired gateway included).
     var gatewayURL: String? {
-        GatewayRegion(rawValue: connection.region.rawValue)?.url
+        if let region = GatewayRegion(rawValue: connection.region.rawValue) { return region.url }
+        if case .ok(let url) = otherHostCheck { return url }
+        return nil
+    }
+
+    /// Why the connection has no usable gateway host, nil when it has one.
+    var gatewayProblem: String? {
+        guard gatewayURL == nil else { return nil }
+        if case .retired = otherHostCheck { return GatewayRegion.retiredRefusal }
+        return "This connection's gateway host is unknown, so Jamf Reports cannot register "
+            + "profiles against it. Add the profiles from onboarding instead."
     }
 
     var scope: OnboardingFlow.PlatformScope {

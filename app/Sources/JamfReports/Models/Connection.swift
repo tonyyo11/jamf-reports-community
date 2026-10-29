@@ -16,9 +16,7 @@ struct Connection: Codable, Sendable, Equatable, Identifiable {
 
         /// The region named by a gateway URL's host (`https://eu.api.jamfcloud.com`).
         static func region(forGatewayURL url: String) -> Region {
-            guard let host = URL(string: url)?.host?.lowercased(),
-                  let first = host.split(separator: ".").first else { return .other }
-            return Region(rawValue: String(first)) ?? .other
+            GatewayRegion.region(forURL: url).flatMap { Region(rawValue: $0.rawValue) } ?? .other
         }
     }
 

@@ -7,10 +7,22 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- The Platform API region list now has Other, which takes a gateway host such as
+  `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
+  setup, Update credentials, and Add environments for a connection set up that way. (#305)
+
 ### Fixed
 
 - A Jamf School collect that runs past midnight now dates its summary by the day it started, as
   a Jamf Pro collect does. (#305)
+- A profile on the retired `apigw.jamf.com` gateway is now refused up front, with the fix, in
+  setup, Update credentials, Add environments, Start a connection and when existing jamf-cli
+  profiles are adopted, instead of failing at the first collect. (#305)
+- Adopting existing Platform API profiles now checks each one's environment or tenant ID: a
+  wrong ID or a tenant with no Jamf Pro is refused with the reason, and a missing permission or
+  an unanswered check shows a note and continues. (#305)
 
 ## [2.11.0] - 2026-10-27
 

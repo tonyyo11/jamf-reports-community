@@ -121,6 +121,25 @@ final class ServerHostRedactionTests: XCTestCase {
             [])
     }
 
+    /// A Platform profile on a custom gateway host (Other in the region picker) is seeded like any
+    /// other profile URL, so a bundle or shared log loses the host.
+    func testServerHostsSeedsACustomGatewayHost() throws {
+        let file = try writeConfig("""
+        profiles:
+            gw:
+                url: https://gateway.corp-example.org:8443
+                auth-method: platform
+                environment-id: 11111111-2222-3333-4444-555555555555
+        """)
+        let hosts = DiagnosticBundleService.serverHosts(profile: "gw", configURL: file)
+        XCTAssertEqual(hosts, ["gateway.corp-example.org:8443", "gateway.corp-example.org"])
+        let text = "POST https://gateway.corp-example.org:8443/devices failed"
+        let redactor = DiagnosticRedactor()
+        redactor.seedServerHosts(hosts)
+        let redacted = redactor.redactText(text)
+        XCTAssertFalse(redacted.contains("corp-example"))
+    }
+
     func testSharedLogRedactsAnotherProfilesHost() throws {
         let file = try writeConfig("""
         profiles:

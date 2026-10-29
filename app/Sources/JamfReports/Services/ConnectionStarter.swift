@@ -22,6 +22,10 @@ enum ConnectionCardState: Equatable {
 
 /// Starts a Connection from a Platform API profile that is in none.
 enum ConnectionStarter {
+    struct Refusal: LocalizedError {
+        let errorDescription: String?
+    }
+
     static var jamfCLIConfigURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/jamf-cli/config.yaml")
@@ -35,8 +39,11 @@ enum ConnectionStarter {
     static func start(
         profile: String, storedURL: String, configText: String?, store: ConnectionStore
     ) throws -> Connection {
-        let region = GatewayRegion.startingURL(fromStored: storedURL)
-            .map { Connection.Region.region(forGatewayURL: $0) } ?? .other
+        let stored = GatewayRegion.startingURL(fromStored: storedURL)
+        if let stored, case .retired = GatewayRegion.check(stored) {
+            throw Refusal(errorDescription: GatewayRegion.retiredRefusal)
+        }
+        let region = stored.map { Connection.Region.region(forGatewayURL: $0) } ?? .other
         let scope = configText.flatMap {
             DiagnosticBundleService.platformScope(profile: profile, inConfig: $0)
         }

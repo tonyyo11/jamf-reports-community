@@ -390,4 +390,143 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         let auth = ExistingCLISetupFlow.collectFailureReason(exit: CLIBridge.exitCodeUnauthorized)
         XCTAssertTrue(auth.contains("re-authenticate"))
     }
+
+    // MARK: - Platform profiles: retired gateway and the connection check
+
+    private func platformProfile(
+        _ name: String, url: String = "us.api.jamfcloud.com",
+        level: PlatformScopeLevel = .environment
+    ) -> JamfCLIProfile {
+        JamfCLIProfile(
+            name: name, url: url, schedules: 0, status: .idle, authMethod: "platform",
+            product: .pro, platformLevel: level)
+    }
+
+    private func failure(_ exit: Int32, _ message: String, hint: String? = nil) -> Data {
+        var object: [String: Any] = ["error": "request failed", "message": message]
+        if let hint { object["hint"] = hint }
+        return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+    }
+
+    /// A runner whose version call and probe call answer as given; no jamf-cli runs.
+    private func runner(
+        version: ConnectionCheck.Attempt?, probe: ConnectionCheck.Attempt? = nil
+    ) -> ConnectionCheck.Runner {
+        { arguments in arguments.contains("jamf-pro-version") ? version : probe }
+    }
+
+    private func runAdopting(
+        _ flow: ExistingCLISetupFlow, runner: ConnectionCheck.Runner?
+    ) async -> [String] {
+        var initialized: [String] = []
+        await flow.run(
+            connectionRunner: runner,
+            initialize: { initialized.append($0); return 0 },
+            collect: { _, _ in 0 })
+        return initialized
+    }
+
+    func testAProfileOnTheRetiredGatewayIsRefusedAndNeverChecked() async {
+        let flow = ExistingCLISetupFlow(profiles: [
+            platformProfile("old", url: "us.apigw.jamf.com"),
+            platformProfile("older", url: "https://apigw.jamf.com/"),
+        ])
+        XCTAssertEqual(flow.refusals["old"], GatewayRegion.retiredRefusal)
+        XCTAssertEqual(flow.refusals["older"], GatewayRegion.retiredRefusal)
+        XCTAssertTrue(flow.selected.isEmpty)
+        let checked = Counter()
+        let initialized = await runAdopting(flow, runner: { _ in checked.bump(); return nil })
+        XCTAssertTrue(initialized.isEmpty)
+        XCTAssertEqual(checked.count, 0, "no jamf-cli call for a refused profile")
+    }
+
+    func testAnAcceptedIDProceeds() async {
+        let flow = ExistingCLISetupFlow(profiles: [platformProfile("prod")])
+        let initialized = await runAdopting(flow, runner: runner(
+            version: (0, Data(#"{"version":"11.25.0"}"#.utf8))))
+        XCTAssertEqual(initialized, ["prod"])
+        XCTAssertEqual(flow.statuses["prod"], .done)
+        XCTAssertNil(flow.connectionNotes["prod"])
+    }
+
+    func testARejectedIDRefusesTheProfile() async {
+        let flow = ExistingCLISetupFlow(profiles: [platformProfile("typo"), platformProfile("ok")])
+        let rejected = failure(4, "[ENVIRONMENT_NOT_FOUND] Environment 'x' not found.")
+        let initialized = await runAdopting(flow, runner: { args in
+            args.contains("typo") ? (4, rejected) : (0, Data(#"{"version":"11.25.0"}"#.utf8))
+        })
+        XCTAssertEqual(initialized, ["ok"], "one refused profile does not stop the next")
+        XCTAssertEqual(
+            flow.statuses["typo"],
+            .failed(ConnectionCheck.Verdict.rejectedID(.unknownEnvironment).message))
+        XCTAssertEqual(flow.failureStages["typo"], .connection)
+        XCTAssertTrue(flow.completionText.contains("connection check refused"))
+    }
+
+    func testNoJamfProRefusesAndPointsAtJamfSchool() async {
+        let flow = ExistingCLISetupFlow(profiles: [platformProfile("campus")])
+        let bare404 = failure(4, "resource not found (HTTP 404): GET /pro/v1/jamf-pro-version")
+        let initialized = await runAdopting(flow, runner: runner(
+            version: (4, bare404), probe: (0, Data("[]".utf8))))
+        XCTAssertTrue(initialized.isEmpty)
+        guard case .failed(let reason) = flow.statuses["campus"] else {
+            return XCTFail("expected a refusal")
+        }
+        XCTAssertEqual(reason, ConnectionCheck.Verdict.noJamfPro.message)
+        XCTAssertTrue(reason.contains("Jamf School"))
+    }
+
+    func testATenantLevelProfileGetsTheTenantWording() async {
+        let flow = ExistingCLISetupFlow(profiles: [platformProfile("legacy", level: .tenant)])
+        let bare404 = failure(4, "resource not found (HTTP 404): GET /pro/v1/jamf-pro-version")
+        _ = await runAdopting(
+            flow, runner: runner(version: (4, bare404), probe: (0, Data("[]".utf8))))
+        XCTAssertEqual(
+            flow.statuses["legacy"],
+            .failed(ConnectionCheck.Verdict.noJamfPro.message(tenantLevel: true)))
+    }
+
+    func testAMissingPermissionProceedsWithANote() async {
+        let flow = ExistingCLISetupFlow(profiles: [platformProfile("prod")])
+        let forbidden = failure(5, "permission denied (HTTP 403)")
+        let initialized = await runAdopting(flow, runner: runner(version: (5, forbidden)))
+        XCTAssertEqual(initialized, ["prod"])
+        XCTAssertEqual(flow.statuses["prod"], .done)
+        XCTAssertEqual(
+            flow.connectionNotes["prod"],
+            ConnectionCheck.Verdict.missingPermission(names: []).message)
+    }
+
+    func testAnUndecidedCheckProceedsWithANote() async {
+        let flow = ExistingCLISetupFlow(profiles: [platformProfile("prod")])
+        let initialized = await runAdopting(flow, runner: runner(version: nil))
+        XCTAssertEqual(initialized, ["prod"])
+        XCTAssertEqual(
+            flow.connectionNotes["prod"], ConnectionCheck.Verdict.undecided(exitCode: nil).message)
+    }
+
+    func testOnlyPlatformProfilesAreChecked() async {
+        let flow = ExistingCLISetupFlow(profiles: [
+            JamfCLIProfile(name: "oauth", url: "jamf.example.org", schedules: 0, status: .idle,
+                           authMethod: "oauth2", product: .pro),
+        ])
+        let checked = Counter()
+        let initialized = await runAdopting(flow, runner: { _ in checked.bump(); return nil })
+        XCTAssertEqual(initialized, ["oauth"])
+        XCTAssertEqual(checked.count, 0)
+    }
+
+    func testNoJamfCLIMeansNothingIsChecked() async {
+        let flow = ExistingCLISetupFlow(profiles: [platformProfile("prod")])
+        let initialized = await runAdopting(flow, runner: nil)
+        XCTAssertEqual(initialized, ["prod"])
+        XCTAssertNil(flow.connectionNotes["prod"])
+    }
+
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func bump() { lock.lock(); value += 1; lock.unlock() }
+        var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+    }
 }

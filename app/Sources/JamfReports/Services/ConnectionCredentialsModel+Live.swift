@@ -35,7 +35,8 @@ extension ConnectionCredentialsModel {
                     workspaceExists: ProfileService.workspaceURL(for: name).map {
                         FileManager.default.fileExists(atPath: $0.path)
                     } ?? true)
-            })
+            },
+            storedURL: { name in profiles().first { $0.name == name }?.url })
     }
 
     /// A Platform profile that an earlier Add environments attempt in this app registered and

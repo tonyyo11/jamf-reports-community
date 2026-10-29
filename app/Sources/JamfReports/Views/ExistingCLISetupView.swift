@@ -269,6 +269,12 @@ struct ExistingCLISetupView: View {
                 }
                 Spacer(minLength: 0)
             }
+            if let note = flow.connectionNotes[name] {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .padding(.leading, 28)
+            }
             // Live tally while this profile collects — the first collection
             // walks ~30 jamf-cli commands and can run for minutes; without
             // motion users assume it hung (#181 field feedback).

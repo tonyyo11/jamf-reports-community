@@ -61,7 +61,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         existingProfiles: [String] = ["acme-prod"],
         reRegistrable: Set<String> = [],
         usesStoredLeftoverRule: Bool = false,
-        region: Connection.Region = .eu
+        region: Connection.Region = .eu,
+        storedURLs: [String: String] = [:]
     ) throws -> Harness {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("credentials-model-\(UUID().uuidString)", isDirectory: true)
@@ -100,7 +101,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
                         name: name, url: "", schedules: 0, status: .idle,
                         authMethod: "platform"),
                     connections: store.load(), workspaceExists: false)
-            })
+            },
+            storedURL: { storedURLs[$0] })
         let model = ConnectionCredentialsModel(
             connection: connection, mode: mode, dependencies: dependencies)
         return Harness(
@@ -441,5 +443,48 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), before)
         // A config.yaml already there is kept, not rewritten.
         XCTAssertFalse(try OnboardingFlow.createJamfCLIOnlyWorkspace(for: "acme-prod"))
+    }
+
+    // MARK: Gateway host
+
+    /// Every member of one connection shares the gateway, so the first readable stored URL wins.
+    func testAnOtherRegionUsesTheHostItsMembersProfilesStore() async throws {
+        let h = try harness(
+            mode: .addEnvironments, region: .other,
+            storedURLs: ["acme-prod": "Gateway.Example.org:8443"])
+        XCTAssertNil(h.model.gatewayProblem)
+        XCTAssertEqual(h.model.gatewayURL, "https://gateway.example.org:8443")
+        fill(h.model, ids: "env-stage Staging")
+        await h.model.run()
+        let registrations = await h.recorder.registrations
+        XCTAssertEqual(registrations.map(\.gatewayURL), ["https://gateway.example.org:8443"])
+    }
+
+    func testAnUnreadableMemberURLIsSkippedForTheNextMember() throws {
+        let h = try harness(
+            mode: .updateAll,
+            members: [.init(profile: "a", scopeID: "env-a"), .init(profile: "b", scopeID: "env-b")],
+            region: .other, storedURLs: ["a": "(jamf-cli profile)", "b": "gw.example.org"])
+        XCTAssertEqual(h.model.gatewayURL, "https://gw.example.org")
+    }
+
+    func testAnOtherRegionOnTheRetiredGatewayRegistersNothing() async throws {
+        let h = try harness(
+            mode: .addEnvironments, region: .other,
+            storedURLs: ["acme-prod": "https://us.apigw.jamf.com"])
+        XCTAssertNil(h.model.gatewayURL)
+        XCTAssertEqual(h.model.gatewayProblem, GatewayRegion.retiredRefusal)
+        fill(h.model, ids: "env-stage Staging")
+        XCTAssertFalse(h.model.canRun)
+        await h.model.run()
+        let registrations = await h.recorder.registrations
+        XCTAssertTrue(registrations.isEmpty)
+    }
+
+    func testAnOtherRegionWithNoReadableMemberURLSaysItIsUnknown() throws {
+        let h = try harness(mode: .updateAll, region: .other)
+        XCTAssertNil(h.model.gatewayURL)
+        XCTAssertNotNil(h.model.gatewayProblem)
+        XCTAssertNotEqual(h.model.gatewayProblem, GatewayRegion.retiredRefusal)
     }
 }
