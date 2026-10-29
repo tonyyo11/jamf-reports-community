@@ -39,8 +39,8 @@ extension Schedule {
             modeSummary = "backs up Jamf Pro configuration objects"
         }
 
-        let timeMatch = schedule.range(of: #"\d{2}:\d{2}"#, options: .regularExpression)
-        let timeComponent = timeMatch.map { " at " + String(schedule[$0]) } ?? ""
+        let timeComponent = schedule.firstMatch(of: #/\d{2}:\d{2}/#)
+            .map { " at " + String($0.0) } ?? ""
 
         // Capitalize only the first character of the cadence summary
         let capitalizedCadence = cadenceSummary.prefix(1).uppercased() + cadenceSummary.dropFirst()
