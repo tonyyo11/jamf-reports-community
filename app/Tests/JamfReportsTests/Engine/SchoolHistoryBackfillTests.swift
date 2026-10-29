@@ -32,17 +32,21 @@ final class SchoolHistoryBackfillTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func mac(_ name: String, checkin: String) -> String {
-        """
-        {"name":"\(name)","serialNumber":"\(name)","os":"macOS 15.1","isManaged":true,
-         "lastCheckin":"\(checkin)","inTrash":false}
-        """
+    private func mac(_ name: String, checkin: String) -> [String: Any] {
+        SchoolRows.device(1, [
+            "name": name, "serialNumber": "SCHOOL-SERIAL-\(name)", "os": "macOS 15.1",
+            "lastCheckin": checkin,
+        ], omitting: ["isSupervised", "udid"])
     }
 
-    private func ipad(_ name: String) -> String {
-        """
-        {"name":"\(name)","serialNumber":"\(name)","os":"iPadOS 18.1","inTrash":false}
-        """
+    private func ipad(_ name: String) -> [String: Any] {
+        SchoolRows.device(1, [
+            "name": name, "serialNumber": "SCHOOL-SERIAL-\(name)", "os": "iPadOS 18.1",
+        ], omitting: ["isManaged", "isSupervised", "lastCheckin", "udid"])
+    }
+
+    private func snapshot(_ rows: [[String: Any]], file: String) throws {
+        try snapshot(SchoolRows.json(rows), file: file)
     }
 
     private func snapshot(_ json: String, file: String) throws {
@@ -69,11 +73,11 @@ final class SchoolHistoryBackfillTests: XCTestCase {
     }
 
     func testThreeDatedSnapshotsWriteThreeSummariesWithTheirOwnCounts() throws {
-        try snapshot("[\(mac("A", checkin: "2026-10-01 09:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-01 09:00:00")],
                      file: "\(kind)_20261001T080000.json")
-        try snapshot("[\(mac("A", checkin: "2026-10-02 09:00:00")),\(ipad("P"))]",
+        try snapshot([mac("A", checkin: "2026-10-02 09:00:00"), ipad("P")],
                      file: "\(kind)_20261002T080000.json")
-        try snapshot("[\(mac("A", checkin: "2026-10-03 09:00:00")),\(ipad("P")),\(ipad("Q"))]",
+        try snapshot([mac("A", checkin: "2026-10-03 09:00:00"), ipad("P"), ipad("Q")],
                      file: "\(kind)_20261003T080000.json")
 
         let lines = backfill()
@@ -97,11 +101,10 @@ final class SchoolHistoryBackfillTests: XCTestCase {
                 at: TestFixtures.dir("sofa").appendingPathComponent(name),
                 to: sofa.appendingPathComponent(name))
         }
-        let managed = """
-        {"name":"R","serialNumber":"R","os":"iPadOS 18.1","isManaged":true,"isSupervised":true,
-         "lastCheckin":"2026-09-01 09:00:00","inTrash":false}
-        """
-        try snapshot("[\(mac("A", checkin: "2026-10-02 09:00:00")),\(managed)]",
+        let managed = SchoolRows.device(2, [
+            "name": "R", "os": "iPadOS 18.1", "lastCheckin": "2026-09-01 09:00:00",
+        ], omitting: ["udid"])
+        try snapshot([mac("A", checkin: "2026-10-02 09:00:00"), managed],
                      file: "\(kind)_20261002T080000.json")
         backfill()
         let s = try summary("2026-10-02")
@@ -114,17 +117,17 @@ final class SchoolHistoryBackfillTests: XCTestCase {
     }
 
     func testTheDaysNewestSnapshotWins() throws {
-        try snapshot("[\(mac("A", checkin: "2026-10-01 09:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-01 09:00:00")],
                      file: "\(kind)_20261001T060000.json")
         let checkin = "2026-10-01 09:00:00"
-        try snapshot("[\(mac("A", checkin: checkin)),\(mac("B", checkin: checkin))]",
+        try snapshot([mac("A", checkin: checkin),mac("B", checkin: checkin)],
                      file: "\(kind)_20261001T200000.json")
         backfill()
         XCTAssertEqual(try summary("2026-10-01").totalDevices, 2)
     }
 
     func testAnExistingSummaryIsNeverOverwritten() throws {
-        try snapshot("[\(mac("A", checkin: "2026-10-01 09:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-01 09:00:00")],
                      file: "\(kind)_20261001T080000.json")
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         let existing = summariesDir.appendingPathComponent("summary_2026-10-01.json")
@@ -134,9 +137,9 @@ final class SchoolHistoryBackfillTests: XCTestCase {
     }
 
     func testConflictCopyManifestAndUndecodableFileAreSkippedWithOneWarning() throws {
-        try snapshot("[\(mac("A", checkin: "2026-10-01 09:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-01 09:00:00")],
                      file: "\(kind)_20261001T080000.json")
-        try snapshot("[\(mac("A", checkin: "2026-10-02 09:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-02 09:00:00")],
                      file: "\(kind)_20261002T080000 2.json")
         try snapshot("[]", file: "manifest.json")
         try snapshot("not json", file: "\(kind)_20261003T080000.json")
@@ -153,7 +156,7 @@ final class SchoolHistoryBackfillTests: XCTestCase {
     }
 
     func testMarkerPreventsASecondPass() throws {
-        try snapshot("[\(mac("A", checkin: "2026-10-01 09:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-01 09:00:00")],
                      file: "\(kind)_20261001T080000.json")
         backfill()
         try FileManager.default.removeItem(
@@ -164,7 +167,7 @@ final class SchoolHistoryBackfillTests: XCTestCase {
     }
 
     func testRefusedStateFolderWritesNothingAndWarns() throws {
-        try snapshot("[\(mac("A", checkin: "2026-10-01 09:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-01 09:00:00")],
                      file: "\(kind)_20261001T080000.json")
         let elsewhere = root.appendingPathComponent("elsewhere", isDirectory: true)
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
@@ -181,7 +184,7 @@ final class SchoolHistoryBackfillTests: XCTestCase {
 
     func testStaleCutOffComesFromTheCaller() throws {
         // Snapshot stamped 2026-10-20; the Mac checked in 10 days earlier.
-        try snapshot("[\(mac("A", checkin: "2026-10-10 08:00:00"))]",
+        try snapshot([mac("A", checkin: "2026-10-10 08:00:00")],
                      file: "\(kind)_20261020T080000.json")
         backfill(staleDays: 7)
         XCTAssertEqual(try summary("2026-10-20").staleCount, 1)
@@ -195,7 +198,7 @@ final class SchoolHistoryBackfillTests: XCTestCase {
 
     func testAFutureDatedSnapshotIsSkippedWithOneWarningAndTodayAndPastLand() throws {
         for day in ["20261020", "20261021", "20261022"] {
-            try snapshot("[\(mac("A", checkin: "2026-10-01 09:00:00"))]",
+            try snapshot([mac("A", checkin: "2026-10-01 09:00:00")],
                          file: "\(kind)_\(day)T080000.json")
         }
         let now = try XCTUnwrap(Calendar.current.date(

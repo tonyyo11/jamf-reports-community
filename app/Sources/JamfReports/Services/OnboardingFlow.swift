@@ -1080,9 +1080,9 @@ final class OnboardingFlow {
                 try await CLIBridge().generate(profile: profile, now: now, onLine: onLine)
             }
         },
-        schoolGenerate: @escaping FirstReportStep = { profile, _, onLine in
+        schoolGenerate: @escaping FirstReportStep = { profile, now, onLine in
             try await CLIBridge.holdingGenerate {
-                try await CLIBridge().schoolGenerate(profile: profile, onLine: onLine)
+                try await CLIBridge().schoolGenerate(profile: profile, now: now, onLine: onLine)
             }
         }
     ) async {

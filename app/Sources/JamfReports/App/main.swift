@@ -614,7 +614,7 @@ private func scheduledRunSingleBody(
         if isSchool {
             failures = try await ReportEngine.schoolGenerate(
                 config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                onLine: onLine)
+                now: runStart, onLine: onLine)
         } else {
             failures = try await engine.generate(
                 outputURL: outputURL, template: template, now: runStart, onLine: onLine)

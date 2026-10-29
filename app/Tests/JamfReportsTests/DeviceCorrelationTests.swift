@@ -101,7 +101,9 @@ final class DeviceCorrelationTests: XCTestCase {
         _ name: String, udid: String = "", serial: String = "", os: String = "macOS 26.6.2"
     ) -> SchoolFleetService.Device {
         SchoolFleetService.device(
-            from: ["name": name, "udid": udid, "serialNumber": serial, "os": os], index: 0)
+            from: SchoolRows.device(
+                1, ["name": name, "udid": udid, "serialNumber": serial, "os": os]),
+            index: 0)
     }
 
     func testProtectMatchesSchoolDevicesByUDIDThenSerialNeverByName() throws {
@@ -141,8 +143,10 @@ final class DeviceCorrelationTests: XCTestCase {
         let rows = [try protectRow(uuid: "aaaa", serial: nil)]
         XCTAssertNil(ProtectProCorrelation.load(
             protect: rows, profile: "campus", demoMode: false, school: true))
-        try Data(#"[{"name":"Lab-1","udid":"AAAA","os":"macOS 26.6.2"}]"#.utf8).write(
-            to: devices.appendingPathComponent("school-devices_20261020T090000.json"))
+        try SchoolRows.write(
+            [SchoolRows.device(1, ["name": "Lab-1", "udid": "AAAA", "os": "macOS 26.6.2"])],
+            kind: "school-devices", into: root.appendingPathComponent("campus/jamf-cli-data"),
+            stamp: "20261020T090000")
         let match = try XCTUnwrap(ProtectProCorrelation.load(
             protect: rows, profile: "campus", demoMode: false, school: true))
         XCTAssertEqual([match.matched, match.proWithoutProtect.count], [1, 0])
