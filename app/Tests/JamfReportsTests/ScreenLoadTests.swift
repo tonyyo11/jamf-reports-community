@@ -14,7 +14,8 @@ private final class ReadProbe: @unchecked Sendable {
 }
 
 /// The snapshot screens (Mobile Devices, Extension Attributes, Protect, Patch, OS Updates,
-/// Groups, Policy & Profile Health, Compliance Benchmarks, DDM, Audit) decode through
+/// Groups, Policy & Profile Health, Compliance Benchmarks, DDM, Audit, Security Posture,
+/// Compliance Posture, School Devices, School Overview) decode through
 /// `ScreenLoad.paint` in their `.task(id:)`: off the main thread, and a result whose profile
 /// went out of date, or whose task was cancelled, is dropped.
 @MainActor
@@ -89,6 +90,26 @@ final class ScreenLoadTests: XCTestCase {
             + #""hardware": {"serialNumber": "\#(serial)"}}"#
         try Data("[\(row)]".utf8)
             .write(to: dir.appendingPathComponent("computers_20260601T080000.json"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+    }
+
+    /// A workspace `profile` whose data dir holds each `kind` folder with the named fixtures.
+    private func workspace(_ profile: String, _ files: [String: [String]]) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)
+        for (kind, names) in files {
+            let dir = root.appendingPathComponent("\(profile)/jamf-cli-data/\(kind)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for name in names {
+                try TestFixtures.copyFile(
+                    TestFixtures.dir("jamf-cli-data/\(kind)/\(name)"),
+                    to: dir.appendingPathComponent(name))
+            }
+        }
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         addTeardownBlock {
             unsetenv("JRC_TEST_WORKSPACES_ROOT")
@@ -247,6 +268,42 @@ final class ScreenLoadTests: XCTestCase {
         let dir = try dataDir(["duplicate-serials": ["duplicate-serials_20260710T090000.json"]])
         await assertScreenLoad("Audit", loaded: { $0.0.isDetected }) {
             (DuplicateSerialService.load(dataDir: dir), MDMCommandHealthService.load(dataDir: dir))
+        }
+    }
+
+    func testSecurityPostureLoadsOffMain() async throws {
+        try workspace("posture", ["security": ["security.json"]])
+        await assertScreenLoad("Security Posture", loaded: { $0.totalDevices > 0 }) {
+            SecurityPostureService.load(profile: "posture")
+        }
+    }
+
+    func testCompliancePostureLoadsOffMain() async throws {
+        try workspace("posture", ["security": ["security.json"]])
+        await assertScreenLoad("Compliance Posture", loaded: { $0.0.totalDevices > 0 }) {
+            (CompliancePostureService.load(profile: "posture"),
+             CompliancePostureView.loadBaselineOutcome(profile: "posture"))
+        }
+    }
+
+    private func schoolDataDir() throws -> URL {
+        try tempDataDir("school-devices", [
+            "school-devices_20261019T080000.json": SchoolRows.json([SchoolRows.device(1)]),
+        ])
+    }
+
+    func testSchoolDevicesLoadOffMain() async throws {
+        let dir = try schoolDataDir()
+        await assertScreenLoad("School Devices", loaded: { $0.devices.count == 1 }) {
+            SchoolFleetService.load(dataDir: dir)
+        }
+    }
+
+    /// The Overview reads the same service, beside the schedule and report checks.
+    func testSchoolOverviewLoadsOffMain() async throws {
+        let dir = try schoolDataDir()
+        await assertScreenLoad("School Overview", loaded: { $0.isDetected }) {
+            SchoolFleetService.load(dataDir: dir)
         }
     }
 
