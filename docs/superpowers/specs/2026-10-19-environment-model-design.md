@@ -119,7 +119,7 @@ unchanged before anything is written:
 |---|---|
 | Pro workspace, OAuth or token | `jamf_pro` = workspace ID |
 | Pro workspace whose profile is a platform profile | `jamf_pro` and `platform` = workspace ID |
-| `protect.enabled: true` | `protect` = `protect.profile`, or the jamf-cli default Protect profile when blank, as `protectCollect` does today |
+| `protect.enabled: true` | `protect` = `protect.profile`; a blank `protect.profile` is no Protect (skipped with one `[warn]`), as `protectCollect` does today. Corrected 2026-10-29: the earlier text claimed a fallback to the jamf-cli default Protect profile, which the code never had |
 | `school_cli` primary | `jamf_school` = workspace ID, `jamf_pro` blank |
 | `school_cli` foreign (an old School login in a Pro workspace) | ignored, as today. Doctor keeps its `school_cli.profile` row |
 | `jamf_cli.profile` set and equal to the workspace ID | no effect (it always had to match) |
