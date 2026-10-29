@@ -456,14 +456,15 @@ final class ProfileSlugCaseTests: XCTestCase {
     func testCollectRouterRefusesAWorkspaceRecordedForACaseVariant() async throws {
         let config = try ConfigLoader.loadFromString("jamf_cli:\n  profile: \"acme\"\n")
         let collected = CaseTestBox(false)
-        let proCollect: CollectRouter.ProCollect = { _, _, _, _, _, _ in
+        let proCollect: CollectRouter.ProCollect = { _, _, _, _, _, _, _ in
             collected.value = true
             return .collected
         }
 
         do {
             try await CollectRouter.run(
-                profile: "Acme", config: config, proCollect: proCollect, onLine: { _ in }
+                workspace: WorkspaceID(validating: "Acme"),
+                config: config, proCollect: proCollect, onLine: { _ in }
             )
             XCTFail("collect must not write into a case variant's workspace")
         } catch let error as CLIBridgeError {
@@ -472,7 +473,8 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertFalse(collected.value)
 
         try await CollectRouter.run(
-            profile: "acme", config: config, proCollect: proCollect, onLine: { _ in }
+            workspace: WorkspaceID(validating: "acme"),
+            config: config, proCollect: proCollect, onLine: { _ in }
         )
         XCTAssertTrue(collected.value, "the owning profile still collects")
     }
@@ -484,8 +486,8 @@ final class ProfileSlugCaseTests: XCTestCase {
             let config = try ConfigLoader.loadFromString("jamf_cli:\n  profile: \"\(recorded)\"\n")
             let collected = CaseTestBox(false)
             try await CollectRouter.run(
-                profile: "Acme", config: config,
-                proCollect: { _, _, _, _, _, _ in collected.value = true; return .collected },
+                workspace: WorkspaceID(validating: "Acme"), config: config,
+                proCollect: { _, _, _, _, _, _, _ in collected.value = true; return .collected },
                 onLine: { _ in }
             )
             XCTAssertTrue(collected.value, "recorded '\(recorded)' is not another spelling of Acme")

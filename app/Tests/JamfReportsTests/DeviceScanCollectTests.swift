@@ -140,6 +140,7 @@ final class DeviceScanCollectTests: XCTestCase {
         let stub = try makeStub()
         let collector = LogTextCollector()
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.scan], skipExpensive: skipExpensive, force: force,
             authConfirmationProbe: probe, locateJamfCLI: { stub },

@@ -139,14 +139,15 @@ enum ProfileService {
         return reasons
     }
 
-    /// The profile an existing workspace folder spelled like `key` (any case)
-    /// records in `jamf_cli.profile`, or the name the folder encodes when that is blank.
+    /// The profile an existing workspace folder spelled like `key` (any case) names as its
+    /// owner (`EnvironmentProfiles.namedOwner`), or the name the folder encodes when it names
+    /// none.
     static func recordedWorkspaceOwner(matching key: String) -> String? {
         guard let folder = workspaceFolders(matching: key).first else { return nil }
         let config = workspacesRoot().appendingPathComponent(folder.component)
             .appendingPathComponent("config.yaml")
-        let recorded = (try? ConfigLoader.load(from: config))?.jamfCli?.resolvedProfile ?? ""
-        return recorded.isEmpty ? folder.name : recorded
+        return EnvironmentProfiles.read(configURL: config, workspace: folder.name).namedOwner
+            ?? folder.name
     }
 
     /// Workspace folders (holding a `config.yaml`) whose profile has the folder key `key`,
@@ -178,7 +179,7 @@ enum ProfileService {
         }
     }
 
-    /// True when a workspace's recorded `jamf_cli.profile` is another profile
+    /// True when the owner a workspace's config.yaml names is another profile
     /// spelled like `profile` apart from case: the two share the folder, and
     /// using it would mix their tenants' data.
     static func isCaseVariant(_ recorded: String, of profile: String) -> Bool {
@@ -272,7 +273,8 @@ enum ProfileService {
     /// Profiles of the workspace folders under `root` (holding a `config.yaml`) that no
     /// jamf-cli profile names. Compared by folder key: on a case-insensitive volume a
     /// folder spelled unlike a profile is still that profile's folder. A folder whose config
-    /// records another profile is a copy (Finder's `prod copy`), not a workspace of its own.
+    /// names another owner (`EnvironmentProfiles.namedOwner`) is a copy (Finder's `prod copy`),
+    /// not a workspace of its own.
     static func localOnlyWorkspaces(under root: URL, cliNames: [String]) -> [String] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
@@ -288,11 +290,12 @@ enum ProfileService {
                       let name = ProfileName.name(fromPathComponent: folder.lastPathComponent),
                       isValid(name), !claimed.contains(ProfileName.folderKey(name))
                 else { return nil }
-                let loaded = try? ConfigLoader.load(from: config)
-                let recorded = loaded?.jamfCli?.resolvedProfile ?? ""
-                let recordsAnother = !recorded.isEmpty
-                    && ProfileName.folderKey(recorded) != ProfileName.folderKey(name)
-                return recordsAnother ? nil : name
+                let owner = EnvironmentProfiles.read(configURL: config, workspace: name)
+                    .namedOwner
+                let namesAnother = owner.map {
+                    ProfileName.folderKey($0) != ProfileName.folderKey(name)
+                } ?? false
+                return namesAnother ? nil : name
             }
     }
 

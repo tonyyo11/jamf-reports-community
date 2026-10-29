@@ -26,9 +26,9 @@ let HTMLReportSHA256Placeholder = String(repeating: "0", count: 64)
 struct HtmlReport: Sendable {
     let config: ReportConfig
     let dataDir: URL
-    /// The profile this report is for, from the caller. Its workspace holds the config.yaml
-    /// and the shared-config pin. Not read from config.yaml, which a peer can edit.
-    var profile: String? = nil
+    /// The workspace this report is for, from the caller. It holds the config.yaml and the
+    /// shared-config pin. Not read from config.yaml, which a peer can edit.
+    var workspace: WorkspaceID? = nil
     /// GUI-generate-only AI executive narrative (F3). nil (the default) omits
     /// the `.aiNarrative` section entirely — headless callers never set it.
     var aiNarrative: String? = nil
@@ -56,12 +56,11 @@ struct HtmlReport: Sendable {
         var historyFile: String = ""
     }
 
-    /// The profile's workspace, which holds its config.yaml and its shared-config pin.
+    /// The workspace's folder, which holds its config.yaml and its shared-config pin.
     /// `jamf_cli.data_dir` can name any folder, so the parent of `dataDir` is the workspace only
-    /// as a fallback: when the caller named no profile or its workspace has no config.yaml.
+    /// as a fallback: when the caller named no workspace or it has no config.yaml.
     private var workspaceURL: URL {
-        if let profile, !profile.isEmpty,
-           let workspace = ProfileService.workspaceURL(for: profile),
+        if let workspace = workspace.map({ WorkspacePaths.workspaceURL(for: $0) }),
            FileManager.default.fileExists(
                atPath: workspace.appendingPathComponent("config.yaml").path) {
             return workspace
@@ -94,8 +93,7 @@ struct HtmlReport: Sendable {
     ///
     /// - Parameters:
     ///   - outputURL: Destination file URL.
-    ///   - profileName: Workspace profile slug for the header. Empty reads the config's
-    ///     `jamf_cli.profile`.
+    ///   - profileName: The workspace's name for the header. Empty leaves it out.
     ///   - sections: The sections to render, as the active `ReportTemplate.htmlSections`
     ///     lists them. `nil` renders every section (`FullInstanceTemplate`).
     /// - Returns: The embedded SHA-256 source fingerprint.

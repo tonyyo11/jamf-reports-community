@@ -294,8 +294,8 @@ final class SharedConfigPinTests: XCTestCase {
         let lines = LineBox()
         let protectRuns = LineBox()
         try await CollectRouter.run(
-            profile: profile, config: config,
-            proCollect: { _, _, _, _, _, _ in .collected },
+            workspace: WorkspaceID(validating: profile), config: config,
+            proCollect: { _, _, _, _, _, _, _ in .collected },
             protectCollect: { name, _, _ in protectRuns.add(name) },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
@@ -327,8 +327,8 @@ final class SharedConfigPinTests: XCTestCase {
         let lines = LineBox()
         let protectRuns = LineBox()
         try await CollectRouter.run(
-            profile: profile, config: config,
-            proCollect: { _, _, _, _, _, _ in .collected },
+            workspace: WorkspaceID(validating: profile), config: config,
+            proCollect: { _, _, _, _, _, _, _ in .collected },
             protectCollect: { name, _, _ in protectRuns.add(name) },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
@@ -853,9 +853,9 @@ final class SharedConfigPinTests: XCTestCase {
             let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
             let lines = LineBox()
             try await CollectRouter.run(
-                profile: profile, config: config,
-                proCollect: { _, _, _, _, _, _ in .collected },
-                schoolCollect: { _, _, _, _, _ in },
+                workspace: WorkspaceID(validating: profile), config: config,
+                proCollect: { _, _, _, _, _, _, _ in .collected },
+                schoolCollect: { _, _, _, _, _, _ in },
                 onLine: { lines.add($0.text) })
             XCTAssertEqual(
                 lines.all.first,

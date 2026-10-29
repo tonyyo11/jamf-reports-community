@@ -2,18 +2,17 @@ import Foundation
 
 /// Which jamf-cli profile serves which product in a workspace (one environment). The one reader
 /// of config.yaml's `profiles:` block, and of the keys it replaces: a file without the block
-/// derives the same slots from `jamf_cli.profile`, `protect.enabled/profile` and
+/// derives the same slots from the workspace ID, `protect.enabled/profile` and
 /// `school_cli.enabled/profile`, so a workspace set up before 2.12 runs exactly as it did. When
 /// the block is present the old keys are not read. Nil is a product the environment does not
-/// have.
+/// have. Every command takes its `-p` from these slots; folders come from the `WorkspaceID`.
 struct EnvironmentProfiles: Equatable, Sendable {
     enum Source: Equatable, Sendable {
         case profilesBlock
         case legacyKeys
     }
 
-    /// Old keys: `jamf_cli.profile` when set, even when it differs from the workspace, so the
-    /// case-variant refusal and `profileMismatch` still see what the file names.
+    /// Old keys: the workspace ID; `jamf_cli.profile` never names the profile commands run as.
     var jamfPro: String?
     var platform: String?
     var jamfSchool: String?
@@ -25,6 +24,10 @@ struct EnvironmentProfiles: Equatable, Sendable {
     /// A School login an earlier build recorded in a Jamf Pro workspace (`school_cli.profile`
     /// naming another profile). Not used there; named so discovery does not offer it.
     var foreignSchool: String?
+    /// The MDM profile the file says owns this folder: the block's MDM slot, or a non-blank
+    /// `jamf_cli.profile` in an old-shape file. Only the folder checks read it (a case variant
+    /// sharing the folder, a copied folder); commands run as `jamfPro` or `jamfSchool`.
+    var namedOwner: String?
     var source = Source.legacyKeys
 
     static let none = EnvironmentProfiles()
@@ -48,13 +51,16 @@ struct EnvironmentProfiles: Equatable, Sendable {
         config: ReportConfig?, workspace: String, auth: ProfileAuthMethod.Resolved? = nil
     ) -> EnvironmentProfiles {
         if let block = config?.profiles {
-            return EnvironmentProfiles(
+            var environment = EnvironmentProfiles(
                 jamfPro: named(block.jamfPro), platform: named(block.platform),
                 jamfSchool: named(block.jamfSchool), protect: named(block.protect),
                 securityCloud: named(block.securityCloud), source: .profilesBlock)
+            environment.namedOwner = environment.mdm
+            return environment
         }
         var environment = EnvironmentProfiles()
-        let recorded = named(config?.jamfCli?.profile) ?? named(workspace)
+        environment.namedOwner = named(config?.jamfCli?.profile)
+        let recorded = named(workspace)
         let school = config?.schoolCli
         if school?.isPrimary(forWorkspace: workspace) == true {
             environment.jamfSchool = recorded
@@ -78,9 +84,9 @@ struct EnvironmentProfiles: Equatable, Sendable {
         resolve(config: config, workspace: "").runsProtect
     }
 
-    /// Why nothing may run for `workspace` under a `profiles:` block, or nil. Until commands take
-    /// their profile from the slots, the MDM slot must name the workspace's own profile; the old
-    /// keys never refuse here, as before.
+    /// Why nothing may run for `workspace` under a `profiles:` block, or nil. Until the slots are
+    /// pinned on a shared workspace, the MDM slot must name the workspace's own profile, so a
+    /// peer's edit cannot point this Mac's collect at another tenant; the old keys never refuse.
     func refusal(workspace: String) -> String? {
         guard source == .profilesBlock else { return nil }
         let shown = ConfigSchema.displayText

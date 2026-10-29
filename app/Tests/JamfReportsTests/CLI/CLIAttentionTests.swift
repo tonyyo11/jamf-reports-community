@@ -25,7 +25,7 @@ final class CLIAttentionTests: XCTestCase {
     private func collect(_ body: @escaping @Sendable () -> Void) async throws {
         try await Collect.perform(
             profile: profile, tiers: [.refresh], force: true, config: nil,
-            proCollect: { _, _, _, _, _, _ in body(); return .collected })
+            proCollect: { _, _, _, _, _, _, _ in body(); return .collected })
     }
 
     private func automationFile(_ name: String) throws -> URL {

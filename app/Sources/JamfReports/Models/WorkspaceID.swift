@@ -14,6 +14,13 @@ struct WorkspaceID: Hashable, Sendable, CustomStringConvertible {
         self.name = name
     }
 
+    /// For a caller that names a workspace as text: an invalid name throws
+    /// `ReportEngineError.invalidProfile`, as the engine always has.
+    init(validating name: String) throws {
+        guard let id = WorkspaceID(name) else { throw ReportEngineError.invalidProfile(name) }
+        self = id
+    }
+
     var pathComponent: String { ProfileName.pathComponent(name) }
     var labelComponent: String { ProfileName.labelComponent(name) }
     var description: String { name }

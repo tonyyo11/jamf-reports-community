@@ -257,6 +257,7 @@ final class CollectPlanTests: XCTestCase {
     ) async -> [String] {
         let lines = LineCollector()
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: tiers,
             skipExpensive: skipExpensive, force: force,
             authConfirmationProbe: { _, _ in false }, locateJamfCLI: { stub },

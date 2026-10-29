@@ -5,9 +5,10 @@ import XCTest
 /// The gate for the environment model's first phases: every config.yaml shape a workspace has
 /// today routes a collect to the same products, with the same `-p` profiles and the same router
 /// lines, so the jamf-cli command lines are byte for byte what they were before `profiles:`.
-/// Captured through the router's closure seams; no jamf-cli runs. The dashboard row goes through
-/// `ReportEngine.dashboardProtectProfile`, the collect's own call; the refusal step after it
-/// (`dashboardProtect`) is covered by `DashboardCollectTests`.
+/// Captured through the router's closure seams, which since P2 hand each collect the workspace
+/// and, separately, the `-p` profile the transcript records; no jamf-cli runs. The dashboard row
+/// goes through `ReportEngine.dashboardProtectProfile`, the collect's own call; the refusal step
+/// after it (`dashboardProtect`) is covered by `DashboardCollectTests`.
 @MainActor
 final class EnvironmentProfilesGoldenTests: XCTestCase {
     private let workspace = "ws-golden"
@@ -62,6 +63,9 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 + "protect:\n  enabled: true\n  profile: ws-golden-protect\n",
               workspaceAuth: "apikey", workspaceProduct: .school),
         Shape(name: "jamf-cli-profile-equal", yaml: "jamf_cli:\n  profile: ws-golden\n",
+              workspaceAuth: "oauth2", workspaceProduct: .pro),
+        // P2: the key names neither the folder nor `-p`, so a copied workspace runs as itself.
+        Shape(name: "jamf-cli-profile-differs", yaml: "jamf_cli:\n  profile: ws-other\n",
               workspaceAuth: "oauth2", workspaceProduct: .pro),
         Shape(name: "no-config", yaml: nil, workspaceAuth: "oauth2", workspaceProduct: .pro),
     ]
@@ -130,6 +134,11 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 pro ws-golden
                 """,
             sha256: "c364263b639293cb634de5d932acd6e31616f01db793527f7fbdf147d01545a1"),
+        "jamf-cli-profile-differs": (
+            transcript: """
+                pro ws-golden
+                """,
+            sha256: "c364263b639293cb634de5d932acd6e31616f01db793527f7fbdf147d01545a1"),
         "no-config": (
             transcript: """
                 pro ws-golden
@@ -155,10 +164,11 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
     private func run(_ shape: Shape) async throws -> GoldenCalls {
         let config = try shape.yaml.map { try ConfigLoader.loadFromString($0) }
         // The dashboard row is the one command line built from config.yaml inside the collect.
+        let id = try XCTUnwrap(WorkspaceID(workspace))
         let calls = GoldenCalls { profile, base in
             ReportEngine.dashboardArguments(
                 base: base, profile: profile,
-                protect: ReportEngine.dashboardProtectProfile(config: config, profile: profile))
+                protect: ReportEngine.dashboardProtectProfile(config: config, workspace: id))
         }
         let auth = shape.workspaceAuth
         let product = shape.workspaceProduct
@@ -169,11 +179,12 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 : .init(authMethod: "oauth2", isTenantLevel: false, product: .protect)
         }
         try await CollectRouter.run(
-            profile: workspace, force: true, config: config, now: .testNoon,
-            proCollect: { profile, _, _, _, _, _ in
+            workspace: WorkspaceID(validating: workspace),
+            force: true, config: config, now: .testNoon,
+            proCollect: { _, profile, _, _, _, _, _ in
                 calls.add(product: "pro", profile: profile); return .collected
             },
-            schoolCollect: { profile, _, _, _, _ in
+            schoolCollect: { _, profile, _, _, _, _ in
                 calls.add(product: "school", profile: profile)
             },
             protectCollect: { profile, _, _ in calls.add(product: "protect", profile: profile) },

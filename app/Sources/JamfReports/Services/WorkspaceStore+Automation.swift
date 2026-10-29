@@ -783,7 +783,7 @@ extension WorkspaceStore {
         profile, tiers, config in
         try await CLIBridge.holdingTickLock {
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: tiers,
                 skipExpensive: false,
                 force: false,
@@ -1013,7 +1013,7 @@ extension WorkspaceStore {
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
         try await CLIBridge.holdingTickLock {
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: [.refresh, .inventory],
                 skipExpensive: false,
                 force: false,  // per-kind cadence filter: no-op if this kind already ran today

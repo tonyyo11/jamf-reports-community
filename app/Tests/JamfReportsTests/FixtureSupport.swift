@@ -106,3 +106,16 @@ enum TestFixtures {
         return names.map { dirURL.appendingPathComponent($0) }
     }
 }
+
+// MARK: - Engine in a workspace
+
+@testable import JamfReports
+
+extension ReportEngine {
+    /// This engine with its folders resolved for the workspace `name`.
+    func inWorkspace(_ name: String) -> ReportEngine {
+        var engine = self
+        engine.workspace = WorkspaceID(name)
+        return engine
+    }
+}

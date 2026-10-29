@@ -82,6 +82,7 @@ final class CollectHonestyTests: XCTestCase {
 
         do {
             try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
                 tiers: [.scan],
@@ -111,6 +112,7 @@ final class CollectHonestyTests: XCTestCase {
         let stub = try makeUnlaunchableStub()
 
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -154,6 +156,7 @@ final class CollectHonestyTests: XCTestCase {
 
         do {
             try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
                 force: true, locateJamfCLI: { stub }, onLine: { _ in })
             XCTFail("a run that saved nothing must not succeed")
@@ -240,6 +243,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         let disposition = try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             force: false,
@@ -476,6 +480,7 @@ final class CollectHonestyTests: XCTestCase {
         let stub = try makeStub(exitCode: 2, stdout: "")
         let collector = LogTextCollector()
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: collector.append)
 
@@ -588,6 +593,7 @@ final class CollectHonestyTests: XCTestCase {
         // Must NOT throw: exit 2 says nothing about server reachability, which
         // is exactly why this run reaches the summary step at all.
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -639,6 +645,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
             force: true, locateJamfCLI: { stub }, now: lateEvening, onLine: collector.append)
 
@@ -668,6 +675,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: collector.append
         )
@@ -709,6 +717,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: collector.append
         )
@@ -730,6 +739,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -857,6 +867,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.inventory],

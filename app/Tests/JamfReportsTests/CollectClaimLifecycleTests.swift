@@ -70,6 +70,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
 
         do {
             try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
                 force: true,
@@ -93,6 +94,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
         let stub = try makeStub(exitCode: 0, stdout: "[]")
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             force: true,
@@ -115,6 +117,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
     func testMissingBinaryLeavesNoClaim() async {
         do {
             try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
                 force: true,

@@ -608,9 +608,9 @@ final class CLIBridge {
                          text: "[error] could not resolve data_dir for \(profile)"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        let engine = ReportEngine(config: config, dataDir: dataDir, profile: profile)
+        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
         let defaultURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false), profile: profile,
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false),
             onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
@@ -743,9 +743,9 @@ final class CLIBridge {
                          text: "[error] could not resolve data_dir for \(profile)"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        let engine = ReportEngine(config: config, dataDir: dataDir)
+        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
         let outputURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true), profile: profile,
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true),
             onLine: onLine)
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
@@ -769,7 +769,7 @@ final class CLIBridge {
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                profile: profile,
+                workspace: WorkspaceID(profile),
                 onLine: onLine
             )
             if failures.isEmpty {
@@ -858,7 +858,7 @@ final class CLIBridge {
         }()
         do {
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: tiers,
                 skipExpensive: skipExpensive,
                 force: force,
@@ -1643,8 +1643,9 @@ final class CLIBridge {
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)
         } else {
-            let engine = ReportEngine(config: config, dataDir: dataDir)
-            outputURL = try engine.resolveOutputURL(stem: "report", profile: profile, onLine: onLine)
+            let engine = ReportEngine(
+                config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+            outputURL = try engine.resolveOutputURL(stem: "report", onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
         let fm = FileManager.default
@@ -1669,7 +1670,7 @@ final class CLIBridge {
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                profile: profile,
+                workspace: WorkspaceID(profile),
                 template: template,
                 aiNarrative: aiNarrative,
                 onLine: onLine
@@ -1742,7 +1743,7 @@ final class CLIBridge {
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                profileName: profile,
+                workspace: WorkspaceID(profile),
                 template: template,
                 onLine: onLine
             )
@@ -1787,9 +1788,10 @@ final class CLIBridge {
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)
         } else {
-            let engine = ReportEngine(config: config, dataDir: workspace)
+            let engine = ReportEngine(
+                config: config, dataDir: workspace, workspace: WorkspaceID(profile))
             outputURL = try engine.resolveOutputURL(
-                stem: ExportNaming.reportKind(for: .csv, schoolMode: false), profile: profile,
+                stem: ExportNaming.reportKind(for: .csv, schoolMode: false),
                 onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("csv")
         }
@@ -2065,12 +2067,11 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        // `-p` is the workspace's own profile, as for collect, generate and audit. A shared
-        // (synced) workspace's config.yaml can be edited from another Mac, so honouring
-        // `jamf_cli.profile` here would export a different tenant's config objects into
-        // this folder from an unattended job. Checked before anything is created, so a
-        // refusal leaves no staging directory behind.
-        try Self.checkBackupConfigProfile(profile, onLine: onLine)
+        // `-p` is the environment's Jamf Pro profile, never `jamf_cli.profile`: a shared (synced)
+        // workspace's config.yaml can be edited from another Mac, and honouring that key would
+        // export a different tenant's config objects into this folder from an unattended job.
+        // Checked before anything is created, so a refusal leaves no staging directory behind.
+        let jamfProProfile = try Self.backupProfile(for: profile, onLine: onLine)
         let backupsRoot = workspace.appendingPathComponent("backups", isDirectory: true)
         // Checked from the resolved root; the unresolved paths below stay as they are (see above).
         guard WorkspacePaths.confinedFolderOrWarn(["backups"], under: workspace, onLine: onLine)
@@ -2118,7 +2119,7 @@ final class CLIBridge {
             exit = try await run(
                 executable: bin,
                 arguments: Self.backupArguments(
-                    profile: profile, outputDirectory: validatedTemp.path),
+                    profile: jamfProProfile, outputDirectory: validatedTemp.path),
                 environment: Self.environmentForJamfCLI(),
                 timeout: timeout,
                 onLine: onLine
@@ -2420,35 +2421,35 @@ final class CLIBridge {
          "--format", "json", "--output", outputDirectory]
     }
 
-    /// Compares the workspace's MDM profile (`EnvironmentProfiles.mdm`: `jamf_cli.profile` in an
-    /// old-shape config.yaml) with `profile` before a backup. A case variant is refused like
-    /// `CollectRouter.run` refuses it: the two share the folder on a case-insensitive volume. A
-    /// `profiles:` block that cannot run was already refused by `refusesProCommand`, so any
-    /// other name here is an old-key one, ignored with one warning, because the backup always
-    /// runs as `profile`. A missing or undecodable config has nothing to compare.
-    nonisolated static func checkBackupConfigProfile(
-        _ profile: String,
+    /// The jamf-cli profile a backup of `workspace` runs as: `EnvironmentProfiles.jamfPro`.
+    /// When the file names another owner for the folder (`namedOwner`), a case variant is
+    /// refused like `CollectRouter.run` refuses it, since the two share the folder on a
+    /// case-insensitive volume; any other name is an old-key `jamf_cli.profile`, ignored with one
+    /// warning. A `profiles:` block that cannot run was already refused by `refusesProCommand`.
+    /// A missing or undecodable config reads as the old shape: Jamf Pro on the workspace.
+    nonisolated static func backupProfile(
+        for workspace: String,
         onLine: @Sendable (LogLine) -> Void
-    ) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile),
-              let config = try? ConfigLoader.load(
-                  from: workspace.appendingPathComponent("config.yaml")
-              ) else { return }
-        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
-        let owner = environment.mdm ?? profile
-        if ProfileService.isCaseVariant(owner, of: profile) {
-            let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(conflict.localizedDescription)"))
-            throw conflict
+    ) throws -> String {
+        let environment = EnvironmentProfiles.read(workspace: workspace)
+        if let owner = environment.namedOwner, owner != workspace {
+            if ProfileService.isCaseVariant(owner, of: workspace) {
+                let conflict = CLIBridgeError.profileCaseConflict(profile: workspace, owner: owner)
+                onLine(.init(timestamp: Date(), level: .fail,
+                             text: "[error] \(conflict.localizedDescription)"))
+                throw conflict
+            }
+            onLine(.init(
+                timestamp: Date(), level: .warn,
+                text: "[warn] backup: config.yaml sets jamf_cli.profile to "
+                    + "\(ConfigSchema.displayText(owner)); ignored, backing up this workspace's "
+                    + "profile \(ConfigSchema.displayText(workspace))"
+            ))
         }
-        guard owner != profile else { return }
-        onLine(.init(
-            timestamp: Date(), level: .warn,
-            text: "[warn] backup: config.yaml sets jamf_cli.profile to "
-                + "\(ConfigSchema.displayText(owner)); ignored, backing up this workspace's "
-                + "profile \(ConfigSchema.displayText(profile))"
-        ))
+        guard let jamfPro = environment.jamfPro else {
+            throw CLIBridgeError.wrongProduct(CollectRouter.schoolBackupReason(profile: workspace))
+        }
+        return jamfPro
     }
 
     /// Backup directory name for `base`, appending `-2`, `-3`, … when a directory

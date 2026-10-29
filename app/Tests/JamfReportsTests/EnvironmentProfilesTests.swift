@@ -65,7 +65,19 @@ final class EnvironmentProfilesTests: XCTestCase {
     }
 
     func testJamfCLIProfileEqualToTheWorkspaceHasNoEffect() throws {
-        XCTAssertEqual(try resolve("jamf_cli:\n  profile: ws\n"), EnvironmentProfiles(jamfPro: ws))
+        XCTAssertEqual(
+            try resolve("jamf_cli:\n  profile: ws\n"),
+            EnvironmentProfiles(jamfPro: ws, namedOwner: ws))
+    }
+
+    /// P2: commands run as the workspace whatever `jamf_cli.profile` says; the key is kept only
+    /// as the folder's named owner, for the case-variant and copied-folder checks.
+    func testJamfCLIProfileNamingAnotherProfileNamesNoCommandProfile() throws {
+        let environment = try resolve("jamf_cli:\n  profile: other\n")
+        XCTAssertEqual(environment.jamfPro, ws)
+        XCTAssertEqual(environment.mdm, ws)
+        XCTAssertEqual(environment.namedOwner, "other")
+        XCTAssertNil(environment.refusal(workspace: ws))
     }
 
     func testOldShapesNeverRefuse() throws {
@@ -96,7 +108,7 @@ final class EnvironmentProfilesTests: XCTestCase {
             """)
         XCTAssertEqual(environment, EnvironmentProfiles(
             jamfPro: ws, platform: "ws-API", protect: "ws-protect", securityCloud: "ws-radar",
-            source: .profilesBlock))
+            namedOwner: ws, source: .profilesBlock))
         XCTAssertFalse(environment.isSchool)
         XCTAssertEqual(environment.protectKey, "profiles.protect")
         XCTAssertEqual(environment.connectedProfiles, ["ws-API", "ws-protect", "ws-radar"])
@@ -147,9 +159,9 @@ final class EnvironmentProfilesTests: XCTestCase {
         let calls = EnvCalls()
         do {
             try await CollectRouter.run(
-                profile: ws, config: config, now: .testNoon,
-                proCollect: { _, _, _, _, _, _ in calls.add("pro"); return .collected },
-                schoolCollect: { _, _, _, _, _ in calls.add("school") },
+                workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
+                proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
+                schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
                 protectCollect: { _, _, _ in calls.add("protect") },
                 resolved: { _ in nil }, onLine: { calls.add($0.text) })
             XCTFail("two MDMs must not collect")
@@ -175,11 +187,11 @@ final class EnvironmentProfilesTests: XCTestCase {
             "protect:\n  enabled: false\nprofiles:\n  jamf_pro: ws\n  protect: ws-protect\n")
         let calls = EnvCalls()
         try await CollectRouter.run(
-            profile: ws, config: config, now: .testNoon,
-            proCollect: { profile, _, _, _, _, _ in
+            workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
+            proCollect: { _, profile, _, _, _, _, _ in
                 calls.add("pro \(profile)"); return .collected
             },
-            schoolCollect: { _, _, _, _, _ in calls.add("school") },
+            schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
             protectCollect: { profile, _, _ in calls.add("protect \(profile)") },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["pro ws", "protect ws-protect"])
@@ -202,9 +214,9 @@ final class EnvironmentProfilesTests: XCTestCase {
         let config = try ConfigLoader.loadFromString("profiles:\n  jamf_school: ws\n")
         let calls = EnvCalls()
         try await CollectRouter.run(
-            profile: ws, config: config, now: .testNoon,
-            proCollect: { _, _, _, _, _, _ in calls.add("pro"); return .collected },
-            schoolCollect: { profile, _, _, _, _ in calls.add("school \(profile)") },
+            workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
+            proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
+            schoolCollect: { _, profile, _, _, _, _ in calls.add("school \(profile)") },
             protectCollect: { _, _, _ in calls.add("protect") },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["school ws"])

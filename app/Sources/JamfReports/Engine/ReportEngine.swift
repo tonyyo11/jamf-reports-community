@@ -20,10 +20,11 @@ struct ReportEngine: Sendable {
     let config: ReportConfig
     /// Directory containing cached jamf-cli JSON snapshots (`jamf_cli.data_dir`).
     let dataDir: URL
-    /// The profile this run is for, from the caller (the one the user or schedule named). The
-    /// pinned logo and HTML history file look the profile's workspace up by it; the profile in
-    /// config.yaml is not used for that, since a peer on a shared workspace can edit it.
-    var profile: String? = nil
+    /// The workspace this run is for, from the caller (the one the user or schedule named). Every
+    /// folder the run reads or writes is this workspace's, the pinned logo and HTML history file
+    /// included; nothing in config.yaml names it, since a peer on a shared workspace can edit
+    /// that file. An engine with none (tests, library use) resolves no workspace folder.
+    var workspace: WorkspaceID? = nil
 
     /// The trend-chart tab, the one tab no sheet plan writes.
     static let chartsSheetName = "Charts"
@@ -60,9 +61,7 @@ struct ReportEngine: Sendable {
         now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
-        // Every folder this run reads or writes is the run's profile's, so a peer cannot point
-        // a shared workspace's generate at another local workspace through config.yaml.
-        let profile = try runProfile(onLine: onLine)
+        let workspaceName = workspace?.name ?? ""
 
         // PR-10 / threat-model T-11: strict-mode pre-flight. Abort before any
         // sheet writes if the workspace has tampered or corrupt-manifest
@@ -75,7 +74,7 @@ struct ReportEngine: Sendable {
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
         let prov = await Provenance.current(
-            profile: profile,
+            profile: workspaceName,
             jamfCLIURL: locateJamfCLI(),
             dataDir: dataDir
         )
@@ -120,12 +119,12 @@ struct ReportEngine: Sendable {
         // A Charts tab the lists drop is still rendered when its PNGs are saved.
         let savePNGs = config.charts?.savePng ?? true
         if config.charts?.isEnabled == true, savePNGs || sheets.keeps(Self.chartsSheetName),
-           let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
+           let summariesDir = resolvedSummariesDir(profile: workspaceName, onLine: onLine) {
             // The PNGs are written before the workbook creates its folder.
             let pngDir = savePNGs ? outputURL.deletingLastPathComponent() : nil
             if let pngDir { createPNGFolder(pngDir) }
             renderChartSheet(workbook: workbook, summariesDir: summariesDir,
-                             pngOutputDir: pngDir, profile: profile)
+                             pngOutputDir: pngDir, profile: workspaceName)
         }
         // Nothing to write: no jamf-cli sheet had data, no EA tab, and no Charts tab that stays.
         if writtenCore.isEmpty, eaWritten.isEmpty,
@@ -136,32 +135,15 @@ struct ReportEngine: Sendable {
 
         // The tabs of every writer above, the Charts tab included, as one list.
         workbook.arrange(by: sheets)
-        if let logo = ReportLogo.load(from: config, profile: profile) {
+        if let logo = ReportLogo.load(from: config, profile: workspaceName) {
             workbook.firstSheet?.insertLogo(data: logo, filename: "logo.png")
         }
         try workbook.write(to: outputURL)
 
         finishWorkbook(at: outputURL, templateID: template.identifier,
-                       profile: profile, provenance: prov, day: now, onLine: onLine)
+                       profile: workspaceName, provenance: prov, day: now, onLine: onLine)
 
         return coreFailures
-    }
-
-    /// The profile every folder of this run belongs to: the caller's. config.yaml's
-    /// `jamf_cli.profile` may be blank or equal; another profile is refused, since a shared
-    /// workspace's file is writable by peers. An engine made with no run profile (tests and
-    /// library use) falls back to the file's value, as before.
-    func runProfile(onLine: (@Sendable (CLIBridge.LogLine) -> Void)?) throws -> String {
-        let named = config.jamfCli?.resolvedProfile ?? ""
-        guard let run = profile, !run.isEmpty else { return named }
-        guard named.isEmpty || named == run else {
-            let mismatch = ReportEngineError.profileMismatch(named: named, run: run)
-            let msg = "[error] \(mismatch.localizedDescription)"
-            AppLogger.report.error("\(msg, privacy: .private)")
-            onLine?(.init(timestamp: Date(), level: .fail, text: msg))
-            throw mismatch
-        }
-        return run
     }
 
     /// Best effort, like the PNG writes: a folder that cannot be made is logged, not fatal.
@@ -1952,8 +1934,12 @@ struct ReportEngine: Sendable {
     /// True inside the tick's same-day retry of a run that failed or came back incomplete.
     @TaskLocal static var isSameDayRetry = false
 
+    /// Collects the Jamf Pro sources into `workspace`, which names every folder the run reads or
+    /// writes. `profile` is the jamf-cli profile the commands run as (`-p`):
+    /// `EnvironmentProfiles.jamfPro`, which `CollectRouter` resolves.
     @discardableResult
     static func collect(
+        workspace: WorkspaceID,
         profile: String,
         workspacePaths: WorkspacePaths.Type,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
@@ -1980,8 +1966,9 @@ struct ReportEngine: Sendable {
         // calendar day. Placed before the early-return guard so it runs on any
         // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
         // own marker keeps it idempotent. Best-effort — never fails the collect.
-        SnapshotRetentionService.sweepIfDue(profile: profile, onLine: onLine)
-        rewriteLostModeTextOnce(profile: profile, workspacePaths: workspacePaths, onLine: onLine)
+        SnapshotRetentionService.sweepIfDue(profile: workspace.name, onLine: onLine)
+        rewriteLostModeTextOnce(
+            profile: workspace.name, workspacePaths: workspacePaths, onLine: onLine)
 
         // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
         // summary for today already exists, unless the caller passes force: true.
@@ -2001,7 +1988,7 @@ struct ReportEngine: Sendable {
         // The tick's same-day retry skips the guard: today's summary is what the failed run wrote,
         // and the per-kind cadence below still fetches only what has not landed.
         if !force, !isSameDayRetry, isFullCollect,
-           let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+           let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
             let today = SummaryJSONParser.dateFormatter.string(from: collectDay)
             let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
             if let data = try? BoundedFile.read(
@@ -2022,7 +2009,7 @@ struct ReportEngine: Sendable {
         // stand down that has nothing to do with whether this Mac has jamf-cli
         // installed. Keeping the whole decision here also makes it reachable
         // without the binary, which is the only way it can be tested.
-        let coordination = Self.coordinationGate(profile: profile, force: force)
+        let coordination = Self.coordinationGate(profile: workspace.name, force: force)
         var holdsClaim = false
         switch coordination {
         case .standDown(let reason):
@@ -2040,7 +2027,7 @@ struct ReportEngine: Sendable {
                 onLine(.init(timestamp: Date(), level: .warn, text: note))
             }
         }
-        defer { if holdsClaim { SharedWorkspace.release(profile: profile) } }
+        defer { if holdsClaim { SharedWorkspace.release(profile: workspace.name) } }
 
         // Test seam. Production callers omit it and get the real locator; a test
         // passes a stub so the whole collect body below is reachable without a
@@ -2051,25 +2038,21 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.jamfCLINotFound
         }
 
-        let dataDir = try workspacePaths.dataDir(for: profile)
+        let dataDir = try workspacePaths.dataDir(for: workspace.name)
         // Respect use_cached_data: when false, a failed collect is fatal for that kind.
         // File-missing is a legitimate first-run state and defaults to true.
         // File-exists-but-unparseable is fatal — throw so the caller surfaces the error
         // rather than silently proceeding with stale cache.
         let useCachedData: Bool
         let loadedConfig: ReportConfig?
-        if let workspace = ProfileService.workspaceURL(for: profile) {
-            let configURL = workspace.appendingPathComponent("config.yaml")
-            if FileManager.default.fileExists(atPath: configURL.path) {
-                let config = try ConfigLoader.load(from: configURL)
-                useCachedData = config.jamfCli?.isCachedDataEnabled ?? true
-                loadedConfig = config
-            } else {
-                useCachedData = true
-                loadedConfig = nil
-            }
+        let configURL = WorkspacePaths.workspaceURL(for: workspace)
+            .appendingPathComponent("config.yaml")
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            let config = try ConfigLoader.load(from: configURL)
+            useCachedData = config.jamfCli?.isCachedDataEnabled ?? true
+            loadedConfig = config
         } else {
-            useCachedData = false
+            useCachedData = true
             loadedConfig = nil
         }
 
@@ -2093,7 +2076,7 @@ struct ReportEngine: Sendable {
 
         // Cadence state store: persists per-kind last-success timestamps so
         // the cadence filter skips reports that aren't due yet.
-        let stateStore: StateFileStore? = (try? workspacePaths.stateDir(for: profile))
+        let stateStore: StateFileStore? = (try? workspacePaths.stateDir(for: workspace.name))
             .map(StateFileStore.init(directory:))
         let collectStart = Date()
 
@@ -2173,7 +2156,7 @@ struct ReportEngine: Sendable {
                 )
             } else if kind == Self.dashboardKind {
                 let dashboardProtect = await Self.dashboardProtect(
-                    Self.dashboardProtectProfile(config: loadedConfig, profile: profile),
+                    Self.dashboardProtectProfile(config: loadedConfig, workspace: workspace),
                     bin: bin, onLine: onLine)
                 result = try await Self.collectDashboard(
                     profile: profile,
@@ -2221,8 +2204,8 @@ struct ReportEngine: Sendable {
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
-            profile: profile, afterMatrix: afterMatrix, bin: bin, dataDir: dataDir,
-            savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
+            workspace: workspace, profile: profile, afterMatrix: afterMatrix, bin: bin,
+            dataDir: dataDir, savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore,
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
@@ -2232,7 +2215,7 @@ struct ReportEngine: Sendable {
         // see the collect happened without parsing summaries. One file per
         // host, so concurrent runs never write the same path.
         if case .proceed(let state, _) = coordination, state.coordinating {
-            SharedWorkspace.recordActivity(profile: profile)
+            SharedWorkspace.recordActivity(profile: workspace.name)
         }
         return .collected
     }
@@ -2367,6 +2350,7 @@ struct ReportEngine: Sendable {
     /// dashboards read: the SOFA feeds, the merged patch release dates, and
     /// the day's summary. Reached only once the verdicts above have passed.
     private static func finalizeCollect(
+        workspace: WorkspaceID,
         profile: String,
         afterMatrix: [String],
         bin: URL,
@@ -2425,9 +2409,9 @@ struct ReportEngine: Sendable {
             // with today's date and chart them as a fresh trend point.
             unwritten = Self.noSourceLandedReason
         } else if let config = loadedConfig,
-           let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+           let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
             let prov = await Provenance.current(
-                profile: profile,
+                profile: workspace.name,
                 jamfCLIURL: bin,
                 dataDir: dataDir
             )
@@ -3299,7 +3283,7 @@ struct ReportEngine: Sendable {
         config: ReportConfig,
         dataDir: URL,
         outputURL: URL,
-        profile: String? = nil,
+        workspace: WorkspaceID? = nil,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
@@ -3310,10 +3294,10 @@ struct ReportEngine: Sendable {
         // toggle would be a false promise for users who generate HTML reports.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
         let report = htmlReport(
-            config: config, dataDir: dataDir, profile: profile, template: template,
+            config: config, dataDir: dataDir, workspace: workspace, template: template,
             aiNarrative: aiNarrative, expandAll: false, locateJamfCLI: locateJamfCLI,
             onLine: onLine)
-        let configProfile = profile ?? config.jamfCli?.resolvedProfile ?? ""
+        let configProfile = workspace?.name ?? ""
         let digest = try await report.generate(
             outputURL: outputURL, profileName: configProfile, sections: template.htmlSections
         )
@@ -3331,7 +3315,7 @@ struct ReportEngine: Sendable {
     private static func htmlReport(
         config: ReportConfig,
         dataDir: URL,
-        profile: String?,
+        workspace: WorkspaceID?,
         template: any ReportTemplate,
         aiNarrative: String? = nil,
         expandAll: Bool,
@@ -3340,7 +3324,7 @@ struct ReportEngine: Sendable {
     ) -> HtmlReport {
         var report = HtmlReport(
             config: config, dataDir: dataDir, aiNarrative: aiNarrative, onLine: onLine)
-        report.profile = profile
+        report.workspace = workspace
         report.templateName = template.displayName
         report.openSections = Set(template.htmlOpenSections)
         report.expandAll = expandAll
@@ -3368,14 +3352,14 @@ struct ReportEngine: Sendable {
     ///   - config: Parsed `ReportConfig`.
     ///   - dataDir: Directory containing cached jamf-cli JSON snapshots.
     ///   - outputURL: Destination `.pdf` file path.
-    ///   - profileName: Active workspace profile slug (shown in provenance footer).
+    ///   - workspace: The workspace the report is for (its name heads the report).
     ///   - template: The `ReportTemplate` controlling sections and pagination strategy.
     @MainActor
     static func generatePDF(
         config: ReportConfig,
         dataDir: URL,
         outputURL: URL,
-        profileName: String = "",
+        workspace: WorkspaceID? = nil,
         template: any ReportTemplate = FullInstanceTemplate(),
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
@@ -3392,12 +3376,12 @@ struct ReportEngine: Sendable {
         // The PDF renderer runs no script, so every group is rendered open rather than
         // left for a print handler, and the expand and collapse buttons are left out.
         var report = htmlReport(
-            config: config, dataDir: dataDir, profile: profileName.isEmpty ? nil : profileName,
+            config: config, dataDir: dataDir, workspace: workspace,
             template: template, expandAll: true, locateJamfCLI: locateJamfCLI)
         report.pdfFileName = outputURL.lastPathComponent
         try await report.generate(
             outputURL: tmpHTML,
-            profileName: profileName,
+            profileName: workspace?.name ?? "",
             sections: template.htmlSections
         )
         defer { try? FileManager.default.removeItem(at: tmpHTML) }
@@ -3412,9 +3396,8 @@ struct ReportEngine: Sendable {
         try await PDFExporter.export(htmlString: paginatedHTML, to: outputURL)
         // Write SHA-256 manifest alongside the PDF artifact, and log its digest like the
         // other formats do so the Generate sheet lists the file.
-        let profile = profileName.isEmpty ? config.jamfCli?.resolvedProfile ?? "" : profileName
         let digest = writeManifestStatic(
-            for: outputURL, profile: profile, template: template.identifier)
+            for: outputURL, profile: workspace?.name ?? "", template: template.identifier)
         if let digest { onLine?(sha256LogLine(hash: digest, artifact: outputURL)) }
     }
 
@@ -3466,8 +3449,10 @@ struct ReportEngine: Sendable {
     /// Throws `ReportEngineError.collectDead` when commands were attempted and none
     /// succeeded, so a dead School tenant does not silently record Success forever.
     /// Partial failures (≥1 success) warn and continue — the same fallback-to-cache
-    /// policy as the Jamf Pro collect path.
+    /// policy as the Jamf Pro collect path. Folders are `workspace`'s; `profile` is the Jamf
+    /// School login the commands run as (`EnvironmentProfiles.jamfSchool`).
     static func schoolCollect(
+        workspace: WorkspaceID,
         profile: String,
         workspacePaths: WorkspacePaths.Type,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
@@ -3483,15 +3468,16 @@ struct ReportEngine: Sendable {
         guard ProfileService.isValid(profile) else {
             throw ReportEngineError.invalidProfile(profile)
         }
-        let dataDir = try workspacePaths.dataDir(for: profile)
+        let dataDir = try workspacePaths.dataDir(for: workspace.name)
 
         let stateStore = WorkspacePaths
             .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
             .map(StateFileStore.init(directory:))
-        if stateStore != nil, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+        if stateStore != nil,
+           let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
             backfillSchoolHistoryOnce(
                 dataDir: dataDir, summariesDir: summariesDir,
-                staleDays: { schoolStaleDays(profile: profile, onLine: onLine) }, now: now,
+                staleDays: { schoolStaleDays(profile: workspace.name, onLine: onLine) }, now: now,
                 onLine: onLine)
         }
         // nil (could not ask) collects: only a profile known to lack Platform fields skips.
@@ -3504,7 +3490,7 @@ struct ReportEngine: Sendable {
             platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false) {
             stateStore?.lastRun(report: $0)
         }
-        let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: profile))
+        let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: workspace.name))
         let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
             .filter { $0 == sofaKind }
         let afterMatrixSkipped = Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip)
@@ -3612,7 +3598,7 @@ struct ReportEngine: Sendable {
             afterMatrix: afterMatrix, profile: profile, dataDir: dataDir,
             refreshSOFA: refreshSOFA, stateStore: stateStore, onLine: onLine)
         writeSchoolSummaryAfterCollect(
-            profile: profile, dataDir: dataDir, workspacePaths: workspacePaths,
+            profile: workspace.name, dataDir: dataDir, workspacePaths: workspacePaths,
             landedKinds: schoolSaved, day: now, onLine: onLine)
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
     }
@@ -3787,7 +3773,7 @@ struct ReportEngine: Sendable {
         config: ReportConfig,
         dataDir: URL,
         outputURL: URL,
-        profile: String? = nil,
+        workspace: WorkspaceID? = nil,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
@@ -3797,8 +3783,8 @@ struct ReportEngine: Sendable {
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
         let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let workbook = Workbook(accentColor: accent)
-        // The profile's daily summaries feed the Trends tab; none leaves it out.
-        let summaries = profile.flatMap { try? WorkspacePaths.summariesDir(for: $0) }
+        // The workspace's daily summaries feed the Trends tab; none leaves it out.
+        let summaries = workspace.flatMap { try? WorkspacePaths.summariesDir(for: $0.name) }
             .map(SummaryJSONParser.parseDirectory) ?? []
         let core = SchoolDashboard(
             config: config, dataDir: dataDir, workbook: workbook, summaries: summaries)
@@ -3817,23 +3803,22 @@ struct ReportEngine: Sendable {
     /// Return a timestamped output URL based on config `output` settings.
     ///
     /// Mirrors the Python timestamping logic in `cmd_generate`:
-    /// `<output_dir>/<stem>_<YYYY-MM-DD_HHmmss>.xlsx`.
+    /// `<output_dir>/<stem>_<YYYY-MM-DD_HHmmss>.xlsx`, in `workspace`'s report folder (with
+    /// none, `output_dir` as typed).
     ///
     /// - Parameter stem: Base filename stem (without extension).
-    /// - Parameter profile: Profile slug whose workspace the folder resolves against.
     /// - Parameter onLine: Receives the `[warn]` line when `output_dir` is refused.
     func resolveOutputURL(
-        stem: String, profile: String? = nil,
-        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+        stem: String, onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) throws -> URL {
-        let outDir = try outputDirectory(profile: profile, onLine: onLine)
+        let outDir = try outputDirectory(onLine: onLine)
 
-        // Include the profile in the filename so reports remain attributable
+        // Include the workspace in the filename so reports remain attributable
         // to their tenant once moved out of the workspace folder.
         // `report_prod_2026-06-01_120000.xlsx`, not `report_2026-06-01_120000.xlsx`.
         let namedStem: String = {
-            guard let profile else { return stem }
-            let part = ExportNaming.profilePart(profile)
+            guard let workspace else { return stem }
+            let part = ExportNaming.profilePart(workspace.name)
             return part.isEmpty ? stem : "\(stem)_\(part)"
         }()
 
@@ -3857,14 +3842,14 @@ struct ReportEngine: Sendable {
     }
 
     /// The report folder from `WorkspacePaths.reportsDir`, so every report writer agrees on it.
-    /// With no profile, the value is used as typed (relative to the working directory), as
-    /// before; a profile whose folder cannot be resolved throws.
+    /// With no workspace, the value is used as typed (relative to the working directory), as
+    /// before; a workspace whose folder cannot be resolved throws.
     private func outputDirectory(
-        profile: String?, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) throws -> URL {
-        if let profile {
-            guard let dir = WorkspacePaths.reportsDir(for: profile, onLine: onLine) else {
-                throw ReportEngineError.reportFolderUnavailable(profile)
+        if let workspace {
+            guard let dir = WorkspacePaths.reportsDir(for: workspace.name, onLine: onLine) else {
+                throw ReportEngineError.reportFolderUnavailable(workspace.name)
             }
             return dir
         }
@@ -4528,8 +4513,6 @@ enum ReportEngineError: Error, LocalizedError {
     /// The installed jamf-cli is older than `JamfCLIInstaller.minimumSupportedVersion`.
     case jamfCLITooOld(installed: String)
     case invalidProfile(String)
-    /// config.yaml's `jamf_cli.profile` names a profile other than the one the run is for.
-    case profileMismatch(named: String, run: String)
     case snapshotParseError(String)
     /// jamf-cli has no profile of this name (`ProfileAuthMethod.isAbsent`); thrown before any
     /// command runs.
@@ -4581,11 +4564,6 @@ enum ReportEngineError: Error, LocalizedError {
                 + "Update jamf-cli in Settings."
         case .invalidProfile(let p):
             return "Invalid profile name '\(ConfigSchema.displayText(p))'."
-        case .profileMismatch(let named, let run):
-            return "config.yaml sets jamf_cli.profile to "
-                + "'\(ConfigSchema.displayText(named))' but this run is for "
-                + "'\(ConfigSchema.displayText(run))'; nothing was generated. Set "
-                + "jamf_cli.profile back to '\(ConfigSchema.displayText(run))'."
         case .snapshotParseError(let kind):
             return "No cached snapshot found for '\(kind)'. Run collect first."
         case .profileNotFound(let p):

@@ -83,7 +83,7 @@ enum ConfigDoctorService {
         rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
         rows += readerRows(profile: profile, workspaceRoot: workspaceRoot)
         if let config, parseError == nil {
-            rows += profileMismatchRows(profile: profile, config: config)
+            rows += profileOwnerRows(profile: profile, config: config)
             rows += protectProfileFolderRows(profile: profile, config: config)
             rows += protectProfileProductRows(config: config, workspace: profile)
             rows += protectSyncedBackupRows(

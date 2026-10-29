@@ -162,7 +162,7 @@ extension HtmlReport {
         let mainBody = parts.filter { !$0.isEmpty }.joined(separator: "\n")
         return buildDocument(
             outputURL: outputURL, mainBody: mainBody, inputs: inputs,
-            profile: profileName.isEmpty ? config.jamfCli?.resolvedProfile ?? "" : profileName,
+            profile: profileName,
             glance: glance)
     }
 

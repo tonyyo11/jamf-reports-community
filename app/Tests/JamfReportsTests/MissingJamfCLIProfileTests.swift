@@ -82,6 +82,7 @@ final class MissingJamfCLIProfileTests: XCTestCase {
         let lines = LineSink()
         do {
             _ = try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
                 force: true, authConfirmationProbe: { _, _ in false },
                 locateJamfCLI: { bin }, refreshSOFA: { _ in (.empty, []) },

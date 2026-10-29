@@ -64,9 +64,11 @@ extension ProfileProductType {
 /// router was introduced.
 enum CollectRouter {
 
-    /// Type of the pro-collect closure, matching `ReportEngine.collect`'s signature.
+    /// Type of the pro-collect closure, matching `ReportEngine.collect`'s signature: the
+    /// workspace whose folders the run writes, and the Jamf Pro profile its commands run as.
     /// The returned disposition decides whether Protect follows (see above).
     typealias ProCollect = @Sendable (
+        _ workspace: WorkspaceID,
         _ profile: String,
         _ workspacePaths: WorkspacePaths.Type,
         _ tiers: Set<CollectionTier>,
@@ -78,6 +80,7 @@ enum CollectRouter {
     /// `ReportEngine.collect` as the default Pro closure calls it: the `ProCollect` arguments plus
     /// the run's start (`now`). Tests replace it to see the day the router hands the engine.
     typealias ProEngine = @Sendable (
+        _ workspace: WorkspaceID,
         _ profile: String,
         _ workspacePaths: WorkspacePaths.Type,
         _ tiers: Set<CollectionTier>,
@@ -87,8 +90,10 @@ enum CollectRouter {
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> ReportEngine.CollectDisposition
 
-    /// Type of the school-collect closure, matching `ReportEngine.schoolCollect`'s signature.
+    /// Type of the school-collect closure, matching `ReportEngine.schoolCollect`'s signature:
+    /// the workspace and the Jamf School login.
     typealias SchoolCollect = @Sendable (
+        _ workspace: WorkspaceID,
         _ profile: String,
         _ workspacePaths: WorkspacePaths.Type,
         _ tiers: Set<CollectionTier>,
@@ -103,10 +108,11 @@ enum CollectRouter {
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> Void
 
-    /// Route a collect run for `profile` to the correct engine function(s).
+    /// Route a collect run for `workspace` to the correct engine function(s). Each product's
+    /// `-p` comes from `EnvironmentProfiles`, resolved once here after the pin checkpoint.
     ///
     /// - Parameters:
-    ///   - profile: Validated profile slug (caller has already verified `ProfileService.isValid`).
+    ///   - workspace: The workspace whose folders the run reads and writes.
     ///   - tiers: Collection tiers (School collects with the refresh or inventory tier).
     ///   - skipExpensive: Skip expensive per-device Pro commands (ignored for School).
     ///   - force: Bypass the once-per-day guard (Pro) and the cadence (Pro and School).
@@ -124,7 +130,7 @@ enum CollectRouter {
     ///
     /// A collect started outside a recording run keeps its attention items in the app record.
     static func run(
-        profile: String,
+        workspace: WorkspaceID,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         skipExpensive: Bool = false,
         force: Bool = false,
@@ -140,9 +146,9 @@ enum CollectRouter {
         },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
-        try await AttentionLog.recording(profile: profile) {
+        try await AttentionLog.recording(profile: workspace.name) {
             try await routed(
-                profile: profile, tiers: tiers, skipExpensive: skipExpensive, force: force,
+                workspace: workspace, tiers: tiers, skipExpensive: skipExpensive, force: force,
                 config: config, workspacePaths: workspacePaths,
                 proCollect: proCollect ?? defaultProCollect(now: now, engine: proEngine),
                 schoolCollect: schoolCollect, protectCollect: protectCollect,
@@ -151,7 +157,7 @@ enum CollectRouter {
     }
 
     private static func routed(
-        profile: String,
+        workspace: WorkspaceID,
         tiers: Set<CollectionTier>,
         skipExpensive: Bool,
         force: Bool,
@@ -167,6 +173,7 @@ enum CollectRouter {
         // the command's product, so a Protect, Security Cloud or organization-level profile
         // would send Jamf Pro commands. A Jamf School workspace is routed to School collect
         // below and is not a Pro run.
+        let profile = workspace.name
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         let detected = ProfileProductType.detect(from: config, profile: profile)
         if detected.type == .jamfPro, let refusal = await CLIBridge.refusesProCommand(
@@ -176,7 +183,7 @@ enum CollectRouter {
         }
         // Every collect path passes through here; the GUI's also checks when it
         // binds the workspace, but the CLI and schedules load config directly.
-        if let owner = environment.mdm, ProfileService.isCaseVariant(owner, of: profile) {
+        if let owner = environment.namedOwner, ProfileService.isCaseVariant(owner, of: profile) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))
@@ -185,6 +192,12 @@ enum CollectRouter {
         if let refusal = environment.refusal(workspace: profile) {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
             throw CLIBridgeError.wrongProduct(refusal)
+        }
+        // An old-shape file derives the MDM from the workspace, and a block without one is
+        // refused above.
+        guard let mdm = environment.mdm else {
+            throw CLIBridgeError.wrongProduct(
+                "'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile")
         }
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
@@ -200,7 +213,7 @@ enum CollectRouter {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] routing \(profile) → Jamf School collect"))
             do {
-                try await schoolCollect(profile, workspacePaths, tiers, force, onLine)
+                try await schoolCollect(workspace, mdm, workspacePaths, tiers, force, onLine)
             } catch let verdict as ReportEngineError where verdict.isCollectVerdict {
                 await followWithProtect(.collected)
                 throw verdict
@@ -211,7 +224,7 @@ enum CollectRouter {
             let disposition: ReportEngine.CollectDisposition
             do {
                 disposition = try await proCollect(
-                    profile, workspacePaths, tiers, skipExpensive, force, onLine
+                    workspace, mdm, workspacePaths, tiers, skipExpensive, force, onLine
                 )
             } catch let verdict as ReportEngineError where verdict.isCollectVerdict {
                 // The Pro run reached Jamf and failed (dead credentials, a dead run): Protect has
@@ -288,8 +301,8 @@ enum CollectRouter {
     static func proRunRefusal(profile: String, operation: String, config: ReportConfig?) -> String? {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         if let refusal = environment.refusal(workspace: profile) { return refusal }
-        guard !environment.isSchool else { return nil }
-        return ProfileAuthMethod.refusal(profile: profile, operation: operation)
+        guard !environment.isSchool, let jamfPro = environment.jamfPro else { return nil }
+        return ProfileAuthMethod.refusal(profile: jamfPro, operation: operation)
     }
 
     /// Why `pro backup` has nothing to do for a Jamf School workspace; the scheduled skip, the
@@ -323,14 +336,16 @@ enum CollectRouter {
 
     /// Default production closure wrapping `ReportEngine.collect`.
     static func defaultProCollect(now: Date, engine: @escaping ProEngine) -> ProCollect {
-        { profile, workspacePaths, tiers, skipExpensive, force, onLine in
-            try await engine(profile, workspacePaths, tiers, skipExpensive, force, now, onLine)
+        { workspace, profile, workspacePaths, tiers, skipExpensive, force, onLine in
+            try await engine(
+                workspace, profile, workspacePaths, tiers, skipExpensive, force, now, onLine)
         }
     }
 
     static let realProEngine: ProEngine = {
-        profile, workspacePaths, tiers, skipExpensive, force, now, onLine in
+        workspace, profile, workspacePaths, tiers, skipExpensive, force, now, onLine in
         try await ReportEngine.collect(
+            workspace: workspace,
             profile: profile,
             workspacePaths: workspacePaths,
             tiers: tiers,
@@ -342,8 +357,10 @@ enum CollectRouter {
     }
 
     /// Default production closure wrapping `ReportEngine.schoolCollect`.
-    static let defaultSchoolCollect: SchoolCollect = { profile, workspacePaths, tiers, force, onLine in
+    static let defaultSchoolCollect: SchoolCollect = {
+        workspace, profile, workspacePaths, tiers, force, onLine in
         try await ReportEngine.schoolCollect(
+            workspace: workspace,
             profile: profile,
             workspacePaths: workspacePaths,
             tiers: tiers,

@@ -513,7 +513,7 @@ private func scheduledRunSingleBody(
             // Scheduled collects never bypass the Jamf Pro once-per-day guard; a School
             // collect-then-generate forces past School's 12 h cadence (`forcesCollect`).
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: resolvedTiers,
                 force: mode.forcesCollect(
                     for: ProfileProductType.detect(from: routingConfig, profile: profile).type),
@@ -599,13 +599,12 @@ private func scheduledRunSingleBody(
         }
         defer { if holdsGenerateClaim { SharedWorkspace.release(profile: profile) } }
 
-        let engine = ReportEngine(config: config, dataDir: dataDir, profile: profile)
+        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
         // A School workspace has no Jamf Pro snapshots: the Pro engine would write a
         // workbook with every sheet skipped.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
         let outputURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool),
-            profile: profile, onLine: onLine)
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool), onLine: onLine)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.
@@ -613,8 +612,8 @@ private func scheduledRunSingleBody(
         let failures: [SheetFailure]
         if isSchool {
             failures = try await ReportEngine.schoolGenerate(
-                config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                onLine: onLine)
+                config: config, dataDir: dataDir, outputURL: outputURL,
+                workspace: WorkspaceID(profile), onLine: onLine)
         } else {
             failures = try await engine.generate(
                 outputURL: outputURL, template: template, now: runStart, onLine: onLine)
@@ -839,11 +838,11 @@ func runCheck(profile: String) -> Int32 {
     }
     do {
         let config = try ConfigLoader.load(from: configURL)
-        let cliProfile = config.jamfCli?.resolvedProfile ?? profile
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         print("[ok] config.yaml decoded successfully")
         // A peer on a shared workspace can write config.yaml, so the value is shown filtered.
-        print("[ok] jamf_cli.profile: "
-            + (cliProfile.isEmpty ? "(not set)" : ConfigSchema.displayText(cliProfile)))
+        print("[ok] \(environment.isSchool ? "Jamf School" : "Jamf Pro") profile: "
+            + (environment.mdm.map(ConfigSchema.displayText) ?? "(not set)"))
         let dataDir = (try? WorkspacePaths.dataDir(for: profile)) ?? workspace
             .appendingPathComponent("jamf-cli-data")
         var isDir: ObjCBool = false
