@@ -140,7 +140,9 @@ final class RunArtifacts: Sendable {
         }
     }
 
-    /// `files` added to `run`, or, for a step that runs on its own (no `run`), sealed now.
+    /// `files` added to `run`, or, for a step that runs on its own (no `run`: the Overview's
+    /// workbook, onboarding, the Reports screen's PDF and CSV exports), sealed now, so every
+    /// report file the app writes is in a manifest.
     static func record(
         _ files: [URL], in run: RunArtifacts?, config: ReportConfig, profile: String,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
@@ -202,7 +204,8 @@ extension CLIBridge {
                 generateXLSX: {
                     if schoolMode {
                         return try await self.schoolGenerate(
-                            profile: profile, csvFolder: types.contains(.csvFolder),
+                            profile: profile, outputDir: outputDir,
+                            csvFolder: types.contains(.csvFolder),
                             now: now, written: written, onLine: onLine)
                     }
                     // A chosen HTML format is the run's one HTML report; `html.with_workbook`

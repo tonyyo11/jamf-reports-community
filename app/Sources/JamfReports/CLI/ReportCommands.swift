@@ -205,6 +205,9 @@ struct Html: AsyncParsableCommand {
                 _ = try await ReportEngine.generateHTML(
                     config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
                     onLine: CLIRun.printLogLine)
+                await ReportEngine.sealRun(
+                    artifacts: [outputURL], config: config, profile: profile,
+                    onLine: CLIRun.printLogLine)
             }
         }
         print(outputURL.path)

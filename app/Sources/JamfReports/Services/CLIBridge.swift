@@ -733,6 +733,7 @@ final class CLIBridge {
     /// Run school-generate for Jamf School tenants via the Swift engine.
     func schoolGenerate(
         profile: String,
+        outputDir: URL? = nil,
         csvFolder: Bool = false,
         now: Date = Date(),
         written: RunArtifacts? = nil,
@@ -756,9 +757,13 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
-        let outputURL = try engine.resolveOutputURL(
+        // A folder chosen on the Generate sheet takes the School workbook too, as it does the
+        // Jamf Pro one, so the run's files share one folder and one manifest.
+        let defaultURL = try engine.resolveOutputURL(
             stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true), profile: profile,
-            onLine: onLine)
+            onLine: outputDir == nil ? onLine : nil)
+        let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) }
+            ?? defaultURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -1696,7 +1701,8 @@ final class CLIBridge {
             )
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
-            written?.add([outputURL], config: config)
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -1770,7 +1776,8 @@ final class CLIBridge {
             )
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] PDF report written: \(outputURL.lastPathComponent)"))
-            written?.add([outputURL], config: config)
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -1828,7 +1835,8 @@ final class CLIBridge {
             if let line = ReportEngine.sha256LogLine(for: outputURL) { onLine(line) }
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] inventory CSV written: \(outputURL.lastPathComponent)"))
-            written?.add([outputURL], config: config)
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
