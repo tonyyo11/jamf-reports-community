@@ -100,7 +100,7 @@ final class JamfCLIInstaller {
     /// the download (`validateAsset`) and again on the URL that answered
     /// (`isTrustedFinalURL`), because a tampered API response or a redirect
     /// could otherwise point the download at an attacker-controlled origin.
-    static let trustedAssetHosts: Set<String> = [
+    nonisolated static let trustedAssetHosts: Set<String> = [
         "github.com",
         "objects.githubusercontent.com",
         "release-assets.githubusercontent.com",
@@ -211,7 +211,7 @@ final class JamfCLIInstaller {
 
     /// Whether the URL that answered a download is an https URL on the allow-list. `nil` (no
     /// response URL) is untrusted.
-    static func isTrustedFinalURL(_ url: URL?) -> Bool {
+    nonisolated static func isTrustedFinalURL(_ url: URL?) -> Bool {
         guard let url, url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased() else { return false }
         return trustedAssetHosts.contains(host)
@@ -819,7 +819,10 @@ final class JamfCLIInstaller {
         var request = URLRequest(url: githubLatestReleaseURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let session = HTTPSession.make(request: 15, resource: 60)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await session.data(
+            for: request, delegate: HTTPSession.RedirectRule.sameHost(as: githubLatestReleaseURL))
         try validateHTTP(response)
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
     }
@@ -846,9 +849,13 @@ final class JamfCLIInstaller {
         var request = URLRequest(url: asset.browserDownloadURL)
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
-        let (downloaded, response) = try await URLSession.shared.download(for: request)
-        // URLSession follows redirects; the host that actually served the bytes is checked
-        // here, before the file leaves URLSession's temp location.
+        let session = HTTPSession.make(request: 60, resource: 600)
+        defer { session.finishTasksAndInvalidate() }
+        // Redirects are refused off the allow-list; the host that served the bytes is checked
+        // again below, before the file leaves URLSession's temp location.
+        let (downloaded, response) = try await session.download(
+            for: request,
+            delegate: HTTPSession.RedirectRule { isTrustedFinalURL($0) })
         guard isTrustedFinalURL(response.url) else {
             try? FileManager.default.removeItem(at: downloaded)
             throw AssetValidationError.untrustedHost(response.url?.host)
