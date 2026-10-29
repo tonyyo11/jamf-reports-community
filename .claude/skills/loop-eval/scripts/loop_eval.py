@@ -9,6 +9,7 @@ Going forward the ledger should use one line per event (see docs/superpowers/pla
   Task <id> review (<reviewer>): <Approved|Needs fixes>; MUST-FIX n; SHOULD-FIX n; CONSIDER n
   Task <id> fix round <n>: ...
   Task <id>: complete ... full suite N/0
+  CI <PR>: <job> <passed|failed> <reason>      (first line per PR is the first-push result)
 
 Usage: loop_eval.py LEDGER [--baseline JSON] [--wave NAME] [--json-out PATH] [--md-out PATH]
 """
@@ -20,9 +21,9 @@ import json
 import re
 import statistics
 import sys
-from typing import Any
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 ID = r"\d+(?:\.\d+)?(?:[+/\-]\d+(?:\.\d+)?)*|tick lane"
 OWNER = re.compile(
@@ -43,6 +44,24 @@ KNOWN = re.compile(
     r"dispatched|implemented|blocked|impl-|done|brief|ruling|deferred|round|complete|review|security|sweep",
     re.I,
 )
+
+
+CI_LINE = re.compile(r"^CI\b")
+CI_PR = re.compile(r"^CI\s+#?(\d+)\b|#(\d+)\b")
+CI_JOB = re.compile(r"\b(macos-?\s?\d+|xcode\s?\d+(?:\.\d+)?)\b", re.I)
+CI_FAILED = re.compile(r"\bfail(?:ed|s|ure)?\b|isolation error", re.I)
+CI_PASSED = re.compile(r"\bpass(?:ed|es)?\b|\bgreen\b", re.I)
+
+
+@dataclass
+class CI:
+    """First-push CI result for one PR: the first `CI` line that names it."""
+
+    pr: str
+    result: str  # failed | passed | unknown
+    jobs: list[str]
+    first_line: int
+    lines: int = 1
 
 
 @dataclass
@@ -77,6 +96,7 @@ class Task:
 class Ledger:
     tasks: dict[str, Task] = field(default_factory=dict)
     unreadable: list[dict[str, Any]] = field(default_factory=list)
+    ci: dict[str, CI] = field(default_factory=dict)
     other: int = 0
     lines: int = 0
 
@@ -155,6 +175,21 @@ def owner_of(line: str) -> tuple[str, str] | None:
     return m.group("fu"), line[m.end() :]
 
 
+def record_ci(ledger: Ledger, line: str, no: int) -> None:
+    m = CI_PR.search(line)
+    if not m:
+        ledger.unreadable.append({"line": no, "head": scrub(line)})
+        return
+    pr = m.group(1) or m.group(2)
+    if pr in ledger.ci:
+        ledger.ci[pr].lines += 1
+        return
+    failed, passed = CI_FAILED.search(line), CI_PASSED.search(line)
+    result = "failed" if failed else "passed" if passed else "unknown"
+    jobs = sorted({re.sub(r"[\s-]+", "", j.lower()) for j in CI_JOB.findall(line)})
+    ledger.ci[pr] = CI(pr, result, jobs, no)
+
+
 def parse_ledger(text: str) -> Ledger:
     ledger = Ledger()
     for no, raw in enumerate(text.splitlines(), 1):
@@ -162,6 +197,9 @@ def parse_ledger(text: str) -> Ledger:
         if not line:
             continue
         ledger.lines += 1
+        if CI_LINE.match(line):
+            record_ci(ledger, line, no)
+            continue
         owned = owner_of(line)
         if owned is None:
             ledger.other += 1
@@ -197,6 +235,9 @@ def summarize(ledger: Ledger, wave: str) -> dict[str, Any]:
         "re_review_seats": sum(r.kind == "re-review" for r in reviews),
         "controller_reads": sum(t.controller_reads for t in tasks),
         "suite_tests_max": max(suites) if suites else 0,
+        "ci_prs": len(ledger.ci),
+        "ci_first_push_failed": sum(c.result == "failed" for c in ledger.ci.values()),
+        "ci_first_push_passed": sum(c.result == "passed" for c in ledger.ci.values()),
     }
     medians = {
         "rounds": median([t.rounds for t in done]),
@@ -211,6 +252,7 @@ def summarize(ledger: Ledger, wave: str) -> dict[str, Any]:
         "unreadable": ledger.unreadable,
         "totals": totals,
         "medians": medians,
+        "ci_first_push": [asdict(c) for c in ledger.ci.values()],
         "tasks": [task_json(t) for t in tasks],
     }
 
@@ -254,6 +296,19 @@ def task_table(summary: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
+def ci_table(summary: dict[str, Any]) -> str:
+    rows = ["First-push CI (the first `CI` line that names each PR):", ""]
+    ci = summary["ci_first_push"]
+    if not ci:
+        return rows[0] + " none recorded.\n"
+    rows += ["| PR | Result | Jobs named | CI lines |", "|---|---|---|---|"]
+    for c in ci:
+        rows.append(
+            f"| #{c['pr']} | {c['result']} | {', '.join(c['jobs']) or '-'} | {c['lines']} |"
+        )
+    return "\n".join(rows) + "\n"
+
+
 METRICS = [
     ("tasks", "Tasks seen"),
     ("completed", "Tasks completed"),
@@ -265,6 +320,9 @@ METRICS = [
     ("re_review_seats", "Re-review seats"),
     ("controller_reads", "Controller read the diff"),
     ("suite_tests_max", "Largest suite at a completion"),
+    ("ci_prs", "PRs with a CI line"),
+    ("ci_first_push_failed", "First push failed CI"),
+    ("ci_first_push_passed", "First push passed CI"),
 ]
 
 
@@ -299,6 +357,7 @@ def render(summary: dict[str, Any], baseline: dict[str, Any] | None) -> str:
     )
     out += [f"- line {u['line']}: {u['head']} ..." for u in unreadable]
     out.append("")
+    out.append(ci_table(summary))
     out.append(
         "Tags are mentions in the review line (`MUST-FIX 2` counts 2; the older `Important` counts as SHOULD-FIX): a lower bound on findings."
     )
@@ -318,26 +377,38 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--md-out", type=Path, help="also write the markdown here")
     args = ap.parse_args(argv)
     try:
-        text = args.ledger.read_text(errors="replace")
+        text = args.ledger.read_text(encoding="utf-8", errors="replace")
     except OSError as err:
         print(f"loop_eval: cannot read {args.ledger}: {err}", file=sys.stderr)
         return 2
     baseline = None
     if args.baseline:
         try:
-            baseline = json.loads(args.baseline.read_text())
+            baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
         except (OSError, ValueError) as err:
             print(
                 f"loop_eval: cannot read baseline {args.baseline}: {err}",
                 file=sys.stderr,
             )
             return 2
+        if not isinstance(baseline, dict) or not isinstance(
+            baseline.get("totals"), dict
+        ):
+            print(
+                f"loop_eval: baseline {args.baseline} is not a loop-eval JSON (no totals object)",
+                file=sys.stderr,
+            )
+            return 2
     summary = summarize(parse_ledger(text), args.wave)
     json_out = args.json_out or args.ledger.with_name("loop-eval.json")
-    json_out.write_text(json.dumps(summary, indent=2) + "\n")
     md = render(summary, baseline)
-    if args.md_out:
-        args.md_out.write_text(md)
+    try:
+        json_out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        if args.md_out:
+            args.md_out.write_text(md, encoding="utf-8")
+    except OSError as err:
+        print(f"loop_eval: cannot write output: {err}", file=sys.stderr)
+        return 2
     print(md, end="")
     print(f"wrote {json_out}")
     return 0

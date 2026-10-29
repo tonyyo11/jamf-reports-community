@@ -55,9 +55,21 @@ class ParseTests(unittest.TestCase):
         self.assertEqual((t.reviews[0].should, t.reviews[0].consider), (2, 1))
         self.assertEqual((t.suite_tests, t.suite_failures), (200, 0))
 
+    def test_first_push_ci_per_pr(self) -> None:
+        ci = self.ledger.ci
+        self.assertEqual(sorted(ci), ["1", "41", "42", "99"])
+        self.assertEqual(
+            (ci["41"].result, ci["41"].jobs, ci["41"].lines), ("failed", ["macos15"], 2)
+        )
+        self.assertEqual(
+            (ci["42"].result, ci["42"].jobs), ("failed", ["macos26", "xcode27"])
+        )
+        totals = le.summarize(self.ledger, "f")["totals"]
+        self.assertEqual((totals["ci_prs"], totals["ci_first_push_failed"]), (4, 4))
+
     def test_unreadable_and_other_lines_are_counted_not_fatal(self) -> None:
-        self.assertEqual([u["line"] for u in self.ledger.unreadable], [17])
-        self.assertEqual(self.ledger.other, 6)
+        self.assertEqual([u["line"] for u in self.ledger.unreadable], [17, 31])
+        self.assertEqual(self.ledger.other, 4)
 
     def test_unreadable_head_is_scrubbed(self) -> None:
         self.assertEqual(le.scrub("Task 1 ~/a/b and /x/y"), "Task 1 <path> and <path>")
@@ -71,6 +83,16 @@ class OutputTests(unittest.TestCase):
         base["totals"]["rounds"] = 5
         md = le.render(summary, base)
         self.assertIn("| Fix rounds to completion (total) | 5 | 3 | -2 |", md)
+
+    def test_bad_baseline_and_unwritable_output_are_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            ledger = Path(d) / "progress.md"
+            ledger.write_text(FIXTURE.read_text())
+            bad = Path(d) / "bad.json"
+            bad.write_text("[1, 2]")
+            self.assertEqual(le.main([str(ledger), "--baseline", str(bad)]), 2)
+            out = Path(d) / "no-such-folder" / "x.json"
+            self.assertEqual(le.main([str(ledger), "--json-out", str(out)]), 2)
 
     def test_cli_writes_json_and_survives_binary_noise(self) -> None:
         with tempfile.TemporaryDirectory() as d:

@@ -43,11 +43,11 @@ review verdicts.
 | Role | What it reads | What it returns | Calls per task | Verdict | Reason |
 |---|---|---|---|---|---|
 | Controller (main loop) | Ledger, briefs, reports, diffs, CI logs | Briefs, rulings, ledger lines, PRs | 1 session | `main` | Directs the others; briefs, fix-round composition, rulings and the ledger stay here. |
-| Implementer (Sonnet; Opus for 2.x, 5.2, hard debugging) | Task row, spec section, checklist, its worktree | Status, commits, counts; the report file is the hand-off | 1 dispatch, then one message per fix round (40 rounds over 24 completed tasks) | `as-tool` | Parallel, fresh context in its own worktree, discardable; the controller needs the result, not the reading. |
+| Implementer (Sonnet; Opus for 2.1–2.3, 3.4, 5.2, hard debugging) | Task row, spec section, checklist, its worktree | Status, commits, counts; the report file is the hand-off | 1 dispatch, then one message per fix round (40 rounds over 24 completed tasks) | `as-tool` | Parallel, fresh context in its own worktree, discardable; the controller needs the result, not the reading. |
 | Task reviewer (Sonnet `reviewer`) | Brief, report, review package (4 KB to 376 KB across 48 packages) | Verdict, tagged findings with checklist numbers | 1 first review (24 reviewer verdicts across 28 tasks) | `as-tool` | Independent verification of a diff the controller did not write. |
 | Security reviewer (Opus `security-reviewer`) | Same, through the security lens | Verdict, MUST-FIX / SHOULD-FIX / CONSIDER | 1 for anything that reads or writes workspace files, adds a product gate or sends data out (8 verdicts) | `as-tool` | Independent verification where a miss is expensive; the stronger model is for this seat only. |
 | Scoped re-review of a fix round, large or touching a seam | FIX_BASE..head package, report | Verdict on the fix | 0 or 1 per fix round (7 re-review seats) | `as-tool` | Above the threshold below the controller cannot verify it as cheaply as a fresh reader. |
-| Scoped re-review of a small, plain fix round | The same | The same | Was 1 per fix round | `fold` | Under about 150 changed source lines, no new seam, file write path or product gate: the controller reads the diff and the report (11 rounds were closed that way in the wave; the controller's account is that none missed a defect). |
+| Scoped re-review of a small, plain fix round | The same | The same | Was 1 per fix round | `fold` | Under about 150 changed source lines, no new seam, file write path or product gate: the controller reads the diff and the report (8 rounds were confirmed by the controller as closed that way, 11 by ledger phrase; the controller's account is that none missed a defect). |
 | Research or comparison agent (web pages, another repository, a long log) | Far more than the loop needs | A compact findings file | 0 to 2 per wave | `as-tool` | Reads far more than the loop needs afterwards. |
 | Review packaging | `git log`, `git diff -U10` | One file per range | 1 per review | `fold` (skill `review-package`) | Deterministic; was retyped shell each time. |
 | Class-sibling grep | The twelve checklist classes plus a seam regex | Sites grouped by class | 1 per fix or review | `fold` (skill `class-sweep`) | Deterministic; the checklist's greps were retyped, and one used the wrong flag (`rg -E`). |
@@ -90,7 +90,7 @@ The loop is judged on numbers the ledger already records, per task:
 - **Re-review seats and controller reads:** how many re-reviews were dispatched, and how many fix
   rounds the controller read itself.
 - **Full-suite result at completion:** the `Executed N tests` or `N/0` figure.
-- **First-push CI result:** green, or the failing job, recorded in the ledger as a `CI` line.
+- **First-push CI result:** per PR, the first `CI <PR>:` ledger line (passed or failed, and the jobs it names); later lines for the same PR are follow-ups. The metric is `ci_first_push`.
 
 `loop-eval` reads these from the ledger (`.superpowers/sdd/<plan>/progress.md`). The ledger is
 prose; the parser is tolerant (a line it cannot read is counted and listed) and the plan's SDD
@@ -100,12 +100,15 @@ section gives the line format to use from now on.
 [agent-loop-eval](agent-loop-eval/2026-10-28-waves-0-6.md)): 28 tasks seen, 24 complete; 40 fix
 rounds (median 2 per completed task; 2 tasks needed none, 7 one, 12 two, 3 three); 39 review
 verdicts (14 Approved, 25 Needs fixes: 24 reviewer, 8 security, 7 re-review); tags 6 MUST-FIX, 25
-SHOULD-FIX, 24 CONSIDER; 11 fix rounds read by the controller instead of re-reviewed; the 35 full-suite counts
-recorded rose from 6845 to 6962 tests with 0 failures in every one (6957 at the last completion); three
-first-push CI failures on stacked heads (a test asserting a folder that a refused run no longer
-creates, a lock test that failed on the macOS 15 job only, and a Swift 6.1 isolation error). Tags are
-mentions in the review line, so they are a lower bound on findings; the ledger has no verdict line for
-a few early reviews (visible as a task with no reviews in the table).
+SHOULD-FIX, 24 CONSIDER; fix rounds read by the controller instead of re-reviewed: 8 confirmed by
+the controller, 11 by ledger phrase; the 35 full-suite counts recorded rose from 6845 to 6962
+tests with 0 failures in every one (6957 at the last completion); first-push CI: 3 PRs with a
+`CI` line (#341, #351, #352), all failed on the first push (a test asserting a folder that a
+refused run no longer creates, a lock test that failed on the macOS 15 job only, and a Swift 6.1
+isolation error), 0 passed. Tags are mentions in the review line, so they are a lower bound on
+findings; the ledger has no verdict line for a few early reviews (visible as a task with no
+reviews in the table). The baseline reads the first 173 non-blank ledger lines, which is the wave
+0 to 6 state; the ledger has grown since.
 
 **The rule for the next wave.** Score it with the same skill and compare with `--baseline`:
 

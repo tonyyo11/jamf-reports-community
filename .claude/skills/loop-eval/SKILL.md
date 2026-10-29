@@ -13,7 +13,8 @@ The eval for `docs/superpowers/agent-loop.md`. Run
 
 - Output: a table with one row per task (done, fix rounds before its `complete` line, reviews and
   verdicts A/NF, MUST/SHOULD/CONSIDER tags, re-review seats, controller reads, suite figure), totals
-  and medians, and the lines it could not read. The same data goes to `--json-out` (default
+  and medians, the first-push CI result per PR (`ci_first_push`, from `CI <PR>:` lines), and the
+  lines it could not read. The same data goes to `--json-out` (default
   `loop-eval.json` beside the ledger).
 - `--baseline FILE` adds a table of deltas for the totals against an earlier JSON. The committed
   baseline is `docs/superpowers/agent-loop-eval/2026-10-28-waves-0-6.json`.

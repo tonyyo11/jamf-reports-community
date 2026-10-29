@@ -25,3 +25,7 @@ Task 9.6 fix round 1: 4444dddd; controller read the diff
 Task 9.6 re-review (rerev-9-6): Approved; MUST-FIX 0; SHOULD-FIX 0; CONSIDER 0
 Task 9.6: complete 2222bbbb..4444dddd; full suite 200/0
 CI 99: macos-15 failed isolation error in a test
+CI: #41 macos-15 job failed a lock test
+CI #41 macos-15: passes in the parity VM
+CI (pre-stack heads): #42 failed on macOS 26 and Xcode 27
+CI no number here

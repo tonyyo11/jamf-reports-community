@@ -20,7 +20,7 @@ and [JSON](agent-loop-eval/2026-10-28-waves-0-6.json).
 |---|---|---|---|---|
 | 1 | Skills `review-package`, `class-sweep`, `changelog-union`, `bundle-wave`, `stack-adopt`, `tip-test` replace retyped shell | `fold` | Landed with this plan | Pending: next wave. Expect no change in rounds or findings; the check is that no step was typed by hand and no flag error recurs. |
 | 2 | `loop-eval` and the committed baseline | `fold` (eval) | Landed | Baseline taken; first comparison is the next wave. |
-| 3 | Scoped re-review of a small, plain fix round (under about 150 changed source lines, no new seam, file write path or product gate) becomes a controller read | `fold` | Rule written; 11 rounds in the baseline were already handled this way | Pending: re-review seats should stay at or below the baseline's 7 while rounds, MUST-FIX and SHOULD-FIX do not rise. |
+| 3 | Scoped re-review of a small, plain fix round (under about 150 changed source lines, no new seam, file write path or product gate) becomes a controller read | `fold` | Rule written; the baseline already has 8 rounds confirmed handled this way (11 by ledger phrase) | Pending: re-review seats should stay at or below the baseline's 7 while rounds, MUST-FIX and SHOULD-FIX do not rise. |
 | 4 | Ledger line format (one line per event) so the eval parses cleanly | n/a | Written in the plan's SDD section | Pending: next ledger reports no unreadable task lines. |
 | 5 | Personal `vm-test` skill (not in this repository) | `fold` | Written; checked against a stub `tart` only | Pending: first real VM run. |
 
@@ -37,8 +37,8 @@ What this loop could get wrong, and what would notice it.
 
 ## Open questions
 
-- Whether the 150-line threshold is right: it comes from one wave's experience (eight to eleven
-  small rounds, no miss recorded). Move it only on the next wave's numbers.
+- Whether the 150-line threshold is right: it comes from one wave's experience (8 confirmed
+  small rounds, 11 by ledger phrase, no miss recorded). Move it only on the next wave's numbers.
 - Whether `class-sweep` should grow a per-class "new site not in the list" check from the diff
   rather than a list of existing sites. Needs its own design.
 

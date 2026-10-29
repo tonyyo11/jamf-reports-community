@@ -1,7 +1,7 @@
 {
   "wave": "2026-10-28-waves-0-6",
   "ledger_lines": 173,
-  "other_lines": 53,
+  "other_lines": 49,
   "unreadable": [],
   "totals": {
     "tasks": 28,
@@ -15,7 +15,10 @@
     "consider": 24,
     "re_review_seats": 7,
     "controller_reads": 11,
-    "suite_tests_max": 6957
+    "suite_tests_max": 6957,
+    "ci_prs": 3,
+    "ci_first_push_failed": 3,
+    "ci_first_push_passed": 0
   },
   "medians": {
     "rounds": 2.0,
@@ -23,6 +26,40 @@
     "must": 0.0,
     "should": 1.0
   },
+  "ci_first_push": [
+    {
+      "pr": "341",
+      "result": "failed",
+      "jobs": [
+        "macos15",
+        "macos26",
+        "xcode27"
+      ],
+      "first_line": 82,
+      "lines": 1
+    },
+    {
+      "pr": "351",
+      "result": "failed",
+      "jobs": [
+        "macos15",
+        "xcode16.4",
+        "xcode27"
+      ],
+      "first_line": 149,
+      "lines": 2
+    },
+    {
+      "pr": "352",
+      "result": "failed",
+      "jobs": [
+        "macos15",
+        "xcode16.4"
+      ],
+      "first_line": 154,
+      "lines": 1
+    }
+  ],
   "tasks": [
     {
       "id": "0.1",
