@@ -387,7 +387,7 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertNil(ProfileService.caseVariantWorkspace(of: "Prod"), "no config.yaml")
     }
 
-    func testRecordedWorkspaceOwnerReadsTheFolderConfig() throws {
+    func testRecordedWorkspaceOwnerIsTheFolderName() throws {
         _ = try writeWorkspace(folder: "Prod", recordedProfile: "Prod")
         _ = try writeWorkspace(folder: "blank", recordedProfile: "")
         XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "prod"), "Prod")
@@ -396,7 +396,7 @@ final class ProfileSlugCaseTests: XCTestCase {
             ["prod": .sharesFolder(with: "Prod")]
         )
         XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "blank"), "blank",
-                       "a blank jamf_cli.profile falls back to the folder name")
+                       "the folder's own name")
         XCTAssertNil(ProfileService.recordedWorkspaceOwner(matching: "absent"))
         try FileManager.default.createDirectory(
             at: tempRoot.appendingPathComponent("Bare"), withIntermediateDirectories: true
@@ -453,30 +453,45 @@ final class ProfileSlugCaseTests: XCTestCase {
     }
     #endif
 
-    func testCollectRouterRefusesAWorkspaceRecordedForACaseVariant() async throws {
-        let config = try ConfigLoader.loadFromString("jamf_cli:\n  profile: \"acme\"\n")
+    /// The folder's own spelling owns it, whatever config.yaml says. Two case-variant profiles
+    /// and a `jamf_cli.profile: Prod` a peer wrote into `prod`'s folder: `Prod` is unusable,
+    /// refused by collect and backup, and `prod` still collects.
+    func testAPeerWrittenCaseVariantNeverTakesTheFolder() async throws {
+        let folder = tempRoot.appendingPathComponent("prod", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let configURL = folder.appendingPathComponent("config.yaml")
+        try Data("jamf_cli:\n  profile: \"Prod\"\n".utf8).write(to: configURL)
+        let config = try ConfigLoader.load(from: configURL)
+
+        XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "prod"), "prod")
+        XCTAssertEqual(ProfileService.unusableProfiles(in: ["prod", "Prod"]),
+                       ["Prod": .sharesFolder(with: "prod")])
+        XCTAssertThrowsError(try CLIBridge.backupProfile(for: "Prod") { _ in }) { error in
+            XCTAssertEqual(
+                error as? CLIBridgeError, .profileCaseConflict(profile: "Prod", owner: "prod"))
+        }
+
         let collected = CaseTestBox(false)
         let proCollect: CollectRouter.ProCollect = { _, _, _, _, _, _, _ in
             collected.value = true
             return .collected
         }
-
         do {
             try await CollectRouter.run(
-                workspace: WorkspaceID(validating: "Acme"),
+                workspace: WorkspaceID(validating: "Prod"),
                 config: config, proCollect: proCollect, onLine: { _ in }
             )
             XCTFail("collect must not write into a case variant's workspace")
         } catch let error as CLIBridgeError {
-            XCTAssertEqual(error, .profileCaseConflict(profile: "Acme", owner: "acme"))
+            XCTAssertEqual(error, .profileCaseConflict(profile: "Prod", owner: "prod"))
         }
         XCTAssertFalse(collected.value)
 
         try await CollectRouter.run(
-            workspace: WorkspaceID(validating: "acme"),
+            workspace: WorkspaceID(validating: "prod"),
             config: config, proCollect: proCollect, onLine: { _ in }
         )
-        XCTAssertTrue(collected.value, "the owning profile still collects")
+        XCTAssertTrue(collected.value, "the folder's own profile still collects")
     }
 
     /// Only a case variant is refused: a workspace recording some other name, or

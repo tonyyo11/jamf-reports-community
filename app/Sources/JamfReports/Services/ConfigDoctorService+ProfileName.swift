@@ -3,10 +3,10 @@ import Foundation
 extension ConfigDoctorService {
 
     /// One row when config.yaml names a profile other than the workspace's own as the folder's
-    /// owner (`EnvironmentProfiles.namedOwner`). `.fail` when that stops every run: a `profiles:`
-    /// block's MDM slot (`EnvironmentProfiles.refusal`), or a case variant, which shares the
-    /// folder. An old-shape `jamf_cli.profile` naming anything else is a `.warn`: since 2.12
-    /// commands run as the workspace and the key is ignored, but a copied or renamed workspace
+    /// owner (`EnvironmentProfiles.namedOwner`). `.fail` for a `profiles:` block's MDM slot, which
+    /// stops every run (`EnvironmentProfiles.refusal`). An old-shape `jamf_cli.profile` naming
+    /// any other profile, a case variant included, is a `.warn`: since 2.12 commands run as the
+    /// workspace and the folder's own name decides its owner, but a copied or renamed workspace
     /// keeps the old name there.
     static func profileOwnerRows(profile: String, config: ReportConfig) -> [DoctorRow] {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
@@ -19,7 +19,7 @@ extension ConfigDoctorService {
         let shownNamed = ConfigSchema.displayText(named)
         let shownProfile = ConfigSchema.displayText(profile)
         let caseOnly = ProfileService.isCaseVariant(named, of: profile)
-        let refused = caseOnly || environment.source == .profilesBlock
+        let refused = environment.source == .profilesBlock
         return [DoctorRow(
             id: "config.profile_mismatch",
             severity: refused ? .fail : .warn,

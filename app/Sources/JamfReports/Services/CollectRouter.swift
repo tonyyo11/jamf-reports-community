@@ -109,7 +109,8 @@ enum CollectRouter {
     ) async throws -> Void
 
     /// Route a collect run for `workspace` to the correct engine function(s). Each product's
-    /// `-p` comes from `EnvironmentProfiles`, resolved once here after the pin checkpoint.
+    /// `-p` comes from `EnvironmentProfiles`, resolved once here before the pin checkpoint; the
+    /// product check probes the same Jamf Pro slot the collect launches with.
     ///
     /// - Parameters:
     ///   - workspace: The workspace whose folders the run reads and writes.
@@ -124,7 +125,8 @@ enum CollectRouter {
     ///   - proCollect: Closure wrapping `ReportEngine.collect`; nil is the real one.
     ///   - schoolCollect: Closure wrapping `ReportEngine.schoolCollect`. Defaults to the real static.
     ///   - protectCollect: Closure wrapping `ReportEngine.protectCollect`. Defaults to the real static.
-    ///   - resolved: The profile's resolved auth method and product (`ProfileAuthMethod.resolve`).
+    ///   - resolved: The Jamf Pro slot's resolved auth method and product
+    ///     (`ProfileAuthMethod.resolve`).
     ///     Nil means "could not ask" and runs the collect.
     ///   - onLine: Progress log callback.
     ///
@@ -177,13 +179,15 @@ enum CollectRouter {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         let detected = ProfileProductType.detect(from: config, profile: profile)
         if detected.type == .jamfPro, let refusal = await CLIBridge.refusesProCommand(
-            profile: profile, operation: "Collect", onLine: onLine, resolved: resolved
+            profile: profile, operation: "Collect", onLine: onLine, environment: environment,
+            resolved: resolved
         ) {
             throw CLIBridgeError.wrongProduct(refusal)
         }
         // Every collect path passes through here; the GUI's also checks when it
-        // binds the workspace, but the CLI and schedules load config directly.
-        if let owner = environment.namedOwner, ProfileService.isCaseVariant(owner, of: profile) {
+        // binds the workspace, but the CLI and schedules load config directly. The owner is the
+        // existing folder's own spelling, never what config.yaml says.
+        if let owner = ProfileService.caseVariantWorkspace(of: profile) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))

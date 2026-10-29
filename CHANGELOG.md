@@ -21,7 +21,9 @@ versions in this repository map to git tags.
 - A workspace whose config.yaml names a different `jamf_cli.profile` than its own, such as a
   copied or renamed workspace folder, now generates reports instead of refusing; every command
   runs as the workspace's own profile, and Config Doctor still points the stale name out.
-  Folders, schedules, report groups and run history keep their names. (#305)
+  Folders, schedules, report groups and run history keep their names. A backup started from
+  Backups on a Jamf School workspace now stops with the reason instead of sending a Jamf Pro
+  backup to the School login. (#305)
 - On a workspace in a sync provider folder, on a network volume or in a shared workspace, the
   Jamf Pro part of a backup is now a choice, as the Jamf Protect part already was: turn on
   **Back up Jamf Pro in this folder** in Backups (or set `backup.pro_on_synced_storage`). A

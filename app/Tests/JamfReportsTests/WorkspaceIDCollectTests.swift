@@ -57,6 +57,27 @@ final class WorkspaceIDCollectTests: XCTestCase {
     }
 }
 
+extension WorkspaceIDCollectTests {
+    /// The product check probes the profile the command runs as (the environment's Jamf Pro
+    /// slot), not the workspace's name.
+    func testTheProductCheckProbesTheJamfProSlot() async {
+        let asked = AskedNames()
+        let refusal = await CLIBridge.refusesProCommand(
+            profile: "folder-ws", operation: "Collect", onLine: nil,
+            environment: EnvironmentProfiles(jamfPro: "tenant-p"),
+            resolved: { asked.add($0); return nil })
+        XCTAssertNil(refusal)
+        XCTAssertEqual(asked.all, ["tenant-p"])
+    }
+}
+
+private final class AskedNames: @unchecked Sendable {
+    private let lock = NSLock()
+    private var names: [String] = []
+    func add(_ name: String) { lock.lock(); names.append(name); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return names }
+}
+
 private final class Lines: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [String] = []

@@ -139,15 +139,11 @@ enum ProfileService {
         return reasons
     }
 
-    /// The profile an existing workspace folder spelled like `key` (any case) names as its
-    /// owner (`EnvironmentProfiles.namedOwner`), or the name the folder encodes when it names
-    /// none.
+    /// The owner of an existing workspace folder spelled like `key` (any case): the name the
+    /// folder itself encodes, case preserved. Never config.yaml, which a peer can write: a
+    /// planted `jamf_cli.profile: Prod` in `prod` must not make `Prod` the folder's owner.
     static func recordedWorkspaceOwner(matching key: String) -> String? {
-        guard let folder = workspaceFolders(matching: key).first else { return nil }
-        let config = workspacesRoot().appendingPathComponent(folder.component)
-            .appendingPathComponent("config.yaml")
-        return EnvironmentProfiles.read(configURL: config, workspace: folder.name).namedOwner
-            ?? folder.name
+        workspaceFolders(matching: key).first?.name
     }
 
     /// Workspace folders (holding a `config.yaml`) whose profile has the folder key `key`,
@@ -247,8 +243,7 @@ enum ProfileService {
     ) -> [JamfCLIProfile] {
         var paired = Set<String>()
         for profile in profiles where hasWorkspace(profile.name, under: root) {
-            let environment = EnvironmentProfiles.read(
-                configURL: configURL(profile.name, under: root), workspace: profile.name)
+            let environment = EnvironmentProfiles.read(workspace: profile.name, under: root)
             for name in environment.connectedProfiles where name != profile.name {
                 paired.insert(name)
             }
@@ -260,14 +255,12 @@ enum ProfileService {
         }
     }
 
-    private static func configURL(_ name: String, under root: URL) -> URL {
-        root.appendingPathComponent(ProfileName.pathComponent(name), isDirectory: true)
-            .appendingPathComponent("config.yaml")
-    }
-
     /// True when `name` has a workspace folder under `root` holding a `config.yaml`.
     static func hasWorkspace(_ name: String, under root: URL = workspacesRoot()) -> Bool {
-        FileManager.default.fileExists(atPath: configURL(name, under: root).path)
+        guard let id = WorkspaceID(name) else { return false }
+        let config = WorkspacePaths.workspaceURL(for: id, under: root)
+            .appendingPathComponent("config.yaml")
+        return FileManager.default.fileExists(atPath: config.path)
     }
 
     /// Profiles of the workspace folders under `root` (holding a `config.yaml`) that no
@@ -399,14 +392,13 @@ enum ProfileService {
 
     /// `profile`'s workspace folder, refused unless it resolves to a direct child of the root.
     private static func confinedWorkspaceFolder(profile: String) throws -> URL {
-        guard isValid(profile), let url = workspaceURL(for: profile) else {
+        guard let id = WorkspaceID(profile) else {
             throw CleanupError.invalidProfile(profile)
         }
+        let url = WorkspacePaths.workspaceURL(for: id)
         let root = workspacesRoot().resolvingSymlinksInPath().standardizedFileURL
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-        let expected = root.appendingPathComponent(
-            ProfileName.pathComponent(profile), isDirectory: true
-        )
+        let expected = WorkspacePaths.workspaceURL(for: id, under: root)
         guard resolved.path == expected.path else {
             throw CleanupError.outsideWorkspaceRoot(url)
         }

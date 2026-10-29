@@ -357,11 +357,11 @@ final class ProfileOwnerDoctorTests: XCTestCase {
             profile: "same", config: try config("same")), [])
     }
 
-    /// A case variant shares the folder, and collect and backup still refuse it.
-    func testACaseVariantIsAFailSaidToDifferOnlyInCase() throws {
+    /// A case variant in the key is ignored too: the folder's own name decides its owner.
+    func testACaseVariantIsAWarnSaidToDifferOnlyInCase() throws {
         let rows = ConfigDoctorService.profileOwnerRows(
             profile: "prod", config: try config("Prod"))
-        XCTAssertEqual(rows.first?.severity, .fail)
+        XCTAssertEqual(rows.first?.severity, .warn)
         XCTAssertTrue(rows.first?.detail.contains("differ only in case") == true)
     }
 

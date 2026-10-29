@@ -608,7 +608,8 @@ final class CLIBridge {
                          text: "[error] could not resolve data_dir for \(profile)"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         let defaultURL = try engine.resolveOutputURL(
             stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false),
             onLine: outputDir == nil ? onLine : nil)
@@ -743,7 +744,8 @@ final class CLIBridge {
                          text: "[error] could not resolve data_dir for \(profile)"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         let outputURL = try engine.resolveOutputURL(
             stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true),
             onLine: onLine)
@@ -769,7 +771,7 @@ final class CLIBridge {
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                workspace: WorkspaceID(profile),
+                workspace: try WorkspaceID(validating: profile),
                 onLine: onLine
             )
             if failures.isEmpty {
@@ -1142,17 +1144,23 @@ final class CLIBridge {
     /// (`EnvironmentProfiles.refusal`), or when `profile` is known to belong to another product
     /// (Jamf School, Protect, Security Cloud) or is an organization-level integration: no `pro`
     /// command may run against it. Nil for a Jamf Pro profile and for one that cannot be
-    /// resolved. Reading config.yaml and the lookup (which can run `jamf-cli config list`) run
-    /// detached: most callers are on the main actor. `resolved` is the test seam.
+    /// resolved. `profile` names the workspace; the product check probes the profile the command
+    /// runs as, the environment's Jamf Pro slot. A caller that already resolved the environment
+    /// (`CollectRouter`) passes it; otherwise config.yaml is read. Reading config.yaml and the
+    /// lookup (which can run `jamf-cli config list`) run detached: most callers are on the main
+    /// actor. `resolved` is the test seam.
     nonisolated static func refusesProCommand(
         profile: String, operation: String, onLine: (@Sendable (LogLine) -> Void)?,
+        environment known: EnvironmentProfiles? = nil,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
             ProfileAuthMethod.resolve(profile: $0)
         }
     ) async -> String? {
-        let refusal = await Task.detached {
-            EnvironmentProfiles.read(workspace: profile).refusal(workspace: profile)
-                ?? resolved(profile)?.proRefusal(profile: profile, operation: operation)
+        let refusal = await Task.detached { () -> String? in
+            let environment = known ?? EnvironmentProfiles.read(workspace: profile)
+            if let refusal = environment.refusal(workspace: profile) { return refusal }
+            let jamfPro = environment.jamfPro ?? profile
+            return resolved(jamfPro)?.proRefusal(profile: jamfPro, operation: operation)
         }.value
         guard let refusal else { return nil }
         onLine?(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
@@ -1644,7 +1652,7 @@ final class CLIBridge {
             outputURL = URL(fileURLWithPath: path)
         } else {
             let engine = ReportEngine(
-                config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+                config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
             outputURL = try engine.resolveOutputURL(stem: "report", onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
@@ -1670,7 +1678,7 @@ final class CLIBridge {
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                workspace: WorkspaceID(profile),
+                workspace: try WorkspaceID(validating: profile),
                 template: template,
                 aiNarrative: aiNarrative,
                 onLine: onLine
@@ -1743,7 +1751,7 @@ final class CLIBridge {
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                workspace: WorkspaceID(profile),
+                workspace: try WorkspaceID(validating: profile),
                 template: template,
                 onLine: onLine
             )
@@ -1789,7 +1797,7 @@ final class CLIBridge {
             outputURL = URL(fileURLWithPath: path)
         } else {
             let engine = ReportEngine(
-                config: config, dataDir: workspace, workspace: WorkspaceID(profile))
+                config: config, dataDir: workspace, workspace: try WorkspaceID(validating: profile))
             outputURL = try engine.resolveOutputURL(
                 stem: ExportNaming.reportKind(for: .csv, schoolMode: false),
                 onLine: onLine)
@@ -2422,23 +2430,24 @@ final class CLIBridge {
     }
 
     /// The jamf-cli profile a backup of `workspace` runs as: `EnvironmentProfiles.jamfPro`.
-    /// When the file names another owner for the folder (`namedOwner`), a case variant is
-    /// refused like `CollectRouter.run` refuses it, since the two share the folder on a
-    /// case-insensitive volume; any other name is an old-key `jamf_cli.profile`, ignored with one
-    /// warning. A `profiles:` block that cannot run was already refused by `refusesProCommand`.
-    /// A missing or undecodable config reads as the old shape: Jamf Pro on the workspace.
+    /// A workspace whose existing folder is spelled differently (a case variant sharing it on a
+    /// case-insensitive volume) is refused like `CollectRouter.run` refuses it, judged by the
+    /// folder's own name, never config.yaml. An old-key `jamf_cli.profile` naming another
+    /// profile is ignored with one warning. A `profiles:` block that cannot run was already
+    /// refused by `refusesProCommand`; a workspace with no Jamf Pro slot (Jamf School) is
+    /// refused with one `[error]`. A missing or undecodable config reads as the old shape.
     nonisolated static func backupProfile(
         for workspace: String,
         onLine: @Sendable (LogLine) -> Void
     ) throws -> String {
+        if let owner = ProfileService.caseVariantWorkspace(of: workspace) {
+            let conflict = CLIBridgeError.profileCaseConflict(profile: workspace, owner: owner)
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(conflict.localizedDescription)"))
+            throw conflict
+        }
         let environment = EnvironmentProfiles.read(workspace: workspace)
         if let owner = environment.namedOwner, owner != workspace {
-            if ProfileService.isCaseVariant(owner, of: workspace) {
-                let conflict = CLIBridgeError.profileCaseConflict(profile: workspace, owner: owner)
-                onLine(.init(timestamp: Date(), level: .fail,
-                             text: "[error] \(conflict.localizedDescription)"))
-                throw conflict
-            }
             onLine(.init(
                 timestamp: Date(), level: .warn,
                 text: "[warn] backup: config.yaml sets jamf_cli.profile to "
@@ -2447,7 +2456,9 @@ final class CLIBridge {
             ))
         }
         guard let jamfPro = environment.jamfPro else {
-            throw CLIBridgeError.wrongProduct(CollectRouter.schoolBackupReason(profile: workspace))
+            let reason = CollectRouter.schoolBackupReason(profile: workspace)
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
+            throw CLIBridgeError.wrongProduct(reason)
         }
         return jamfPro
     }
@@ -2676,9 +2687,9 @@ final class CLIBridge {
     ) throws {
         do {
             let document = try YAMLCodec.decode(ConfigLoader.readText(at: config))
-            guard case .mapping(let root) = document.root else { return }
-            let current = root.value(for: "jamf_cli")?.mapping?.value(for: "profile")?
-                .stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard case .mapping = document.root else { return }
+            let current = EnvironmentProfiles.read(configURL: config, workspace: profile)
+                .namedOwner ?? ""
             guard current != profile else { return }
             guard !ProfileService.isCaseVariant(current, of: profile) else {
                 throw CLIBridgeError.profileCaseConflict(profile: profile, owner: current)
