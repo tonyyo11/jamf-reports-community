@@ -456,8 +456,8 @@ private func scheduledRunSingleBody(
             // Backup mode never retries within the day, so Partial does not repeat the run.
             let message = failureDetail.map { "[error] " + $0 }
                 ?? (honesty.incomplete
-                    ? "[partial] scheduled backup for '\(profile)' kept the Jamf Pro backup; "
-                        + "the Jamf Protect part is incomplete"
+                    ? "[partial] scheduled backup for '\(profile)' is incomplete; the lines "
+                        + "above say which product's part is missing"
                     : "[ok] scheduled backup complete for '\(profile)'")
             if failureDetail == nil { print(message) } else { fputs(message + "\n", stderr) }
             recorder?.record(message)

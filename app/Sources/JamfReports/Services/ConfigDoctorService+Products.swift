@@ -90,6 +90,44 @@ extension ConfigDoctorService {
         )]
     }
 
+    /// One `.suggest` row while backups skip Jamf Pro, or are about to, because the workspace is
+    /// on storage other Macs reach and the choice is not in effect on this Mac. Whether that
+    /// storage may hold Jamf Pro's configuration is the organization's call, so this points at
+    /// the setting.
+    static func proSyncedBackupRows(_ choice: ProBackup.SyncedStorageChoice?) -> [DoctorRow] {
+        guard let choice, choice.setting != .allowed,
+              choice.setting != .configUnreadable else { return [] }
+        let key = SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue
+        let secrets = "A Jamf Pro backup contains LDAP, SMTP and API-client configuration and "
+            + "scripts that can hold secrets."
+        let title: String
+        let consequence: String
+        let hint: String
+        switch choice.setting {
+        case .notChosen:
+            title = "Jamf Pro backups on this storage need a choice"
+            consequence = "Scheduled backups that already ran here continue for "
+                + "\(BackupMaintenance.graceRunsBeforeAsking) runs, then skip Jamf Pro and read "
+                + "as Partial."
+            hint = "If your organization's storage and access policy allows it, turn on "
+                + "\"Back up Jamf Pro in this folder\" in Backups (\(key)); otherwise set it to "
+                + "false to record that Jamf Pro stays out."
+        case .awaitingConfirmation:
+            title = "Jamf Pro backups are waiting for confirmation on this Mac"
+            consequence = "\(key) is on in config.yaml but not confirmed here, so backups skip "
+                + "Jamf Pro and read as Partial."
+            hint = "Confirm it in the shared config row, or from the Backups switch."
+        default:
+            title = "Backups leave Jamf Pro out on this storage"
+            consequence = "\(key) is false, so backups here skip Jamf Pro."
+            hint = "If your organization's storage and access policy allows it, turn on "
+                + "\"Back up Jamf Pro in this folder\" in Backups (\(key))."
+        }
+        return [DoctorRow(
+            id: "backup.pro_synced_storage", severity: .suggest, title: title,
+            detail: "This workspace is \(choice.place). \(secrets) \(consequence)", hint: hint)]
+    }
+
     /// One `.fail` row for a workspace whose profile is an organization-level Platform
     /// integration: it reaches Jamf Account only, and `collect` stops at one `[error]` line.
     static func organizationLevelRows(

@@ -13,6 +13,16 @@ versions in this repository map to git tags.
   `gateway.example.org` or `gateway.example.org:8443`, with or without `https://`. It works in
   setup, Update credentials, and Add environments for a connection set up that way. (#305)
 
+### Changed
+
+- On a workspace in a sync provider folder, on a network volume or in a shared workspace, the
+  Jamf Pro part of a backup is now a choice, as the Jamf Protect part already was: turn on
+  **Back up Jamf Pro in this folder** in Backups (or set `backup.pro_on_synced_storage`). A
+  workspace that already ran scheduled backups there keeps backing up for three more scheduled
+  runs while Needs attention asks, then skips Jamf Pro and shows each backup as Partial until
+  you choose; a new workspace asks before its first backup. Choosing no skips Jamf Pro without
+  a Partial run. Local storage is unchanged. (#305)
+
 ### Fixed
 
 - A Jamf School collect that runs past midnight now dates its summary by the day it started, as
@@ -68,6 +78,11 @@ versions in this repository map to git tags.
   dots, hyphens or parentheses, such as `+44 20 7946 0958` and `+1 (415) 555 0132`. (#305)
 - Mobile device snapshots saved by earlier versions no longer keep lost-mode phone numbers,
   locations or messages: the first refresh after updating removes them. (#305)
+- A Jamf Pro backup holds LDAP, SMTP and API-client configuration and scripts that can contain
+  secrets, so on storage other Macs reach it is no longer written without the organization's
+  decision. Each Mac confirms the choice once before a shared `config.yaml` can turn it on;
+  turning it off applies at once. A value the app cannot read as true or false, a `config.yaml`
+  that does not decode, and a folder another Mac marked as not shared all keep Jamf Pro out. (#305)
 
 ## [2.11.0] - 2026-10-27
 

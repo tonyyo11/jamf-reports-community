@@ -26,6 +26,7 @@ struct BackupsView: View {
     @State private var showDeleteConfirm = false
     /// Set when Protect is connected and the backups folder is on storage other Macs reach.
     @State private var syncedChoice: ProtectBackup.SyncedStorageChoice?
+    @State private var proChoice: ProBackup.SyncedStorageChoice?
 
     private var backupsDirectory: URL {
         let root = ProfileService.workspaceURL(for: workspace.profile)
@@ -117,6 +118,9 @@ struct BackupsView: View {
             Text("This cannot be undone.")
         }
         .task(id: workspace.profile) {
+            // The previous workspace's switches must not show (or write) for this one.
+            syncedChoice = nil
+            proChoice = nil
             // Sweep abandoned .tmp-* staging dirs (interrupted backups) before
             // listing — production accumulated one that was months old.
             if !workspace.demoMode {
@@ -219,7 +223,15 @@ struct BackupsView: View {
     /// synced storage the storage banner says why Protect was skipped, so the summary does not.
     @ViewBuilder
     private var protectBanner: some View {
-        if let syncedChoice { syncedStorageBanner(syncedChoice) }
+        if syncedChoice != nil || proChoice != nil { syncedStorageBanner }
+        if latestBackup?.proSkipped == true, proChoice == nil {
+            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+                Text("The latest backup has no Jamf Pro part: it was skipped. Run History has "
+                     + "the reason; Diff compares Jamf Pro backups and skips this one.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.secondary)
+            }
+        }
         if latestBackup?.proFailed == true {
             InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
                 Text("The latest backup's Jamf Pro part failed, so it holds only what Jamf "
@@ -246,28 +258,13 @@ struct BackupsView: View {
         return reason == ProtectBackup.syncedStorageReason(place: syncedChoice.place)
     }
 
-    private func syncedStorageBanner(_ choice: ProtectBackup.SyncedStorageChoice) -> some View {
-        InlineBanner(icon: "lock.shield", tone: choice.allowed ? .info : .warn) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(choice.allowed
-                     ? "Jamf Protect is backed up in this folder, which is \(choice.place). "
-                        + "Its backups contain action configurations with request headers and "
-                        + "data-forwarding settings."
-                     : "Jamf Protect is not backed up: this workspace is \(choice.place), and a "
-                        + "Protect backup contains action configurations with request headers "
-                        + "and data-forwarding settings. Jamf Pro backups are not affected.")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Text.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle("Back up Jamf Protect in this folder", isOn: Binding(
-                    get: { choice.allowed },
-                    set: { setProtectOnSyncedStorage($0) }))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .font(.footnote)
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp
-                          : SharedConfigPin.Key.protectBackupOnSyncedStorage.rawValue)
+    private var syncedStorageBanner: some View {
+        let allAllowed = (proChoice.map { $0.setting == .allowed } ?? true)
+            && (syncedChoice?.allowed ?? true)
+        return InlineBanner(icon: "lock.shield", tone: allAllowed ? .info : .warn) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let proChoice { proChoiceSection(proChoice) }
+                if let syncedChoice { protectChoiceSection(syncedChoice) }
                 Text("Your organization's storage and access policy decides whether this "
                      + "folder may hold them.")
                     .font(.caption)
@@ -276,29 +273,98 @@ struct BackupsView: View {
         }
     }
 
-    private func setProtectOnSyncedStorage(_ on: Bool) {
+    private func proChoiceSection(_ choice: ProBackup.SyncedStorageChoice) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(proChoiceText(choice))
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            // An unreadable config.yaml leaves nothing to write the switch into.
+            if choice.setting != .configUnreadable {
+                choiceToggle(
+                    "Back up Jamf Pro in this folder", isOn: choice.setting == .allowed,
+                    key: .proBackupOnSyncedStorage, choice: .pro)
+            }
+        }
+    }
+
+    private func proChoiceText(_ choice: ProBackup.SyncedStorageChoice) -> String {
+        let secrets = "A Jamf Pro backup contains LDAP, SMTP and API-client configuration and "
+            + "scripts that can hold secrets."
+        switch choice.setting {
+        case .allowed:
+            return "Jamf Pro is backed up in this folder, which is \(choice.place). \(secrets)"
+        case .declined:
+            return "Jamf Pro is not backed up: this workspace is \(choice.place). \(secrets)"
+        case .awaitingConfirmation:
+            return "Jamf Pro backups are turned on in config.yaml but wait for confirmation on "
+                + "this Mac, so they are skipped for now. Turn the switch on here to confirm. "
+                + "\(secrets)"
+        case .configUnreadable:
+            return "config.yaml could not be read; Jamf Pro is not backed up here "
+                + "(\(choice.place)). Fix the file in Config Doctor, then choose."
+        case .notChosen:
+            return "Choose whether Jamf Pro is backed up in this folder, which is "
+                + "\(choice.place). \(secrets) Scheduled backups that already ran here continue "
+                + "for \(BackupMaintenance.graceRunsBeforeAsking) runs while you decide, then "
+                + "stop. A new workspace asks before its first backup."
+        }
+    }
+
+    private func protectChoiceSection(_ choice: ProtectBackup.SyncedStorageChoice) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(choice.allowed
+                 ? "Jamf Protect is backed up in this folder, which is \(choice.place). "
+                    + "Its backups contain action configurations with request headers and "
+                    + "data-forwarding settings."
+                 : "Jamf Protect is not backed up: this workspace is \(choice.place), and a "
+                    + "Protect backup contains action configurations with request headers "
+                    + "and data-forwarding settings.")
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            choiceToggle(
+                "Back up Jamf Protect in this folder", isOn: choice.allowed,
+                key: .protectBackupOnSyncedStorage, choice: .protect)
+        }
+    }
+
+    private func choiceToggle(
+        _ title: String, isOn: Bool, key: SharedConfigPin.Key,
+        choice: BackupChoiceConfigWriter.Choice
+    ) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { isOn }, set: { setBackupChoice(choice, on: $0) }))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.footnote)
+            .disabled(workspace.demoMode)
+            .help(workspace.demoMode ? DemoData.liveOnlyHelp : key.rawValue)
+    }
+
+    private func setBackupChoice(_ choice: BackupChoiceConfigWriter.Choice, on: Bool) {
         guard !workspace.demoMode else { return }
         do {
-            try ProtectBackupConfigWriter.save(onSyncedStorage: on, profile: workspace.profile)
+            try BackupChoiceConfigWriter.save(choice, on: on, profile: workspace.profile)
         } catch {
-            errorMessage = "Couldn't save the Jamf Protect backup setting: "
-                + error.localizedDescription
+            errorMessage = "Couldn't save the backup setting: " + error.localizedDescription
         }
         Task { await refreshSyncedChoice() }
     }
 
     /// Off the main actor: it decodes config.yaml and probes the volume.
     private func refreshSyncedChoice() async {
-        guard !workspace.demoMode else { syncedChoice = nil; return }
+        guard !workspace.demoMode else { syncedChoice = nil; proChoice = nil; return }
         let profile = workspace.profile
-        let choice = await Task.detached(priority: .utility) {
-            let config = ProfileService.workspaceURL(for: profile).flatMap {
-                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
-            }
-            return ProtectBackup.syncedStorageChoice(profile: profile, config: config)
+        let choices = await Task.detached(priority: .utility) {
+            let read = ProBackup.readConfig(profile: profile)
+            return (ProtectBackup.syncedStorageChoice(profile: profile, config: read.config),
+                    ProBackup.syncedStorageChoice(
+                        profile: profile, config: read.config, decodeFailure: read.failure))
         }.value
         guard profile == workspace.profile else { return }
-        syncedChoice = choice
+        syncedChoice = choices.0
+        proChoice = choices.1
     }
 
     private var backupsTable: some View {
@@ -314,6 +380,10 @@ struct BackupsView: View {
                                 .foregroundStyle(Theme.Text.primary)
                             if backup.proFailed {
                                 Text("Jamf Pro part failed: Jamf Protect only")
+                                    .font(Theme.Fonts.mono(10.5))
+                                    .foregroundStyle(Theme.Colors.warn)
+                            } else if backup.proSkipped {
+                                Text("Jamf Pro part skipped")
                                     .font(Theme.Fonts.mono(10.5))
                                     .foregroundStyle(Theme.Colors.warn)
                             } else if backup.label.isEmpty {
@@ -776,7 +846,8 @@ struct BackupLibrary {
             fileCount: manifest.fileCount ?? stats.fileCount,
             url: dir,
             protect: manifest.protect,
-            proFailed: manifest.pro?.state == .failed
+            proFailed: manifest.pro?.state == .failed,
+            proSkipped: manifest.pro?.state == .skipped
         )
     }
 

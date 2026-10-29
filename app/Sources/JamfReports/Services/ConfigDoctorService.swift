@@ -88,6 +88,8 @@ enum ConfigDoctorService {
             rows += protectProfileProductRows(config: config)
             rows += protectSyncedBackupRows(
                 ProtectBackup.syncedStorageChoice(profile: profile, config: config))
+            rows += proSyncedBackupRows(
+                ProBackup.syncedStorageChoice(profile: profile, config: config))
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
             rows += securityPolicyRows(profile: profile, config: config)
@@ -452,10 +454,11 @@ enum ConfigDoctorService {
         }
     }
 
-    /// true/false keys the decoder does not model, and `html.with_workbook`, `notify.heartbeat`
-    /// and `protect.backup_on_synced_storage`, which it reads as off for any other value instead
-    /// of failing the decode. `output.allow_absolute_paths` also takes yes, on and 1
-    /// (`WorkspacePaths.optIn`); the others take only true and false.
+    /// true/false keys the decoder does not model, and `html.with_workbook`, `notify.heartbeat`,
+    /// `protect.backup_on_synced_storage` and `backup.pro_on_synced_storage`, which it reads as
+    /// off for any other value instead of failing the decode.
+    /// `output.allow_absolute_paths` also takes yes, on and 1 (`WorkspacePaths.optIn`); the
+    /// others take only true and false.
     static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {
         var rows: [DoctorRow] = []
         if let value = typedNonBoolean(at: ["output", "allow_absolute_paths"], in: root) {
@@ -470,9 +473,19 @@ enum ConfigDoctorService {
             case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
             }
         }
+        // A `backup:` that is not a block of settings reads as an explicit no.
+        if let value = ConfigLoader.rawValue(at: ["backup"], in: root),
+           !(value is NSNull), !(value is [String: Any]) {
+            rows.append(DoctorRow(
+                id: "config.value.backup", severity: .warn, title: "backup",
+                detail: "\((value as? Bool).map { "\($0)" } ?? typedText(value)) is not a block of "
+                    + "settings, so the app reads "
+                    + "backup.pro_on_synced_storage as false.",
+                hint: "Write backup: with pro_on_synced_storage: true or false under it."))
+        }
         let switches = [
             ["html", "track_history"], ["html", "with_workbook"], ["notify", "heartbeat"],
-            ["protect", "backup_on_synced_storage"],
+            ["protect", "backup_on_synced_storage"], ["backup", "pro_on_synced_storage"],
         ]
         for path in switches {
             if let value = typedNonBoolean(at: path, in: root) {

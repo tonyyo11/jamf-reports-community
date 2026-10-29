@@ -1568,10 +1568,10 @@ final class CLIBridge {
         ) {
             throw CLIBridgeError.wrongProduct(refusal)
         }
-        // A backup whose Jamf Pro part failed holds only Protect objects, which `pro diff`
-        // cannot read.
+        // A backup whose Jamf Pro part failed or was skipped holds only Protect objects, which
+        // `pro diff` cannot read.
         for backup in [left, right]
-        where BackupProductResult.pro(inBackup: backup)?.state == .failed {
+        where BackupProductResult.pro(inBackup: backup)?.leavesNoJamfProBackup == true {
             let error = CLIBridgeError.backupWithoutPro(backup.lastPathComponent)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(error.localizedDescription)"))
@@ -2075,18 +2075,29 @@ final class CLIBridge {
             throw CLIBridgeError.directoryOperationFailed(path: validatedTemp.path)
         }
 
-        let args = Self.backupArguments(profile: profile, outputDirectory: validatedTemp.path)
-        let exit = try await run(
-            executable: bin,
-            arguments: args,
-            environment: Self.environmentForJamfCLI(),
-            timeout: timeout,
-            onLine: onLine
-        )
-        if exit == Self.exitCodeTimedOut {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] backup stopped after the \(Int(timeout.rounded(.up))) s "
-                             + "limit; the unfinished backup was discarded"))
+        // On storage other Macs reach, the operator decides whether Jamf Pro is backed up here.
+        let proSkip = decideProBackup(
+            profile: profile, workspace: workspace, backupsRoot: backupsRoot,
+            isScheduled: trimmedLabel?.hasPrefix("scheduled-") == true, onLine: onLine)
+        let proSkipped = proSkip != nil
+        let exit: Int32
+        if proSkip == nil {
+            exit = try await run(
+                executable: bin,
+                arguments: Self.backupArguments(
+                    profile: profile, outputDirectory: validatedTemp.path),
+                environment: Self.environmentForJamfCLI(),
+                timeout: timeout,
+                onLine: onLine
+            )
+            if exit == Self.exitCodeTimedOut {
+                onLine(.init(timestamp: Date(), level: .fail,
+                             text: "[error] backup stopped after the "
+                                 + "\(Int(timeout.rounded(.up))) s limit; the unfinished backup "
+                                 + "was discarded"))
+            }
+        } else {
+            exit = 0
         }
 
         // Exit 7 is jamf-cli's documented partial failure: some config-object types
@@ -2094,7 +2105,7 @@ final class CLIBridge {
         // data was returned for the rest. Keeping that staging dir is the whole
         // point of the code — deleting it here would destroy the partial export.
         let isPartial = exit == Self.exitCodePartialFailure
-        let proFailed = exit != 0 && !isPartial
+        let proFailed = !proSkipped && exit != 0 && !isPartial
         if proFailed {
             // Every other failure branch names its cause; this one used to return a
             // bare exit code with no log line at all.
@@ -2126,10 +2137,11 @@ final class CLIBridge {
         let protectResult = await backupProtect(
             profile: profile, workspace: workspace, staging: validatedTemp, executable: bin,
             timeout: protectTimeout,
-            proState: proFailed ? .failed : (isPartial ? .partial : .ok),
+            proState: proSkipped ? .skipped : proFailed ? .failed : (isPartial ? .partial : .ok),
             sharedStorage: {
                 BackupMaintenance.sharedStorageDescription(
-                    backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume)
+                    backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
+                    pinnedIsShared: true)
             },
             onLine: onLine)
         // With Jamf Pro failed, the folder is kept only for Protect objects to restore from.
@@ -2185,14 +2197,18 @@ final class CLIBridge {
             "file_count": stats.fileCount,
             "size_bytes": stats.sizeBytes,
         ]
-        // Only a workspace with Protect connected records per-product results; any other
-        // manifest is as it always was, and older ones read the same.
-        if let protectResult {
-            manifest["products"] = [
-                "pro": ["exit_code": Int(exit),
-                        "state": proFailed ? "failed" : isPartial ? "partial" : "ok"],
-                "protect": protectResult.manifestValue,
-            ] as [String: Any]
+        // Only a workspace with Protect connected, or a skipped Jamf Pro part, records
+        // per-product results; any other manifest is as it always was, and older ones read the
+        // same.
+        if protectResult != nil || proSkipped {
+            var products: [String: Any] = [
+                "pro": proSkip.map {
+                    BackupProductResult(state: .skipped, reason: $0.reason).manifestValue
+                } ?? ["exit_code": Int(exit),
+                      "state": proFailed ? "failed" : isPartial ? "partial" : "ok"],
+            ]
+            products["protect"] = protectResult?.manifestValue
+            manifest["products"] = products
         }
         do {
             let manifestData = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted])
@@ -2223,16 +2239,110 @@ final class CLIBridge {
         let protectIncomplete = protectResult?.isIncomplete == true
         onLine(.init(
             timestamp: Date(),
-            level: isPartial || protectIncomplete ? .warn : .ok,
+            level: proSkip?.isPartial == true || isPartial || protectIncomplete ? .warn
+                : proSkipped ? .info : .ok,
             text: isPartial
                 ? "[warn] partial backup written: \(validatedFinal.lastPathComponent)"
                 : protectIncomplete
                 ? "[warn] backup written without a complete Jamf Protect part: "
                     + validatedFinal.lastPathComponent
+                : proSkipped
+                ? (proSkip?.isPartial == true ? "[warn]" : "[info]")
+                    + " backup written without a Jamf Pro part: "
+                    + validatedFinal.lastPathComponent
                 : "[ok] backup written: \(validatedFinal.lastPathComponent)"
         ))
         tightenOnSuccess(exit, profile: profile)
         return exit
+    }
+
+    /// A Jamf Pro part this backup leaves out: `reason` goes in the manifest, `isPartial` is
+    /// whether the run reads as Partial.
+    struct ProSkip: Sendable {
+        let reason: String
+        let isPartial: Bool
+    }
+
+    /// Decides whether this backup includes Jamf Pro (`ProBackup.plan`), logs what that means
+    /// and keeps the Needs-attention item in step. Returns the skip when it is skipped. A skip
+    /// is never a failure (no `[error]`); it is Partial only when nobody has decided yet or the
+    /// decision waits for a Confirm.
+    private func decideProBackup(
+        profile: String, workspace: URL, backupsRoot: URL, isScheduled: Bool,
+        onLine: @Sendable (LogLine) -> Void
+    ) -> ProSkip? {
+        let read = ProBackup.readConfig(profile: profile)
+        let config = read.config
+        let decodeFailure = read.failure
+        // A config.yaml that does not decode cannot say the folder is shared; the storage and
+        // this Mac's pin can.
+        let place = BackupMaintenance.sharedStorageDescription(
+            backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
+            unreadableConfigIsShared: false, pinnedIsShared: true)
+        let setting: ProBackup.Setting = place == nil || decodeFailure != nil ? .notChosen
+            : SharedConfigPin.proBackupSetting(
+                config?.backup?.proOnSyncedStorage, profile: profile)
+        // Once this Mac has seen a choice, a peer deleting the key cannot restart the grace.
+        if place != nil, decodeFailure == nil, setting != .notChosen {
+            ProBackupGrace.exhaust(profile: profile)
+        }
+        let plan = ProBackup.plan(
+            setting: setting, place: place, decodeFailure: decodeFailure,
+            hasScheduledHistory: { BackupMaintenance.hasScheduledJamfProBackup(profile: profile) },
+            graceRunsUsed: { ProBackupGrace.used(profile: profile) })
+        func skip(
+            _ reason: String, _ kind: ProBackup.SkipKind, place: String, detail: String? = nil
+        ) -> ProSkip {
+            let full = reason + (detail.map { ": \($0)" } ?? "")
+            onLine(.init(timestamp: Date(), level: .warn, text: ProBackup.skipLine(reason: full)))
+            if kind.makesRunPartial {
+                onLine(.init(timestamp: Date(), level: .warn, text: ProBackup.partialLine))
+            }
+            if kind == .asking {
+                AttentionLog.raise(
+                    .proBackupChoiceNeeded,
+                    ProBackup.choiceNeededMessage(place: place, runsLeft: nil))
+            } else {
+                AttentionLog.clear(.proBackupChoiceNeeded)
+            }
+            return ProSkip(reason: reason, isPartial: kind.makesRunPartial)
+        }
+        switch plan {
+        case .run:
+            AttentionLog.clear(.proBackupChoiceNeeded)
+            return nil
+        case .runOnSyncedStorage(let place):
+            AttentionLog.clear(.proBackupChoiceNeeded)
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] backing up Jamf Pro to synced storage: this workspace is "
+                             + "\(place), and "
+                             + "\(SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue) allows "
+                             + "it on this Mac"))
+            return nil
+        case .skip(let reason, let kind):
+            return skip(reason, kind, place: place ?? "on synced storage", detail: decodeFailure)
+        case .runWhileAsking(let place, let runsLeft):
+            // Only a scheduled run uses up the grace; a manual backup during it is free.
+            var left = runsLeft
+            if isScheduled {
+                do {
+                    try ProBackupGrace.record(profile: profile)
+                    left -= 1
+                } catch {
+                    // Not counting would keep Jamf Pro on shared storage for good. The manifest
+                    // gets a fixed reason; the error text stays in the log line.
+                    return skip(
+                        "the count of scheduled backups that run before this choice is needed "
+                            + "could not be saved on this Mac",
+                        .asking, place: place,
+                        detail: LogRedactor.redact(error.localizedDescription))
+                }
+            }
+            let message = ProBackup.choiceNeededMessage(place: place, runsLeft: left)
+            onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(message)"))
+            AttentionLog.raise(.proBackupChoiceNeeded, message)
+            return nil
+        }
     }
 
     private func discardStaging(_ staging: URL, onLine: @Sendable (LogLine) -> Void) {

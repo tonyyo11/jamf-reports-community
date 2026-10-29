@@ -48,6 +48,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var notifyHeartbeat: Bool = false
     /// `protect.backup_on_synced_storage`: whether a backup on shared storage includes Protect.
     var protectBackupOnSyncedStorage: Bool = false
+    /// `backup.pro_on_synced_storage`: whether a backup on shared storage includes Jamf Pro.
+    /// An absent key pins as false; whether it was absent is read from config.yaml, not the pin.
+    var proBackupOnSyncedStorage: Bool = false
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -67,6 +70,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case htmlHistoryFile = "html.history_file"
         case brandingLogoPath = "branding.logo_path"
         case protectBackupOnSyncedStorage = "protect.backup_on_synced_storage"
+        case proBackupOnSyncedStorage = "backup.pro_on_synced_storage"
 
         /// `text(of:)` with everything a comparison needs: the webhook's full URL hash.
         fileprivate func token(of pin: SharedConfigPin) -> String {
@@ -102,6 +106,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .htmlHistoryFile: pin.htmlHistoryFile
             case .brandingLogoPath: pin.brandingLogoPath
             case .protectBackupOnSyncedStorage: String(pin.protectBackupOnSyncedStorage)
+            case .proBackupOnSyncedStorage: String(pin.proBackupOnSyncedStorage)
             case .notifyURL:
                 pin.notifyURLHash.isEmpty
                     ? pin.notifyURLHost
@@ -127,6 +132,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .brandingLogoPath: pin.brandingLogoPath = source.brandingLogoPath
             case .protectBackupOnSyncedStorage:
                 pin.protectBackupOnSyncedStorage = source.protectBackupOnSyncedStorage
+            case .proBackupOnSyncedStorage:
+                pin.proBackupOnSyncedStorage = source.proBackupOnSyncedStorage
             case .notifyURL:
                 pin.notifyURLHost = source.notifyURLHost
                 pin.notifyURLHash = source.notifyURLHash
@@ -206,6 +213,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             waiting.append(.retentionMode)
         }
         if current.protectBackupOnSyncedStorage { waiting.append(.protectBackupOnSyncedStorage) }
+        if current.proBackupOnSyncedStorage { waiting.append(.proBackupOnSyncedStorage) }
         return waiting.filter(keys.contains)
     }
 
@@ -267,7 +275,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             brandingLogoPath: path("branding", "logo_path"),
             notifyHeartbeat: (raw("notify", "heartbeat") as? Bool) ?? false,
             protectBackupOnSyncedStorage:
-                (raw("protect", "backup_on_synced_storage") as? Bool) ?? false
+                (raw("protect", "backup_on_synced_storage") as? Bool) ?? false,
+            proBackupOnSyncedStorage:
+                (raw("backup", "pro_on_synced_storage") as? Bool) ?? false
         )
     }
 
@@ -375,7 +385,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             var pinned = stored
             let upgraded = adoptingMissingKeys(stored, current: current, workspace: workspace)
             if let upgraded { pinned = upgraded }
-            let optedOut = repinningProtectOptOut(&pinned, current: current)
+            let optedOut = repinningBackupOptOuts(&pinned, current: current)
             if upgraded != nil || optedOut {
                 do {
                     if persist { try save(pinned, profile: profile, appSupport: appSupport) }
@@ -391,18 +401,25 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
     }
 
-    /// Re-pins `protect.backup_on_synced_storage` to false when config.yaml no longer says true:
-    /// moving to the safe value needs no Confirm, and a later true is then drift again.
-    private static func repinningProtectOptOut(
+    /// Re-pins the two backup opt-ins (`protect.backup_on_synced_storage`,
+    /// `backup.pro_on_synced_storage`) to false when config.yaml no longer says true: moving to
+    /// the safe value needs no Confirm, and a later true is then drift again.
+    private static func repinningBackupOptOuts(
         _ pin: inout SharedConfigPin, current: SharedConfigPin
     ) -> Bool {
-        let key = Key.protectBackupOnSyncedStorage
-        guard !current.protectBackupOnSyncedStorage,
-              pin.protectBackupOnSyncedStorage || pin.unconfirmed.contains(key.rawValue)
-        else { return false }
-        pin.protectBackupOnSyncedStorage = false
-        pin.unconfirmed.removeAll { $0 == key.rawValue }
-        return true
+        let optIns: [(Key, WritableKeyPath<SharedConfigPin, Bool>)] = [
+            (.protectBackupOnSyncedStorage, \.protectBackupOnSyncedStorage),
+            (.proBackupOnSyncedStorage, \.proBackupOnSyncedStorage),
+        ]
+        var changed = false
+        for (key, field) in optIns {
+            guard !current[keyPath: field],
+                  pin[keyPath: field] || pin.unconfirmed.contains(key.rawValue) else { continue }
+            pin[keyPath: field] = false
+            pin.unconfirmed.removeAll { $0 == key.rawValue }
+            changed = true
+        }
+        return changed
     }
 
     /// `changed` plus the first-sight keys still awaiting a Confirm, in `Key.allCases` order.
@@ -656,6 +673,24 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             .isDrifted(.protectBackupOnSyncedStorage)
     }
 
+    /// `backup.pro_on_synced_storage` as this Mac may use it, by the same rule. An absent key is
+    /// `notChosen`, which is not a no; a true that waits for a Confirm is its own state.
+    static func proBackupSetting(
+        _ configured: Bool?, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> ProBackup.Setting {
+        guard let configured else { return .notChosen }
+        guard configured else { return .declined }
+        return check(profile: profile, appSupport: appSupport).isDrifted(.proBackupOnSyncedStorage)
+            ? .awaitingConfirmation : .allowed
+    }
+
+    /// Whether this Mac holds a pin for `profile`, which only a shared workspace ever gets: the
+    /// workspace was shared once, whatever config.yaml says now.
+    static func hasPin(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
+        FileManager.default.fileExists(
+            atPath: storeURL(profile: profile, appSupport: appSupport).path)
+    }
+
     // MARK: - Folder overrides
 
     /// Which path keys read as their safe value: the folders and the opt-in that differ from
@@ -906,5 +941,7 @@ extension SharedConfigPin {
         notifyHeartbeat = try c.decodeIfPresent(Bool.self, forKey: .notifyHeartbeat) ?? false
         protectBackupOnSyncedStorage = try c.decodeIfPresent(
             Bool.self, forKey: .protectBackupOnSyncedStorage) ?? false
+        proBackupOnSyncedStorage = try c.decodeIfPresent(
+            Bool.self, forKey: .proBackupOnSyncedStorage) ?? false
     }
 }

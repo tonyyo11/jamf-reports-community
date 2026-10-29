@@ -35,6 +35,10 @@ struct BackupProductResult: Sendable, Hashable {
 
     var objectTotal: Int { objectCounts.values.reduce(0, +) }
 
+    /// For a Jamf Pro result: the backup holds no Jamf Pro files, because the part failed or the
+    /// operator has not allowed it on this storage.
+    var leavesNoJamfProBackup: Bool { state == .failed || state == .skipped }
+
     /// A count a manifest may hold: a whole number from 0 to `Int32.max`, as the Platform count
     /// checks read one. `manifest.json` sits in a folder a peer can write, and a larger value
     /// would trap `objectTotal`'s sum.
@@ -210,7 +214,8 @@ enum ProtectBackup {
               let workspace = ProfileService.workspaceURL(for: profile),
               let place = BackupMaintenance.sharedStorageDescription(
                 workspace.appendingPathComponent("backups", isDirectory: true),
-                profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume)
+                profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
+                pinnedIsShared: true)
         else { return nil }
         return SyncedStorageChoice(
             place: place,
@@ -279,41 +284,6 @@ enum ProtectBackup {
     }
 }
 
-/// Scoped write of `protect.backup_on_synced_storage`, the Backups screen's switch. Like
-/// `NotifyConfigWriter` it rewrites only the `protect:` block (a dropped comment is copied out
-/// first) and confirms the value it wrote on this Mac, since the switch is the operator's own act.
-enum ProtectBackupConfigWriter {
-    enum WriteError: Error, LocalizedError {
-        case invalidProfile(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
-            }
-        }
-    }
-
-    static func apply(onSyncedStorage: Bool, to root: inout YAMLCodec.YAMLMapping) {
-        var protect = root.value(for: "protect")?.mapping ?? .init(entries: [])
-        protect.set("backup_on_synced_storage", value: .scalar(.bool(onSyncedStorage)))
-        root.set("protect", value: .mapping(protect))
-    }
-
-    @discardableResult
-    static func save(
-        onSyncedStorage: Bool, profile: String, appSupport: URL = AppSupport.directory()
-    ) throws -> ConfigSaveReport {
-        guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
-        let report = try ConfigService.saveBlock(key: "protect", profile: profile) {
-            apply(onSyncedStorage: onSyncedStorage, to: &$0)
-        }.report
-        SharedConfigPin.confirmWritten(
-            String(onSyncedStorage), key: .protectBackupOnSyncedStorage,
-            profile: profile, appSupport: appSupport)
-        return report
-    }
-}
-
 extension CLIBridge {
     /// Backs up Protect into `<staging>/protect` when the workspace has it connected and the
     /// plan allows it, whether or not the Jamf Pro backup succeeded. Nil means Protect is not
@@ -330,26 +300,19 @@ extension CLIBridge {
         sharedStorage: () -> String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> BackupProductResult? {
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig?
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                // Whether Protect is connected cannot be told, so say so instead of leaving it out.
-                let reason = LogRedactor.redact(
-                    "config.yaml does not decode, so Protect cannot be told from it: "
-                        + error.localizedDescription)
-                onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] Jamf Protect not backed up: \(reason). "
-                                 + "The Jamf Pro backup is unaffected."))
-                AttentionLog.raise(
-                    .protectBackupSkipped, "Protect not backed up: config.yaml does not decode")
-                return BackupProductResult(state: .skipped, reason: reason)
-            }
-        } else {
-            config = nil
+        let read = ProBackup.readConfig(profile: profile)
+        if let detail = read.failure {
+            // Whether Protect is connected cannot be told, so say so instead of leaving it out.
+            // The error text can carry a path: it goes in the log line, not the manifest.
+            let reason = "config.yaml does not decode, so Protect cannot be told from it"
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] Jamf Protect not backed up: \(reason): \(detail). "
+                             + "The Jamf Pro backup is unaffected."))
+            AttentionLog.raise(
+                .protectBackupSkipped, "Protect not backed up: config.yaml does not decode")
+            return BackupProductResult(state: .skipped, reason: reason)
         }
+        let config = read.config
         let named = config?.protect?.resolvedProfile ?? ""
         let refusal = config?.protect?.isEnabled == true && !named.isEmpty
             ? await ProfileAuthMethod.protectRefusal(profile: named) : nil
@@ -488,7 +451,8 @@ extension CLIBridge {
         switch state {
         case .ok: "the Jamf Pro backup is complete"
         case .partial: "the Jamf Pro backup is partial too"
-        case .failed, .skipped: "the Jamf Pro backup failed too"
+        case .failed: "the Jamf Pro backup failed too"
+        case .skipped: "the Jamf Pro backup was skipped too"
         }
     }
 }
