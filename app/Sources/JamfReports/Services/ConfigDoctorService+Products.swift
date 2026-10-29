@@ -2,7 +2,7 @@ import Foundation
 
 extension ConfigDoctorService {
 
-    /// One `.suggest` row on the Jamf Pro workspace whose `protect.profile` names a Protect (or
+    /// One `.suggest` row on the Jamf Pro workspace whose Protect slot names a Protect (or
     /// Security Cloud) login that also has a workspace folder. 2.9.0 listed that login as a
     /// workspace, so a catch-up, a scheduled run or a click may have made a folder for it. The
     /// app reads nothing in it (the Protect data is in this workspace), and removes nothing.
@@ -12,8 +12,8 @@ extension ConfigDoctorService {
         discovered: () -> [JamfCLIProfile],
         folderExists: (String) -> Bool = { ProfileService.hasWorkspace($0) }
     ) -> [DoctorRow] {
-        guard config.protect?.isEnabled == true,
-              let named = config.protect?.resolvedProfile, !named.isEmpty, named != profile,
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        guard let named = environment.protect, named != profile,
               discovered().contains(where: { $0.name == named && $0.product.isNeverAWorkspace }),
               folderExists(named) else { return [] }
         let shown = ConfigSchema.displayText(named)
@@ -21,10 +21,10 @@ extension ConfigDoctorService {
             id: "protect.profile_folder",
             severity: .suggest,
             title: "The Jamf Protect login has a workspace folder it does not need",
-            detail: "protect.profile names '\(shown)', a Jamf Protect login. It is not a Jamf Pro "
-                + "workspace, so the app no longer lists or runs it, and its Protect data is "
-                + "collected into this workspace. A folder named for it under the workspace "
-                + "root, made by an earlier version, is not read.",
+            detail: "\(environment.protectKey) names '\(shown)', a Jamf Protect login. It is not "
+                + "a Jamf Pro workspace, so the app no longer lists or runs it, and its Protect "
+                + "data is collected into this workspace. A folder named for it under the "
+                + "workspace root, made by an earlier version, is not read.",
             hint: "Remove the '\(ProfileName.pathComponent(named))' folder from the workspace "
                 + "root when you no longer need its history. The app never deletes it."
         )]
@@ -38,36 +38,42 @@ extension ConfigDoctorService {
             discovered: { ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]) })
     }
 
-    /// One `.warn` row when `protect.profile` names a login jamf-cli knows to be another product
+    /// One `.warn` row when the Protect slot names a login jamf-cli knows to be another product
     /// (a Jamf Pro or School profile, say): collect, backup and the dashboard skip Protect for it
     /// rather than send Protect commands to the wrong API. Nothing is asked when `resolved`
     /// cannot tell.
     static func protectProfileProductRows(
         config: ReportConfig,
+        workspace: String,
         resolved: (String) -> ProfileAuthMethod.Resolved?
     ) -> [DoctorRow] {
-        guard config.protect?.isEnabled == true,
-              let named = config.protect?.resolvedProfile, !named.isEmpty,
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: workspace)
+        guard let named = environment.protect,
               let product = resolved(named)?.product,
               resolved(named)?.protectRefusal(profile: named) != nil else { return [] }
         let shown = ConfigSchema.displayText(named)
+        let key = environment.protectKey
         return [DoctorRow(
             id: "protect.profile_product",
             severity: .warn,
-            title: "protect.profile is not a Jamf Protect login",
-            detail: "protect.profile names '\(shown)', a \(product.displayName) profile. Protect "
+            title: "\(key) is not a Jamf Protect login",
+            detail: "\(key) names '\(shown)', a \(product.displayName) profile. Protect "
                 + "commands would go to the wrong API, so Jamf Protect is not collected, backed "
                 + "up or added to the dashboard until it names a Jamf Protect login.",
-            hint: "Set protect.profile to the profile `jamf-cli protect setup` created, or turn "
-                + "protect.enabled off."
+            hint: environment.source == .profilesBlock
+                ? "Set profiles.protect to the profile `jamf-cli protect setup` created, or "
+                    + "clear it."
+                : "Set protect.profile to the profile `jamf-cli protect setup` created, or turn "
+                    + "protect.enabled off."
         )]
     }
 
     /// `protectProfileProductRows` for the live `config list`; it asks jamf-cli only for a
     /// workspace that has Protect on.
-    static func protectProfileProductRows(config: ReportConfig) -> [DoctorRow] {
+    static func protectProfileProductRows(config: ReportConfig, workspace: String) -> [DoctorRow] {
         protectProfileProductRows(
-            config: config, resolved: { ProfileAuthMethod.resolve(profile: $0) })
+            config: config, workspace: workspace,
+            resolved: { ProfileAuthMethod.resolve(profile: $0) })
     }
 
     /// One `.suggest` row while backups leave Jamf Protect out because the workspace is on

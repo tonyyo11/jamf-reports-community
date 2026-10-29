@@ -121,6 +121,13 @@ enum CLIRun {
         exit(code)
     }
 
+    /// Exit unless `profile` is a name the app takes; the typed name is filtered before it is
+    /// printed, since an invalid one can hold control characters.
+    static func requireValidProfile(_ profile: String) {
+        guard !ProfileService.isValid(profile) else { return }
+        fail("invalid profile '\(ConfigSchema.displayText(profile))'")
+    }
+
     /// Reject a user-supplied output path that lands in a sensitive directory
     /// (`~/.ssh`, `~/Library`, …). The GUI applies this deny-list in `CLIBridge`;
     /// the CLI calls the engine directly, so it must guard the path itself —

@@ -13,7 +13,7 @@ struct ProtectView: View {
     @State private var reloads = 0
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var selectedTimelineDevice: String?
-    @State private var connectedProducts = ConnectedProducts.none
+    @State private var environment = EnvironmentProfiles.none
     @State private var showingConnect = false
     @State private var proMatch = ProMatchState.pending
 
@@ -23,11 +23,11 @@ struct ProtectView: View {
         case pending, noInventory(ProtectProCorrelation.Inventory), ready(ProtectProCorrelation)
     }
 
-    /// Protect is connected to this workspace (`protect.enabled` with a profile). Before 2.10
+    /// Protect is connected to this workspace (`EnvironmentProfiles.protect`). Before 2.10
     /// the screen decided from snapshots on disk alone, so an unconnected workspace was told
     /// to run jamf-cli commands that write nothing into it.
     private var protectConnected: Bool {
-        workspace.demoMode || connectedProducts.protectProfile != nil
+        workspace.demoMode || environment.protect != nil
     }
 
     /// The demo shows the deep dive: its data is populated, and a locked card on
@@ -125,22 +125,22 @@ struct ProtectView: View {
         if loadedSource != source {
             loadedSource = nil
             snapshot = .empty
-            connectedProducts = .none
+            environment = .none
             proMatch = .pending
         }
         // The demo's rows are drawn by the same code as a live tenant's, and its
         // counts are taken from those rows.
         if workspace.demoMode {
             snapshot = DemoData.protectSnapshot
-            connectedProducts = .none
+            environment = .none
         } else {
             guard let loaded = await ScreenLoad.paint(
                 stillCurrent: { source == dataSource },
                 read: { (ProtectDashboardService.load(profile: profile),
-                         ConnectedProducts.read(profile: profile)) }
+                         EnvironmentProfiles.read(workspace: profile)) }
             ) else { return }
             snapshot = loaded.0
-            connectedProducts = loaded.1
+            environment = loaded.1
         }
         loadedSource = source
         await loadProMatch(source: source, profile: profile)

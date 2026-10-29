@@ -15,7 +15,7 @@ enum ProfileService {
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile):
-                return "Invalid profile name: \(profile)"
+                return ProfileName.invalidMessage(profile)
             case .outsideWorkspaceRoot(let url):
                 return "Refusing to remove workspace outside \(workspacesRoot().path): \(url.path)"
             }
@@ -249,10 +249,9 @@ enum ProfileService {
     ) -> [JamfCLIProfile] {
         var paired = Set<String>()
         for profile in profiles where hasWorkspace(profile.name, under: root) {
-            let products = ConnectedProducts.read(
+            let environment = EnvironmentProfiles.read(
                 configURL: configURL(profile.name, under: root), workspace: profile.name)
-            for name in [products.protectProfile, products.foreignSchoolProfile].compactMap({ $0 })
-            where name != profile.name {
+            for name in environment.connectedProfiles where name != profile.name {
                 paired.insert(name)
             }
         }

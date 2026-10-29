@@ -351,7 +351,7 @@ enum SecurityPolicyConfigWriter {
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
+            case .invalidProfile(let profile): ProfileName.invalidMessage(profile)
             }
         }
     }

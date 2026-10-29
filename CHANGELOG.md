@@ -18,7 +18,6 @@ versions in this repository map to git tags.
   update-error devices that opens the Health Audit. An environment with no Macs leaves out the
   Mac-only sections (Customize lists them with the reason) and shows mobile score cards; a saved
   Overview layout gets the new section at the end. (#305)
-
 - The Health Audit has a Mobile Devices card with seven findings: jailbreak detected, not managed,
   passcode not compliant, data protection off, OS behind the current release, software update
   errors, and no inventory update within the stale window. Each shows the change since the
@@ -26,6 +25,9 @@ versions in this repository map to git tags.
   devices table has a Needs attention menu with the same filters. The HTML report's Needs
   attention lists the same conditions. A device that does not report a field is never counted
   as failing, and the card is hidden when the workspace has no mobile devices. (#305)
+- config.yaml can name each product's jamf-cli profile in one `profiles:` block (Jamf Pro or
+  Jamf School, Jamf Protect, and the Platform API and Security Cloud profiles for later
+  releases). A workspace without the block keeps working exactly as before. (#305)
 
 ### Changed
 
