@@ -1459,7 +1459,7 @@ struct ReportEngine: Sendable {
             try png.write(to: url, options: .atomic)
         } catch {
             AppLogger.report.warning(
-                "[warn] PNG export failed for \(kind, privacy: .public): \(error.localizedDescription)"
+                "[warn] PNG export failed for \(kind, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
         }
     }

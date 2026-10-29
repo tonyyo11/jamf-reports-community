@@ -50,8 +50,8 @@ enum TickRunner {
     }
 
     /// Spawn `JamfReports --tick --now <label>` as a child through `CLIBridge.run`, the shared
-    /// runner: line splitting, EOF-gated completion, handler cleanup and task cancellation (a
-    /// cancelled caller stops the child). With `wait`, stream its output through `onLine` and
+    /// runner: line splitting, EOF-gated completion, handler cleanup. Cancelling the caller does
+    /// not stop the child. With `wait`, stream its output through `onLine` and
     /// return its exit code; without, return 0 once the executable is found and let the run
     /// finish unobserved (the health-row button). The parent's environment is passed on, as
     /// before: the child reads `JRC_WORKSPACES_ROOT` and the like.
@@ -74,12 +74,17 @@ enum TickRunner {
             }
             return 0
         }
-        do {
-            return try await bridge.run(
-                executable: executable, arguments: arguments,
-                environment: environment, onLine: onLine)
-        } catch {
-            return 1
+        // Detached, so cancelling the caller (a view going away) stops the wait, not the child:
+        // a Run now keeps running, as it did before.
+        let run = Task.detached {
+            do {
+                return try await bridge.run(
+                    executable: executable, arguments: arguments,
+                    environment: environment, onLine: onLine)
+            } catch {
+                return Int32(1)
+            }
         }
+        return await run.value
     }
 }
