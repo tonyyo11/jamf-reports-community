@@ -139,7 +139,7 @@
     "command": "config validate",
     "description": "Validate config file and profile settings",
     "destructive": false,
-    "flags": "--connectivity",
+    "flags": "--auth, --connectivity",
     "group": "Core Commands",
     "product": ""
   },
@@ -175,7 +175,7 @@
     "command": "mcp serve",
     "description": "Start an MCP server on stdio",
     "destructive": false,
-    "flags": "",
+    "flags": "--input-dir",
     "group": "Core Commands",
     "product": ""
   },
@@ -615,6 +615,26 @@
   {
     "aliases": "deals",
     "api": "platform-gateway",
+    "command": "platform deal-registrations create",
+    "description": "Create Deal Registration",
+    "destructive": false,
+    "flags": "--from-file, --scaffold, --set",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "deals",
+    "api": "platform-gateway",
+    "command": "platform deal-registrations get",
+    "description": "Get Deal Registration",
+    "destructive": false,
+    "flags": "--name",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "deals",
+    "api": "platform-gateway",
     "command": "platform deal-registrations list",
     "description": "List Deal Registrations",
     "destructive": false,
@@ -709,6 +729,76 @@
     "description": "Get Distributor Quote",
     "destructive": false,
     "flags": "",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "envs",
+    "api": "platform-gateway",
+    "command": "platform environments",
+    "description": "Manage environments (Platform API)",
+    "destructive": false,
+    "flags": "",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "envs",
+    "api": "platform-gateway",
+    "command": "platform environments apply",
+    "description": "Create or update an environment by name",
+    "destructive": false,
+    "flags": "--from-file, --scaffold, --set, --yes",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "envs",
+    "api": "platform-gateway",
+    "command": "platform environments create",
+    "description": "Create Environment",
+    "destructive": false,
+    "flags": "--from-file, --scaffold, --set",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "envs",
+    "api": "platform-gateway",
+    "command": "platform environments delete",
+    "description": "Delete Environment",
+    "destructive": true,
+    "flags": "--name, --yes",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "envs",
+    "api": "platform-gateway",
+    "command": "platform environments list",
+    "description": "List Environments",
+    "destructive": false,
+    "flags": "",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "envs",
+    "api": "platform-gateway",
+    "command": "platform environments tenants",
+    "description": "Assign Tenants To Environment",
+    "destructive": false,
+    "flags": "--from-file, --name, --scaffold, --set",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "envs",
+    "api": "platform-gateway",
+    "command": "platform environments update",
+    "description": "Update Environment",
+    "destructive": false,
+    "flags": "--from-file, --name, --scaffold, --set",
     "group": "Jamf Account (US-only)",
     "product": "platform"
   },
@@ -843,6 +933,26 @@
   },
   {
     "aliases": "",
+    "api": "platform-gateway",
+    "command": "platform tenants",
+    "description": "Manage tenants (Platform API)",
+    "destructive": false,
+    "flags": "",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "",
+    "api": "platform-gateway",
+    "command": "platform tenants list",
+    "description": "List Tenants",
+    "destructive": false,
+    "flags": "",
+    "group": "Jamf Account (US-only)",
+    "product": "platform"
+  },
+  {
+    "aliases": "",
     "command": "pro",
     "description": "Jamf Pro commands",
     "destructive": false,
@@ -932,7 +1042,7 @@
     "command": "pro accounts create",
     "description": "Adds new account.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > Admin account: Create (accounts:create)"
     ],
@@ -1008,7 +1118,7 @@
     "command": "pro accounts update",
     "description": "Updates the user account.",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Admin identity and access > Admin account: Update (accounts:update)"
     ],
@@ -1037,7 +1147,7 @@
     "command": "pro activation-code add-history-note",
     "description": "Add Activation Code object note",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Activation code: Update (activation-code:update)"
     ],
@@ -1075,7 +1185,7 @@
     "command": "pro activation-code history-export",
     "description": "Export history object collection in specified format for Activation Code",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Infrastructure > Activation code: Read (activation-code:read)"
     ],
@@ -1123,7 +1233,7 @@
     "command": "pro activation-code update",
     "description": "Updates Activation Code",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Activation code: Update (activation-code:update)"
     ],
@@ -1152,7 +1262,7 @@
     "command": "pro adcs-settings add-history-note",
     "description": "Add specified AD CS Settings object note",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > AD Certificate Services connector: Update (ad-cs-settings:update)"
     ],
@@ -1171,7 +1281,7 @@
     "command": "pro adcs-settings create",
     "description": "Create AD CS Settings configuration for either inbound or outbound mode",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > AD Certificate Services connector: Create (ad-cs-settings:create)"
     ],
@@ -1285,7 +1395,7 @@
     "command": "pro adcs-settings validate-certificate",
     "description": "Validate AD CS Settings server certificate",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > AD Certificate Services connector: Create, Update (ad-cs-settings:create, ad-cs-settings:update)"
     ],
@@ -1306,7 +1416,7 @@
     "command": "pro adcs-settings validate-client-certificate",
     "description": "Validate AD CS Settings client certificate",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > AD Certificate Services connector: Create, Update (ad-cs-settings:create, ad-cs-settings:update)"
     ],
@@ -1374,7 +1484,7 @@
     "command": "pro advanced-mobile-device-searches create",
     "description": "Create Advanced Search object",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Inventory > Advanced device searches: Create (advanced-device-searches:create)"
     ],
@@ -1469,7 +1579,7 @@
     "command": "pro advanced-mobile-device-searches update",
     "description": "Get specified Advanced Search object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Inventory > Advanced device searches: Update (advanced-device-searches:update)"
     ],
@@ -1516,7 +1626,7 @@
     "command": "pro advanced-user-content-searches create",
     "description": "Create Advanced User Content Search object",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Inventory > Advanced user searches: Create (advanced-user-searches:create)"
     ],
@@ -1592,7 +1702,7 @@
     "command": "pro advanced-user-content-searches update",
     "description": "Get Specified Advanced User Content Search object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Inventory > Advanced user searches: Update (advanced-user-searches:update)"
     ],
@@ -1624,7 +1734,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin Accounts",
     "product": "pro"
   },
@@ -1637,7 +1747,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin Accounts",
     "product": "pro"
   },
@@ -1650,7 +1760,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin Accounts",
     "product": "pro"
   },
@@ -1663,7 +1773,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin Accounts",
     "product": "pro"
   },
@@ -1673,10 +1783,10 @@
     "command": "pro api-authentication oauth-token",
     "description": "Obtain an access token using an API Client",
     "destructive": false,
-    "flags": "",
+    "flags": "--from-file",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin Accounts",
     "product": "pro"
   },
@@ -1689,7 +1799,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin Accounts",
     "product": "pro"
   },
@@ -1712,7 +1822,7 @@
     "flags": "--dry-run, --from-file, --scaffold, --yes",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "product": "pro"
   },
@@ -1725,7 +1835,7 @@
     "flags": "--name",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Create API Integrations"
@@ -1738,10 +1848,10 @@
     "command": "pro api-integrations create",
     "description": "Create API integration object",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Create API Integrations"
@@ -1757,7 +1867,7 @@
     "flags": "--dry-run, --from-file, --name, --yes",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Delete API Integrations"
@@ -1773,7 +1883,7 @@
     "flags": "--name",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Read API Integrations"
@@ -1789,7 +1899,7 @@
     "flags": "--all, --filter, --limit, --page, --page-size, --sort",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Read API Integrations"
@@ -1802,10 +1912,10 @@
     "command": "pro api-integrations update",
     "description": "Update specified API integration object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Update API Integrations"
@@ -1831,7 +1941,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Read API Roles"
@@ -1847,7 +1957,7 @@
     "flags": "--limit, --name",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Read API Roles"
@@ -1873,7 +1983,7 @@
     "flags": "--dry-run, --from-file, --scaffold, --yes",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "product": "pro"
   },
@@ -1883,10 +1993,10 @@
     "command": "pro api-roles create",
     "description": "Create a new API role",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Create API Roles"
@@ -1902,7 +2012,7 @@
     "flags": "--dry-run, --from-file, --name, --yes",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Delete API Roles"
@@ -1918,7 +2028,7 @@
     "flags": "--name",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Read API Roles"
@@ -1934,7 +2044,7 @@
     "flags": "--all, --filter, --limit, --page, --page-size, --sort",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Read API Roles"
@@ -1947,10 +2057,10 @@
     "command": "pro api-roles update",
     "description": "Update API Integrations Role",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "privileges": [
       "Update API Roles"
@@ -1992,7 +2102,7 @@
     "command": "pro apns-client-push-status enable-client",
     "description": "Enable push notifications for a single client",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Device actions > Device actions: Execute (device-actions:execute)"
     ],
@@ -2088,7 +2198,7 @@
     "command": "pro app-installers global-settings add-history-note",
     "description": "Add App Installer global settings history object note",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Apps: Update (applications:update)"
     ],
@@ -2164,7 +2274,7 @@
     "command": "pro app-installers global-settings update",
     "description": "Update global settings for app installers.",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "App lifecycle management > Apps: Update (applications:update)"
     ],
@@ -2193,7 +2303,7 @@
     "command": "pro app-installers-deployments add-history-note",
     "description": "Add specified App Installer deployment history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Apps: Update (applications:update)"
     ],
@@ -2252,7 +2362,7 @@
     "command": "pro app-installers-deployments create",
     "description": "Create a new App Installer deployment",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Apps: Create (applications:create)"
     ],
@@ -2290,7 +2400,7 @@
     "command": "pro app-installers-deployments export",
     "description": "Export App Installer deployment summary",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "App lifecycle management > Apps: Read (applications:read)"
     ],
@@ -2423,7 +2533,7 @@
     "command": "pro app-installers-deployments update",
     "description": "Updates App Installer deployment.",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "App lifecycle management > Apps: Update (applications:update)"
     ],
@@ -2442,7 +2552,7 @@
     "command": "pro app-installers-deployments version-update",
     "description": "Update app title version for deployment.",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Apps: Update (applications:update)"
     ],
@@ -2557,7 +2667,7 @@
     "command": "pro app-request update",
     "description": "Update Application Request Settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > App request settings: Update (app-request:update)"
     ],
@@ -2603,7 +2713,7 @@
     "command": "pro app-request-form-input-fields create",
     "description": "Create Form Input Field record",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > App request settings: Update (app-request:update)"
     ],
@@ -2679,7 +2789,7 @@
     "command": "pro app-request-form-input-fields update",
     "description": "Replace all Form Input Fields",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > App request settings: Update (app-request:update)"
     ],
@@ -3053,7 +3163,7 @@
     "command": "pro blueprints import-profile",
     "description": "Import a Classic configuration profile as a blueprint",
     "destructive": false,
-    "flags": "--blueprint-name, --computer-group, --include-unsupported, --legacy, --mobile-device-group, --name, --strip-defaults, --type",
+    "flags": "--all, --blueprint-name, --computer-group, --convert, --deploy, --include-unsupported, --mobile-device-group, --name, --skip-exclusions, --skip-limitations, --strip-defaults, --takeover-only, --type, --yes",
     "group": "Platform - Configuration",
     "product": "pro"
   },
@@ -3205,7 +3315,7 @@
     "command": "pro buildings add-history-note",
     "description": "Add specified Building history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Organizational context > Buildings: Update (buildings:update)"
     ],
@@ -3242,7 +3352,7 @@
     "command": "pro buildings create",
     "description": "Create Building record",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Organizational context > Buildings: Create (buildings:create)"
     ],
@@ -3299,7 +3409,7 @@
     "command": "pro buildings export",
     "description": "Export Buildings collection",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Organizational context > Buildings: Read (buildings:read)"
     ],
@@ -3356,7 +3466,7 @@
     "command": "pro buildings history-export",
     "description": "Export history object collection in specified format for specified Buildings",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --name, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --name, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Organizational context > Buildings: Read (buildings:read)"
     ],
@@ -3394,7 +3504,7 @@
     "command": "pro buildings update",
     "description": "Update specified Building object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Organizational context > Buildings: Update (buildings:update)"
     ],
@@ -3457,7 +3567,7 @@
     "command": "pro bulk send-command",
     "description": "Send an MDM command to a set of computers",
     "destructive": false,
-    "flags": "--command, --confirm-destructive, --from-file, --group, --yes",
+    "flags": "--command, --from-file, --group, --yes",
     "group": "Power Commands",
     "product": "pro"
   },
@@ -3496,7 +3606,7 @@
     "command": "pro cache-settings update",
     "description": "Update Cache Settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Infrastructure > Cache: Update (cache:update)"
     ],
@@ -3525,7 +3635,7 @@
     "command": "pro categories add-history-note",
     "description": "Add specified Category history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Organizational context > Categories: Update (categories:update)"
     ],
@@ -3564,7 +3674,7 @@
     "command": "pro categories create",
     "description": "Create Category record",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Organizational context > Categories: Create (categories:create)"
     ],
@@ -3681,7 +3791,7 @@
     "command": "pro categories update",
     "description": "Update specified Category object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Organizational context > Categories: Update (categories:update)"
     ],
@@ -4439,7 +4549,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Classic API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro Classic 11.32.0, which trails the Pro API's version",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -4452,7 +4562,7 @@
     "flags": "--dry-run, --from-file, --yes",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Classic API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro Classic 11.32.0, which trails the Pro API's version",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -4465,7 +4575,7 @@
     "flags": "--from-file",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Classic API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro Classic 11.32.0, which trails the Pro API's version",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -4478,7 +4588,7 @@
     "flags": "--dry-run, --from-file, --name, --yes",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Classic API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro Classic 11.32.0, which trails the Pro API's version",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -4491,7 +4601,7 @@
     "flags": "--name",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Classic API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro Classic 11.32.0, which trails the Pro API's version",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -4504,7 +4614,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Classic API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro Classic 11.32.0, which trails the Pro API's version",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -4517,7 +4627,7 @@
     "flags": "--from-file, --name",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Classic API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro Classic 11.32.0, which trails the Pro API's version",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -4642,6 +4752,16 @@
   {
     "aliases": "",
     "api": "pro-classic",
+    "command": "pro classic-computer-groups add-members",
+    "description": "Add computers to a static computer group",
+    "destructive": false,
+    "flags": "--computer, --from-file, --from-group, --name, --yes",
+    "group": "Classic - Computers",
+    "product": "pro"
+  },
+  {
+    "aliases": "",
+    "api": "pro-classic",
     "command": "pro classic-computer-groups apply",
     "description": "Create or replace a computer_group by name",
     "destructive": false,
@@ -4718,6 +4838,16 @@
     "gatewayPrivileges": [
       "device-groups:read"
     ],
+    "group": "Classic - Computers",
+    "product": "pro"
+  },
+  {
+    "aliases": "",
+    "api": "pro-classic",
+    "command": "pro classic-computer-groups remove-members",
+    "description": "Remove computers from a static computer group",
+    "destructive": false,
+    "flags": "--computer, --from-file, --from-group, --name, --yes",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -6513,6 +6643,16 @@
   {
     "aliases": "",
     "api": "pro-classic",
+    "command": "pro classic-mobile-device-groups add-members",
+    "description": "Add mobile devices to a static mobile device group",
+    "destructive": false,
+    "flags": "--from-file, --from-group, --mobile-device, --name, --yes",
+    "group": "Classic - Mobile Devices",
+    "product": "pro"
+  },
+  {
+    "aliases": "",
+    "api": "pro-classic",
     "command": "pro classic-mobile-device-groups apply",
     "description": "Create or replace a mobile_device_group by name",
     "destructive": false,
@@ -6589,6 +6729,16 @@
     "gatewayPrivileges": [
       "device-groups:read"
     ],
+    "group": "Classic - Mobile Devices",
+    "product": "pro"
+  },
+  {
+    "aliases": "",
+    "api": "pro-classic",
+    "command": "pro classic-mobile-device-groups remove-members",
+    "description": "Remove mobile devices from a static mobile device group",
+    "destructive": false,
+    "flags": "--from-file, --from-group, --mobile-device, --name, --yes",
     "group": "Classic - Mobile Devices",
     "product": "pro"
   },
@@ -7604,6 +7754,26 @@
     "gatewayPrivileges": [
       "policies:delete"
     ],
+    "group": "Classic - Computers",
+    "product": "pro"
+  },
+  {
+    "aliases": "",
+    "api": "pro-classic",
+    "command": "pro classic-policies disable",
+    "description": "Disable one or more policies",
+    "destructive": false,
+    "flags": "--all-computers, --category, --exclude-building, --exclude-department, --exclude-group, --from-file, --limit-network-segment, --limit-user-group, --name, --name-pattern, --scope-building, --scope-department, --scope-group, --yes",
+    "group": "Classic - Computers",
+    "product": "pro"
+  },
+  {
+    "aliases": "",
+    "api": "pro-classic",
+    "command": "pro classic-policies enable",
+    "description": "Enable one or more policies",
+    "destructive": false,
+    "flags": "--all-computers, --category, --exclude-building, --exclude-department, --exclude-group, --from-file, --limit-network-segment, --limit-user-group, --name, --name-pattern, --scope-building, --scope-department, --scope-group, --yes",
     "group": "Classic - Computers",
     "product": "pro"
   },
@@ -8867,7 +9037,7 @@
     "command": "pro client-check-in add-history-note",
     "description": "Add a Note to Client Check-In History",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Device check-in configuration: Update (computer-check-in:update)"
     ],
@@ -8924,7 +9094,7 @@
     "command": "pro client-check-in update",
     "description": "Update Client Check-In object",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Device check-in configuration: Update (computer-check-in:update)"
     ],
@@ -8953,7 +9123,7 @@
     "command": "pro cloud-azure create",
     "description": "Create Azure Cloud Identity Provider configuration",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Create (ldap-servers:create)"
     ],
@@ -9048,7 +9218,7 @@
     "command": "pro cloud-azure update",
     "description": "Update Azure Cloud Identity Provider configuration",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Update (ldap-servers:update)"
     ],
@@ -9096,7 +9266,7 @@
     "command": "pro cloud-distribution-point add-history-note",
     "description": "Add specified cloud distribution point history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Cloud Distribution Point: Update (cloud-distribution-point:update)"
     ],
@@ -9115,7 +9285,7 @@
     "command": "pro cloud-distribution-point create",
     "description": "Create cloud distribution point",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Cloud Distribution Point: Update (cloud-distribution-point:update)"
     ],
@@ -9287,7 +9457,7 @@
     "command": "pro cloud-idp add-history-note",
     "description": "Add Cloud Identity Provider history note",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Update (ldap-servers:update)"
     ],
@@ -9306,7 +9476,7 @@
     "command": "pro cloud-idp export",
     "description": "Export Cloud Identity Providers collection",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Read (ldap-servers:read)"
     ],
@@ -9382,7 +9552,7 @@
     "command": "pro cloud-idp test-group",
     "description": "Get group test search",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Read (ldap-servers:read)"
     ],
@@ -9401,7 +9571,7 @@
     "command": "pro cloud-idp test-user",
     "description": "Get user test search",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Read (ldap-servers:read)"
     ],
@@ -9420,7 +9590,7 @@
     "command": "pro cloud-idp test-user-membership",
     "description": "Get membership test search",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Read (ldap-servers:read)"
     ],
@@ -9488,7 +9658,7 @@
     "command": "pro cloud-ldap create",
     "description": "Create Cloud Identity Provider configuration",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Create (ldap-servers:create)"
     ],
@@ -9640,7 +9810,7 @@
     "command": "pro cloud-ldap update",
     "description": "Update Cloud Identity Provider configuration",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Update (ldap-servers:update)"
     ],
@@ -9659,7 +9829,7 @@
     "command": "pro cloud-ldap update-mappings",
     "description": "Update Cloud Identity Provider mappings configuration.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Update (ldap-servers:update)"
     ],
@@ -9678,7 +9848,7 @@
     "command": "pro cloud-ldap verify",
     "description": "Validate keystore for Cloud Identity Provider secure connection",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > LDAP / cloud IdP: Create (ldap-servers:create)"
     ],
@@ -9800,7 +9970,7 @@
     "command": "pro computer-extension-attributes add-history-note",
     "description": "Add specified Computer Extension Attribute history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Inventory > Device extension attributes: Update (extension-attributes:update)"
     ],
@@ -9837,7 +10007,7 @@
     "command": "pro computer-extension-attributes create",
     "description": "Create Computer Extension Attribute.",
     "destructive": false,
-    "flags": "--scaffold, --script-file",
+    "flags": "--from-file, --scaffold, --script-file",
     "gatewayPermissions": [
       "Inventory > Device extension attributes: Create (extension-attributes:create)"
     ],
@@ -9989,7 +10159,7 @@
     "command": "pro computer-extension-attributes update",
     "description": "Update specified Computer Extension Attribute object.",
     "destructive": false,
-    "flags": "--name, --scaffold, --script-file",
+    "flags": "--from-file, --name, --scaffold, --script-file",
     "gatewayPermissions": [
       "Inventory > Device extension attributes: Update (extension-attributes:update)"
     ],
@@ -10154,7 +10324,7 @@
     "command": "pro computer-groups-smart-groups create",
     "description": "Create a Smart Computer Group",
     "destructive": false,
-    "flags": "--platform, --scaffold",
+    "flags": "--from-file, --platform, --scaffold",
     "gatewayPermissions": [
       "Inventory > Device groups: Create (device-groups:create)"
     ],
@@ -10230,7 +10400,7 @@
     "command": "pro computer-groups-smart-groups update",
     "description": "Update a Smart Computer Group",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Inventory > Device groups: Update (device-groups:update)"
     ],
@@ -10277,7 +10447,7 @@
     "command": "pro computer-groups-static-groups create",
     "description": "Create membership of a static computer group.",
     "destructive": false,
-    "flags": "--platform, --scaffold",
+    "flags": "--from-file, --platform, --scaffold",
     "gatewayPermissions": [
       "Inventory > Device groups: Create (device-groups:create)"
     ],
@@ -10353,7 +10523,7 @@
     "command": "pro computer-groups-static-groups update",
     "description": "Update membership of a static computer group.",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Inventory > Device groups: Update (device-groups:update)"
     ],
@@ -10427,7 +10597,7 @@
     "command": "pro computer-inventory create",
     "description": "Create Computer Inventory record",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Inventory > Devices: Create (devices:create)"
     ],
@@ -10470,14 +10640,10 @@
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory disable-remote-desktop",
     "description": "Disable Remote Desktop on a computer",
     "destructive": false,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Computer Management",
     "product": "pro"
   },
@@ -10502,14 +10668,10 @@
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory enable-remote-desktop",
     "description": "Enable Remote Desktop on a computer",
     "destructive": false,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Computer Management",
     "product": "pro"
   },
@@ -10609,14 +10771,10 @@
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory lock",
     "description": "Lock a computer",
     "destructive": true,
     "flags": "--confirm-destructive, --from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Computer Management",
     "product": "pro"
   },
@@ -10706,66 +10864,55 @@
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory restart",
     "description": "Restart a computer",
     "destructive": true,
     "flags": "--from-file, --group, --id, --name, --rebuild-kernel-cache, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Computer Management",
     "product": "pro"
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory set-auto-admin-password",
     "description": "Set the auto-admin password on a computer",
     "destructive": false,
     "flags": "--confirm-destructive, --from-file, --group, --id, --name, --password-file, --serial, --user-name, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Computer Management",
     "product": "pro"
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory set-recovery-lock",
     "description": "Set or clear the Recovery Lock password on a computer",
     "destructive": false,
-    "flags": "--confirm-destructive, --from-file, --group, --id, --name, --new-password, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
+    "flags": "--clear, --confirm-destructive, --from-file, --group, --id, --name, --new-password-file, --serial, --yes",
     "group": "Computer Management",
     "product": "pro"
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory settings",
     "description": "Send a Settings command to a computer",
     "destructive": false,
     "flags": "--bluetooth, --from-file, --group, --id, --name, --serial, --software-update-cadence, --time-zone, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Computer Management",
     "product": "pro"
   },
   {
     "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
-    "api": "pro",
     "command": "pro computer-inventory shutdown",
     "description": "Shut down a computer",
     "destructive": true,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
+    "group": "Computer Management",
+    "product": "pro"
+  },
+  {
+    "aliases": "comp, computer-smart-groups, computers, computers-inventory, erase-device-computers, remove-computer-mdm-profiles",
+    "command": "pro computer-inventory unlock-user-account",
+    "description": "Unlock a local user account on a computer",
+    "destructive": false,
+    "flags": "--from-file, --group, --id, --name, --serial, --user-name, --yes",
     "group": "Computer Management",
     "product": "pro"
   },
@@ -10890,7 +11037,7 @@
     "command": "pro computer-inventory-collection-settings-custom-path create",
     "description": "Create Computer Inventory Collection Settings Custom Path",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Inventory collection custom file paths: Create (custom-paths:create)"
     ],
@@ -10956,7 +11103,7 @@
     "command": "pro computer-prestages create",
     "description": "Create a Computer Prestage",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Create (prestage-enrollments:create)"
     ],
@@ -10975,7 +11122,7 @@
     "command": "pro computer-prestages create-scope",
     "description": "Add device Scope for a specific Computer Prestage",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Update (prestage-enrollments:update)"
     ],
@@ -11108,7 +11255,7 @@
     "command": "pro computer-prestages update",
     "description": "Update a Computer Prestage",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Update (prestage-enrollments:update)"
     ],
@@ -11127,7 +11274,7 @@
     "command": "pro computer-prestages update-scope",
     "description": "Replace device Scope for a specific Computer Prestage",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Update (prestage-enrollments:update)"
     ],
@@ -11282,7 +11429,7 @@
     "command": "pro dashboard toggle",
     "description": "Add or remove an object to the Jamf Pro dashboard",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "group": "Server Health",
     "product": "pro"
   },
@@ -11466,7 +11613,7 @@
     "command": "pro departments add-history-note",
     "description": "Add specified Department history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Organizational context > Departments: Update (departments:update)"
     ],
@@ -11503,7 +11650,7 @@
     "command": "pro departments create",
     "description": "Create department record",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Organizational context > Departments: Create (departments:create)"
     ],
@@ -11617,7 +11764,7 @@
     "command": "pro departments update",
     "description": "Update specified department object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Organizational context > Departments: Update (departments:update)"
     ],
@@ -11646,7 +11793,7 @@
     "command": "pro device-communication-settings add-history-note",
     "description": "Add Device Communication Settings history notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > MDM profile renewal settings: Update (mdm-profile-renewal-settings:update)"
     ],
@@ -11703,7 +11850,7 @@
     "command": "pro device-communication-settings update",
     "description": "Update device communication settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > MDM profile renewal settings: Update (mdm-profile-renewal-settings:update)"
     ],
@@ -11732,7 +11879,7 @@
     "command": "pro device-enrollments add-history-note",
     "description": "Add Device Enrollment history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Automated Device Enrollment connection: Update (device-enrollment-program-instances:update)"
     ],
@@ -11769,7 +11916,7 @@
     "command": "pro device-enrollments create",
     "description": "Create a Device Enrollment Instance with the supplied Token",
     "destructive": false,
-    "flags": "--name, --scaffold, --token-file",
+    "flags": "--from-file, --name, --scaffold, --token-file",
     "gatewayPermissions": [
       "Infrastructure > Automated Device Enrollment connection: Create (device-enrollment-program-instances:create)"
     ],
@@ -11826,7 +11973,7 @@
     "command": "pro device-enrollments disown",
     "description": "Disown devices from the given Device Enrollment Instance",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Automated Device Enrollment connection: Update (device-enrollment-program-instances:update)"
     ],
@@ -11978,7 +12125,7 @@
     "command": "pro device-enrollments update",
     "description": "Update a Device Enrollment Instance with the supplied id",
     "destructive": false,
-    "flags": "--name, --scaffold, --token-file",
+    "flags": "--from-file, --name, --scaffold, --token-file",
     "gatewayPermissions": [
       "Infrastructure > Automated Device Enrollment connection: Update (device-enrollment-program-instances:update)"
     ],
@@ -12035,7 +12182,7 @@
     "command": "pro digicert create",
     "description": "Create DigiCert Trust Lifecycle Manager configuration with client authentication via client certificate.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > DigiCert Trust Lifecycle Manager: Create (digicert-settings:create)"
     ],
@@ -12149,7 +12296,7 @@
     "command": "pro digicert validate-client-certificate",
     "description": "Validate DigiCert Trust Lifecycle Manager client certificate",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > DigiCert Trust Lifecycle Manager: Create, Update (digicert-settings:create, digicert-settings:update)"
     ],
@@ -12180,7 +12327,7 @@
     "command": "pro distribution-point add-history-note",
     "description": "Add specified distribution point History object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Distribution points: Update (distribution-points:update)"
     ],
@@ -12217,7 +12364,7 @@
     "command": "pro distribution-point create",
     "description": "Create distribution point",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Distribution points: Create (distribution-points:create)"
     ],
@@ -12352,7 +12499,7 @@
     "command": "pro distribution-point update",
     "description": "Update specified distribution point object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Infrastructure > Distribution points: Read, Update (distribution-points:read, distribution-points:update)"
     ],
@@ -12383,7 +12530,7 @@
     "command": "pro dock-items create",
     "description": "Create a DockItem",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Dock items: Create (dock-items:create)"
     ],
@@ -12440,7 +12587,7 @@
     "command": "pro dock-items update",
     "description": "Replace the dockItem at the id with the supplied information",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Deployment > Dock items: Update (dock-items:update)"
     ],
@@ -12555,7 +12702,7 @@
     "command": "pro enrollment add-history-note",
     "description": "Add Enrollment history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Update (user-initiated-enrollment:update)"
     ],
@@ -12603,7 +12750,7 @@
     "command": "pro enrollment adue-session-token-settings update",
     "description": "Update Account Driven User Enrollment Session Token Settings.",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Update (user-initiated-enrollment:update)"
     ],
@@ -12622,7 +12769,7 @@
     "command": "pro enrollment create-access-management",
     "description": "Configure Access Management settings",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > Access management: Update (access-management:update)"
     ],
@@ -12698,7 +12845,7 @@
     "command": "pro enrollment history-export",
     "description": "Export enrollment history collection",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Read (user-initiated-enrollment:read)"
     ],
@@ -12736,7 +12883,7 @@
     "command": "pro enrollment update",
     "description": "Update Enrollment object",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Update (user-initiated-enrollment:update)"
     ],
@@ -12782,7 +12929,7 @@
     "command": "pro enrollment-access-groups create",
     "description": "Add the configured LDAP group for User-Initiated Enrollment.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Update (user-initiated-enrollment:update)"
     ],
@@ -12858,7 +13005,7 @@
     "command": "pro enrollment-access-groups update",
     "description": "Modify the configured LDAP groups configured for User-Initiated Enrollment. Only exiting Access Groups can be updated.",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Update (user-initiated-enrollment:update)"
     ],
@@ -12887,7 +13034,7 @@
     "command": "pro enrollment-customization add-history-note",
     "description": "Add Enrollment Customization history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -12962,7 +13109,7 @@
     "command": "pro enrollment-customization create",
     "description": "Create an Enrollment Customization",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Create (enrollment-customization:create)"
     ],
@@ -13059,7 +13206,7 @@
     "command": "pro enrollment-customization ldap-create",
     "description": "Create an LDAP Panel for a single Enrollment Customization",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -13097,7 +13244,7 @@
     "command": "pro enrollment-customization ldap-update",
     "description": "Update a single LDAP Panel for a single Enrollment Customization",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -13154,7 +13301,7 @@
     "command": "pro enrollment-customization parse-markdown",
     "description": "Parse the given string as markdown text and return Html output",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Read (enrollment-customization:read)"
     ],
@@ -13211,7 +13358,7 @@
     "command": "pro enrollment-customization sso-create",
     "description": "Create an SSO Panel for a single Enrollment Customization",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -13249,7 +13396,7 @@
     "command": "pro enrollment-customization sso-update",
     "description": "Update a single SSO Panel for a single Enrollment Customization",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -13287,7 +13434,7 @@
     "command": "pro enrollment-customization text-create",
     "description": "Create a Text Panel for a single Enrollment Customization",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -13325,7 +13472,7 @@
     "command": "pro enrollment-customization text-update",
     "description": "Update a single Text Panel for a single Enrollment Customization",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -13344,7 +13491,7 @@
     "command": "pro enrollment-customization update",
     "description": "Update an Enrollment Customization",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Enrollment customization: Update (enrollment-customization:update)"
     ],
@@ -13488,7 +13635,7 @@
     "command": "pro enrollment-languages update",
     "description": "Edit Enrollment messaging for a language",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Update (user-initiated-enrollment:update)"
     ],
@@ -13499,29 +13646,6 @@
     "privileges": [
       "Update User-Initiated Enrollment"
     ],
-    "product": "pro"
-  },
-  {
-    "aliases": "",
-    "api": "pro",
-    "command": "pro environment-type",
-    "description": "Manage environment-type",
-    "destructive": false,
-    "flags": "",
-    "group": "Server Health",
-    "product": "pro"
-  },
-  {
-    "aliases": "",
-    "api": "pro",
-    "command": "pro environment-type get",
-    "description": "Get the cloud services environment type",
-    "destructive": false,
-    "flags": "",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
-    "group": "Server Health",
     "product": "pro"
   },
   {
@@ -13659,7 +13783,7 @@
     "command": "pro gsx-connection add-history-note",
     "description": "Add specified GSX Connection history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Apple GSX connection: Update (gsx-connection:update)"
     ],
@@ -13760,7 +13884,7 @@
     "command": "pro gsx-connection update",
     "description": "Updates Jamf Pro GSX Connection information",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Infrastructure > APNS certificate: Update (push-certificates:update)",
       "Infrastructure > Apple GSX connection: Update (gsx-connection:update)"
@@ -13881,7 +14005,7 @@
     "command": "pro impact-alert-notification-settings update",
     "description": "Update Impact Alert Notification Settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Notification settings: Update (impact-alert-notification-settings:update)"
     ],
@@ -13930,7 +14054,7 @@
     "command": "pro inventory-preload add-history-note",
     "description": "Add Inventory Preload history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Inventory preload: Update (inventory-preload-records:update)"
     ],
@@ -14025,7 +14149,7 @@
     "command": "pro inventory-preload export",
     "description": "Export a collection of inventory preload records",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Global settings > Inventory preload: Read (inventory-preload-records:read)"
     ],
@@ -14117,7 +14241,7 @@
     "command": "pro inventory-preload-records create",
     "description": "Create a new Inventory Preload record using JSON",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Inventory preload: Create (inventory-preload-records:create)"
     ],
@@ -14212,7 +14336,7 @@
     "command": "pro inventory-preload-records update",
     "description": "Update an Inventory Preload record",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Inventory preload: Update (inventory-preload-records:update)"
     ],
@@ -14393,7 +14517,7 @@
     "command": "pro jamf-connect add-history-note",
     "description": "Add Jamf Connect history notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Jamf Connect deployment: Update (jamf-connect-deployments:update)"
     ],
@@ -14412,7 +14536,7 @@
     "command": "pro jamf-connect create",
     "description": "Request a retry of Connect install tasks",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Jamf Connect deployment: Deploy (jamf-connect-deployments:deploy)"
     ],
@@ -14518,7 +14642,7 @@
     "command": "pro jamf-connect-config-profiles update",
     "description": "Update the way the Jamf Connect app gets updated on computers within scope of the associated configuration profile.",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Deployment > Jamf Connect deployment: Update (jamf-connect-deployments:update)"
     ],
@@ -14623,13 +14747,26 @@
   {
     "aliases": "database-connections, systems",
     "api": "pro",
+    "command": "pro jamf-pro-initialization fedramp-initialize",
+    "description": "Set up a fresh installed Jamf Pro Server for FedRAMP",
+    "destructive": false,
+    "flags": "--from-file, --scaffold",
+    "gateway": "unserved",
+    "gatewayBasis": "unpublished",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
+    "group": "Server Health",
+    "product": "pro"
+  },
+  {
+    "aliases": "database-connections, systems",
+    "api": "pro",
     "command": "pro jamf-pro-initialization initialize",
     "description": "Set up fresh installed Jamf Pro Server",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Server Health",
     "product": "pro"
   },
@@ -14639,10 +14776,10 @@
     "command": "pro jamf-pro-initialization initialize-database-connection",
     "description": "Provide Database Password during startup",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Server Health",
     "product": "pro"
   },
@@ -14652,10 +14789,10 @@
     "command": "pro jamf-pro-initialization platform-initialize",
     "description": "Set up fresh installed Jamf Pro Server for Platform",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Server Health",
     "product": "pro"
   },
@@ -14714,7 +14851,7 @@
     "command": "pro jamf-pro-server-url add-history-note",
     "description": "Add Jamf Pro Server URL settings history notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Jamf Pro server URL: Update (jss-url:update)"
     ],
@@ -14771,7 +14908,7 @@
     "command": "pro jamf-pro-server-url update",
     "description": "Update Jamf Pro Server URL settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Infrastructure > Jamf Pro server URL: Update (jss-url:update)"
     ],
@@ -14800,7 +14937,7 @@
     "command": "pro jamf-pro-user-account-settings change-password",
     "description": "Changes the user account password.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > Change admin password: Execute (change-password:execute)"
     ],
@@ -14839,7 +14976,7 @@
     "command": "pro jamf-pro-user-account-settings update",
     "description": "Persist the user setting",
     "destructive": false,
-    "flags": "",
+    "flags": "--from-file",
     "group": "Users & Groups",
     "product": "pro"
   },
@@ -14879,7 +15016,7 @@
     "command": "pro jamf-protect add-history-note",
     "description": "Add Jamf Protect history notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Jamf Protect deployment: Update (jamf-protect-deployments:update)"
     ],
@@ -14898,7 +15035,7 @@
     "command": "pro jamf-protect create",
     "description": "Register a Jamf Protect API configuration with Jamf Pro",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Jamf Protect deployment: Update (jamf-protect-deployments:update)"
     ],
@@ -14994,7 +15131,7 @@
     "command": "pro jamf-protect retry",
     "description": "Request a retry of Protect install tasks",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Jamf Protect deployment: Deploy (jamf-protect-deployments:deploy)"
     ],
@@ -15060,7 +15197,7 @@
     "command": "pro jamf-protect update",
     "description": "Jamf Protect integration settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Deployment > Jamf Protect deployment: Update (jamf-protect-deployments:update)"
     ],
@@ -15089,7 +15226,7 @@
     "command": "pro jamf-remote-assist export",
     "description": "Export Jamf Remote Assist sessions history",
     "destructive": false,
-    "flags": "--save-to, --scaffold",
+    "flags": "--from-file, --save-to, --scaffold",
     "gatewayPermissions": [
       "Global settings > Remote Assist: Read (remote-assist:read)"
     ],
@@ -15423,7 +15560,7 @@
     "command": "pro local-admin-password set-password",
     "description": "Set the LAPS password for a device.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Device secrets > Local Admin Passwords (LAPS): Execute (local-admin-passwords:execute)"
     ],
@@ -15472,7 +15609,7 @@
     "command": "pro local-admin-password settings update",
     "description": "Update settings for LAPS.",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Device secrets > Local Admin Passwords (LAPS): Update (local-admin-passwords:update)"
     ],
@@ -15550,7 +15687,7 @@
     "command": "pro log-flushing-task create",
     "description": "Queue a log flushing task",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > Retention policy: Update (retention-policy:update)"
     ],
@@ -15646,7 +15783,7 @@
     "command": "pro login-customization update",
     "description": "Update current login disclaimer settings.",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Login disclaimer: Update (login-disclaimer:update)"
     ],
@@ -15704,7 +15841,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "OS Updates",
     "product": "pro"
   },
@@ -15714,7 +15851,7 @@
     "command": "pro macos-managed-software-updates send-updates",
     "description": "Send MacOs Managed Software Updates",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Device actions > Device actions: Execute (device-actions:execute)"
     ],
@@ -15806,7 +15943,7 @@
     "command": "pro managed-software-updates-plans create",
     "description": "Create a Managed Software Update Plan",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Software updates: Create (managed-software-updates:create)",
       "Device actions > Device actions: Execute (device-actions:execute)",
@@ -15950,7 +16087,7 @@
     "command": "pro managed-software-updates-plans feature-toggle update",
     "description": "Updates Feature Toggle Value",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Deployment > Software updates: Create, Read, Update (managed-software-updates:create, managed-software-updates:read, managed-software-updates:update)"
     ],
@@ -16029,7 +16166,7 @@
     "command": "pro managed-software-updates-plans-group create",
     "description": "Create Managed Software Update Plans for a Group",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Software updates: Create (managed-software-updates:create)",
       "Device actions > Device actions: Execute (device-actions:execute)",
@@ -16101,7 +16238,7 @@
     "command": "pro mdm blank-push",
     "description": "Send blank push notifications to a list of client management IDs.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Device actions > Device actions: Execute (device-actions:execute)"
     ],
@@ -16120,10 +16257,19 @@
     "command": "pro mdm commands",
     "description": "Post a command for creation and queuing",
     "destructive": false,
-    "flags": "--scaffold",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
+    "flags": "--from-file, --scaffold",
+    "gatewayPermissions": [
+      "Device actions > Destructive device actions: Execute (destructive-device-actions:execute)",
+      "Device actions > Device actions: Execute (device-actions:execute)",
+      "Device secrets > Local Admin Passwords (LAPS): Execute (local-admin-passwords:execute)",
+      "Device secrets > Recovery lock password: Execute (recovery-lock:execute)"
+    ],
+    "gatewayPrivileges": [
+      "destructive-device-actions:execute",
+      "device-actions:execute",
+      "local-admin-passwords:execute",
+      "recovery-lock:execute"
+    ],
     "group": "Scripts & Policies",
     "privileges": [
       "View MDM command information in Jamf Pro API"
@@ -16136,7 +16282,7 @@
     "command": "pro mdm deploy-package",
     "description": "Deploy packages using MDM",
     "destructive": false,
-    "flags": "--scaffold, --verbose",
+    "flags": "--from-file, --scaffold, --verbose",
     "gatewayPermissions": [
       "Device actions > Device actions: Execute (device-actions:execute)"
     ],
@@ -16280,7 +16426,7 @@
     "command": "pro mobile-device-apps reinstall-app-config",
     "description": "Reinstall App Config for Managed iOS Apps",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "group": "Mobile Device Management",
     "product": "pro"
   },
@@ -16329,7 +16475,7 @@
     "command": "pro mobile-device-extension-attributes add-history-note",
     "description": "Add specified Mobile Device Extension Attribute history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Inventory > Device extension attributes: Update (extension-attributes:update)"
     ],
@@ -16366,7 +16512,7 @@
     "command": "pro mobile-device-extension-attributes create",
     "description": "Create Mobile Device Extension Attribute.",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Inventory > Device extension attributes: Create (extension-attributes:create)"
     ],
@@ -16480,7 +16626,7 @@
     "command": "pro mobile-device-extension-attributes update",
     "description": "Update specified Mobile Device Extension Attribute object.",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Inventory > Device extension attributes: Update (extension-attributes:update)"
     ],
@@ -16598,7 +16744,7 @@
     "command": "pro mobile-device-groups-smart-groups create",
     "description": "Create a smart group",
     "destructive": false,
-    "flags": "--platform, --scaffold",
+    "flags": "--from-file, --platform, --scaffold",
     "gatewayPermissions": [
       "Inventory > Device groups: Create (device-groups:create)"
     ],
@@ -16674,7 +16820,7 @@
     "command": "pro mobile-device-groups-smart-groups update",
     "description": "Update a smart group",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Inventory > Device groups: Update (device-groups:update)"
     ],
@@ -16720,7 +16866,7 @@
     "command": "pro mobile-device-groups-static-groups create",
     "description": "Create a static group",
     "destructive": false,
-    "flags": "--platform, --scaffold",
+    "flags": "--from-file, --platform, --scaffold",
     "gatewayPermissions": [
       "Inventory > Device groups: Create (device-groups:create)"
     ],
@@ -16825,7 +16971,7 @@
     "command": "pro mobile-device-prestages add-history-note",
     "description": "Add Mobile Device Prestage history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Update (prestage-enrollments:update)"
     ],
@@ -16900,7 +17046,7 @@
     "command": "pro mobile-device-prestages create",
     "description": "Create a Mobile Device Prestage",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Create (prestage-enrollments:create)"
     ],
@@ -16919,7 +17065,7 @@
     "command": "pro mobile-device-prestages create-scope",
     "description": "Add Device Scope for a specific Mobile Device Prestage",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Update (prestage-enrollments:update)"
     ],
@@ -17128,7 +17274,7 @@
     "command": "pro mobile-device-prestages update",
     "description": "Update a Mobile Device Prestage",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Update (prestage-enrollments:update)"
     ],
@@ -17147,7 +17293,7 @@
     "command": "pro mobile-device-prestages update-scope",
     "description": "Replace Device Scope for a specific Mobile Device Prestage",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Enrollment > PreStage enrollments: Update (prestage-enrollments:update)"
     ],
@@ -17191,40 +17337,28 @@
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices apply-redemption-code",
     "description": "Apply a redemption code for a managed app",
     "destructive": false,
     "flags": "--app, --code, --from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices clear-passcode",
     "description": "Clear the passcode on a mobile device",
     "destructive": false,
-    "flags": "--confirm-destructive, --from-file, --group, --id, --name, --serial, --unlock-token, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
+    "flags": "--confirm-destructive, --from-file, --group, --id, --name, --serial, --unlock-token-file, --yes",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices clear-restrictions-password",
     "description": "Clear the restrictions password on a mobile device",
     "destructive": false,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
@@ -17246,14 +17380,10 @@
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices delete-user",
     "description": "Delete a user from a Shared iPad",
     "destructive": true,
     "flags": "--all, --confirm-destructive, --force, --from-file, --group, --id, --name, --serial, --user-name, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
@@ -17278,27 +17408,19 @@
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices disable-lost-mode",
     "description": "Disable Lost Mode on a mobile device",
     "destructive": true,
     "flags": "--confirm-destructive, --from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices enable-lost-mode",
     "description": "Enable Lost Mode on a supervised mobile device",
     "destructive": false,
     "flags": "--confirm-destructive, --footnote, --from-file, --group, --id, --message, --name, --phone, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
@@ -17360,27 +17482,19 @@
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices lock",
     "description": "Lock a mobile device",
     "destructive": true,
-    "flags": "--confirm-destructive, --from-file, --group, --id, --message, --name, --phone-number, --pin, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
+    "flags": "--confirm-destructive, --from-file, --group, --id, --message, --name, --phone-number, --pin-file, --serial, --yes",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices log-out-user",
     "description": "Log out the current user on a Shared iPad",
     "destructive": false,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
@@ -17424,14 +17538,10 @@
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices play-lost-mode-sound",
     "description": "Play a sound on a device in Lost Mode",
     "destructive": false,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
@@ -17475,92 +17585,64 @@
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices refresh-cellular-plans",
     "description": "Refresh eSIM cellular plans on a mobile device",
     "destructive": false,
     "flags": "--esim-server-url, --from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices request-mirroring",
     "description": "Request AirPlay mirroring to a destination",
     "destructive": false,
     "flags": "--destination-id, --destination-name, --from-file, --group, --id, --name, --scan-time, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices restart",
     "description": "Restart a mobile device",
     "destructive": true,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices settings",
     "description": "Send a Settings command to a mobile device",
     "destructive": false,
     "flags": "--bluetooth, --data-roaming, --default-browser, --default-calling, --default-messaging, --device-name, --from-file, --group, --id, --name, --personal-hotspot, --serial, --software-update-cadence, --time-zone, --voice-roaming, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices shutdown",
     "description": "Shut down a mobile device",
     "destructive": true,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices stop-mirroring",
     "description": "Stop AirPlay mirroring on a mobile device",
     "destructive": false,
     "flags": "--from-file, --group, --id, --name, --serial, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
   {
     "aliases": "erase-device-mobiles, md, mobile-device-inventory-details, mobile-device-smart-groups, remove-mobile-device-mdm-profiles",
-    "api": "pro",
     "command": "pro mobile-devices unlock-user-account",
     "description": "Unlock a user account on a Shared iPad",
     "destructive": false,
     "flags": "--from-file, --group, --id, --name, --serial, --user-name, --yes",
-    "gateway": "unserved",
-    "gatewayBasis": "unpublished",
-    "gatewayDetail": "the gateway's Jamf Pro API 11.32.0 declares GET on this path but not POST",
     "group": "Mobile Device Management",
     "product": "pro"
   },
@@ -17608,7 +17690,7 @@
     "command": "pro oidc dispatch",
     "description": "Provide the url to redirect for OIDC login",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "group": "Admin SSO",
     "product": "pro"
   },
@@ -17667,7 +17749,7 @@
     "command": "pro onboarding add-history-note",
     "description": "Add Onboarding history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Onboarding configuration: Update (onboarding:update)"
     ],
@@ -17781,7 +17863,7 @@
     "command": "pro onboarding history-export",
     "description": "Export history object collection in specified format for Onboarding",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Global settings > Onboarding configuration: Read (onboarding:read)"
     ],
@@ -17800,7 +17882,7 @@
     "command": "pro onboarding update",
     "description": "Update the onboarding configuration.",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Onboarding configuration: Update (onboarding:update)"
     ],
@@ -17847,7 +17929,7 @@
     "command": "pro packages add-history-note",
     "description": "Add specified Package history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Deployment > Packages: Update (packages:update)"
     ],
@@ -17884,7 +17966,7 @@
     "command": "pro packages create",
     "description": "Create package",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Deployment > Packages: Create (packages:create)"
     ],
@@ -17941,7 +18023,7 @@
     "command": "pro packages export",
     "description": "Export Packages collection",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Deployment > Packages: Read (packages:read)"
     ],
@@ -17998,7 +18080,7 @@
     "command": "pro packages history-export",
     "description": "Export history object collection in specified format for specified Packages",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --name, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --name, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Deployment > Packages: Read (packages:read)"
     ],
@@ -18066,7 +18148,7 @@
     "command": "pro packages update",
     "description": "Update specified package object",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Deployment > Packages: Update (packages:update)"
     ],
@@ -18104,7 +18186,7 @@
     "command": "pro parent-app add-history-note",
     "description": "Add Jamf Parent app settings history notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Parent app settings: Update (parent-app:update)"
     ],
@@ -18161,7 +18243,7 @@
     "command": "pro parent-app update",
     "description": "Update Jamf Parent app settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Parent app settings: Update (parent-app:update)"
     ],
@@ -18371,7 +18453,7 @@
     "command": "pro patch-policies retry",
     "description": "Send retry attempts for specific devices",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Patch policies: Update (patch-policies:update)"
     ],
@@ -18419,7 +18501,7 @@
     "command": "pro patch-software-title-configurations add-history-note",
     "description": "Add Patch Software Title Configuration history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Patch titles: Update (patch-management-software-titles:update)"
     ],
@@ -18455,7 +18537,7 @@
     "command": "pro patch-software-title-configurations create",
     "description": "Create Patch Software Title Configurations",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Patch titles: Create (patch-management-software-titles:create)"
     ],
@@ -19161,7 +19243,7 @@
     "command": "pro policy-properties update",
     "description": "Update Policy Properties object",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Deployment > Policies: Update (policies:update)"
     ],
@@ -19190,7 +19272,7 @@
     "command": "pro re-enrollment add-history-note",
     "description": "Add specified Re-enrollment history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Re-enrollment settings: Update (re-enrollment:update)"
     ],
@@ -19247,7 +19329,7 @@
     "command": "pro re-enrollment history-export",
     "description": "Export reenrollment history collection",
     "destructive": false,
-    "flags": "--export-fields, --export-labels, --filter, --page, --page-size, --save-to, --scaffold, --sort",
+    "flags": "--export-fields, --export-labels, --filter, --from-file, --page, --page-size, --save-to, --scaffold, --sort",
     "gatewayPermissions": [
       "Global settings > Re-enrollment settings: Read (re-enrollment:read)"
     ],
@@ -19266,7 +19348,7 @@
     "command": "pro re-enrollment update",
     "description": "Update the Re-enrollment object",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Re-enrollment settings: Update (re-enrollment:update)"
     ],
@@ -19456,7 +19538,7 @@
     "command": "pro return-to-service create",
     "description": "Create a Return to Service Configuration",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Return to service configuration: Update (return-to-service:update)"
     ],
@@ -19532,7 +19614,7 @@
     "command": "pro return-to-service update",
     "description": "Update a Return to Service Configuration",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Return to service configuration: Update (return-to-service:update)"
     ],
@@ -19640,7 +19722,7 @@
     "command": "pro scripts add-history-note",
     "description": "Add specified Script history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "Deployment > Scripts: Update (scripts:update)"
     ],
@@ -19677,7 +19759,7 @@
     "command": "pro scripts create",
     "description": "Create a Script",
     "destructive": false,
-    "flags": "--scaffold, --script-file",
+    "flags": "--from-file, --scaffold, --script-file",
     "gatewayPermissions": [
       "Deployment > Scripts: Create (scripts:create)"
     ],
@@ -19791,7 +19873,7 @@
     "command": "pro scripts update",
     "description": "Replace the script at the id with the supplied information",
     "destructive": false,
-    "flags": "--name, --scaffold, --script-file",
+    "flags": "--from-file, --name, --scaffold, --script-file",
     "gatewayPermissions": [
       "Deployment > Scripts: Update (scripts:update)"
     ],
@@ -19830,7 +19912,7 @@
     "command": "pro self-service settings add-history-note",
     "description": "Add Self Service settings history notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Self Service configuration: Update (self-service:update)"
     ],
@@ -19887,7 +19969,7 @@
     "command": "pro self-service settings update",
     "description": "Put an object representation of Self Service settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Self Service configuration: Update (self-service:update)"
     ],
@@ -19953,7 +20035,7 @@
     "command": "pro self-service-branding-ios create",
     "description": "Create a Self Service iOS branding configuration with the supplied",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Self Service configuration: Create (self-service:create)"
     ],
@@ -20029,7 +20111,7 @@
     "command": "pro self-service-branding-ios update",
     "description": "Update a Self Service iOS branding configuration with the supplied details",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Self Service configuration: Update (self-service:update)"
     ],
@@ -20076,7 +20158,7 @@
     "command": "pro self-service-branding-macos create",
     "description": "Create a Self Service macOS branding configuration with the supplied",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Self Service configuration: Create (self-service:create)"
     ],
@@ -20153,7 +20235,7 @@
     "command": "pro self-service-branding-macos update",
     "description": "Update a Self Service macOS branding configuration with the supplied details",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Self Service configuration: Update (self-service:update)"
     ],
@@ -20221,7 +20303,7 @@
     "command": "pro self-service-plus settings update",
     "description": "Save Self Service Plus settings.",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Self Service configuration: Update (self-service:update)"
     ],
@@ -20269,7 +20351,7 @@
     "command": "pro service-discovery-enrollment update",
     "description": "Update service discovery well-known settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > User-initiated enrollment settings: Update (user-initiated-enrollment:update)"
     ],
@@ -20397,7 +20479,7 @@
     "command": "pro smtp-server add-history-note",
     "description": "Add SMTP Server history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > SMTP: Update (smtp-server:update)"
     ],
@@ -20473,7 +20555,7 @@
     "command": "pro smtp-server test",
     "description": "Test functionality of an SMTP Server",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > SMTP: Read (smtp-server:read)"
     ],
@@ -20492,7 +20574,7 @@
     "command": "pro smtp-server update",
     "description": "Updates Jamf Pro SMTP Server information",
     "destructive": false,
-    "flags": "--oauth-state, --scaffold, --set",
+    "flags": "--from-file, --oauth-state, --scaffold, --set",
     "gatewayPermissions": [
       "Infrastructure > SMTP: Update (smtp-server:update)"
     ],
@@ -20524,7 +20606,7 @@
     "flags": "",
     "gateway": "unserved",
     "gatewayBasis": "unpublished",
-    "gatewayDetail": "not declared by the gateway's Jamf Pro API 11.32.0",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "API Access",
     "product": "pro"
   },
@@ -20544,7 +20626,7 @@
     "command": "pro sso-settings add-history-note",
     "description": "Add SSO history object notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > Single Sign-On: Update (sso-settings:update)"
     ],
@@ -20649,7 +20731,7 @@
     "command": "pro sso-settings cert parse",
     "description": "Parse the certificate to get details about certificate type and keys needed to upload certificate file",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Admin identity and access > Single Sign-On: Update (sso-settings:update)"
     ],
@@ -20668,7 +20750,7 @@
     "command": "pro sso-settings cert update",
     "description": "Update the certificate used by Jamf Pro to sign SSO requests to the identify provider",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Admin identity and access > Single Sign-On: Update (sso-settings:update)"
     ],
@@ -20831,12 +20913,9 @@
     "description": "Get the OIDC broker configuration",
     "destructive": false,
     "flags": "",
-    "gatewayPermissions": [
-      "Admin identity and access > Single Sign-On: Read (sso-settings:read)"
-    ],
-    "gatewayPrivileges": [
-      "sso-settings:read"
-    ],
+    "gateway": "unserved",
+    "gatewayBasis": "unpublished",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin SSO",
     "privileges": [
       "Read SSO Settings"
@@ -20849,13 +20928,10 @@
     "command": "pro sso-settings oidc-broker-config update",
     "description": "Update the OIDC broker configuration",
     "destructive": false,
-    "flags": "--scaffold, --set",
-    "gatewayPermissions": [
-      "Admin identity and access > Single Sign-On: Update (sso-settings:update)"
-    ],
-    "gatewayPrivileges": [
-      "sso-settings:update"
-    ],
+    "flags": "--from-file, --scaffold, --set",
+    "gateway": "unserved",
+    "gatewayBasis": "unpublished",
+    "gatewayDetail": "not declared by the gateway's Jamf Pro 11.33.0",
     "group": "Admin SSO",
     "privileges": [
       "Update SSO Settings"
@@ -20868,7 +20944,7 @@
     "command": "pro sso-settings update",
     "description": "Updates the current Single Sign On configuration settings",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Admin identity and access > Single Sign-On: Update (sso-settings:update)"
     ],
@@ -20982,7 +21058,7 @@
     "command": "pro supervision-identities create",
     "description": "Create a Supervision Identity for the supplied information",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Apple Configurator enrollment settings: Update (apple-configurator-enrollment:update)"
     ],
@@ -21077,7 +21153,7 @@
     "command": "pro supervision-identities update",
     "description": "Update a Supervision Identity with the supplied information",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Apple Configurator enrollment settings: Update (apple-configurator-enrollment:update)"
     ],
@@ -21096,7 +21172,7 @@
     "command": "pro supervision-identities upload",
     "description": "Upload the Supervision Identity .p12 file",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Apple Configurator enrollment settings: Update (apple-configurator-enrollment:update)"
     ],
@@ -21125,7 +21201,7 @@
     "command": "pro teacher-app add-history-note",
     "description": "Add Jamf Teacher app settings history notes",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > Teacher app settings: Update (teacher-app:update)"
     ],
@@ -21182,7 +21258,7 @@
     "command": "pro teacher-app update",
     "description": "Update a Jamf Teacher settings object",
     "destructive": false,
-    "flags": "--scaffold, --set",
+    "flags": "--from-file, --scaffold, --set",
     "gatewayPermissions": [
       "Global settings > Teacher app settings: Update (teacher-app:update)"
     ],
@@ -21230,7 +21306,7 @@
     "command": "pro team-viewer-remote-administration create",
     "description": "Create Team Viewer Remote Administration connection configuration",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Global settings > TeamViewer configuration: Create (remote-administration:create)"
     ],
@@ -21478,7 +21554,7 @@
     "command": "pro users create",
     "description": "Create a new user in inventory",
     "destructive": false,
-    "flags": "--platform, --scaffold",
+    "flags": "--from-file, --platform, --scaffold",
     "gatewayPermissions": [
       "Inventory > Users: Create (users:create)"
     ],
@@ -21592,7 +21668,7 @@
     "command": "pro users update",
     "description": "Update a user in inventory",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "Inventory > Users: Update (users:update)"
     ],
@@ -21621,7 +21697,7 @@
     "command": "pro venafi add-history-note",
     "description": "Add specified Venafi CA Object Note",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > PKI certificates: Update (pki:update)"
     ],
@@ -21659,7 +21735,7 @@
     "command": "pro venafi create",
     "description": "Create a PKI configuration in Jamf Pro for Venafi",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "Infrastructure > PKI certificates: Update (pki:update)"
     ],
@@ -21811,7 +21887,7 @@
     "command": "pro venafi proxy-trust-store-create",
     "description": "Uploads the PKI Proxy Server public key to secure communication between Jamf Pro and a Jamf Pro PKI Proxy Server",
     "destructive": false,
-    "flags": "",
+    "flags": "--from-file",
     "gatewayPermissions": [
       "Infrastructure > PKI certificates: Update (pki:update)"
     ],
@@ -21878,7 +21954,7 @@
     "command": "pro volume-purchasing-locations add-history-note",
     "description": "Add specified Volume Purchasing Location history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Volume purchasing: Update (volume-purchasing-locations:update)"
     ],
@@ -21933,7 +22009,7 @@
     "command": "pro volume-purchasing-locations create",
     "description": "Create a Volume Purchasing Location",
     "destructive": false,
-    "flags": "--name, --scaffold, --token-file",
+    "flags": "--from-file, --name, --scaffold, --token-file",
     "gatewayPermissions": [
       "App lifecycle management > Volume purchasing: Create (volume-purchasing-locations:create)"
     ],
@@ -22095,7 +22171,7 @@
     "command": "pro volume-purchasing-subscriptions add-history-note",
     "description": "Add Volume Purchasing Subscription history object notes",
     "destructive": false,
-    "flags": "--name, --scaffold",
+    "flags": "--from-file, --name, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Volume purchasing: Update (volume-purchasing-locations:update)"
     ],
@@ -22132,7 +22208,7 @@
     "command": "pro volume-purchasing-subscriptions create",
     "description": "Create a Volume Purchasing Subscription",
     "destructive": false,
-    "flags": "--scaffold",
+    "flags": "--from-file, --scaffold",
     "gatewayPermissions": [
       "App lifecycle management > Volume purchasing: Create (volume-purchasing-locations:create)"
     ],
@@ -22227,7 +22303,7 @@
     "command": "pro volume-purchasing-subscriptions update",
     "description": "Update a Volume Purchasing Subscription",
     "destructive": false,
-    "flags": "--name, --scaffold, --set",
+    "flags": "--from-file, --name, --scaffold, --set",
     "gatewayPermissions": [
       "App lifecycle management > Volume purchasing: Update (volume-purchasing-locations:update)"
     ],
@@ -22657,7 +22733,7 @@
   {
     "aliases": "comp",
     "command": "protect computers delete",
-    "description": "Delete a computer by hostname or serial number",
+    "description": "Delete a computer by UUID, serial number, or hostname",
     "destructive": true,
     "flags": "--yes",
     "group": "Endpoints",
@@ -22666,7 +22742,7 @@
   {
     "aliases": "comp",
     "command": "protect computers get",
-    "description": "Get a computer by hostname or serial number",
+    "description": "Get a computer by UUID, serial number, or hostname",
     "destructive": false,
     "flags": "",
     "group": "Endpoints",
@@ -22684,7 +22760,7 @@
   {
     "aliases": "comp",
     "command": "protect computers set-plan",
-    "description": "Assign a plan to a computer by hostname or serial number",
+    "description": "Assign a plan to a computer by UUID, serial number, or hostname",
     "destructive": false,
     "flags": "",
     "group": "Endpoints",
@@ -23814,7 +23890,7 @@
     "command": "school blueprints import-profile",
     "description": "Import a Classic configuration profile as a blueprint",
     "destructive": false,
-    "flags": "--blueprint-name, --computer-group, --include-unsupported, --legacy, --mobile-device-group, --name, --strip-defaults, --type",
+    "flags": "--all, --blueprint-name, --computer-group, --convert, --deploy, --include-unsupported, --mobile-device-group, --name, --skip-exclusions, --skip-limitations, --strip-defaults, --takeover-only, --type, --yes",
     "group": "Platform",
     "product": "school"
   },

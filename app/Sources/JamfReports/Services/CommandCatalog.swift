@@ -197,7 +197,7 @@ struct CommandCatalog: Sendable {
 
     // MARK: - Installed jamf-cli
 
-    /// The setup text's list when no catalog can be read: the 1.31.1 catalog's names and every
+    /// The setup text's list when no catalog can be read: the 1.35.0 catalog's names and every
     /// supplemental one. `CommandCatalogTests` keeps it equal to the fixture's, so the text is
     /// never blank and never drifts.
     static let bundledCollectPrivileges = Privilege.merged(
