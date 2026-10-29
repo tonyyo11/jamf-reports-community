@@ -148,6 +148,78 @@ enum AddSheetPlan {
         if unassigned.contains(where: { $0.use == .addToCurrent }) { return .addToCurrent }
         return .newWorkspace
     }
+
+    /// The current workspace can take a Protect profile now: it takes Protect at all and
+    /// discovery has read its config.yaml without finding one already named.
+    static func currentAcceptsProtect(
+        takesProtect: Bool, discovery: AddSheetDiscovery?
+    ) -> Bool {
+        takesProtect && discovery != nil && discovery?.currentProtect == nil
+    }
+
+    /// The step the sheet shows: Add to current only while the workspace can take Protect,
+    /// else New workspace, whatever was chosen.
+    static func step(choice: Choice, takesProtect: Bool) -> Choice {
+        takesProtect ? choice : .newWorkspace
+    }
+
+    /// The rows the chosen step lists. Add to current lists Protect logins only, and none once
+    /// the workspace names one; New workspace lists everything else, a refused profile
+    /// (Security Cloud, organization level, unusable name) included with its reason.
+    static func visibleRows(
+        choice: Choice, takesProtect: Bool, discovery: AddSheetDiscovery?
+    ) -> [UnassignedProfile] {
+        let rows = discovery?.unassigned ?? []
+        if step(choice: choice, takesProtect: takesProtect) == .addToCurrent {
+            return currentAcceptsProtect(takesProtect: takesProtect, discovery: discovery)
+                ? rows.filter { $0.use == .addToCurrent } : []
+        }
+        return rows.filter { $0.use != .addToCurrent }
+    }
+
+    /// What the "Profiles jamf-cli already has" card shows.
+    enum Listing: Equatable, Sendable {
+        case demo
+        case reading
+        /// jamf-cli's profiles could not be read, which is not the same as "none".
+        case unreadable
+        case empty(String)
+        case rows([UnassignedProfile])
+    }
+
+    static func listing(
+        demoMode: Bool, isChecking: Bool, choice: Choice, takesProtect: Bool,
+        discovery: AddSheetDiscovery?
+    ) -> Listing {
+        if demoMode { return .demo }
+        if isChecking && discovery == nil { return .reading }
+        if let discovery, discovery.unassigned == nil { return .unreadable }
+        let rows = visibleRows(choice: choice, takesProtect: takesProtect, discovery: discovery)
+        if !rows.isEmpty { return .rows(rows) }
+        if step(choice: choice, takesProtect: takesProtect) == .addToCurrent {
+            return .empty(
+                currentAcceptsProtect(takesProtect: takesProtect, discovery: discovery)
+                    ? "No Jamf Protect profile in jamf-cli is free to add. Connect new above."
+                    : "This workspace already has Jamf Protect.")
+        }
+        return .empty("Every jamf-cli profile already has a workspace. Profiles made in "
+            + "Terminal appear here after Re-check.")
+    }
+
+    /// The choice after Re-check read `found`. Rows come from `found` alone, so a profile added
+    /// since the last read appears and one that gained a workspace leaves. The choice is
+    /// preselected again only while the user has not picked one.
+    static func recheck(
+        found: AddSheetDiscovery, takesProtect: Bool, choice: Choice, choiceTouched: Bool,
+        requested: NewProduct?
+    ) -> Choice {
+        guard !choiceTouched else { return choice }
+        return preselection(
+            unassigned: found.unassigned ?? [],
+            currentAcceptsProtect: currentAcceptsProtect(
+                takesProtect: takesProtect, discovery: found),
+            requested: requested)
+    }
 }
 
 /// What the Add sheet reads when it opens and on Re-check. `load` runs `jamf-cli config list`,

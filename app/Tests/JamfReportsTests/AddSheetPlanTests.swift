@@ -129,6 +129,136 @@ final class AddSheetPlanTests: XCTestCase {
         XCTAssertEqual(preselection([profile("cloud", .securityCloud)]), .newWorkspace)
     }
 
+    // MARK: - Rows and Re-check
+
+    private func discovery(
+        _ profiles: [JamfCLIProfile], workspaces: [String] = [], currentProtect: String? = nil
+    ) -> AddSheetDiscovery {
+        AddSheetDiscovery(
+            unassigned: unassigned(profiles, workspaces: workspaces),
+            currentProtect: currentProtect)
+    }
+
+    private func listing(
+        _ found: AddSheetDiscovery?, _ choice: AddSheetPlan.Choice = .newWorkspace,
+        takesProtect: Bool = true, demo: Bool = false, checking: Bool = false
+    ) -> AddSheetPlan.Listing {
+        AddSheetPlan.listing(
+            demoMode: demo, isChecking: checking, choice: choice, takesProtect: takesProtect,
+            discovery: found)
+    }
+
+    private func names(_ listing: AddSheetPlan.Listing) -> [String] {
+        if case .rows(let rows) = listing { return rows.map(\.name) }
+        return []
+    }
+
+    func testNewWorkspaceListsEveryoneButProtectAndKeepsRefusedRowsWithTheirReason() {
+        let found = discovery([
+            profile("lab"), profile("p", .protect), profile("cloud", .securityCloud),
+            profile("org", level: .organization),
+        ])
+        guard case .rows(let rows) = listing(found) else { return XCTFail("no rows") }
+        XCTAssertEqual(rows.map(\.name), ["lab", "cloud", "org"])
+        XCTAssertEqual(rows.map(\.use), [
+            .newWorkspace, .unavailable(AddSheetPlan.securityCloudReason),
+            .unavailable(PlatformScopeLevel.organizationLevelReason),
+        ])
+    }
+
+    func testAddToCurrentListsOnlyProtectLogins() {
+        let found = discovery([profile("lab"), profile("p", .protect)])
+        XCTAssertEqual(names(listing(found, .addToCurrent)), ["p"])
+    }
+
+    func testAddToCurrentSaysWhyThereIsNothingToAdd() {
+        XCTAssertEqual(listing(discovery([profile("lab")]), .addToCurrent),
+                       .empty("No Jamf Protect profile in jamf-cli is free to add. Connect new "
+                           + "above."))
+        XCTAssertEqual(
+            listing(discovery([profile("p", .protect)], currentProtect: "other"), .addToCurrent),
+            .empty("This workspace already has Jamf Protect."))
+    }
+
+    func testAChoiceOfAddToCurrentIsIgnoredWhenTheWorkspaceCannotTakeProtect() {
+        let found = discovery([profile("lab"), profile("p", .protect)])
+        XCTAssertEqual(names(listing(found, .addToCurrent, takesProtect: false)), ["lab"])
+    }
+
+    func testListingStatesFollowDemoReadingAndUnreadable() {
+        XCTAssertEqual(listing(discovery([profile("lab")]), demo: true), .demo)
+        XCTAssertEqual(listing(nil, checking: true), .reading)
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(listing(unreadable, checking: true), .unreadable)
+        guard case .empty(let text) = listing(discovery([])) else { return XCTFail("not empty") }
+        XCTAssertTrue(text.hasPrefix("Every jamf-cli profile already has a workspace."))
+    }
+
+    func testRecheckPreselectsAgainOnlyWhileTheChoiceIsUntouched() {
+        let found = discovery([profile("p", .protect)])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: nil), .addToCurrent)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: true,
+            requested: nil), .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: .jamfPro), .newWorkspace)
+    }
+
+    func testRecheckShowsAProfileAddedAfterLaunch() {
+        let before = discovery([profile("lab")])
+        let after = discovery([profile("lab"), profile("made-in-terminal")])
+        XCTAssertEqual(names(listing(before)), ["lab"])
+        XCTAssertEqual(names(listing(after)), ["lab", "made-in-terminal"])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: after, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
+    func testTheStepFallsBackToNewWorkspaceWhenTheWorkspaceCannotTakeProtect() {
+        XCTAssertEqual(AddSheetPlan.step(choice: .addToCurrent, takesProtect: true), .addToCurrent)
+        XCTAssertEqual(AddSheetPlan.step(choice: .addToCurrent, takesProtect: false),
+                       .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.step(choice: .newWorkspace, takesProtect: true),
+                       .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.step(choice: .newWorkspace, takesProtect: false),
+                       .newWorkspace)
+    }
+
+    func testDemoModeOutranksReadingAndUnreadable() {
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(listing(nil, demo: true, checking: true), .demo)
+        XCTAssertEqual(listing(unreadable, demo: true), .demo)
+    }
+
+    func testRecheckWithAWorkspaceThatCannotTakeProtectOpensNewWorkspace() {
+        let found = discovery([profile("p", .protect)])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: false, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
+    func testRecheckOfUnreadableProfilesOpensNewWorkspace() {
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: unreadable, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
+    func testRecheckDropsAProfileThatGainedAWorkspace() {
+        let all = [profile("lab"), profile("p", .protect)]
+        let before = discovery(all)
+        let after = discovery(all, workspaces: ["lab"])
+        XCTAssertEqual(names(listing(before)), ["lab"])
+        XCTAssertEqual(listing(after), .empty("Every jamf-cli profile already has a workspace. "
+            + "Profiles made in Terminal appear here after Re-check."))
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: after, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: nil), .addToCurrent)
+    }
+
     // MARK: - Which workspace takes Jamf Protect
 
     /// A Jamf School workspace takes Protect as a Jamf Pro one does (2.11); a profile with no
