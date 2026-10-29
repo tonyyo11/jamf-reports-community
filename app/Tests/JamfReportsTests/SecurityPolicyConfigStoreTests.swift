@@ -424,7 +424,7 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
             try SecurityPolicyConfigWriter.save(.level(.fail, for: .sip), profile: "escape\n")
         ) { error in
             XCTAssertEqual(
-                error.localizedDescription, "Invalid profile name: escape\n")
+                error.localizedDescription, "Invalid profile name: escape")
         }
     }
 
@@ -1020,7 +1020,7 @@ final class SecurityPolicyCardTests: XCTestCase {
                 failure: failure.binding, note: failure.noteBinding)
             XCTAssertEqual(
                 failure.value?.message,
-                "Couldn't save the security policy: Invalid profile name: escape\n")
+                "Couldn't save the security policy: Invalid profile name: escape")
         }
     }
 
@@ -1132,7 +1132,7 @@ final class SecurityPolicyCardTests: XCTestCase {
 
             XCTAssertEqual(
                 failure.value?.message,
-                "Couldn't save the security policy: Invalid profile name: escape\n")
+                "Couldn't save the security policy: Invalid profile name: escape")
             XCTAssertEqual(picker.wrappedValue, .fail)
             let first = failure.value
             picker.wrappedValue = .warning

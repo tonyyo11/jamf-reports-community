@@ -1159,12 +1159,19 @@ final class CLIBridge {
         return refusal
     }
 
+    /// The `[error]` line for a name that failed `ProfileService.isValid`, filtered like
+    /// `ProfileName.invalidMessage`.
+    nonisolated static func invalidProfileLine(_ profile: String) -> LogLine {
+        .init(timestamp: Date(), level: .fail,
+              text: "[error] invalid profile name: \(ConfigSchema.displayText(profile))")
+    }
+
     nonisolated func validateConnection(
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
@@ -1569,7 +1576,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (exitCode: Int32, payload: Data) {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         if let refusal = await Self.refusesProCommand(
@@ -1840,7 +1847,7 @@ final class CLIBridge {
         // B-02: defense-in-depth profile validation. Mirrors validateConnection.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("audit: rejecting invalid profile name")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash category. Checked before auth so that the
@@ -1886,7 +1893,7 @@ final class CLIBridge {
         // B-02: defense-in-depth profile validation.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("groupHygiene: rejecting invalid profile name")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         if let refusal = await Self.refusesProCommand(
@@ -2024,7 +2031,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> BackupRun {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash labels — would be re-interpreted as a flag by jamf-cli.
@@ -2508,7 +2515,7 @@ final class CLIBridge {
         // trust those strings without re-validation.
         for profile in target.allProfileNames where !ProfileService.isValid(profile) {
             AppLogger.cli.warning("runMulti: rejecting invalid profile name in target")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // Auth guard: probe credentials before dispatching live API calls.
@@ -2631,7 +2638,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         let config = workspace.appendingPathComponent("config.yaml")

@@ -66,7 +66,8 @@ enum CLICommand: Sendable, Equatable {
         }
         guard ProfileService.isValid(profile) else {
             assertionFailure(
-                "CLICommand.argv called with invalid profile '\(profile)' " +
+                "CLICommand.argv called with invalid profile "
+                    + "'\(ConfigSchema.displayText(profile))' " +
                 "— caller should validate before constructing CLICommand"
             )
             return []

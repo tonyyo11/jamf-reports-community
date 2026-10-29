@@ -15,7 +15,7 @@ enum ProfileService {
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile):
-                return "Invalid profile name: \(profile)"
+                return ProfileName.invalidMessage(profile)
             case .outsideWorkspaceRoot(let url):
                 return "Refusing to remove workspace outside \(workspacesRoot().path): \(url.path)"
             }

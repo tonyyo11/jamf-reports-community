@@ -241,7 +241,7 @@ enum ConfigService {
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
+            case .invalidProfile(let profile): ProfileName.invalidMessage(profile)
             case .pathTraversal: "Refusing config path with a '..' component."
             case .symlinkDestination(let url): "Refusing to write symlink: \(url.path)"
             case .missingConfig(let url): "No config.yaml at \(url.path)"
