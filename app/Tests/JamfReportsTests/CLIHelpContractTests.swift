@@ -82,7 +82,7 @@ final class CLIHelpContractTests: XCTestCase {
                 let base = ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
                     .first { $0.kind == ReportEngine.dashboardKind }?.args ?? []
                 let withProtect = ReportEngine.dashboardArguments(
-                    base: base, profile: "p", protect: ProtectConfig(enabled: true, profile: "q"))
+                    base: base, profile: "p", protect: "q")
                 return [Invocation(label: "dashboard with Protect", argv: withProtect)]
             case .audit:
                 return [Invocation(
