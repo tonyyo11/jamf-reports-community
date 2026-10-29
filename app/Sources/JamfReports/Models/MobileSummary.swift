@@ -37,6 +37,12 @@ struct MobileSummary: Codable, Sendable, Equatable {
         var lastSeen: Date?
     }
 
+    /// A device last seen MORE than `staleDays` whole days before `now`: the one stale rule for
+    /// the summary, the Health Audit and the Mobile Devices filter.
+    static func isStale(lastSeen: Date, staleDays: Int, now: Date) -> Bool {
+        max(0, Int(now.timeIntervalSince(lastSeen) / 86_400)) > staleDays
+    }
+
     /// The figures for `devices`, nil when there are none. `latestByMajor` is the iOS feed's
     /// (`SOFAFeedService.latestByMajor`); empty leaves `osCurrent` out. A device is stale when
     /// `lastSeen` is MORE than `staleDays` whole days before `now`.
@@ -51,9 +57,7 @@ struct MobileSummary: Codable, Sendable, Equatable {
             return Share(met: reported.filter { $0 }.count, of: reported.count)
         }
         func count(_ values: [Bool?]) -> Int? { share(values)?.met }
-        let ages = devices.compactMap(\.lastSeen).map {
-            max(0, Int(now.timeIntervalSince($0) / 86_400))
-        }
+        let seen = devices.compactMap(\.lastSeen)
         let current = devices.compactMap(\.iOSVersion).map {
             SOFAFeedService.isCurrent($0, latestByMajor: latestByMajor)
         }
@@ -65,7 +69,9 @@ struct MobileSummary: Codable, Sendable, Equatable {
             dataProtection: share(devices.map(\.dataProtected)),
             activationLock: share(devices.map(\.activationLock)),
             osCurrent: share(current),
-            stale: ages.isEmpty ? nil : ages.filter { $0 > staleDays }.count,
+            stale: seen.isEmpty ? nil : seen.filter {
+                isStale(lastSeen: $0, staleDays: staleDays, now: now)
+            }.count,
             jailbroken: count(devices.map(\.jailbroken)),
             updateErrors: updateErrors)
     }
@@ -108,7 +114,7 @@ struct MobileSummary: Codable, Sendable, Equatable {
     ) -> MobileSummary? {
         guard let rows = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
         else { return nil }
-        let devices = rows.filter { $0.general != nil || $0.security != nil }.map { device($0) }
+        let devices = rows.filter(MobileFleetService.reportsPosture).map { device($0) }
         return build(
             devices, latestByMajor: latestByMajor, staleDays: staleDays, now: now,
             updateErrors: updateErrors)

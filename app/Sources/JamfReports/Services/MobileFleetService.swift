@@ -251,6 +251,11 @@ struct MobileFleetService: Sendable {
         var sourceDates: [String: Date] = [:]
         /// A device snapshot was collected and read, whether or not it holds any device.
         var inventoryCollected = false
+        /// The cached iOS / iPadOS feed's newest release per major, for the OS-behind finding.
+        var iOSLatestByMajor: [Int: String] = [:]
+        /// Identifiers of the devices the update scan lists with errors (`MobileFinding`); nil
+        /// when no scan has run.
+        var updateErrorKeys: Set<String>?
 
         // MARK: - Computed properties
 
@@ -470,7 +475,9 @@ struct MobileFleetService: Sendable {
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate &&
             lhs.sourceDates == rhs.sourceDates &&
-            lhs.inventoryCollected == rhs.inventoryCollected
+            lhs.inventoryCollected == rhs.inventoryCollected &&
+            lhs.iOSLatestByMajor == rhs.iOSLatestByMajor &&
+            lhs.updateErrorKeys == rhs.updateErrorKeys
         }
     }
 
@@ -495,9 +502,16 @@ struct MobileFleetService: Sendable {
         let listURL = newest(deviceKind)
         let candidates = [listURL, newest(legacyInventoryKind)].compactMap { $0 }
         let source = inventorySource(among: candidates, inside: dir)
-        return assemble(
+        var snapshot = assemble(
             listURL: listURL, inventoryURL: source?.url, inventoryRows: source?.devices,
             profilesURL: newest("classic-ios-profiles"))
+        guard snapshot.isDetected else { return snapshot }
+        snapshot.iOSLatestByMajor = SOFAFeedService.iOSLatestByMajor(
+            SOFAFeedService.load(dataDir: dir).rows)
+        snapshot.updateErrorKeys = newest("update-device-failures")
+            .flatMap { BoundedFile.readLogged($0, inside: dir) }
+            .flatMap(MobileFinding.updateErrorKeys(in:))
+        return snapshot
     }
 
     /// Test seam: load directly from arbitrary file URLs.
