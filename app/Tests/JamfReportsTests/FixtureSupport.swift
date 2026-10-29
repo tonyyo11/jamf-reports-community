@@ -119,3 +119,12 @@ extension ReportEngine {
         return engine
     }
 }
+
+/// `CLIBridge.backupProfile` with the environment read from the workspace's config.yaml.
+func readingBackupProfile(
+    _ workspace: String, onLine: @Sendable (CLIBridge.LogLine) -> Void
+) throws -> String {
+    try CLIBridge.backupProfile(
+        for: workspace, environment: EnvironmentProfiles.read(workspace: workspace),
+        onLine: onLine)
+}

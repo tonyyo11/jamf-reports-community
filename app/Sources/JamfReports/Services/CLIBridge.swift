@@ -2669,6 +2669,14 @@ final class CLIBridge {
             onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
+        // The folder's own spelling owns it, never config.yaml: a case variant sharing it on a
+        // case-insensitive volume is refused before anything is created or written.
+        if let owner = ProfileService.caseVariantWorkspace(of: profile) {
+            let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(conflict.localizedDescription)"))
+            throw conflict
+        }
         let config = workspace.appendingPathComponent("config.yaml")
         if !FileManager.default.fileExists(atPath: config.path) {
             onLine(.init(timestamp: Date(), level: .info,
@@ -2695,11 +2703,9 @@ final class CLIBridge {
         try reconcileConfigProfile(config: config, profile: profile, onLine: onLine)
     }
 
-    /// Refuses a workspace recorded for a case variant of `profile`: the two
-    /// share the folder on a case-insensitive volume, and rebinding it would
-    /// collect a second tenant into the first one's data. Records `profile` in
-    /// `jamf_cli.profile` through `ConfigService.saveBlock`, which copies the file first when
-    /// the write drops a comment, an unread line or a retired key, and logs what it did.
+    /// Records `profile` in `jamf_cli.profile` through `ConfigService.saveBlock`, which copies
+    /// the file first when the write drops a comment, an unread line or a retired key, and logs
+    /// what it did. A case variant was refused by `ensureWorkspace` from the folder's own name.
     private func reconcileConfigProfile(
         config: URL,
         profile: String,
@@ -2711,9 +2717,6 @@ final class CLIBridge {
             let current = EnvironmentProfiles.read(configURL: config, workspace: profile)
                 .namedOwner ?? ""
             guard current != profile else { return }
-            guard !ProfileService.isCaseVariant(current, of: profile) else {
-                throw CLIBridgeError.profileCaseConflict(profile: profile, owner: current)
-            }
 
             let report = try ConfigService.saveBlock(
                 key: "jamf_cli", profile: profile,
@@ -2727,10 +2730,6 @@ final class CLIBridge {
             if let line = report.statusLine {
                 onLine(.init(timestamp: Date(), level: .info, text: "[info] \(line)"))
             }
-        } catch let conflict as CLIBridgeError {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(conflict.localizedDescription)"))
-            throw conflict
         } catch {
             onLine(.init(
                 timestamp: Date(),

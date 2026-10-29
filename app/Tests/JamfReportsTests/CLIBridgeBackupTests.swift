@@ -215,8 +215,7 @@ final class CLIBridgeBackupTests: XCTestCase {
     func test_backupConfigProfile_silentWithoutConfig() throws {
         let profile = try makeWorkspace(configYAML: nil)
         let collector = LineCollector()
-        XCTAssertNoThrow(try CLIBridge.backupProfile(
-            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) })
+        XCTAssertNoThrow(try readingBackupProfile(profile) { collector.append($0) })
         XCTAssertTrue(collector.lines.isEmpty)
     }
 
@@ -228,8 +227,7 @@ final class CLIBridgeBackupTests: XCTestCase {
         for profile in [matching, empty] {
             let collector = LineCollector()
             XCTAssertNoThrow(
-                try CLIBridge.backupProfile(
-            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) })
+                try readingBackupProfile(profile) { collector.append($0) })
             XCTAssertTrue(collector.lines.isEmpty, "\(collector.lines.map(\.text))")
         }
     }
@@ -239,8 +237,7 @@ final class CLIBridgeBackupTests: XCTestCase {
     func test_backupConfigProfile_warnsOnceAndKeepsWorkspaceProfileForAnotherTenant() throws {
         let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"tenant-b\"\n")
         let collector = LineCollector()
-        XCTAssertEqual(try CLIBridge.backupProfile(
-            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) }, profile)
+        XCTAssertEqual(try readingBackupProfile(profile) { collector.append($0) }, profile)
         XCTAssertEqual(collector.lines.count, 1)
         let line = try XCTUnwrap(collector.lines.first)
         XCTAssertEqual(line.level, .warn)
@@ -255,8 +252,7 @@ final class CLIBridgeBackupTests: XCTestCase {
         let profile = try makeWorkspace(configYAML: nil)
         try writeConfig("jamf_cli:\n  profile: \"\(profile.uppercased())\"\n", for: profile)
         let collector = LineCollector()
-        XCTAssertEqual(try CLIBridge.backupProfile(
-            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { collector.append($0) }, profile)
+        XCTAssertEqual(try readingBackupProfile(profile) { collector.append($0) }, profile)
         XCTAssertEqual(collector.lines.map(\.level), [.warn])
     }
 
@@ -268,8 +264,7 @@ final class CLIBridgeBackupTests: XCTestCase {
         try writeConfig("jamf_cli:\n  profile: \"\(variant)\"\n", for: folder)
         let collector = LineCollector()
         XCTAssertThrowsError(
-            try CLIBridge.backupProfile(
-            for: variant, environment: EnvironmentProfiles.read(workspace: variant)) { collector.append($0) }
+            try readingBackupProfile(variant) { collector.append($0) }
         ) { error in
             XCTAssertEqual(
                 error as? CLIBridgeError, .profileCaseConflict(profile: variant, owner: folder))
@@ -320,16 +315,13 @@ final class CLIBridgeBackupTests: XCTestCase {
         try writeConfig("jamf_cli:\n  profile: other\nprofiles:\n  jamf_pro: \"\(profile)\"\n",
                         for: profile)
         let quiet = LineCollector()
-        XCTAssertNoThrow(try CLIBridge.backupProfile(
-            for: profile, environment: EnvironmentProfiles.read(workspace: profile)) { quiet.append($0) })
+        XCTAssertNoThrow(try readingBackupProfile(profile) { quiet.append($0) })
         XCTAssertTrue(quiet.lines.isEmpty, "jamf_cli.profile is not read under the block")
 
         // A slot naming another profile is refused here too, not only by `refusesProCommand`.
         try writeConfig("profiles:\n  jamf_pro: tenant-b\n", for: profile)
         let refused = LineCollector()
-        XCTAssertThrowsError(try CLIBridge.backupProfile(
-            for: profile, environment: EnvironmentProfiles.read(workspace: profile)
-        ) { refused.append($0) }) { error in
+        XCTAssertThrowsError(try readingBackupProfile(profile) { refused.append($0) }) { error in
             guard case .wrongProduct = error as? CLIBridgeError else { return XCTFail("\(error)") }
         }
         XCTAssertEqual(refused.lines.filter { $0.text.hasPrefix("[error]") }.count, 1)

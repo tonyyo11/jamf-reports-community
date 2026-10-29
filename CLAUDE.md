@@ -1386,11 +1386,10 @@ file (legacy import or live run) populates that field.
   profile never
   becomes active (`WorkspaceStore.setProfile`, `initialProfile`) or a run target
   (`ProfileService.runnableProfiles`, catch-up), because Audit and Refresh write for the
-  active profile without binding its workspace; and collect and backup refuse a profile whose
-  existing folder is spelled differently (`ProfileService.caseVariantWorkspace`, in
-  `CollectRouter.run` and `CLIBridge.backupProfile`), while the binding refuses a workspace whose
-  `jamf_cli.profile` is another spelling (`EnvironmentProfiles.namedOwner`,
-  `CLIBridge.reconcileConfigProfile`).
+  active profile without binding its workspace; and the binding, collect and backup refuse a
+  profile whose existing folder is spelled differently (`ProfileService.caseVariantWorkspace`, in
+  `CLIBridge.ensureWorkspace`, `CollectRouter.run` and `CLIBridge.backupProfile`), judged by the
+  folder's own name and never by config.yaml.
 - **jamf-cli signature (2.9):** `CodeSignVerifier.verify` checks a designated requirement
   (`anchor apple generic and certificate leaf[subject.OU] = "<team>"`, strict validation), not
   the team ID an ad-hoc signature can carry; `JamfCLIIdentity` fingerprints the

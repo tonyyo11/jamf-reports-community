@@ -363,8 +363,10 @@ final class ProfileSlugCaseTests: XCTestCase {
         return config
     }
 
-    func testBindingRefusesAWorkspaceRecordedForACaseVariant() async throws {
-        let config = try writeWorkspace(folder: "Acme", recordedProfile: "acme")
+    /// The binding judges the folder by its own name: `Acme` is refused from `acme`'s folder
+    /// and nothing in it is rewritten.
+    func testBindingRefusesAProfileWhoseFolderIsSpelledDifferently() async throws {
+        let config = try writeWorkspace(folder: "acme", recordedProfile: "acme")
         do {
             _ = try await CLIBridge().initializeWorkspace(
                 profile: "Acme", onLine: CLIBridge.noOpOnLine
@@ -375,6 +377,19 @@ final class ProfileSlugCaseTests: XCTestCase {
         }
         XCTAssertEqual(try ConfigLoader.load(from: config).jamfCli?.profile, "acme",
                        "the owner's jamf_cli.profile must not be rewritten")
+    }
+
+    /// A `jamf_cli.profile: Prod` planted in `prod`'s folder does not block `prod`: the
+    /// binding runs and records the folder's own name.
+    func testAPlantedCaseVariantDoesNotBlockTheFoldersOwnProfile() async throws {
+        let config = try writeWorkspace(folder: "prod", recordedProfile: "Prod")
+        let lines = CaseTestBox<[String]>([])
+        let code = try await CLIBridge().initializeWorkspace(profile: "prod") { line in
+            lines.value.append(line.text)
+        }
+        XCTAssertEqual(code, 0)
+        XCTAssertFalse(lines.value.contains { $0.hasPrefix("[error]") }, "\(lines.value)")
+        XCTAssertEqual(try ConfigLoader.load(from: config).jamfCli?.profile, "prod")
     }
 
     func testCaseVariantWorkspaceFindsADifferentlySpelledFolder() throws {
@@ -466,8 +481,7 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "prod"), "prod")
         XCTAssertEqual(ProfileService.unusableProfiles(in: ["prod", "Prod"]),
                        ["Prod": .sharesFolder(with: "prod")])
-        XCTAssertThrowsError(try CLIBridge.backupProfile(
-            for: "Prod", environment: EnvironmentProfiles.read(workspace: "Prod")) { _ in }) { error in
+        XCTAssertThrowsError(try readingBackupProfile("Prod") { _ in }) { error in
             XCTAssertEqual(
                 error as? CLIBridgeError, .profileCaseConflict(profile: "Prod", owner: "prod"))
         }
