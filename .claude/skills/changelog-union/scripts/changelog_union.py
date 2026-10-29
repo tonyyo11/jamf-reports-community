@@ -80,8 +80,34 @@ def render(items: list[Bullet]) -> list[str]:
     return [ln if ln.endswith("\n") else ln + "\n" for it in items for ln in it]
 
 
+def split_h2(lines: list[str]) -> tuple[list[str], dict[str, list[str]]]:
+    """Split a hunk side at `## ` release headings (kept as headers, not as text)."""
+    lead: list[str] = []
+    blocks: dict[str, list[str]] = {}
+    cur: list[str] = lead
+    for ln in lines:
+        if ln.startswith("## "):
+            cur = blocks.setdefault(ln.rstrip(), [])
+        else:
+            cur.append(ln)
+    return lead, blocks
+
+
 def merge(head: list[str], incoming: list[str]) -> list[str]:
-    """Union of two hunk sides: loose bullets first, then one block per header."""
+    """Union of two hunk sides, release heading by release heading."""
+    lead_a, blocks_a = split_h2(head)
+    lead_b, blocks_b = split_h2(incoming)
+    out = merge_sections(lead_a, lead_b)
+    for h in dict.fromkeys([*blocks_a, *blocks_b]):
+        if out and out[-1].strip():
+            out.append("\n")
+        out += [h + "\n", "\n"]
+        out += merge_sections(blocks_a.get(h, []), blocks_b.get(h, []))
+    return out
+
+
+def merge_sections(head: list[str], incoming: list[str]) -> list[str]:
+    """Union of two sides without release headings: loose bullets, then one block per header."""
     pa, sa = parse(head)
     pb, sb = parse(incoming)
     known = [h for h in ORDER if h in sa or h in sb]
@@ -121,7 +147,12 @@ def resolve(lines: list[str]) -> tuple[list[str], int]:
         if i >= len(lines):
             raise ValueError("unterminated conflict hunk (no >>>>>>> line)")
         i += 1
-        res += merge(head, incoming)
+        merged = collapse_blank_runs(merge(head, incoming))
+        while merged and not merged[0].strip() and res and not res[-1].strip():
+            merged.pop(0)
+        if merged and merged[0].startswith("#") and res and res[-1].strip():
+            res.append("\n")
+        res += merged
         n += 1
         if i < len(lines) and lines[i].startswith("#") and res and res[-1].strip():
             res.append("\n")
@@ -236,7 +267,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--check", action="store_true", help="only run the checks")
     args = ap.parse_args(argv)
     try:
-        text = args.file.read_text()
+        text = args.file.read_text(encoding="utf-8")
     except OSError as err:
         print(f"changelog_union: cannot read {args.file}: {err}", file=sys.stderr)
         return 2
@@ -249,9 +280,8 @@ def main(argv: list[str]) -> int:
             print(f"changelog_union: {args.file}: {err}", file=sys.stderr)
             return 2
         if hunks:
-            lines = collapse_blank_runs(lines)
             if not args.dry_run:
-                args.file.write_text("".join(lines))
+                args.file.write_text("".join(lines), encoding="utf-8")
         verb = "would resolve" if args.dry_run else "resolved"
         print(f"{verb} {hunks} hunk(s) in {args.file}")
     findings = check(lines)

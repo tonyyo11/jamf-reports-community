@@ -57,9 +57,9 @@ HEADER_OUTSIDE = """## [Unreleased]
 def run(text: str, *flags: str) -> tuple[int, str, str]:
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "CHANGELOG.md"
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
         code = cu.main([*flags, str(path)])
-        return code, path.read_text(), str(path)
+        return code, path.read_text(encoding="utf-8"), str(path)
 
 
 class UnionTests(unittest.TestCase):
@@ -79,6 +79,29 @@ class UnionTests(unittest.TestCase):
         code, out, _ = run(HEADER_OUTSIDE)
         self.assertEqual(code, 1)
         self.assertEqual(out.count("### Fixed"), 2)
+
+    def test_release_headings_inside_a_hunk_stay_headings(self) -> None:
+        text = (
+            "<<<<<<< HEAD\n## [Unreleased]\n\n### Added\n\n- One. (#1)\n"
+            "=======\n## [Unreleased]\n\n### Added\n\n- Two. (#2)\n\n### Fixed\n\n- Three. (#3)\n"
+            ">>>>>>> x\n"
+        )
+        code, out, _ = run(text)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.count("## [Unreleased]"), 1)
+        self.assertLess(out.index("- One."), out.index("- Two."))
+        self.assertIn("### Fixed", out)
+
+    def test_blank_runs_outside_hunks_are_left_alone(self) -> None:
+        text = "# Changelog\n\n\n\nintro\n\n### Added\n\n- A. (#1)\n"
+        code, out, _ = run(text)
+        self.assertEqual((code, out), (0, text))
+
+    def test_non_ascii_round_trips(self) -> None:
+        text = "### Added\n\n<<<<<<< HEAD\n- Caf\u00e9 \u2014 one. (#1)\n=======\n- Two. (#2)\n>>>>>>> x\n"
+        code, out, _ = run(text)
+        self.assertEqual(code, 0)
+        self.assertIn("Caf\u00e9 \u2014 one", out)
 
     def test_dry_run_writes_nothing(self) -> None:
         code, out, _ = run(CONFLICT, "--dry-run")
