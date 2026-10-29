@@ -23,11 +23,9 @@ struct OnboardingView: View {
         + "commands that the gateway refuses need a separate Jamf Pro OAuth profile; Jamf "
         + "Reports runs none of them."
 
-    private let privileges = [
-        "Computers: Read", "Mobile Devices: Read", "Mobile Profiles: Read",
-        "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
-        "Mobile Apps: Read", "Software Updates: Read", "Computer Groups: Read",
-    ]
+    /// jamf-cli's own list for the commands a collect runs; the 1.31.1 list until the installed
+    /// jamf-cli's catalog has been read.
+    @State private var privileges = CommandCatalog.bundledCollectPrivileges
 
     var body: some View {
         ScrollView {
@@ -998,6 +996,16 @@ struct OnboardingView: View {
                     }
                 }
             }
+            Text("From jamf-cli. It lists none for report and Classic commands, which also "
+                + "need Read access to what they report on.")
+                .font(.caption2)
+                .foregroundStyle(Theme.Colors.fg2)
+        }
+        .task {
+            let read = await Task.detached {
+                CommandCatalog.installed()?.collectPrivileges()
+            }.value
+            if let read, !read.isEmpty { privileges = read }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
