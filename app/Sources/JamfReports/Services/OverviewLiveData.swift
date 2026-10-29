@@ -424,22 +424,13 @@ enum OverviewLiveDataLoader {
         return keys.lazy.compactMap({ eaCounts[$0] }).first
     }
 
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
-    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
     /// Most recent check-in first: fewest days since contact, then the newest
     /// timestamp within a day, then name.
     static func recentDevices(
         _ records: [DeviceInventoryRecord], limit: Int
     ) -> [DeviceInventoryRecord] {
-        let iso = isoFormatter
-        let isoFractional = isoFractionalFormatter
         let dated: [(record: DeviceInventoryRecord, date: Date?)] = records.map {
-            ($0, iso.date(from: $0.lastContact) ?? isoFractional.date(from: $0.lastContact))
+            ($0, ISO8601Time.parse($0.lastContact))
         }
         let sorted = dated.sorted { a, b in
             switch (a.record.daysSinceContact, b.record.daysSinceContact) {

@@ -102,9 +102,7 @@ enum CrashReporter {
         // Tighten permissions on any pre-existing directory created with a looser umask.
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: logDir.path)
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let timestamp = formatter.string(from: Date())
+        let timestamp = ISO8601Time.string(Date())
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: "+", with: "Z")
         let logURL = logDir.appendingPathComponent("crash_\(timestamp).log")

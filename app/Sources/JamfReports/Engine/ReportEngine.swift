@@ -1521,18 +1521,31 @@ struct ReportEngine: Sendable {
         var name = url.deletingPathExtension().lastPathComponent
         // Strip trailing _YYYY-MM-DD or _YYYY-MM-DD_HHmmss timestamp to recover stem.
         let patterns = [
-            #"_\d{4}-\d{2}-\d{2}T\d{6}$"#,
-            #"_\d{4}-\d{2}-\d{2}_\d{6}$"#,
-            #"_\d{8}$"#,
-            #"_\d{4}-\d{2}-\d{2}$"#,
+            #/_\d{4}-\d{2}-\d{2}T\d{6}$/#,
+            #/_\d{4}-\d{2}-\d{2}_\d{6}$/#,
+            #/_\d{8}$/#,
+            #/_\d{4}-\d{2}-\d{2}$/#,
         ]
         for pattern in patterns {
-            if let range = name.range(of: pattern, options: .regularExpression) {
-                name = String(name[..<range.lowerBound])
+            if let match = name.firstMatch(of: pattern) {
+                name = String(name[..<match.range.lowerBound])
                 break
             }
         }
         return name
+    }
+
+    /// One formatter per `dateFromFilename` pattern, in the same order.
+    private static let filenameDateFormatters: [DateFormatter] = [
+        "yyyy-MM-dd'T'HHmmss", "yyyy-MM-dd'T'HH_mm_ss", "yyyy-MM-dd'T'HH-mm-ss",
+        "yyyy-MM-dd_HHmmss", "yyyyMMdd", "yyyy-MM-dd",
+    ].map { format in
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = format
+        return formatter
     }
 
     private func dateFromFilename(_ url: URL, fm: FileManager) -> Date {
@@ -1545,22 +1558,17 @@ struct ReportEngine: Sendable {
         //   YYYY-MM-DD_HHMMSS     — underscore separator, compact time
         //   YYYYMMDD              — compact date only
         //   YYYY-MM-DD            — ISO date only
-        let patterns: [(regex: String, fmt: String)] = [
-            (#"(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})(\d{2})$"#,       "yyyy-MM-dd'T'HHmmss"),
-            (#"(\d{4}-\d{2}-\d{2})T(\d{2})_(\d{2})_(\d{2})$"#,     "yyyy-MM-dd'T'HH_mm_ss"),
-            (#"(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})$"#,     "yyyy-MM-dd'T'HH-mm-ss"),
-            (#"(\d{4}-\d{2}-\d{2})_(\d{6})$"#,                      "yyyy-MM-dd_HHmmss"),
-            (#"(\d{8})$"#,                                           "yyyyMMdd"),
-            (#"(\d{4}-\d{2}-\d{2})$"#,                              "yyyy-MM-dd"),
+        let patterns: [Regex<Substring>] = [
+            #/\d{4}-\d{2}-\d{2}T\d{6}$/#,
+            #/\d{4}-\d{2}-\d{2}T\d{2}_\d{2}_\d{2}$/#,
+            #/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$/#,
+            #/\d{4}-\d{2}-\d{2}_\d{6}$/#,
+            #/\d{8}$/#,
+            #/\d{4}-\d{2}-\d{2}$/#,
         ]
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .iso8601)
-        for (pattern, fmt) in patterns {
-            guard let range = name.range(of: pattern, options: .regularExpression) else { continue }
-            let match = String(name[range])
-            formatter.dateFormat = fmt
-            if let date = formatter.date(from: match) { return date }
+        for (pattern, formatter) in zip(patterns, Self.filenameDateFormatters) {
+            guard let match = name.firstMatch(of: pattern) else { continue }
+            if let date = formatter.date(from: String(match.0)) { return date }
         }
         let attrs = try? fm.attributesOfItem(atPath: url.path)
         return (attrs?[.modificationDate] as? Date) ?? .distantPast
@@ -3926,9 +3934,8 @@ struct ReportEngine: Sendable {
     /// ISO 8601 formatter's default zone, which is why a workbook's name can read hours
     /// ahead of the Generated column beside it. The Config screen's example comes from here.
     static func workbookTimestamp(_ date: Date = Date()) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
-        return formatter.string(from: date)
+        // The internet date-time form less its trailing "Z".
+        return String(ISO8601Time.string(date).dropLast())
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "T", with: "_")
     }
@@ -4517,9 +4524,7 @@ struct ReportEngine: Sendable {
             return nil
         }
 
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        let now = iso.string(from: Date())
+        let now = ISO8601Time.string(Date())
 
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
             as? String ?? "dev"
@@ -4702,18 +4707,9 @@ enum ReportEngineError: Error, LocalizedError {
 /// cross-reference the state file. Byte-stable ISO-8601 UTC matches
 /// `StateFileStore`'s on-disk format so logs and files agree literally.
 ///
-/// `nonisolated(unsafe)` for the same reason as `StateFileStore.formatter`
-/// — the post-init read methods are reentrant on macOS.
-nonisolated(unsafe) private let collectLogDateFormatter: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime]
-    f.timeZone = TimeZone(secondsFromGMT: 0)
-    return f
-}()
-
 /// `date` as the collect log writes it, or "never". Shared by the `[skip]` and `[plan]` lines.
 func collectLogDateLabel(_ date: Date?) -> String {
     guard let date else { return "never" }
-    return collectLogDateFormatter.string(from: date)
+    return ISO8601Time.string(date)
 }
 

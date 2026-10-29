@@ -1003,14 +1003,7 @@ enum LaunchAgentService {
 
     private static func dateValue(_ raw: Any?) -> Date? {
         guard let text = raw as? String, !text.isEmpty else { return nil }
-        let withFractional = ISO8601DateFormatter()
-        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFractional.date(from: text) {
-            return date
-        }
-        let standard = ISO8601DateFormatter()
-        standard.formatOptions = [.withInternetDateTime]
-        return standard.date(from: text)
+        return ISO8601Time.parse(text)
     }
 
     static func parseLogTail(

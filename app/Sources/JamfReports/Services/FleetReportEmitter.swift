@@ -44,7 +44,7 @@ enum FleetReportEmitter {
         }
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK)
         if Int(info.st_size) > maxBytes { _ = ftruncate(fd, 0) }
-        let line = ISO8601DateFormatter().string(from: Date()) + " " + message + "\n"
+        let line = ISO8601Time.string(Date()) + " " + message + "\n"
         // write(contentsOf:), not write(_:): the latter raises on failure, which Swift cannot
         // catch. On a synced workspace the write really can fail.
         try handle.write(contentsOf: Data(line.utf8))

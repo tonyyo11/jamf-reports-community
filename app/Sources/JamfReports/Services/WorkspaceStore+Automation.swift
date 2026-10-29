@@ -910,7 +910,7 @@ extension WorkspaceStore {
             return WebhookNotifier.Fact(
                 label: name,
                 value: issue.expectedFire.map {
-                    "expected \(ISO8601DateFormatter().string(from: $0)); no run recorded"
+                    "expected \(ISO8601Time.string($0)); no run recorded"
                 } ?? "no run recorded"
             )
         }

@@ -86,10 +86,8 @@ struct SOFAScoreFeed: Sendable, Equatable {
     }
 
     private static func date(from raw: String) -> Date? {
-        let iso = ISO8601DateFormatter()
-        if let date = iso.date(from: raw) { return date }
-        iso.formatOptions = [.withFullDate]
-        return iso.date(from: String(raw.prefix(10)))
+        if let date = ISO8601Time.parse(raw) { return date }
+        return try? Date.ISO8601FormatStyle().year().month().day().parse(String(raw.prefix(10)))
     }
 
     /// Every field is read on its own: a value of another type costs that field, a release

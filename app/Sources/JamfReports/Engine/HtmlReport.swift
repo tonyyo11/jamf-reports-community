@@ -592,8 +592,7 @@ struct HtmlReport: Sendable {
             versions.append((ver, count))
         }
 
-        let dateFormatter = ISO8601DateFormatter()
-        let ts = dateFormatter.string(from: Date())
+        let ts = ISO8601Time.string(Date())
         let entry: [String: Any] = [
             "ts": ts,
             "versions": versions.map { ["v": $0.0, "c": $0.1] },

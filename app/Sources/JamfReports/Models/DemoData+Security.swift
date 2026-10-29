@@ -18,7 +18,7 @@ extension DemoData {
     /// dates. Built from the reference date, never the clock, so demo ages hold.
     static func timestamp(minutesBefore minutes: Int) -> String {
         let date = referenceDate.addingTimeInterval(-Double(minutes) * 60)
-        return ISO8601DateFormatter().string(from: date)
+        return ISO8601Time.string(date)
     }
 
     // MARK: - Fleet

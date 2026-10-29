@@ -133,7 +133,7 @@ extension CoreDashboard {
             title: "Fleet Drift",
             subtitle: "Collected \(stamp.string(from: pair.current.date)) vs "
                 + "\(stamp.string(from: pair.prior.date)) | \(ruleSubtitle(rule)) | "
-                + "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+                + "Generated: \(ISO8601Time.string(Date()))",
             ncols: 6)
         ws.setColumnWidth(0, 0, 34)
         ws.setColumnWidth(1, 5, 22)
@@ -166,7 +166,7 @@ extension CoreDashboard {
         }
         func listing(_ mac: ComputerDates) -> [String] {
             [mac.name ?? "", mac.serial ?? "", mac.osVersion ?? "",
-             mac.checkIn.map(ISO8601DateFormatter().string(from:)) ?? ""]
+             mac.checkIn.map(ISO8601Time.string) ?? ""]
         }
         func days(_ age: StaleAge?) -> String {
             switch age {

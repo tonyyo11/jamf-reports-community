@@ -650,7 +650,7 @@ private struct BarChartExportView: View {
     }
 
     // Built once, never mutated after creation.
-    nonisolated(unsafe) private static let dayFormatter: DateFormatter = {
+    nonisolated private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         // A formatter built per call read the zone at that moment; this one follows changes.

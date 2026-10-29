@@ -139,12 +139,10 @@ struct RunManifest: Codable, Equatable, Sendable {
                 entries.append(try entry(name, in: folder))
             }
         }
-        let stamp = ISO8601DateFormatter()
-        stamp.formatOptions = [.withInternetDateTime]
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
             as? String ?? "dev"
         return RunManifest(
-            generatedAt: stamp.string(from: now), generator: "JamfReports \(version)",
+            generatedAt: ISO8601Time.string(now), generator: "JamfReports \(version)",
             artifacts: entries)
     }
 
@@ -336,10 +334,8 @@ struct RunManifest: Codable, Equatable, Sendable {
             result.passed = false
             return
         }
-        let stamp = ISO8601DateFormatter()
-        stamp.formatOptions = [.withInternetDateTime]
         let signer = inspection.signer.map { " by \"\(shown($0))\"" } ?? ""
-        result.lines.append("Timestamp: manifest signed \(stamp.string(from: inspection.signedAt))"
+        result.lines.append("Timestamp: manifest signed \(ISO8601Time.string(inspection.signedAt))"
             + signer)
         if let fingerprint = inspection.signerSHA256 {
             result.lines.append("Timestamp signer certificate SHA-256: \(fingerprint) (compare "
