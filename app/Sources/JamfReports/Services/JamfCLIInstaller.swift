@@ -290,7 +290,7 @@ final class JamfCLIInstaller {
         }
 
         guard let output = JamfCLIProbe.run(
-            executable: binary, arguments: ["--version"], timeout: timeout
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: timeout
         ) else { return nil }
         let text = [
             String(data: output.stdout, encoding: .utf8),

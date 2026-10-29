@@ -22,6 +22,10 @@ enum JamfCLIProbe {
         case launchFailed
     }
 
+    /// The root flag all three version readers send (`Provenance`, `DiagnosticBundleService`,
+    /// `JamfCLIInstaller.installedVersion`).
+    static let versionArguments = ["--version"]
+
     /// Seconds a probe gets, the same allowance as `ConnectionCheck`'s calls.
     static let defaultTimeout: TimeInterval = ConnectionCheck.timeout
 

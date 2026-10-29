@@ -1201,7 +1201,7 @@ enum DiagnosticBundleService {
             return "unavailable (codesign gate rejected binary)"
         }
         guard let result = JamfCLIProbe.run(
-            executable: binary, arguments: ["--version"], timeout: 10) else {
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: 10) else {
             return "unavailable (did not run)"
         }
         guard result.exitCode == 0 else { return "unavailable (exit \(result.exitCode))" }
