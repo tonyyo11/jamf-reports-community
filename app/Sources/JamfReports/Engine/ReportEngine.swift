@@ -324,7 +324,8 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): \(error)"
+            let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): "
+                + error.localizedDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -394,7 +395,8 @@ struct ReportEngine: Sendable {
             try fm.moveItem(at: file, to: dest)
             return true
         } catch {
-            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error)"
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): "
+                + error.localizedDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             if label.isEmpty { print(msg) }
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -435,7 +437,7 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create summaries dir: \(error)"
+            let msg = "[warn] Could not create summaries dir: \(error.localizedDescription)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -1444,7 +1446,7 @@ struct ReportEngine: Sendable {
             try png.write(to: url, options: .atomic)
         } catch {
             AppLogger.report.warning(
-                "[warn] PNG export failed for \(kind, privacy: .public): \(error)"
+                "[warn] PNG export failed for \(kind, privacy: .public): \(error.localizedDescription)"
             )
         }
     }
@@ -4461,8 +4463,8 @@ struct ReportEngine: Sendable {
             try line.write(to: sidecarURL, atomically: true, encoding: .utf8)
             return hex
         } catch {
-            fputs("[warn] sha256 sidecar: could not write \(sidecarURL.lastPathComponent): \(error)\n",
-                  stderr)
+            fputs("[warn] sha256 sidecar: could not write \(sidecarURL.lastPathComponent): "
+                + "\(error.localizedDescription)\n", stderr)
             return nil
         }
     }
@@ -4515,8 +4517,8 @@ struct ReportEngine: Sendable {
         do {
             try manifest.write(to: manifestURL, atomically: true, encoding: .utf8)
         } catch {
-            fputs("[warn] manifest: could not write \(manifestURL.lastPathComponent): \(error)\n",
-                  stderr)
+            fputs("[warn] manifest: could not write \(manifestURL.lastPathComponent): "
+                + "\(error.localizedDescription)\n", stderr)
         }
         return hex
     }
