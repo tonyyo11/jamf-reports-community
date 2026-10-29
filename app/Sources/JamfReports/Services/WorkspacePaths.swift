@@ -10,6 +10,13 @@ import Foundation
 /// mirrors that behavior, reading the file through the engine's loader.
 enum WorkspacePaths {
 
+    /// The workspace's folder under the workspaces root. Every folder path starts here.
+    static func workspaceURL(
+        for workspace: WorkspaceID, under root: URL = ProfileService.workspacesRoot()
+    ) -> URL {
+        root.appendingPathComponent(workspace.pathComponent, isDirectory: true)
+    }
+
     /// The conventional subdirectory name for generated report output.
     /// Used by `CLIBridge+Generation` to construct HTML and PDF output paths
     /// without duplicating the literal.

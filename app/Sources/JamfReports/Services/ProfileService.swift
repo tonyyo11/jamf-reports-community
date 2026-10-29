@@ -192,12 +192,9 @@ enum ProfileService {
         WorkspaceRootStore.current()
     }
 
-    /// Path to a specific workspace. Returns nil for invalid names.
+    /// Path to a specific workspace (`WorkspacePaths.workspaceURL`). Returns nil for invalid names.
     static func workspaceURL(for profile: String) -> URL? {
-        guard isValid(profile) else { return nil }
-        return workspacesRoot().appendingPathComponent(
-            ProfileName.pathComponent(profile), isDirectory: true
-        )
+        WorkspaceID(profile).map { WorkspacePaths.workspaceURL(for: $0) }
     }
 
     /// The profile of an existing workspace folder spelled like `profile` apart from
