@@ -572,14 +572,15 @@ final class CLIBridge {
         outputDir: URL? = nil,
         aiNarrative: String? = nil,
         htmlWithWorkbook: Bool = true,
+        csvFolder: Bool = false,
         now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await AttentionLog.recording(profile: profile) {
             try await generateRecording(
                 profile: profile, template: template, outputDir: outputDir,
-                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook, now: now,
-                onLine: onLine)
+                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook,
+                csvFolder: csvFolder, now: now, onLine: onLine)
         }
     }
 
@@ -589,6 +590,7 @@ final class CLIBridge {
         outputDir: URL?,
         aiNarrative: String?,
         htmlWithWorkbook: Bool,
+        csvFolder: Bool,
         now: Date,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
@@ -633,7 +635,7 @@ final class CLIBridge {
         do {
             let failures = try await engine.generate(
                 outputURL: outputURL, template: template,
-                aiNarrative: aiNarrative, now: now, onLine: onLine
+                aiNarrative: aiNarrative, csvFolder: csvFolder, now: now, onLine: onLine
             )
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -724,6 +726,7 @@ final class CLIBridge {
     /// Run school-generate for Jamf School tenants via the Swift engine.
     func schoolGenerate(
         profile: String,
+        csvFolder: Bool = false,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -770,6 +773,7 @@ final class CLIBridge {
                 dataDir: dataDir,
                 outputURL: outputURL,
                 profile: profile,
+                csvFolder: csvFolder,
                 onLine: onLine
             )
             if failures.isEmpty {

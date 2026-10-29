@@ -8,6 +8,8 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
     case html = "HTML"
     case pdf  = "PDF"
     case csv  = "CSV"
+    /// One CSV per workbook tab, beside the workbook; the workbook is written with it.
+    case csvFolder = "CSV folder"
 
     var description: String {
         switch self {
@@ -15,6 +17,7 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
         case .html: "Executive summary, browser"
         case .pdf:  "Paginated audit artifact"
         case .csv:  "Wide inventory export"
+        case .csvFolder: "One CSV per tab, with the workbook"
         }
     }
 
@@ -24,6 +27,7 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
         case .html: "safari"
         case .pdf:  "doc.richtext"
         case .csv:  "doc.plaintext"
+        case .csvFolder: "folder"
         }
     }
 }

@@ -146,12 +146,12 @@ final class SchoolWorkspaceTests: XCTestCase {
 
     // MARK: - Generate
 
-    func testTheGenerateSheetOffersTheSchoolWorkbookOnly() {
+    func testTheGenerateSheetOffersTheSchoolWorkbookAndItsCSVFolderOnly() {
         let state = GenerateSheetState()
         state.schoolWorkspace = true
         XCTAssertTrue(state.schoolMode)
         XCTAssertEqual(state.selectedTypes, [.xlsx])
-        XCTAssertEqual(state.offeredTypes, [.xlsx])
+        XCTAssertEqual(state.offeredTypes, [.xlsx, .csvFolder])
         XCTAssertEqual(state.offeredTemplates.map(\.identifier), [SchoolTemplate().identifier])
 
         let pro = GenerateSheetState()

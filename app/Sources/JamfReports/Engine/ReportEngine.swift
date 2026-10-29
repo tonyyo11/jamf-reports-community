@@ -41,6 +41,8 @@ struct ReportEngine: Sendable {
     ///   - aiNarrative: Optional AI executive narrative (F3). GUI-generate flows pass
     ///                  a pre-generated paragraph; headless callers (scheduled runs,
     ///                  included CLI) leave the default nil and no AI block is written.
+    ///   - csvFolder: Also write the workbook's tabs as a folder of CSVs beside it, as
+    ///                `output.csv_folder` does for every run.
     ///   - locateJamfCLI: Finds the jamf-cli whose version the Cover sheet records; tests
     ///                    pass `{ nil }` so no jamf-cli runs.
     ///   - now: The run's start. The trend summary is dated by it, so a run whose `collect`
@@ -56,10 +58,28 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        csvFolder: Bool = false,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
+        try await generateReport(
+            outputURL: outputURL, template: template, aiNarrative: aiNarrative,
+            csvFolder: csvFolder, locateJamfCLI: locateJamfCLI, now: now, onLine: onLine
+        ).failures
+    }
+
+    /// `generate`, also naming the CSV folder it wrote (nil when none), so a scheduled run can
+    /// record it.
+    func generateReport(
+        outputURL: URL,
+        template: any ReportTemplate = FullInstanceTemplate(),
+        aiNarrative: String? = nil,
+        csvFolder: Bool = false,
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        now: Date = Date(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> GeneratedReport {
         // Every folder this run reads or writes is the run's profile's, so a peer cannot point
         // a shared workspace's generate at another local workspace through config.yaml.
         let profile = try runProfile(onLine: onLine)
@@ -140,11 +160,14 @@ struct ReportEngine: Sendable {
             workbook.firstSheet?.insertLogo(data: logo, filename: "logo.png")
         }
         try workbook.write(to: outputURL)
+        let csvFolderURL = Self.writeCSVFolder(
+            of: workbook, besideWorkbook: outputURL, requested: csvFolder, config: config,
+            onLine: onLine)
 
         finishWorkbook(at: outputURL, templateID: template.identifier,
                        profile: profile, provenance: prov, day: now, onLine: onLine)
 
-        return coreFailures
+        return GeneratedReport(failures: coreFailures, csvFolder: csvFolderURL)
     }
 
     /// The profile every folder of this run belongs to: the caller's. config.yaml's
@@ -258,8 +281,9 @@ struct ReportEngine: Sendable {
     /// Falls back to file mtime when no date pattern is found.
     ///
     /// A run is a workbook: `keep` counts workbooks, and one that moves takes its companion HTML
-    /// (the same name with `.html`, written by `html.with_workbook`) and its sidecars with it.
-    /// An HTML report with no workbook of the same name beside it is never moved.
+    /// (the same name with `.html`, written by `html.with_workbook`), its CSV folder
+    /// (`csvFolderURL`) and their sidecars with it. An HTML report or CSV folder with no
+    /// workbook of the same name beside it is never moved.
     ///
     /// - Parameter onLine: When provided, warnings are emitted here instead of (only) via
     ///   `print`, so live log views (e.g. GenerateSheet) display side-effect failures.
@@ -308,10 +332,12 @@ struct ReportEngine: Sendable {
         }
 
         for file in sorted.dropFirst(keep) {
-            // The workbook's companion HTML (`html.with_workbook`) is part of its run. A
-            // `.html` with no workbook beside it, such as the Generate sheet's HTML format or
-            // `jamf-reports html` output, is not a run of this stem and is left where it is.
-            let run = [file, Self.htmlURL(besideWorkbook: file)]
+            // The workbook's companion HTML (`html.with_workbook`) and CSV folder are part of its
+            // run. A `.html` with no workbook beside it, such as the Generate sheet's HTML
+            // format or `jamf-reports html` output, is not a run of this stem and is left where
+            // it is.
+            let run = [file, Self.htmlURL(besideWorkbook: file),
+                       Self.csvFolderURL(besideWorkbook: file)]
                 .filter { fm.fileExists(atPath: $0.path) }
             for artifact in run {
                 // Skip sidecars when the move failed: sidecars without their report in the
@@ -3788,8 +3814,23 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         outputURL: URL,
         profile: String? = nil,
+        csvFolder: Bool = false,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
+        try await schoolGenerateReport(
+            config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
+            csvFolder: csvFolder, onLine: onLine).failures
+    }
+
+    /// `schoolGenerate`, also naming the CSV folder it wrote (nil when none).
+    static func schoolGenerateReport(
+        config: ReportConfig,
+        dataDir: URL,
+        outputURL: URL,
+        profile: String? = nil,
+        csvFolder: Bool = false,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> GeneratedReport {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
         // generation too. School snapshots live under the same workspace data
         // dir and share the manifest discipline; integrity violations here
@@ -3807,9 +3848,12 @@ struct ReportEngine: Sendable {
 
         workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)
+        let folder = writeCSVFolder(
+            of: workbook, besideWorkbook: outputURL, requested: csvFolder, config: config,
+            onLine: onLine)
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
         _ = writeSHA256Sidecar(for: outputURL)
-        return schoolFailures
+        return GeneratedReport(failures: schoolFailures, csvFolder: folder)
     }
 
     // MARK: - Convenience: timestamped output path

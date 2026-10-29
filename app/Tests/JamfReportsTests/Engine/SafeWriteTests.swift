@@ -37,6 +37,15 @@ final class SafeWriteTests: XCTestCase {
         XCTAssertTrue(s.hasPrefix("\t"))
     }
 
+    /// The guard `csvField` applies: a leading tab or carriage return (alone or as CRLF) is
+    /// prefixed too, so a cell reads the same in a workbook and in a CSV.
+    func testLeadingTabAndCarriageReturnGetALeadingTab() {
+        for raw in ["\tcmd", "\rcmd", "\r\ncmd"] {
+            guard case .string(let s) = CellValue.safe(raw) else { XCTFail("Expected .string"); return }
+            XCTAssertEqual(s, "\t" + raw)
+        }
+    }
+
     func testNormalStringPassesThrough() {
         guard case .string(let s) = CellValue.safe("MacBook Pro") else {
             XCTFail("Expected .string"); return
