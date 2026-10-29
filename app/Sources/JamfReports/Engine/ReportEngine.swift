@@ -1007,7 +1007,7 @@ struct ReportEngine: Sendable {
     /// device with errors for two products counts once); nil for a summary-only snapshot, whose
     /// empty list says nothing.
     static func mobileUpdateErrorCount(_ data: Data) -> Int? {
-        MobileFinding.updateErrorKeys(in: data)?.count
+        MobileFinding.updateErrors(in: data)?.count
     }
 
     /// The day's summary for a fleet with no Macs and some mobile devices: `totalDevices` is

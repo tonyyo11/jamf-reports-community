@@ -16,7 +16,7 @@ extension MobileFleetService.Snapshot {
     func findingContext(staleDays: Int, now: Date) -> MobileFinding.Context {
         MobileFinding.Context(
             latestByMajor: iOSLatestByMajor, staleDays: staleDays, now: now,
-            updateErrorKeys: updateErrorKeys)
+            updateErrors: updateErrors)
     }
 
     /// Each finding's device count. A finding no device reports the field for is absent, never
@@ -26,10 +26,11 @@ extension MobileFleetService.Snapshot {
         let listRows = lightDevicesByID
         for device in richDevices where MobileFleetService.reportsPosture(device) {
             let reading = MobileSummary.device(device)
-            let key = updateErrorKey(of: device, listRows: listRows)
+            let identity = identity(of: device, listRows: listRows)
             for finding in MobileFinding.allCases {
                 guard let hit = finding.isAffected(
-                    reading, updateErrorKey: key, context: context) else { continue }
+                    reading, serial: identity.serial, name: identity.name, context: context)
+                else { continue }
                 counts[finding, default: 0] += hit ? 1 : 0
             }
         }
@@ -45,19 +46,19 @@ extension MobileFleetService.Snapshot {
         let listRows = lightDevicesByID
         return devices.filter { device in
             guard MobileFleetService.reportsPosture(device) else { return false }
+            let identity = identity(of: device, listRows: listRows)
             return finding.isAffected(
-                MobileSummary.device(device),
-                updateErrorKey: updateErrorKey(of: device, listRows: listRows),
+                MobileSummary.device(device), serial: identity.serial, name: identity.name,
                 context: context) == true
         }
     }
 
-    private func updateErrorKey(
+    /// How the update scan names a device: its serial and display name.
+    private func identity(
         of device: MobileDeviceInventoryItem, listRows: [String: MobileDeviceListRow]
-    ) -> String? {
-        MobileFinding.updateErrorKey(
-            serial: MobileFleetService.serialNumber(
-                of: device, listRow: device.mobileDeviceId.flatMap { listRows[$0] }),
-            name: device.general?.displayName)
+    ) -> (serial: String?, name: String?) {
+        (MobileFleetService.serialNumber(
+            of: device, listRow: device.mobileDeviceId.flatMap { listRows[$0] }),
+         device.general?.displayName)
     }
 }

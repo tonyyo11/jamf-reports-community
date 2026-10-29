@@ -124,6 +124,9 @@ struct MobileFleetView: View {
         snapshot = loaded
         findingContext = context
         findingCounts = counts
+        // A reload whose data no longer reports the finding must not leave its chip over an
+        // empty table.
+        if let active = findingFilter, counts[active] == nil { findingFilter = nil }
         supervisionFilter = nil
         loadedSource = source
         applyPendingFilter()
@@ -722,15 +725,15 @@ struct MobileFleetView: View {
         let listRowsByID = snapshot.lightDevicesByID
         let matching = tableRows
         let rows = Array(matching.prefix(50))
-        let total = totalMobileDevices
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     SectionHeader(
                         title: "Mobile Devices",
+                        // The denominator is the matching count, so a filter reads "50 of 80".
                         trailing: supervisionFilter != nil || findingFilter != nil
-                            || total > rows.count
-                            ? "\(rows.count) of \(total) shown"
+                            || matching.count > rows.count
+                            ? "\(rows.count) of \(matching.count) shown"
                             : nil
                     )
                     if let supervisionFilter {

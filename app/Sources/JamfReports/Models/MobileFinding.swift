@@ -20,9 +20,9 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
         var latestByMajor: [Int: String] = [:]
         var staleDays: Int
         var now: Date
-        /// Identifiers of the devices in the update scan's non-computer error rows; nil when no
-        /// scan has run, which leaves `updateErrors` unjudged.
-        var updateErrorKeys: Set<String>?
+        /// The devices in the update scan's non-computer error rows; nil when no scan has
+        /// run, which leaves `updateErrors` unjudged.
+        var updateErrors: UpdateErrors?
     }
 
     // MARK: - Wording
@@ -118,14 +118,14 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
 
     /// True when `device` shows the condition, false when it reports the field and does not,
     /// nil when it does not report the field (or, for `osBehind`, runs a major the feed does
-    /// not track; for `updateErrors`, when no scan has run). `updateErrorKey` is
-    /// `updateErrorKey(serial:name:)` of the device.
+    /// not track; for `updateErrors`, when no scan has run). `serial` and `name` identify the
+    /// device in the update scan.
     func isAffected(
-        _ device: MobileSummary.Device, updateErrorKey: String?, context: Context
+        _ device: MobileSummary.Device, serial: String?, name: String?, context: Context
     ) -> Bool? {
         switch self {
         case .jailbreak: return device.jailbroken
-        case .unmanaged: return device.managed.map { !$0 }
+        case .unmanaged: return device.managed == nil ? nil : device.isUnmanaged
         case .passcode: return device.passcodeCompliant.map { !$0 }
         case .dataProtection: return device.dataProtected.map { !$0 }
         case .osBehind:
@@ -133,9 +133,7 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
                 .flatMap { SOFAFeedService.isCurrent($0, latestByMajor: context.latestByMajor) }
                 .map { !$0 }
         case .updateErrors:
-            return context.updateErrorKeys.map { keys in
-                updateErrorKey.map(keys.contains) ?? false
-            }
+            return context.updateErrors.map { $0.contains(serial: serial, name: name) }
         case .stale:
             return device.lastSeen.map {
                 MobileSummary.isStale(
@@ -159,21 +157,47 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
 
     // MARK: - Update scan rows
 
-    /// How an error row of the update scan names a device: its serial, else its name. A row
-    /// naming neither matches no device.
-    static func updateErrorKey(serial: String?, name: String?) -> String? {
-        MobileFleetService.firstNonBlank(serial, name)?.uppercased()
+    /// The devices the update scan lists with errors, other than computers. A row names its
+    /// device by serial; a row with no serial falls back to the name, and only such a row is
+    /// matched by name, so a name two devices share does not pull in a row that has a serial.
+    struct UpdateErrors: Sendable, Equatable {
+        private(set) var serials: Set<String> = []
+        private(set) var namesWithoutSerial: Set<String> = []
+
+        /// Devices with errors; one with errors for two products counts once.
+        var count: Int { serials.count + namesWithoutSerial.count }
+
+        init(rows: [(serial: String?, name: String?)]) {
+            for row in rows {
+                if let serial = Self.key(row.serial) {
+                    serials.insert(serial)
+                } else if let name = Self.key(row.name) {
+                    namesWithoutSerial.insert(name)
+                }
+            }
+        }
+
+        /// True when a row names the device by its serial, or, for a row with no serial, by
+        /// its name. A device with no serial can match only by name.
+        func contains(serial: String?, name: String?) -> Bool {
+            if let serial = Self.key(serial), serials.contains(serial) { return true }
+            if let name = Self.key(name), namesWithoutSerial.contains(name) { return true }
+            return false
+        }
+
+        private static func key(_ text: String?) -> String? {
+            MobileFleetService.firstNonBlank(text)?.uppercased()
+        }
     }
 
-    /// The devices the update scan lists with errors, other than computers; nil when the data
-    /// is not a `--scan-failures` snapshot (a summary-only snapshot's empty list says nothing).
-    /// One device with an error for each of two products is one device.
-    static func updateErrorKeys(in scanData: Data) -> Set<String>? {
+    /// The scan's mobile error devices; nil when the data is not a `--scan-failures`
+    /// snapshot (a summary-only snapshot's empty list says nothing).
+    static func updateErrors(in scanData: Data) -> UpdateErrors? {
         guard let scan = try? JSONDecoder().decode([UpdateFailuresReport].self, from: scanData)
             .first else { return nil }
-        return Set(scan.errorDevices
+        return UpdateErrors(rows: scan.errorDevices
             .filter { $0.deviceType.uppercased() != "COMPUTER" }
-            .compactMap { updateErrorKey(serial: $0.serial, name: $0.name) })
+            .map { (serial: $0.serial, name: $0.name) })
     }
 
     // MARK: - Navigation

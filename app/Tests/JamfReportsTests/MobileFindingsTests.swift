@@ -320,7 +320,7 @@ final class MobileFindingsTests: XCTestCase {
                 includingPropertiesForKeys: nil).first))
         let mobile = try XCTUnwrap(MobileSummary.fromMobileDevicesList(
             data, latestByMajor: context.latestByMajor, staleDays: 30, now: now,
-            updateErrors: snapshot.updateErrorKeys?.count))
+            updateErrors: snapshot.updateErrors?.count))
         var inputs = HtmlReport.Inputs()
         inputs.summaries = [ReportEngine.mobileOnlySummary(
             date: "2026-10-19", mobileDeviceCount: 6, mobile: mobile,
@@ -356,10 +356,35 @@ final class MobileFindingsTests: XCTestCase {
             "total": 2, "status_summary": [], "error_devices": [row("a"), row("b")],
             "failed_plans": NSNull(),
         ] as [String: Any]])
-        XCTAssertEqual(MobileFinding.updateErrorKeys(in: data), ["SN-1"])
+        XCTAssertEqual(MobileFinding.updateErrors(in: data)?.count, 1)
         XCTAssertEqual(ReportEngine.mobileUpdateErrorCount(data), 1)
-        XCTAssertNil(MobileFinding.updateErrorKeys(in: Data("[{\"total\":1}]".utf8)),
+        XCTAssertNil(MobileFinding.updateErrors(in: Data("[{\"total\":1}]".utf8)),
                      "a summary-only snapshot says nothing about errors")
+    }
+
+    /// A scan row with a name and no serial names its device by that name, even when the
+    /// listed device has a serial; a row with a serial is not pulled in by a shared name.
+    func testAScanRowWithNoSerialMatchesTheDeviceByName() throws {
+        try write(try rows())
+        let named = try XCTUnwrap(try rows().first { ($0["mobileDeviceId"] as? String) == "5" })
+        let name = try XCTUnwrap((named["general"] as? [String: Any])?["displayName"] as? String)
+        func row(_ name: String, serial: String) -> [String: Any] {
+            ["name": name, "serial": serial, "device_type": "MOBILE_DEVICE", "os_version": "18",
+             "username": "u", "status": "FAILED", "product_key": "k", "updated": "2026-10-18"]
+        }
+        try GoldenFleetWorkspace.writeJSON(
+            [["total": 2, "status_summary": [], "error_devices": [
+                row(name, serial: ""), row("Device 83", serial: "NOT-A-LISTED-SERIAL"),
+            ], "failed_plans": NSNull()] as [String: Any]],
+            to: dataDir.appendingPathComponent(
+                "update-device-failures/update-device-failures_2026-10-18T120000000000.json"))
+        let snapshot = MobileFleetService.load(dataDir: dataDir)
+        XCTAssertEqual(snapshot.updateErrors?.count, 2)
+        let hit = snapshot.devices(
+            snapshot.richDevices, affectedBy: .updateErrors,
+            context: snapshot.findingContext(staleDays: 30, now: now))
+        XCTAssertEqual(hit.compactMap(\.mobileDeviceId), ["5"],
+                       "device 1 is named Device 83, but its row has a serial that matches nothing")
     }
 
     // MARK: - Demo

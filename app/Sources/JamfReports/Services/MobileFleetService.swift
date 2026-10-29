@@ -253,9 +253,9 @@ struct MobileFleetService: Sendable {
         var inventoryCollected = false
         /// The cached iOS / iPadOS feed's newest release per major, for the OS-behind finding.
         var iOSLatestByMajor: [Int: String] = [:]
-        /// Identifiers of the devices the update scan lists with errors (`MobileFinding`); nil
-        /// when no scan has run.
-        var updateErrorKeys: Set<String>?
+        /// The devices the update scan lists with errors (`MobileFinding`); nil when no scan
+        /// has run.
+        var updateErrors: MobileFinding.UpdateErrors?
 
         // MARK: - Computed properties
 
@@ -328,7 +328,7 @@ struct MobileFleetService: Sendable {
         }
 
         var unmanagedCount: Int {
-            richDevices.filter { $0.general?.managed == false }.count
+            richDevices.filter { MobileSummary.device($0).isUnmanaged }.count
         }
 
         var supervisedCount: Int {
@@ -435,9 +435,9 @@ struct MobileFleetService: Sendable {
         /// Devices whose jailbreak status is anything but "none", or nil when no
         /// device reports a status. A blank status is not a report.
         var jailbreakDetectedCount: Int? {
-            let reported = richDevices.compactMap(MobileFleetService.jailbreakStatus(of:))
+            let reported = richDevices.compactMap { MobileSummary.device($0).jailbroken }
             guard !reported.isEmpty else { return nil }
-            return reported.filter { !$0.localizedCaseInsensitiveContains("none") }.count
+            return reported.filter { $0 }.count
         }
 
         var osDistribution: [(osVersion: String, count: Int)] {
@@ -477,7 +477,7 @@ struct MobileFleetService: Sendable {
             lhs.sourceDates == rhs.sourceDates &&
             lhs.inventoryCollected == rhs.inventoryCollected &&
             lhs.iOSLatestByMajor == rhs.iOSLatestByMajor &&
-            lhs.updateErrorKeys == rhs.updateErrorKeys
+            lhs.updateErrors == rhs.updateErrors
         }
     }
 
@@ -508,9 +508,9 @@ struct MobileFleetService: Sendable {
         guard snapshot.isDetected else { return snapshot }
         snapshot.iOSLatestByMajor = SOFAFeedService.iOSLatestByMajor(
             SOFAFeedService.load(dataDir: dir).rows)
-        snapshot.updateErrorKeys = newest("update-device-failures")
+        snapshot.updateErrors = newest("update-device-failures")
             .flatMap { BoundedFile.readLogged($0, inside: dir) }
-            .flatMap(MobileFinding.updateErrorKeys(in:))
+            .flatMap(MobileFinding.updateErrors(in:))
         return snapshot
     }
 

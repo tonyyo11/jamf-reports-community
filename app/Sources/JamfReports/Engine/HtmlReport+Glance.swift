@@ -266,10 +266,9 @@ extension HtmlReport {
                 "Security agents are not on every Mac: \(list.joined(separator: ", ")).")
         }
         if let mobile = latest?.mobile {
-            let staleDays = config.thresholds?.resolvedStaleDays ?? 30
             for finding in MobileFinding.allCases {
                 guard let count = finding.count(in: mobile), count > 0 else { continue }
-                add(.mobileFleet, .mobile, finding.sentence(count: count, staleDays: staleDays))
+                add(.mobileFleet, .mobile, finding.sentence(count: count, staleDays: rule.days))
             }
         }
         return items

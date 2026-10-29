@@ -35,6 +35,9 @@ struct MobileSummary: Codable, Sendable, Equatable {
         /// An iOS or iPadOS version; nil for a platform the iOS feed does not cover.
         var iOSVersion: String?
         var lastSeen: Date?
+
+        /// Jamf Pro lists the device as unmanaged; an unknown management state is not.
+        var isUnmanaged: Bool { managed == false }
     }
 
     /// A device last seen MORE than `staleDays` whole days before `now`: the one stale rule for
@@ -63,7 +66,7 @@ struct MobileSummary: Codable, Sendable, Equatable {
         }
         return MobileSummary(
             managed: devices.filter { $0.managed == true }.count,
-            unmanaged: devices.filter { $0.managed == false }.count,
+            unmanaged: devices.filter(\.isUnmanaged).count,
             supervised: share(devices.filter { $0.managed == true }.map(\.supervised)),
             passcode: share(devices.map(\.passcodeCompliant)),
             dataProtection: share(devices.map(\.dataProtected)),
@@ -74,6 +77,12 @@ struct MobileSummary: Codable, Sendable, Equatable {
             }.count,
             jailbroken: count(devices.map(\.jailbroken)),
             updateErrors: updateErrors)
+    }
+
+    /// A jailbreak status other than "none" (`MobileFleetService.jailbreakStatus`): the one test
+    /// the summary, the findings and the Mobile Devices tiles share.
+    static func isJailbroken(status: String) -> Bool {
+        !status.localizedCaseInsensitiveContains("none")
     }
 
     /// The Jamf Pro reading of one `mobile-devices-list` row (`MobileFleetService` accessors).
@@ -89,7 +98,7 @@ struct MobileSummary: Codable, Sendable, Equatable {
             dataProtected: MobileFleetService.dataProtected(of: item),
             activationLock: MobileFleetService.activationLockEnabled(of: item),
             jailbroken: MobileFleetService.jailbreakStatus(of: item)
-                .map { !$0.localizedCaseInsensitiveContains("none") },
+                .map { isJailbroken(status: $0) },
             iOSVersion: isTV ? nil : MobileFleetService.firstNonBlank(item.general?.osVersion),
             lastSeen: item.general?.lastInventoryUpdateDate.flatMap(DateParser().parse))
     }
