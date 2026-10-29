@@ -664,7 +664,8 @@ final class BoundedReadsTests: XCTestCase {
         try fifo(at: dataDir.appendingPathComponent(
             "school-ibeacons/school-ibeacons_20991231T000000.json"))
         let core = CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: Workbook())
-        let school = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: Workbook())
+        let school = SchoolDashboard(
+            config: ReportConfig(), dataDir: dataDir, workbook: Workbook(), now: .testNoon)
         let coreError = within { () -> String in
             do { try core.writePolicyHealth(); return "no error" } catch { return "\(error)" }
         }

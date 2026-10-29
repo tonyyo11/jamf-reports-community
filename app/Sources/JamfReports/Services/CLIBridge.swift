@@ -724,6 +724,7 @@ final class CLIBridge {
     /// Run school-generate for Jamf School tenants via the Swift engine.
     func schoolGenerate(
         profile: String,
+        now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -770,6 +771,7 @@ final class CLIBridge {
                 dataDir: dataDir,
                 outputURL: outputURL,
                 profile: profile,
+                now: now,
                 onLine: onLine
             )
             if failures.isEmpty {

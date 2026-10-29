@@ -3779,6 +3779,7 @@ struct ReportEngine: Sendable {
     ///
     /// Mirrors the Python `cmd_school_generate` function.
     ///
+    /// - Parameter now: The run's start, for the sheets' "Generated" stamp and check-in ages.
     /// - Returns: A list of `SheetFailure` entries for school sheets that encountered
     ///            unexpected errors. Absent snapshots (`SchoolDashboardError.noCachedData`)
     ///            are graceful skips and are not included.
@@ -3788,6 +3789,7 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         outputURL: URL,
         profile: String? = nil,
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
@@ -3802,7 +3804,7 @@ struct ReportEngine: Sendable {
             .map(SummaryJSONParser.parseDirectory) ?? []
         let core = SchoolDashboard(
             config: config, dataDir: dataDir, workbook: workbook, summaries: summaries,
-            now: Date())
+            now: now)
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
         let (_, schoolFailures) = core.writeAll(sheets: sheets)
 

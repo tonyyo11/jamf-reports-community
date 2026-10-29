@@ -18,7 +18,7 @@ struct SchoolDashboard: Sendable {
     /// The profile's daily summaries, for the Trends tab.
     var summaries: [DailySummary] = []
     /// The run's start: the "Generated" stamp and the age of a check-in.
-    var now = Date()
+    let now: Date
 
     private var staleThreshold: Int { config.thresholds?.resolvedStaleDays ?? 30 }
 
@@ -473,10 +473,12 @@ struct SchoolDashboard: Sendable {
     func writeSchoolStaleDevices() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
         let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
-        // A check-in that does not read is unknown, not stale, so the device is left out.
+        // The Devices screen's rule: stale is MORE than the threshold, and a check-in that does
+        // not read is unknown, so the device is left out.
         let stale = items.compactMap { item -> (item: [String: Any], days: Int)? in
-            let checkin = stringField(item, ["lastCheckin", "last_checkin", "lastContactTime"])
-            guard let days = daysSince(checkin), days > staleThreshold else { return nil }
+            let device = SchoolFleetService.device(from: item, index: 0)
+            guard device.isStale(atDays: staleThreshold, now: now),
+                  let days = device.daysSinceCheckin(now: now) else { return nil }
             return (item, days)
         }
         let ws = workbook.addSheet("Stale Devices")
@@ -629,11 +631,6 @@ struct SchoolDashboard: Sendable {
 
     private func countFrom(_ item: [String: Any]) -> Int {
         intField(item, ["members"])
-    }
-
-    /// jamf-cli's `lastCheckin` is "yyyy-MM-dd HH:mm:ss", which `DateParser` reads.
-    private func daysSince(_ dateString: String) -> Int? {
-        DateParser().parse(dateString).map { Int(now.timeIntervalSince($0) / 86400) }
     }
 
     /// The platform and major version in jamf-cli's `os`, which reads "Prefix Version": "macOS

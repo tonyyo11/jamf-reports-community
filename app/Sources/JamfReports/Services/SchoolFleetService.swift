@@ -124,9 +124,9 @@ enum SchoolFleetService {
 
     private static func devicesSnapshot(rows: [[String: Any]], date: Date) -> Snapshot {
         var snapshot = Snapshot()
-        let all = rows.enumerated().map { device(from: $1, index: $0) }
-        snapshot.devices = all.filter { !$0.inTrash }
-        snapshot.trashedCount = all.count - snapshot.devices.count
+        let (members, trashed) = partitionFleet(rows)
+        snapshot.devices = members.enumerated().map { device(from: $1, index: $0) }
+        snapshot.trashedCount = trashed
         snapshot.devicesDate = date
         return snapshot
     }
