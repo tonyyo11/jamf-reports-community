@@ -442,6 +442,9 @@ struct SourcesView: View {
             doctorRow("Credentials", Self.credentialSummary(report))
             doctorRow("Connectivity", Self.connectivitySummary(report.connectivity))
 
+            if report.health == .environmentReference {
+                doctorMessageRow(Self.environmentReferenceNote, tone: .warn)
+            }
             if Self.healthNeedsCredentials(report.health) {
                 HStack(spacing: 8) {
                     Image(systemName: "key.slash")
@@ -460,10 +463,15 @@ struct SourcesView: View {
         }
     }
 
+    static let environmentReferenceNote =
+        "Credential is an environment-variable reference; the app starts jamf-cli with a "
+        + "cleaned environment, so it cannot sign in from here. Use a keychain or file "
+        + "reference (jamf-cli config add-profile)."
+
     /// Health verdicts where re-registering credentials is the likely remedy.
     static func healthNeedsCredentials(_ health: CLIDoctorReport.Health) -> Bool {
         switch health {
-        case .credentialsUnresolved, .unauthorized, .noProfile:
+        case .credentialsUnresolved, .unauthorized, .noProfile, .environmentReference:
             return true
         case .healthy, .unreachable:
             return false
@@ -509,6 +517,8 @@ struct SourcesView: View {
             return ("Unreachable", .danger, "wifi.slash")
         case .noProfile:
             return ("No profile", .danger, "questionmark.circle")
+        case .environmentReference:
+            return ("Environment credential", .warn, "key.slash")
         }
     }
 

@@ -59,7 +59,23 @@ extension ConfigDoctorService {
                 "notify.url", "notify.enabled is true but url \(why). The app sends no webhook.",
                 "Set url to an https:// address, or set enabled to false."))
         }
+        if notify.isUsable, let row = unknownWebhookHostRow(notify.resolvedURL) { rows.append(row) }
         return rows
+    }
+
+    /// Warns, never refuses: a relay or proxy may front a webhook. The host only is shown; the
+    /// path of an incoming-webhook URL is its secret.
+    private static func unknownWebhookHostRow(_ url: String) -> DoctorRow? {
+        let host = URL(string: url)?.host ?? ""
+        guard !LogRedactor.isKnownNotifyWebhookHost(host) else { return nil }
+        let what = host.isEmpty ? "has no readable host" : "points at \(shown(host))"
+        return valueRow(
+            "notify.url",
+            "notify.url \(what), which is not a known Microsoft Teams, Power Automate or Slack "
+                + "webhook host. The app still sends to it.",
+            "Check the address was copied whole from the Teams Workflows or Slack webhook setup. "
+                + "Ignore this if a relay you run fronts the webhook.",
+            tag: ".host")
     }
 
     private static func retentionValueRows(

@@ -25,20 +25,34 @@ enum LogRedactor {
 
     // MARK: - Patterns
 
-    /// Incoming-webhook endpoints, as `https?://` URL patterns: Slack, Teams connectors and
-    /// Workflows (Logic Apps, Power Automate, commercial and US Government clouds) and Discord.
-    /// Shared with `DiagnosticRedactor`; a host added here reaches both, so the two cannot drift.
-    static let webhookURLPatterns: [String] = [
-        #"hooks\.slack\.com/services"#,
-        #"[A-Za-z0-9.\-]+\.webhook\.office\.com/"#,
-        #"[A-Za-z0-9.\-]+\.logic\.azure\.(?:com|us)(?::\d+)?/"#,
+    /// Hosts a Teams, Power Automate or Slack incoming webhook is served from, as host regexes
+    /// (no scheme, port or path), paired with the path the secret follows. One list: the
+    /// redaction patterns below and Config Doctor's known-host check both read it.
+    static let notifyWebhookHosts: [(host: String, path: String)] = [
+        (#"hooks\.slack\.com"#, "/services"),
+        (#"[A-Za-z0-9.\-]+\.webhook\.office\.com"#, "/"),
+        (#"[A-Za-z0-9.\-]+\.logic\.azure\.(?:com|us)"#, "/"),
         // Power Platform trigger hosts: commercial, GCC (`api.gov.powerplatform.microsoft.us`),
         // GCC High (`api.high.…`) and DoD (`api.appsplatform.us`).
-        #"[A-Za-z0-9.\-]+\.api\.powerplatform\.(?:com|us)(?::\d+)?/"#,
-        #"[A-Za-z0-9.\-]+\.api\.(?:gov|high)\.powerplatform\.microsoft\.us(?::\d+)?/"#,
-        #"[A-Za-z0-9.\-]+\.api\.appsplatform\.us(?::\d+)?/"#,
-        #"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#,
-    ].map { #"https?://"# + $0 + #"[^\s"',}]*"# }
+        (#"[A-Za-z0-9.\-]+\.api\.powerplatform\.(?:com|us)"#, "/"),
+        (#"[A-Za-z0-9.\-]+\.api\.(?:gov|high)\.powerplatform\.microsoft\.us"#, "/"),
+        (#"[A-Za-z0-9.\-]+\.api\.appsplatform\.us"#, "/"),
+    ]
+
+    /// True when `host` (no port) is one of `notifyWebhookHosts`.
+    static func isKnownNotifyWebhookHost(_ host: String) -> Bool {
+        notifyWebhookHosts.contains {
+            host.range(of: "^" + $0.host + "$", options: [.regularExpression, .caseInsensitive])
+                != nil
+        }
+    }
+
+    /// Incoming-webhook endpoints, as `https?://` URL patterns: `notifyWebhookHosts` and Discord.
+    /// Shared with `DiagnosticRedactor`; a host added there reaches both, so the two cannot drift.
+    static let webhookURLPatterns: [String] = (
+        notifyWebhookHosts.map { $0.host + #"(?::\d+)?"# + $0.path }
+            + [#"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#]
+    ).map { #"https?://"# + $0 + #"[^\s"',}]*"# }
 
     /// A `sig=` query value: the signature a Workflows trigger or an Azure SAS URL is signed with.
     static let signatureQueryPattern = #"([?&]sig=)[^\s&"',}]+"#
