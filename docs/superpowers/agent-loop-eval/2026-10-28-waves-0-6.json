@@ -1,0 +1,617 @@
+{
+  "wave": "2026-10-28-waves-0-6",
+  "ledger_lines": 173,
+  "other_lines": 53,
+  "unreadable": [],
+  "totals": {
+    "tasks": 28,
+    "completed": 24,
+    "rounds": 40,
+    "reviews": 39,
+    "needs_fixes": 25,
+    "approved": 14,
+    "must": 6,
+    "should": 25,
+    "consider": 24,
+    "re_review_seats": 7,
+    "controller_reads": 11,
+    "suite_tests_max": 6957
+  },
+  "medians": {
+    "rounds": 2.0,
+    "reviews": 1.0,
+    "must": 0.0,
+    "should": 1.0
+  },
+  "tasks": [
+    {
+      "id": "0.1",
+      "completed": true,
+      "reviews": [],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 0
+    },
+    {
+      "id": "0.2",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 0,
+          "consider": 0,
+          "line": 43
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 1
+    },
+    {
+      "id": "1.1",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 53
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 1
+    },
+    {
+      "id": "1.10",
+      "completed": true,
+      "reviews": [],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 2
+    },
+    {
+      "id": "1.11+1.14",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 0,
+          "consider": 0,
+          "line": 54
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 3
+    },
+    {
+      "id": "1.12+1.13",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 35
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 1
+    },
+    {
+      "id": "1.17",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 0,
+          "consider": 0,
+          "line": 72
+        },
+        {
+          "kind": "security",
+          "verdict": "approved",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 74
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 3
+    },
+    {
+      "id": "1.18",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 96
+        },
+        {
+          "kind": "security",
+          "verdict": "needs_fixes",
+          "must": 1,
+          "should": 0,
+          "consider": 1,
+          "line": 97
+        },
+        {
+          "kind": "re-review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 106
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": 6855,
+      "suite_failures": 0,
+      "rounds": 3
+    },
+    {
+      "id": "1.2+1.3",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 0,
+          "consider": 0,
+          "line": 27
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 2
+    },
+    {
+      "id": "1.4+1.15",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 0,
+          "consider": 0,
+          "line": 45
+        },
+        {
+          "kind": "security",
+          "verdict": "approved",
+          "must": 0,
+          "should": 0,
+          "consider": 1,
+          "line": 49
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 0
+    },
+    {
+      "id": "1.5",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 0,
+          "consider": 0,
+          "line": 52
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 1
+    },
+    {
+      "id": "1.6",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "security",
+          "verdict": "needs_fixes",
+          "must": 1,
+          "should": 1,
+          "consider": 0,
+          "line": 55
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 2
+    },
+    {
+      "id": "1.8/1.7/1.16",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 71
+        },
+        {
+          "kind": "security",
+          "verdict": "approved",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 73
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 2
+    },
+    {
+      "id": "1.9",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 36
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 1
+    },
+    {
+      "id": "2.1",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "security",
+          "verdict": "approved",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 127
+        },
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 1,
+          "should": 0,
+          "consider": 1,
+          "line": 128
+        },
+        {
+          "kind": "re-review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 144
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6913,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "4.1",
+      "completed": false,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 0,
+          "consider": 1,
+          "line": 167
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": 6962,
+      "suite_failures": 0,
+      "rounds": 1
+    },
+    {
+      "id": "4.2",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 0,
+          "consider": 1,
+          "line": 168
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6957,
+      "suite_failures": 0,
+      "rounds": 1
+    },
+    {
+      "id": "5.1",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 1,
+          "should": 0,
+          "consider": 1,
+          "line": 138
+        },
+        {
+          "kind": "security",
+          "verdict": "approved",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 141
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6904,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "5.2",
+      "completed": false,
+      "reviews": [],
+      "controller_reads": 0,
+      "suite_tests": null,
+      "suite_failures": null,
+      "rounds": 0
+    },
+    {
+      "id": "5.3",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 1,
+          "should": 0,
+          "consider": 1,
+          "line": 129
+        },
+        {
+          "kind": "re-review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 139
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6899,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "6.1",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 115
+        },
+        {
+          "kind": "re-review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 0,
+          "consider": 1,
+          "line": 119
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6896,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "6.4",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 125
+        },
+        {
+          "kind": "re-review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 132
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6891,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "6.5",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 2,
+          "consider": 1,
+          "line": 117
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6890,
+      "suite_failures": 0,
+      "rounds": 1
+    },
+    {
+      "id": "6.7",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 146
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": 6894,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "Sweep A",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 88
+        },
+        {
+          "kind": "security",
+          "verdict": "needs_fixes",
+          "must": 1,
+          "should": 1,
+          "consider": 1,
+          "line": 89
+        },
+        {
+          "kind": "re-review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 1,
+          "consider": 0,
+          "line": 94
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6850,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "Sweep B",
+      "completed": true,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 2,
+          "consider": 1,
+          "line": 91
+        },
+        {
+          "kind": "re-review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 1,
+          "consider": 1,
+          "line": 100
+        }
+      ],
+      "controller_reads": 1,
+      "suite_tests": 6846,
+      "suite_failures": 0,
+      "rounds": 2
+    },
+    {
+      "id": "fu-wave5",
+      "completed": false,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "approved",
+          "must": 0,
+          "should": 0,
+          "consider": 1,
+          "line": 173
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": 6936,
+      "suite_failures": 0,
+      "rounds": 1
+    },
+    {
+      "id": "fu-wave6",
+      "completed": false,
+      "reviews": [
+        {
+          "kind": "review",
+          "verdict": "needs_fixes",
+          "must": 0,
+          "should": 0,
+          "consider": 1,
+          "line": 172
+        }
+      ],
+      "controller_reads": 0,
+      "suite_tests": 6947,
+      "suite_failures": 0,
+      "rounds": 1
+    }
+  ]
+}
