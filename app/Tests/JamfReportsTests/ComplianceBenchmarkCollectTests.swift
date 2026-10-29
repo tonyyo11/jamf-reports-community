@@ -201,6 +201,7 @@ final class ComplianceBenchmarkCollectTests: XCTestCase {
     ) async throws {
         let stub = try makeStub()
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.inventory], force: true, locateJamfCLI: { stub }, onLine: onLine)
     }

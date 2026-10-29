@@ -41,6 +41,12 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A workspace whose config.yaml names a different `jamf_cli.profile` than its own, such as a
+  copied or renamed workspace folder, now generates reports instead of refusing; every command
+  runs as the workspace's own profile, and Config Doctor still points the stale name out.
+  Folders, schedules, report groups and run history keep their names. A backup started from
+  Backups on a Jamf School workspace now stops with the reason instead of sending a Jamf Pro
+  backup to the School login. (#305)
 - Charts now keep one colour for the same thing everywhere: a macOS version, a patch title, a
   metric or a compliance band is the same colour on the Overview, Trends, Computers, Patch
   Compliance and Security Posture screens, in the workbook's charts and in the HTML report's

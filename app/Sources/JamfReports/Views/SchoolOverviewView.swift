@@ -94,7 +94,7 @@ struct SchoolOverviewView: View {
                 let policy = AutomationPolicy.current()
                 let scheduled = scheduleCovered(
                     hasAgent: hasAgent, policyIsManaged: policy.isManaged,
-                    excluded: policy.excludedProfiles.contains(profile))
+                    excluded: policy.excludedWorkspaces.contains(profile))
                 let reported = !ReportLibrary().list(profile: profile).isEmpty
                 return (loaded, scheduled, reported)
             }

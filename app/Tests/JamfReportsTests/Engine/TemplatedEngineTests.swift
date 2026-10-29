@@ -324,7 +324,7 @@ final class TemplatedEngineTests: XCTestCase {
             config: config,
             dataDir: tmpDir,
             outputURL: outURL,
-            profileName: "test",
+            workspace: WorkspaceID("test"),
             template: ComplianceTemplate()
         )
 

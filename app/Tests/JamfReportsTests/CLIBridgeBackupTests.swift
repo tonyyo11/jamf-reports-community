@@ -209,13 +209,13 @@ final class CLIBridgeBackupTests: XCTestCase {
         )
     }
 
-    // MARK: - -p is the workspace's own profile
+    // MARK: - -p is the environment's Jamf Pro profile
 
     /// No config.yaml: nothing to compare, nothing logged.
     func test_backupConfigProfile_silentWithoutConfig() throws {
         let profile = try makeWorkspace(configYAML: nil)
         let collector = LineCollector()
-        XCTAssertNoThrow(try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
+        XCTAssertNoThrow(try readingBackupProfile(profile) { collector.append($0) })
         XCTAssertTrue(collector.lines.isEmpty)
     }
 
@@ -227,7 +227,7 @@ final class CLIBridgeBackupTests: XCTestCase {
         for profile in [matching, empty] {
             let collector = LineCollector()
             XCTAssertNoThrow(
-                try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
+                try readingBackupProfile(profile) { collector.append($0) })
             XCTAssertTrue(collector.lines.isEmpty, "\(collector.lines.map(\.text))")
         }
     }
@@ -237,7 +237,7 @@ final class CLIBridgeBackupTests: XCTestCase {
     func test_backupConfigProfile_warnsOnceAndKeepsWorkspaceProfileForAnotherTenant() throws {
         let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"tenant-b\"\n")
         let collector = LineCollector()
-        XCTAssertNoThrow(try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
+        XCTAssertEqual(try readingBackupProfile(profile) { collector.append($0) }, profile)
         XCTAssertEqual(collector.lines.count, 1)
         let line = try XCTUnwrap(collector.lines.first)
         XCTAssertEqual(line.level, .warn)
@@ -246,21 +246,51 @@ final class CLIBridgeBackupTests: XCTestCase {
         XCTAssertTrue(line.text.contains(profile), line.text)
     }
 
-    /// A case variant shares the folder on a case-insensitive volume: refuse, as collect does.
-    func test_backupConfigProfile_refusesACaseVariant() throws {
+    /// A case variant a peer writes into config.yaml decides nothing: the folder's own name is
+    /// the owner, so the key is ignored with the usual warning and the backup runs as the folder.
+    func test_backupConfigProfile_ignoresACaseVariantInConfig() throws {
         let profile = try makeWorkspace(configYAML: nil)
-        let owner = profile.uppercased()
-        try writeConfig("jamf_cli:\n  profile: \"\(owner)\"\n", for: profile)
+        try writeConfig("jamf_cli:\n  profile: \"\(profile.uppercased())\"\n", for: profile)
+        let collector = LineCollector()
+        XCTAssertEqual(try readingBackupProfile(profile) { collector.append($0) }, profile)
+        XCTAssertEqual(collector.lines.map(\.level), [.warn])
+    }
+
+    /// A profile spelled like an existing folder apart from case shares it on a
+    /// case-insensitive volume: refused, as collect does, whatever config.yaml says.
+    func test_backupConfigProfile_refusesAProfileWhoseFolderIsSpelledDifferently() throws {
+        let folder = try makeWorkspace(configYAML: nil)
+        let variant = folder.uppercased()
+        try writeConfig("jamf_cli:\n  profile: \"\(variant)\"\n", for: folder)
         let collector = LineCollector()
         XCTAssertThrowsError(
-            try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) }
+            try readingBackupProfile(variant) { collector.append($0) }
         ) { error in
             XCTAssertEqual(
-                error as? CLIBridgeError, .profileCaseConflict(profile: profile, owner: owner)
-            )
+                error as? CLIBridgeError, .profileCaseConflict(profile: variant, owner: folder))
         }
-        XCTAssertTrue(
-            collector.lines.contains { $0.level == .fail && $0.text.hasPrefix("[error]") })
+        XCTAssertEqual(collector.lines.filter { $0.text.hasPrefix("[error]") }.count, 1)
+    }
+
+    /// A Jamf School workspace has no Jamf Pro slot: the backup is refused with one `[error]`
+    /// line before anything is staged, instead of sending `pro backup` to a School login.
+    func test_backup_refusesAJamfSchoolWorkspaceAndStagesNothing() async throws {
+        let profile = try makeWorkspace(configYAML: "school_cli:\n  enabled: true\n")
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        let stub = try SleepingCLIStub.make(in: try makeTempDir(), writesPartialFile: false)
+        let collector = LineCollector()
+        do {
+            _ = try await CLIBridge().backup(
+                profile: profile, label: nil, _testExecutable: stub) { collector.append($0) }
+            XCTFail("a Jamf School workspace must not run pro backup")
+        } catch let error as CLIBridgeError {
+            XCTAssertEqual(
+                error, .wrongProduct(CollectRouter.schoolBackupReason(profile: profile)))
+        }
+        let errors = collector.lines.filter { $0.text.hasPrefix("[error]") }
+        XCTAssertEqual(errors.count, 1, "\(collector.lines.map(\.text))")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: workspace.appendingPathComponent("backups").path))
     }
 
     /// `-p` carries the workspace profile whatever it looks like, a leading dash included
@@ -285,15 +315,43 @@ final class CLIBridgeBackupTests: XCTestCase {
         try writeConfig("jamf_cli:\n  profile: other\nprofiles:\n  jamf_pro: \"\(profile)\"\n",
                         for: profile)
         let quiet = LineCollector()
-        XCTAssertNoThrow(try CLIBridge.checkBackupConfigProfile(profile) { quiet.append($0) })
+        XCTAssertNoThrow(try readingBackupProfile(profile) { quiet.append($0) })
         XCTAssertTrue(quiet.lines.isEmpty, "jamf_cli.profile is not read under the block")
 
-        let owner = profile.uppercased()
-        try writeConfig("profiles:\n  jamf_pro: \"\(owner)\"\n", for: profile)
-        XCTAssertThrowsError(try CLIBridge.checkBackupConfigProfile(profile) { _ in }) { error in
-            XCTAssertEqual(
-                error as? CLIBridgeError, .profileCaseConflict(profile: profile, owner: owner))
+        // A slot naming another profile is refused here too, not only by `refusesProCommand`.
+        try writeConfig("profiles:\n  jamf_pro: tenant-b\n", for: profile)
+        let refused = LineCollector()
+        XCTAssertThrowsError(try readingBackupProfile(profile) { refused.append($0) }) { error in
+            guard case .wrongProduct = error as? CLIBridgeError else { return XCTFail("\(error)") }
         }
+        XCTAssertEqual(refused.lines.filter { $0.text.hasPrefix("[error]") }.count, 1)
+    }
+
+    /// One read of config.yaml serves the product check and the launch: a peer that rewrites
+    /// the file while the check asks jamf-cli (up to 60 s) does not change the `-p` that runs.
+    func test_backup_launchesWithTheProfileTheCheckRead() async throws {
+        let profile = try makeWorkspace(configYAML: nil)
+        try writeConfig("profiles:\n  jamf_pro: \"\(profile)\"\n", for: profile)
+        let configURL = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+            .appendingPathComponent("config.yaml")
+        let dir = try makeTempDir()
+        let calls = dir.appendingPathComponent("calls.log")
+        let stub = dir.appendingPathComponent("stub-cli")
+        try "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"\(calls.path)\"\nexit 0\n"
+            .write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+
+        _ = try? await CLIBridge().backup(
+            profile: profile, label: nil, _testExecutable: stub,
+            resolved: { _ in
+                try? "profiles:\n  jamf_pro: tenant-b\n"
+                    .write(to: configURL, atomically: true, encoding: .utf8)
+                return nil
+            }) { _ in }
+
+        let argv = try String(contentsOf: calls, encoding: .utf8)
+        XCTAssertTrue(argv.contains("-p \(profile) --no-input pro backup"), argv)
+        XCTAssertFalse(argv.contains("tenant-b"), argv)
     }
 
     private func makeWorkspace(configYAML: String?) throws -> String {

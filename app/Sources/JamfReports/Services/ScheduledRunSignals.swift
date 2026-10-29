@@ -233,8 +233,8 @@ enum ScheduledRunSignals {
         let targets = notifyTargets(in: profiles.filter { !excluded.contains($0) }) { _ in false }
         let marker = DayMarker(name: "heartbeat")
         for target in targets where target.notify.sendsHeartbeat {
-            let folder = stateRoot.appendingPathComponent(
-                ProfileName.pathComponent(target.profile), isDirectory: true)
+            guard let id = WorkspaceID(target.profile) else { continue }
+            let folder = stateRoot.appendingPathComponent(id.pathComponent, isDirectory: true)
             // Every wake gets here; skip before building anything once today's card is out.
             guard !marker.isStamped(day, in: folder) else { continue }
             let facts = heartbeatFacts(
@@ -691,10 +691,9 @@ struct CLIRunSignals: Sendable {
     /// A distinct, valid LaunchAgent-style label so CLI runs appear honestly in
     /// Run History (`<prefix>.<profile>.cli-collect` / `.cli-generate`) rather
     /// than being attributed to a scheduled agent.
-    static func cliLabel(profile: String, kind: Kind) -> String {
+    static func cliLabel(workspace: WorkspaceID, kind: Kind) -> String {
         let kindSlug = kind == .collect ? "collect" : "generate"
-        let labelProfile = ProfileName.labelComponent(profile)
-        return "\(LaunchAgentWriter.labelPrefix).\(labelProfile).cli-\(kindSlug)"
+        return "\(LaunchAgentWriter.labelPrefix).\(workspace.labelComponent).cli-\(kindSlug)"
     }
 
     /// Best-effort setup for an included-CLI run. Resolves the workspace, loads
@@ -703,12 +702,15 @@ struct CLIRunSignals: Sendable {
     /// un-openable recorder degrades to a run that still executes, just without
     /// the trust signals.
     static func begin(profile: String, kind: Kind, config: ReportConfig? = nil) -> CLIRunSignals {
-        let workspace = ProfileService.workspaceURL(for: profile)
+        let id = WorkspaceID(profile)
+        let workspace = id.map { WorkspacePaths.workspaceURL(for: $0) }
         let resolvedConfig = config ?? workspace.flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
-        let recorder = workspace.flatMap {
-            ScheduledRunRecorder(workspace: $0, label: cliLabel(profile: profile, kind: kind))
+        let recorder = id.flatMap {
+            ScheduledRunRecorder(
+                workspace: WorkspacePaths.workspaceURL(for: $0),
+                label: cliLabel(workspace: $0, kind: kind))
         }
         return CLIRunSignals(
             profile: profile, workspace: workspace, config: resolvedConfig,

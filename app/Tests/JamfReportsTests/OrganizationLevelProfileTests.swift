@@ -113,8 +113,8 @@ final class OrganizationLevelProfileTests: XCTestCase {
 
     private func route(_ bin: URL, sink: Sink, calls: Counter) async throws {
         try await CollectRouter.run(
-            profile: profile, tiers: [.scan], force: true, config: nil,
-            proCollect: { _, _, _, _, _, _ in calls.bump(); return .collected },
+            workspace: WorkspaceID(validating: profile), tiers: [.scan], force: true, config: nil,
+            proCollect: { _, _, _, _, _, _, _ in calls.bump(); return .collected },
             resolved: { ProfileAuthMethod.resolve(profile: $0, binary: bin, configFile: nil) },
             onLine: sink.append)
     }

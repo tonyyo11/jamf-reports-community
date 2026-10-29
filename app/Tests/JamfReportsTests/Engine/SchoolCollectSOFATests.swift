@@ -140,6 +140,7 @@ final class SchoolCollectSOFATests: XCTestCase {
         let lines = LineBox()
         let stub = try makeStub()
         try await ReportEngine.schoolCollect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
             force: true, locateJamfCLI: { stub }, refreshSOFA: fetch, now: .testNoon,
             onLine: lines.append)

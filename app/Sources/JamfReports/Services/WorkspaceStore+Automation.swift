@@ -783,7 +783,7 @@ extension WorkspaceStore {
         profile, tiers, config in
         try await CLIBridge.holdingTickLock {
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: tiers,
                 skipExpensive: false,
                 force: false,
@@ -819,7 +819,9 @@ extension WorkspaceStore {
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
         let overdue = issues.filter { $0.kind == .overdue || $0.kind == .tickerDisabled }
         guard !overdue.isEmpty else { return }
-        guard let notify = SharedConfigPin.effectiveNotify(
+        // A case variant is never active, but its webhook and stamp would be another spelling's.
+        guard ProfileService.caseVariantWorkspace(of: profile) == nil,
+              let notify = SharedConfigPin.effectiveNotify(
                 Self.loadNotifyConfig(profile: profile), profile: profile),
               notify.isUsable,
               let workspace = ProfileService.workspaceURL(for: profile) else { return }
@@ -1013,7 +1015,7 @@ extension WorkspaceStore {
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
         try await CLIBridge.holdingTickLock {
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: [.refresh, .inventory],
                 skipExpensive: false,
                 force: false,  // per-kind cadence filter: no-op if this kind already ran today
@@ -1030,7 +1032,7 @@ extension WorkspaceStore {
         discovered: [String]
     ) -> [String] {
         guard policy.isManaged, policy.freshnessEnabled else { return [] }
-        let excluded = Set(policy.excludedProfiles)
+        let excluded = Set(policy.excludedWorkspaces)
         return discovered.filter { ProfileService.isValid($0) && !excluded.contains($0) }
     }
 

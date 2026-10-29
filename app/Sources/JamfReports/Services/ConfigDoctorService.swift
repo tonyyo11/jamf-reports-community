@@ -83,7 +83,7 @@ enum ConfigDoctorService {
         rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
         rows += readerRows(profile: profile, workspaceRoot: workspaceRoot)
         if let config, parseError == nil {
-            rows += profileMismatchRows(profile: profile, config: config)
+            rows += profileOwnerRows(profile: profile, config: config)
             rows += protectProfileFolderRows(profile: profile, config: config)
             rows += protectProfileProductRows(config: config, workspace: profile)
             rows += protectSyncedBackupRows(
@@ -1527,9 +1527,8 @@ extension ConfigDoctorService {
     }
 
     private static func summaryCount(profile: String, root: URL) -> Int {
-        guard ProfileService.isValid(profile) else { return 0 }
-        let dir = root
-            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
+        guard let id = WorkspaceID(profile) else { return 0 }
+        let dir = WorkspacePaths.workspaceURL(for: id, under: root)
             .appendingPathComponent("snapshots/summaries", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         return names.filter { $0.hasPrefix("summary_") && $0.hasSuffix(".json") }.count

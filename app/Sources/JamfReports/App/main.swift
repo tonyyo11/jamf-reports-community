@@ -198,12 +198,14 @@ func postOverdueDigest(
 
 /// A target for each profile in `profiles` whose `config.yaml` `notify:` block is
 /// usable, in discovery order. Best-effort per profile — an unreadable config is left out; one
-/// that does not decode still contributes its `notify:` block.
+/// that does not decode still contributes its `notify:` block. A case variant is left out: its
+/// path is another spelling's folder, whose webhook and day stamps are not its own.
 func notifyTargets(
     in profiles: [String], sentToday: (URL) -> Bool
 ) -> [OverdueDigestRouting.Target] {
     profiles.compactMap { profile in
         guard ProfileService.isValid(profile),
+              ProfileService.caseVariantWorkspace(of: profile) == nil,
               let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
         let url = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: url.path),
@@ -271,14 +273,17 @@ private func scheduledRunSingleBody(
 ) async -> Int32 {
     // The run's day for its summary and its metric alerts, however long the collect takes.
     let runStart = Date()
-    guard ProfileService.isValid(profile) else {
+    guard let workspaceID = WorkspaceID(profile) else {
         fputs("[error] Invalid profile '\(ConfigSchema.displayText(profile))'\n", stderr)
         return 1
     }
-    guard let workspace = ProfileService.workspaceURL(for: profile) else {
-        fputs("[error] No workspace for profile '\(profile)'\n", stderr)
-        return 1
-    }
+    // A case variant's path is another spelling's folder on a case-insensitive volume: its
+    // config.yaml (and webhook) is not read and nothing is written there. Only a folder named
+    // exactly as the profile, its own on a case-sensitive volume, is.
+    let caseVariant = ProfileService.caseVariantRefusal(of: profile)
+    let ownsFolder = caseVariant == nil || ProfileService
+        .workspaceFolderNames(matching: ProfileName.folderKey(profile)).contains(profile)
+    let workspace = WorkspacePaths.workspaceURL(for: workspaceID)
     // `runSchedule` skips a workspace with no jamf-cli profile before this, so it has one now.
     if mode != .jamfCLIOnly { AttentionLog.clear(.jamfCLIProfileMissing) }
 
@@ -290,7 +295,7 @@ private func scheduledRunSingleBody(
     var configError: Error?
     let routingConfig: ReportConfig?
     do {
-        routingConfig = FileManager.default.fileExists(atPath: configURL.path)
+        routingConfig = ownsFolder && FileManager.default.fileExists(atPath: configURL.path)
             ? try ConfigLoader.load(from: configURL) : nil
     } catch {
         routingConfig = nil
@@ -303,7 +308,7 @@ private func scheduledRunSingleBody(
             "[routing] no usable config for \(profile, privacy: .public) — treating as Jamf Pro")
     }
 
-    let labelProfile = ProfileName.labelComponent(profile)
+    let labelProfile = workspaceID.labelComponent
     let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(labelProfile).\(mode.rawValue)"
     // One failure card a day per schedule and profile for the same failure (hourly retries).
     let cardKey = "\(runLabel).\(labelProfile)"
@@ -312,26 +317,30 @@ private func scheduledRunSingleBody(
     // a Jamf Pro schedule, so every retry would fail the same way. Refused before the full
     // recorder opens; like a School backup, it ends the run as a success
     // so the tick does not retry it and no failure webhook is posted. jamf-cli-only reads the
-    // cache and sends no command. A workspace (a folder with a config.yaml) gets a one-line run
-    // record marked refused; a leftover folder or a login with none (Protect) gets nothing
-    // written into it.
-    if mode != .jamfCLIOnly, configError == nil || mode == .backup,
-       let refusal = CollectRouter.proRunRefusal(
-        profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig
-    ) {
+    // cache and sends no command. A case variant (another spelling owns the folder) is refused
+    // the same way in every mode. A workspace (a folder with a config.yaml) gets a one-line run
+    // record marked refused; a leftover folder, a login with none (Protect) and another
+    // spelling's folder get nothing written into them.
+    let productRefusal: () -> String? = {
+        guard mode != .jamfCLIOnly, configError == nil || mode == .backup else { return nil }
+        return CollectRouter.proRunRefusal(
+            profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig)
+    }
+    if let refusal = caseVariant ?? productRefusal() {
         let message = "[skip] scheduled \(mode.rawValue) run skipped for '\(profile)': "
             + "\(refusal). Not a failure. Exclude this profile from the schedule to stop "
             + "scheduling it."
         fputs(message + "\n", stderr)
         AppLogger.schedule.notice("\(LogRedactor.redact(message), privacy: .public)")
-        if FileManager.default.fileExists(atPath: configURL.path),
+        if ownsFolder, FileManager.default.fileExists(atPath: configURL.path),
            let refusedRecorder = ScheduledRunRecorder(workspace: workspace, label: runLabel) {
             refusedRecorder.record(message)
             refusedRecorder.finish(exitCode: 0, refused: true)
         }
-        // Exit 0 so the tick does not retry it, but not silence: one card a day.
+        // Exit 0 so the tick does not retry it, but not silence: one card a day. Never for a case
+        // variant, whose webhook and stamp folder are another spelling's (`notifyTargets`).
         await ScheduledRunSignals.notifyScheduledRunFailure(
-            config: routingConfig, profile: profile, mode: mode,
+            config: caseVariant == nil ? routingConfig : nil, profile: profile, mode: mode,
             errorDescription: refusal, recorder: nil, scheduleKey: cardKey)
         return 0
     }
@@ -513,7 +522,7 @@ private func scheduledRunSingleBody(
             // Scheduled collects never bypass the Jamf Pro once-per-day guard; a School
             // collect-then-generate forces past School's 12 h cadence (`forcesCollect`).
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: resolvedTiers,
                 force: mode.forcesCollect(
                     for: ProfileProductType.detect(from: routingConfig, profile: profile).type),
@@ -599,13 +608,12 @@ private func scheduledRunSingleBody(
         }
         defer { if holdsGenerateClaim { SharedWorkspace.release(profile: profile) } }
 
-        let engine = ReportEngine(config: config, dataDir: dataDir, profile: profile)
+        let engine = ReportEngine(config: config, dataDir: dataDir, workspace: workspaceID)
         // A School workspace has no Jamf Pro snapshots: the Pro engine would write a
         // workbook with every sheet skipped.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
         let outputURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool),
-            profile: profile, onLine: onLine)
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool), onLine: onLine)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.
@@ -613,7 +621,7 @@ private func scheduledRunSingleBody(
         let generated: GeneratedReport
         if isSchool {
             generated = try await ReportEngine.schoolGenerateReport(
-                config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
+                config: config, dataDir: dataDir, outputURL: outputURL, workspace: workspaceID,
                 now: runStart, onLine: onLine)
         } else {
             generated = try await engine.generateReport(
@@ -843,11 +851,11 @@ func runCheck(profile: String) -> Int32 {
     }
     do {
         let config = try ConfigLoader.load(from: configURL)
-        let cliProfile = config.jamfCli?.resolvedProfile ?? profile
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         print("[ok] config.yaml decoded successfully")
         // A peer on a shared workspace can write config.yaml, so the value is shown filtered.
-        print("[ok] jamf_cli.profile: "
-            + (cliProfile.isEmpty ? "(not set)" : ConfigSchema.displayText(cliProfile)))
+        print("[ok] \(environment.isSchool ? "Jamf School" : "Jamf Pro") profile: "
+            + (environment.mdm.map(ConfigSchema.displayText) ?? "(not set)"))
         let dataDir = (try? WorkspacePaths.dataDir(for: profile)) ?? workspace
             .appendingPathComponent("jamf-cli-data")
         var isDir: ObjCBool = false

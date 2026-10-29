@@ -39,7 +39,8 @@ final class SummaryDayOnGenerateTests: XCTestCase {
                 .appendingPathComponent(
                     "security_\(GoldenFleetClock.stamp(GoldenFleetClock.anchorNoon())).json"))
         let config = try ConfigLoader.load(from: configURL)
-        let engine = ReportEngine(config: config, dataDir: dataDir, profile: "shared")
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: WorkspaceID("shared"))
         // 23:59:30 on the start day; the generate below runs after 00:00:00 the next day.
         let start = try XCTUnwrap(Calendar.current.date(
             bySettingHour: 23, minute: 59, second: 30, of: .testNoon))

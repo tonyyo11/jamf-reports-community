@@ -80,7 +80,7 @@ final class ReportNamingProfileTests: XCTestCase {
 
         let engine = ReportEngine(config: config, dataDir: URL(fileURLWithPath: "/tmp"))
         let url = try inEmptyWorkspacesRoot {
-            try engine.resolveOutputURL(stem: "report", profile: "prod")
+            try engine.inWorkspace("prod").resolveOutputURL(stem: "report")
         }
 
         XCTAssertTrue(
@@ -98,7 +98,7 @@ final class ReportNamingProfileTests: XCTestCase {
 
         let engine = ReportEngine(config: config, dataDir: URL(fileURLWithPath: "/tmp"))
         let url = try inEmptyWorkspacesRoot {
-            try engine.resolveOutputURL(stem: "report", profile: "prod")
+            try engine.inWorkspace("prod").resolveOutputURL(stem: "report")
         }
 
         XCTAssertEqual(url.lastPathComponent, "report_prod.xlsx")
@@ -140,9 +140,8 @@ final class ReportNamingProfileTests: XCTestCase {
         let engine = ReportEngine(config: config, dataDir: URL(fileURLWithPath: "/tmp"))
         for school in [false, true] {
             let url = try inEmptyWorkspacesRoot {
-                try engine.resolveOutputURL(
-                    stem: ExportNaming.reportKind(for: .xlsx, schoolMode: school),
-                    profile: "prod")
+                try engine.inWorkspace("prod").resolveOutputURL(
+                    stem: ExportNaming.reportKind(for: .xlsx, schoolMode: school))
             }
             XCTAssertTrue(url.lastPathComponent.hasPrefix(
                 ExportNaming.stem(for: .xlsx, profile: "prod", schoolMode: school) + "_"),

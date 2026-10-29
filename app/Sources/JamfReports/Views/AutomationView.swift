@@ -362,7 +362,7 @@ struct AutomationView: View {
 
     private func addGroup(name: String, profiles: [String]) {
         update {
-            $0.reportGroups.append(ReportGroup(name: name, profiles: profiles))
+            $0.reportGroups.append(ReportGroup(name: name, workspaces: profiles))
         }
     }
 
@@ -396,13 +396,15 @@ struct AutomationView: View {
 
     private func exclusionBinding(_ profile: String) -> Binding<Bool> {
         Binding(
-            get: { policy.excludedProfiles.contains(profile) },
+            get: { policy.excludedWorkspaces.contains(profile) },
             set: { excluded in
                 update { p in
                     if excluded {
-                        if !p.excludedProfiles.contains(profile) { p.excludedProfiles.append(profile) }
+                        if !p.excludedWorkspaces.contains(profile) {
+                            p.excludedWorkspaces.append(profile)
+                        }
                     } else {
-                        p.excludedProfiles.removeAll { $0 == profile }
+                        p.excludedWorkspaces.removeAll { $0 == profile }
                     }
                 }
             }
@@ -646,7 +648,7 @@ private struct GroupsCard: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(group.name).font(.callout.weight(.semibold))
-                            Text(group.profiles.joined(separator: ", "))
+                            Text(group.workspaces.joined(separator: ", "))
                                 .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                         }
                         Spacer()

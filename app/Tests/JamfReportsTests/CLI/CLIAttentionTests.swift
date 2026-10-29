@@ -25,7 +25,7 @@ final class CLIAttentionTests: XCTestCase {
     private func collect(_ body: @escaping @Sendable () -> Void) async throws {
         try await Collect.perform(
             profile: profile, tiers: [.refresh], force: true, config: nil,
-            proCollect: { _, _, _, _, _, _ in body(); return .collected })
+            proCollect: { _, _, _, _, _, _, _ in body(); return .collected })
     }
 
     private func automationFile(_ name: String) throws -> URL {
@@ -37,7 +37,8 @@ final class CLIAttentionTests: XCTestCase {
         try await collect { AttentionLog.raise(.eaSnapshotUnreadable, "ea-results unreadable") }
         XCTAssertEqual(AttentionLog.openItems(profile: profile).map(\.code), [.eaSnapshotUnreadable])
 
-        let label = CLIRunSignals.cliLabel(profile: profile, kind: .collect)
+        let label = CLIRunSignals.cliLabel(
+            workspace: try XCTUnwrap(WorkspaceID(profile)), kind: .collect)
         let status = try automationFile("\(label)_status.json")
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: status)) as? [String: Any]
         XCTAssertEqual((json?["attention"] as? [[String: Any]])?.count, 1)
@@ -68,7 +69,8 @@ final class CLIAttentionTests: XCTestCase {
         _ = try await command.write(
             config: config, dataDir: dataDir, template: FullInstanceTemplate())
 
-        let label = CLIRunSignals.cliLabel(profile: profile, kind: .generate)
+        let label = CLIRunSignals.cliLabel(
+            workspace: try XCTUnwrap(WorkspaceID(profile)), kind: .generate)
         let json = try JSONSerialization.jsonObject(
             with: Data(contentsOf: automationFile("\(label)_status.json"))) as? [String: Any]
         let items = try XCTUnwrap(json?["attention"] as? [[String: Any]])

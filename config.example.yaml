@@ -77,10 +77,11 @@ security_agents:
 jamf_cli:
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
-  # Optional jamf-cli profile name, equivalent to passing -p/--profile to
-  # jamf-cli. When you use multiple profiles, point data_dir at a profile-
-  # specific folder so cached snapshots do not mix between tenants.
-  # Not read when the profiles block below is set.
+  # The jamf-cli profile this workspace was set up for. Every command runs as the
+  # workspace's own profile (its folder name), so leave this blank or equal to it;
+  # Config Doctor warns when it names another. When you use multiple profiles,
+  # point data_dir at a profile-specific folder so cached snapshots do not mix
+  # between tenants. Not read when the profiles block below is set.
   profile: ""
 
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.

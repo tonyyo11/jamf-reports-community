@@ -106,12 +106,13 @@ final class ProBackupTests: XCTestCase {
         XCTAssertEqual(ProBackupGrace.used(profile: "a", appSupport: support), 2)
         XCTAssertEqual(ProBackupGrace.used(profile: "b", appSupport: support), 0)
         let mode = try FileManager.default.attributesOfItem(
-            atPath: ProBackupGrace.url(profile: "a", appSupport: support).path
+            atPath: try XCTUnwrap(ProBackupGrace.url(profile: "a", appSupport: support)).path
         )[.posixPermissions] as? Int
         XCTAssertEqual(mode, 0o600)
 
-        try "not json".write(to: ProBackupGrace.url(profile: "b", appSupport: support),
-                             atomically: true, encoding: .utf8)
+        try "not json".write(
+            to: try XCTUnwrap(ProBackupGrace.url(profile: "b", appSupport: support)),
+            atomically: true, encoding: .utf8)
         XCTAssertEqual(ProBackupGrace.used(profile: "b", appSupport: support),
                        BackupMaintenance.graceRunsBeforeAsking,
                        "an unreadable count reads as used up")
@@ -346,7 +347,8 @@ final class ProBackupTests: XCTestCase {
         let ctx = try makeContext(config: shared)
         try addHistory(ctx, "20260101T010101")
         // A count file nothing can replace: it reads as zero runs, and the save fails.
-        var count = ProBackupGrace.url(profile: ctx.profile, appSupport: AppSupport.directory())
+        var count = try XCTUnwrap(
+            ProBackupGrace.url(profile: ctx.profile, appSupport: AppSupport.directory()))
         try Data("{\"runs\": 0}".utf8).write(to: count)
         var immutable = URLResourceValues()
         immutable.isUserImmutable = true
@@ -367,7 +369,8 @@ final class ProBackupTests: XCTestCase {
     func test_backup_aGraceCountThatCannotBeSavedLeavesAFixedManifestReason() async throws {
         let ctx = try protectContext()
         try addHistory(ctx, "20260101T010101")
-        var count = ProBackupGrace.url(profile: ctx.profile, appSupport: AppSupport.directory())
+        var count = try XCTUnwrap(
+            ProBackupGrace.url(profile: ctx.profile, appSupport: AppSupport.directory()))
         try Data("{\"runs\": 0}".utf8).write(to: count)
         var immutable = URLResourceValues()
         immutable.isUserImmutable = true

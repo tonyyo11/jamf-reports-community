@@ -17,7 +17,7 @@ struct Schedules: AsyncParsableCommand {
             let records = ScheduleStore().load()
             if records.isEmpty { print("no hand-built schedules"); return }
             for r in records {
-                let target = r.allProfiles ? "all-profiles" : r.profile
+                let target = r.allWorkspaces ? "all-profiles" : r.workspace
                 let flag = r.enabled ? "" : " (disabled)"
                 print("\(r.label)\t\(target)\t\(Self.effectiveMode(of: r))\t\(r.schedule)\(flag)")
             }
@@ -53,8 +53,10 @@ struct Schedules: AsyncParsableCommand {
             name: String, profile: String, allProfiles: Bool, exclude: String?,
             mode: String, cadence: String, tiers: String?, disabled: Bool
         ) throws -> ScheduleRecord {
-            guard ProfileService.isValid(profile) else {
-                throw Invalid(description: "invalid profile '\(ConfigSchema.displayText(profile))'")
+            // Before the product pre-check below reads config.yaml: a case variant's would be
+            // another spelling's.
+            if let refusal = CLIRun.profileRefusal(profile) {
+                throw Invalid(description: refusal)
             }
             guard mode != Schedule.RunMode.retiredCSVAssistedRaw else {
                 throw Invalid(description: "csv-assisted mode was retired in 2.11; use jamf-cli-full")
