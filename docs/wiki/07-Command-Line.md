@@ -66,6 +66,7 @@ name as `%2C` and a percent sign as `%25`.
 | `device` | Print one device's detail JSON (Jamf Pro profiles only) | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School workspace; refuses a profile that is not one | `--profile` |
 | `schedules` | List, add, remove, or run hand-built schedules (managed ones come from the Automation policy and are not editable here) | `list`, `add …`, `remove <label>`, `run <label>` |
+| `verify` | Check a report run's manifest: every file's size and SHA-256, and the RFC 3161 timestamp beside it when there is one; exits `1` when anything differs | `<stem>.manifest.json` |
 
 ### Gating a job on config health
 
@@ -110,6 +111,18 @@ A few behaviors worth knowing:
   it with `_csv` added. It holds the rows the workbook tabs hold, honours `sheets.only`,
   `skip` and `order`, and moves to the archive with its workbook. A failure prints a
   `[warn] CSV folder not written: …` line and leaves the workbook as it is.
+- Every report run (`generate`, the app, a schedule) also writes `<workbook name>.manifest.json`
+  beside the workbook: the size and SHA-256 of the workbook, its HTML report and each CSV in
+  its CSV folder. `jamf-reports verify <manifest>` prints `OK`, `CHANGED`, `MISSING` or
+  `UNREADABLE` for each and exits `1` unless all match. With
+  `output.timestamp_authority: "https://…"` the manifest's SHA-256 (and a random nonce,
+  nothing else) is sent to that RFC 3161 time-stamp authority and its signed reply saved as
+  `<workbook name>.tsr`; `verify` then checks the reply signs this manifest and prints the
+  authority's time and whether this Mac trusts its certificate chain. A failed request is a
+  `[warn] report timestamp not saved: …` line; the reports stand. `https://freetsa.org/tsr` is
+  a free test service, not a qualified authority. To check a reply without this app, macOS's
+  own LibreSSL (3.3.6, macOS 15 and later) does it:
+  `openssl ts -verify -data <stem>.manifest.json -in <stem>.tsr -CAfile <authority CA>.pem`.
 - A Jamf Pro `collect` runs at most once per profile per day; a second run the same day
   exits successfully without re-collecting. A Jamf School workspace collects each source at
   most every 12 hours instead. Pass `--force` to override either.

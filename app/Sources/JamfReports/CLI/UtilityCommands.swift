@@ -132,6 +132,21 @@ struct Check: AsyncParsableCommand {
     }
 }
 
+/// `jamf-reports verify <stem>.manifest.json`: read-only, so it takes no lock and no profile.
+struct Verify: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Check a report run's manifest: every artifact's size and SHA-256, and the "
+            + "RFC 3161 timestamp (.tsr) beside it when there is one. Exits 1 when anything "
+            + "differs.")
+    @Argument(help: "The run's <stem>.manifest.json, beside its workbook.") var manifest: String
+
+    func run() async throws {
+        let result = RunManifest.verify(manifestAt: URL(fileURLWithPath: manifest))
+        CLIRun.write(result.lines.joined(separator: "\n") + "\n", to: .standardOutput)
+        Foundation.exit(result.passed ? 0 : 1)
+    }
+}
+
 /// Shape of `check --json`. Stable enough to gate a CI job on: `passed` and the
 /// exit code agree, and `findings` carries the same fix text a human sees.
 private struct CheckJSON: Encodable {

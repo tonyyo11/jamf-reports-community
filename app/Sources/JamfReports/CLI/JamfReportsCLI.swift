@@ -18,7 +18,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
         subcommands: [
             Generate.self, Collect.self, Html.self, Backup.self, Scaffold.self,
             Check.self, Capabilities.self, DiagnosticBundleCommand.self, Device.self,
-            SchoolCheck.self, Schedules.self,
+            SchoolCheck.self, Schedules.self, Verify.self,
         ]
     )
 
@@ -26,7 +26,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
     /// `isKnownSubcommand`, which is how `routesToCLI` still sends `--help` to the CLI.
     static let subcommandNames: Set<String> = [
         "generate", "collect", "html", "backup", "scaffold", "check",
-        "capabilities", "diagnostic-bundle", "device", "school-check", "schedules",
+        "capabilities", "diagnostic-bundle", "device", "school-check", "schedules", "verify",
     ]
 
     /// `help` is ArgumentParser's built-in subcommand (`jamf-reports help generate`),
