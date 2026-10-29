@@ -1016,14 +1016,22 @@ struct GenerateSheet: View {
 
         // The collect is the Overview's (`collectThenGenerate`'s), and the F3 narrative,
         // time-boxed inside makeForGUIGenerate, is asked for after it.
+        // One clock for the run: the collect and the report date the day's summary the same.
+        let runStart = Date()
         let outcome = await GenerateSheetState.perform(
             request,
             profile: profile,
             onLine: onLine,
-            collect: { try await bridge.collect(profile: profile, force: true, onLine: onLine) },
+            collect: {
+                try await bridge.collect(
+                    profile: profile, force: true, now: runStart, onLine: onLine)
+            },
             narrative: { await ReportNarrative.makeForGUIGenerate(profile: profile) },
-            generateAll: bridge.generateAll(
-                types:outputDir:profile:schoolMode:template:aiNarrative:onLine:)
+            generateAll: { types, dir, profile, school, template, narrative, onLine in
+                await bridge.generateAll(
+                    types: types, outputDir: dir, profile: profile, schoolMode: school,
+                    template: template, aiNarrative: narrative, now: runStart, onLine: onLine)
+            }
         )
         state.completedCount = outcome.count
         state.errorMessage = outcome.message

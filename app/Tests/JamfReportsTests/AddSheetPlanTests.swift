@@ -68,7 +68,7 @@ final class AddSheetPlanTests: XCTestCase {
         ])
         XCTAssertEqual(rows.map(\.use), [
             .newWorkspace, .newWorkspace, .newWorkspace, .addToCurrent,
-            .unavailable(AddSheetPlan.securityCloudReason),
+            .unavailable(ExistingCLISetupFlow.securityCloudReason),
         ])
     }
 
@@ -161,7 +161,7 @@ final class AddSheetPlanTests: XCTestCase {
         guard case .rows(let rows) = listing(found) else { return XCTFail("no rows") }
         XCTAssertEqual(rows.map(\.name), ["lab", "cloud", "org"])
         XCTAssertEqual(rows.map(\.use), [
-            .newWorkspace, .unavailable(AddSheetPlan.securityCloudReason),
+            .newWorkspace, .unavailable(ExistingCLISetupFlow.securityCloudReason),
             .unavailable(PlatformScopeLevel.organizationLevelReason),
         ])
     }
@@ -370,6 +370,51 @@ final class AddSheetPlanTests: XCTestCase {
         XCTAssertEqual(rows[1].use, .newWorkspace)
     }
 
+    /// One decision: the Add sheet's unavailable reason is the one the adoption screen refuses
+    /// the same profile with, for every profile either can reject.
+    @MainActor
+    func testTheAddSheetAndTheAdoptionScreenGiveTheSameReason() {
+        let refused = [
+            platform("old", url: "us.apigw.jamf.com"),
+            profile("org", level: .organization),
+            profile("cloud", .securityCloud),
+        ]
+        let rows = unassigned(refused)
+        let flow = ExistingCLISetupFlow(profiles: refused)
+        for (row, source) in zip(rows, refused) {
+            let reason = try? XCTUnwrap(flow.refusals[source.name])
+            XCTAssertEqual(row.use, .unavailable(reason ?? ""), source.name)
+            XCTAssertEqual(ExistingCLISetupFlow.refusal(for: source), reason, source.name)
+        }
+    }
+
+    /// A Protect login on a retired host or at organization level is refused before the Protect
+    /// offer, as the adoption screen refuses it.
+    @MainActor
+    func testAProtectLoginOnARetiredHostOrAtOrganizationLevelIsStillUnavailable() {
+        let retired = JamfCLIProfile(
+            name: "old", url: "us.apigw.jamf.com", schedules: 0, status: .idle,
+            authMethod: "platform", product: .protect, platformLevel: .environment)
+        let org = profile("org", .protect, level: .organization)
+        let rows = unassigned([retired, org])
+        let flow = ExistingCLISetupFlow(profiles: [retired, org])
+        XCTAssertEqual(rows.map(\.use), [
+            .unavailable(GatewayRegion.retiredRefusal),
+            .unavailable(PlatformScopeLevel.organizationLevelReason),
+        ])
+        XCTAssertEqual(flow.refusals["old"], GatewayRegion.retiredRefusal)
+        XCTAssertEqual(flow.refusals["org"], PlatformScopeLevel.organizationLevelReason)
+    }
+
+    /// The adoption screen refuses a Protect login as a workspace; the Add sheet adds it to the
+    /// current one instead, so only the flow lists a reason.
+    @MainActor
+    func testAProtectLoginIsRefusedAsAWorkspaceButOfferedToTheCurrentOne() {
+        let protect = profile("p", .protect)
+        XCTAssertNotNil(ExistingCLISetupFlow.refusal(for: protect))
+        XCTAssertEqual(unassigned([protect]).map(\.use), [.addToCurrent])
+    }
+
     func testARowCarriesWhatTheConnectionCheckReads() {
         let row = unassigned([platform("prod", url: "us.api.jamfcloud.com")])[0]
         let adopted = AddSheetPlan.adoptionProfile(for: row)
@@ -396,5 +441,28 @@ final class AddSheetPlanTests: XCTestCase {
         XCTAssertEqual(
             flow.statuses["typo"],
             .failed(ConnectionCheck.Verdict.rejectedID(.unknownEnvironment).message))
+    }
+
+    /// The row that showed the connection check's note leaves the list once adopted, so the
+    /// success message carries the note.
+    @MainActor
+    func testASuccessfulAdoptionKeepsTheConnectionChecksNote() async {
+        let row = unassigned([platform("prod", url: "us.api.jamfcloud.com")])[0]
+        let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
+        let forbidden = (try? JSONSerialization.data(withJSONObject: [
+            "error": "request failed", "message": "permission denied (HTTP 403)",
+        ])) ?? Data()
+        await flow.run(
+            connectionRunner: { _ in (5, forbidden) },
+            initialize: { _ in 0 }, collect: { _, _ in 0 })
+        let note = ConnectionCheck.Verdict.missingPermission(names: []).message
+        XCTAssertEqual(flow.connectionNotes["prod"], note)
+
+        let outcome = AddSheetPlan.adoptionOutcome(
+            name: "prod", status: flow.statuses["prod"], note: flow.connectionNotes["prod"])
+        XCTAssertEqual(
+            outcome.message,
+            "prod is set up. Switch to it from the workspace menu. " + note)
+        XCTAssertNil(outcome.error)
     }
 }

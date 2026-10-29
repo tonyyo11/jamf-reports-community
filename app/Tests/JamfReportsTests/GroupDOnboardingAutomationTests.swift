@@ -18,6 +18,10 @@ final class GroupDOnboardingAutomationTests: XCTestCase {
     /// closure directly — it never hops to a background task before invoking
     /// `collect`/`generate` — so every mutation happens serially on the
     /// main actor, same as the test itself.
+    private final class DateRecorder {
+        var dates: [Date] = []
+    }
+
     private final class CallRecorder {
         var calls: [String] = []
     }
@@ -48,8 +52,8 @@ final class GroupDOnboardingAutomationTests: XCTestCase {
 
             await flow.runFirstReport(
                 workspaceStore: workspace,
-                collect: { _, _ in recorder.calls.append("collect"); return 0 },
-                generate: { _, _ in recorder.calls.append("generate"); return 0 }
+                collect: { _, _, _ in recorder.calls.append("collect"); return 0 },
+                generate: { _, _, _ in recorder.calls.append("generate"); return 0 }
             )
 
             XCTAssertEqual(
@@ -58,6 +62,26 @@ final class GroupDOnboardingAutomationTests: XCTestCase {
             )
             XCTAssertEqual(flow.firstReportExitCode, 0)
             XCTAssertNil(flow.lastError)
+        }
+    }
+
+    /// One clock for the run: the collect and the report after it get the same start.
+    func test_runFirstReport_handsOneStartToTheCollectAndTheGenerate() async throws {
+        await withIsolatedWorkspacesRoot {
+            let flow = OnboardingFlow()
+            flow.productPath = .pro
+            flow.profileName = "grpd\(Int.random(in: 1000...9999))"
+            let workspace = WorkspaceStore(demoMode: true)
+            let seen = DateRecorder()
+
+            await flow.runFirstReport(
+                workspaceStore: workspace,
+                now: .testNoon,
+                collect: { _, now, _ in seen.dates.append(now); return 0 },
+                generate: { _, now, _ in seen.dates.append(now); return 0 }
+            )
+
+            XCTAssertEqual(seen.dates, [.testNoon, .testNoon])
         }
     }
 
@@ -71,8 +95,8 @@ final class GroupDOnboardingAutomationTests: XCTestCase {
 
             await flow.runFirstReport(
                 workspaceStore: workspace,
-                collect: { _, _ in recorder.calls.append("collect"); return 3 },
-                generate: { _, _ in recorder.calls.append("generate"); return 0 }
+                collect: { _, _, _ in recorder.calls.append("collect"); return 3 },
+                generate: { _, _, _ in recorder.calls.append("generate"); return 0 }
             )
 
             XCTAssertEqual(
@@ -99,9 +123,9 @@ final class GroupDOnboardingAutomationTests: XCTestCase {
 
             await flow.runFirstReport(
                 workspaceStore: workspace,
-                collect: { _, _ in recorder.calls.append("collect"); return 0 },
-                generate: { _, _ in recorder.calls.append("generate"); return 0 },
-                schoolGenerate: { _, _ in recorder.calls.append("schoolGenerate"); return 0 }
+                collect: { _, _, _ in recorder.calls.append("collect"); return 0 },
+                generate: { _, _, _ in recorder.calls.append("generate"); return 0 },
+                schoolGenerate: { _, _, _ in recorder.calls.append("schoolGenerate"); return 0 }
             )
 
             XCTAssertEqual(recorder.calls, ["collect", "schoolGenerate"])
@@ -119,9 +143,9 @@ final class GroupDOnboardingAutomationTests: XCTestCase {
 
             await flow.runFirstReport(
                 workspaceStore: workspace,
-                collect: { _, _ in recorder.calls.append("collect"); return 1 },
-                generate: { _, _ in recorder.calls.append("generate"); return 0 },
-                schoolGenerate: { _, _ in recorder.calls.append("schoolGenerate"); return 0 }
+                collect: { _, _, _ in recorder.calls.append("collect"); return 1 },
+                generate: { _, _, _ in recorder.calls.append("generate"); return 0 },
+                schoolGenerate: { _, _, _ in recorder.calls.append("schoolGenerate"); return 0 }
             )
 
             XCTAssertEqual(recorder.calls, ["collect"])

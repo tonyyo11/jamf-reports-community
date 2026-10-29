@@ -146,14 +146,7 @@ final class ProBackupTests: XCTestCase {
         XCTAssertEqual(run.lines.filter { $0.hasPrefix("[partial]") }.count, 1, "\(run.lines)")
         XCTAssertFalse(run.lines.contains { $0.hasPrefix("[error]") }, "\(run.lines)")
 
-        let final = try ctx.onlyBackup()
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: final.appendingPathComponent("computers.json").path))
-        let pro = try XCTUnwrap(BackupProductResult.pro(inBackup: final))
-        XCTAssertEqual(pro.state, .skipped)
-        XCTAssertTrue(try XCTUnwrap(pro.reason).contains("backup.pro_on_synced_storage"))
-        XCTAssertFalse(pro.isIncomplete)
-        XCTAssertTrue(pro.leavesNoJamfProBackup)
+        try assertNoBackupFolder(ctx, run)
         guard case .raised(let message)? = run.changes[.proBackupChoiceNeeded]
         else { return XCTFail("\(run.changes)") }
         XCTAssertTrue(message.contains("need a choice"), message)
@@ -200,8 +193,8 @@ final class ProBackupTests: XCTestCase {
         XCTAssertEqual(try ctx.calls().count, 3, "the fourth scheduled run skips")
         XCTAssertTrue(fourth.lines.contains { $0.hasPrefix("[warn] Jamf Pro not backed up") })
         XCTAssertTrue(fourth.lines.contains { $0.hasPrefix("[partial]") })
-        let newest = try newestBackup(ctx)
-        XCTAssertEqual(BackupProductResult.pro(inBackup: newest)?.state, .skipped)
+        let folders = try backupFolders(ctx)
+        XCTAssertEqual(folders.count, 4, "the history folder and the three grace runs: \(folders)")
     }
 
     func test_backup_aManualBackupDuringGraceDoesNotUseItUp() async throws {
@@ -256,10 +249,10 @@ final class ProBackupTests: XCTestCase {
         let watcher = CollectHonestyWatcher()
         run.lines.forEach(watcher.observe)
         XCTAssertFalse(watcher.incomplete)
-        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[info] backup written without a Jamf Pro") },
+        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[info] no backup written") },
                       "\(run.lines)")
         XCTAssertEqual(run.changes[.proBackupChoiceNeeded], .cleared)
-        XCTAssertEqual(BackupProductResult.pro(inBackup: try newestBackup(ctx))?.state, .skipped)
+        XCTAssertEqual(try backupFolders(ctx), ["20260101T010101"], "an explicit no writes none")
     }
 
     func test_backup_aNonBooleanIsAnExplicitNoNotAGrace() async throws {
@@ -299,10 +292,7 @@ final class ProBackupTests: XCTestCase {
         let warn = try XCTUnwrap(run.lines.first { $0.hasPrefix("[warn] Jamf Pro not backed up") })
         XCTAssertTrue(warn.contains("config.yaml could not be read"), warn)
         XCTAssertTrue(warn.contains("thresholds"), "the log line keeps the detail: \(warn)")
-        let reason = try XCTUnwrap(
-            BackupProductResult.pro(inBackup: try newestBackup(ctx))?.reason)
-        XCTAssertFalse(reason.contains("thresholds"), reason)
-        XCTAssertFalse(reason.contains(ctx.workspace.path), "no path in the manifest")
+        XCTAssertEqual(try backupFolders(ctx), ["20260101T010101"], "no manifest to carry a reason")
         XCTAssertEqual(ProBackupGrace.used(profile: ctx.profile), 0)
         XCTAssertNil(run.changes[.proBackupChoiceNeeded].flatMap {
             if case .raised = $0 { return $0 } else { return nil }
@@ -369,6 +359,24 @@ final class ProBackupTests: XCTestCase {
         XCTAssertEqual(try ctx.calls().count, 0, "\(run.lines)")
         let warn = try XCTUnwrap(run.lines.first { $0.hasPrefix("[warn] Jamf Pro not backed up") })
         XCTAssertTrue(warn.contains("could not be saved on this Mac: "), warn)
+        XCTAssertEqual(try backupFolders(ctx), ["20260101T010101"])
+    }
+
+    /// The manifest reason of a skipped Jamf Pro part, which only a run that kept Jamf Protect
+    /// objects writes.
+    func test_backup_aGraceCountThatCannotBeSavedLeavesAFixedManifestReason() async throws {
+        let ctx = try protectContext()
+        try addHistory(ctx, "20260101T010101")
+        var count = ProBackupGrace.url(profile: ctx.profile, appSupport: AppSupport.directory())
+        try Data("{\"runs\": 0}".utf8).write(to: count)
+        var immutable = URLResourceValues()
+        immutable.isUserImmutable = true
+        try count.setResourceValues(immutable)
+        defer {
+            immutable.isUserImmutable = false
+            try? count.setResourceValues(immutable)
+        }
+        _ = try await backup(ctx, label: "scheduled-t")
         let reason = try XCTUnwrap(
             BackupProductResult.pro(inBackup: try newestBackup(ctx))?.reason)
         XCTAssertTrue(reason.hasSuffix("could not be saved on this Mac"), reason)
@@ -376,11 +384,7 @@ final class ProBackupTests: XCTestCase {
     }
 
     func test_backup_protectStillBacksUpWhenJamfProIsSkipped() async throws {
-        let ctx = try makeContext(
-            config: shared + "protect:\n  enabled: true\n  profile: \"protect-login\"\n"
-                + "  backup_on_synced_storage: true\n")
-        _ = SharedConfigPin.check(profile: ctx.profile)
-        try SharedConfigPin.confirm(profile: ctx.profile, keys: [.protectBackupOnSyncedStorage])
+        let ctx = try protectContext()
         let run = try await backup(ctx, label: "scheduled-t")
 
         XCTAssertEqual(run.exit, 0)
@@ -393,6 +397,37 @@ final class ProBackupTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: final.appendingPathComponent("protect/plans/a.yaml").path))
         XCTAssertTrue(run.lines.contains { $0.hasPrefix("[warn] Jamf Pro not backed up") })
+    }
+
+    /// The Protect warning points at protect/_failures.yaml in the backup folder; a run that
+    /// keeps no folder says the list went with the staging folder.
+    func test_backup_aDiscardedFolderSaysItTookTheProtectFailureListWithIt() async throws {
+        let ctx = try makeContext(
+            config: shared + "protect:\n  enabled: true\n  profile: \"protect-login\"\n"
+                + "  backup_on_synced_storage: true\n",
+            protectFailuresOnly: true)
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        try SharedConfigPin.confirm(profile: ctx.profile, keys: [.protectBackupOnSyncedStorage])
+        let run = try await backup(ctx, label: "scheduled-t")
+
+        XCTAssertEqual(try backupFolders(ctx), [], "\(run.lines)")
+        let notes = run.lines.filter { $0.contains("failure list") && $0.contains("discarded") }
+        XCTAssertEqual(notes.count, 1, "\(run.lines)")
+    }
+
+    /// The run names the folder it finished, so housekeeping stamps that one and no other.
+    func test_backupRun_namesTheFolderOnlyWhenOneWasWritten() async throws {
+        let none = try makeContext(config: shared)
+        let skipped = try await CLIBridge().backupRun(
+            profile: none.profile, label: "scheduled-t", _testExecutable: none.stub) { _ in }
+        XCTAssertEqual(skipped.exit, 0)
+        XCTAssertNil(skipped.folder)
+        XCTAssertEqual(try backupFolders(none), [])
+
+        let kept = try protectContext()
+        let run = try await CLIBridge().backupRun(
+            profile: kept.profile, label: "scheduled-t", _testExecutable: kept.stub) { _ in }
+        XCTAssertEqual(run.folder?.lastPathComponent, try kept.onlyBackup().lastPathComponent)
     }
 
     func test_backup_aConfigThatDoesNotDecodeOnLocalStorageStillBacksUpJamfPro() async throws {
@@ -436,7 +471,7 @@ final class ProBackupTests: XCTestCase {
     // MARK: - Records, retention, diff
 
     func test_backupRecordMarksTheSkippedPartAndRefusesToDiffIt() async throws {
-        let ctx = try makeContext(config: shared)
+        let ctx = try protectContext()
         _ = try await backup(ctx, label: "scheduled-t")
         let record = try XCTUnwrap(BackupLibrary().list(profile: ctx.profile).first)
         XCTAssertTrue(record.proSkipped)
@@ -643,6 +678,35 @@ final class ProBackupTests: XCTestCase {
             config.backup?.proOnSyncedStorage, profile: ctx.profile)
     }
 
+    /// Shared storage with Jamf Protect connected and allowed there, so a skipped Jamf Pro part
+    /// still leaves a folder holding the Protect objects.
+    private func protectContext() throws -> Context {
+        let ctx = try makeContext(
+            config: shared + "protect:\n  enabled: true\n  profile: \"protect-login\"\n"
+                + "  backup_on_synced_storage: true\n")
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        try SharedConfigPin.confirm(profile: ctx.profile, keys: [.protectBackupOnSyncedStorage])
+        return ctx
+    }
+
+    private func backupFolders(_ ctx: Context) throws -> [String] {
+        let backups = ctx.workspace.appendingPathComponent("backups", isDirectory: true)
+        return try FileManager.default.contentsOfDirectory(atPath: backups.path).sorted()
+    }
+
+    /// A skipped Jamf Pro part with no Jamf Protect objects writes no folder, and no staging
+    /// folder stays behind. The skip is still said, and still not a failure.
+    private func assertNoBackupFolder(
+        _ ctx: Context, _ run: Run, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        XCTAssertEqual(try backupFolders(ctx), [], file: file, line: line)
+        XCTAssertEqual(run.exit, 0, file: file, line: line)
+        XCTAssertTrue(run.lines.contains { $0.hasPrefix("[warn] no backup written") },
+                      "\(run.lines)", file: file, line: line)
+        XCTAssertFalse(run.lines.contains { $0.hasPrefix("[error]") },
+                       "\(run.lines)", file: file, line: line)
+    }
+
     private struct Run {
         let exit: Int32
         let lines: [String]
@@ -706,7 +770,9 @@ final class ProBackupTests: XCTestCase {
         }
     }
 
-    private func makeContext(config: String?, protectPartial: Bool = false) throws -> Context {
+    private func makeContext(
+        config: String?, protectPartial: Bool = false, protectFailuresOnly: Bool = false
+    ) throws -> Context {
         let root = try tempDir()
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
@@ -730,8 +796,9 @@ final class ProBackupTests: XCTestCase {
         mkdir -p "$out"
         case " $* " in
         *" protect backup "*)
-        mkdir -p "$out/plans"
-        echo 'name: a' > "$out/plans/a.yaml"
+        \(protectFailuresOnly
+            ? "echo 'plans: boom' > \"$out/_failures.yaml\""
+            : "mkdir -p \"$out/plans\"; echo 'name: a' > \"$out/plans/a.yaml\"")
         \(protectPartial ? "echo 'plans: boom' > \"$out/_failures.yaml\"; exit 7" : "")
         ;;
         *)

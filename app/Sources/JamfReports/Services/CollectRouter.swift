@@ -87,6 +87,18 @@ enum CollectRouter {
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> ReportEngine.CollectDisposition
 
+    /// `ReportEngine.collect` as the default Pro closure calls it: the `ProCollect` arguments plus
+    /// the run's start (`now`). Tests replace it to see the day the router hands the engine.
+    typealias ProEngine = @Sendable (
+        _ profile: String,
+        _ workspacePaths: WorkspacePaths.Type,
+        _ tiers: Set<CollectionTier>,
+        _ skipExpensive: Bool,
+        _ force: Bool,
+        _ now: Date,
+        _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async throws -> ReportEngine.CollectDisposition
+
     /// Type of the school-collect closure, matching `ReportEngine.schoolCollect`'s signature.
     typealias SchoolCollect = @Sendable (
         _ profile: String,
@@ -113,7 +125,9 @@ enum CollectRouter {
     ///   - config: Loaded config for the profile; pass nil when load failed. A nil config
     ///     degrades to Jamf Pro (same behaviour as before this router existed).
     ///   - workspacePaths: Path resolver (injectable for tests).
-    ///   - proCollect: Closure wrapping `ReportEngine.collect`. Defaults to the real static.
+    ///   - now: The run's start, which dates the Jamf Pro collect's summary. A default is read at
+    ///     entry, before the product probe below, so the probe's time never moves the day.
+    ///   - proCollect: Closure wrapping `ReportEngine.collect`; nil is the real one.
     ///   - schoolCollect: Closure wrapping `ReportEngine.schoolCollect`. Defaults to the real static.
     ///   - protectCollect: Closure wrapping `ReportEngine.protectCollect`. Defaults to the real static.
     ///   - resolved: The profile's resolved auth method and product (`ProfileAuthMethod.resolve`).
@@ -128,7 +142,9 @@ enum CollectRouter {
         force: Bool = false,
         config: ReportConfig?,
         workspacePaths: WorkspacePaths.Type = WorkspacePaths.self,
-        proCollect: ProCollect = defaultProCollect,
+        now: Date = Date(),
+        proCollect: ProCollect? = nil,
+        proEngine: @escaping ProEngine = realProEngine,
         schoolCollect: SchoolCollect = defaultSchoolCollect,
         protectCollect: ProtectCollect = defaultProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
@@ -139,7 +155,8 @@ enum CollectRouter {
         try await AttentionLog.recording(profile: profile) {
             try await routed(
                 profile: profile, tiers: tiers, skipExpensive: skipExpensive, force: force,
-                config: config, workspacePaths: workspacePaths, proCollect: proCollect,
+                config: config, workspacePaths: workspacePaths,
+                proCollect: proCollect ?? defaultProCollect(now: now, engine: proEngine),
                 schoolCollect: schoolCollect, protectCollect: protectCollect,
                 resolved: resolved, onLine: onLine)
         }
@@ -310,13 +327,21 @@ enum CollectRouter {
     // MARK: - Default closures (production)
 
     /// Default production closure wrapping `ReportEngine.collect`.
-    static let defaultProCollect: ProCollect = { profile, workspacePaths, tiers, skipExpensive, force, onLine in
+    static func defaultProCollect(now: Date, engine: @escaping ProEngine) -> ProCollect {
+        { profile, workspacePaths, tiers, skipExpensive, force, onLine in
+            try await engine(profile, workspacePaths, tiers, skipExpensive, force, now, onLine)
+        }
+    }
+
+    static let realProEngine: ProEngine = {
+        profile, workspacePaths, tiers, skipExpensive, force, now, onLine in
         try await ReportEngine.collect(
             profile: profile,
             workspacePaths: workspacePaths,
             tiers: tiers,
             skipExpensive: skipExpensive,
             force: force,
+            now: now,
             onLine: onLine
         )
     }

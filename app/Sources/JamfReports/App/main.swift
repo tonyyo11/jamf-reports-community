@@ -269,6 +269,8 @@ private func scheduledRunSingleBody(
     honesty: CollectHonestyWatcher,
     retiredCSVAssisted: Bool
 ) async -> Int32 {
+    // The run's day for its summary and its metric alerts, however long the collect takes.
+    let runStart = Date()
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1
@@ -433,17 +435,19 @@ private func scheduledRunSingleBody(
         }
         do {
             let bridge = CLIBridge()
-            let exit = try await bridge.backup(
+            let run = try await bridge.backupRun(
                 profile: profile,
                 label: "scheduled-\(BackupMaintenance.dateStamp())",
                 onLine: onLine
             )
+            let exit = run.exit
             // Exit 7 keeps its partial export on disk, so retention has to see
             // it — otherwise partial backups accumulate unpruned forever. The
             // run itself still reports non-success: an incomplete backup is not
             // a restore point, and the row should stay red until it's fixed.
             if CLIBridge.backupOutputIsPrunable(exit: exit) {
-                BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
+                BackupMaintenance.performPostSuccessHousekeeping(
+                    profile: profile, justFinished: run.folder, onLine: onLine)
             }
             // Explain the exit code (cause + remediation) instead of a bare
             // integer — same translation the GUI's Backups screen already shows
@@ -458,6 +462,9 @@ private func scheduledRunSingleBody(
                 ?? (honesty.incomplete
                     ? "[partial] scheduled backup for '\(profile)' is incomplete; the lines "
                         + "above say which product's part is missing"
+                    : run.folder == nil
+                    ? "[ok] scheduled backup ran for '\(profile)' and kept nothing: Jamf Pro was "
+                        + "skipped and Jamf Protect left no objects"
                     : "[ok] scheduled backup complete for '\(profile)'")
             if failureDetail == nil { print(message) } else { fputs(message + "\n", stderr) }
             recorder?.record(message)
@@ -511,6 +518,7 @@ private func scheduledRunSingleBody(
                 force: mode.forcesCollect(
                     for: ProfileProductType.detect(from: routingConfig, profile: profile).type),
                 config: routingConfig,
+                now: runStart,
                 onLine: onLine
             )
             // Tighten permissions on collected snapshots immediately after
@@ -550,7 +558,7 @@ private func scheduledRunSingleBody(
                 )
                 await ScheduledRunSignals.notifyMetricAlerts(
                     config: routingConfig, profile: profile, workspace: workspace,
-                    recorder: recorder
+                    recorder: recorder, now: runStart
                 )
             }
             ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
@@ -609,7 +617,7 @@ private func scheduledRunSingleBody(
                 onLine: onLine)
         } else {
             failures = try await engine.generate(
-                outputURL: outputURL, template: template, onLine: onLine)
+                outputURL: outputURL, template: template, now: runStart, onLine: onLine)
         }
         if !failures.isEmpty {
             let partialMsg = partialRunMarker(sheetFailures: failures.count)
@@ -640,7 +648,8 @@ private func scheduledRunSingleBody(
         // written this run, so there is nothing new to alert on.
         if mode != .jamfCLIOnly, !honesty.stoodDown {
             await ScheduledRunSignals.notifyMetricAlerts(
-                config: config, profile: profile, workspace: workspace, recorder: recorder
+                config: config, profile: profile, workspace: workspace, recorder: recorder,
+                now: runStart
             )
         }
         ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)

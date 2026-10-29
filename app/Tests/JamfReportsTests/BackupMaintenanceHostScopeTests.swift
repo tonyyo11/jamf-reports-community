@@ -73,25 +73,45 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         XCTAssertTrue(left.contains("20260825T050000"), "the newest must survive")
     }
 
-    /// The stamp is what makes the newest-backup attribution work after a run.
-    func testStampNewestPicksTheLatestByName() throws {
-        try makeBackup("20260825T010000", owner: nil)
-        try makeBackup("20260825T090000", owner: nil)
-        try makeBackup("20260825T050000", owner: nil)
-        BackupMaintenance.stampNewestScheduledBackup(profile: profile)
+    // MARK: - Stamping the folder a run finished
 
-        XCTAssertEqual(
-            BackupMaintenance.ownerHostID(
-                of: backupsDir.appendingPathComponent("20260825T090000")
-            ),
-            SharedWorkspace.currentHost.id
-        )
-        XCTAssertNil(
-            BackupMaintenance.ownerHostID(
-                of: backupsDir.appendingPathComponent("20260825T050000")
-            ),
-            "only the backup that just finished is ours to claim"
-        )
+    /// A peer's newer scheduled folder, unstamped, beside the one this run made.
+    private func finishedAndPeers() throws -> (mine: URL, peer: URL) {
+        let mine = try makeBackup("20260825T010000", owner: nil)
+        let peer = try makeBackup("20260825T090000", owner: nil)
+        return (mine, peer)
+    }
+
+    func testHousekeepingStampsTheFolderTheRunFinishedNotAPeersNewerOne() throws {
+        let (mine, peer) = try finishedAndPeers()
+        BackupMaintenance.performPostSuccessHousekeeping(
+            profile: profile, justFinished: mine)
+        XCTAssertEqual(BackupMaintenance.ownerHostID(of: mine), SharedWorkspace.currentHost.id)
+        XCTAssertNil(BackupMaintenance.ownerHostID(of: peer))
+    }
+
+    func testHousekeepingAfterARunThatWroteNoFolderStampsNothing() throws {
+        let (mine, peer) = try finishedAndPeers()
+        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, justFinished: nil)
+        XCTAssertNil(BackupMaintenance.ownerHostID(of: mine))
+        XCTAssertNil(BackupMaintenance.ownerHostID(of: peer))
+    }
+
+    /// Retention on a shared folder still spends only this Mac's budget once the run names its
+    /// folder: the older stamped one goes, the peer's newer one stays.
+    func testSyncedHousekeepingCountsOnlyThisMachinesFolders() throws {
+        try makeSyncedWorkspaceRoot()
+        let older = try makeBackup("20260825T010000", owner: SharedWorkspace.currentHost.id)
+        let mine = try makeBackup("20260825T020000", owner: nil)
+        let peer = try makeBackup("20260825T090000", owner: "some-other-host-abc123")
+
+        BackupMaintenance.performPostSuccessHousekeeping(
+            profile: profile, justFinished: mine, keep: 1)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: older.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mine.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: peer.path))
+        XCTAssertEqual(BackupMaintenance.ownerHostID(of: peer), "some-other-host-abc123")
     }
 
     // MARK: - Synced-volume pruning
@@ -254,21 +274,5 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
             [])
         XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
         XCTAssertEqual(BackupMaintenance.cleanStaleTempDirs(profile: profile).count, 1)
-    }
-
-    /// Ordering is by folder name, never mtime — the whole reason this is safe
-    /// on a volume where a sync provider rewrites modification dates.
-    func testNewestIsChosenByNameNotModificationDate() throws {
-        let older = try makeBackup("20260825T010000", owner: nil)
-        try makeBackup("20260825T090000", owner: nil)
-        // Make the OLDER folder look freshly modified, as a provider would.
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date().addingTimeInterval(3600)], ofItemAtPath: older.path
-        )
-        BackupMaintenance.stampNewestScheduledBackup(profile: profile)
-        XCTAssertNil(
-            BackupMaintenance.ownerHostID(of: older),
-            "a re-stamped mtime must not make an old backup look like the newest"
-        )
     }
 }

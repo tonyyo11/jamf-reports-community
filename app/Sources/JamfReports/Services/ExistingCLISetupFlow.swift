@@ -164,16 +164,8 @@ final class ExistingCLISetupFlow {
         self.products = Dictionary(
             profiles.map { ($0.name, $0.product) }, uniquingKeysWith: { first, _ in first })
         var refusals: [String: String] = [:]
-        for profile in profiles where profile.product.isNeverAWorkspace {
-            refusals[profile.name] = "A \(profile.product.displayName) login holds no Jamf Pro "
-                + "data, so it is not a workspace. Add Jamf Protect from the Jamf Pro workspace "
-                + "that uses it."
-        }
-        for profile in profiles where profile.isOrganizationLevel {
-            refusals[profile.name] = PlatformScopeLevel.organizationLevelReason
-        }
-        for profile in profiles where GatewayRegion.check(profile.url) == .retired {
-            refusals[profile.name] = GatewayRegion.retiredRefusal
+        for profile in profiles {
+            if let reason = Self.refusal(for: profile) { refusals[profile.name] = reason }
         }
         self.refusals = refusals
         let unusable = ProfileService.unusableProfiles(in: profileNames)
@@ -184,6 +176,29 @@ final class ExistingCLISetupFlow {
         self.reportsCadence = defaults.reportsCadence
         self.runTime = defaults.runTime
         for name in profileNames { statuses[name] = .pending }
+    }
+
+    nonisolated static let securityCloudReason = "Jamf Security Cloud is not supported yet."
+
+    /// Why a profile cannot be adopted whatever its product, or nil: the retired gateway and an
+    /// organization-level integration, which choosing a different product does not fix.
+    nonisolated static func scopeRefusal(for profile: JamfCLIProfile) -> String? {
+        if GatewayRegion.check(profile.url) == .retired { return GatewayRegion.retiredRefusal }
+        if profile.isOrganizationLevel { return PlatformScopeLevel.organizationLevelReason }
+        return nil
+    }
+
+    /// Why a profile is never a workspace, or nil: the one decision behind the adoption
+    /// screen's refused rows and the Add sheet's unavailable ones.
+    nonisolated static func refusal(for profile: JamfCLIProfile) -> String? {
+        if let scope = scopeRefusal(for: profile) { return scope }
+        switch profile.product {
+        case .protect:
+            return "A \(profile.product.displayName) login holds no Jamf Pro data, so it is not "
+                + "a workspace. Add Jamf Protect from the Jamf Pro workspace that uses it."
+        case .securityCloud: return securityCloudReason
+        case .pro, .school, .unknown: return nil
+        }
     }
 
     // MARK: - Trigger

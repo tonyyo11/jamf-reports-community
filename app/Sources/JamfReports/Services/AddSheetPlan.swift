@@ -6,14 +6,17 @@ import Foundation
 enum AddSheetPlan {
     /// What the sheet says once Set up workspace finished for `name`: the workspace exists, so
     /// the row leaves the list, and a first collect that failed must be said here instead.
+    /// `note` is the connection check's word on a profile it let through (a missing permission,
+    /// or no answer): the row that showed it is gone by then, so the message carries it.
     static func adoptionOutcome(
-        name: String, status: ExistingCLISetupFlow.ProfileStatus?
+        name: String, status: ExistingCLISetupFlow.ProfileStatus?, note: String? = nil
     ) -> (message: String?, error: String?) {
         if case .failed(let reason) = status {
             return (nil, "\(name)'s workspace was created, but its first collect failed "
                 + "(\(reason)). Fix the cause, then collect from that workspace.")
         }
-        return ("\(name) is set up. Switch to it from the workspace menu.", nil)
+        let done = "\(name) is set up. Switch to it from the workspace menu."
+        return (note.map { done + " " + $0 } ?? done, nil)
     }
 
     /// Why the Add sheet stays closed, or nil. Replacing a setup that has already registered a
@@ -64,8 +67,6 @@ enum AddSheetPlan {
             authMethod: row.authMethod, product: row.product, platformLevel: row.platformLevel)
     }
 
-    static let securityCloudReason = "Jamf Security Cloud is not supported yet."
-
     /// The current workspace takes Jamf Protect: a live workspace on disk, Jamf Pro or, from
     /// 2.11 (Experimental), Jamf School. Demo mode writes nothing.
     static func currentTakesProtect(
@@ -99,17 +100,14 @@ enum AddSheetPlan {
         of profile: JamfCLIProfile, unusable: String?
     ) -> UnassignedProfile.Use {
         if let unusable { return .unavailable(unusable) }
-        if GatewayRegion.check(profile.url) == .retired {
-            return .unavailable(GatewayRegion.retiredRefusal)
+        if let reason = ExistingCLISetupFlow.scopeRefusal(for: profile) {
+            return .unavailable(reason)
         }
-        if profile.isOrganizationLevel {
-            return .unavailable(PlatformScopeLevel.organizationLevelReason)
-        }
-        switch profile.product {
-        case .protect: return .addToCurrent
-        case .securityCloud: return .unavailable(securityCloudReason)
-        case .pro, .school, .unknown: return .newWorkspace
-        }
+        // A Protect login is added to the current workspace; the flow refuses it only as a
+        // workspace of its own.
+        if profile.product == .protect { return .addToCurrent }
+        if let reason = ExistingCLISetupFlow.refusal(for: profile) { return .unavailable(reason) }
+        return .newWorkspace
     }
 
     /// The line under an unassigned profile that reaches the same Jamf Pro as a profile that

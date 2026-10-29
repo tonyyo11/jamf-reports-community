@@ -173,6 +173,25 @@ final class CollectRouterTests: XCTestCase {
         XCTAssertEqual(spy.protectCallCount, 0, "Protect collect must not be called without protect.enabled")
     }
 
+    /// The run's start reaches the engine unchanged, so the collect dates its summary by the
+    /// day the run began, not by whenever the router's product probe finished.
+    func test_router_handsTheRunsStartToTheEngine() async throws {
+        let config = try ConfigLoader.loadFromString("jamf_cli:\n  data_dir: data\n")
+        let seen = RouterDates()
+
+        try await CollectRouter.run(
+            profile: "testpro",
+            config: config,
+            workspacePaths: WorkspacePaths.self,
+            now: .testNoon,
+            proEngine: { _, _, _, _, _, now, _ in seen.add(now); return .collected },
+            protectCollect: { _, _, _ in },
+            onLine: { _ in }
+        )
+
+        XCTAssertEqual(seen.values, [.testNoon])
+    }
+
     /// For a School profile, only schoolCollect is called; pro and protect are not called.
     func test_router_schoolProfile_callsSchoolCollectOnly() async throws {
         let config = try ConfigLoader.loadFromString("""
@@ -682,6 +701,13 @@ private final class RouterLineCollector: @unchecked Sendable {
     private var _texts: [String] = []
     var texts: [String] { lock.withLock { _texts } }
     func append(_ text: String) { lock.withLock { _texts.append(text) } }
+}
+
+private final class RouterDates: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Date] = []
+    var values: [Date] { lock.withLock { stored } }
+    func add(_ date: Date) { lock.withLock { stored.append(date) } }
 }
 
 private struct RouterSpy {

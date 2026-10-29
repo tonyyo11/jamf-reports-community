@@ -156,6 +156,7 @@ extension CLIBridge {
         schoolMode: Bool = false,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        now: Date = Date(),
         onLine rawOnLine: @Sendable @escaping (LogLine) -> Void
     ) async -> GenerateAllResult {
         // Each format resolves the report folder; a refused `output_dir` is said once per run.
@@ -176,7 +177,7 @@ extension CLIBridge {
                     return try await self.generate(
                         profile: profile, template: template,
                         outputDir: outputDir, aiNarrative: aiNarrative,
-                        htmlWithWorkbook: !types.contains(.html), onLine: onLine
+                        htmlWithWorkbook: !types.contains(.html), now: now, onLine: onLine
                     )
                 },
                 generateHTML: {

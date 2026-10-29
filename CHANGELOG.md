@@ -27,12 +27,22 @@ versions in this repository map to git tags.
 
 - A Jamf School collect that runs past midnight now dates its summary by the day it started, as
   a Jamf Pro collect does. (#305)
+- A collect-and-report run that crosses midnight, scheduled, from Generate or the command line,
+  now keeps the one summary dated the day it started, instead of adding a second one from cached
+  data, and its metric alerts judge that summary by the same day instead of skipping it as old.
+  (#305)
 - A profile on the retired `apigw.jamf.com` gateway is now refused up front, with the fix, in
   setup, Update credentials, Add environments, Start a connection and when existing jamf-cli
   profiles are adopted, instead of failing at the first collect. (#305)
 - Adopting existing Platform API profiles now checks each one's environment or tenant ID: a
   wrong ID or a tenant with no Jamf Pro is refused with the reason, and a missing permission or
   an unanswered check shows a note and continues. (#305)
+- Setting up an existing profile from the Add sheet now keeps the connection check's note, such as
+  a missing permission, in the message shown after it finishes, instead of losing it when the
+  profile leaves the list. (#305)
+- A scheduled backup that skips Jamf Pro on shared storage and has no Jamf Protect part to keep
+  no longer leaves an empty backup folder behind, and the run now marks as its own Mac's only
+  the folder it wrote, never a newer folder another Mac added to the shared workspace. (#305)
 - Config Doctor now warns when the notification webhook points at a host that is not a known
   Microsoft Teams, Power Automate or Slack webhook host. It shows the host only, and the app
   still sends. (#305)

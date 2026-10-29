@@ -129,7 +129,7 @@ struct Collect: AsyncParsableCommand {
     /// The collect itself, in a Needs attention scope of its own. `proCollect` is the test seam.
     static func perform(
         profile: String, tiers: Set<CollectionTier>, force: Bool, config: ReportConfig?,
-        proCollect: CollectRouter.ProCollect = CollectRouter.defaultProCollect
+        proCollect: CollectRouter.ProCollect? = nil
     ) async throws {
         try await AttentionLog.recording(profile: profile) {
             // Trust signals — a CLI collect now records to Run History, evaluates
@@ -148,6 +148,7 @@ struct Collect: AsyncParsableCommand {
                     force: force,
                     config: config,
                     workspacePaths: WorkspacePaths.self,
+                    now: signals.startedAt,
                     proCollect: proCollect,
                     onLine: signals.teeing(CLIRun.printLogLine)
                 )
