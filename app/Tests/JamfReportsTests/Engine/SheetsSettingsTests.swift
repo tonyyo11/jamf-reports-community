@@ -174,12 +174,11 @@ final class SheetsSettingsTests: XCTestCase {
     ) async throws -> (tabs: [String], pngs: Int) {
         let out = scratch.appendingPathComponent("out-\(UUID().uuidString)/report.xlsx")
         let config = try ConfigLoader.loadFromString("""
-        jamf_cli: {profile: \(profile)}
         charts: {enabled: true, save_png: \(savePNG)}
         sheets: \(sheets)
         """)
-        try await ReportEngine(config: config, dataDir: dataDir).generate(
-            outputURL: out, locateJamfCLI: { nil })
+        try await ReportEngine(config: config, dataDir: dataDir, workspace: WorkspaceID(profile))
+            .generate(outputURL: out, locateJamfCLI: { nil })
         let folder = try FileManager.default.contentsOfDirectory(
             atPath: out.deletingLastPathComponent().path)
         return (try Self.tabs(of: out), folder.filter { $0.hasSuffix(".png") }.count)
