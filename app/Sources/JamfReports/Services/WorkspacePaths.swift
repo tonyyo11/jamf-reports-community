@@ -254,7 +254,7 @@ enum WorkspacePaths {
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let p): "Invalid profile: \(p)"
+            case .invalidProfile(let p): ProfileName.invalidMessage(p)
             case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.localizedDescription)"
             case .resolutionEscaped(let val, let root): "Path '\(val)' escapes workspace root \(root.lastPathComponent)"
             case .disallowedAbsolutePath(let u): "Disallowed absolute path: \(u.path)"

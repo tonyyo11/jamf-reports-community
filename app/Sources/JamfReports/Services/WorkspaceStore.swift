@@ -1102,10 +1102,10 @@ final class WorkspaceStore {
             .limited(toSchool: isSchoolWorkspace, protectConnected: protectConnected)
     }
 
-    /// Re-reads whether the active workspace has Jamf Protect connected (`ConnectedProducts`).
+    /// Re-reads whether the active workspace has Jamf Protect connected (`EnvironmentProfiles`).
     func refreshProtectConnection() {
         protectConnected = !demoMode
-            && ConnectedProducts.read(profile: profile).protectProfile != nil
+            && EnvironmentProfiles.read(workspace: profile).protect != nil
     }
 
     /// After credentials are saved: a profile's auth method or scope level may have changed, so
@@ -1157,10 +1157,10 @@ final class WorkspaceStore {
 
     /// The profile a reload keeps active: the current one while it is still
     /// listed and usable. When it is gone because it is a Protect login (discovery no longer
-    /// lists one), the workspace whose `protect.profile` names it; else `initialProfile(in:)`.
+    /// lists one), the workspace whose Protect slot names it; else `initialProfile(in:)`.
     nonisolated static func activeProfile(
         keeping current: String, in profiles: [JamfCLIProfile],
-        protectProfile: (String) -> String? = { ConnectedProducts.read(profile: $0).protectProfile }
+        protectProfile: (String) -> String? = { EnvironmentProfiles.read(workspace: $0).protect }
     ) -> String? {
         if profiles.contains(where: { $0.name == current && $0.status != .error }) {
             return current

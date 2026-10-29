@@ -278,6 +278,24 @@ final class CLIBridgeBackupTests: XCTestCase {
     /// Creates a temp workspaces root, points `JRC_TEST_WORKSPACES_ROOT` at it,
     /// and returns the profile slug of a workspace containing `configYAML`
     /// (no config.yaml written when nil).
+    /// Under a `profiles:` block the MDM slot is the owner: its own profile is silent, a case
+    /// variant is refused. Another name never gets here, `refusesProCommand` refuses it first.
+    func test_backupConfigProfile_readsTheProfilesBlock() throws {
+        let profile = try makeWorkspace(configYAML: nil)
+        try writeConfig("jamf_cli:\n  profile: other\nprofiles:\n  jamf_pro: \"\(profile)\"\n",
+                        for: profile)
+        let quiet = LineCollector()
+        XCTAssertNoThrow(try CLIBridge.checkBackupConfigProfile(profile) { quiet.append($0) })
+        XCTAssertTrue(quiet.lines.isEmpty, "jamf_cli.profile is not read under the block")
+
+        let owner = profile.uppercased()
+        try writeConfig("profiles:\n  jamf_pro: \"\(owner)\"\n", for: profile)
+        XCTAssertThrowsError(try CLIBridge.checkBackupConfigProfile(profile) { _ in }) { error in
+            XCTAssertEqual(
+                error as? CLIBridgeError, .profileCaseConflict(profile: profile, owner: owner))
+        }
+    }
+
     private func makeWorkspace(configYAML: String?) throws -> String {
         let root = try makeTempDir()
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)

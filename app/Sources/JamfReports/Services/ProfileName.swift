@@ -4,6 +4,12 @@ import Foundation
 /// checks only the URL and auth method), so the app keeps the exact name and encodes it only here.
 enum ProfileName {
 
+    /// The error text for a name that failed `ProfileService.isValid`. Such a name can hold
+    /// control characters, so it is printed through `ConfigSchema.displayText`.
+    static func invalidMessage(_ name: String) -> String {
+        "Invalid profile name: \(ConfigSchema.displayText(name))"
+    }
+
     /// Why a name can't be used. The app takes every other name jamf-cli takes.
     enum Problem: Equatable, Sendable {
         case empty
