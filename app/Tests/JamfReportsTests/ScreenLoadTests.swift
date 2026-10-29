@@ -307,6 +307,56 @@ final class ScreenLoadTests: XCTestCase {
         }
     }
 
+    /// Trends and the Overview share one store that outlives both screens: a screen waits for
+    /// the data of the profile it shows, through a switch away and back before a read lands.
+    func testTrendsWaitForTheProfileTheyShow() {
+        let store = TrendStore()
+        XCTAssertFalse(store.isLoaded(for: "a"), "nothing has loaded yet")
+
+        let snapshot = TrendStore.TrendSnapshot(
+            summaries: [DailySummary(
+                date: "2026-07-01", totalDevices: 3, fileVaultPct: 98, compliancePct: 90,
+                staleCount: 1, osCurrentPct: 80, crowdstrikePct: 95, patchPct: 88)],
+            latestSnapshotDate: nil, hasEverFetchedLive: true, bandSeries: [:], baselineNames: [])
+        store.apply(snapshot, profile: "a", range: .all, generation: store.beginLoading())
+        XCTAssertTrue(store.isLoaded(for: "a"))
+        XCTAssertFalse(store.isLoaded(for: "b"), "a's data is not b's")
+
+        // a, then b, then a again before b's scan lands.
+        store.clearForProfileSwitch(to: "b")
+        let bScan = store.beginLoading()
+        store.clearForProfileSwitch(to: "a")
+        let aScan = store.beginLoading()
+        XCTAssertFalse(store.isLoaded(for: "a"), "the loading card shows, not a's empty state")
+        XCTAssertTrue(store.isEmpty)
+
+        store.apply(snapshot, profile: "b", range: .all, generation: bScan)
+        XCTAssertFalse(store.isLoaded(for: "b"), "b's late scan was dropped")
+        store.apply(snapshot, profile: "a", range: .all, generation: aScan)
+        XCTAssertTrue(store.isLoaded(for: "a"))
+    }
+
+    func testFleetOverviewIsReadForTheKeyItIsShownUnder() {
+        let live = WorkspaceStore(
+            demoMode: false, tickerRegistrar: StubTickerRegistrar(), jamfCLIProfileNames: { [] })
+        let demo = WorkspaceStore(
+            demoMode: true, tickerRegistrar: StubTickerRegistrar(), jamfCLIProfileNames: { [] })
+        live.profile = "alpha"
+        demo.profile = "alpha"
+        XCTAssertNotEqual(live.fleetOverviewLoadKey, demo.fleetOverviewLoadKey,
+                          "demo mode under the same profile name reloads")
+        let overview = FleetWorkspaceOverview(profile: "alpha", summary: nil)
+        XCTAssertNotNil(overview.shown(for: "alpha"))
+        XCTAssertNil(overview.shown(for: "beta"))
+    }
+
+    func testComputersLoadOffMain() async throws {
+        try workspaceWithComputer(serial: "C02TEST0001")
+        await assertScreenLoad("Computers", loaded: { !$0.devices.isEmpty }) {
+            DeviceInventoryService.load(profile: "match", demoMode: false)
+        }
+    }
+
     func testDeviceLookupIndexLoadsOffMain() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ScreenLoad-\(UUID().uuidString)", isDirectory: true)

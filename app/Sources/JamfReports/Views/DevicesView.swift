@@ -17,7 +17,10 @@ struct DevicesView: View {
     /// on first appear, then stays user-adjustable for the session.
     @State private var didSeedStaleDays = false
     @State private var osFilter: String?
-    @State private var isLoading = false
+    /// True until the first read lands, so the first frame does not say nothing is collected.
+    @State private var isLoading = true
+    /// The `dataSource` `snapshot` was read for.
+    @State private var loadedSource: String?
     @State private var deviceDetail: DeviceDetail?
     @State private var deviceDetailState: DeviceDetailState = .idle
     @State private var deviceDetailRequestKey = ""
@@ -267,7 +270,7 @@ struct DevicesView: View {
             staleDays = min(max(configured, AppConstants.staleDaysMin), AppConstants.staleDaysMax)
         }
         .onChange(of: workspace.pendingDevicesFilter, initial: true) { applyPendingFilter() }
-        .task(id: "\(workspace.profile)-\(workspace.demoMode)") {
+        .task(id: dataSource) {
             await reload()
         }
         .task(id: deviceDetailTaskID) {
@@ -1312,24 +1315,31 @@ struct DevicesView: View {
         return device.user
     }
 
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.profile)-\(workspace.demoMode)" }
+
+    /// Each phase paints only while `source` is still the screen's: the key task is cancelled
+    /// on a switch, but a refresh task and the detached reads are not, so a read for another
+    /// profile would otherwise land on this one.
     private func reload() async {
+        let source = dataSource
         let profile = workspace.profile
         let demoMode = workspace.demoMode
+        if loadedSource != source { clearForNewSource() }
         isLoading = true
         let loaded = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.load(profile: profile, demoMode: demoMode)
         }.value
+        guard isCurrent(source) else { return }
         applyLoaded(snapshot: loaded)
-        sourceDates = await Task.detached(priority: .userInitiated) {
+        loadedSource = source
+        let dates = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode)
         }.value
-        if demoMode {
-            ddmSnapshot = .empty; healthSnapshot = .empty
-        } else {
-            ddmSnapshot = await Task.detached(priority: .userInitiated) {
-                DDMDeviceStatusService.load(profile: profile) }.value
-            healthSnapshot = await Task.detached(priority: .userInitiated) {
-                MDMCommandHealthService.load(profile: profile) }.value
+        guard isCurrent(source) else { return }
+        sourceDates = dates
+        guard await loadDeviceHealth(source: source, profile: profile, demoMode: demoMode) else {
+            return
         }
         if selectedID == nil || !loaded.devices.contains(where: { $0.id == selectedID }) {
             selectedID = loaded.devices.first?.id
@@ -1341,14 +1351,45 @@ struct DevicesView: View {
         let agentColumn = workspace.configState.securityAgents
             .first { !$0.column.trimmingCharacters(in: .whitespaces).isEmpty }?
             .column ?? ""
+        var lookup: [String: String] = [:]
         if !demoMode, !agentColumn.isEmpty {
-            applyLoaded(agentStatusLookup: await Task.detached(priority: .userInitiated) {
+            lookup = await Task.detached(priority: .userInitiated) {
                 RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
-            }.value)
-        } else {
-            applyLoaded(agentStatusLookup: [:])
+            }.value
         }
+        guard isCurrent(source) else { return }
+        applyLoaded(agentStatusLookup: lookup)
         isLoading = false
+    }
+
+    private func isCurrent(_ source: String) -> Bool {
+        !Task.isCancelled && source == dataSource
+    }
+
+    /// Nothing of the previous profile stays on screen while the new one loads.
+    private func clearForNewSource() {
+        loadedSource = nil
+        applyLoaded(snapshot: .empty, agentStatusLookup: [:])
+        sourceDates = [:]
+        ddmSnapshot = .empty
+        healthSnapshot = .empty
+    }
+
+    /// The DDM and MDM command-health snapshots; false when the source changed while they read.
+    private func loadDeviceHealth(source: String, profile: String, demoMode: Bool) async -> Bool {
+        guard !demoMode else {
+            ddmSnapshot = .empty
+            healthSnapshot = .empty
+            return true
+        }
+        let ddm = await Task.detached(priority: .userInitiated) {
+            DDMDeviceStatusService.load(profile: profile) }.value
+        let health = await Task.detached(priority: .userInitiated) {
+            MDMCommandHealthService.load(profile: profile) }.value
+        guard isCurrent(source) else { return false }
+        ddmSnapshot = ddm
+        healthSnapshot = health
+        return true
     }
 
     /// The one writer of `snapshot` and `agentStatusLookup`: the cached list and ratings are

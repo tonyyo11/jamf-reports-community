@@ -265,7 +265,8 @@ struct TrendsView: View {
 
     var body: some View {
         PageScaffold(spacing: 16) {
-            if !workspaceStore.demoMode && trendStore.isLoading && trendStore.isEmpty {
+            if !workspaceStore.demoMode && (!trendStore.isLoaded(for: workspaceStore.profile)
+                || (trendStore.isLoading && trendStore.isEmpty)) {
                 trendsLoadingState
             } else if !workspaceStore.demoMode && trendStore.isEmpty {
                 emptyState
@@ -330,7 +331,6 @@ struct TrendsView: View {
     private func loadTrendsOffMain() async {
         guard !workspaceStore.demoMode else { return }
         let profile = workspaceStore.profile
-        let r = range
         // Profile switch: drop the previous tenant's data so the loading state
         // (not stale data) shows during the new scan; same-profile is a no-op.
         trendStore.clearForProfileSwitch(to: profile)
@@ -338,7 +338,8 @@ struct TrendsView: View {
         let snapshot = await Task.detached(priority: .userInitiated) {
             TrendStore.computeSnapshot(profile: profile)
         }.value
-        trendStore.apply(snapshot, profile: profile, range: r, generation: generation)
+        // The range as it is now: a range picked during the scan already filtered the store.
+        trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
         await trendStore.backfillHistory(profile: profile)
     }
 

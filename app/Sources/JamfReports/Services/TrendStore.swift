@@ -168,6 +168,12 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         filterSummaries(range: range)
     }
 
+    /// Whether the held summaries were read for `profile`. False before the first load, after a
+    /// profile switch cleared them, and while another profile's data is held (the store outlives
+    /// the screens), so a screen shows its loading state instead of an empty state or the
+    /// previous profile's data.
+    func isLoaded(for profile: String) -> Bool { currentProfile == profile }
+
     /// Clear displayed data when switching to a DIFFERENT profile, so the loading
     /// overlay shows for the new profile rather than the previous tenant's data
     /// during the scan. A same-profile reload (tab re-entry) is a no-op — data

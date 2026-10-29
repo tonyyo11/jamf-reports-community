@@ -32,7 +32,10 @@ versions in this repository map to git tags.
   Extension Attributes, Jamf Protect, Patch Compliance, OS Updates, Groups & Searches, Policy &
   Profile Health, Compliance Benchmarks, Declarative Device Management, Audit and Device Lookup.
   Nine of them show a loading card until the data is ready, and switching profile or turning demo
-  mode on or off shows the new data only. (#305)
+  mode on or off shows the new data only. Security Posture, Compliance Posture, School Devices,
+  School Overview, Trends, Fleet Overview and Computers do the same: while a profile loads they
+  show a loading state, not the previous profile's data or "nothing collected", and a read that
+  finishes after you have switched is dropped. (#305)
 
 ### Fixed
 
