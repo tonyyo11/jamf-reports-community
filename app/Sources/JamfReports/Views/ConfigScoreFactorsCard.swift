@@ -47,10 +47,24 @@ struct ScoreFactorsSnapshot: Sendable, Equatable {
 struct ScoreFactorsCard: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
-    @State private var snapshot = ScoreFactorsSnapshot()
+    @State private var read = ScoreFactorsSnapshot()
+    /// The profile `read` was read for.
+    @State private var loadedProfile: String?
     @State private var saveFailure: String?
     /// What a save did not keep (a backup was made), shown while its profile is live.
     @State private var saveNote: ProfileSaveNote?
+
+    /// What was read, only while it is this profile's: the default list below is built from
+    /// it, and an edit writes that whole list.
+    private var snapshot: ScoreFactorsSnapshot {
+        Self.visible(read, loadedProfile: loadedProfile, for: workspace.profile)
+    }
+
+    static func visible(
+        _ read: ScoreFactorsSnapshot, loadedProfile: String?, for profile: String
+    ) -> ScoreFactorsSnapshot {
+        loadedProfile == profile ? read : ScoreFactorsSnapshot()
+    }
 
     private var agentNames: [String] {
         workspace.configState.securityAgents.map(\.name)
@@ -80,7 +94,8 @@ struct ScoreFactorsCard: View {
                 EDRAgentPickerRow(names: agentNames, onFailure: { saveFailure = $0 },
                                   onSaved: noting)
             }
-            .disabled(workspace.demoMode)
+            // An edit before this profile's read lands would write a list built without it.
+            .disabled(workspace.demoMode || loadedProfile != workspace.profile)
             .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
         }
         .accessibilityElement(children: .contain)
@@ -143,11 +158,13 @@ struct ScoreFactorsCard: View {
     private func reload() async {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
-        let loaded = await Task.detached(priority: .utility) {
-            ScoreFactorsSnapshot.load(profile: profile)
-        }.value
-        guard profile == workspace.profile else { return }
-        snapshot = loaded
+        if loadedProfile != profile { loadedProfile = nil; read = ScoreFactorsSnapshot() }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { profile == workspace.profile && !workspace.demoMode },
+            read: { ScoreFactorsSnapshot.load(profile: profile) }
+        ) else { return }
+        read = loaded
+        loadedProfile = profile
     }
 
     /// Shares do not depend on weights, so only a changed list or profile reloads them.

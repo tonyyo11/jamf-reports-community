@@ -13,7 +13,7 @@ struct Backup: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         // Before the tick lock and before anything is written, once: the bridge would print
         // the same refusal and ArgumentParser would print it again as an error.
         if let refusal = Self.refusal(profile: profile) { CLIRun.fail(refusal) }
@@ -102,7 +102,7 @@ struct Check: AsyncParsableCommand {
     @Flag(help: "Emit machine-readable JSON.") var json = false
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         guard json else { Foundation.exit(runCheck(profile: profile)) }
 
         // JSON mode reports the doctor alone. The plain path's extra lines
@@ -211,7 +211,7 @@ struct DiagnosticBundleCommand: AsyncParsableCommand {
     @Option(help: "Workspace profile slug.") var profile: String
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         let url = try DiagnosticBundleService.generate(profile: profile)
         print(url.path)
     }
@@ -230,7 +230,7 @@ struct Device: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let refusal = await Self.refusal(profile: profile) { CLIRun.fail(refusal) }
         let bridge = await MainActor.run { CLIBridge() }
         guard let result = await bridge.deviceDetailWithProvenance(
@@ -253,7 +253,7 @@ struct SchoolCheck: AsyncParsableCommand {
     @Option(help: "Workspace profile slug.") var profile: String
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         Foundation.exit(runSchoolCheck(profile: profile))
     }
 }

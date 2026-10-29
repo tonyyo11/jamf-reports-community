@@ -11,3 +11,9 @@ StubTickerRegistrar               # TickerRegistrar test double; tests run the t
 invokeRetryForTesting             # ErrorStateView: fires the retry action without a rendered button
 controlTextDidChange              # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
 controlTextDidEndEditing          # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
+
+# --- jamf-cli command catalog -------------------------------------------------
+isCanonical  # CommandCatalog query: the help-contract test pins which app commands go through an alias
+isDestructive  # CommandCatalog query: the help-contract test asserts the app issues no destructive command
+isPreview  # CommandCatalog query for the catalog's preview column; read by the catalog tests
+privilegesListed  # CommandCatalog query: "lists none" (nil) versus "not in the catalog" (nil path), asserted by the catalog tests

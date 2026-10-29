@@ -141,10 +141,11 @@ struct CoreDashboard: Sendable {
         ]
     }
 
-    /// A Protect tab is written only while protect.enabled is on, as in the HTML report: a
-    /// workspace that turned Protect off keeps its old `protect-*` snapshots on disk.
+    /// A Protect tab is written only while the environment has Protect
+    /// (`EnvironmentProfiles.runsProtect`), as in the HTML report: a workspace that turned
+    /// Protect off keeps its old `protect-*` snapshots on disk.
     private func gatedOnProtect(_ write: @escaping () throws -> Void) -> () throws -> Void {
-        let enabled = config.protect?.isEnabled == true
+        let enabled = EnvironmentProfiles.runsProtect(config)
         return {
             guard enabled else { throw CoreDashboardError.protectDisabled }
             try write()

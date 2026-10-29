@@ -54,7 +54,7 @@ struct Schedules: AsyncParsableCommand {
             mode: String, cadence: String, tiers: String?, disabled: Bool
         ) throws -> ScheduleRecord {
             guard ProfileService.isValid(profile) else {
-                throw Invalid(description: "invalid profile '\(profile)'")
+                throw Invalid(description: "invalid profile '\(ConfigSchema.displayText(profile))'")
             }
             guard mode != Schedule.RunMode.retiredCSVAssistedRaw else {
                 throw Invalid(description: "csv-assisted mode was retired in 2.11; use jamf-cli-full")

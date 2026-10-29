@@ -9,7 +9,10 @@ struct SchoolOverviewView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: SchoolFleetService.Snapshot = .empty
     @State private var checklist: GettingStartedChecklist?
-    @State private var reloadToken = 0
+    /// The `dataSource` `snapshot` and `checklist` were read for; the content waits for it to
+    /// match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
     private var staleDays: Int { Int(workspace.configState.staleDeviceDays) ?? 30 }
 
@@ -21,19 +24,23 @@ struct SchoolOverviewView: View {
                 subtitle: workspace.profile,
                 lastModified: snapshot.collectedAt
             )
-            if let checklist, !checklist.isComplete {
-                GettingStartedCard(checklist: checklist, onAction: perform)
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "overview")
+            } else {
+                if let checklist, !checklist.isComplete {
+                    GettingStartedCard(checklist: checklist, onAction: perform)
+                }
+                if snapshot.devicesDate != nil {
+                    SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
+                }
+                if !snapshot.overview.isEmpty { resourcesCard }
+                if !snapshot.isDetected { emptyState }
             }
-            if snapshot.devicesDate != nil {
-                SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
-            }
-            if !snapshot.overview.isEmpty { resourcesCard }
-            if !snapshot.isDetected { emptyState }
         }
         .tint(Theme.Colors.goldBright)
-        .task(id: "\(workspace.profile)#\(reloadToken)") { await reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reloadToken += 1
+            reloads += 1
         }
     }
 
@@ -65,27 +72,38 @@ struct SchoolOverviewView: View {
 
     // MARK: - Loading
 
-    private func reload() async {
-        guard !workspace.demoMode else { return }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty; checklist = nil }
         let profile = workspace.profile
-        guard ProfileService.isValid(profile) else { return }
+        guard !workspace.demoMode, ProfileService.isValid(profile) else {
+            loadedSource = source
+            return
+        }
         let connected = !workspace.profiles.isEmpty
-        let (loaded, scheduled, reported) = await Task.detached(priority: .utility) {
-            let loaded = SchoolFleetService.load(profile: profile)
-            let hasAgent = ScheduleStore().load().map { $0.toSchedule() }
-                .contains { $0.profile == profile }
-            let policy = AutomationPolicy.current()
-            let scheduled = scheduleCovered(
-                hasAgent: hasAgent, policyIsManaged: policy.isManaged,
-                excluded: policy.excludedProfiles.contains(profile))
-            let reported = !ReportLibrary().list(profile: profile).isEmpty
-            return (loaded, scheduled, reported)
-        }.value
-        guard profile == workspace.profile else { return }
+        guard let (loaded, scheduled, reported) = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: {
+                let loaded = SchoolFleetService.load(profile: profile)
+                let hasAgent = ScheduleStore().load().map { $0.toSchedule() }
+                    .contains { $0.profile == profile }
+                let policy = AutomationPolicy.current()
+                let scheduled = scheduleCovered(
+                    hasAgent: hasAgent, policyIsManaged: policy.isManaged,
+                    excluded: policy.excludedProfiles.contains(profile))
+                let reported = !ReportLibrary().list(profile: profile).isEmpty
+                return (loaded, scheduled, reported)
+            }
+        ) else { return }
         snapshot = loaded
         checklist = .buildSchool(
             connected: connected, collected: loaded.isDetected,
             scheduled: scheduled, reported: reported)
+        loadedSource = source
     }
 
     private func perform(_ step: GettingStartedStep) {
@@ -93,7 +111,7 @@ struct SchoolOverviewView: View {
         case .collect:
             Task {
                 await workspace.runFirstCollect()
-                reloadToken += 1
+                reloads += 1
             }
         default:
             NotificationCenter.default.post(

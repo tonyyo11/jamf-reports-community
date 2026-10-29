@@ -6,6 +6,8 @@ struct BackupsView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var bridge = CLIBridge()
     @State private var backups: [BackupRecord] = []
+    /// The `dataSource` `backups` was listed for; the list and its Delete and Diff wait for it.
+    @State private var loadedSource: String?
     @State private var selectedBackups = Set<BackupRecord.ID>()
     @State private var backupLabel = ""
     @State private var backupOutput: [CLIBridge.LogLine] = []
@@ -97,10 +99,14 @@ struct BackupsView: View {
     var body: some View {
         PageScaffold(spacing: 16) {
             header
-            summary
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: "backups")
+            } else {
+                summary
+            }
             errorBanner
             protectBanner
-            backupsTable
+            if loadedSource == dataSource { backupsTable }
             logCard
         }
         .sheet(isPresented: $showingDiff) {
@@ -117,10 +123,15 @@ struct BackupsView: View {
         } message: {
             Text("This cannot be undone.")
         }
-        .task(id: workspace.profile) {
-            // The previous workspace's switches must not show (or write) for this one.
+        .task(id: dataSource) {
+            // The previous workspace's switches and backups must not show (or write) for this one.
             syncedChoice = nil
             proChoice = nil
+            if loadedSource != dataSource {
+                loadedSource = nil
+                backups = []
+                selectedBackups = []
+            }
             // Sweep abandoned .tmp-* staging dirs (interrupted backups) before
             // listing — production accumulated one that was months old.
             if !workspace.demoMode {
@@ -144,7 +155,8 @@ struct BackupsView: View {
     private var header: some View {
         PageHeader(
             kicker: "Configuration Backups",
-            title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
+            title: loadedSource == dataSource
+                ? "\(backups.count) backup\(backups.count == 1 ? "" : "s")" : "Backups",
             subtitle: backupsFolderDisplayPath,
             wrapsTrailing: true
         ) {
@@ -173,6 +185,7 @@ struct BackupsView: View {
                     }
                     .disabled(
                         workspace.demoMode || isRunningBackup || isRunningDiff
+                            || loadedSource != dataSource
                             || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     PNPButton(
@@ -729,17 +742,25 @@ struct BackupsView: View {
         }
     }
 
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
     private func reload() async {
+        let source = dataSource
         let profile = workspace.profile
         // Walks every backup folder and reads its manifest, which can be slow on a synced share.
-        let listed = workspace.demoMode
-            ? DemoData.backups
-            : await Task.detached(priority: .userInitiated) {
-                BackupLibrary().list(profile: profile)
-            }.value
-        guard profile == workspace.profile else { return }
+        let listed: [BackupRecord]?
+        if workspace.demoMode {
+            listed = DemoData.backups
+        } else {
+            listed = await ScreenLoad.paint(
+                stillCurrent: { source == dataSource },
+                read: { BackupLibrary().list(profile: profile) })
+        }
+        guard let listed else { return }
         backups = listed
         selectedBackups = selectedBackups.intersection(Set(backups.map(\.id)))
+        loadedSource = source
     }
 
     @MainActor
@@ -892,8 +913,10 @@ struct BackupLibrary {
 
     private func parseDate(_ text: String?) -> Date? {
         guard let text else { return nil }
-        return ISO8601DateFormatter().date(from: text)
+        return Self.isoFormatter.date(from: text)
     }
+
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
 
     private struct BackupManifest {
         var label = ""

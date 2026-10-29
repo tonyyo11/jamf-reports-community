@@ -91,7 +91,7 @@ final class ProtectConnectionTests: XCTestCase {
         let config = try ConfigLoader.load(from: configURL)
         XCTAssertEqual(config.protect?.enabled, false)
         XCTAssertNil(config.protect?.profile)
-        XCTAssertEqual(ConnectedProducts.read(configURL: configURL, workspace: profile), .none)
+        XCTAssertNil(EnvironmentProfiles.read(configURL: configURL, workspace: profile).protect)
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertTrue(text.contains("extra: keep-me"))
         XCTAssertTrue(text.contains("stale_device_days: 21"))

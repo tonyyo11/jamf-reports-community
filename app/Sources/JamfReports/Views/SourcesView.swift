@@ -16,7 +16,7 @@ struct SourcesView: View {
     @State private var doctorRunning = false
     @State private var cliBridge = CLIBridge()
     @State private var showingProtectConnect = false
-    @State private var connectedProducts = ConnectedProducts.none
+    @State private var environment = EnvironmentProfiles.none
     @State private var cliProfileNames: [String]?
     @State private var showingEAWalkthrough = false
     @State private var showingReauth = false
@@ -73,7 +73,7 @@ struct SourcesView: View {
             familiesCard
             additionalProductsCard
         }
-        .sheet(isPresented: $showingProtectConnect, onDismiss: reloadConnectedProducts) {
+        .sheet(isPresented: $showingProtectConnect, onDismiss: reloadEnvironment) {
             ProductConnectSheetView(profileSlug: workspace.profile)
         }
         .sheet(isPresented: $showingEAWalkthrough) {
@@ -99,14 +99,9 @@ struct SourcesView: View {
             reload()
             reloadCapabilities()
         }
-        .onChange(of: workspace.profile) { _, _ in
-            schoolResolved = nil
-            schoolPlatformCheck = nil
-            doctorOutcome = nil
-            doctorRunning = false
-            reload()
-            reloadCapabilities()
-        }
+        .onChange(of: workspace.profile) { _, _ in sourceChanged() }
+        // The same profile name can be the demo workspace or a real one.
+        .onChange(of: workspace.demoMode) { _, _ in sourceChanged() }
         .confirmationDialog(
             "Elevate \"\(pendingScopeProfile ?? "")\" to Full Admin?",
             isPresented: $showElevateScopeConfirm,
@@ -690,11 +685,23 @@ struct SourcesView: View {
         .padding(.vertical, 8)
     }
 
+    /// The profile or demo mode changed: nothing of the previous source stays on screen.
+    private func sourceChanged() {
+        schoolResolved = nil
+        sourcesPlan = nil
+        cachedAt = [:]
+        schoolPlatformCheck = nil
+        doctorOutcome = nil
+        doctorRunning = false
+        reload()
+        reloadCapabilities()
+    }
+
     private func reload() {
         guard !workspace.demoMode else {
             // The demo workspace, never this Mac's: no folder is read.
             families = DemoData.snapshotFamilies(for: workspace.profile)
-            connectedProducts = .none
+            environment = .none
             sourcesPlan = CollectSourcesPlan.build(.init(
                 product: .jamfPro, profile: workspace.profile,
                 protectProfile: DemoData.org.profile + "-protect"))
@@ -705,7 +712,7 @@ struct SourcesView: View {
             resolutionError = nil
             return
         }
-        reloadConnectedProducts()
+        reloadEnvironment()
         reloadSourcesPlan()
         families = SnapshotArchiveService().families(profile: workspace.profile)
 
@@ -722,11 +729,11 @@ struct SourcesView: View {
         }
     }
 
-    private func reloadConnectedProducts() {
-        connectedProducts = workspace.demoMode
-            ? .none : ConnectedProducts.read(profile: workspace.profile)
+    private func reloadEnvironment() {
+        environment = workspace.demoMode
+            ? .none : EnvironmentProfiles.read(workspace: workspace.profile)
         workspace.refreshProtectConnection()
-        guard let named = connectedProducts.protectProfile else {
+        guard let named = environment.protect else {
             cliProfileNames = nil
             return
         }
@@ -738,7 +745,7 @@ struct SourcesView: View {
                 ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]).map(\.name)
             }.value
             guard profile == workspace.profile,
-                  connectedProducts.protectProfile == named else { return }
+                  environment.protect == named else { return }
             cliProfileNames = names
         }
     }
@@ -757,7 +764,8 @@ struct SourcesView: View {
                 }
                 let detected = ProfileProductType.detect(from: config, profile: profile)
                 let auth = ProfileAuthMethod.resolve(profile: profile)
-                let protectProfile = ConnectedProducts.read(profile: profile).protectProfile
+                let protectProfile = EnvironmentProfiles.resolve(
+                    config: config, workspace: profile).protect
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
@@ -958,11 +966,11 @@ struct SourcesView: View {
                 ProtectProductControl(
                     workspace: workspace.profile,
                     state: ProtectConnection.state(
-                        configured: connectedProducts.protectProfile,
+                        configured: environment.protect,
                         cliProfiles: cliProfileNames),
                     demoMode: workspace.demoMode,
                     onConnect: { showingProtectConnect = true },
-                    onDisconnected: reloadConnectedProducts)
+                    onDisconnected: reloadEnvironment)
 
                 if !isSchoolWorkspace {
                     Text("Jamf School uses its own workspace: add one with Settings › Add "

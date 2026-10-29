@@ -282,7 +282,7 @@ extension HtmlReport {
     }
 
     /// Protect's kind directories sit beside every other snapshot; nil when Protect is off.
-    private var protectDir: URL? { config.protect?.isEnabled == true ? dataDir : nil }
+    private var protectDir: URL? { EnvironmentProfiles.runsProtect(config) ? dataDir : nil }
 
     // MARK: Group summary lines
 

@@ -26,7 +26,7 @@ struct Generate: AsyncParsableCommand {
     var csvFolder = false
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let output { CLIRun.requireSafeOutput(output) }
         let resolved = try CLIRun.resolveTemplate(template)
         let (config, dataDir) = try CLIRun.loadProfile(profile)
@@ -72,7 +72,7 @@ struct Generate: AsyncParsableCommand {
             if isSchool {
                 generated = try await ReportEngine.schoolGenerateReport(
                     config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                    csvFolder: csvFolder, onLine: onLine)
+                    csvFolder: csvFolder, now: signals.startedAt, onLine: onLine)
             } else {
                 generated = try await engine.generateReport(
                     outputURL: outputURL, template: resolved, csvFolder: csvFolder, onLine: onLine)
@@ -124,7 +124,7 @@ struct Collect: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         let config = collectRoutingConfig(profile: profile)
         // Before the run record, the signals and the tick lock: nothing is created for a
         // profile that belongs to another product.
@@ -187,7 +187,7 @@ struct Html: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let output { CLIRun.requireSafeOutput(output) }
         let (config, dataDir) = try CLIRun.loadProfile(profile)
         if let refusal = Self.refusal(config: config, profile: profile) { CLIRun.fail(refusal) }

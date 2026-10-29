@@ -1045,20 +1045,18 @@ struct ReportEngine: Sendable {
     /// The summary's `mobile` object from a `mobile-devices-list` snapshot, judged now against
     /// the cached iOS feed, with update errors from a `--scan-failures` snapshot when one exists.
     private func mobileFigures(_ data: Data, updateFailures: Data?) -> MobileSummary? {
-        let iOSRows = SOFAFeedService.load(dataDir: dataDir).rows
-            .filter { $0.platform == SOFAFeedService.platformLabels["ios"] }
         return MobileSummary.fromMobileDevicesList(
-            data, latestByMajor: SOFAFeedService.latestByMajor(iOSRows),
+            data, latestByMajor: SOFAFeedService.iOSLatestByMajor(
+                SOFAFeedService.load(dataDir: dataDir).rows),
             staleDays: config.thresholds?.resolvedStaleDays ?? 30, now: Date(),
             updateErrors: updateFailures.flatMap(Self.mobileUpdateErrorCount))
     }
 
-    /// Rows of a `--scan-failures` snapshot's `error_devices` that are not computers; nil for a
-    /// summary-only snapshot, whose empty list says nothing.
+    /// Devices a `--scan-failures` snapshot's `error_devices` lists that are not computers (a
+    /// device with errors for two products counts once); nil for a summary-only snapshot, whose
+    /// empty list says nothing.
     static func mobileUpdateErrorCount(_ data: Data) -> Int? {
-        guard let scan = try? JSONDecoder().decode([UpdateFailuresReport].self, from: data).first
-        else { return nil }
-        return scan.errorDevices.filter { $0.deviceType.uppercased() != "COMPUTER" }.count
+        MobileFinding.updateErrors(in: data)?.count
     }
 
     /// The day's summary for a fleet with no Macs and some mobile devices: `totalDevices` is
@@ -1931,17 +1929,18 @@ struct ReportEngine: Sendable {
     static let defaultAuthConfirmationProbe: AuthConfirmationProbe =
         authConfirmationProbe(timeout: authProbeTimeout)
 
+    /// `--refresh` forces an exchange; plain `auth token` echoes the cached token file.
+    static func authRefreshArguments(profile: String) -> [String] {
+        ["-p", profile, "pro", "auth", "token", "--refresh", "--output", "json", "--no-input"]
+    }
+
     /// The real probe with a limit; a call that gets no answer in time is `unconfirmed`.
     static func authConfirmationProbe(timeout: TimeInterval) -> AuthConfirmationProbe {
         { profile, bin in
             let probeBridge = CLIBridge()
             guard let (exitCode, _) = try? await probeBridge.runAndCapture(
                 executable: bin,
-                // --refresh forces an exchange; plain `auth token` echoes the cached token file.
-                arguments: [
-                    "-p", profile, "pro", "auth", "token", "--refresh",
-                    "--output", "json", "--no-input",
-                ],
+                arguments: authRefreshArguments(profile: profile),
                 environment: CLIBridge.environmentForJamfCLI(),
                 timeout: timeout,
                 onLine: { _ in }
@@ -2228,7 +2227,7 @@ struct ReportEngine: Sendable {
                 )
             } else if kind == Self.dashboardKind {
                 let dashboardProtect = await Self.dashboardProtect(
-                    SharedConfigPin.protectAllowed(profile: profile) ? loadedConfig?.protect : nil,
+                    Self.dashboardProtectProfile(config: loadedConfig, profile: profile),
                     bin: bin, onLine: onLine)
                 result = try await Self.collectDashboard(
                     profile: profile,
@@ -3136,6 +3135,11 @@ struct ReportEngine: Sendable {
     /// `patch-release-dates_<ts>.json` snapshot.
     ///
     /// Reads the current patch-status snapshot for the title list, then runs
+    static func patchDefinitionArguments(profile: String, titleId: String) -> [String] {
+        ["-p", profile, "pro", "patch-software-title-configurations",
+         "definitions", titleId, "--page-size", "100", "--output", "json"]
+    }
+
     /// `pro patch-software-title-configurations definitions <id>` for each title.
     /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
     /// Non-fatal: warn and skip titles that fail rather than aborting the run. Calls that time
@@ -3176,8 +3180,7 @@ struct ReportEngine: Sendable {
                              text: "[warn] patch-definitions: skipping title with an unsafe id"))
                 continue
             }
-            let args = ["-p", profile, "pro", "patch-software-title-configurations",
-                        "definitions", titleId, "--page-size", "100", "--output", "json"]
+            let args = patchDefinitionArguments(profile: profile, titleId: titleId)
             let captureResult = try? await bridge.runAndCapture(
                 executable: bin, arguments: args,
                 environment: CLIBridge.environmentForJamfCLI(),
@@ -3834,6 +3837,7 @@ struct ReportEngine: Sendable {
     ///
     /// Mirrors the Python `cmd_school_generate` function.
     ///
+    /// - Parameter now: The run's start, for the sheets' "Generated" stamp and check-in ages.
     /// - Returns: A list of `SheetFailure` entries for school sheets that encountered
     ///            unexpected errors. Absent snapshots (`SchoolDashboardError.noCachedData`)
     ///            are graceful skips and are not included.
@@ -3844,11 +3848,12 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         profile: String? = nil,
         csvFolder: Bool = false,
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         try await schoolGenerateReport(
             config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-            csvFolder: csvFolder, onLine: onLine).failures
+            csvFolder: csvFolder, now: now, onLine: onLine).failures
     }
 
     /// `schoolGenerate`, also naming the CSV folder it wrote (nil when none).
@@ -3858,6 +3863,7 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         profile: String? = nil,
         csvFolder: Bool = false,
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> GeneratedReport {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
@@ -3871,7 +3877,8 @@ struct ReportEngine: Sendable {
         let summaries = profile.flatMap { try? WorkspacePaths.summariesDir(for: $0) }
             .map(SummaryJSONParser.parseDirectory) ?? []
         let core = SchoolDashboard(
-            config: config, dataDir: dataDir, workbook: workbook, summaries: summaries)
+            config: config, dataDir: dataDir, workbook: workbook, summaries: summaries,
+            now: now)
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
         let (_, schoolFailures) = core.writeAll(sheets: sheets, onLine: onLine)
 
@@ -4653,7 +4660,7 @@ enum ReportEngineError: Error, LocalizedError {
                 + "\(JamfCLIInstaller.minimumSupportedVersion), the oldest Jamf Reports can run. "
                 + "Update jamf-cli in Settings."
         case .invalidProfile(let p):
-            return "Invalid profile name '\(p)'."
+            return "Invalid profile name '\(ConfigSchema.displayText(p))'."
         case .profileMismatch(let named, let run):
             return "config.yaml sets jamf_cli.profile to "
                 + "'\(ConfigSchema.displayText(named))' but this run is for "

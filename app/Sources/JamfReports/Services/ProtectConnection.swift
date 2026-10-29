@@ -2,7 +2,7 @@ import Foundation
 
 /// What Data Sources > Additional Products says about Jamf Protect, and the write that
 /// disconnects it. The connection itself is `protect.enabled/profile` in the workspace's
-/// config.yaml (`ConnectedProducts`); the jamf-cli profile it names lives in jamf-cli.
+/// config.yaml (`EnvironmentProfiles`); the jamf-cli profile it names lives in jamf-cli.
 enum ProtectConnection {
     enum State: Equatable, Sendable {
         case notConnected
@@ -45,7 +45,9 @@ enum ProtectConnection {
     static func disconnect(
         workspace profile: String, appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
-        let report = try ConfigService.saveBlock(key: "protect", profile: profile) { root in
+        let report = try ConfigService.saveBlock(
+            key: "protect", profile: profile, profilesSlot: "protect"
+        ) { root in
             guard var block = root.value(for: "protect")?.mapping else { return }
             block.set("enabled", value: .scalar(.bool(false)))
             block.entries.removeAll { $0.key == "profile" }

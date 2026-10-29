@@ -256,6 +256,11 @@ extension ReportEngine {
         return (results, await gate.stops(), await gate.stopCause())
     }
 
+    static func historyArguments(profile: String, id: String) -> [String] {
+        ["-p", profile, "pro", "classic-computer-history", "get", id,
+         "--subset", "commands", "--output", "json"]
+    }
+
     static func statusItemsArguments(profile: String, managementId: String) -> [String] {
         ["-p", profile, "pro", "declarative-device-management", "status-items", managementId,
          "--output", "json"]
@@ -270,10 +275,9 @@ extension ReportEngine {
         var status: CallOutcome = .notMade
 
         if await gate.allows(.history) {
-            history = await call(.history, [
-                "-p", profile, "pro", "classic-computer-history", "get", t.id,
-                "--subset", "commands", "--output", "json",
-            ], bridge: bridge, bin: bin, gate: gate, timeout: limits.timeout, onLine: onLine)
+            history = await call(
+                .history, historyArguments(profile: profile, id: t.id),
+                bridge: bridge, bin: bin, gate: gate, timeout: limits.timeout, onLine: onLine)
         }
 
         if t.ddmEnabled {

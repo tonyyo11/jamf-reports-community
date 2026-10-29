@@ -407,11 +407,11 @@ extension ConfigDoctorService {
     }
 
     private static func productValueRows(_ config: ReportConfig, profile: String) -> [DoctorRow] {
-        guard let school = config.schoolCli, school.isEnabled,
-              school.isForeign(toWorkspace: profile) else { return [] }
+        guard let foreign = EnvironmentProfiles.resolve(config: config, workspace: profile)
+            .foreignSchool else { return [] }
         return [valueRow(
             "school_cli.profile",
-            "school_cli.profile names \(shown(school.resolvedProfile)), not this workspace's "
+            "school_cli.profile names \(shown(foreign)), not this workspace's "
                 + "profile. The app collects Jamf Pro for this workspace and does not use that "
                 + "Jamf School profile here. Jamf School needs its own workspace.",
             "Set school_cli.enabled to false here, and add Jamf School as a separate "

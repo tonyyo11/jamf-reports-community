@@ -34,7 +34,15 @@ Scrub checklist (apply to every refreshed fixture):
 - Management IDs and similar GUIDs: freshly generated values, never tenant originals.
 - Tenant, org, and location names: clearly fictional placeholders.
 
-`timestamp/` is the one fixture that is not synthetic: `freetsa.tsr` is FreeTSA's real reply
+`jamf-cli/commands-<version>.json` is jamf-cli's own command catalog, not demo-tenant data: it is
+the output of `jamf-cli commands -o json`, with no hosts or IDs. Refresh it with
+`app/scripts/capture-jamf-cli-catalog.zsh` when the jamf-cli floor moves. The script sorts each
+row's `aliases` and rewrites the JSON with 2-space indent (jamf-cli prints aliases in map order),
+and the committed file has that one normalisation applied; nothing else is edited. Python
+writes Go's HTML escapes (`\u003e` for `>`, and `<`, `&`) as the characters themselves, so the
+text of the descriptions and gateway permissions differs from jamf-cli's raw bytes there.
+
+`timestamp/` is not synthetic either: `freetsa.tsr` is FreeTSA's real reply
 (https://freetsa.org/tsr, 2026-10-29 06:38:24 UTC) to `freetsa.tsq`, a query made with
 `openssl ts -query -digest <sha256> -sha256 -cert` over the SHA-256 of
 `report_fixture_2026-10-29_090000.manifest.json`, which `RunManifest.build` wrote over the

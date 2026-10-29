@@ -290,7 +290,7 @@ final class JamfCLIInstaller {
         }
 
         guard let output = JamfCLIProbe.run(
-            executable: binary, arguments: ["--version"], timeout: timeout
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: timeout
         ) else { return nil }
         let text = [
             String(data: output.stdout, encoding: .utf8),
@@ -301,6 +301,8 @@ final class JamfCLIInstaller {
 
         return parseVersion(from: text)
     }
+
+    nonisolated static let versionJSONArguments = ["version", "-o", "json"]
 
     /// Fetches the `specProVersion` field from `jamf-cli version -o json` (added in v1.18.0).
     ///
@@ -320,7 +322,7 @@ final class JamfCLIInstaller {
         }
 
         guard let output = JamfCLIProbe.run(
-            executable: binary, arguments: ["version", "-o", "json"], timeout: timeout
+            executable: binary, arguments: Self.versionJSONArguments, timeout: timeout
         ), output.exitCode == 0 else { return nil }
 
         let data = output.stdout

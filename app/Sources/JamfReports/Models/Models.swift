@@ -389,11 +389,21 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     static func dateInName(_ name: String) -> Date? {
         guard let match = name.wholeMatch(
             of: #/(backup_)?(\d{8})[T_](\d{6})(?:-\d+)?/#) else { return nil }
+        let formatter = match.output.1 == nil ? utcNameFormatter : localNameFormatter
+        return formatter.date(from: String(match.output.2) + String(match.output.3))
+    }
+
+    private static let utcNameFormatter = nameFormatter(utc: true)
+    /// The older tool wrote its names in local time: the zone is left unset so it follows the
+    /// default zone.
+    private static let localNameFormatter = nameFormatter(utc: false)
+
+    private static func nameFormatter(utc: Bool) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = match.output.1 == nil ? TimeZone(identifier: "UTC") : .current
+        if utc { formatter.timeZone = TimeZone(identifier: "UTC") }
         formatter.dateFormat = "yyyyMMddHHmmss"
-        return formatter.date(from: String(match.output.2) + String(match.output.3))
+        return formatter
     }
 
     /// VoiceOver label for a backup row: display name, file count, size, date.

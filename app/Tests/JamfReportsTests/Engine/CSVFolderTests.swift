@@ -62,7 +62,18 @@ final class CSVFolderTests: XCTestCase {
 
     func testTheJamfSchoolTabsHoldTheSameRows() async throws {
         try await withScratch { scratch in
-            let dataDir = try fixtureData(["school-ibeacons", "school-dep-devices"], in: scratch)
+            let dataDir = scratch.appendingPathComponent("jamf-cli-data", isDirectory: true)
+            try SchoolRows.write(
+                [SchoolRows.row("school-dep-devices", 1), SchoolRows.row("school-dep-devices", 2)],
+                kind: "school-dep-devices", into: dataDir)
+            // iBeacon keys were never captured from jamf-cli, so SchoolRows has no shape for them.
+            try SchoolRows.write([
+                ["id": 1, "name": "Library Front Desk",
+                 "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D", "major": 100, "minor": 1,
+                 "description": "Beacon at the library entrance"],
+                ["id": 2, "name": "Cafeteria", "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
+                 "major": 100, "minor": 2, "description": ""],
+            ], kind: "school-ibeacons", into: dataDir)
             let out = scratch.appendingPathComponent("out/school.xlsx")
             try await ReportEngine.schoolGenerate(
                 config: ReportConfig(), dataDir: dataDir, outputURL: out, csvFolder: true)

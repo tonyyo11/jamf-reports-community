@@ -124,9 +124,9 @@ enum SchoolFleetService {
 
     private static func devicesSnapshot(rows: [[String: Any]], date: Date) -> Snapshot {
         var snapshot = Snapshot()
-        let all = rows.enumerated().map { device(from: $1, index: $0) }
-        snapshot.devices = all.filter { !$0.inTrash }
-        snapshot.trashedCount = all.count - snapshot.devices.count
+        let (members, trashed) = partitionFleet(rows)
+        snapshot.devices = members.enumerated().map { device(from: $1, index: $0) }
+        snapshot.trashedCount = trashed
         snapshot.devicesDate = date
         return snapshot
     }
@@ -144,9 +144,22 @@ enum SchoolFleetService {
             isManaged: row["isManaged"] as? Bool,
             isSupervised: row["isSupervised"] as? Bool,
             lastCheckin: DateParser().parse(text(row, "lastCheckin")),
-            inTrash: row["inTrash"] as? Bool ?? false,
+            inTrash: isTrashed(row),
             udid: text(row, "udid")
         )
+    }
+
+    /// A row in School's trash. Absent or not a boolean reads as not trashed.
+    static func isTrashed(_ row: [String: Any]) -> Bool { row["inTrash"] as? Bool ?? false }
+
+    /// The one fleet rule for a device or user list: trashed rows (`isTrashed`, which also
+    /// decides `Device.inTrash`) are counted apart and never in a fleet figure. The workbook's
+    /// device and user tabs read through it.
+    static func partitionFleet(
+        _ rows: [[String: Any]]
+    ) -> (members: [[String: Any]], trashed: Int) {
+        let members = rows.filter { !isTrashed($0) }
+        return (members, rows.count - members.count)
     }
 
     static func depDevice(from row: [String: Any], index: Int) -> DEPDevice {
