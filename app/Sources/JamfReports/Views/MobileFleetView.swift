@@ -201,8 +201,7 @@ struct MobileFleetView: View {
             : "F2LX" + String(0x51C0 + i * 0x3B, radix: 16, uppercase: true) + "N0DV"
         // Inventoried in the week before the demo's "now", never after it.
         let age = TimeInterval((i % 7) * 86_400 + (i * 37 % 300 + 20) * 60)
-        let lastUpdate = Self.isoFormatter.string(
-            from: DemoData.referenceDate.addingTimeInterval(-age))
+        let lastUpdate = ISO8601Time.string(DemoData.referenceDate.addingTimeInterval(-age))
         let ownership = supervised
             ? "Institutional"
             : (i % 10 == 0 ? "AccountDrivenUserEnrollment" : "UserEnrollment")
@@ -1073,7 +1072,7 @@ struct MobileFleetView: View {
             return "—"
         case .right(let rich):
             guard let dateString = rich.general?.lastInventoryUpdateDate,
-                  let date = Self.isoFormatter.date(from: dateString) else {
+                  let date = ISO8601Time.parse(dateString) else {
                 return "—"
             }
             // Demo dates were written against the demo's "now"; measured from
@@ -1083,9 +1082,7 @@ struct MobileFleetView: View {
         }
     }
 
-    // Built once: both run per table row. Configured at creation, never mutated after.
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
-
+    // Built once: it runs per table row. Configured at creation, never mutated after.
     nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated

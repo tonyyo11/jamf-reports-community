@@ -129,7 +129,7 @@ extension DemoData {
     private static func logText(_ run: PlannedRun, label: String) -> [String] {
         let profile = run.schedule.profile
         var lines = [
-            "[info] run started \(ISO8601DateFormatter().string(from: run.start)) for \(label)",
+            "[info] run started \(ISO8601Time.string(run.start)) for \(label)",
         ]
         guard run.recordedExit else {
             lines.append(contentsOf: staleMobileCacheWarnings)

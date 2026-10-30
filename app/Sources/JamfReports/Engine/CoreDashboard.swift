@@ -164,7 +164,7 @@ struct CoreDashboard: Sendable {
     func writeOverview() throws {
         let data = try loadLatestJSON(names: ["overview"])
         let ws = workbook.addSheet("Fleet Overview")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Fleet Overview"),
                                       subtitle: "Generated: \(ts)", ncols: 4)
         ws.setColumnWidth(0, 0, 24)
@@ -227,7 +227,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Security Posture")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Security Posture"),
                                       subtitle: snapshotSubtitle(names: ["security"], generated: ts),
                                       ncols: 5)
@@ -313,7 +313,7 @@ struct CoreDashboard: Sendable {
 
         let ncols = hasReleaseDates ? 8 : 6
         let ws = workbook.addSheet("Patch Compliance")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Patch Compliance"),
                                       subtitle: snapshotSubtitle(names: ["patch-status", "patch_status"],
                                                                   generated: ts),
@@ -373,7 +373,7 @@ struct CoreDashboard: Sendable {
         let velocities = PatchVelocityBuilder.compute(dataDir: dataDir, releaseRows: releaseRows)
 
         let ws = workbook.addSheet("Patch Velocity")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(
             title: t("Patch Velocity"),
             subtitle: "Adoption speed vs. release date — Generated: \(ts)",
@@ -460,14 +460,16 @@ struct CoreDashboard: Sendable {
     }
 
     /// Release-date display formatter for the Patch Velocity sheet (date-only, UTC).
-    private var patchVelocityDateFormatter: DateFormatter {
+    private var patchVelocityDateFormatter: DateFormatter { Self.utcDayFormatter }
+
+    private static let utcDayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.locale = Locale(identifier: "en_US_POSIX")
         f.calendar = Calendar(identifier: .iso8601)
         f.timeZone = TimeZone(identifier: "UTC")
         return f
-    }
+    }()
 
     // MARK: - Patch Failures
     // Source: `jamf-cli pro report patch-status --scan-failures --output json`
@@ -475,7 +477,7 @@ struct CoreDashboard: Sendable {
     func writePatchFailures() throws {
         let raw = try loadLatestJSON(names: ["patch-device-failures", "patch_device_failures"])
         let ws = workbook.addSheet("Patch Failures")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Patch Failures"),
                                       subtitle: snapshotSubtitle(
                                           names: ["patch-device-failures", "patch_device_failures"],
@@ -523,7 +525,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Update Status")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Update Status"),
                                       subtitle: snapshotSubtitle(
                                           names: ["update-status", "update_status"],
@@ -568,7 +570,7 @@ struct CoreDashboard: Sendable {
     func writeUpdateFailures() throws {
         let raw = try loadLatestJSON(names: ["update-device-failures", "update_device_failures"])
         let ws = workbook.addSheet("Update Failures")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Update Failures"),
                                       subtitle: snapshotSubtitle(
                                           names: ["update-device-failures", "update_device_failures"],
@@ -631,7 +633,7 @@ struct CoreDashboard: Sendable {
     func writeInventorySummary() throws {
         let raw = try loadLatestJSON(names: ["inventory-summary", "inventory_summary"])
         let ws = workbook.addSheet("Inventory Summary")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Inventory Summary"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
         ws.setColumnWidth(0, 0, 36)
@@ -664,7 +666,7 @@ struct CoreDashboard: Sendable {
     func writeDeviceCompliance() throws {
         let items = try loadDeviceComplianceRows()
         let ws = workbook.addSheet("Device Compliance")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Device Compliance"),
                                       subtitle: snapshotSubtitle(
                                           names: ["device-compliance", "device_compliance"],
@@ -741,7 +743,7 @@ struct CoreDashboard: Sendable {
     func writePolicyHealth() throws {
         let raw = try loadLatestJSON(names: ["policy-status", "policy_status"])
         let ws = workbook.addSheet("Policy Health")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Policy Health"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 14)
@@ -804,7 +806,7 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["profile-status"])
         }
         let ws = workbook.addSheet("Profile Status")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         writeFailureReport(
             ws, report, title: "Profile Status", subject: "Profiles",
             subtitle: snapshotSubtitle(names: names, generated: ts),
@@ -821,7 +823,7 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["app-status"])
         }
         let ws = workbook.addSheet("App Status")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         writeFailureReport(
             ws, report, title: "App Status", subject: "Apps",
             subtitle: snapshotSubtitle(names: names, generated: ts), warnAtErrors: 1)
@@ -911,7 +913,7 @@ struct CoreDashboard: Sendable {
     func writeSoftwareInstalls() throws {
         let raw = try loadLatestJSON(names: ["software-installs", "software_installs"])
         let ws = workbook.addSheet("Software Installs")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Software Installs"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
         ws.setColumnWidth(0, 0, 40)
@@ -939,7 +941,7 @@ struct CoreDashboard: Sendable {
     func writeEADefinitions() throws {
         let raw = try loadLatestJSON(names: ["computer-extension-attributes", "ea-definitions"])
         let ws = workbook.addSheet("EA Definitions")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("EA Definitions"),
                                       subtitle: "Generated: \(ts)", ncols: 4)
         ws.setColumnWidth(0, 0, 8)
@@ -971,7 +973,7 @@ struct CoreDashboard: Sendable {
     func writeEACoverage() throws {
         let raw = try loadLatestJSON(names: ["ea-results", "ea_results"])
         let ws = workbook.addSheet("EA Coverage")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("EA Coverage"),
                                       subtitle: "Generated: \(ts)", ncols: 5)
         ws.setColumnWidth(0, 0, 28)
@@ -1016,7 +1018,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Mobile Fleet Summary")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Mobile Fleet Summary"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
         ws.setColumnWidth(0, 0, 30)
@@ -1092,7 +1094,7 @@ struct CoreDashboard: Sendable {
             .sorted { $0.count > $1.count }
 
         let ws = workbook.addSheet("Hardware Models")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Hardware Models"),
                                       subtitle: "Generated: \(ts)", ncols: 2)
         ws.setColumnWidth(0, 0, 40)
@@ -1121,7 +1123,7 @@ struct CoreDashboard: Sendable {
         let summary = summarizeMobileInventory(rows, staleDays: staleThreshold)
 
         let ws = workbook.addSheet("Mobile Inventory")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Mobile Inventory"),
                                       subtitle: "Generated: \(ts)", ncols: 20)
 
@@ -1193,7 +1195,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
 
         let ws = workbook.addSheet("Audit Summary")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Health Audit Summary"),
                                       subtitle: "Generated: \(ts)", ncols: 5)
         ws.setColumnWidth(0, 0, 35)
@@ -1231,7 +1233,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Group Hygiene")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Group Hygiene: Unused Groups"),
                                       subtitle: "Generated: \(ts)", ncols: 4)
         ws.setColumnWidth(0, 0, 45)
@@ -1275,7 +1277,7 @@ struct CoreDashboard: Sendable {
         // The overdue window is its own threshold, counted over the dates `stale_basis` lists.
         let overdueRule = config.staleRule.with(days: threshold)
         let ws = workbook.addSheet("Check-in Health")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(
             title: t("Check-in Health"),
             subtitle: "\(ruleSubtitle(overdueRule, window: "Threshold")) | Generated: \(ts)",
@@ -1379,11 +1381,17 @@ struct CoreDashboard: Sendable {
     /// A date as `yyyy-MM-dd`, empty when the Mac has none.
     static func dayText(_ date: Date?) -> String {
         guard let date else { return "" }
+        return localDayFormatter.string(from: date)
+    }
+
+    // Local zone, built once: `dayText` runs per Mac. `.autoupdatingCurrent` follows zone changes.
+    private static let localDayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 
     // MARK: - Environment Stats
     // Source: `jamf-cli pro report env-stats --output json`
@@ -1414,7 +1422,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Environment Stats")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Environment Stats"),
                                       subtitle: "Generated: \(ts)", ncols: 2)
         ws.setColumnWidth(0, 0, 36)
@@ -1446,7 +1454,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Mobile Config Profiles")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Mobile Config Profiles"),
                                       subtitle: "Generated: \(ts)", ncols: 5)
         ws.setColumnWidth(0, 0, 34)
@@ -1505,7 +1513,7 @@ struct CoreDashboard: Sendable {
         let managed = items.filter { $0.managed == true }.count
 
         let ws = workbook.addSheet("Active Devices")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(
             title: t("Active Devices"),
             subtitle: "\(ruleSubtitle(config.staleRule)) | Generated: \(ts)", ncols: 2)
@@ -1538,7 +1546,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Smart Groups")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Smart Groups"),
                                       subtitle: "Generated: \(ts)", ncols: 7)
         ws.setColumnWidth(0, 0, 40)
@@ -1589,7 +1597,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Package Lifecycle")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Package Lifecycle"),
                                       subtitle: "Generated: \(ts)", ncols: 7)
         ws.setColumnWidth(0, 0, 40)
@@ -1876,7 +1884,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Compliance Devices")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Compliance Devices"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 24)
@@ -1907,7 +1915,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Compliance Rules")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Compliance Rules"),
                                       subtitle: "Generated: \(ts)", ncols: 8)
         ws.setColumnWidth(0, 0, 24)
@@ -1941,7 +1949,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("DDM Status")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("DDM Status"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 40)
@@ -1971,7 +1979,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Blueprint Status")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Blueprint Status"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 36)
@@ -2002,7 +2010,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("DDM Device Status")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("DDM Device Status"),
                                       subtitle: "Generated: \(ts)", ncols: 10)
         ws.setColumnWidth(0, 0, 10)
@@ -2046,7 +2054,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("MDM Command Health")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("MDM Command Health"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 10)
@@ -2088,7 +2096,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Protect Overview")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Overview"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
         ws.setColumnWidth(0, 0, 24)
@@ -2117,7 +2125,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Protect Alerts")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Alerts"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 28)
@@ -2150,7 +2158,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Protect Computers")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Computers"),
                                       subtitle: "Generated: \(ts)", ncols: 8)
         ws.setColumnWidth(0, 0, 26)
@@ -2200,7 +2208,7 @@ struct CoreDashboard: Sendable {
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Protect Insights")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Insights"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 40)
@@ -2235,7 +2243,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Protect Plans")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Plans"),
                                       subtitle: "Generated: \(ts)", ncols: 7)
         ws.setColumnWidth(0, 0, 28)
@@ -2297,7 +2305,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Protect Threat Overview")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Threat Overview"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 28)
@@ -2383,7 +2391,7 @@ struct CoreDashboard: Sendable {
         let top10 = patchRows.sorted { $0.adjPct < $1.adjPct }.prefix(10)
 
         let ws = workbook.addSheet("Patch Summary Dashboard")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(
             title: t("Patch Summary Dashboard"),
             subtitle: "Source: patch-status + device-compliance | "
@@ -2529,7 +2537,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Device Security State")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(
             title: t("Device Security State"),
             subtitle: "Source: computers (security sections) | Generated: \(ts)",
@@ -2615,7 +2623,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Mobile Supervision Status")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Mobile Supervision Status"),
                                       subtitle: "Generated: \(ts)", ncols: 5)
         ws.setColumnWidth(0, 0, 22)
@@ -2650,7 +2658,7 @@ struct CoreDashboard: Sendable {
         let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
 
         let ws = workbook.addSheet("OS Currency")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         let headers = [
             "Platform", "OS Family", "Latest Version", "Build", "Released",
             "Days Since Release", "Actively Exploited CVEs",
@@ -3051,7 +3059,7 @@ struct CoreDashboard: Sendable {
         // predates today (skip-expensive preset). Only the three headline-KPI kinds are
         // checked — "inventory-summary" is always-run (today) and would suppress the
         // clause permanently if included.
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         let subtitle = snapshotSubtitle(
             names: ["security", "patch-status", "patch_status", "device-compliance"],
             generated: ts,
@@ -3069,7 +3077,7 @@ struct CoreDashboard: Sendable {
     /// Self-documents every sheet so a first-time reader knows what to click.
     func writeCoverSheet() throws {
         let ws = workbook.addSheet("Cover")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         ws.setColumnWidth(0, 0, 42)
         ws.setColumnWidth(1, 1, 60)
 
@@ -3221,7 +3229,7 @@ struct CoreDashboard: Sendable {
     /// a top-20 non-compliant device table sorted by failure count descending.
     func writeCompliancePosture() throws {
         let ws = workbook.addSheet("Compliance Posture")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         let framework = config.compliance?.resolvedFramework ?? "Compliance Benchmark"
         var row = ws.writeSheetHeader(title: t("Compliance Posture"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
@@ -3616,7 +3624,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("mSCP Compliance")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(
             title: t("mSCP Compliance"),
             subtitle: "Generated: \(ts)", ncols: 3
@@ -3720,7 +3728,7 @@ struct CoreDashboard: Sendable {
         }
 
         let ws = workbook.addSheet("Compliance Trend")
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(
             title: t("Compliance Trend — \(primary.name)"),
             subtitle: "Generated: \(ts)", ncols: 7

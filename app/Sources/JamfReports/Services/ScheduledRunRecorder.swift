@@ -84,7 +84,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         }
         self.handle = fh
         Self.markRunInProgress(fh, label: label)
-        record("[info] run started \(ISO8601DateFormatter().string(from: now)) for \(label)")
+        record("[info] run started \(ISO8601Time.string(now)) for \(label)")
     }
 
     /// Append one line to the per-run log. When the log handle is gone (already
@@ -201,7 +201,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         exitCode: Int32, sheetFailures: Int, artifacts: [URL], refused: Bool
     ) {
         var payload: [String: Any] = [
-            "finished_at": ISO8601DateFormatter().string(from: Date()),
+            "finished_at": ISO8601Time.string(Date()),
             "success": exitCode == 0,
             "exit_code": Int(exitCode),
             "label": label,

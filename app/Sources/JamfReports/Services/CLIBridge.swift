@@ -1354,9 +1354,7 @@ final class CLIBridge {
         }
         let expiresAt: Date?
         if let rawDate = payload.expires_at {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            expiresAt = formatter.date(from: rawDate)
+            expiresAt = ISO8601Time.parse(rawDate)
         } else {
             expiresAt = nil
         }
@@ -1584,9 +1582,7 @@ final class CLIBridge {
     ///   (done in `singleDeviceDetail` alongside `removeItem(at: cache)`).
     nonisolated static func writeDeviceDetailFreshnessSidecar(for cache: URL) {
         let sidecar = cache.appendingPathExtension("meta")
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let isoString = formatter.string(from: Date())
+        let isoString = ISO8601Time.string(Date())
         guard let data = try? JSONSerialization.data(
             withJSONObject: ["generated_at": isoString]
         ) else {
@@ -2255,7 +2251,7 @@ final class CLIBridge {
         }
 
         // Rename temp dir to a timestamped final name.
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "")
             .prefix(15)
@@ -2296,7 +2292,7 @@ final class CLIBridge {
         let effectiveLabel = trimmedLabel ?? ""
         var manifest: [String: Any] = [
             "label": effectiveLabel,
-            "created_at": ISO8601DateFormatter().string(from: Date()),
+            "created_at": ISO8601Time.string(Date()),
             "file_count": stats.fileCount,
             "size_bytes": stats.sizeBytes,
         ]

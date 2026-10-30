@@ -54,7 +54,7 @@ struct StateFileStore: Sendable {
         guard let raw = BoundedFile.stateText(url, inside: trustedRoot) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        return Self.formatter.date(from: trimmed)
+        return ISO8601Time.parse(trimmed)
     }
 
     // MARK: - Write
@@ -73,7 +73,7 @@ struct StateFileStore: Sendable {
             at: directory, withIntermediateDirectories: true
         )
         let truncated = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
-        let body = Self.formatter.string(from: truncated)
+        let body = ISO8601Time.string(truncated)
         guard let data = body.data(using: .utf8) else {
             throw StateFileError.encodingFailed(report: report)
         }
@@ -102,7 +102,7 @@ struct StateFileStore: Sendable {
     func failures(report: String) -> FailureRecord? {
         guard let parts = validFailureFields(report: report),
               let count = Int(parts[0]),
-              let date = Self.formatter.date(from: String(parts[1])) else { return nil }
+              let date = ISO8601Time.parse(String(parts[1])) else { return nil }
         return FailureRecord(count: count, last: date)
     }
 
@@ -142,7 +142,7 @@ struct StateFileStore: Sendable {
         let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
         guard parts.count == 2 || parts.count == 3,
               let count = Int(parts[0]), count > 0,
-              Self.formatter.date(from: String(parts[1])) != nil else { return nil }
+              ISO8601Time.parse(String(parts[1])) != nil else { return nil }
         return parts
     }
 
@@ -168,7 +168,7 @@ struct StateFileStore: Sendable {
         // Saturates: a count read back from a damaged file can be Int.max.
         let next = min(failures(report: report)?.count ?? 0, Int.max - 1) + 1
         let truncated = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
-        var body = "\(next) \(Self.formatter.string(from: truncated))"
+        var body = "\(next) \(ISO8601Time.string(truncated))"
         if let exitCode { body += " \(exitCode)" }
         guard let data = body.data(using: .utf8) else {
             throw StateFileError.encodingFailed(report: report)
@@ -359,22 +359,6 @@ struct StateFileStore: Sendable {
     }
 
     // MARK: - Internals
-
-    /// ISO-8601 RFC 3339, UTC, seconds precision, no fractional component.
-    /// Pinned as a static so every write produces the identical byte
-    /// representation — T-14's snapshot manifest hash relies on it.
-    ///
-    /// `nonisolated(unsafe)` because `ISO8601DateFormatter` isn't marked
-    /// `Sendable` upstream, but per Apple's docs the immutable
-    /// `formatOptions`/`timeZone` configuration is safe to share across
-    /// threads — both `.string(from:)` and `.date(from:)` are
-    /// reentrant on macOS once the formatter is fully configured.
-    nonisolated(unsafe) private static let formatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        return f
-    }()
 
     /// The folder above `directory`: reads open below it, so a `state` folder swapped for a link
     /// is refused rather than followed.

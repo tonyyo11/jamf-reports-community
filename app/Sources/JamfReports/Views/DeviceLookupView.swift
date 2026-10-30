@@ -564,9 +564,7 @@ internal func freshnessTimestamp(for cacheURL: URL?) -> Date? {
     if let raw = BoundedFile.readLogged(sidecar, limit: BoundedFile.documentLimit),
        let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: String],
        let isoString = obj["generated_at"] {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: isoString) {
+        if let date = ISO8601Time.parse(isoString) {
             return date
         }
     }

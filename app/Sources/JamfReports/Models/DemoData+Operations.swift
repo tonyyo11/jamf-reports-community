@@ -450,7 +450,7 @@ extension DemoData {
     private static func backup(
         label: String, created: Date, fileCount: Int, bytes: Int64
     ) -> BackupRecord {
-        let name = String(ISO8601DateFormatter().string(from: created)
+        let name = String(ISO8601Time.string(created)
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "")
             .prefix(15))
