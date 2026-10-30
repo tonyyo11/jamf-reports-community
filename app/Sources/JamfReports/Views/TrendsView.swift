@@ -16,6 +16,8 @@ struct TrendsView: View {
     private var trendStore: TrendStore { workspaceStore.trendStore }
     @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .stability
+    /// Bumped to re-run the keyed load task (refresh, archive).
+    @State private var reloadCount = 0
     @State private var range: TrendRange = .w4
     @State private var selectedDate: Date? = nil
     @State private var isArchiving = false
@@ -293,18 +295,14 @@ struct TrendsView: View {
             if let preferred = TrendRange(rawValue: defaultTrendRangeRaw), preferred != range {
                 range = preferred
             }
-            ensureOfferedMetric()
-            // Off-main scan so entering Trends never freezes the UI.
-            Task { await loadTrendsOffMain() }
         }
-        .onChange(of: workspaceStore.profile) { _, _ in
+        // Off-main scan so entering Trends never freezes the UI. One keyed task: a profile or
+        // demo flip (a flip under one profile name still needs its scan) or a reload request
+        // cancels the scan in flight.
+        .task(id: TrendsLoadKey(profile: workspaceStore.profile, demoMode: workspaceStore.demoMode,
+                                reloads: reloadCount)) {
             ensureOfferedMetric()
-            Task { await loadTrendsOffMain() }
-        }
-        .onChange(of: workspaceStore.demoMode) { _, _ in
-            // A flip under one profile name is no profile change: the store still needs its scan.
-            ensureOfferedMetric()
-            Task { await loadTrendsOffMain() }
+            await loadTrendsOffMain()
         }
         .onChange(of: range) { _, newValue in
             selectedDate = nil
@@ -318,7 +316,7 @@ struct TrendsView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            Task { await loadTrendsOffMain() }
+            reloadCount += 1
         }
     }
 
@@ -394,20 +392,18 @@ struct TrendsView: View {
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspaceStore.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    SegmentedControl(
-                        selection: $range,
-                        options: TrendRange.allCases.map { ($0, $0.rawValue, nil) }
-                    )
-                    PNPButton(title: isExporting ? "Exporting…" : "Export PNG", icon: "arrow.down.circle") {
-                        Task { await exportChartPNG() }
-                    }
-                    .disabled(isExporting)
-                    .accessibilityLabel("Export \(metricLabel(metric)) trend chart as PNG")
-                    .help("Save the current trend chart as a PNG image")
+            HStack(spacing: 8) {
+                SegmentedControl(
+                    selection: $range,
+                    options: TrendRange.allCases.map { ($0, $0.rawValue, nil) }
+                )
+                PNPButton(title: isExporting ? "Exporting…" : "Export PNG", icon: "arrow.down.circle") {
+                    Task { await exportChartPNG() }
                 }
-            )
+                .disabled(isExporting)
+                .accessibilityLabel("Export \(metricLabel(metric)) trend chart as PNG")
+                .help("Save the current trend chart as a PNG image")
+            }
         }
     }
 
@@ -718,7 +714,7 @@ struct TrendsView: View {
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
                                             .background(Theme.Colors.winBG2)
-                                            .cornerRadius(4)
+                                            .clipShape(.rect(cornerRadius: 4))
                                             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: metric.colorHex), lineWidth: 1))
                                     }
                             } else if let lastPoint = trendPoints.last {
@@ -1445,7 +1441,7 @@ struct TrendsView: View {
                 // Archive just wrote new files on the same profile — force a
                 // re-scan, off-main like every other load (a sync reload here
                 // was the last surviving main-thread scan).
-                Task { await loadTrendsOffMain() }
+                reloadCount += 1
             } else {
                 workspaceStore.toast = Toast(message: "Archive failed · exit \(exit)", style: .danger)
             }
@@ -1875,4 +1871,10 @@ enum TrendAxis {
         case .all: nil
         }
     }
+}
+
+private struct TrendsLoadKey: Equatable {
+    let profile: String
+    let demoMode: Bool
+    let reloads: Int
 }

@@ -119,7 +119,7 @@ struct SettingsView: View {
                 settingsRow(
                     label: "Installed version",
                     sub: workspace.demoMode ? DemoData.jamfCLINote : jamfCLISubtitle,
-                    trailing: AnyView(PNPButton(title: "Refresh", size: .sm) {
+                    trailing: PNPButton(title: "Refresh", size: .sm) {
                         guard !workspace.demoMode else { return }
                         workspace.refreshToolStatus()
                         workspace.reloadFromDisk()
@@ -127,27 +127,27 @@ struct SettingsView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Re-detect jamf-cli on PATH and reload workspace state from disk."))
+                          : "Re-detect jamf-cli on PATH and reload workspace state from disk.")
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "jamf-cli updates",
                     sub: workspace.demoMode ? DemoData.jamfCLINote : jamfCLIUpdateSubtitle,
-                    trailing: AnyView(jamfCLIUpdateControls)
+                    trailing: jamfCLIUpdateControls
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "Auto-update jamf-cli",
                     sub: autoUpdateManaged ? ManagedPreference.note : "Check on launch",
-                    trailing: AnyView(PNPToggle(isOn: $autoUpdate)
+                    trailing: PNPToggle(isOn: $autoUpdate)
                         .disabled(workspace.demoMode || autoUpdateManaged)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : ""))
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "Demo mode",
                     sub: "Synthetic data, no API calls",
-                    trailing: AnyView(PNPToggle(isOn: demoModeBinding))
+                    trailing: PNPToggle(isOn: demoModeBinding)
                 )
             }
         }
@@ -407,7 +407,7 @@ struct SettingsView: View {
         )
     }
 
-    private func settingsRow(label: String, sub: String, trailing: AnyView) -> some View {
+    private func settingsRow<Trailing: View>(label: String, sub: String, trailing: Trailing) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.callout.weight(.medium))
@@ -502,11 +502,15 @@ struct SettingsView: View {
                     }
                 }
                 if let err = testErrors[profileName] {
-                    Text(err)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(Theme.Colors.warn)
-                        .lineLimit(4)
-                        .onTapGesture { testErrors[profileName] = nil }
+                    Button { testErrors[profileName] = nil } label: {
+                        Text(err)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Colors.warn)
+                            .lineLimit(4)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Dismisses this message")
                 }
             } else {
                 PNPButton(title: "Test", size: .sm) {
@@ -651,16 +655,16 @@ struct SettingsView: View {
                     sub: updates.isForcedByProfile
                         ? ManagedPreference.note
                         : "Once a day, stable releases only. Nothing is downloaded or installed.",
-                    trailing: AnyView(PNPToggle(isOn: Binding(
+                    trailing: PNPToggle(isOn: Binding(
                         get: { updates.isEnabled }, set: { updates.setEnabled($0) }
                     ))
-                    .disabled(updates.isForcedByProfile))
+                    .disabled(updates.isForcedByProfile)
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "Status",
                     sub: updates.statusText,
-                    trailing: AnyView(HStack(spacing: 8) {
+                    trailing: HStack(spacing: 8) {
                         if let page = updates.latest?.page, updates.isEnabled {
                             PNPButton(title: "View release", icon: "arrow.up.right.square",
                                       size: .sm) {
@@ -673,7 +677,7 @@ struct SettingsView: View {
                         }
                         .disabled(!updates.isEnabled || updates.isChecking)
                         .help("Ask GitHub for the latest stable release now.")
-                    })
+                    }
                 )
             }
         }
@@ -788,15 +792,15 @@ struct SettingsView: View {
                     label: "Default trend range",
                     sub: trendRangeManaged ? ManagedPreference.note
                         : "Applies to Overview and Trends until you change the picker in-view.",
-                    trailing: AnyView(trendRangePicker)
+                    trailing: trendRangePicker
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "Skip expensive collections",
                     sub: skipExpensiveManaged
                         ? ManagedPreference.note : skipExpensiveCollectionsSubtitle,
-                    trailing: AnyView(PNPToggle(isOn: $skipExpensiveCollections)
-                        .disabled(skipExpensiveManaged))
+                    trailing: PNPToggle(isOn: $skipExpensiveCollections)
+                        .disabled(skipExpensiveManaged)
                 )
             }
         }

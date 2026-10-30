@@ -490,7 +490,7 @@ private struct ScoreRing: View {
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
                 Text("of 100")
-                    .font(Theme.Fonts.mono(9.5))
+                    .font(Theme.Fonts.mono(10))
                     .tracking(1.0)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }

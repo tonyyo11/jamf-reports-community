@@ -231,11 +231,14 @@ struct DevicesView: View {
                     )
                 }
                 if let err = exportError {
-                    Text(err)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Colors.danger)
-                        .padding(.horizontal, 4)
-                        .onTapGesture { exportError = nil }
+                    Button { exportError = nil } label: {
+                        Text(err)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.danger)
+                            .padding(.horizontal, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Dismisses this message")
                 }
                 if !workspace.demoMode && activeSnapshot.devices.isEmpty && !isLoading {
                     if activeSnapshot.warnings.isEmpty {
@@ -330,26 +333,24 @@ struct DevicesView: View {
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspace.demoMode ? nil : activeSnapshot.generatedDate
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    staleDaysPicker
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        Task { await reload() }
-                    }
-                    .help("Reload computer inventory from the cached jamf-cli snapshots.")
-                    PNPButton(
-                        title: isExportingCSV ? "Exporting…" : "Export CSV",
-                        icon: "square.and.arrow.up",
-                        style: .neutral
-                    ) {
-                        Task { await exportFilteredCSV() }
-                    }
-                    .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
-                    .help(workspace.demoMode
-                          ? DemoData.liveOnlyHelp
-                          : "Export the currently filtered computer list to a CSV file")
+            HStack(spacing: 8) {
+                staleDaysPicker
+                PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                    Task { await reload() }
                 }
-            )
+                .help("Reload computer inventory from the cached jamf-cli snapshots.")
+                PNPButton(
+                    title: isExportingCSV ? "Exporting…" : "Export CSV",
+                    icon: "square.and.arrow.up",
+                    style: .neutral
+                ) {
+                    Task { await exportFilteredCSV() }
+                }
+                .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : "Export the currently filtered computer list to a CSV file")
+            }
         }
     }
 

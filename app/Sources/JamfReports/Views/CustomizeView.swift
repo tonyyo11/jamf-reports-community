@@ -128,33 +128,31 @@ struct CustomizeView: View {
             subtitle: "Chart and HTML options for generated reports, and where to change "
                 + "what else a report shows"
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    PNPButton(
-                        title: "How to customize",
-                        icon: "questionmark.circle",
-                        style: .ghost,
-                        size: .sm
-                    ) {
-                        showGuide = true
-                    }
-                    // Apply writes the options into config.yaml, which in
-                    // demo mode would create one under the demo profile's name.
-                    PNPButton(
-                        title: applySaved ? "Saved" : "Apply",
-                        icon: applySaved ? "checkmark.circle" : "checkmark",
-                        style: .gold
-                    ) {
-                        saveError = nil
-                        applyAndSave()
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            HStack(spacing: 8) {
+                PNPButton(
+                    title: "How to customize",
+                    icon: "questionmark.circle",
+                    style: .ghost,
+                    size: .sm
+                ) {
+                    showGuide = true
                 }
-                .sheet(isPresented: $showGuide) {
-                    CustomizeGuideSheet()
+                // Apply writes the options into config.yaml, which in
+                // demo mode would create one under the demo profile's name.
+                PNPButton(
+                    title: applySaved ? "Saved" : "Apply",
+                    icon: applySaved ? "checkmark.circle" : "checkmark",
+                    style: .gold
+                ) {
+                    saveError = nil
+                    applyAndSave()
                 }
-            )
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            }
+            .sheet(isPresented: $showGuide) {
+                CustomizeGuideSheet()
+            }
         }
     }
 

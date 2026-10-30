@@ -18,10 +18,14 @@ enum AppTips {
     /// `.immediate` shows a tip as soon as its anchor appears and the tip is
     /// eligible; each tip carries its own `options` to keep it from re-nagging.
     static func configure() {
-        try? Tips.configure([
-            .displayFrequency(.immediate),
-            .datastoreLocation(.applicationDefault),
-        ])
+        do {
+            try Tips.configure([
+                .displayFrequency(.immediate),
+                .datastoreLocation(.applicationDefault),
+            ])
+        } catch {
+            AppLogger.ui.error("TipKit configure failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Clear the shown/dismissed state for every tip so they appear again.

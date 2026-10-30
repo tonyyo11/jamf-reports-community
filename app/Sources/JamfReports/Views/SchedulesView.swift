@@ -173,28 +173,26 @@ struct SchedulesView: View {
             title: "Scheduled Runs",
             subtitle: "\(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s") · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profile\(profileCount == 1 ? "" : "s")"
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    // A reload re-reads profiles and schedules, and in demo mode
-                    // put a chosen demo profile back to meridian-prod.
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        guard !workspace.demoMode else { return }
-                        workspace.reloadFromDisk()
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode
-                          ? DemoData.liveOnlyHelp
-                          : "Re-read schedules from disk.")
-                    PNPButton(title: "New schedule", icon: "plus", style: .gold) {
-                        newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
-                        showNewSchedule = true
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode
-                          ? DemoData.liveOnlyHelp
-                          : "Add a schedule the background item runs automatically.")
+            HStack(spacing: 8) {
+                // A reload re-reads profiles and schedules, and in demo mode
+                // put a chosen demo profile back to meridian-prod.
+                PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                    guard !workspace.demoMode else { return }
+                    workspace.reloadFromDisk()
                 }
-            )
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : "Re-read schedules from disk.")
+                PNPButton(title: "New schedule", icon: "plus", style: .gold) {
+                    newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
+                    showNewSchedule = true
+                }
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : "Add a schedule the background item runs automatically.")
+            }
         }
     }
 
@@ -556,7 +554,7 @@ struct SchedulesView: View {
                                     Text(mode.displayTitle)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
-                                    Mono(text: mode.rawValue, size: 9, color: Theme.Text.tertiary(contrast))
+                                    Mono(text: mode.rawValue, size: 10, color: Theme.Text.tertiary(contrast))
                                 }
                             }
                             Divider().background(Theme.Colors.hairline)

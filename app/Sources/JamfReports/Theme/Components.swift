@@ -62,7 +62,7 @@ struct Kicker: View {
 
 // MARK: - Page header (kicker + serif H1 + subtitle)
 
-struct PageHeader: View {
+struct PageHeader<Trailing: View>: View {
     let kicker: String
     var kickerTone: Kicker.Tone = .gold
     var breadcrumbs: [Breadcrumb] = []
@@ -72,7 +72,7 @@ struct PageHeader: View {
     /// True when `trailing` is a `WrappingRow` of controls: they sit beside the title when
     /// they fit and under it, wrapping, when they do not. False keeps one row.
     var wrapsTrailing = false
-    @ViewBuilder var trailing: () -> AnyView
+    let trailing: Trailing
 
     init(
         kicker: String,
@@ -82,7 +82,7 @@ struct PageHeader: View {
         subtitle: String? = nil,
         lastModified: Date? = nil,
         wrapsTrailing: Bool = false,
-        @ViewBuilder trailing: @escaping () -> AnyView = { AnyView(EmptyView()) }
+        @ViewBuilder trailing: () -> Trailing
     ) {
         self.kicker = kicker
         self.kickerTone = kickerTone
@@ -91,7 +91,7 @@ struct PageHeader: View {
         self.subtitle = subtitle
         self.lastModified = lastModified
         self.wrapsTrailing = wrapsTrailing
-        self.trailing = trailing
+        self.trailing = trailing()
     }
 
     var body: some View {
@@ -100,18 +100,18 @@ struct PageHeader: View {
                 HStack(alignment: .bottom) {
                     titleBlock
                     Spacer()
-                    trailing()
+                    trailing
                 }
                 VStack(alignment: .leading, spacing: 12) {
                     titleBlock
-                    trailing()
+                    trailing
                 }
             }
         } else {
             HStack(alignment: .bottom) {
                 titleBlock
                 Spacer()
-                trailing()
+                trailing
             }
         }
     }
@@ -179,6 +179,22 @@ struct PageHeader: View {
         case .teal:  Theme.Colors.tealBright
         case .warn:  Theme.Colors.warn
         case .danger: Theme.Colors.danger
+        }
+    }
+}
+
+extension PageHeader where Trailing == EmptyView {
+    init(
+        kicker: String,
+        kickerTone: Kicker.Tone = .gold,
+        breadcrumbs: [Breadcrumb] = [],
+        title: String,
+        subtitle: String? = nil,
+        lastModified: Date? = nil
+    ) {
+        self.init(kicker: kicker, kickerTone: kickerTone, breadcrumbs: breadcrumbs, title: title,
+                  subtitle: subtitle, lastModified: lastModified, wrapsTrailing: false) {
+            EmptyView()
         }
     }
 }

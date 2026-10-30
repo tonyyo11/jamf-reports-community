@@ -377,22 +377,20 @@ struct ConfigView: View {
             title: "config.yaml",
             subtitle: configDisplayPath
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    if workspace.hasUnsavedChanges && saveStatus == .idle {
-                        Pill(text: "Unsaved changes", tone: .warn, icon: "pencil")
-                            .transition(.opacity)
-                    }
-                    saveStatusPill
-                    PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
-                        .disabled(workspace.demoMode)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-                    // Demo edits apply on screen but have no file to be saved to.
-                    PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
-                        .disabled(workspace.demoMode)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            HStack(spacing: 8) {
+                if workspace.hasUnsavedChanges && saveStatus == .idle {
+                    Pill(text: "Unsaved changes", tone: .warn, icon: "pencil")
+                        .transition(.opacity)
                 }
-            )
+                saveStatusPill
+                PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                // Demo edits apply on screen but have no file to be saved to.
+                PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            }
         }
     }
 

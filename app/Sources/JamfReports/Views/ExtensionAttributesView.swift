@@ -47,16 +47,14 @@ struct ExtensionAttributesView: View {
                 // for as long as the demo stays open.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             ) {
-                AnyView(
-                    PNPButton(
-                        title: "Adopt EAs…", icon: "plus.circle", style: .ghost, size: .sm
-                    ) { showingAdopt = true }
-                    // Demo mode never writes a workspace.
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode
-                          ? DemoData.liveOnlyHelp
-                          : "Pick collected Extension Attributes to track in config.yaml.")
-                )
+                PNPButton(
+                    title: "Adopt EAs…", icon: "plus.circle", style: .ghost, size: .sm
+                ) { showingAdopt = true }
+                // Demo mode never writes a workspace.
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : "Pick collected Extension Attributes to track in config.yaml.")
             }
             if loadedSource != dataSource {
                 ScreenLoadingCard(what: "extension attributes")
@@ -387,10 +385,16 @@ struct ExtensionAttributesView: View {
 
                 VStack(spacing: 8) {
                     ForEach(Array(sortedCoverage.prefix(30)), id: \.id) { coverage in
-                        coverageRow(for: coverage)
-                            .onTapGesture {
-                                selectedEA = coverage.eaName
-                            }
+                        Button { selectedEA = coverage.eaName } label: {
+                            coverageRow(for: coverage)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            "\(coverage.eaName) extension attribute, "
+                                + "\(coverage.populatedDevices) devices reporting a value")
+                        .accessibilityHint("Shows its value distribution")
+                        .accessibilityAddTraits(selectedEA == coverage.eaName ? .isSelected : [])
                     }
 
                     if snapshot.coverage.count > 30 {
@@ -425,13 +429,6 @@ struct ExtensionAttributesView: View {
             in: RoundedRectangle(cornerRadius: 6)
         )
         .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(coverage.eaName) extension attribute, \(coverage.populatedDevices) devices reporting a value")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "View distribution") {
-            selectedEA = coverage.eaName
-        }
-        .focusable()
     }
 
     @ViewBuilder
@@ -664,16 +661,14 @@ private struct BarChartExportView: View {
                 title: distribution.eaName,
                 subtitle: dateText
             ) {
-                AnyView(
-                    VStack(alignment: .trailing, spacing: 5) {
-                        Text("\(distribution.top.count)")
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.gold)
-                        Text("distinct values shown")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Theme.Chart.textTertiary)
-                    }
-                )
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text("\(distribution.top.count)")
+                        .font(.system(size: 28, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.gold)
+                    Text("distinct values shown")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Chart.textTertiary)
+                }
             }
 
             Chart(bars) { bar in
@@ -742,7 +737,7 @@ private struct BarChartExportView: View {
     private func exportStat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Theme.Chart.textTertiary)
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
