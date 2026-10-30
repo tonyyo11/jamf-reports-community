@@ -66,7 +66,7 @@ name as `%2C` and a percent sign as `%25`.
 | `device` | Print one device's detail JSON (Jamf Pro profiles only) | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School workspace; refuses a profile that is not one | `--profile` |
 | `schedules` | List, add, remove, or run hand-built schedules (managed ones come from the Automation policy and are not editable here) | `list`, `add …`, `remove <label>`, `run <label>` |
-| `verify` | Check a report run's manifest: every file's size and SHA-256, and the RFC 3161 timestamp beside it when there is one; exits `1` when anything differs | `<stem>.manifest.json` |
+| `verify` | Check a report run's manifest: every file's size and SHA-256, and the RFC 3161 timestamp beside it when there is one; exits `1` when anything differs | `<stem>.manifest.json`, `--signer-sha256 <hex>` |
 
 ### Gating a job on config health
 
@@ -126,7 +126,11 @@ A few behaviors worth knowing:
   chain. Compare that fingerprint with the one the authority publishes: a self-signed
   certificate can name itself anything. With no `.tsr`, or an untrusted chain, `verify` adds a
   note: anyone who can write the folder can write a matching manifest, so a match holds only if
-  you trust where the manifest (and the signer fingerprint) came from. A failed request is a `[warn] report timestamp not
+  you trust where the manifest (and the signer fingerprint) came from. For a script or an
+  audit, pass the authority's published fingerprint as `--signer-sha256 <hex>` (64 hex digits;
+  colons and spaces, as `openssl x509 -fingerprint -sha256` prints them, are accepted): `verify`
+  then exits `1` when the run has no `.tsr` or another certificate signed it, and prints `OK`
+  for the signer instead of the note. A failed request is a `[warn] report timestamp not
   saved: …` line; the reports stand. On a shared workspace the address is used on a Mac only
   once it is confirmed there (Config Doctor). `https://freetsa.org/tsr` is a free test service,
   not a qualified authority. To check a reply without this app, macOS's own LibreSSL (3.3.6,

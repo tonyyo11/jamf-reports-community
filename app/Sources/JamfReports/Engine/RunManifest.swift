@@ -198,8 +198,10 @@ struct RunManifest: Codable, Equatable, Sendable {
 
     /// Recomputes every artifact's hash against the manifest at `url`, then reads the `.tsr`
     /// beside it (if any): its imprint must be the manifest's own SHA-256 and its signature must
-    /// verify. An authority whose chain this Mac does not trust (FreeTSA) is reported, not failed.
-    static func verify(manifestAt url: URL) -> Verification {
+    /// verify. An authority whose chain this Mac does not trust (FreeTSA) is reported, not failed,
+    /// unless `expectedSigner` (a SHA-256 of the signer certificate, `--signer-sha256`) is given:
+    /// then a missing timestamp, or one signed by any other certificate, fails.
+    static func verify(manifestAt url: URL, expectedSigner: String? = nil) -> Verification {
         var result = Verification()
         func fail(_ line: String) {
             result.lines.append(line)
@@ -245,7 +247,9 @@ struct RunManifest: Codable, Equatable, Sendable {
         }
         for extra in extras(of: manifest, in: folder) { fail("EXTRA    \(shown(extra))") }
         result.lines.append("\(matched) of \(manifest.artifacts.count) artifacts match.")
-        verifyTimestamp(at: timestampURL(forManifest: url), manifestSHA256: digest, into: &result)
+        verifyTimestamp(
+            at: timestampURL(forManifest: url), manifestSHA256: digest,
+            expectedSigner: expectedSigner, into: &result)
         return result
     }
 
@@ -304,13 +308,19 @@ struct RunManifest: Codable, Equatable, Sendable {
     }
 
     private static func verifyTimestamp(
-        at url: URL, manifestSHA256: String, into result: inout Verification
+        at url: URL, manifestSHA256: String, expectedSigner: String?,
+        into result: inout Verification
     ) {
         var info = stat()
         guard lstat(url.path, &info) == 0 else {
             result.lines.append(
                 "Timestamp: none (no \(shown(url.lastPathComponent)) beside the manifest)")
-            result.lines.append(untimestampedNote)
+            if expectedSigner != nil {
+                result.lines.append("FAIL  --signer-sha256 was given, but the run has no timestamp")
+                result.passed = false
+            } else {
+                result.lines.append(untimestampedNote)
+            }
             return
         }
         let inspection: TimestampToken.Inspection
@@ -345,7 +355,32 @@ struct RunManifest: Codable, Equatable, Sendable {
             ? "Timestamp chain: trusted by this Mac"
             : "Timestamp chain: not trusted by this Mac (a self-signed or private authority; "
                 + "the time above is what that authority signed)")
-        if !inspection.chainTrusted { result.lines.append(untrustedChainNote) }
+        guard let expectedSigner else {
+            if !inspection.chainTrusted { result.lines.append(untrustedChainNote) }
+            return
+        }
+        guard let actual = inspection.signerSHA256 else {
+            result.lines.append("FAIL  the timestamp carries no signer certificate to compare "
+                + "with --signer-sha256")
+            result.passed = false
+            return
+        }
+        if actual == expectedSigner {
+            result.lines.append("OK    timestamp signer is the expected certificate "
+                + "(--signer-sha256)")
+        } else {
+            result.lines.append("FAIL  timestamp signer is not the expected certificate: "
+                + "expected \(expectedSigner), signed by \(actual)")
+            result.passed = false
+        }
+    }
+
+    /// A certificate SHA-256 as people copy it (`openssl x509 -fingerprint -sha256` prints
+    /// `AB:CD:...`): colons and spaces dropped, lowercased. Nil unless 64 hex digits remain.
+    static func normalizedSignerSHA256(_ text: String) -> String? {
+        let hex = text.lowercased().filter { $0 != ":" && !$0.isWhitespace }
+        guard hex.count == 64, hex.allSatisfy(\.isHexDigit) else { return nil }
+        return hex
     }
 
     /// Anyone who can write the folder can write a manifest that matches the files beside it.
