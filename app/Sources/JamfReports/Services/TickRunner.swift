@@ -49,9 +49,12 @@ enum TickRunner {
         try? FileManager.default.removeItem(at: dir.appendingPathComponent(label))
     }
 
-    /// Spawn `JamfReports --tick --now <label>` as a child. With `wait`, stream
-    /// its stdout/stderr through `onLine` and return its exit code; without,
-    /// return 0 as soon as it is launched (the health-row button).
+    /// Spawn `JamfReports --tick --now <label>` as a child through `CLIBridge.run`, the shared
+    /// runner: line splitting, EOF-gated completion, handler cleanup. Cancelling the caller does
+    /// not stop the child. With `wait`, stream its output through `onLine` and
+    /// return its exit code; without, return 0 once the executable is found and let the run
+    /// finish unobserved (the health-row button). The parent's environment is passed on, as
+    /// before: the child reads `JRC_WORKSPACES_ROOT` and the like.
     static func spawnNow(
         label: String,
         wait: Bool,
@@ -59,43 +62,40 @@ enum TickRunner {
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void = { _ in }
     ) async -> Int32 {
         guard LaunchAgentWriter.isValidLabel(label), let executable else { return 1 }
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = ["--tick", "--now", label]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
-            }
-            let text = String(decoding: data, as: UTF8.self)
-            for line in text.split(separator: "\n") {
-                onLine(CLIBridge.LogLine(timestamp: Date(), level: .info, text: String(line)))
-            }
-        }
-
+        let arguments = ["--tick", "--now", label]
+        let environment = ProcessInfo.processInfo.environment
+        let bridge = await MainActor.run { CLIBridge() }
         guard wait else {
+            guard FileManager.default.isExecutableFile(atPath: executable.path) else { return 1 }
+            Task.detached {
+                do {
+                    _ = try await bridge.run(
+                        executable: executable, arguments: arguments,
+                        environment: environment, onLine: onLine)
+                } catch {
+                    logLaunchFailure(label: label, error: error)
+                }
+            }
+            return 0
+        }
+        // Detached, so cancelling the caller (a view going away) never reaches the child: a Run
+        // now keeps running, as it did before, and the wait still returns its exit code.
+        let run = Task.detached {
             do {
-                try process.run()
-                return 0
+                return try await bridge.run(
+                    executable: executable, arguments: arguments,
+                    environment: environment, onLine: onLine)
             } catch {
-                pipe.fileHandleForReading.readabilityHandler = nil
-                return 1
+                logLaunchFailure(label: label, error: error)
+                return Int32(1)
             }
         }
+        return await run.value
+    }
 
-        return await withCheckedContinuation { (c: CheckedContinuation<Int32, Never>) in
-            process.terminationHandler = { proc in c.resume(returning: proc.terminationStatus) }
-            do {
-                try process.run()
-            } catch {
-                process.terminationHandler = nil
-                pipe.fileHandleForReading.readabilityHandler = nil
-                c.resume(returning: 1)
-            }
-        }
+    private static func logLaunchFailure(label: String, error: any Error) {
+        let reason = error.localizedDescription
+        AppLogger.schedule.error(
+            "Run now \(label, privacy: .private) did not start: \(reason, privacy: .private)")
     }
 }

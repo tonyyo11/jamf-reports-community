@@ -42,7 +42,16 @@ echo
 # so the .app is not notarized+stapled here and then immediately re-signed in
 # step 2, which would otherwise invalidate the staple.
 echo "→ Building release bundle..."
-if ! RELEASE=1 MARKETING_VERSION="${RELEASE_VERSION}" SKIP_NOTARIZE=1 ./build-app.sh release; then
+# Build with the identity step 2 signs with, so the tick agent's SpawnConstraint names its team.
+# shellcheck source-path=SCRIPTDIR source=lib/spawn-constraint.zsh
+source "$(cd -- "$(dirname -- "$0")" && pwd -P)/lib/spawn-constraint.zsh"
+BUILD_TEAM_ID="$(jr_identity_team_id "${DEVELOPER_ID_APP}")"
+if [[ -z "$BUILD_TEAM_ID" ]]; then
+  echo "✗ could not read the team ID from ${DEVELOPER_ID_APP}" >&2
+  exit 1
+fi
+if ! RELEASE=1 MARKETING_VERSION="${RELEASE_VERSION}" SKIP_NOTARIZE=1 \
+    TEAM_ID="${BUILD_TEAM_ID}" SIGNING_IDENTITY="${DEVELOPER_ID_APP}" ./build-app.sh release; then
   echo "✗ build-app.sh release failed" >&2
   exit 1
 fi

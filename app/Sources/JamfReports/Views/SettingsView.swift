@@ -1,12 +1,12 @@
 import SwiftUI
+import Synchronization
 import AppKit
 import UniformTypeIdentifiers
 
-private final class TextLineBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _lines: [String] = []
-    func append(_ text: String) { lock.withLock { _lines.append(text) } }
-    var lines: [String] { lock.withLock { _lines } }
+private final class TextLineBuffer: Sendable {
+    private let stored = Mutex<[String]>([])
+    func append(_ text: String) { stored.withLock { $0.append(text) } }
+    var lines: [String] { stored.withLock { $0 } }
 }
 
 struct SettingsView: View {

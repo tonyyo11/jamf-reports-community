@@ -14,7 +14,7 @@ enum SecurityPolicyConfigLoader {
             let file = url.lastPathComponent
             let reason = error.localizedDescription
             AppLogger.report.warning("""
-                Security policy: could not decode \(file, privacy: .public), using the default \
+                Security policy: could not decode \(file, privacy: .private), using the default \
                 policy: \(reason, privacy: .private)
                 """)
             return .default

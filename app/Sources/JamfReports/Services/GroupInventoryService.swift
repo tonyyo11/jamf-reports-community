@@ -207,7 +207,7 @@ struct GroupInventoryService: Sendable {
             return envelope.results
         }
         AppLogger.collect.warning(
-            "GroupInventoryService: failed to decode advanced-mobile-device-searches at \(url.lastPathComponent, privacy: .public)"
+            "GroupInventoryService: failed to decode advanced-mobile-device-searches at \(url.lastPathComponent, privacy: .private)"
         )
         return []
     }
@@ -222,7 +222,7 @@ struct GroupInventoryService: Sendable {
             return groups
         }
         AppLogger.collect.warning(
-            "GroupInventoryService: failed to decode \(kind, privacy: .public) at \(url.lastPathComponent, privacy: .public)"
+            "GroupInventoryService: failed to decode \(kind, privacy: .public) at \(url.lastPathComponent, privacy: .private)"
         )
         return []
     }

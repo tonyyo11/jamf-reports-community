@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Resolves a jamf-cli profile's `auth-method` — the fact that decides whether
 /// the Platform API kinds can ever succeed for that profile.
@@ -54,8 +55,7 @@ enum ProfileAuthMethod {
         }
     }
 
-    nonisolated(unsafe) private static var cache: [String: Resolved] = [:]
-    private static let cacheLock = NSLock()
+    private static let cache = Mutex<[String: Resolved]>([:])
 
     /// The profile's auth method and scope level, or nil when they cannot be
     /// determined — no jamf-cli, the probe failed, or the profile is not in
@@ -68,9 +68,7 @@ enum ProfileAuthMethod {
         timeout: TimeInterval = JamfCLIProbe.defaultTimeout,
         configFile: URL? = ProfileService.defaultConfigFileURL
     ) -> Resolved? {
-        cacheLock.lock()
-        let cached = cache[profile]
-        cacheLock.unlock()
+        let cached = cache.withLock { $0[profile] }
         if let cached { return cached }
 
         guard let binary, let data = configList(binary: binary, timeout: timeout),
@@ -90,9 +88,7 @@ enum ProfileAuthMethod {
                 configProduct: entry?.product, authMethod: method, url: entry?.url) == nil
         )
 
-        cacheLock.lock()
-        cache[profile] = resolved
-        cacheLock.unlock()
+        cache.withLock { $0[profile] = resolved }
         return resolved
     }
 
@@ -158,9 +154,7 @@ enum ProfileAuthMethod {
     /// Drops the cache. Called when profile configuration changes (and by
     /// tests), mirroring `JamfCLIConfigList.refresh()`.
     static func invalidateCache() {
-        cacheLock.lock()
-        cache.removeAll()
-        cacheLock.unlock()
+        cache.withLock { $0.removeAll() }
     }
 
     /// Runs `config list --output json`, returning nil on any failure, including a run that

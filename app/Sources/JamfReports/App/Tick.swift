@@ -242,7 +242,7 @@ func workspaces(
 private func saveLastTick(_ state: TickState, to url: URL) {
     do { try state.save(url: url) } catch {
         AppLogger.schedule.warning(
-            "tick: wake time not recorded: \(error.localizedDescription, privacy: .public)")
+            "tick: wake time not recorded: \(error.localizedDescription, privacy: .private)")
     }
 }
 
@@ -357,7 +357,7 @@ enum TickLoop {
                 if verdictChanged || outcomesChanged {
                     do { try save(state) } catch {
                         AppLogger.schedule.warning(
-                            "tick: \(label, privacy: .public) retry verdict not recorded")
+                            "tick: \(label, privacy: .private) retry verdict not recorded")
                     }
                 }
             }
@@ -443,5 +443,5 @@ final class TickFailureLog {
 /// agent's stderr goes nowhere, so OSLog and `TickFailureLog` are the lasting record.
 private func reportTickError(_ message: String, caller: LockHolder = .tick) {
     fputs("[error] \(caller.label): \(message)\n", stderr)
-    AppLogger.schedule.error("\(caller.label, privacy: .public): \(message, privacy: .public)")
+    AppLogger.schedule.error("\(caller.label, privacy: .private): \(message, privacy: .private)")
 }

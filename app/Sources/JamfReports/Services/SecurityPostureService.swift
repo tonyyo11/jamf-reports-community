@@ -143,7 +143,7 @@ struct SecurityPostureService: Sendable {
         }
         guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
             AppLogger.platform.warning(
-                "SecurityPostureService: failed to decode security file \(url.lastPathComponent, privacy: .public)"
+                "SecurityPostureService: failed to decode security file \(url.lastPathComponent, privacy: .private)"
             )
             throw LoadError.decodeFailed("failed to decode \(url.lastPathComponent)")
         }

@@ -58,7 +58,7 @@ extension ReportEngine {
             collectedByHost: collectingHostLabel(dataDir: dataDir))
         else {
             let msg = "[warn] Jamf School returned 0 devices — summary not written"
-            AppLogger.collect.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             AttentionLog.raise(.schoolZeroDevices, "Jamf School returned 0 devices")
             return .nothingToSummarize
@@ -69,7 +69,7 @@ extension ReportEngine {
                 at: summariesDir, withIntermediateDirectories: true)
         } catch {
             let msg = "\(summaryNotWrittenMarker) the summaries directory could not be created"
-            AppLogger.collect.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             return .directoryUnavailable
         }

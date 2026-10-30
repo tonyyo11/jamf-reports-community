@@ -68,7 +68,7 @@ enum DashboardChartExport {
               let bitmap = NSBitmapImageRep(data: tiff),
               let pngData = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
             AppLogger.ui.error(
-                "DashboardChartExport: render pipeline returned nil for '\(title, privacy: .public)'"
+                "DashboardChartExport: render pipeline returned nil for '\(title, privacy: .private)'"
             )
             return .failure(.renderFailed)
         }
@@ -78,7 +78,7 @@ enum DashboardChartExport {
             return .success(url)
         } catch {
             AppLogger.ui.error(
-                "DashboardChartExport: write failed for chart '\(title, privacy: .public)' — \(error.localizedDescription, privacy: .private)"
+                "DashboardChartExport: write failed for chart '\(title, privacy: .private)' — \(error.localizedDescription, privacy: .private)"
             )
             return .failure(.writeFailed(underlying: error))
         }
@@ -113,7 +113,7 @@ enum DashboardChartExport {
               let bitmap = NSBitmapImageRep(data: tiff),
               let pngData = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
             AppLogger.ui.error(
-                "DashboardChartExport.render: render pipeline returned nil for '\(suggestedFilename, privacy: .public)'"
+                "DashboardChartExport.render: render pipeline returned nil for '\(suggestedFilename, privacy: .private)'"
             )
             return .failure(.renderFailed)
         }
@@ -123,7 +123,7 @@ enum DashboardChartExport {
             return .success(url)
         } catch {
             AppLogger.ui.error(
-                "DashboardChartExport.render: write failed for '\(suggestedFilename, privacy: .public)' — \(error.localizedDescription, privacy: .private)"
+                "DashboardChartExport.render: write failed for '\(suggestedFilename, privacy: .private)' — \(error.localizedDescription, privacy: .private)"
             )
             return .failure(.writeFailed(underlying: error))
         }

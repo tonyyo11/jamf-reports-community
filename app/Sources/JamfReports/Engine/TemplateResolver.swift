@@ -62,7 +62,7 @@ enum TemplateResolver {
         let known = allTemplates.map(\.identifier).joined(separator: ", ")
         AppLogger.report.warning(
             """
-            TemplateResolver: unknown identifier '\(identifier, privacy: .public)'. \
+            TemplateResolver: unknown identifier '\(identifier, privacy: .private)'. \
             Known: \(known, privacy: .public). Falling back to ExecutiveTemplate.
             """
         )

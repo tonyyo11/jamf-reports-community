@@ -361,7 +361,7 @@ enum SnapshotRetentionService {
                 let name = url.lastPathComponent
                 let desc = error.localizedDescription
                 AppLogger.collect.warning(
-                    "SnapshotRetentionService: delete failed for \(name, privacy: .public): \(desc, privacy: .public)"
+                    "SnapshotRetentionService: delete failed for \(name, privacy: .private): \(desc, privacy: .private)"
                 )
                 onLine(.init(
                     timestamp: Date(), level: .warn,
@@ -381,7 +381,7 @@ enum SnapshotRetentionService {
                 let name = url.lastPathComponent
                 let desc = error.localizedDescription
                 AppLogger.collect.warning(
-                    "SnapshotRetentionService: archive failed for \(name, privacy: .public): \(desc, privacy: .public)"
+                    "SnapshotRetentionService: archive failed for \(name, privacy: .private): \(desc, privacy: .private)"
                 )
                 onLine(.init(
                     timestamp: Date(), level: .warn,

@@ -1,20 +1,23 @@
 import Foundation
+import Synchronization
 
 /// Locked process box for task cancellation and the timeout: terminates the child after a
 /// deadline (SIGTERM, then SIGKILL after `CLIBridge.timeoutKillGrace`). Shared by
 /// `CLIBridge.runAndCapture` and `JamfCLIProbe`.
-final class TimedProcessBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var process: Process?
-    private var readHandles: [FileHandle] = []
-    private var timeoutItem: DispatchWorkItem?
-    private var timedOut = false
-    var didTimeOut: Bool { lock.lock(); defer { lock.unlock() }; return timedOut }
+final class TimedProcessBox: Sendable {
+    private struct State {
+        var process: Process?
+        var readHandles: [FileHandle] = []
+        var disarmed = false
+        var timedOut = false
+    }
+    private let state = Mutex(State())
+    var didTimeOut: Bool { state.withLock { $0.timedOut } }
     func set(_ p: Process) {
-        lock.lock(); process = p; lock.unlock()
+        state.withLock { $0.process = p }
         Self.live.add(self)
     }
-    func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
+    func terminate() { state.withLock { $0.process?.terminate() } }
 
     /// Right after `process.run()` at every launch site: a process that is exiting
     /// (`terminateAllRunning` ran) must not leave a child it started after that pass. Same
@@ -27,16 +30,15 @@ final class TimedProcessBox: @unchecked Sendable {
 
     /// Whether the child is running, for `terminateAllRunning`.
     private var isChildRunning: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return process?.isRunning == true
+        state.withLock { $0.process?.isRunning == true }
     }
 
     func setReadHandles(_ handles: [FileHandle]) {
-        lock.lock(); readHandles = handles; lock.unlock()
+        state.withLock { $0.readHandles = handles }
     }
 
     func clearReadHandlers() {
-        lock.lock(); let handles = readHandles; lock.unlock()
+        let handles = state.withLock { $0.readHandles }
         for handle in handles { handle.readabilityHandler = nil }
     }
 
@@ -46,32 +48,34 @@ final class TimedProcessBox: @unchecked Sendable {
     /// terminate(), and only for a live child, so a child that exited on its own as the
     /// timer fired is not reported as timed out.
     func armTimeout(_ seconds: TimeInterval) {
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.lock.lock()
-            guard let p = self.process, p.isRunning else { self.lock.unlock(); return }
-            self.timedOut = true
-            self.lock.unlock()
-            p.terminate()
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, !self.state.withLock({ $0.disarmed }) else { return }
+            // The flag is set, then the child stopped, in one critical section.
+            let stopped = self.state.withLock { state -> Bool in
+                guard let p = state.process, p.isRunning else { return false }
+                state.timedOut = true
+                p.terminate()
+                return true
+            }
+            guard stopped else { return }
             let killAt = DispatchTime.now() + CLIBridge.timeoutKillGrace
             DispatchQueue.global().asyncAfter(deadline: killAt) { [weak self] in
                 self?.killIfStillRunning()
             }
         }
-        lock.lock(); timeoutItem = item; lock.unlock()
-        DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: item)
     }
 
-    func disarmTimeout() { lock.lock(); let i = timeoutItem; lock.unlock(); i?.cancel() }
+    func disarmTimeout() { state.withLock { $0.disarmed = true } }
 
     /// Checked under the lock and only while Foundation still reports the child running,
     /// so the pid of a child that has exited (and could be reused) is not signalled.
     private func killIfStillRunning() { signalIfRunning(SIGKILL) }
 
     private func signalIfRunning(_ signal: Int32) {
-        lock.lock(); defer { lock.unlock() }
-        guard let p = process, p.isRunning else { return }
-        kill(p.processIdentifier, signal)
+        state.withLock { state in
+            guard let p = state.process, p.isRunning else { return }
+            kill(p.processIdentifier, signal)
+        }
     }
 
     // MARK: - Every child this process started
@@ -110,27 +114,23 @@ final class TimedProcessBox: @unchecked Sendable {
     }
 }
 
-private final class ClosingLatch: @unchecked Sendable {
-    private let lock = NSLock()
-    private var flag = false
-    var value: Bool { lock.withLock { flag } }
-    func set(_ new: Bool) { lock.withLock { flag = new } }
+private final class ClosingLatch: Sendable {
+    private let flag = Mutex(false)
+    var value: Bool { flag.withLock { $0 } }
+    func set(_ new: Bool) { flag.withLock { $0 = new } }
 }
 
 /// Weak references to the boxes that hold a child, so a box that has finished is not kept alive.
-private final class LiveBoxes: @unchecked Sendable {
+private final class LiveBoxes: Sendable {
     private struct Weak { weak var box: TimedProcessBox? }
-    private let lock = NSLock()
-    private var entries: [Weak] = []
+    private let entries = Mutex<[Weak]>([])
 
     func add(_ box: TimedProcessBox) {
-        lock.lock(); defer { lock.unlock() }
-        entries.removeAll { $0.box == nil }
-        entries.append(Weak(box: box))
+        entries.withLock {
+            $0.removeAll { $0.box == nil }
+            $0.append(Weak(box: box))
+        }
     }
 
-    var boxes: [TimedProcessBox] {
-        lock.lock(); defer { lock.unlock() }
-        return entries.compactMap(\.box)
-    }
+    var boxes: [TimedProcessBox] { entries.withLock { $0.compactMap(\.box) } }
 }

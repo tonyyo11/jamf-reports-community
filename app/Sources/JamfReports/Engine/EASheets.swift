@@ -247,7 +247,7 @@ struct EASheets: Sendable {
                                 ("computer-extension-attributes", definitionsProblem)] {
             guard let problem else { continue }
             let msg = "[warn] \(kind): snapshot unreadable — \(problem)"
-            AppLogger.report.warning("\(msg, privacy: .public)")
+            AppLogger.report.warning("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
         }
         let unreadable = [("ea-results", resultsProblem),

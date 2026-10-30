@@ -141,9 +141,11 @@ enum AppUpdateCheck {
     /// One GET with no cookies or cache, read up to `maxResponseBytes`. The session is cancelled
     /// on the way out, so an answer refused as too large stops downloading.
     static let liveFetch: Fetch = { request in
-        let session = URLSession(configuration: .ephemeral)
+        let session = HTTPSession.make(request: requestTimeout, resource: requestTimeout * 2)
         defer { session.invalidateAndCancel() }
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await session.bytes(
+            for: request,
+            delegate: HTTPSession.RedirectRule { $0.scheme == "https" && $0.host == "api.github.com" })
         guard response.url?.host == "api.github.com" else { throw CheckError.unexpectedHost }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw CheckError.httpStatus(status) }

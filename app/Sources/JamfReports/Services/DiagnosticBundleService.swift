@@ -584,7 +584,7 @@ enum DiagnosticBundleService {
             do { return try resolve() } catch {
                 let reason = WorkspacePaths.refusal(of: error)
                 let note = "DiagnosticBundle: \(name) not collected: \(reason)"
-                AppLogger.collect.warning("\(note, privacy: .public)")
+                AppLogger.collect.warning("\(note, privacy: .private)")
                 refused.append(.skipped(path: name, reason: reason))
                 return nil
             }
@@ -798,7 +798,7 @@ enum DiagnosticBundleService {
         } catch {
             let msg = error.localizedDescription
             AppLogger.collect.warning(
-                "DiagnosticBundle: chmod zip failed: \(msg, privacy: .public)"
+                "DiagnosticBundle: chmod zip failed: \(msg, privacy: .private)"
             )
         }
         return zipURL

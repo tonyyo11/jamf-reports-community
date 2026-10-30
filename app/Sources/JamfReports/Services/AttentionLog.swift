@@ -175,8 +175,8 @@ final class AttentionLog: Sendable {
         } catch {
             AppLogger.schedule.error(
                 """
-                AttentionLog: could not write \(target.lastPathComponent, privacy: .public): \
-                \(error.localizedDescription, privacy: .public)
+                AttentionLog: could not write \(target.lastPathComponent, privacy: .private): \
+                \(error.localizedDescription, privacy: .private)
                 """)
         }
     }

@@ -336,11 +336,11 @@ enum BackupMaintenance {
                 try fm.removeItem(at: url)
                 removed.append(name)
                 AppLogger.cli.info(
-                    "BackupMaintenance: removed abandoned staging dir \(name, privacy: .public)"
+                    "BackupMaintenance: removed abandoned staging dir \(name, privacy: .private)"
                 )
             } catch {
                 AppLogger.cli.warning(
-                    "BackupMaintenance: could not remove \(name, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                    "BackupMaintenance: could not remove \(name, privacy: .private): \(error.localizedDescription, privacy: .private)"
                 )
             }
         }

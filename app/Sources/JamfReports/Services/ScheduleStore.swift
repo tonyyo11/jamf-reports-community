@@ -99,8 +99,8 @@ struct ScheduleStore: Sendable {
             AppLogger.schedule.error(
                 """
                 schedules.json could not be decoded: \
-                \(error.localizedDescription, privacy: .public) — moved to \
-                \(aside?.lastPathComponent ?? "(move failed)", privacy: .public)
+                \(error.localizedDescription, privacy: .private) — moved to \
+                \(aside?.lastPathComponent ?? "(move failed)", privacy: .private)
                 """
             )
             return []

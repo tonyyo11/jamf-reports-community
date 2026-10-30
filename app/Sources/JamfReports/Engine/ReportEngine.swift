@@ -479,14 +479,14 @@ struct ReportEngine: Sendable {
                 fresh.collectionSources = Self.mergedSources(
                     existing: existing.collectionSources, fresh: built.collectionSources)
                 let upgradeMsg = "[info] summary_\(today).json rebuilt with fresher data"
-                AppLogger.collect.info("\(upgradeMsg, privacy: .public)")
+                AppLogger.collect.info("\(upgradeMsg, privacy: .private)")
                 onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
                 return Self.writeSummaryFile(fresh, to: summaryFile, onLine: onLine)
                     ? .wrote : .writeFailed
             }
             let msg = "[info] summary_\(today).json already exists — "
                 + "leaving existing file in place"
-            AppLogger.collect.info("\(msg, privacy: .public)")
+            AppLogger.collect.info("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .info, text: msg))
             return .keptExisting
         }
@@ -498,7 +498,7 @@ struct ReportEngine: Sendable {
             // the trend chart and StaleDataBanner won't refresh on this run.
             let msg = "[warn] summary JSON not written: no jamf-cli snapshots available to summarize " +
                       "(run `collect` first)"
-            AppLogger.collect.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return .nothingToSummarize
@@ -597,7 +597,7 @@ struct ReportEngine: Sendable {
             let data = try encoder.encode(summary)
             try data.write(to: url, options: .atomic)
             let msg = "[ok] wrote \(url.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
-            AppLogger.collect.info("\(msg, privacy: .public)")
+            AppLogger.collect.info("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .ok, text: msg))
             return true
         } catch {
@@ -901,7 +901,7 @@ struct ReportEngine: Sendable {
                 // `.notice` (not `.debug`) so the shape surfaces without verbose logging;
                 // `reason` is keys-only (PII-safe).
                 AppLogger.platform.notice(
-                    "ReportEngine: ea-results undecodable — \(decoded.reason, privacy: .public)"
+                    "ReportEngine: ea-results undecodable — \(decoded.reason, privacy: .private)"
                 )
             }
         }
@@ -1254,7 +1254,7 @@ struct ReportEngine: Sendable {
             // `.notice` (not `.debug`) so the shape surfaces without verbose logging;
             // `reason` is keys-only (PII-safe).
             AppLogger.platform.notice(
-                "ReportEngine.renderChartSheet: ea-results undecodable — \(eaDecoded.reason, privacy: .public)"
+                "ReportEngine.renderChartSheet: ea-results undecodable — \(eaDecoded.reason, privacy: .private)"
             )
         }
         let eaRows = eaDecoded?.rows
@@ -1459,7 +1459,7 @@ struct ReportEngine: Sendable {
             try png.write(to: url, options: .atomic)
         } catch {
             AppLogger.report.warning(
-                "[warn] PNG export failed for \(kind, privacy: .public): \(error.localizedDescription)"
+                "[warn] PNG export failed for \(kind, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
         }
     }
@@ -1482,7 +1482,7 @@ struct ReportEngine: Sendable {
         } catch {
             let msg = "[warn] could not resolve historical_csv_dir for '\(profile)': " +
                       "\(error.localizedDescription) — summary skipped"
-            AppLogger.report.warning("\(msg, privacy: .public)")
+            AppLogger.report.warning("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return nil
         }
@@ -1511,7 +1511,7 @@ struct ReportEngine: Sendable {
         } catch {
             let msg = "[warn] could not resolve archive_dir for '\(profile)': " +
                       "\(error.localizedDescription) — run rotation skipped"
-            AppLogger.report.warning("\(msg, privacy: .public)")
+            AppLogger.report.warning("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return nil
         }
@@ -2071,7 +2071,7 @@ struct ReportEngine: Sendable {
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
                 let msg = "[info] already collected today — skipping (use Refresh to force)"
-                AppLogger.collect.info("\(msg, privacy: .public)")
+                AppLogger.collect.info("\(msg, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .info, text: msg))
                 return .alreadyCollected
             }
@@ -2091,13 +2091,13 @@ struct ReportEngine: Sendable {
             // Run History must not show it as a clean success next to a run
             // that actually fetched the fleet.
             let line = Self.standDownLine(reason: reason)
-            AppLogger.collect.info("\(line, privacy: .public)")
+            AppLogger.collect.info("\(line, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: line))
             return .stoodDown
         case .proceed(let state, let notes):
             holdsClaim = state.holdsClaim
             for note in notes {
-                AppLogger.collect.warning("\(note, privacy: .public)")
+                AppLogger.collect.warning("\(note, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .warn, text: note))
             }
         }
@@ -2136,7 +2136,7 @@ struct ReportEngine: Sendable {
         let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
 
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
-        let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
+        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
         // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
         if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
             onLine(.init(timestamp: Date(), level: .fail,
@@ -2334,21 +2334,21 @@ struct ReportEngine: Sendable {
                     "reads as endpoint-specific (a mid-command token expiry or a " +
                     "server-side token quirk on that command) rather than dead " +
                     "credentials. Updating jamf-cli may resolve it. Continuing."
-                AppLogger.collect.warning("\(msg, privacy: .public)")
+                AppLogger.collect.warning("\(msg, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .warn, text: msg))
             case .unconfirmed(let warnedKinds):
                 let msg = "[warn] auth check timed out for '\(profile)'; could not confirm "
                     + "whether the credentials are valid. \(warnedKinds.joined(separator: ", ")) "
                     + "returned 401. Not treated as expired credentials; each source keeps "
                     + "the result it got."
-                AppLogger.collect.warning("\(msg, privacy: .public)")
+                AppLogger.collect.warning("\(msg, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .warn, text: msg))
             case .confirmedDead(let failedCount):
                 let msg = "[error] auth failed for '\(profile)': \(failedCount) live call(s) " +
                     "returned 401 and none succeeded — re-authenticate " +
                     "(jamf-cli -p \(ProfileName.shellWord(profile)) pro auth token). " +
                     "No snapshot written."
-                AppLogger.collect.error("\(msg, privacy: .public)")
+                AppLogger.collect.error("\(msg, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .fail, text: msg))
                 throw ReportEngineError.authExpired(profile: profile, failedCount: failedCount)
             }
@@ -2381,7 +2381,7 @@ struct ReportEngine: Sendable {
         let unsavedKinds = Self.degradedKinds(outcomes: outcomes, savedKinds: savedKinds)
         if !unsavedKinds.isEmpty {
             let msg = Self.unlandedSourcesLine(unsavedKinds, attempted: outcomes.count)
-            AppLogger.collect.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
         return nil
@@ -2392,7 +2392,7 @@ struct ReportEngine: Sendable {
         _ error: ReportEngineError, onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) -> ReportEngineError {
         let msg = "[error] " + (error.errorDescription ?? "collect failed")
-        AppLogger.collect.error("\(msg, privacy: .public)")
+        AppLogger.collect.error("\(msg, privacy: .private)")
         onLine(.init(timestamp: Date(), level: .fail, text: msg))
         return error
     }
@@ -2512,7 +2512,7 @@ struct ReportEngine: Sendable {
         // where having no jamf-cli snapshots is the normal, correct state.
         if let unwritten {
             let msg = "\(Self.summaryNotWrittenMarker) \(unwritten) — Trends did not advance"
-            AppLogger.collect.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
     }
@@ -3584,7 +3584,7 @@ struct ReportEngine: Sendable {
                 text: "[skip] \(kind): \(CollectSkipReason.collectSkip.skipDetail ?? "")"))
         }
         // Same gate as the Pro loop.
-        let quiet = JamfCLIInstaller.installedVersion(at: bin).map {
+        let quiet = await JamfCLIInstaller.installedVersionOffMain(at: bin).map {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
         let commands = plan.filter { $0.skip == nil }.map {
@@ -3666,7 +3666,7 @@ struct ReportEngine: Sendable {
                 ? "[error] " + (error.errorDescription ?? "collect failed")
                 : "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
                     "'\(profile)' — server unreachable or credentials broken. No snapshot written."
-            AppLogger.collect.error("\(msg, privacy: .public)")
+            AppLogger.collect.error("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             throw error
         }
@@ -3740,7 +3740,7 @@ struct ReportEngine: Sendable {
     ) {
         guard !kinds.isEmpty else { return }
         let msg = unlandedSourcesLine(kinds, attempted: attempted)
-        AppLogger.collect.warning("\(msg, privacy: .public)")
+        AppLogger.collect.warning("\(msg, privacy: .private)")
         onLine(.init(timestamp: Date(), level: .warn, text: msg))
     }
 
@@ -3988,7 +3988,7 @@ struct ReportEngine: Sendable {
                 try fm.setAttributes(attrs, ofItemAtPath: url.path)
             } catch {
                 AppLogger.collect.warning(
-                    "initializeWorkspace: setAttributes failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                    "initializeWorkspace: setAttributes failed for \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
                 )
             }
         }
@@ -4308,7 +4308,7 @@ struct ReportEngine: Sendable {
             )
         } catch {
             AppLogger.collect.warning(
-                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
             )
         }
         // 2.6 accuracy track: stamp the sibling manifest.json so strict-mode
@@ -4325,7 +4325,7 @@ struct ReportEngine: Sendable {
                 // the "no unverified data" promise. Also surfaced on the collect
                 // stream (onLine) so it lands in Run History, not just Console.app.
                 AppLogger.collect.error(
-                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
                 )
                 onLine(.init(
                     timestamp: Date(), level: .warn,

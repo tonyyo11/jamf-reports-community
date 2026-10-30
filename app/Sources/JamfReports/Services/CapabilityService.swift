@@ -86,8 +86,7 @@ final class CapabilityService {
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             return .absent
         }
-        // Version lookup is nonisolated+synchronous; safe on any thread.
-        let version = JamfCLIInstaller.installedVersion(at: bin)
+        let version = await JamfCLIInstaller.installedVersionOffMain(at: bin)
         return await buildSnapshot(version: version, executor: executor)
     }
 

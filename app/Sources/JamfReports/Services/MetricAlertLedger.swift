@@ -60,7 +60,7 @@ struct MetricAlertLedger: Sendable {
             try AutomationStateFile.write(JSONEncoder().encode(record), to: fileURL)
         } catch {
             AppLogger.webhook.warning(
-                "MetricAlertLedger: could not persist ledger — same-day dedup may not hold: \(error.localizedDescription, privacy: .public)"
+                "MetricAlertLedger: could not persist ledger — same-day dedup may not hold: \(error.localizedDescription, privacy: .private)"
             )
         }
     }

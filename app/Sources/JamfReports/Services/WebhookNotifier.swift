@@ -408,7 +408,11 @@ enum WebhookNotifier {
         request.timeoutInterval = 10
         let what = kind.isEmpty ? "webhook" : "\(kind) webhook"
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            // Ephemeral, and no redirect off the webhook's host: the URL is a credential.
+            let session = HTTPSession.make(request: 15, resource: 30)
+            defer { session.finishTasksAndInvalidate() }
+            let (_, response) = try await session.data(
+                for: request, delegate: HTTPSession.RedirectRule.sameHost(as: url))
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 failure?.record("HTTP \(http.statusCode) from the \(provider.rawValue) webhook")
                 AppLogger.webhook.error(

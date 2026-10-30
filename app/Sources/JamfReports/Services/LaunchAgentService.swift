@@ -41,7 +41,7 @@ enum LaunchAgentService {
         for label in labels {
             guard includingManaged || !ManagedAutomation.owns(label) else {
                 AppLogger.schedule.warning(
-                    "archiveAndRemove refused managed label \(label, privacy: .public)")
+                    "archiveAndRemove refused managed label \(label, privacy: .private)")
                 rejected.append(label)
                 continue
             }
@@ -61,7 +61,7 @@ enum LaunchAgentService {
                 // bootstrapped this session — and the plist removal below still
                 // retires it. Logged so a genuinely stuck agent is diagnosable.
                 AppLogger.schedule.info(
-                    "bootout \(label, privacy: .public) exited \(bootoutStatus) (agent likely not loaded; plist removed regardless)")
+                    "bootout \(label, privacy: .private) exited \(bootoutStatus) (agent likely not loaded; plist removed regardless)")
             }
             do {
                 try FileManager.default.removeItem(at: url)
@@ -137,7 +137,7 @@ enum LaunchAgentService {
             return true
         } catch {
             AppLogger.schedule.error(
-                "archivePlist failed for \(label, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                "archivePlist failed for \(label, privacy: .private): \(error.localizedDescription, privacy: .private)")
             return false
         }
     }
@@ -514,7 +514,7 @@ enum LaunchAgentService {
                 result.insert(tier)
             } else {
                 AppLogger.schedule.warning(
-                    "LaunchAgentService.parse: unknown tier '\(trimmed, privacy: .public)' in --tiers; dropped"
+                    "LaunchAgentService.parse: unknown tier '\(trimmed, privacy: .private)' in --tiers; dropped"
                 )
             }
         }
@@ -1076,17 +1076,11 @@ enum LaunchAgentService {
 
     private static func bootout(_ label: String) -> Int32 {
         guard LaunchAgentWriter.isValidLabel(label) else { return -1 }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["bootout", "gui/\(getuid())/\(label)"]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus
-        } catch {
-            return -1
-        }
+        // Bounded and drained like every other child; a launch failure or timeout reads as -1.
+        let result = JamfCLIInstaller.runProcessSync(
+            executable: URL(fileURLWithPath: "/bin/launchctl"),
+            arguments: ["bootout", "gui/\(getuid())/\(label)"],
+            environment: CLIBridge.environmentForJamfCLI(), timeout: 30)
+        return result.timedOut ? -1 : result.exitCode
     }
 }
