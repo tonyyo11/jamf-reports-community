@@ -4,6 +4,7 @@ import XCTest
 /// The Trends mobile metrics (mobile spec 4.1): read from each day's `mobile` object, offered by
 /// the device types the history carries, and backfilled from same-day `mobile-devices-list`
 /// snapshots for days summarized without them (4.3).
+@MainActor
 final class TrendStoreMobileMetricsTests: XCTestCase {
 
     private var root: URL!

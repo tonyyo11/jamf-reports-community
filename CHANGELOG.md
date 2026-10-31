@@ -83,6 +83,9 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Finishing a collect, report or backup no longer freezes the window while workspace permissions
+  are checked. Run History opens and switches runs without freezing too, and launch no longer waits
+  on the once-per-version workspace check. (#305)
 - Policies & Profiles keeps the most severe findings when a workspace has more than 100. A
   Critical finding past the 100th row used to be left out of the table. (#305)
 - A Jamf School report that leaves a tab out for want of data now says so in plain words

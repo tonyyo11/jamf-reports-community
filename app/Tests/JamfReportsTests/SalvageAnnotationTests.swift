@@ -10,6 +10,7 @@ import XCTest
 ///     `TrendsView` can annotate them.
 ///  B. `EAParseHealthService.coverageDrift` excludes a salvaged day from the
 ///     two-newest-days comparison — a truncated day fabricates drift.
+@MainActor
 final class SalvageAnnotationTests: XCTestCase {
 
     #if DEBUG

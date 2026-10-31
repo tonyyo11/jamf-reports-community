@@ -228,6 +228,10 @@ enum ProfileService {
     /// default profile first, then by name. In demo mode, the caller falls back
     /// to `DemoData.cliProfiles`.
     static func discoverLocal(keeping active: Set<String> = []) -> [JamfCLIProfile] {
+        AppLogger.signpost("Discover profiles") { discoverLocalProfiles(keeping: active) }
+    }
+
+    private static func discoverLocalProfiles(keeping active: Set<String>) -> [JamfCLIProfile] {
         let scheduleCounts = Dictionary(
             grouping: ScheduleStore().load().filter { !$0.allWorkspaces }, by: \.workspace
         ).mapValues(\.count)

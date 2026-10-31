@@ -22,7 +22,6 @@ import Foundation
 /// the sentinel matches the current `CFBundleShortVersionString`. New
 /// profiles created after the migration runs are still picked up by the
 /// going-forward hooks in `OnboardingFlow.createWorkspace`.
-@MainActor
 enum WorkspaceMigration {
 
     /// `UserDefaults` key — value is the app version string the migration last completed under.
