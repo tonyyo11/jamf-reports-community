@@ -83,6 +83,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Policies & Profiles keeps the most severe findings when a workspace has more than 100. A
+  Critical finding past the 100th row used to be left out of the table. (#305)
 - A Jamf School report that leaves a tab out for want of data now says so in plain words
   (`[skip] Blueprints: No cached school snapshot found for: school-blueprints`) and in the run
   log, as a Jamf Pro report does, and a few archive and summary warnings no longer print a raw
