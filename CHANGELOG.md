@@ -83,6 +83,11 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Generate no longer refuses with "A refresh is already running" when nothing shows one running.
+  The automatic refresh and Device Lookup's refresh now appear in the status bar and in Run
+  History, and the Generate sheet names the running collect and turns Generate off until it
+  ends. A refresh that finishes with the data still out of date now backs off, instead of
+  starting again each time you return to the app. (#368)
 - Finishing a collect, report or backup no longer freezes the window while workspace permissions
   are checked. Run History opens and switches runs without freezing too, and launch no longer waits
   on the once-per-version workspace check. (#305)

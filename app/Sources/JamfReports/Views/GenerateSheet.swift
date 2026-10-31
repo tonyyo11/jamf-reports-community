@@ -273,6 +273,16 @@ final class GenerateSheetState {
 
     /// The footer button labels. Done keeps its name while a run goes (the button is disabled
     /// then), so only Generate says Running.
+    /// What the footer says while another collect holds Generate back, or nil when nothing does.
+    /// `status` names the collect when it set one; a scheduled run in another process does not
+    /// reach here, and the click-time `generateRefusal` is the backstop for it.
+    nonisolated static func waitingMessage(
+        isRunning: Bool, collectInFlight: Bool, status: String?
+    ) -> String? {
+        guard !isRunning, collectInFlight else { return nil }
+        return "Waiting for: \(status ?? "a refresh to finish")"
+    }
+
     nonisolated static func footerTitles(isRunning: Bool) -> (dismiss: String, generate: String) {
         ("Done", isRunning ? "Running\u{2026}" : "Generate")
     }
@@ -926,7 +936,17 @@ struct GenerateSheet: View {
     }
 
     private var footer: some View {
-        HStack {
+        let waiting = GenerateSheetState.waitingMessage(
+            isRunning: state.isRunning, collectInFlight: workspace.isAnyCollectInFlight,
+            status: workspace.collectStatus)
+        return HStack {
+            if let waiting {
+                ProgressView().controlSize(.small)
+                Text(waiting)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fg2)
+                    .lineLimit(2)
+            }
             Spacer()
 
             PNPButton(title: GenerateSheetState.footerTitles(isRunning: state.isRunning).dismiss) {
@@ -940,10 +960,10 @@ struct GenerateSheet: View {
                 icon: state.isRunning ? "hourglass" : "play.fill",
                 style: .gold
             ) {
-                guard state.canGenerate else { return }
+                guard state.canGenerate, waiting == nil else { return }
                 Task { await runGenerate() }
             }
-            .disabled(!state.canGenerate)
+            .disabled(!state.canGenerate || waiting != nil)
             .keyboardShortcut(.defaultAction)
             .accessibilityLabel(state.isRunning ? "Running" : "Generate selected report formats")
         }

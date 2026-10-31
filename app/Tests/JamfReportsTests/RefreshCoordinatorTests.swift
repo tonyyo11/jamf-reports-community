@@ -145,7 +145,10 @@ final class RefreshCoordinatorTests: XCTestCase {
 
     @MainActor
     func testRefreshIfStaleNoOpsForNonRefreshTier() {
-        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        let coordinator = RefreshCoordinator { profile, tier in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine)
+        }
         coordinator.refreshIfStale(profile: "validprofile", tier: .inventory)
         XCTAssertFalse(
             coordinator.isRefreshing(profile: "validprofile", tier: .inventory),
@@ -157,7 +160,10 @@ final class RefreshCoordinatorTests: XCTestCase {
 
     @MainActor
     func testRefreshIfStaleNoOpsForInvalidProfile() {
-        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        let coordinator = RefreshCoordinator { profile, tier in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine)
+        }
         // A line break fails ProfileService.isValid — the guard must
         // catch it before any task is queued.
         coordinator.refreshIfStale(profile: "Bad\nProfile", tier: .refresh)
@@ -169,11 +175,91 @@ final class RefreshCoordinatorTests: XCTestCase {
         // Cycling the sidebar chip fires observeProfileSwitch repeatedly.
         // The debounce means none of them have started a refresh yet — the
         // coordinator must stay quiet (and not crash) through the burst.
-        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        let coordinator = RefreshCoordinator { profile, tier in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine)
+        }
         coordinator.observeProfileSwitch("alpha")
         coordinator.observeProfileSwitch("beta")
         coordinator.observeProfileSwitch("gamma")
         XCTAssertEqual(coordinator.failureCount(profile: "gamma", tier: .refresh), 0)
         XCTAssertFalse(coordinator.isRefreshing(profile: "gamma", tier: .refresh))
+    }
+}
+
+/// #368: the coordinator's collect, and what a run that leaves the data stale counts as.
+@MainActor
+final class RefreshCoordinatorOutcomeTests: XCTestCase {
+    private func run(
+        exit: Int32 = 0, stale: [Bool], thrown: Error? = nil
+    ) async -> (coordinator: RefreshCoordinator, collects: Int) {
+        var answers = stale
+        var collects = 0
+        let coordinator = RefreshCoordinator(
+            isStale: { _, _ in answers.isEmpty ? false : answers.removeFirst() },
+            collect: { _, _ in
+                collects += 1
+                if let thrown { throw thrown }
+                return exit
+            })
+        await coordinator.refreshIfStale(profile: "alpha", tier: .refresh)?.value
+        return (coordinator, collects)
+    }
+
+    func testExitZeroWithFreshDataIsASuccess() async {
+        let (coordinator, collects) = await run(stale: [true, false])
+        XCTAssertEqual(collects, 1)
+        XCTAssertEqual(coordinator.failureCount(profile: "alpha", tier: .refresh), 0)
+        XCTAssertNotNil(coordinator.lastSuccessfulRefresh["alpha"])
+    }
+
+    func testExitZeroThatLeavesDataStaleCountsAsAFailure() async {
+        let (coordinator, _) = await run(stale: [true, true])
+        XCTAssertEqual(coordinator.failureCount(profile: "alpha", tier: .refresh), 1)
+        XCTAssertNil(coordinator.lastSuccessfulRefresh["alpha"])
+    }
+
+    func testBackoffStopsRepeatedCollectsThatLeaveDataStale() async {
+        var collects = 0
+        let coordinator = RefreshCoordinator(
+            isStale: { _, _ in true },
+            collect: { _, _ in
+                collects += 1
+                return 0
+            })
+        for _ in 0..<6 {
+            await coordinator.refreshIfStale(profile: "alpha", tier: .refresh)?.value
+        }
+        XCTAssertEqual(collects, RefreshPolicy.default.maxFailures)
+    }
+
+    func testFreshDataRunsNoCollect() async {
+        let (_, collects) = await run(stale: [false])
+        XCTAssertEqual(collects, 0)
+    }
+
+    func testARefusedCollectCountsAsNothingAttempted() async {
+        let (coordinator, _) = await run(stale: [true], thrown: CLIBridgeError.collectInProgress)
+        XCTAssertEqual(coordinator.failureCount(profile: "alpha", tier: .refresh), 0)
+    }
+
+    func testGenerateSheetNamesTheCollectItWaitsFor() {
+        XCTAssertEqual(
+            GenerateSheetState.waitingMessage(
+                isRunning: false, collectInFlight: true, status: "refreshing data"),
+            "Waiting for: refreshing data")
+        XCTAssertEqual(
+            GenerateSheetState.waitingMessage(isRunning: false, collectInFlight: true, status: nil),
+            "Waiting for: a refresh to finish")
+        XCTAssertNil(GenerateSheetState.waitingMessage(
+            isRunning: true, collectInFlight: true, status: "x"))
+        XCTAssertNil(GenerateSheetState.waitingMessage(
+            isRunning: false, collectInFlight: false, status: nil))
+    }
+
+    func testBackgroundRefreshHasItsOwnRunHistoryName() {
+        XCTAssertEqual(
+            RunHistoryService.humanName(from: WorkspaceStore.appRefreshRunLabel),
+            "Background refresh")
     }
 }

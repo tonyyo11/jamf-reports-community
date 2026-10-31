@@ -23,7 +23,10 @@ extension WorkspaceStore {
         {
             return existing
         }
-        let new = RefreshCoordinator(bridge: CLIBridge())
+        let new = RefreshCoordinator { [weak self] profile, tier in
+            guard let self else { throw CancellationError() }
+            return try await self.runBackgroundRefresh(profile: profile, tier: tier)
+        }
         objc_setAssociatedObject(
             self,
             &WorkspaceStore.coordinatorKey,
@@ -31,6 +34,22 @@ extension WorkspaceStore {
             .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
         return new
+    }
+
+    /// The coordinator's collect, shown and recorded like every other GUI collect. It holds the
+    /// lock that makes Generate refuse, so it must not run unseen (#368).
+    private func runBackgroundRefresh(profile: String, tier: CollectionTier) async throws -> Int32 {
+        beginCollect(for: profile, status: "refreshing data in the background · profile=\(profile)")
+        defer { endCollect(for: profile) }
+        let (exit, _) = try await Self.recordingCollect(
+            profile: profile, label: Self.appRefreshRunLabel, keep: Self.keptAppRefreshRuns,
+            honesty: CollectHonestyWatcher()
+        ) { onLine in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [tier], force: true, onLine: onLine)
+        }
+        await refreshDataFreshness()
+        return exit
     }
 
     private static var coordinatorKey: UInt8 = 0
@@ -379,6 +398,15 @@ extension WorkspaceStore {
     /// so a button pressed often cannot push schedule runs out of the recorder's window.
     nonisolated static let keptAppCollectRuns = 20
 
+    /// The label of the background refresh's record; Run History names it "Background refresh".
+    nonisolated static var appRefreshRunLabel: String {
+        "\(LaunchAgentWriter.labelPrefix).background-refresh"
+    }
+
+    /// Fewer than a person's collects: it can run on each return to the app, and schedule runs
+    /// must stay inside the recorder's 50 logs per workspace.
+    nonisolated static let keptAppRefreshRuns = 10
+
     /// Runs a GUI collect with its lines fed to the in-app log, `honesty` and a Run History
     /// record under `appCollectRunLabel`, which `runFirstCollect` has always written.
     /// `recorded` is false when the record could not be opened: the run still goes ahead and
@@ -388,15 +416,17 @@ extension WorkspaceStore {
     @MainActor
     static func recordingCollect(
         profile: String,
+        label: String = appCollectRunLabel,
+        keep: Int = keptAppCollectRuns,
         honesty: CollectHonestyWatcher,
         _ run: (@escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32
     ) async throws -> (exit: Int32, recorded: Bool) {
         if let logs = try? WorkspacePaths.runHistoryDir(for: profile) {
             ScheduledRunRecorder.pruneRunLogs(
-                in: logs, keep: keptAppCollectRuns - 1, label: appCollectRunLabel)
+                in: logs, keep: keep - 1, label: label)
         }
         let recorder = ProfileService.workspaceURL(for: profile).flatMap {
-            ScheduledRunRecorder(workspace: $0, label: appCollectRunLabel)
+            ScheduledRunRecorder(workspace: $0, label: label)
         }
         if recorder == nil {
             AppLogger.cli.warning(
