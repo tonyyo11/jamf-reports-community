@@ -9,6 +9,11 @@ versions in this repository map to git tags.
 
 ### Added
 
+- The app now speaks **French, Spanish and German**, following your Mac's language, or the one you
+  pick for Jamf Reports in System Settings › General › Language & Region. These are machine
+  translations nobody fluent has reviewed; please report wording that reads wrong. Reports, CSVs,
+  log lines, webhook cards and the command-line tool stay in English, so workbooks and anything
+  that reads them are unchanged, and so does demo data.
 - A **CSV folder** report format writes one CSV per workbook tab into a folder beside the
   workbook, for tools that read CSV. Tick it in Generate, run `jamf-reports generate
   --csv-folder`, or set `output.csv_folder: true` to get it with every workbook, scheduled runs

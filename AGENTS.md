@@ -1576,11 +1576,23 @@ To bump: change `MARKETING_VERSION`, roll `CHANGELOG.md`, tag `vX.Y.Z`; the buil
 takes care of itself. `.jamf-cli-tracked-version` is a separate axis (the jamf-cli
 dependency floor), unrelated to app versioning.
 
+#### Localization (2.12)
+
+The GUI ships in English, French, Spanish and German: machine translated, reviewed by nobody fluent. `app/Localization/Localizable.xcstrings` lives outside the SwiftPM target, and `build-app.sh` compiles it into `Contents/Resources/<lang>.lproj`, so there is no `Bundle.module` and `Text` and `String(localized:)` find it in `Bundle.main` although the code is in the library target. `swift run` and tests have no table and show English.
+
+`L("text \(n)")` (`Services/Localization.swift`) returns a `String`, so house components and models keep `String` APIs; its `String.LocalizationValue` parameter is what `swiftc -emit-localized-strings` extracts. Numbers format under POSIX (no separator in a port, year or exit code). Plurals are two whole strings, `n == 1 ? L("\(n) device") : L("\(n) devices")`; never a suffix or a sentence built from fragments.
+
+**Stays English:** workbook tabs and columns (Power BI reads them), the HTML report, PDF, CSV, CLI output, log lines and their `[partial]`/`[warn]` markers, webhook cards, AI model input, diagnostic bundles, jamf-cli's own messages, demo data (it stands in for tenant data). Headless runs read a table that does not exist, and `Localization.english { }` does the same around report generation, collect, CSV exports and AI input.
+
+**Never wrap a string that is also a value:** matched against jamf-cli output, compared, switched on, parsed, stored in a file or used as a key. English tests cannot catch it, because `L` returns English under test. A fixed English value shown on screen uses `LK("All")` to put it in the catalog and `LShown(value)` to display it.
+
+After adding strings: `app/scripts/sync-strings.zsh --prune-stale`, then translate the new keys to every language using `app/Localization/glossary.md`. `LocalizationCatalogTests` fails on a missing or empty translation, a format specifier mismatch, a lost product name or config key, and a source literal not in the catalog. `HTMLWithWorkbookGUITests.testNoTranslatedTextReachesAReportOrItsLog` proves the report path stays English, and `JRC_PSEUDO_L10N=1 swift test` marks all `L` text for a wider look (most failures are tests asserting English wording). `JRC_L10N_LAYOUT=1 JRC_PREVIEW_OUT=<folder> swift test --filter LocalizationLayoutTests` renders every tab in demo mode under each language at `PageScaffold.minSupportedWidth` and fails on a page wider than both that and its English self.
+
 #### Swift code conventions
 
 - Swift 6 strict concurrency (`@MainActor`, `Sendable`, `async/await` throughout).
 - `@Observable` for state; no `ObservableObject` / `@Published`.
-- All user-visible strings in English; no `NSLocalizedString` wrapping required for now.
+- User-visible GUI text goes through the catalog (see **Localization** below). A literal in `Text`, `Button` and other `LocalizedStringKey` views localizes itself; anything that becomes a `String` first is wrapped in `L("...")`.
 - No `UIKit` — SwiftUI only.
 - All new services must validate paths through `ProfileService.workspaceURL(for:)` before
   constructing any file paths.
