@@ -66,7 +66,7 @@ enum ConfigDoctorService {
         } catch let error as ConfigLoader.LoadError {
             parseError = error.keyPathDetail
                 ?? error.errorDescription
-                ?? "config could not be parsed"
+                ?? L("config could not be parsed")
         } catch {
             parseError = error.localizedDescription
         }
@@ -115,8 +115,8 @@ enum ConfigDoctorService {
               names.contains(where: { !$0.hasPrefix(".") }) else { return [] }
         return [DoctorRow(
             id: "workspace.csv_inbox", severity: .suggest, title: "csv-inbox",
-            detail: "csv-inbox is no longer read since 2.11; you can delete it.",
-            hint: "Move any export you still need elsewhere, then delete the folder.")]
+            detail: L("csv-inbox is no longer read since 2.11; you can delete it."),
+            hint: L("Move any export you still need elsewhere, then delete the folder."))]
     }
 
     // MARK: - Pure evaluator (test seam)
@@ -134,9 +134,9 @@ enum ConfigDoctorService {
             return [DoctorRow(
                 id: "config.parse",
                 severity: .fail,
-                title: "Config could not be parsed",
+                title: L("Config could not be parsed"),
                 detail: parseError,
-                hint: "Fix the YAML at the location above, or restore defaults in Config."
+                hint: L("Fix the YAML at the location above, or restore defaults in Config.")
             )]
         }
         guard let config else { return [] }
@@ -164,23 +164,21 @@ enum ConfigDoctorService {
             let column = ea.column.trimmingCharacters(in: .whitespaces)
             guard !column.isEmpty else { return nil }
             let id = "custom_ea.\(ea.name).ea_results"
-            let title = "EA: \(ea.name)"
+            let title = L("EA: \(ea.name)")
             if collected.contains(column.lowercased()) {
                 return DoctorRow(id: id, severity: .pass, title: title,
-                                 detail: "'\(column)' has collected values.", hint: nil)
+                                 detail: L("'\(column)' has collected values."), hint: nil)
             }
             if defined.isEmpty || defined.contains(column.lowercased()) {
                 return DoctorRow(
                     id: id, severity: .warn, title: title,
-                    detail: "No collected values for '\(column)', so this EA has no sheet.",
-                    hint: "Run Collect; a defined extension attribute with no value on any Mac "
-                        + "stays empty.")
+                    detail: L("No collected values for '\(column)', so this EA has no sheet."),
+                    hint: L("Run Collect; a defined extension attribute with no value on any Mac stays empty."))
             }
             return DoctorRow(
                 id: id, severity: .warn, title: title,
-                detail: "'\(column)' is not an extension attribute defined in Jamf Pro, so "
-                    + "this EA has no sheet.",
-                hint: "Fix the custom_eas column to match the extension attribute's name.")
+                detail: L("'\(column)' is not an extension attribute defined in Jamf Pro, so this EA has no sheet."),
+                hint: L("Fix the custom_eas column to match the extension attribute's name."))
         }
     }
 
@@ -199,9 +197,9 @@ enum ConfigDoctorService {
         let hasList = nonEmpty(compliance.failuresListColumn) != nil
         guard !hasCount || !hasList else { return [] }
         return [DoctorRow(
-            id: "compliance.columns", severity: .warn, title: "Compliance enabled",
-            detail: "Compliance is on but failures_count_column or failures_list_column is empty.",
-            hint: "Set both compliance columns, or disable compliance."
+            id: "compliance.columns", severity: .warn, title: L("Compliance enabled"),
+            detail: L("Compliance is on but failures_count_column or failures_list_column is empty."),
+            hint: L("Set both compliance columns, or disable compliance.")
         )]
     }
 
@@ -212,9 +210,9 @@ enum ConfigDoctorService {
             // ConfigLoader parse failure — no type-validity row is reachable here.
             if ea.type == .boolean, nonEmpty(ea.trueValue) == nil {
                 rows.append(DoctorRow(
-                    id: "custom_ea.\(ea.name).true_value", severity: .warn, title: "EA: \(ea.name)",
-                    detail: "Boolean EA has no true_value set.",
-                    hint: "Set true_value (the cell value that counts as a pass)."
+                    id: "custom_ea.\(ea.name).true_value", severity: .warn, title: L("EA: \(ea.name)"),
+                    detail: L("Boolean EA has no true_value set."),
+                    hint: L("Set true_value (the cell value that counts as a pass).")
                 ))
             }
         }
@@ -227,15 +225,15 @@ enum ConfigDoctorService {
             if agent.column.trimmingCharacters(in: .whitespaces).isEmpty {
                 rows.append(DoctorRow(
                     id: "security_agent.\(agent.name).column.structural", severity: .warn,
-                    title: "Agent: \(agent.name)", detail: "No column configured.",
-                    hint: "Set the agent's status column."
+                    title: L("Agent: \(agent.name)"), detail: L("No column configured."),
+                    hint: L("Set the agent's status column.")
                 ))
             }
             if agent.connectedValue.trimmingCharacters(in: .whitespaces).isEmpty {
                 rows.append(DoctorRow(
                     id: "security_agent.\(agent.name).connected_value.structural", severity: .warn,
-                    title: "Agent: \(agent.name)", detail: "No connected_value set.",
-                    hint: "Set connected_value for a precise match."
+                    title: L("Agent: \(agent.name)"), detail: L("No connected_value set."),
+                    hint: L("Set connected_value for a precise match.")
                 ))
             }
         }
@@ -256,15 +254,15 @@ enum ConfigDoctorService {
             if seen.contains(column.lowercased()) {
                 return DoctorRow(
                     id: "compliance.baseline.\(baseline.name)", severity: .pass,
-                    title: "Baseline: \(baseline.name)",
-                    detail: "EA '\(column)' seen in cached ea-results.", hint: nil
+                    title: L("Baseline: \(baseline.name)"),
+                    detail: L("EA '\(column)' seen in cached ea-results."), hint: nil
                 )
             }
             return DoctorRow(
                 id: "compliance.baseline.\(baseline.name)", severity: .warn,
-                title: "Baseline: \(baseline.name)",
-                detail: "Baseline EA '\(column)' not seen in cached ea-results.",
-                hint: "Collect EA results, or fix the baseline column name."
+                title: L("Baseline: \(baseline.name)"),
+                detail: L("Baseline EA '\(column)' not seen in cached ea-results."),
+                hint: L("Collect EA results, or fix the baseline column name.")
             )
         } ?? []
     }
@@ -282,12 +280,12 @@ enum ConfigDoctorService {
 
         for (index, rule) in (alerts.rules ?? []).enumerated() {
             guard let failure = alertRuleFailure(rule) else { continue }
-            let label = rule.metric ?? "(no metric)"
+            let label = rule.metric ?? L("(no metric)")
             rows.append(DoctorRow(
                 id: "alerts.rule.\(index)", severity: .fail,
-                title: "Alert rule ignored",
-                detail: "Rule for '\(label)' ignored — \(failure).",
-                hint: "Fix the rule under alerts.rules in config.yaml, or remove it."
+                title: L("Alert rule ignored"),
+                detail: L("Rule for '\(label)' ignored — \(failure)."),
+                hint: L("Fix the rule under alerts.rules in config.yaml, or remove it.")
             ))
         }
 
@@ -295,16 +293,14 @@ enum ConfigDoctorService {
         if alerts.isEnabled, !notifyUsable {
             rows.append(DoctorRow(
                 id: "alerts.notify_missing", severity: .warn,
-                title: "Alerts enabled without a webhook",
-                detail: "Alerts are enabled but no usable webhook is configured "
-                    + "(notify.url must be https and notify.enabled true) — "
-                    + "alerts cannot be delivered.",
-                hint: "Configure notify: in config.yaml, or disable alerts."
+                title: L("Alerts enabled without a webhook"),
+                detail: L("Alerts are enabled but no usable webhook is configured (notify.url must be https and notify.enabled true) — alerts cannot be delivered."),
+                hint: L("Configure notify: in config.yaml, or disable alerts.")
             ))
         } else if alerts.isEnabled, notifyUsable, !alerts.resolvedRules.isEmpty {
             rows.append(DoctorRow(
-                id: "alerts.armed", severity: .pass, title: "Alerts armed",
-                detail: "\(alerts.resolvedRules.count) alert rule(s) armed.", hint: nil
+                id: "alerts.armed", severity: .pass, title: L("Alerts armed"),
+                detail: L("\(alerts.resolvedRules.count) alert rule(s) armed."), hint: nil
             ))
         }
         return rows
@@ -315,32 +311,29 @@ enum ConfigDoctorService {
     private static func alertRuleFailure(_ rule: AlertRule) -> String? {
         let sampleKeys = AlertMetric.allCases.prefix(4).map(\.rawValue).joined(separator: ", ")
         guard let metricRaw = nonEmpty(rule.metric) else {
-            return "no metric set — valid keys: \(sampleKeys), … (see config.example.yaml)"
+            return L("no metric set — valid keys: \(sampleKeys), … (see config.example.yaml)")
         }
         guard AlertMetric(rawValue: metricRaw) != nil else {
-            return "unknown metric '\(metricRaw)' — valid keys: \(sampleKeys), … "
-                + "(see config.example.yaml)"
+            return L("unknown metric '\(metricRaw)' — valid keys: \(sampleKeys), … (see config.example.yaml)")
         }
         guard let whenRaw = nonEmpty(rule.when) else {
-            return "no 'when' comparison set — valid values: below, above, drops_more_than"
+            return L("no 'when' comparison set — valid values: below, above, drops_more_than")
         }
         guard AlertRule.Comparison(rawValue: whenRaw) != nil else {
-            return "unknown 'when' comparison '\(whenRaw)' — "
-                + "valid values: below, above, drops_more_than"
+            return L("unknown 'when' comparison '\(whenRaw)' — valid values: below, above, drops_more_than")
         }
         guard let threshold = rule.threshold else {
-            return "no threshold set"
+            return L("no threshold set")
         }
         return thresholdFailure(threshold)
     }
 
     private static func thresholdFailure(_ threshold: Double) -> String? {
         guard threshold.isFinite, threshold >= 0 else {
-            return "threshold \(threshold) is not a valid non-negative number"
+            return L("threshold \(String(describing: threshold)) is not a valid non-negative number")
         }
         guard threshold <= AlertRule.maxThreshold else {
-            return "threshold \(threshold) is above \(Int(AlertRule.maxThreshold)), "
-                + "the largest the app accepts"
+            return L("threshold \(String(describing: threshold)) is above \(Int(AlertRule.maxThreshold)), the largest the app accepts")
         }
         return nil
     }
@@ -368,19 +361,18 @@ enum ConfigDoctorService {
         var rows = keys.prefix(unknownKeyCap).enumerated().map { index, key in
             DoctorRow(
                 id: "config.unknown_key.\(index)", severity: .warn, title: key.keyPath,
-                detail: "The app does not read this key."
-                    + (key.suggestion.map { " Did you mean \"\($0)\"?" } ?? ""),
-                hint: "Remove it from config.yaml, or check its spelling: keys are case-sensitive."
+                detail: L("The app does not read this key.")
+                    + (key.suggestion.map { L(" Did you mean \"\($0)\"?") } ?? ""),
+                hint: L("Remove it from config.yaml, or check its spelling: keys are case-sensitive.")
             )
         }
         if keys.count > unknownKeyCap {
             let more = keys.count - unknownKeyCap
             rows.append(DoctorRow(
                 id: "config.unknown_key.more", severity: .warn,
-                title: "More keys the app does not read",
-                detail: "\(more) more key\(more == 1 ? "" : "s") in config.yaml that the app "
-                    + "does not read.",
-                hint: "Fix the keys above, then run the check again to see the rest."
+                title: L("More keys the app does not read"),
+                detail: (more == 1 ? L("\(more) more key in config.yaml that the app does not read.") : L("\(more) more keys in config.yaml that the app does not read.")),
+                hint: L("Fix the keys above, then run the check again to see the rest.")
             ))
         }
         return rows + retiredKeyRows(allKeys.compactMap { key in
@@ -394,10 +386,10 @@ enum ConfigDoctorService {
         keys.enumerated().map { index, key in
             let block = key.path.components(separatedBy: ".").first ?? ""
             let hint = ConfigService.retiredKeyRemover(inBlock: block)
-                .map { "The next \($0) removes it." } ?? "Delete the line from config.yaml."
+                .map { L("The next \($0) removes it.") } ?? L("Delete the line from config.yaml.")
             return DoctorRow(
                 id: "config.retired_key.\(index)", severity: .suggest, title: key.path,
-                detail: "No longer read since \(key.since).", hint: hint)
+                detail: L("No longer read since \(key.since)."), hint: hint)
         }
     }
 
@@ -421,7 +413,7 @@ enum ConfigDoctorService {
         var rows = notes.prefix(parseNoteCap).enumerated().map { index, note in
             DoctorRow(
                 id: "config.parse_note.\(index)", severity: .warn,
-                title: "config.yaml line \(note.line)",
+                title: L("config.yaml line \(note.line)"),
                 detail: note.detail.prefix(1).uppercased() + note.detail.dropFirst() + ".",
                 hint: parseNoteHint(note.kind)
             )
@@ -430,11 +422,11 @@ enum ConfigDoctorService {
             let more = notes.count - parseNoteCap
             rows.append(DoctorRow(
                 id: "config.parse_note.more", severity: .warn,
-                title: "More lines the app did not read as written",
+                title: L("More lines the app did not read as written"),
                 detail: more == 1
-                    ? "1 more line in config.yaml was not read as written."
-                    : "\(more) more lines in config.yaml were not read as written.",
-                hint: "Fix the lines above, then run the check again to see the rest."
+                    ? L("1 more line in config.yaml was not read as written.")
+                    : L("\(more) more lines in config.yaml were not read as written."),
+                hint: L("Fix the lines above, then run the check again to see the rest.")
             ))
         }
         return rows
@@ -442,15 +434,15 @@ enum ConfigDoctorService {
 
     private static func parseNoteHint(_ kind: YAMLCodec.ParseNote.Kind) -> String {
         switch kind {
-        case .indentation: "Line it up with the other keys of its block."
-        case .noKey: "Write it as key: value, or remove it."
-        case .tab: "Replace the tab with spaces."
-        case .duplicateKey: "Remove one of the two lines."
-        case .blockScalar: "Put the value on the same line, in quotes."
-        case .orphanItems: "Put the list under the key it belongs to, or remove it."
-        case .unclosedFlow: "Close it on the same line, or put one item per line under the key."
-        case .secondDocument: "Remove the --- line; config.yaml holds one document."
-        case .nestingTooDeep: "Flatten it; no setting is nested that deep."
+        case .indentation: L("Line it up with the other keys of its block.")
+        case .noKey: L("Write it as key: value, or remove it.")
+        case .tab: L("Replace the tab with spaces.")
+        case .duplicateKey: L("Remove one of the two lines.")
+        case .blockScalar: L("Put the value on the same line, in quotes.")
+        case .orphanItems: L("Put the list under the key it belongs to, or remove it.")
+        case .unclosedFlow: L("Close it on the same line, or put one item per line under the key.")
+        case .secondDocument: L("Remove the --- line; config.yaml holds one document.")
+        case .nestingTooDeep: L("Flatten it; no setting is nested that deep.")
         }
     }
 
@@ -468,8 +460,8 @@ enum ConfigDoctorService {
                 rows.append(DoctorRow(
                     id: "config.value.output.allow_absolute_paths", severity: .suggest,
                     title: "output.allow_absolute_paths",
-                    detail: "\(typedText(value)) opts in, as true does.",
-                    hint: "Write true: the rest of config.yaml reads only true and false."))
+                    detail: L("\(typedText(value)) opts in, as true does."),
+                    hint: L("Write true: the rest of config.yaml reads only true and false.")))
             case false?: break
             case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
             }
@@ -479,10 +471,8 @@ enum ConfigDoctorService {
            !(value is NSNull), !(value is [String: Any]) {
             rows.append(DoctorRow(
                 id: "config.value.backup", severity: .warn, title: "backup",
-                detail: "\((value as? Bool).map { "\($0)" } ?? typedText(value)) is not a block of "
-                    + "settings, so the app reads "
-                    + "backup.pro_on_synced_storage as false.",
-                hint: "Write backup: with pro_on_synced_storage: true or false under it."))
+                detail: L("\((value as? Bool).map { "\($0)" } ?? typedText(value)) is not a block of settings, so the app reads backup.pro_on_synced_storage as false."),
+                hint: L("Write backup: with pro_on_synced_storage: true or false under it.")))
         }
         let switches = [
             ["html", "track_history"], ["html", "with_workbook"], ["output", "csv_folder"],
@@ -506,14 +496,14 @@ enum ConfigDoctorService {
 
     private static func typedText(_ value: Any) -> String {
         ((value as? String) ?? (value as? Int).map { String($0) })
-            .map { "\"\(ConfigSchema.displayText($0))\"" } ?? "This value"
+            .map { "\"\(ConfigSchema.displayText($0))\"" } ?? L("This value")
     }
 
     private static func readsAsFalseRow(_ keyPath: String, _ value: Any) -> DoctorRow {
         DoctorRow(
             id: "config.value.\(keyPath)", severity: .warn, title: keyPath,
-            detail: "\(typedText(value)) is not true or false, so the app reads it as false.",
-            hint: "Write true or false."
+            detail: L("\(typedText(value)) is not true or false, so the app reads it as false."),
+            hint: L("Write true or false.")
         )
     }
 
@@ -543,7 +533,7 @@ enum ConfigDoctorService {
         guard !listed.isEmpty else {
             return [DoctorRow(
                 id: "security_policy.score_factors.empty", severity: .warn, title: path,
-                detail: "The list is empty, so the security score counts nothing.",
+                detail: L("The list is empty, so the security score counts nothing."),
                 hint: "Add factors in Config > Scoring, or remove the key to use the defaults.")]
         }
         let kept = Set(config.resolvedScoreFactors.map(\.key))
@@ -551,15 +541,14 @@ enum ConfigDoctorService {
             .enumerated().map { index, factor in
                 let name = ConfigSchema.displayText(factor.target ?? "")
                 let detail = factor.kind == .agent
-                    ? "\"\(name)\" matches no security_agents entry, so it is not scored."
+                    ? L("\"\(name)\" matches no security_agents entry, so it is not scored.")
                     : factor.target == nil
-                        ? "No compliance.baselines entry is configured, so mSCP is not scored."
-                        : "\"\(name)\" matches no compliance.baselines entry, so it is not scored."
+                        ? L("No compliance.baselines entry is configured, so mSCP is not scored.")
+                        : L("\"\(name)\" matches no compliance.baselines entry, so it is not scored.")
                 return DoctorRow(
                     id: "security_policy.score_factors.unmatched.\(index)", severity: .warn,
                     title: path, detail: detail,
-                    hint: "Write the name exactly as configured, or remove the factor in "
-                        + "Config > Scoring.")
+                    hint: L("Write the name exactly as configured, or remove the factor in Config > Scoring."))
             }
     }
 
@@ -577,12 +566,11 @@ enum ConfigDoctorService {
         return [DoctorRow(
             id: "security_policy.edr_agent", severity: .warn,
             title: SecurityPolicyConfigLoader.edrAgentPath,
-            detail: "\"\(ConfigSchema.displayText(chosen))\" matches no security_agents entry, so "
-                + (counted.map { "\"\(ConfigSchema.displayText($0))\" counts as the EDR agent" }
-                    ?? "no agent counts as the EDR agent")
+            detail: L("\"\(ConfigSchema.displayText(chosen))\" matches no security_agents entry, so ")
+                + (counted.map { L("\"\(ConfigSchema.displayText($0))\" counts as the EDR agent") }
+                    ?? L("no agent counts as the EDR agent"))
                 + ".",
-            hint: "Write the agent's name exactly as under security_agents, or pick it in "
-                + "Config > Scoring."
+            hint: L("Write the agent's name exactly as under security_agents, or pick it in Config > Scoring.")
         )]
     }
 
@@ -603,9 +591,8 @@ enum ConfigDoctorService {
             rows.append(DoctorRow(
                 id: "security_policy.hardware_facts", severity: .warn,
                 title: "security_policy.filevault_off_hardware_encrypted",
-                detail: "No hardware information yet — the rule applies after an inventory "
-                    + "collect. Until then FileVault off counts at the FileVault level.",
-                hint: "Run a collect for this profile."
+                detail: L("No hardware information yet — the rule applies after an inventory collect. Until then FileVault off counts at the FileVault level."),
+                hint: L("Run a collect for this profile.")
             ))
         }
         return rows
@@ -613,49 +600,47 @@ enum ConfigDoctorService {
 
     private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
         if issue.keyPath == SecurityPolicyConfigLoader.edrAgentPath {
-            return "Expected the name of a security agent, found \"\(issue.value)\" — "
-                + "using \(issue.used)"
+            return L("Expected the name of a security agent, found \"\(issue.value)\" — using \(issue.used)")
         }
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
-            return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
+            return L("Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)")
         }
         if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
             return issue.value.isEmpty
-                ? "This entry is \(issue.used)" : "\"\(issue.value)\" — \(issue.used)"
+                ? L("This entry is \(issue.used)") : "\"\(issue.value)\" — \(issue.used)"
         }
         if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
             return securityVocabularyDetail(issue)
         }
-        return "\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)"
+        return L("\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)")
     }
 
     private static func securityVocabularyDetail(_ issue: SecurityPolicyIssue) -> String {
         let list = issue.keyPath.hasPrefix(SecurityPolicyConfigLoader.onValuesPath)
             ? "on_values" : "off_values"
         if issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff {
-            return "\"\(issue.value)\" is listed in both on_values and off_values — "
-                + "reading it as off"
+            return L("\"\(issue.value)\" is listed in both on_values and off_values — reading it as off")
         }
-        if issue.value.isEmpty { return "An empty value in \(list) is skipped" }
-        return "\"\(issue.value)\" in \(list) is not text — skipped"
+        if issue.value.isEmpty { return L("An empty value in \(list) is skipped") }
+        return L("\"\(issue.value)\" in \(list) is not text — skipped")
     }
 
     private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
         if issue.keyPath == SecurityPolicyConfigLoader.edrAgentPath {
-            return "Write the agent's name as text, or remove the line."
+            return L("Write the agent's name as text, or remove the line.")
         }
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
-            return "Write it as indented key: value lines in config.yaml, or remove it."
+            return L("Write it as indented key: value lines in config.yaml, or remove it.")
         }
         if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
-            return "Fix the entry in config.yaml, or edit the factors in Config > Scoring."
+            return L("Fix the entry in config.yaml, or edit the factors in Config > Scoring.")
         }
         if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
             return issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff
-                ? "Remove it from on_values, or from off_values, in config.yaml."
-                : "Write each value as text, such as \"Pass\" (quote a number), or remove it."
+                ? L("Remove it from on_values, or from off_values, in config.yaml.")
+                : L("Write each value as text, such as \"Pass\" (quote a number), or remove it.")
         }
-        return "Set it to fail, warning or ignore in config.yaml, or remove the line."
+        return L("Set it to fail, warning or ignore in config.yaml, or remove the line.")
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -745,7 +730,7 @@ extension ConfigDoctorService {
     ) -> [DoctorRow] {
         var sources: [CountSource] = []
         if let computers = inputs.computersCount, computers > 0 {
-            sources.append(CountSource(label: "computers snapshot", count: computers))
+            sources.append(CountSource(label: L("computers snapshot"), count: computers))
         }
         if let eaRows = inputs.eaRows {
             let ids = MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
@@ -758,17 +743,16 @@ extension ConfigDoctorService {
             let (a, b) = divergent
             return [DoctorRow(
                 id: "accuracy.reconciliation", severity: .warn,
-                title: "Device counts disagree",
-                detail: "\(a.label) has \(a.count) devices but \(b.label) has \(b.count) "
-                    + "(more than 10% apart).",
-                hint: "Re-collect, or replace the stale export, so the sources agree."
+                title: L("Device counts disagree"),
+                detail: L("\(a.label) has \(a.count) devices but \(b.label) has \(b.count) (more than 10% apart)."),
+                hint: L("Re-collect, or replace the stale export, so the sources agree.")
             )]
         }
         let summary = sources.map { "\($0.label) \($0.count)" }.joined(separator: ", ")
         return [DoctorRow(
             id: "accuracy.reconciliation", severity: .pass,
-            title: "Device counts agree",
-            detail: "Within 10% across sources (\(summary)).", hint: nil
+            title: L("Device counts agree"),
+            detail: L("Within 10% across sources (\(summary))."), hint: nil
         )]
     }
 
@@ -834,8 +818,8 @@ extension ConfigDoctorService {
         if cleanCount > 0 {
             rows.insert(DoctorRow(
                 id: "accuracy.parse_health.ok", severity: .pass,
-                title: "Column values parse cleanly",
-                detail: "\(cleanCount) column\(cleanCount == 1 ? "" : "s") parse cleanly (≥90%).",
+                title: L("Column values parse cleanly"),
+                detail: (cleanCount == 1 ? L("\(cleanCount) column parse cleanly (≥90%).") : L("\(cleanCount) columns parse cleanly (≥90%).")),
                 hint: nil
             ), at: 0)
         }
@@ -848,23 +832,21 @@ extension ConfigDoctorService {
         rate: Double
     ) -> DoctorRow {
         let pct = Int((rate * 100).rounded())
-        var detail = "Only \(pct)% of '\(health.column)' values parse "
-            + "(\(health.parseable) of \(health.nonEmpty))."
+        var detail = L("Only \(pct)% of '\(health.column)' values parse (\(health.parseable) of \(health.nonEmpty)).")
         let topSkeleton = health.topUnparseable.first
         if let top = topSkeleton {
-            detail += " Most common unparseable shape: \(top.skeleton) (\(top.count))."
+            detail += L(" Most common unparseable shape: \(top.skeleton) (\(top.count)).")
         }
         // A percentage EA whose worst skeleton is all-digits is usually a raw-count
         // column mis-typed by the scaffold (values >100 fail the 0–100 clamp).
         let looksLikeCounts = type == .percentage
             && topSkeleton?.skeleton.range(of: #"^9+$"#, options: .regularExpression) != nil
         let hint = looksLikeCounts
-            ? "Values look like raw counts — if this EA holds counts rather than "
-                + "percentages, change its type (percentage expects 0–100)."
-            : "Check the EA type or the source column — bad values become No Data."
+            ? L("Values look like raw counts — if this EA holds counts rather than percentages, change its type (percentage expects 0–100).")
+            : L("Check the EA type or the source column — bad values become No Data.")
         return DoctorRow(
             id: "accuracy.parse_health.\(health.column)", severity: .warn,
-            title: "Column parses poorly",
+            title: L("Column parses poorly"),
             detail: detail,
             hint: hint
         )
@@ -883,9 +865,9 @@ extension ConfigDoctorService {
             // surface it distinctly rather than rendering the green OK row.
             return [DoctorRow(
                 id: "accuracy.coverage_drift.unavailable", severity: .suggest,
-                title: "EA coverage drift unavailable",
+                title: L("EA coverage drift unavailable"),
                 detail: reason + ".",
-                hint: "Collect ea-results on two different days to enable this check."
+                hint: L("Collect ea-results on two different days to enable this check.")
             )]
         case .computed(let computedDrift):
             drift = computedDrift
@@ -894,8 +876,8 @@ extension ConfigDoctorService {
         guard !drops.isEmpty else {
             return [DoctorRow(
                 id: "accuracy.coverage_drift.ok", severity: .pass,
-                title: "EA coverage stable",
-                detail: "No EA lost more than 15 points of coverage since the prior snapshot.",
+                title: L("EA coverage stable"),
+                detail: L("No EA lost more than 15 points of coverage since the prior snapshot."),
                 hint: nil
             )]
         }
@@ -903,19 +885,18 @@ extension ConfigDoctorService {
             let delta = Int(drop.deltaPP.rounded())
             return DoctorRow(
                 id: "accuracy.coverage_drift.\(drop.eaName)", severity: .warn,
-                title: "EA coverage dropped",
-                detail: "'\(drop.eaName)' coverage fell \(delta) points "
-                    + "(\(Int(drop.previousPct.rounded()))% → \(Int(drop.currentPct.rounded()))%).",
-                hint: "Confirm the EA still populates — a drop can silently thin a report."
+                title: L("EA coverage dropped"),
+                detail: L("'\(drop.eaName)' coverage fell \(delta) points (\(Int(drop.previousPct.rounded()))% → \(Int(drop.currentPct.rounded()))%)."),
+                hint: L("Confirm the EA still populates — a drop can silently thin a report.")
             )
         }
         if drops.count > coverageDriftCap {
             let more = drops.count - coverageDriftCap
             rows.append(DoctorRow(
                 id: "accuracy.coverage_drift.more", severity: .warn,
-                title: "More EAs dropped coverage",
-                detail: "+\(more) more EA\(more == 1 ? "" : "s") dropped over 15 points.",
-                hint: "Review the ea-results snapshot for a broader collection failure."
+                title: L("More EAs dropped coverage"),
+                detail: (more == 1 ? L("+\(more) more EA dropped over 15 points.") : L("+\(more) more EAs dropped over 15 points.")),
+                hint: L("Review the ea-results snapshot for a broader collection failure.")
             ))
         }
         return rows
@@ -935,8 +916,8 @@ extension ConfigDoctorService {
                 // compare; surface as a benign OK rather than a false alarm.
                 return DoctorRow(
                     id: "accuracy.cross_check.\(result.baselineName)", severity: .pass,
-                    title: "Baseline count vs list: \(result.baselineName)",
-                    detail: "No devices had both a count and a list value to compare.",
+                    title: L("Baseline count vs list: \(result.baselineName)"),
+                    detail: L("No devices had both a count and a list value to compare."),
                     hint: nil
                 )
             }
@@ -944,16 +925,15 @@ extension ConfigDoctorService {
                 let pct = Int((rate * 100).rounded())
                 return DoctorRow(
                     id: "accuracy.cross_check.\(result.baselineName)", severity: .warn,
-                    title: "Baseline count vs list disagree: \(result.baselineName)",
-                    detail: "\(pct)% of \(result.devicesCompared) compared devices have a "
-                        + "failure count that doesn't match their failure list length.",
-                    hint: "One EA is out of date — re-run the mSCP audit so both agree."
+                    title: L("Baseline count vs list disagree: \(result.baselineName)"),
+                    detail: L("\(pct)% of \(result.devicesCompared) compared devices have a failure count that doesn't match their failure list length."),
+                    hint: L("One EA is out of date — re-run the mSCP audit so both agree.")
                 )
             }
             return DoctorRow(
                 id: "accuracy.cross_check.\(result.baselineName)", severity: .pass,
-                title: "Baseline count vs list agree: \(result.baselineName)",
-                detail: "Count and list agree on \(result.devicesCompared) compared devices.",
+                title: L("Baseline count vs list agree: \(result.baselineName)"),
+                detail: L("Count and list agree on \(result.devicesCompared) compared devices."),
                 hint: nil
             )
         }
@@ -1020,60 +1000,51 @@ extension ConfigDoctorService {
             return [DoctorRow(
                 id: "cloud.root",
                 severity: .fail,
-                title: "Workspace folder is not there",
-                detail: "Nothing exists at \(path). On a synced folder this usually means the "
-                    + "provider has not finished mounting, you are signed out of it, or the "
-                    + "share was renamed. Until it returns, no profile can be read or written.",
-                hint: "Open the folder in Finder to confirm it mounts, then reopen the app. "
-                    + "To go back to local storage, clear the folder in Settings › Workspace."
+                title: L("Workspace folder is not there"),
+                detail: L("Nothing exists at \(path). On a synced folder this usually means the provider has not finished mounting, you are signed out of it, or the share was renamed. Until it returns, no profile can be read or written."),
+                hint: L("Open the folder in Finder to confirm it mounts, then reopen the app. To go back to local storage, clear the folder in Settings › Workspace.")
             )]
         case .notADirectory:
             return [DoctorRow(
                 id: "cloud.root",
                 severity: .fail,
-                title: "Workspace path is a file",
-                detail: "\(path) is a file, so no workspace can live there.",
-                hint: "Pick a folder in Settings › Workspace."
+                title: L("Workspace path is a file"),
+                detail: L("\(path) is a file, so no workspace can live there."),
+                hint: L("Pick a folder in Settings › Workspace.")
             )]
         case .notWritable:
             return [DoctorRow(
                 id: "cloud.root",
                 severity: .fail,
-                title: "Workspace folder is read-only",
-                detail: "\(path) cannot be written by your account. On a shared team folder this "
-                    + "normally means you have been granted read access rather than edit access.",
-                hint: "Ask the folder's owner for edit permission, or point Settings › Workspace "
-                    + "at a folder you can write to."
+                title: L("Workspace folder is read-only"),
+                detail: L("\(path) cannot be written by your account. On a shared team folder this normally means you have been granted read access rather than edit access."),
+                hint: L("Ask the folder's owner for edit permission, or point Settings › Workspace at a folder you can write to.")
             )]
         case .sensitiveLocation:
             return [DoctorRow(
                 id: "cloud.root",
                 severity: .fail,
-                title: "Workspace folder is in a reserved location",
-                detail: "\(path) is a system directory or holds credentials, so it will not be "
-                    + "used for fleet data.",
-                hint: "Pick a folder under your home directory or a synced team folder."
+                title: L("Workspace folder is in a reserved location"),
+                detail: L("\(path) is a system directory or holds credentials, so it will not be used for fleet data."),
+                hint: L("Pick a folder under your home directory or a synced team folder.")
             )]
         case .notOwned, .groupOrWorldWritable, .hasACL:
             return [DoctorRow(
                 id: "cloud.root",
                 severity: .fail,
-                title: "Workspace folder is open to other accounts",
-                detail: "\(path): \(inputs.rootValidation.message ?? "") Device inventory and "
-                    + "run logs kept here are exposed to them. The app keeps using this folder "
-                    + "until the root is changed, and would refuse it as a new root.",
-                hint: "Fix the folder's owner or permissions, or point Settings › Workspace at a "
-                    + "folder you own."
+                title: L("Workspace folder is open to other accounts"),
+                detail: L("\(path): \(inputs.rootValidation.message ?? "") Device inventory and run logs kept here are exposed to them. The app keeps using this folder until the root is changed, and would refuse it as a new root."),
+                hint: L("Fix the folder's owner or permissions, or point Settings › Workspace at a folder you own.")
             )]
         case .ok:
             guard inputs.rootIsCustom else { return ownershipUncheckedRows(inputs) }
             let provider = inputs.providerOf(inputs.workspaceRoot)
-            let where_ = provider.map { "on \($0.displayName)" } ?? "at a custom location"
+            let where_ = provider.map { L("on \($0.displayName)") } ?? L("at a custom location")
             return [DoctorRow(
                 id: "cloud.root",
                 severity: .pass,
-                title: "Workspace is \(where_)",
-                detail: "Profiles, history and reports are read from and written to \(path).",
+                title: L("Workspace is \(where_)"),
+                detail: L("Profiles, history and reports are read from and written to \(path)."),
                 hint: nil
             )] + ownershipUncheckedRows(inputs)
         }
@@ -1087,12 +1058,9 @@ extension ConfigDoctorService {
         return [DoctorRow(
             id: "cloud.root_ownership_unchecked",
             severity: .warn,
-            title: "Workspace folder ownership is not checked on this volume",
-            detail: "\(path) is on a network or synced volume, where the app cannot read who "
-                + "owns the folder or who can write to it. Device inventory and run logs "
-                + "kept here are exposed to any account that can write it.",
-            hint: "Make sure other accounts cannot write this folder, on the share or in the "
-                + "provider's sharing settings."
+            title: L("Workspace folder ownership is not checked on this volume"),
+            detail: L("\(path) is on a network or synced volume, where the app cannot read who owns the folder or who can write to it. Device inventory and run logs kept here are exposed to any account that can write it."),
+            hint: L("Make sure other accounts cannot write this folder, on the share or in the provider's sharing settings.")
         )]
     }
 
@@ -1106,29 +1074,22 @@ extension ConfigDoctorService {
         // but nothing is coordinating writes to it.
         guard inputs.coordinationEnabled else {
             let why = inputs.coordinationExplicit
-                ? "shared_workspace.enabled is set to false, so coordination is switched off "
-                    + "even though this folder syncs."
-                : "Coordination could not be enabled automatically for this folder."
+                ? L("shared_workspace.enabled is set to false, so coordination is switched off even though this folder syncs.")
+                : L("Coordination could not be enabled automatically for this folder.")
             return [DoctorRow(
                 id: "cloud.workspace",
                 severity: .warn,
-                title: "Shared folder with coordination off",
-                detail: "\(why) If a second Mac points at this folder, both will collect the "
-                    + "same day's inventory, each will report success for work the other did, "
-                    + "and neither will wait for the other to finish writing.",
-                hint: "Set shared_workspace.enabled: true in config.yaml — or leave it unset so "
-                    + "it turns on by itself — unless you are certain this Mac is the only "
-                    + "writer."
+                title: L("Shared folder with coordination off"),
+                detail: L("\(why) If a second Mac points at this folder, both will collect the same day's inventory, each will report success for work the other did, and neither will wait for the other to finish writing."),
+                hint: L("Set shared_workspace.enabled: true in config.yaml — or leave it unset so it turns on by itself — unless you are certain this Mac is the only writer.")
             )]
         }
 
         return [DoctorRow(
             id: "cloud.workspace",
             severity: .pass,
-            title: "Shared workspace on \(provider.displayName)",
-            detail: "Several Macs can report against these tenants and build one shared "
-                + "history. \(collectSpacing(inputs.minCollectInterval)) Each run is announced "
-                + "with a short claim so two machines do not collect at once.",
+            title: L("Shared workspace on \(provider.displayName)"),
+            detail: L("Several Macs can report against these tenants and build one shared history. \(collectSpacing(inputs.minCollectInterval)) Each run is announced with a short claim so two machines do not collect at once."),
             hint: nil
         )] + privacyRow(provider: provider)
     }
@@ -1137,11 +1098,10 @@ extension ConfigDoctorService {
     /// name — zero is a real choice here and reads very differently.
     private static func collectSpacing(_ interval: TimeInterval) -> String {
         guard interval > 0 else {
-            return "Freshness checks are off, so every Mac collects on its own schedule."
+            return L("Freshness checks are off, so every Mac collects on its own schedule.")
         }
         let hours = Int(interval / 3600)
-        return "A scheduled collect stands down if another Mac collected in the last "
-            + "\(hours) hour\(hours == 1 ? "" : "s")."
+        return (hours == 1 ? L("A scheduled collect stands down if another Mac collected in the last \(hours) hour.") : L("A scheduled collect stands down if another Mac collected in the last \(hours) hours."))
     }
 
     /// Always paired with an enabled shared workspace. Coordination solves
@@ -1151,16 +1111,9 @@ extension ConfigDoctorService {
         [DoctorRow(
             id: "cloud.privacy",
             severity: .suggest,
-            title: "Everyone with folder access can read raw fleet data",
-            detail: "Raw snapshots under jamf-cli-data/ and the files in automation/logs/ hold "
-                + "device serials, usernames and email addresses in clear text, and config.yaml "
-                + "holds any webhook URL you have configured. \(provider.displayName) shares "
-                + "those with everyone the folder is shared with; the file permissions this Mac "
-                + "sets are not carried across.",
-            hint: "Confirm the folder is shared only with people cleared to see device-level "
-                + "inventory. To share findings more widely, keep the workspace private and "
-                + "point output.output_dir at a second, wider folder so only finished reports "
-                + "are published."
+            title: L("Everyone with folder access can read raw fleet data"),
+            detail: L("Raw snapshots under jamf-cli-data/ and the files in automation/logs/ hold device serials, usernames and email addresses in clear text, and config.yaml holds any webhook URL you have configured. \(provider.displayName) shares those with everyone the folder is shared with; the file permissions this Mac sets are not carried across."),
+            hint: L("Confirm the folder is shared only with people cleared to see device-level inventory. To share findings more widely, keep the workspace private and point output.output_dir at a second, wider folder so only finished reports are published.")
         )]
     }
 
@@ -1181,9 +1134,8 @@ extension ConfigDoctorService {
             return [DoctorRow(
                 id: "cloud.peers",
                 severity: .pass,
-                title: "This Mac is the only one writing here",
-                detail: "No other machine has recorded a run in this workspace. Coordination is "
-                    + "armed and will engage as soon as one does.",
+                title: L("This Mac is the only one writing here"),
+                detail: L("No other machine has recorded a run in this workspace. Coordination is armed and will engage as soon as one does."),
                 hint: nil
             )]
         }
@@ -1193,13 +1145,13 @@ extension ConfigDoctorService {
             .prefix(4)
             .map { activity -> String in
                 guard let at = activity.lastCollectAt else {
-                    return "\(activity.host.display) (no collect recorded)"
+                    return L("\(activity.host.display) (no collect recorded)")
                 }
                 let age = ReportEngine.approximateAge(since: at, now: inputs.now)
                 return "\(activity.host.display) \(age)"
             }
             .joined(separator: ", ")
-        let more = inputs.otherHosts.count > 4 ? " (+\(inputs.otherHosts.count - 4) more)" : ""
+        let more = inputs.otherHosts.count > 4 ? L(" (+\(inputs.otherHosts.count - 4) more)") : ""
 
         // A mixed-version fleet is worth naming: an older build writing here
         // predates the ordering and pruning guards this one relies on.
@@ -1210,8 +1162,8 @@ extension ConfigDoctorService {
         var rows = [DoctorRow(
             id: "cloud.peers",
             severity: .pass,
-            title: "\(inputs.otherHosts.count) other Mac(s) share this workspace",
-            detail: "Last collects: \(named)\(more).",
+            title: L("\(inputs.otherHosts.count) other Mac(s) share this workspace"),
+            detail: L("Last collects: \(named)\(more)."),
             hint: nil
         )]
 
@@ -1219,13 +1171,9 @@ extension ConfigDoctorService {
             rows.append(DoctorRow(
                 id: "cloud.peerversions",
                 severity: .warn,
-                title: "Other Macs are running different app versions",
-                detail: "This Mac runs \(SharedWorkspace.appVersion); others report "
-                    + "\(mismatched.joined(separator: ", ")). Versions before 2.7.0 order "
-                    + "snapshots by modification date, which a sync provider rewrites, and "
-                    + "prune backups without checking whose they are.",
-                hint: "Update every Mac writing to this folder to the same version before "
-                    + "relying on the shared history."
+                title: L("Other Macs are running different app versions"),
+                detail: L("This Mac runs \(SharedWorkspace.appVersion); others report \(mismatched.joined(separator: ", ")). Versions before 2.7.0 order snapshots by modification date, which a sync provider rewrites, and prune backups without checking whose they are."),
+                hint: L("Update every Mac writing to this folder to the same version before relying on the shared history.")
             ))
         }
         return rows
@@ -1239,11 +1187,8 @@ extension ConfigDoctorService {
             return [DoctorRow(
                 id: "cloud.claim",
                 severity: .suggest,
-                title: "Stale claim left by \(claim.host.display)",
-                detail: "\(claim.host.display) started \(claim.operation) "
-                    + "\(ReportEngine.approximateAge(since: claim.startedAt, now: inputs.now)) and "
-                    + "never released it — usually a Mac that slept or was shut down mid-run. "
-                    + "It has expired, so the next run here takes it over automatically.",
+                title: L("Stale claim left by \(claim.host.display)"),
+                detail: L("\(claim.host.display) started \(claim.operation) \(ReportEngine.approximateAge(since: claim.startedAt, now: inputs.now)) and never released it — usually a Mac that slept or was shut down mid-run. It has expired, so the next run here takes it over automatically."),
                 hint: nil
             )]
         }
@@ -1251,11 +1196,8 @@ extension ConfigDoctorService {
         return [DoctorRow(
             id: "cloud.claim",
             severity: .pass,
-            title: "\(claim.host.display) is running \(claim.operation)",
-            detail: "Its claim lasts "
-                + "\(ReportEngine.approximateAge(until: claim.expiresAt, now: inputs.now)). "
-                + "Scheduled runs on this Mac will stand down until then; Refresh still works "
-                + "and will say it is running alongside.",
+            title: L("\(claim.host.display) is running \(claim.operation)"),
+            detail: L("Its claim lasts \(ReportEngine.approximateAge(until: claim.expiresAt, now: inputs.now)). Scheduled runs on this Mac will stand down until then; Refresh still works and will say it is running alongside."),
             hint: nil
         )]
     }
@@ -1276,12 +1218,9 @@ extension ConfigDoctorService {
         return [DoctorRow(
             id: "cloud.clockskew",
             severity: .warn,
-            title: "Another Mac's clock is ahead of this one",
-            detail: "\(names) recorded a collect dated in the future relative to this Mac. "
-                + "Freshness checks compare these timestamps, so this Mac may keep standing "
-                + "down for a collect that has not actually happened recently.",
-            hint: "Turn on Set date and time automatically in System Settings › General › "
-                + "Date & Time on every Mac sharing this folder."
+            title: L("Another Mac's clock is ahead of this one"),
+            detail: L("\(names) recorded a collect dated in the future relative to this Mac. Freshness checks compare these timestamps, so this Mac may keep standing down for a collect that has not actually happened recently."),
+            hint: L("Turn on Set date and time automatically in System Settings › General › Date & Time on every Mac sharing this folder.")
         )]
     }
 
@@ -1297,10 +1236,8 @@ extension ConfigDoctorService {
             rows.append(DoctorRow(
                 id: "cloud.output",
                 severity: .pass,
-                title: "Reports publish to \(provider.displayName)",
-                detail: "Generated reports are written to \(provider.displayName) while the "
-                    + "workspace stays on local disk — the narrowest way to share output, since "
-                    + "only finished reports leave this Mac.",
+                title: L("Reports publish to \(provider.displayName)"),
+                detail: L("Generated reports are written to \(provider.displayName) while the workspace stays on local disk — the narrowest way to share output, since only finished reports leave this Mac."),
                 hint: nil
             ))
         }
@@ -1309,12 +1246,9 @@ extension ConfigDoctorService {
             rows.append(DoctorRow(
                 id: "cloud.archive",
                 severity: .warn,
-                title: "Report archive is on \(provider.displayName), reports are not",
-                detail: "output.archive_dir points at \(provider.displayName) but "
-                    + "output.output_dir does not, so rotated reports leave the machine while "
-                    + "current ones stay behind — the opposite of what most people intend.",
-                hint: "Point output.output_dir at the shared folder too, or set archive_dir back "
-                    + "to a local path."
+                title: L("Report archive is on \(provider.displayName), reports are not"),
+                detail: L("output.archive_dir points at \(provider.displayName) but output.output_dir does not, so rotated reports leave the machine while current ones stay behind — the opposite of what most people intend."),
+                hint: L("Point output.output_dir at the shared folder too, or set archive_dir back to a local path.")
             ))
         }
 
@@ -1322,13 +1256,9 @@ extension ConfigDoctorService {
             rows.append(DoctorRow(
                 id: "cloud.backups",
                 severity: .suggest,
-                title: "Only this Mac's backups are pruned here",
-                detail: "Retention on a shared folder applies to backups this Mac made — each "
-                    + "one records which machine produced it. Another Mac's backups, and any "
-                    + "made before ownership was recorded, are left alone rather than counted "
-                    + "against this machine's retention budget.",
-                hint: "Backups from other Macs, and any predating this version, need removing "
-                    + "by hand or by running each machine at least once so it prunes its own."
+                title: L("Only this Mac's backups are pruned here"),
+                detail: L("Retention on a shared folder applies to backups this Mac made — each one records which machine produced it. Another Mac's backups, and any made before ownership was recorded, are left alone rather than counted against this machine's retention budget."),
+                hint: L("Backups from other Macs, and any predating this version, need removing by hand or by running each machine at least once so it prunes its own.")
             ))
         }
         return rows
@@ -1340,28 +1270,23 @@ extension ConfigDoctorService {
         guard !inputs.conflictCopies.isEmpty else { return [] }
         let sample = inputs.conflictCopies.prefix(3).joined(separator: ", ")
         let more = inputs.conflictCopies.count > 3
-            ? " (+\(inputs.conflictCopies.count - 3) more)" : ""
+            ? L(" (+\(inputs.conflictCopies.count - 3) more)") : ""
 
         // With coordination on, conflict copies are expected background noise
         // from overlapping runs rather than evidence of an unknown writer.
         let severity: DoctorSeverity = inputs.coordinationEnabled ? .suggest : .warn
         let cause = inputs.coordinationEnabled
-            ? "Two Macs wrote the same file closely enough that the provider kept both copies. "
-                + "They are ignored when reading data, so no report is built from them."
-            : "A sync provider created these when two machines wrote the same file. They are "
-                + "ignored when reading data, but their presence means something other than "
-                + "this Mac is writing here."
+            ? L("Two Macs wrote the same file closely enough that the provider kept both copies. They are ignored when reading data, so no report is built from them.")
+            : L("A sync provider created these when two machines wrote the same file. They are ignored when reading data, but their presence means something other than this Mac is writing here.")
         let hint = inputs.coordinationEnabled
-            ? "Safe to delete. If they keep appearing, raise "
-                + "shared_workspace.min_collect_interval_hours so runs overlap less often."
-            : "Delete the duplicates, then either turn on shared_workspace.enabled or make sure "
-                + "only one Mac writes to this folder."
+            ? L("Safe to delete. If they keep appearing, raise shared_workspace.min_collect_interval_hours so runs overlap less often.")
+            : L("Delete the duplicates, then either turn on shared_workspace.enabled or make sure only one Mac writes to this folder.")
 
         return [DoctorRow(
             id: "cloud.conflicts",
             severity: severity,
-            title: "\(inputs.conflictCopies.count) sync-conflict file(s) in the workspace",
-            detail: "Files such as \(sample)\(more). \(cause)",
+            title: L("\(inputs.conflictCopies.count) sync-conflict file(s) in the workspace"),
+            detail: L("Files such as \(sample)\(more). \(cause)"),
             hint: hint
         )]
     }
@@ -1454,14 +1379,9 @@ extension ConfigDoctorService {
             rows.append(DoctorRow(
                 id: "continuity.history-elsewhere",
                 severity: .suggest,
-                title: "More history for this profile exists in another folder",
-                detail: "This workspace has \(inputs.activeSummaryCount) daily "
-                    + "summar\(inputs.activeSummaryCount == 1 ? "y" : "ies"); "
-                    + "\(best.root.path) has \(best.summaryCount). Trends and every "
-                    + "period-over-period figure read only the folder in use, so the "
-                    + "older history is not lost — it is simply not being read.",
-                hint: "To use it, point Settings › Workspace at that folder, or copy its "
-                    + "snapshots/summaries into this workspace."
+                title: L("More history for this profile exists in another folder"),
+                detail: (inputs.activeSummaryCount == 1 ? L("This workspace has \(inputs.activeSummaryCount) daily summary; \(best.root.path) has \(best.summaryCount). Trends and every period-over-period figure read only the folder in use, so the older history is not lost — it is simply not being read.") : L("This workspace has \(inputs.activeSummaryCount) daily summaries; \(best.root.path) has \(best.summaryCount). Trends and every period-over-period figure read only the folder in use, so the older history is not lost — it is simply not being read.")),
+                hint: L("To use it, point Settings › Workspace at that folder, or copy its snapshots/summaries into this workspace.")
             ))
         }
 
@@ -1470,20 +1390,16 @@ extension ConfigDoctorService {
         // knows where they are.
         if inputs.activeSummaryCount == 0 && !inputs.configIsCustomised {
             let moved = inputs.rootIsCustom
-                ? "This is a new workspace at a folder you chose"
-                : "This is a new workspace"
+                ? L("This is a new workspace at a folder you chose")
+                : L("This is a new workspace")
             rows.append(DoctorRow(
                 id: "continuity.fresh-workspace",
                 severity: .suggest,
-                title: "Settings here are defaults",
-                detail: "\(moved), so it starts with a scaffold config and no history. "
-                    + "Custom extension attributes and thresholds are at their defaults "
-                    + "rather than anything you set previously.",
+                title: L("Settings here are defaults"),
+                detail: L("\(moved), so it starts with a scaffold config and no history. Custom extension attributes and thresholds are at their defaults rather than anything you set previously."),
                 hint: inputs.rootIsCustom
-                    ? "If you moved here from another folder, copy its config.yaml and "
-                        + "snapshots/ across — changing the workspace location does not "
-                        + "move existing data."
-                    : "Set up custom extension attributes and thresholds in Config."
+                    ? L("If you moved here from another folder, copy its config.yaml and snapshots/ across — changing the workspace location does not move existing data.")
+                    : L("Set up custom extension attributes and thresholds in Config.")
             ))
         }
 

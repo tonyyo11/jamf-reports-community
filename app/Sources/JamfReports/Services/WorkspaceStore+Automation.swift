@@ -126,7 +126,7 @@ enum AutomationHealth {
         if wantsTicker, tickerOff {
             return [AutomationHealthIssue(
                 label: tickerLabel,
-                displayName: "Background item disabled",
+                displayName: L("Background item disabled"),
                 kind: .tickerDisabled,
                 isMulti: true,
                 profile: "",
@@ -289,8 +289,7 @@ extension WorkspaceStore {
     func warnIfTickerNeedsApproval() {
         guard tickerStatus == .requiresApproval || tickerStatus == .notRegistered else { return }
         toast = Toast(
-            message: "Setup finished — allow JamfReports under Login Items › "
-                + "Allow in the Background to start automation",
+            message: L("Setup finished — allow JamfReports under Login Items › Allow in the Background to start automation"),
             style: .warning
         )
     }
@@ -544,7 +543,7 @@ extension WorkspaceStore {
         guard canRefresh(profileSlug: profile) else {
             // Practically unreachable — freshness only evaluates for a valid
             // profile — but a button click must never be a silent no-op.
-            toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
+            toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
         let tiers = Self.manualCollectTiers(AutomationHealthModel.shared.freshnessIssues)
@@ -893,8 +892,7 @@ extension WorkspaceStore {
             if issue.kind == .tickerDisabled {
                 return WebhookNotifier.Fact(
                     label: "Automation",
-                    value: "JamfReports is not allowed to run in the background — enable it "
-                        + "under Login Items › Allow in the Background"
+                    value: "JamfReports is not allowed to run in the background — enable it under Login Items › Allow in the Background"
                 )
             }
             let name: String

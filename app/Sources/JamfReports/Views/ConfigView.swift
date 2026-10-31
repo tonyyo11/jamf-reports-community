@@ -36,13 +36,13 @@ struct ConfigView: View {
         case agents, eas, thresholds, platform, output, scoring, fromFile
         var label: String {
             switch self {
-            case .agents:     "Security Agents"
-            case .eas:        "Custom EAs"
-            case .thresholds: "Thresholds"
-            case .platform:   "Platform API"
-            case .output:     "Output & Branding"
-            case .scoring:    "Scoring"
-            case .fromFile:   "From config.yaml"
+            case .agents:     L("Security Agents")
+            case .eas:        L("Custom EAs")
+            case .thresholds: L("Thresholds")
+            case .platform:   L("Platform API")
+            case .output:     L("Output & Branding")
+            case .scoring:    L("Scoring")
+            case .fromFile:   L("From config.yaml")
             }
         }
         var icon: String {
@@ -59,11 +59,11 @@ struct ConfigView: View {
         /// Lets the strip fit PageScaffold.minSupportedWidth when the full labels do not.
         var shortLabel: String {
             switch self {
-            case .agents:   "Agents"
-            case .eas:      "EAs"
-            case .platform: "Platform"
-            case .output:   "Output"
-            case .fromFile: "From file"
+            case .agents:   L("Agents")
+            case .eas:      L("EAs")
+            case .platform: L("Platform")
+            case .output:   L("Output")
+            case .fromFile: L("From file")
             default:        label
             }
         }
@@ -146,11 +146,9 @@ struct ConfigView: View {
             let summary = workspace.clearedConfigSummary()
             Text(
                 (summary.isEmpty
-                    ? "This reseeds the default config."
-                    : "This clears \(summary).")
-                + " Your current file is kept beside the new one as "
-                + "config.yaml.broken-<timestamp> — nothing is deleted, so you can copy "
-                + "values back. Rebuild quickly with Adopt EAs in Data Sources."
+                    ? L("This reseeds the default config.")
+                    : L("This clears \(summary)."))
+                + " Your current file is kept beside the new one as config.yaml.broken-<timestamp> — nothing is deleted, so you can copy values back. Rebuild quickly with Adopt EAs in Data Sources."
             )
         }
     }
@@ -221,13 +219,13 @@ struct ConfigView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Configuration error: \(problem)")
                 HStack(spacing: 8) {
-                    PNPButton(title: "Open config.yaml", icon: "doc.text", size: .sm) {
+                    PNPButton(title: L("Open config.yaml"), icon: "doc.text", size: .sm) {
                         if let url = ProfileService.workspaceURL(for: workspace.profile)?
                             .appendingPathComponent("config.yaml") {
                             SystemActions.open(url)
                         }
                     }
-                    PNPButton(title: "Restore default config…", style: .danger, size: .sm) {
+                    PNPButton(title: L("Restore default config…"), style: .danger, size: .sm) {
                         showRestoreConfirm = true
                     }
                 }
@@ -260,7 +258,7 @@ struct ConfigView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel(text.detail)
                 if !keys.isEmpty {
-                    PNPButton(title: "Save now", icon: "checkmark", style: .gold, size: .sm) {
+                    PNPButton(title: L("Save now"), icon: "checkmark", style: .gold, size: .sm) {
                         save()
                     }
                 }
@@ -273,22 +271,19 @@ struct ConfigView: View {
     static func readerCardText(
         keys: [String], notes: [String]
     ) -> (title: String, pill: String, summary: String, detail: String) {
-        func count(_ n: Int, _ noun: String) -> String? {
-            n == 0 ? nil : "\(n) \(noun)\(n == 1 ? "" : "s")"
-        }
-        let shown = notes.prefix(20) + (notes.count > 20 ? ["…and \(notes.count - 20) more"] : [])
+        let shown = notes.prefix(20) + (notes.count > 20 ? [L("…and \(notes.count - 20) more")] : [])
         let summary = [
-            keys.isEmpty ? nil : "The following YAML keys had malformed sequence items that were "
-                + "auto-reattached. The file reads correctly but is still malformed on disk. "
-                + "Save from this screen to persist the cleanup.",
-            notes.isEmpty ? nil : "The app did not read the lines below as written. "
-                + "Correct them in config.yaml.",
+            keys.isEmpty ? nil : L("The following YAML keys had malformed sequence items that were auto-reattached. The file reads correctly but is still malformed on disk. Save from this screen to persist the cleanup."),
+            notes.isEmpty ? nil : L("The app did not read the lines below as written. Correct them in config.yaml."),
         ]
         return (
             title: keys.isEmpty
-                ? "Some lines in config.yaml were not read as written"
-                : "Config auto-healed on load",
-            pill: [count(keys.count, "key"), count(notes.count, "line")].compactMap { $0 }
+                ? L("Some lines in config.yaml were not read as written")
+                : L("Config auto-healed on load"),
+            pill: [
+                keys.isEmpty ? nil : (keys.count == 1 ? L("\(keys.count) key") : L("\(keys.count) keys")),
+                notes.isEmpty ? nil : (notes.count == 1 ? L("\(notes.count) line") : L("\(notes.count) lines")),
+            ].compactMap { $0 }
                 .joined(separator: " · "),
             summary: summary.compactMap { $0 }.joined(separator: " "),
             detail: [keys.isEmpty ? nil : keys.joined(separator: ", "),
@@ -303,13 +298,12 @@ struct ConfigView: View {
     ) -> (title: String, lines: [String])? {
         if changedOnDisk {
             return (
-                title: "Not saved",
-                lines: ["config.yaml changed on disk since this screen loaded it. Reload reads "
-                    + "the file again and discards the changes you have not saved here."]
+                title: L("Not saved"),
+                lines: [L("config.yaml changed on disk since this screen loaded it. Reload reads the file again and discards the changes you have not saved here.")]
             )
         }
         let lines = report?.notes ?? []
-        return lines.isEmpty ? nil : (title: "Saved with notes", lines: lines)
+        return lines.isEmpty ? nil : (title: L("Saved with notes"), lines: lines)
     }
 
     private func saveNoticeCard(_ notice: (title: String, lines: [String])) -> some View {
@@ -330,7 +324,7 @@ struct ConfigView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if changedOnDisk {
-                    PNPButton(title: "Reload", icon: "arrow.clockwise", size: .sm) { reload() }
+                    PNPButton(title: L("Reload"), icon: "arrow.clockwise", size: .sm) { reload() }
                 }
             }
         }
@@ -373,21 +367,21 @@ struct ConfigView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "Workspace · \(workspace.profile)",
+            kicker: L("Workspace · \(workspace.profile)"),
             title: "config.yaml",
             subtitle: configDisplayPath
         ) {
             HStack(spacing: 8) {
                 if workspace.hasUnsavedChanges && saveStatus == .idle {
-                    Pill(text: "Unsaved changes", tone: .warn, icon: "pencil")
+                    Pill(text: L("Unsaved changes"), tone: .warn, icon: "pencil")
                         .transition(.opacity)
                 }
                 saveStatusPill
-                PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
+                PNPButton(title: L("View YAML"), icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 // Demo edits apply on screen but have no file to be saved to.
-                PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
+                PNPButton(title: L("Save"), icon: "checkmark", style: .gold, action: save)
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
             }
@@ -405,7 +399,7 @@ struct ConfigView: View {
         guard !workspace.demoMode else { return }
         guard let url = ProfileService.workspaceURL(for: workspace.profile) else {
             workspace.toast = Toast(
-                message: "Workspace not found for profile `\(workspace.profile)`.",
+                message: L("Workspace not found for profile `\(workspace.profile)`."),
                 style: .danger
             )
             return
@@ -413,7 +407,7 @@ struct ConfigView: View {
         let config = url.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: config.path) else {
             workspace.toast = Toast(
-                message: "config.yaml does not exist yet — save first.",
+                message: L("config.yaml does not exist yet — save first."),
                 style: .danger
             )
             return
@@ -430,11 +424,11 @@ struct ConfigView: View {
         case .error(let msg):
             // The message goes in the tooltip and a toast: Pill is fixed-size, so a
             // long error here widened the header past the window.
-            Pill(text: "save failed", tone: .danger, icon: "exclamationmark.triangle")
+            Pill(text: L("save failed"), tone: .danger, icon: "exclamationmark.triangle")
                 .help(msg)
                 .transition(.opacity)
         case .saving:
-            Pill(text: "saving…", tone: .muted)
+            Pill(text: L("saving…"), tone: .muted)
                 .transition(.opacity)
         case .idle:
             EmptyView()
@@ -490,7 +484,7 @@ struct ConfigView: View {
                 let message = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription
                 withMotionSafeAnimation { saveStatus = .error(message) }
-                workspace.toast = Toast(message: "Save failed: \(message)", style: .danger)
+                workspace.toast = Toast(message: L("Save failed: \(message)"), style: .danger)
             }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
@@ -510,9 +504,9 @@ private struct AgentsTab: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Security Agents")
+                    SectionHeader(title: L("Security Agents"))
                     Spacer()
-                    PNPButton(title: "Add agent", icon: "plus", style: .gold, size: .sm, action: { ws.addSecurityAgent() })
+                    PNPButton(title: L("Add agent"), icon: "plus", style: .gold, size: .sm, action: { ws.addSecurityAgent() })
                 }
                 agentsTable
             }
@@ -548,9 +542,9 @@ private struct AgentsTab: View {
     /// title sits over its field.
     private var agentsHeader: some View {
         HStack(spacing: 8) {
-            tableHeaderCell("Agent Name",      width: nil)
-            tableHeaderCell("EA Column",       width: nil)
-            tableHeaderCell("Connected Value", width: 140)
+            tableHeaderCell(L("Agent Name"),      width: nil)
+            tableHeaderCell(L("EA Column"),       width: nil)
+            tableHeaderCell(L("Connected Value"), width: 140)
             Color.clear.frame(width: 36, height: 1)
         }
         .padding(.horizontal, 12)
@@ -614,7 +608,7 @@ private struct AgentsTab: View {
 /// Spoken name of an icon-only remove button: what it removes, by name when it has one.
 func removeButtonLabel(noun: String, name: String) -> String {
     let trimmed = name.trimmingCharacters(in: .whitespaces)
-    return trimmed.isEmpty ? "Remove \(noun)" : "Remove \(noun) \(trimmed)"
+    return trimmed.isEmpty ? L("Remove \(noun)") : L("Remove \(noun) \(trimmed)")
 }
 
 // MARK: - Custom EAs tab
@@ -628,9 +622,9 @@ private struct EasTab: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Custom Extension Attribute Sheets")
+                    SectionHeader(title: L("Custom Extension Attribute Sheets"))
                     Spacer()
-                    PNPButton(title: "Add EA sheet", icon: "plus", style: .gold, size: .sm, action: { ws.addCustomEA() })
+                    PNPButton(title: L("Add EA sheet"), icon: "plus", style: .gold, size: .sm, action: { ws.addCustomEA() })
                 }
                 if ws.configState.customEAs.isEmpty {
                     Text("No custom EA sheets configured.")
@@ -667,15 +661,15 @@ private struct EACardEdit: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
-                    FieldLabel(label: "Sheet name")
+                    FieldLabel(label: L("Sheet name"))
                     PNPTextField(value: ea.name)
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    FieldLabel(label: "EA Column")
+                    FieldLabel(label: L("EA Column"))
                     PNPTextField(value: ea.column, mono: true)
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    FieldLabel(label: "Type")
+                    FieldLabel(label: L("Type"))
                     Picker("", selection: ea.type) {
                         Text("Boolean").tag("boolean")
                         Text("Percentage").tag("percentage")
@@ -699,15 +693,15 @@ private struct EACardEdit: View {
             let type = ea.wrappedValue.type
             HStack(spacing: 16) {
                 if type == "boolean" {
-                    eaField(label: "True value", value: ea.trueValue, help: "Value that means compliant")
+                    eaField(label: L("True value"), value: ea.trueValue, help: L("Value that means compliant"))
                 } else if type == "percentage" {
-                    eaField(label: "Warning ≥", value: ea.warningThreshold, unit: "%")
-                    eaField(label: "Critical ≥", value: ea.criticalThreshold, unit: "%")
+                    eaField(label: L("Warning ≥"), value: ea.warningThreshold, unit: "%")
+                    eaField(label: L("Critical ≥"), value: ea.criticalThreshold, unit: "%")
                 } else if type == "date" {
-                    eaField(label: "Warning days", value: ea.warningDays, unit: "days")
+                    eaField(label: L("Warning days"), value: ea.warningDays, unit: "days")
                 } else if type == "version" {
                     VStack(alignment: .leading, spacing: 4) {
-                        FieldLabel(label: "Current versions")
+                        FieldLabel(label: L("Current versions"))
                         Text("Comma-separated list").font(.caption2).foregroundStyle(Theme.Text.tertiary(contrast))
                         PNPTextField(value: Binding(
                             get: { ea.wrappedValue.currentVersions.joined(separator: ", ") },
@@ -757,12 +751,11 @@ private struct ThresholdsTab: View {
         @Bindable var ws = workspace
         return Card(padding: 18) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "General Thresholds").padding(.bottom, 14)
+                SectionHeader(title: L("General Thresholds")).padding(.bottom, 14)
                 thresholdField(
-                    label: "Stale device threshold", key: "stale_device_days",
+                    label: L("Stale device threshold"), key: "stale_device_days",
                     value: $ws.configState.staleDeviceDays, unit: "days",
-                    help: "A device is stale when its last check-in with Jamf School is more "
-                        + "than this many days ago"
+                    help: L("A device is stale when its last check-in with Jamf School is more than this many days ago")
                 )
             }
         }
@@ -774,36 +767,35 @@ private struct ThresholdsTab: View {
         return HStack(alignment: .top, spacing: 14) {
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionHeader(title: "General Thresholds").padding(.bottom, 14)
+                    SectionHeader(title: L("General Thresholds")).padding(.bottom, 14)
                     thresholdField(
-                        label: "Stale device threshold", key: "stale_device_days",
+                        label: L("Stale device threshold"), key: "stale_device_days",
                         value: $ws.configState.staleDeviceDays, unit: "days",
-                        help: "A device is flagged stale when a date counted below is more than "
-                            + "this many days old"
+                        help: L("A device is flagged stale when a date counted below is more than this many days old")
                     )
                     StaleBasisControls()
                     thresholdField(
-                        label: "Check-in overdue", key: "checkin_overdue_days",
+                        label: L("Check-in overdue"), key: "checkin_overdue_days",
                         value: $ws.configState.checkinOverdueDays, unit: "days",
-                        help: "Check-in Health counts a Mac overdue after this many days"
+                        help: L("Check-in Health counts a Mac overdue after this many days")
                     )
                     thresholdField(
-                        label: "Cert expiry warning", key: "cert_warning_days",
+                        label: L("Cert expiry warning"), key: "cert_warning_days",
                         value: $ws.configState.certWarningDays, unit: "days",
-                        help: "Default expiry warning window for date EAs"
+                        help: L("Default expiry warning window for date EAs")
                     )
 
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
-                    SectionHeader(title: "Disk Usage").padding(.bottom, 14)
+                    SectionHeader(title: L("Disk Usage")).padding(.bottom, 14)
                     thresholdField(
-                        label: "Disk usage warning", key: "warning_disk_percent",
+                        label: L("Disk usage warning"), key: "warning_disk_percent",
                         value: $ws.configState.warningDiskPercent, unit: "%",
-                        help: "Yellow highlight in Disk Usage sheet"
+                        help: L("Yellow highlight in Disk Usage sheet")
                     )
                     thresholdField(
-                        label: "Disk usage critical", key: "critical_disk_percent",
+                        label: L("Disk usage critical"), key: "critical_disk_percent",
                         value: $ws.configState.criticalDiskPercent, unit: "%",
-                        help: "Red highlight in Disk Usage sheet"
+                        help: L("Red highlight in Disk Usage sheet")
                     )
                 }
             }
@@ -811,12 +803,12 @@ private struct ThresholdsTab: View {
             VStack(spacing: 14) {
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionHeader(title: "Compliance Baseline").padding(.bottom, 2)
-                        FieldLabel(label: "Baseline label")
+                        SectionHeader(title: L("Compliance Baseline")).padding(.bottom, 2)
+                        FieldLabel(label: L("Baseline label"))
                         PNPTextField(value: $ws.configState.baselineLabel)
-                        FieldLabel(label: "Failures count column")
+                        FieldLabel(label: L("Failures count column"))
                         PNPTextField(value: $ws.configState.failuresCountColumn, mono: true)
-                        FieldLabel(label: "Failed-list column")
+                        FieldLabel(label: L("Failed-list column"))
                         PNPTextField(value: $ws.configState.failuresListColumn, mono: true)
                         Divider().background(Theme.Hairline.standard).padding(.top, 6)
                         HStack {
@@ -836,11 +828,11 @@ private struct ThresholdsTab: View {
 
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionHeader(title: "jamf-cli Errors").padding(.bottom, 2)
+                        SectionHeader(title: L("jamf-cli Errors")).padding(.bottom, 2)
                         thresholdField(
-                            label: "Profile error warning", key: "profile_error_warning",
+                            label: L("Profile error warning"), key: "profile_error_warning",
                             value: $ws.configState.profileErrorWarning, unit: "errors",
-                            help: "Yellow highlight on Profile Status sheet"
+                            help: L("Yellow highlight on Profile Status sheet")
                         )
                     }
                 }
@@ -879,8 +871,8 @@ private struct PlatformTab: View {
             VStack(alignment: .leading, spacing: 14) {
                 // The Platform API Gateway went GA in September 2026.
                 HStack(alignment: .center, spacing: 10) {
-                    SectionHeader(title: "Jamf Platform API")
-                    Pill(text: "GA", tone: .teal)
+                    SectionHeader(title: L("Jamf Platform API"))
+                    Pill(text: L("GA"), tone: .teal)
                 }
                 (Text("Generally available · reached through ")
                  + Text("jamf-cli").font(.caption.monospaced())
@@ -895,7 +887,7 @@ private struct PlatformTab: View {
                 }
                 Divider().background(Theme.Hairline.standard)
                 VStack(alignment: .leading, spacing: 8) {
-                    FieldLabel(label: "Compliance benchmarks")
+                    FieldLabel(label: L("Compliance benchmarks"))
                     ForEach(ws.configState.complianceBenchmarks.indices, id: \.self) { i in
                         let benchmark = safeElementBinding(
                             $ws.configState.complianceBenchmarks, i, default: "")
@@ -912,8 +904,8 @@ private struct PlatformTab: View {
                                 removeButtonLabel(noun: "benchmark", name: benchmark.wrappedValue))
                         }
                     }
-                    PNPButton(title: "Add benchmark", icon: "plus", style: .ghost, size: .sm, action: { ws.addComplianceBenchmark() })
-                    FieldHelp(text: "Exact titles, case-sensitive. Empty collects every benchmark.")
+                    PNPButton(title: L("Add benchmark"), icon: "plus", style: .ghost, size: .sm, action: { ws.addComplianceBenchmark() })
+                    FieldHelp(text: L("Exact titles, case-sensitive. Empty collects every benchmark."))
                 }
             }
         }
@@ -929,8 +921,7 @@ private struct PlatformTab: View {
                 Text("Platform Gateway profile active")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                Text("Profile \"\(workspace.profile)\" is configured for Platform Gateway auth. "
-                     + "Collect runs the Platform API reports for it.")
+                Text("Profile \"\(workspace.profile)\" is configured for Platform Gateway auth. Collect runs the Platform API reports for it.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
             }
@@ -955,10 +946,7 @@ private struct PlatformTab: View {
                 Text("Requires a Platform Gateway profile")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                Text("Create an integration in Jamf Account under Integrations, then add it "
-                     + "with Settings → Add connection and choose Platform API. That routes "
-                     + "Jamf Pro API traffic through the gateway and unlocks the Platform "
-                     + "commands these sheets use.")
+                Text("Create an integration in Jamf Account under Integrations, then add it with Settings → Add connection and choose Platform API. That routes Jamf Pro API traffic through the gateway and unlocks the Platform commands these sheets use.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                 Button {
@@ -1001,7 +989,7 @@ private struct OutputTab: View {
         HStack(alignment: .top, spacing: 14) {
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionHeader(title: "Output Directory").padding(.bottom, 14)
+                    SectionHeader(title: L("Output Directory")).padding(.bottom, 14)
                     FieldLabel(label: "output_dir")
                     HStack(spacing: 6) {
                         PNPTextField(value: $ws.configState.outputDir, mono: true)
@@ -1009,7 +997,7 @@ private struct OutputTab: View {
                             pickFolder { ws.configState.outputDir = $0 }
                         }
                     }
-                    FieldHelp(text: "Relative paths resolve from config.yaml's folder")
+                    FieldHelp(text: L("Relative paths resolve from config.yaml's folder"))
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "archive_dir")
                         HStack(spacing: 6) {
@@ -1018,20 +1006,20 @@ private struct OutputTab: View {
                                 pickFolder { ws.configState.archiveDir = $0 }
                             }
                         }
-                        FieldHelp(text: "Optional. Leave blank to use 'archive' next to output_dir.")
+                        FieldHelp(text: L("Optional. Leave blank to use 'archive' next to output_dir."))
                     }
                     .padding(.top, 14)
 
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
                     outputToggleRow(
-                        title: "Timestamp output filenames",
+                        title: L("Timestamp output filenames"),
                         detail: "_\(ReportEngine.workbookTimestamp())",
                         isOn: $ws.configState.timestampOutputs
                     )
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
                     outputToggleRow(
-                        title: "Auto-archive older runs",
-                        detail: "Keep latest \(ws.configState.keepLatestRuns)",
+                        title: L("Auto-archive older runs"),
+                        detail: L("Keep latest \(ws.configState.keepLatestRuns)"),
                         isOn: $ws.configState.archiveEnabled
                     )
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
@@ -1046,18 +1034,16 @@ private struct OutputTab: View {
             VStack(spacing: 14) {
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionHeader(title: "jamf-cli Cache")
+                        SectionHeader(title: L("jamf-cli Cache"))
                         outputToggleRow(
-                            title: "Use cached jamf-cli data",
+                            title: L("Use cached jamf-cli data"),
                             detail: "jamf_cli.use_cached_data",
                             isOn: $ws.configState.jamfCLIUseCachedData
                         )
                         Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
                         outputToggleRow(
-                            title: "Require snapshot manifest",
-                            detail: "jamf_cli.require_manifest — hard-fail on tampered "
-                                + "(mismatched or corrupt) snapshots; missing/legacy manifests "
-                                + "are tolerated",
+                            title: L("Require snapshot manifest"),
+                            detail: L("jamf_cli.require_manifest — hard-fail on tampered (mismatched or corrupt) snapshots; missing/legacy manifests are tolerated"),
                             isOn: $ws.configState.jamfCLIRequireManifest
                         )
                     }
@@ -1066,19 +1052,19 @@ private struct OutputTab: View {
                 // Branding: keys ARE in config.example.yaml and DEFAULT_CONFIG.
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 14) {
-                        SectionHeader(title: "Branding")
+                        SectionHeader(title: L("Branding"))
                         VStack(alignment: .leading, spacing: 4) {
-                            FieldLabel(label: "Organisation name")
+                            FieldLabel(label: L("Organisation name"))
                             PNPTextField(value: $ws.configState.orgName, placeholder: ws.org.name)
                         }
                         VStack(alignment: .leading, spacing: 4) {
-                            FieldLabel(label: "Logo path")
+                            FieldLabel(label: L("Logo path"))
                             PNPTextField(value: $ws.configState.logoPath, mono: true)
                         }
                         // The swatch is the colour the reports will use: a value that is not
                         // #RGB or #RRGGBB reads as the default, as it does in the reports.
                         colorField(
-                            label: "Accent color", value: $ws.configState.accentColor,
+                            label: L("Accent color"), value: $ws.configState.accentColor,
                             hexColor: Color(hex: BrandingConfig(
                                 accentColor: ws.configState.accentColor).sanitizedAccentRGB))
                     }
@@ -1092,7 +1078,7 @@ private struct OutputTab: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Select"
+        panel.prompt = L("Select")
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in completion(url.path) }
@@ -1167,15 +1153,15 @@ private struct EACard: View {
     private var eaDetail: String {
         switch ea.type {
         case .percentage:
-            return "Warning ≥ \(ea.warn.map { "\($0)" } ?? "—")% · Critical ≥ \(ea.crit.map { "\($0)" } ?? "—")%"
+            return L("Warning ≥ \(ea.warn.map { "\($0)" } ?? "—")% · Critical ≥ \(ea.crit.map { "\($0)" } ?? "—")%")
         case .version:
-            return "Current: \(ea.currentVersions?.joined(separator: ", ") ?? "—")"
+            return L("Current: \(ea.currentVersions?.joined(separator: ", ") ?? "—")")
         case .date:
-            return "Warn within \(ea.warningDays.map { "\($0)" } ?? "—") days · Past = expired"
+            return L("Warn within \(ea.warningDays.map { "\($0)" } ?? "—") days · Past = expired")
         case .boolean:
-            return "True value: \(ea.trueValue ?? "—")"
+            return L("True value: \(ea.trueValue ?? "—")")
         case .text:
-            return "Frequency table"
+            return L("Frequency table")
         }
     }
 }

@@ -26,7 +26,7 @@ struct ErrorStateView: View {
             message: message,
             commands: commands,
             primaryAction: retry.map {
-                EmptyStateAction(label: "Retry", icon: "arrow.clockwise", action: $0)
+                EmptyStateAction(label: L("Retry"), icon: "arrow.clockwise", action: $0)
             }
         )
     }

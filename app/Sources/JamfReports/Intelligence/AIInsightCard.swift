@@ -31,9 +31,9 @@ struct AIInsightCard: View {
 
     /// The card's corner label: the short form of `providerName`, which fits one line beside the
     /// title. Not a `Kicker`, which upper-cases its text.
-    static let badgeText = "On-Device · Apple Intelligence"
+    static let badgeText = L("On-Device · Apple Intelligence")
     /// The name Settings and VoiceOver use for Apple's model.
-    static let providerName = "On-Device Foundation Model (Apple Intelligence)"
+    static let providerName = L("On-Device Foundation Model (Apple Intelligence)")
 
     /// macOS 27 and a live profile. Synchronous, so a screen can leave the
     /// card out of its layout before any config is read.
@@ -106,7 +106,7 @@ struct AIInsightCard: View {
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.warn)
                     .fixedSize(horizontal: false, vertical: true)
-                generateButton("Try again")
+                generateButton(L("Try again"))
             }
         } else {
             idle
@@ -119,7 +119,7 @@ struct AIInsightCard: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
-            generateButton("Generate insight")
+            generateButton(L("Generate insight"))
         }
     }
 
@@ -154,7 +154,7 @@ struct AIInsightCard: View {
                 .font(.caption2)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
-            generateButton("Regenerate")
+            generateButton(L("Regenerate"))
         }
     }
 
@@ -297,7 +297,7 @@ final class AIInsightCardModel {
         case nil:
             AppLogger.platform.error(
                 "AIInsightCard generate failed: \(error.localizedDescription, privacy: .private)")
-            return "Insight generation failed."
+            return L("Insight generation failed.")
         }
     }
 }

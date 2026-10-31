@@ -23,9 +23,9 @@ func mobileDevicesFindings(
             affected: count,
             category: MobileFinding.category,
             recommendation: finding.recommendation(staleDays: context.staleDays),
-            severity: count == 0 ? "OK" : finding.severity,
-            devices: shown + (more > 0 ? ["and \(more) more, in Mobile Devices"] : []),
-            deviceNoun: "Devices",
+            severity: count == 0 ? L("OK") : finding.severity,
+            devices: shown + (more > 0 ? [L("and \(more) more, in Mobile Devices")] : []),
+            deviceNoun: L("Devices"),
             mobileFilter: finding.rawValue,
             change: previous.flatMap { earlier in
                 finding.count(in: earlier.mobile).map {
@@ -45,7 +45,7 @@ private func deviceNames(
     let names: [String] = affected.map { device in
         let serial = MobileFleetService.serialNumber(
             of: device, listRow: device.mobileDeviceId.flatMap { listRows[$0] })
-        return "\(device.general?.displayName ?? "Untitled Device") (\(serial ?? "no serial"))"
+        return "\(device.general?.displayName ?? L("Untitled Device")) (\(serial ?? L("no serial")))"
     }
     return names.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
 }
@@ -91,7 +91,7 @@ struct MobileDevicesSection: View {
         if !findings.isEmpty {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionHeader(title: "Mobile Devices").padding(16)
+                    SectionHeader(title: L("Mobile Devices")).padding(16)
                     Divider().background(Theme.Colors.hairline)
                     ForEach(findings) { finding in row(finding) }
                 }

@@ -91,7 +91,7 @@ struct CLIStatusChip: View {
 
     private var popoverPathText: String {
         if workspace.demoMode { return DemoData.jamfCLINote }
-        return workspace.jamfCLIPath ?? "not found on PATH"
+        return workspace.jamfCLIPath ?? L("not found on PATH")
     }
 
     private var cliStatusText: String {
@@ -102,8 +102,8 @@ struct CLIStatusChip: View {
 
     /// The chip's label. `nonisolated` so tests can call it without a view.
     nonisolated static func statusText(path: String?, version: String?, demoMode: Bool) -> String {
-        if demoMode { return "jamf-cli · demo" }
-        guard path != nil else { return "jamf-cli missing" }
-        return "jamf-cli \(version ?? "unknown") · live"
+        if demoMode { return L("jamf-cli · demo") }
+        guard path != nil else { return L("jamf-cli missing") }
+        return L("jamf-cli \(version ?? "unknown") · live")
     }
 }

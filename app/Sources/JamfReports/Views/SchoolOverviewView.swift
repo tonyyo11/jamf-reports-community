@@ -19,8 +19,8 @@ struct SchoolOverviewView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Jamf School",
-                title: "Overview",
+                kicker: L("Jamf School"),
+                title: L("Overview"),
                 subtitle: workspace.profile,
                 lastModified: snapshot.collectedAt
             )
@@ -48,8 +48,8 @@ struct SchoolOverviewView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "graduationcap",
-                title: "No Jamf School data yet",
-                message: "Collect from Jamf School to see its devices, users and classes here."
+                title: L("No Jamf School data yet"),
+                message: L("Collect from Jamf School to see its devices, users and classes here.")
             )
         }
     }
@@ -58,7 +58,7 @@ struct SchoolOverviewView: View {
     private var resourcesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "In Jamf School")
+                SectionHeader(title: L("In Jamf School"))
                 EqualHeightTileGrid(minTileWidth: 160) {
                     ForEach(snapshot.overview) { row in
                         StatTile(label: row.resource, value: row.value.isEmpty ? "—" : row.value,

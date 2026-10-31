@@ -17,7 +17,7 @@ enum ProfileService {
             case .invalidProfile(let profile):
                 return ProfileName.invalidMessage(profile)
             case .outsideWorkspaceRoot(let url):
-                return "Refusing to remove workspace outside \(workspacesRoot().path): \(url.path)"
+                return L("Refusing to remove workspace outside \(workspacesRoot().path): \(url.path)")
             }
         }
     }
@@ -95,8 +95,7 @@ enum ProfileService {
         var explanation: String {
             switch self {
             case .unsupportedName(let problem):
-                return problem.explanation + " jamf-cli can't rename a profile, so add this "
-                    + "connection again under a new name."
+                return problem.explanation + L(" jamf-cli can't rename a profile, so add this connection again under a new name.")
             case .sharesFolder(let owner):
                 return "Matches \(owner) except for letter case, so both would use one workspace "
                     + "folder, which belongs to \(owner). To use this profile, add it again in "
@@ -107,8 +106,8 @@ enum ProfileService {
         /// Short form for one-line connection rows.
         var label: String {
             switch self {
-            case .unsupportedName: return "(unsupported name)"
-            case .sharesFolder(let owner): return "(same folder as \(owner))"
+            case .unsupportedName: return L("(unsupported name)")
+            case .sharesFolder(let owner): return L("(same folder as \(owner))")
             }
         }
     }

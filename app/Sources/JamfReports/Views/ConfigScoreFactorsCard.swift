@@ -145,7 +145,7 @@ struct ScoreFactorsCard: View {
         do {
             noting(try workspace.saveScoreFactors(factors))
         } catch {
-            saveFailure = "Couldn't save the score factors: \(error.localizedDescription)"
+            saveFailure = L("Couldn't save the score factors: \(error.localizedDescription)")
         }
     }
 
@@ -174,10 +174,7 @@ struct ScoreFactorsCard: View {
 
     // MARK: Pure helpers
 
-    static let intro = "The Security Score is the weighted share of Macs that pass each factor, "
-        + "on Security Posture, the Overview, Trends, alerts and reports. Weights need not add "
-        + "up to 100: a factor with no data drops out and the rest are rescaled. The list is "
-        + "saved to this workspace's config.yaml (security_policy.score_factors)."
+    static let intro = L("The Security Score is the weighted share of Macs that pass each factor, on Security Posture, the Overview, Trends, alerts and reports. Weights need not add up to 100: a factor with no data drops out and the rest are rescaled. The list is saved to this workspace's config.yaml (security_policy.score_factors).")
 
     /// The factors that score today: counted, with data and a weight above 0.
     static func scoringWeight(
@@ -207,21 +204,21 @@ struct ScoreFactorsCard: View {
         policy: SecurityControlPolicy
     ) -> String {
         if let control = factor.kind.control, policy.level(for: control) == .ignore {
-            return "Not counted: \(control.displayName) is set to Ignore above"
+            return L("Not counted: \(control.displayName) is set to Ignore above")
         }
         switch factor.kind {
         case .agent where SecurityControlPolicy.configuredName(
             factor.target, in: snapshot.agents) == nil:
-            return "Not counted: no security agent has this name"
+            return L("Not counted: no security agent has this name")
         case .mscp where snapshot.baselines.isEmpty:
-            return "Not counted: no mSCP baseline is configured"
+            return L("Not counted: no mSCP baseline is configured")
         case .mscp where factor.target != nil && SecurityControlPolicy.configuredName(
             factor.target, in: snapshot.baselines) == nil:
-            return "Not counted: no mSCP baseline has this name"
+            return L("Not counted: no mSCP baseline has this name")
         default:
             break
         }
-        guard let share = snapshot.measures[factor.key]?.share else { return "No data yet" }
+        guard let share = snapshot.measures[factor.key]?.share else { return L("No data yet") }
         return String(format: "%.1f%% of Macs pass", share)
     }
 
@@ -272,11 +269,11 @@ private struct ScoreFactorsHeader: View {
 
     var body: some View {
         HStack {
-            SectionHeader(title: "Security Score Factors")
+            SectionHeader(title: L("Security Score Factors"))
             Spacer()
-            Pill(text: isDefault ? "Defaults" : "\(count) factors", tone: .teal,
+            Pill(text: isDefault ? L("Defaults") : L("\(count) factors"), tone: .teal,
                  icon: isDefault ? "checkmark" : "slider.horizontal.3")
-            PNPButton(title: "Use defaults", size: .sm, action: onDefaults)
+            PNPButton(title: L("Use defaults"), size: .sm, action: onDefaults)
                 .disabled(demo || isDefault)
                 .help(demo ? DemoData.liveOnlyHelp
                       : "Remove the list from config.yaml and score the default factors.")
@@ -382,7 +379,7 @@ private struct EDRAgentPickerRow: View {
                 do {
                     onSaved(try workspace.saveEDRAgent(name))
                 } catch {
-                    onFailure("Couldn't save the EDR agent: \(error.localizedDescription)")
+                    onFailure(L("Couldn't save the EDR agent: \(error.localizedDescription)"))
                 }
             })
     }

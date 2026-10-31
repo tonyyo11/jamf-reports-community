@@ -12,7 +12,7 @@ struct MobileOverviewTile: Identifiable, Equatable, Sendable {
 
     var id: String { label }
 
-    static let unreported = "Not reported"
+    static let unreported = L("Not reported")
     static let dash = "—"
 }
 
@@ -29,9 +29,9 @@ extension MobileSummary {
     var overviewTiles: [MobileOverviewTile] {
         var tiles = [
             MobileOverviewTile(
-                label: "Devices", value: "\(managed)", caption: "managed mobile devices"),
-            Self.shareTile("OS current", osCurrent, of: "devices with a listed version"),
-            Self.shareTile("Passcode compliant", passcode, of: "devices reporting"),
+                label: L("Devices"), value: "\(managed)", caption: L("managed mobile devices")),
+            Self.shareTile(L("OS current"), osCurrent, of: "devices with a listed version"),
+            Self.shareTile(L("Passcode compliant"), passcode, of: "devices reporting"),
         ]
         if let attention = needsAttentionTile { tiles.append(attention) }
         return tiles
@@ -40,9 +40,9 @@ extension MobileSummary {
     private var needsAttentionTile: MobileOverviewTile? {
         guard needsAttentionCount > 0 else { return nil }
         let parts = [(unmanaged, "unmanaged"), (jailbroken ?? 0, "jailbroken"),
-                     (updateErrors ?? 0, "update errors")]
+                     (updateErrors ?? 0, L("update errors"))]
         return MobileOverviewTile(
-            label: "Needs attention", value: "\(needsAttentionCount)",
+            label: L("Needs attention"), value: "\(needsAttentionCount)",
             caption: parts.filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }.joined(separator: ", "),
             opensAudit: true)
     }
@@ -58,6 +58,6 @@ extension MobileSummary {
         }
         return MobileOverviewTile(
             label: label, value: String(format: "%.1f%%", pct),
-            caption: "\(share.met) of \(share.of) \(population)")
+            caption: L("\(share.met) of \(share.of) \(population)"))
     }
 }

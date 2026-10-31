@@ -35,8 +35,7 @@ struct NotificationsCard: View {
                 Text("Notifications").font(.headline)
                 Text("Webhook for profile \"\(profile)\".")
                     .font(.callout.weight(.semibold))
-                Text("Scheduled runs post digests, failure alerts, metric alerts, and overdue "
-                    + "notices to this webhook.")
+                Text("Scheduled runs post digests, failure alerts, metric alerts, and overdue notices to this webhook.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
 
                 Toggle("Enable notifications", isOn: Binding(
@@ -67,8 +66,7 @@ struct NotificationsCard: View {
                         .onSubmit { flushNotifySave() }
 
                     if NotifyConfigWriter.showsMissingURLWarning(enabled: notifyEnabled, url: notifyURL) {
-                        Text("Add the webhook URL. Nothing is sent until then, the heartbeat "
-                            + "included.")
+                        Text("Add the webhook URL. Nothing is sent until then, the heartbeat included.")
                             .font(.footnote).foregroundStyle(Theme.Colors.warn)
                     }
                     if NotifyConfigWriter.showsInsecureURLWarning(enabled: notifyEnabled, url: notifyURL) {
@@ -84,20 +82,18 @@ struct NotificationsCard: View {
                     }
                     .pickerStyle(.menu)
                     .frame(maxWidth: 260, alignment: .leading)
-                    Text("Minimal sends event counts only — no metric values, error text, or "
-                        + "schedule names.")
+                    Text("Minimal sends event counts only — no metric values, error text, or schedule names.")
                         .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
 
                     Toggle("Send a daily heartbeat", isOn: Binding(
                         get: { notifyHeartbeat },
                         set: { notifyHeartbeat = $0; saveNotifyConfig() }))
                         .toggleStyle(.switch)
-                    Text("Posts one short card a day while the background item runs, so you can "
-                        + "alert on a day without one.")
+                    Text("Posts one short card a day while the background item runs, so you can alert on a day without one.")
                         .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
 
                     HStack(spacing: 8) {
-                        PNPButton(title: "Send test notification", icon: "paperplane", size: .sm) {
+                        PNPButton(title: L("Send test notification"), icon: "paperplane", size: .sm) {
                             Task { await sendTestNotification() }
                         }
                         .disabled(notifyTesting || !currentNotifyConfig.isUsable)
@@ -186,7 +182,7 @@ struct NotificationsCard: View {
             // A debounced save can land after a profile switch; its note keeps its own profile.
             if let saved = written.report.note(for: edit.profile) { notifySaveNote = saved }
         } catch {
-            notifySaveMessage = "Couldn't save notification settings: \(error.localizedDescription)"
+            notifySaveMessage = L("Couldn't save notification settings: \(error.localizedDescription)")
         }
     }
 
@@ -228,15 +224,15 @@ struct NotificationsCard: View {
             .value
         let delivered = await WebhookNotifier.send(
             config: currentNotifyConfig,
-            title: "Test notification",
+            title: L("Test notification"),
             facts: [
-                .init(label: "Profile", value: profile),
-                .init(label: "Status", value: "Test"),
+                .init(label: L("Profile"), value: profile),
+                .init(label: L("Status"), value: L("Test")),
             ],
             organization: organization
         )
         notifyTesting = false
-        notifyTestResult = delivered ? "Delivered" : "Send failed — check the URL"
+        notifyTestResult = delivered ? L("Delivered") : L("Send failed — check the URL")
     }
 }
 

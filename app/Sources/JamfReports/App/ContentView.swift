@@ -271,74 +271,43 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
     private var detailView: some View {
-        switch tab {
-        case .overview:
-            if workspace.isSchoolWorkspace { SchoolOverviewView() } else { OverviewView() }
-        case .fleet:             FleetOverviewView()
-        case .devices:           DevicesView()
-        case .deviceLookup:      DeviceLookupView()
-        case .trends:            TrendsView()
-        case .audit:             AuditView()
-        case .reports:           ReportsView()
-        case .schedules:         AutomationTab()
-        case .runs:              RunsView()
-        case .config:            ConfigView()
-        case .customize:         CustomizeView()
-        case .sources:           SourcesView()
-        case .backups:           BackupsView()
-        case .settings:          SettingsView()
-        case .onboarding:        OnboardingView().id(onboardingRun)
-        case .securityPosture:   SecurityPostureView()
-        case .compliancePosture: CompliancePostureView()
-        case .complianceBenchmarks: ComplianceBenchmarksView()
-        case .patch:             PatchView()
-        case .updates:           UpdatesView()
-        case .ddmBlueprints:     DDMBlueprintView()
-        case .policyProfile:     PolicyProfileView()
-        case .extensionAttributes: ExtensionAttributesView()
-        case .outreach:          OutreachView()
-        case .protectDashboard:  ProtectView()
-        case .mobileFleet:       MobileFleetView()
-        case .groupInventory:    GroupsView()
-        case .schoolDevices:     SchoolDevicesView()
-        }
+        TabPage(tab: tab, onboardingRun: onboardingRun)
     }
 
     private func subtitle(for tab: Tab) -> String? {
         switch tab {
-        case .overview:          "FLEET"
-        case .fleet:             "WORKSPACE SUMMARY"
-        case .devices:           "INVENTORY"
-        case .deviceLookup:      "LOOKUP"
+        case .overview:          L("FLEET")
+        case .fleet:             L("WORKSPACE SUMMARY")
+        case .devices:           L("INVENTORY")
+        case .deviceLookup:      L("LOOKUP")
         case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
-        case .audit:             "HEALTH & HYGIENE"
+        case .audit:             L("HEALTH & HYGIENE")
         // Demo mode always shows the schedules list (see `AutomationTab`).
         case .schedules:
             !workspace.demoMode && AutomationPolicy.parse(automationPolicyRaw).isManaged
-                ? "POLICY" : "SCHEDULES"
-        case .runs:              "STDOUT"
+                ? L("POLICY") : L("SCHEDULES")
+        case .runs:              L("STDOUT")
         case .config:            "CONFIG.YAML"
-        case .customize:         "SHEETS"
-        case .sources:           "INPUTS"
-        case .backups:           "CONFIG SNAPSHOTS"
-        case .settings:          "APP"
-        case .onboarding:        "FIRST RUN"
+        case .customize:         L("SHEETS")
+        case .sources:           L("INPUTS")
+        case .backups:           L("CONFIG SNAPSHOTS")
+        case .settings:          L("APP")
+        case .onboarding:        L("FIRST RUN")
         case .reports:           nil
-        case .securityPosture:   "SCORE & CONTROLS"
-        case .compliancePosture: "BANDS & GAPS"
-        case .complianceBenchmarks: "BENCHMARKS & RULES"
-        case .patch:             "TITLES & FAILURES"
-        case .updates:           "PLANS & FAILURES"
-        case .ddmBlueprints:     "DEVICE STATUS · BLUEPRINTS"
-        case .policyProfile:     "FINDINGS & STATUS"
-        case .extensionAttributes: "COVERAGE & VALUES"
-        case .outreach:          "STALE TIERS"
-        case .protectDashboard:  "ALERTS & AGENTS"
-        case .mobileFleet:       "IOS · IPADOS"
-        case .groupInventory:    "CLASSIC API"
-        case .schoolDevices:     "JAMF SCHOOL"
+        case .securityPosture:   L("SCORE & CONTROLS")
+        case .compliancePosture: L("BANDS & GAPS")
+        case .complianceBenchmarks: L("BENCHMARKS & RULES")
+        case .patch:             L("TITLES & FAILURES")
+        case .updates:           L("PLANS & FAILURES")
+        case .ddmBlueprints:     L("DEVICE STATUS · BLUEPRINTS")
+        case .policyProfile:     L("FINDINGS & STATUS")
+        case .extensionAttributes: L("COVERAGE & VALUES")
+        case .outreach:          L("STALE TIERS")
+        case .protectDashboard:  L("ALERTS & AGENTS")
+        case .mobileFleet:       L("IOS · IPADOS")
+        case .groupInventory:    L("CLASSIC API")
+        case .schoolDevices:     L("JAMF SCHOOL")
         }
     }
 
@@ -433,5 +402,46 @@ extension SidebarMode {
     ) -> (stored: SidebarMode, overridden: Bool) {
         let shown = effective(stored: stored, isNarrow: isNarrow, overridden: overridden)
         return (shown.next(), overridden || isNarrow)
+    }
+}
+
+/// The screen a sidebar tab shows.
+struct TabPage: View {
+    let tab: Tab
+    let onboardingRun: Int
+    @Environment(WorkspaceStore.self) private var workspace
+
+    var body: some View {
+        switch tab {
+        case .overview:
+            if workspace.isSchoolWorkspace { SchoolOverviewView() } else { OverviewView() }
+        case .fleet:             FleetOverviewView()
+        case .devices:           DevicesView()
+        case .deviceLookup:      DeviceLookupView()
+        case .trends:            TrendsView()
+        case .audit:             AuditView()
+        case .reports:           ReportsView()
+        case .schedules:         AutomationTab()
+        case .runs:              RunsView()
+        case .config:            ConfigView()
+        case .customize:         CustomizeView()
+        case .sources:           SourcesView()
+        case .backups:           BackupsView()
+        case .settings:          SettingsView()
+        case .onboarding:        OnboardingView().id(onboardingRun)
+        case .securityPosture:   SecurityPostureView()
+        case .compliancePosture: CompliancePostureView()
+        case .complianceBenchmarks: ComplianceBenchmarksView()
+        case .patch:             PatchView()
+        case .updates:           UpdatesView()
+        case .ddmBlueprints:     DDMBlueprintView()
+        case .policyProfile:     PolicyProfileView()
+        case .extensionAttributes: ExtensionAttributesView()
+        case .outreach:          OutreachView()
+        case .protectDashboard:  ProtectView()
+        case .mobileFleet:       MobileFleetView()
+        case .groupInventory:    GroupsView()
+        case .schoolDevices:     SchoolDevicesView()
+        }
     }
 }

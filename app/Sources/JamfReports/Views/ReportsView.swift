@@ -35,7 +35,7 @@ struct ReportsView: View {
     private var reportsFolderDisplayPath: String {
         workspace.demoMode
             ? DemoData.workspaceDisplayPath(
-                profile: DemoData.org.profile, subpath: "Generated Reports") + "/"
+                profile: DemoData.org.profile, subpath: L("Generated Reports")) + "/"
             : WorkspaceRootStore.displayPath(of: reportsDirectory, profile: workspace.profile) + "/"
     }
 
@@ -95,9 +95,9 @@ struct ReportsView: View {
     /// The profile menu's label: "All Profiles", the one chosen, or how many.
     static func profileFilterLabel(_ selection: Set<String>) -> String {
         switch selection.count {
-        case 0: return "All Profiles"
-        case 1: return selection.first ?? "All Profiles"
-        default: return "\(selection.count) profiles"
+        case 0: return L("All Profiles")
+        case 1: return selection.first ?? L("All Profiles")
+        default: return L("\(selection.count) profiles")
         }
     }
 
@@ -209,23 +209,22 @@ struct ReportsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             PageHeader(
-                kicker: "Generated Reports",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-                title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
+                kicker: L("Generated Reports"),
+                breadcrumbs: [Breadcrumb(label: L("Overview"), action: { navigateToOverview() })],
+                title: reports.count == 1 ? L("1 report") : L("\(reports.count) reports"),
                 subtitle: reportsFolderDisplayPath,
                 wrapsTrailing: true
             ) {
                 WrappingRow {
-                    PNPButton(title: "Reveal in Finder", icon: "folder") {
+                    PNPButton(title: L("Reveal in Finder"), icon: "folder") {
                         revealReportsFolder()
                     }
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
-                          ? "Demo reports are not on disk. Revealing their folder "
-                            + "needs a live profile."
+                          ? "Demo reports are not on disk. Revealing their folder needs a live profile."
                           : "Open the Generated Reports folder in Finder")
                     PNPButton(
-                        title: "Period report",
+                        title: L("Period report"),
                         icon: "calendar.badge.clock",
                         style: .neutral
                     ) {
@@ -240,7 +239,7 @@ struct ReportsView: View {
                         : "Fleet numbers for a period, with start, end and change"
                     )
                     PNPButton(
-                        title: "Generate\u{2026}",
+                        title: L("Generate\u{2026}"),
                         icon: "doc.badge.plus",
                         style: .gold
                     ) {
@@ -257,7 +256,7 @@ struct ReportsView: View {
                     // Both render Jamf Pro data; a Jamf School workspace has a workbook only.
                     if !workspace.isSchoolWorkspace {
                         PNPButton(
-                            title: isGeneratingPDF ? "Generating..." : "Export PDF",
+                            title: isGeneratingPDF ? L("Generating...") : L("Export PDF"),
                             icon: "doc.richtext",
                             style: .neutral
                         ) {
@@ -270,7 +269,7 @@ struct ReportsView: View {
                             : "Render the HTML report to PDF via WKWebView"
                         )
                         PNPButton(
-                            title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
+                            title: isExportingCSV ? L("Exporting...") : L("Export Inventory CSV"),
                             icon: "doc.text",
                             style: .neutral
                         ) {
@@ -289,7 +288,7 @@ struct ReportsView: View {
                 SegmentedControl(
                     selection: $filter,
                     options: [
-                        ("All", "All", nil),
+                        ("All", L("All"), nil),
                         ("xlsx", "xlsx", nil),
                         ("html", "html", nil),
                         ("pdf", "pdf", nil),
@@ -332,11 +331,10 @@ struct ReportsView: View {
     private var emptyState: some View {
         EmptyStateView(
             systemImage: "doc.badge.plus",
-            title: "No reports yet",
-            message: "Reports are generated from the Overview screen using "
-                + "jamf-cli snapshots and optionally a CSV export.",
+            title: L("No reports yet"),
+            message: L("Reports are generated from the Overview screen using jamf-cli snapshots and optionally a CSV export."),
             primaryAction: EmptyStateAction(
-                label: "Go to Overview",
+                label: L("Go to Overview"),
                 icon: "house"
             ) { requestOverviewTab() }
         )
@@ -360,24 +358,24 @@ struct ReportsView: View {
     private var summary: some View {
         HStack(spacing: 12) {
             StatTile(
-                label: "Total reports",
+                label: L("Total reports"),
                 value: "\(reportStats.count)",
-                sub: "Generated outputs"
+                sub: L("Generated outputs")
             )
             StatTile(
-                label: "Disk used",
+                label: L("Disk used"),
                 value: FileDisplay.size(reportStats.totalBytes),
-                sub: "xlsx · html · pdf · csv"
+                sub: L("xlsx · html · pdf · csv")
             )
             StatTile(
-                label: "Snapshots archived",
+                label: L("Snapshots archived"),
                 value: "\(snapshotCount)",
-                sub: snapshotFamilies.count == 1 ? "1 family" : "\(snapshotFamilies.count) families"
+                sub: snapshotFamilies.count == 1 ? L("1 family") : L("\(snapshotFamilies.count) families")
             )
             StatTile(
-                label: "Auto-archived",
+                label: L("Auto-archived"),
                 value: "\(reportStats.archivedCount)",
-                sub: "Moved to /archive"
+                sub: L("Moved to /archive")
             )
         }
     }
@@ -474,20 +472,20 @@ struct ReportsView: View {
                     isGeneratingPDF = false
                     workspace.globalStatus = nil
                     workspace.toast = WorkspaceStore.exportFailureToast(
-                        error, operation: "PDF generation")
+                        error, operation: L("PDF generation"))
                     if !CLIBridgeError.isCollectRefusal(error) {
-                        reportError = "PDF generation failed: \(error.localizedDescription)"
+                        reportError = L("PDF generation failed: \(error.localizedDescription)")
                     }
                     return
                 }
                 isGeneratingPDF = false
                 workspace.globalStatus = nil
                 if code == 0 {
-                    workspace.toast = Toast(message: "PDF report generated", style: .success)
+                    workspace.toast = Toast(message: L("PDF report generated"), style: .success)
                     SystemActions.open(dest, profile: profile)
                     reload()
                 } else {
-                    let msg = CLIBridge.explainExit(code, operation: "PDF report generation")
+                    let msg = CLIBridge.explainExit(code, operation: L("PDF report generation"))
                     workspace.toast = Toast(message: msg, style: .danger)
                     reportError = msg
                 }
@@ -531,20 +529,20 @@ struct ReportsView: View {
                     isExportingCSV = false
                     workspace.globalStatus = nil
                     workspace.toast = WorkspaceStore.exportFailureToast(
-                        error, operation: "CSV export")
+                        error, operation: L("CSV export"))
                     if !CLIBridgeError.isCollectRefusal(error) {
-                        reportError = "Inventory CSV export failed: \(error.localizedDescription)"
+                        reportError = L("Inventory CSV export failed: \(error.localizedDescription)")
                     }
                     return
                 }
                 isExportingCSV = false
                 workspace.globalStatus = nil
                 if code == 0 {
-                    workspace.toast = Toast(message: "Inventory CSV exported", style: .success)
+                    workspace.toast = Toast(message: L("Inventory CSV exported"), style: .success)
                     SystemActions.reveal(dest, profile: profile)
                     reload()
                 } else {
-                    let msg = CLIBridge.explainExit(code, operation: "Inventory CSV export")
+                    let msg = CLIBridge.explainExit(code, operation: L("Inventory CSV export"))
                     workspace.toast = Toast(message: msg, style: .danger)
                     reportError = msg
                 }

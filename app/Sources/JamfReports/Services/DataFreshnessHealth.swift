@@ -37,13 +37,13 @@ struct DataFreshnessIssue: Identifiable, Sendable, Equatable {
         switch kind {
         case .failing:
             let attempts = consecutiveFailures == 1 ? "attempt" : "attempts"
-            return "\(snapshotKind) has failed \(consecutiveFailures) collect \(attempts) in a row"
+            return L("\(snapshotKind) has failed \(consecutiveFailures) collect \(attempts) in a row")
         case .stale:
             guard let lastSuccess else {
-                return "\(snapshotKind) has never been collected successfully"
+                return L("\(snapshotKind) has never been collected successfully")
             }
             let days = max(0, Int(Date().timeIntervalSince(lastSuccess) / 86_400))
-            return "\(snapshotKind) last landed \(days)d ago (expected every \(tier.cadenceLabel))"
+            return L("\(snapshotKind) last landed \(days)d ago (expected every \(tier.cadenceLabel))")
         }
     }
 }
@@ -151,7 +151,7 @@ extension CollectionTier {
         let hours = intervalSeconds / 3_600
         if hours >= 24 {
             let days = hours / 24
-            return days == 1 ? "1 day" : "\(days) days"
+            return days == 1 ? L("1 day") : L("\(days) days")
         }
         return "\(hours)h"
     }

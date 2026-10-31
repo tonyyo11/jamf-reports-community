@@ -150,10 +150,10 @@ extension WorkspaceStore {
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             outcome = Self.refreshToast(
-                "\(labels) data refreshed", exit: exit, incomplete: honesty.incomplete,
+                L("\(labels) data refreshed"), exit: exit, incomplete: honesty.incomplete,
                 recorded: recorded)
         } catch {
-            outcome = Self.collectFailureToast(error, operation: "Refresh")
+            outcome = Self.collectFailureToast(error, operation: L("Refresh"))
         }
         // Re-probe rather than clear: exit 0 means the run finished, not that each
         // tier's probe kind landed, so clearing on exit 0 hid the prompt for a tier
@@ -197,9 +197,9 @@ extension WorkspaceStore {
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             outcome = Self.refreshToast(
-                "Data refreshed", exit: exit, incomplete: honesty.incomplete, recorded: recorded)
+                L("Data refreshed"), exit: exit, incomplete: honesty.incomplete, recorded: recorded)
         } catch {
-            outcome = Self.collectFailureToast(error, operation: "Refresh")
+            outcome = Self.collectFailureToast(error, operation: L("Refresh"))
         }
         // The Overview scan prompt reads `staleHeavyTiers`, which only the prompt's
         // own button cleared — so a toolbar refresh that collected every tier left
@@ -229,7 +229,7 @@ extension WorkspaceStore {
         guard canRefresh(profileSlug: profile) else {
             // Practically unreachable (the banner is suppressed in demo mode),
             // but a button click must never be a silent no-op.
-            toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
+            toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
         guard !manualCollectMustWait() else { return }
@@ -248,7 +248,7 @@ extension WorkspaceStore {
             outcome = Self.firstCollectToast(
                 exitCode: exit, runRecorded: recorded, incomplete: honesty.incomplete)
         } catch {
-            outcome = Self.collectFailureToast(error, operation: "Collect")
+            outcome = Self.collectFailureToast(error, operation: L("Collect"))
         }
         await checkHeavyTierStaleness()
         await refreshDataFreshness()
@@ -268,7 +268,7 @@ extension WorkspaceStore {
         guard let refusal else { return false }
         AppLogger.collect.notice(
             "Manual collect refused: \(refusal.localizedDescription, privacy: .private)")
-        toast = Self.collectFailureToast(refusal, operation: "Refresh")
+        toast = Self.collectFailureToast(refusal, operation: L("Refresh"))
         return true
     }
 
@@ -284,9 +284,9 @@ extension WorkspaceStore {
 
     /// What Generate says when `generateRefusal` stops it.
     nonisolated static func generateRefusalMessage(_ refusal: CLIBridgeError) -> String {
-        let reason = CLIBridge.explainOperationError(refusal, operation: "Generate")
+        let reason = CLIBridge.explainOperationError(refusal, operation: L("Generate"))
         guard refusal != .generateInProgress else { return reason }
-        return reason + ". A report made while data is collected would mix old and new figures."
+        return reason + L(". A report made while data is collected would mix old and new figures.")
     }
 
     /// True, after posting why as information, when a report must not start now
@@ -305,7 +305,7 @@ extension WorkspaceStore {
         guard !reportMustWait() else { return false }
         guard setRunInProgress(for: profile) else {
             toast = Toast(
-                message: "Another run is already in progress for profile '\(profile)' — skipped",
+                message: L("Another run is already in progress for profile '\(profile)' — skipped"),
                 style: .danger)
             return false
         }
@@ -317,7 +317,7 @@ extension WorkspaceStore {
     nonisolated static func exportFailureToast(_ error: Error, operation: String) -> Toast {
         guard CLIBridgeError.isCollectRefusal(error) else {
             return Toast(
-                message: "\(operation) failed · \(error.localizedDescription)", style: .danger)
+                message: L("\(operation) failed · \(error.localizedDescription)"), style: .danger)
         }
         return collectFailureToast(error, operation: operation)
     }
@@ -337,8 +337,8 @@ extension WorkspaceStore {
 
         var pointer: String {
             switch self {
-            case .runHistory: "see Run History"
-            case .settingsLogging: "see Settings › Logging"
+            case .runHistory: L("see Run History")
+            case .settingsLogging: L("see Settings › Logging")
             }
         }
     }
@@ -350,7 +350,7 @@ extension WorkspaceStore {
     ) -> Toast {
         guard incomplete else { return Toast(message: message, style: .success) }
         return Toast(
-            message: "Refresh finished with warnings — \(warningsAt.pointer)", style: .warning)
+            message: L("Refresh finished with warnings — \(warningsAt.pointer)"), style: .warning)
     }
 
     /// `sink`, after feeding each run line to `honesty`.
@@ -436,7 +436,7 @@ extension WorkspaceStore {
         let destination: WarningsDestination = recorded ? .runHistory : .settingsLogging
         guard exit == 0 else {
             return Toast(
-                message: "Refresh finished with exit \(exit) — \(destination.pointer)",
+                message: L("Refresh finished with exit \(exit) — \(destination.pointer)"),
                 style: .danger)
         }
         return collectCompletedToast(message, incomplete: incomplete, warningsAt: destination)
@@ -452,23 +452,22 @@ extension WorkspaceStore {
             // Context-neutral: this path also serves CollectNowBanner on every
             // collect-fed screen, not just the first-run flow.
             return collectCompletedToast(
-                "Collection complete", incomplete: incomplete,
+                L("Collection complete"), incomplete: incomplete,
                 warningsAt: runRecorded ? .runHistory : .settingsLogging)
         }
         if exitCode == CLIBridge.exitCodeUnauthorized {
             return Toast(
-                message: "Collect failed — jamf-cli credentials expired; re-authenticate "
-                    + "from Settings → Connections",
+                message: L("Collect failed — jamf-cli credentials expired; re-authenticate from Settings → Connections"),
                 style: .danger
             )
         }
         // Only point at Run History when this run was actually recorded;
         // otherwise the failing commands live in the app log, not a run log.
         let tail = runRecorded
-            ? "see Run History for the failing commands"
-            : "check the app log"
+            ? L("see Run History for the failing commands")
+            : L("check the app log")
         return Toast(
-            message: "Collect finished with errors (exit \(exitCode)) — \(tail)",
+            message: L("Collect finished with errors (exit \(exitCode)) — \(tail)"),
             style: .danger
         )
     }

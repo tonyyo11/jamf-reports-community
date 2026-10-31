@@ -48,9 +48,9 @@ final class ExistingCLISetupFlow {
         var skipped = 0
 
         var summary: String {
-            var parts = ["\(collected) collected"]
-            if failed > 0 { parts.append("\(failed) failed") }
-            if skipped > 0 { parts.append("\(skipped) skipped") }
+            var parts = [L("\(collected) collected")]
+            if failed > 0 { parts.append(L("\(failed) failed")) }
+            if skipped > 0 { parts.append(L("\(skipped) skipped")) }
             return parts.joined(separator: ", ")
         }
     }
@@ -178,7 +178,7 @@ final class ExistingCLISetupFlow {
         for name in profileNames { statuses[name] = .pending }
     }
 
-    nonisolated static let securityCloudReason = "Jamf Security Cloud is not supported yet."
+    nonisolated static let securityCloudReason = L("Jamf Security Cloud is not supported yet.")
 
     /// Why a profile cannot be adopted whatever its product, or nil: the retired gateway and an
     /// organization-level integration, which choosing a different product does not fix.
@@ -194,8 +194,7 @@ final class ExistingCLISetupFlow {
         if let scope = scopeRefusal(for: profile) { return scope }
         switch profile.product {
         case .protect:
-            return "A \(profile.product.displayName) login holds no Jamf Pro data, so it is not "
-                + "a workspace. Add Jamf Protect from the Jamf Pro workspace that uses it."
+            return L("A \(profile.product.displayName) login holds no Jamf Pro data, so it is not a workspace. Add Jamf Protect from the Jamf Pro workspace that uses it.")
         case .securityCloud: return securityCloudReason
         case .pro, .school, .unknown: return nil
         }
@@ -223,11 +222,9 @@ final class ExistingCLISetupFlow {
     /// looked for, since "nothing found" alone leaves them guessing whether
     /// they picked the parent folder or the profile folder.
     nonisolated static func missingWorkspaceMessage(root: String, profiles: [String]) -> String {
-        let folder = profiles.first.map(ProfileName.pathComponent) ?? "<profile>"
+        let folder = profiles.first.map(ProfileName.pathComponent) ?? L("<profile>")
         let example = "\(root)/\(folder)/config.yaml"
-        return "No workspace for \(profiles.joined(separator: ", ")) under \(root) — "
-            + "expected \(example). Pick the folder that contains the profile folders, "
-            + "or initialize a new workspace below."
+        return L("No workspace for \(profiles.joined(separator: ", ")) under \(root) — expected \(example). Pick the folder that contains the profile folders, or initialize a new workspace below.")
     }
 
     // MARK: - Same Jamf Pro, two profiles
@@ -241,8 +238,7 @@ final class ExistingCLISetupFlow {
     /// The line under an oauth2 profile that reaches the same Jamf Pro as a platform one.
     func twinNote(for name: String) -> String? {
         twinOf[name].map {
-            "Same Jamf Pro as \($0). Kept for commands the gateway refuses; not collected, so "
-                + "history and fleet totals count the fleet once. Tick it to collect it anyway."
+            L("Same Jamf Pro as \($0). Kept for commands the gateway refuses; not collected, so history and fleet totals count the fleet once. Tick it to collect it anyway.")
         }
     }
 
@@ -388,7 +384,7 @@ final class ExistingCLISetupFlow {
             do {
                 let initExit = try await initialize(name)
                 guard initExit == 0 else {
-                    fail(name, "workspace init exited \(initExit)", at: stage)
+                    fail(name, L("workspace init exited \(initExit)"), at: stage)
                     continue
                 }
                 if products[name] == .school { try configureSchool(name) }
@@ -464,36 +460,31 @@ final class ExistingCLISetupFlow {
             failures: profileNames.filter(selected.contains).compactMap { failureStages[$0] }
         )
         guard !canContinue else { return summary }
-        return summary + " No workspace exists yet, so there is no dashboard to open. Fix the "
-            + "cause above and try again, or skip for now."
+        return summary + L(" No workspace exists yet, so there is no dashboard to open. Fix the cause above and try again, or skip for now.")
     }
 
     /// Names the cause each failure had. Sign-in is blamed only for a collect that
     /// failed on credentials; a profile with no workspace never got as far as signing in.
     nonisolated static func summaryText(succeeded: Int, failures: [FailureStage]) -> String {
         if failures.isEmpty {
-            return "All \(succeeded) profile" + (succeeded == 1 ? "" : "s")
-                + " collected — dashboards are populated and the first trend point is saved."
+            return L("All \(succeeded) profile") + (succeeded == 1 ? "" : "s")
+                + L(" collected — dashboards are populated and the first trend point is saved.")
         }
-        var parts = ["\(succeeded) succeeded, \(failures.count) failed."]
+        var parts = [L("\(succeeded) succeeded, \(failures.count) failed.")]
         let noWorkspace = failures.filter { $0 == .workspace }.count
         if noWorkspace == 1 {
-            parts.append("A workspace could not be created, so nothing was collected for that "
-                + "profile; its row above names the cause.")
+            parts.append(L("A workspace could not be created, so nothing was collected for that profile; its row above names the cause."))
         } else if noWorkspace > 1 {
-            parts.append("\(noWorkspace) workspaces could not be created, so nothing was "
-                + "collected for those profiles; each row above names the cause.")
+            parts.append(L("\(noWorkspace) workspaces could not be created, so nothing was collected for those profiles; each row above names the cause."))
         }
         if failures.contains(.connection) {
-            parts.append("A profile's connection check refused it; its row above names the cause.")
+            parts.append(L("A profile's connection check refused it; its row above names the cause."))
         }
         if failures.contains(.credentials) {
-            parts.append("A collect failed on jamf-cli sign-in. Once jamf-cli auth is fixed, "
-                + "re-collect from the Overview banner (Sources page shows connection status).")
+            parts.append(L("A collect failed on jamf-cli sign-in. Once jamf-cli auth is fixed, re-collect from the Overview banner (Sources page shows connection status)."))
         }
         if failures.contains(.collect) {
-            parts.append("A collect reported failures; Run History lists the failing commands, "
-                + "and the Overview banner can re-collect.")
+            parts.append(L("A collect reported failures; Run History lists the failing commands, and the Overview banner can re-collect."))
         }
         return parts.joined(separator: " ")
     }
@@ -550,7 +541,7 @@ final class ExistingCLISetupFlow {
     /// failures, and blaming auth for it sends the user to the wrong page.
     nonisolated static func collectFailureReason(exit: Int32) -> String {
         exit == CLIBridge.exitCodeUnauthorized
-            ? "jamf-cli credentials expired — re-authenticate this profile"
-            : "collect exited \(exit) — see Run History for the failing commands"
+            ? L("jamf-cli credentials expired — re-authenticate this profile")
+            : L("collect exited \(exit) — see Run History for the failing commands")
     }
 }

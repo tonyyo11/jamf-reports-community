@@ -1048,6 +1048,7 @@ package func runJamfReports() async {
         await runIncludedCLI(Array(cliArgs.dropFirst()))
     } else {
         // No arguments, or a launch argument starting with `-` (double-click) → the GUI.
+        Localization.useAppLanguage()
         JamfReportsApp.main()
     }
 }

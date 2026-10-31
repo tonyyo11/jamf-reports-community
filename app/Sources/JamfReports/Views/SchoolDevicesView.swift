@@ -23,8 +23,8 @@ struct SchoolDevicesView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Jamf School",
-                title: "Devices",
+                kicker: L("Jamf School"),
+                title: L("Devices"),
                 subtitle: subtitle,
                 lastModified: snapshot.collectedAt
             )
@@ -50,7 +50,7 @@ struct SchoolDevicesView: View {
     private var subtitle: String? {
         guard snapshot.devicesDate != nil else { return nil }
         let count = snapshot.devices.count
-        return "\(count) device\(count == 1 ? "" : "s") in Jamf School."
+        return (count == 1 ? L("\(count) device in Jamf School.") : L("\(count) devices in Jamf School."))
     }
 
     /// Changes when the profile does, and when demo mode flips under the same profile name.
@@ -76,9 +76,8 @@ struct SchoolDevicesView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "ipad.and.iphone",
-                title: "No devices collected yet",
-                message: "Collect from Jamf School (Data Sources › Collect now) to list its "
-                    + "devices."
+                title: L("No devices collected yet"),
+                message: L("Collect from Jamf School (Data Sources › Collect now) to list its devices.")
             )
         }
     }
@@ -105,12 +104,12 @@ struct SchoolDevicesView: View {
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Devices",
+                    title: L("Devices"),
                     trailing: shown.count == snapshot.devices.count
-                        ? nil : "\(shown.count) of \(snapshot.devices.count) shown")
+                        ? nil : L("\(shown.count) of \(snapshot.devices.count) shown"))
                 HStack(spacing: 12) {
                     Picker("Show", selection: $filter) {
-                        ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(Filter.allCases) { Text(LShown($0.rawValue)).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -127,7 +126,7 @@ struct SchoolDevicesView: View {
     private var depCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Automated Device Enrollment",
+                SectionHeader(title: L("Automated Device Enrollment"),
                               trailing: "\(snapshot.depDevices.count)")
                 Table(snapshot.depDevices) {
                     TableColumn("Serial") { Text($0.serial).font(Theme.Fonts.mono(11)) }
@@ -156,19 +155,19 @@ struct SchoolDeviceTiles: View {
     var body: some View {
         let total = snapshot.devices.count
         EqualHeightTileGrid(minTileWidth: 200) {
-            StatTile(label: "Devices", value: "\(total)", sub: platformLine, fillsHeight: true)
-            StatTile(label: "Managed", value: "\(snapshot.managedCount)",
+            StatTile(label: L("Devices"), value: "\(total)", sub: platformLine, fillsHeight: true)
+            StatTile(label: L("Managed"), value: "\(snapshot.managedCount)",
                      sub: share(snapshot.managedCount, of: total), fillsHeight: true)
-            StatTile(label: "Supervised", value: "\(snapshot.supervisedCount)",
+            StatTile(label: L("Supervised"), value: "\(snapshot.supervisedCount)",
                      sub: share(snapshot.supervisedCount, of: total), fillsHeight: true)
-            StatTile(label: "Stale", value: "\(snapshot.staleCount(atDays: staleDays))",
-                     sub: "No check-in for more than \(staleDays) days", fillsHeight: true)
+            StatTile(label: L("Stale"), value: "\(snapshot.staleCount(atDays: staleDays))",
+                     sub: L("No check-in for more than \(staleDays) days"), fillsHeight: true)
         }
     }
 
     private var platformLine: String {
         let parts = snapshot.platformCounts.map { "\($0.count) \($0.platform)" }
-        return parts.isEmpty ? "None collected" : parts.joined(separator: " · ")
+        return parts.isEmpty ? L("None collected") : parts.joined(separator: " · ")
     }
 
     private func share(_ count: Int, of total: Int) -> String {
@@ -226,7 +225,7 @@ struct SchoolDevicesTable: View {
     }
 
     static func yesNo(_ value: Bool?) -> String {
-        value.map { $0 ? "Yes" : "No" } ?? "—"
+        value.map { $0 ? L("Yes") : L("No") } ?? "—"
     }
 
     /// The check-in text, led by "Stale" so the state is not carried by color alone.
@@ -234,11 +233,11 @@ struct SchoolDevicesTable: View {
         _ device: SchoolFleetService.Device, stale: Bool, now: Date
     ) -> String {
         let text = checkinText(device, now: now)
-        return stale ? "Stale, \(text)" : text
+        return stale ? L("Stale, \(text)") : text
     }
 
     static func checkinText(_ device: SchoolFleetService.Device, now: Date) -> String {
-        guard let days = device.daysSinceCheckin(now: now) else { return "Unknown" }
-        return days == 0 ? "Today" : "\(days) day\(days == 1 ? "" : "s") ago"
+        guard let days = device.daysSinceCheckin(now: now) else { return L("Unknown") }
+        return days == 0 ? L("Today") : (days == 1 ? L("\(days) day ago") : L("\(days) days ago"))
     }
 }

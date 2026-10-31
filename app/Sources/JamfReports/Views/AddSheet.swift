@@ -14,9 +14,9 @@ struct AddSheetRequest: Identifiable {
 extension AddSheetPlan.NewProduct {
     var title: String {
         switch self {
-        case .jamfPro: "Jamf Pro"
-        case .platformAPI: "Platform API"
-        case .jamfSchool: "Jamf School"
+        case .jamfPro: L("Jamf Pro")
+        case .platformAPI: L("Platform API")
+        case .jamfSchool: L("Jamf School")
         }
     }
 
@@ -30,9 +30,9 @@ extension AddSheetPlan.NewProduct {
 
     var summary: String {
         switch self {
-        case .jamfPro: "A Jamf Pro server with an API client (OAuth2): on-prem, GovCloud or cloud."
-        case .platformAPI: "A Jamf Account integration, recommended for Jamf Cloud."
-        case .jamfSchool: "A Jamf School network, with its Network ID and API key."
+        case .jamfPro: L("A Jamf Pro server with an API client (OAuth2): on-prem, GovCloud or cloud.")
+        case .platformAPI: L("A Jamf Account integration, recommended for Jamf Cloud.")
+        case .jamfSchool: L("A Jamf School network, with its Network ID and API key.")
         }
     }
 
@@ -120,8 +120,7 @@ struct AddSheet: View {
             Text("Add")
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
-            Text("Set up a new workspace, add Jamf Protect to this one, or use a profile "
-                + "jamf-cli already has.")
+            Text("Set up a new workspace, add Jamf Protect to this one, or use a profile jamf-cli already has.")
                 .font(.callout)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -132,7 +131,7 @@ struct AddSheet: View {
     private var footer: some View {
         HStack {
             Spacer()
-            PNPButton(title: "Close", style: .neutral, size: .md, action: close)
+            PNPButton(title: L("Close"), style: .neutral, size: .md, action: close)
                 .disabled(isAdopting)
         }
         .padding(16)
@@ -152,13 +151,12 @@ struct AddSheet: View {
     private var choiceRow: some View {
         HStack(alignment: .top, spacing: 12) {
             choiceCard(
-                .newWorkspace, icon: "folder.badge.plus", title: "New workspace",
-                body: "Jamf Pro, the Platform API or Jamf School, in a workspace of its own.")
+                .newWorkspace, icon: "folder.badge.plus", title: L("New workspace"),
+                body: L("Jamf Pro, the Platform API or Jamf School, in a workspace of its own."))
             choiceCard(
                 .addToCurrent, icon: "plus.rectangle.on.rectangle",
-                title: "Add to \(workspace.profile)",
-                body: "Jamf Protect alerts and analytics beside this workspace's "
-                    + "\(workspace.isSchoolWorkspace ? "Jamf School" : "Jamf Pro") data.")
+                title: L("Add to \(workspace.profile)"),
+                body: (workspace.isSchoolWorkspace ? L("Jamf Protect alerts and analytics beside this workspace's Jamf School data.") : L("Jamf Protect alerts and analytics beside this workspace's Jamf Pro data.")))
         }
     }
 
@@ -232,7 +230,7 @@ struct AddSheet: View {
                 .foregroundStyle(Theme.Colors.fg2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            PNPButton(title: "Connect new", icon: "arrow.right", size: .sm) {
+            PNPButton(title: L("Connect new"), icon: "arrow.right", size: .sm) {
                 startOnboarding(product)
             }
             .disabled(isAdopting)
@@ -258,18 +256,16 @@ struct AddSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Jamf Protect").font(.headline).foregroundStyle(Theme.Colors.fg)
                     if let connected = discovery?.currentProtect {
-                        Text("\(workspace.profile) already uses the Jamf Protect profile "
-                            + "\(connected). Change it from Data Sources.")
+                        Text("\(workspace.profile) already uses the Jamf Protect profile \(connected). Change it from Data Sources.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Connect a Jamf Protect tenant with an API client. Its alerts, "
-                            + "computers and insights are collected with this workspace.")
+                        Text("Connect a Jamf Protect tenant with an API client. Its alerts, computers and insights are collected with this workspace.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .fixedSize(horizontal: false, vertical: true)
-                        PNPButton(title: "Connect new", icon: "arrow.right", size: .sm) {
+                        PNPButton(title: L("Connect new"), icon: "arrow.right", size: .sm) {
                             showingProtectConnect = true
                         }
                         .disabled(isAdopting || discovery == nil)
@@ -297,7 +293,7 @@ struct AddSheet: View {
                         .font(.headline)
                         .foregroundStyle(Theme.Colors.fg)
                     Spacer()
-                    PNPButton(title: "Re-check", icon: "arrow.clockwise", size: .sm) {
+                    PNPButton(title: L("Re-check"), icon: "arrow.clockwise", size: .sm) {
                         Task { await recheck() }
                     }
                     .disabled(isChecking || isAdopting || workspace.demoMode)
@@ -315,16 +311,14 @@ struct AddSheet: View {
     private var existingProfilesBody: some View {
         switch listing {
         case .demo:
-            note("Demo mode is on. Profiles jamf-cli already has are listed once a real "
-                + "connection is set up.")
+            note(L("Demo mode is on. Profiles jamf-cli already has are listed once a real connection is set up."))
         case .reading:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                note("Reading jamf-cli's profiles…")
+                note(L("Reading jamf-cli's profiles…"))
             }
         case .unreadable:
-            note("Could not read jamf-cli's profiles. Check that jamf-cli is installed, then "
-                + "Re-check.")
+            note(L("Could not read jamf-cli's profiles. Check that jamf-cli is installed, then Re-check."))
         case .empty(let text):
             note(text)
         case .rows(let rows):
@@ -381,10 +375,10 @@ struct AddSheet: View {
     ) -> some View {
         switch status {
         case .pending: EmptyView()
-        case .initializing: note("Creating the workspace…")
-        case .collecting: note("Collecting · \(flow.progress.summary)")
+        case .initializing: note(L("Creating the workspace…"))
+        case .collecting: note(L("Collecting · \(flow.progress.summary)"))
         case .done:
-            note(["Workspace set up", flow.kindSummaries[adoptingName ?? ""]?.summary]
+            note([L("Workspace set up"), flow.kindSummaries[adoptingName ?? ""]?.summary]
                 .compactMap { $0 }.joined(separator: " · "))
         case .failed(let reason):
             Text(reason)
@@ -402,14 +396,14 @@ struct AddSheet: View {
                 ProgressView().controlSize(.small)
                     .accessibilityLabel("Setting up \(row.name)")
             } else {
-                PNPButton(title: "Set up workspace", icon: "folder.badge.plus", size: .sm) {
+                PNPButton(title: L("Set up workspace"), icon: "folder.badge.plus", size: .sm) {
                     Task { await adopt(row) }
                 }
                 .disabled(isAdopting || isChecking)
                 .accessibilityLabel("Set up workspace for \(row.name)")
             }
         case .addToCurrent:
-            PNPButton(title: "Add to \(workspace.profile)", icon: "plus", size: .sm) {
+            PNPButton(title: L("Add to \(workspace.profile)"), icon: "plus", size: .sm) {
                 addProtect(row)
             }
             .disabled(isAdopting || isChecking)
@@ -498,10 +492,9 @@ struct AddSheet: View {
         do {
             let report = try OnboardingFlow.writeProtectConfig(
                 profileSlug: workspace.profile, protectProfileName: row.name)
-            message = (["Jamf Protect profile \(row.name) added to \(workspace.profile). "
-                + "The next collect reads its data."] + report.notes).joined(separator: " ")
+            message = ([L("Jamf Protect profile \(row.name) added to \(workspace.profile). The next collect reads its data.")] + report.notes).joined(separator: " ")
         } catch {
-            errorText = "Could not add \(row.name): \(error.localizedDescription)"
+            errorText = L("Could not add \(row.name): \(error.localizedDescription)")
         }
         Task { await recheck() }
     }

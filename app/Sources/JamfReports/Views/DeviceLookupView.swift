@@ -72,26 +72,26 @@ struct DeviceLookupView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "Device",
-            title: "Device Lookup",
-            subtitle: "Resolve a single computer or mobile device by serial, hostname, asset tag, or ID."
+            kicker: L("Device"),
+            title: L("Device Lookup"),
+            subtitle: L("Resolve a single computer or mobile device by serial, hostname, asset tag, or ID.")
         )
     }
 
     private var searchCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                FieldLabel(label: "Identifier")
+                FieldLabel(label: L("Identifier"))
                 HStack(spacing: 8) {
                     PNPTextField(
                         value: $searchTerm,
-                        placeholder: "Serial, hostname, asset tag, or device ID",
+                        placeholder: L("Serial, hostname, asset tag, or device ID"),
                         mono: true
                     )
                     .focused($searchFocused)
                     .onSubmit { performLookup() }
                     PNPButton(
-                        title: state == .loading ? "Looking up…" : "Lookup",
+                        title: state == .loading ? L("Looking up…") : L("Lookup"),
                         icon: state == .loading ? "hourglass" : "magnifyingglass",
                         style: .gold
                     ) {
@@ -110,18 +110,18 @@ struct DeviceLookupView: View {
         // Demo mode has no jamf-cli profile behind it, so there is no cache to
         // name and nothing a Refresh could populate.
         if workspace.demoMode {
-            return "Demo mode: lookups run against a live jamf-cli profile's cached inventory."
+            return L("Demo mode: lookups run against a live jamf-cli profile's cached inventory.")
         }
         let count = index.candidates.count
         let countLabel: String
         if count == 0 {
-            countLabel = "No cached inventory yet — run Refresh to populate"
+            countLabel = L("No cached inventory yet — run Refresh to populate")
         } else {
             let computers = index.candidates.lazy.filter { $0.kind == .computer }.count
             let mobiles = count - computers
-            countLabel = "\(computers) computers · \(mobiles) mobile devices indexed"
+            countLabel = L("\(computers) computers · \(mobiles) mobile devices indexed")
         }
-        return "Auto-resolves serials and names against `\(workspace.profile)` cached inventory. \(countLabel)."
+        return L("Auto-resolves serials and names against `\(workspace.profile)` cached inventory. \(countLabel).")
     }
 
     @ViewBuilder
@@ -163,7 +163,7 @@ struct DeviceLookupView: View {
     private var ambiguousCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Multiple matches for \(submittedTerm)")
+                SectionHeader(title: L("Multiple matches for \(submittedTerm)"))
                 Text("Pick the device you want to inspect.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -193,7 +193,7 @@ struct DeviceLookupView: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 8) {
-                        Mono(text: "ID \(cand.id)", size: 10.5, color: Theme.Text.tertiary(contrast))
+                        Mono(text: L("ID \(cand.id)"), size: 10.5, color: Theme.Text.tertiary(contrast))
                         if let serial = cand.serial, !serial.isEmpty {
                             Mono(text: serial, size: 10.5, color: Theme.Text.tertiary(contrast))
                         }
@@ -235,13 +235,13 @@ struct DeviceLookupView: View {
     private func clarifiedUnavailableMessage(_ message: String) -> String {
         let lower = message.lowercased()
         if lower.contains("401") || lower.contains("unauthorized") {
-            return "Authentication failed — check your jamf-cli profile token."
+            return L("Authentication failed — check your jamf-cli profile token.")
         }
         if lower.contains("timeout") || lower.contains("connection") || lower.contains("network") {
-            return "Network unreachable — check your connection to Jamf Pro."
+            return L("Network unreachable — check your connection to Jamf Pro.")
         }
         if lower.contains("decode") || lower.contains("parse") {
-            return "Cached data may be stale — run Collect to refresh."
+            return L("Cached data may be stale — run Collect to refresh.")
         }
         return message
     }
@@ -258,7 +258,7 @@ struct DeviceLookupView: View {
                 }
                 HStack(spacing: 8) {
                     PNPButton(
-                        title: refreshing ? "Refreshing…" : "Refresh inventory",
+                        title: refreshing ? L("Refreshing…") : L("Refresh inventory"),
                         icon: refreshing ? "hourglass" : "arrow.clockwise",
                         size: .sm
                     ) {
@@ -267,7 +267,7 @@ struct DeviceLookupView: View {
                     .disabled(refreshing)
                     if let listURL = workspace.computerListURL() {
                         PNPButton(
-                            title: "Open Computers in Jamf Pro",
+                            title: L("Open Computers in Jamf Pro"),
                             icon: "arrow.up.right.square",
                             style: .neutral,
                             size: .sm
@@ -302,10 +302,10 @@ struct DeviceLookupView: View {
                              tone: kind == .computer ? .teal : .gold,
                              icon: kind == .computer ? "desktopcomputer" : "ipad")
                     }
-                    Pill(text: "Loaded", tone: .teal, icon: "checkmark")
+                    Pill(text: L("Loaded"), tone: .teal, icon: "checkmark")
                     if let url = computerConsoleURL(for: detail) {
                         PNPButton(
-                            title: "Open in Jamf Pro",
+                            title: L("Open in Jamf Pro"),
                             icon: "arrow.up.right.square",
                             size: .sm
                         ) {
@@ -401,10 +401,7 @@ struct DeviceLookupView: View {
             lookupDiagnostic = collector.firstFail()
             guard requestKey == key else { return }
             guard let result else {
-                let base = "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail " +
-                    "for ID `\(id)` on profile `\(profile)`. " +
-                    "Run `\(Self.cliCommand(kind: kind, profile: profile, id: id))` in a " +
-                    "terminal for the underlying error."
+                let base = L("jamf-cli could not load the \(kind.displayLabel.lowercased()) detail for ID `\(id)` on profile `\(profile)`. Run `\(Self.cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error.")
                 state = .unavailable(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
                 return
             }
@@ -414,7 +411,7 @@ struct DeviceLookupView: View {
                 detail = decoded
                 state = .loaded
             } catch {
-                state = .unavailable("Could not decode jamf-cli response for \(id) on profile `\(profile)`.")
+                state = .unavailable(L("Could not decode jamf-cli response for \(id) on profile `\(profile)`."))
             }
         }
     }
@@ -460,8 +457,7 @@ struct DeviceLookupView: View {
             }
             lookupDiagnostic = collector.firstFail()
             guard requestKey == key else { return }
-            let base = "No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups " +
-                "for computer and mobile both failed. The cache may be stale."
+            let base = L("No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups for computer and mobile both failed. The cache may be stale.")
             state = .noMatchOfferRefresh(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
         }
     }
@@ -500,7 +496,7 @@ struct DeviceLookupView: View {
     /// running, says so; any other failure stays in the log, as before.
     nonisolated static func refreshRefusalToast(for error: Error) -> Toast? {
         guard CLIBridgeError.isCollectRefusal(error) else { return nil }
-        return WorkspaceStore.collectFailureToast(error, operation: "Refresh")
+        return WorkspaceStore.collectFailureToast(error, operation: L("Refresh"))
     }
 
     private var trimmedTerm: String {

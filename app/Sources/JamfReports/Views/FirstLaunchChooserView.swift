@@ -51,7 +51,7 @@ struct FirstLaunchChooserView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Kicker(text: "First launch", tone: .gold)
+            Kicker(text: L("First launch"), tone: .gold)
             Text("Welcome to Jamf Reports.")
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
@@ -89,13 +89,13 @@ struct FirstLaunchChooserView: View {
         ) {
             chooserCard(
                 icon: "person.badge.key.fill",
-                title: "Connect with Jamf Account",
-                body: "The recommended way to connect Jamf Cloud: a Jamf Account integration scoped to your environment, through the Jamf Platform API. Reaches Jamf Pro, Compliance Benchmarks and Blueprints.",
+                title: L("Connect with Jamf Account"),
+                body: L("The recommended way to connect Jamf Cloud: a Jamf Account integration scoped to your environment, through the Jamf Platform API. Reaches Jamf Pro, Compliance Benchmarks and Blueprints."),
                 pills: [
-                    ("Platform API", "key.fill", Pill.Tone.teal),
-                    ("Recommended", "star.fill", Pill.Tone.muted),
+                    (L("Platform API"), "key.fill", Pill.Tone.teal),
+                    (L("Recommended"), "star.fill", Pill.Tone.muted),
                 ],
-                cta: "Connect with Jamf Account",
+                cta: L("Connect with Jamf Account"),
                 ctaIcon: "arrow.right",
                 ctaStyle: .gold,
                 action: { startOnboarding(.pro, connection: .platformGateway) }
@@ -103,13 +103,13 @@ struct FirstLaunchChooserView: View {
 
             chooserCard(
                 icon: "network.badge.shield.half.filled",
-                title: "Connect a Jamf Pro server",
-                body: "For on-prem, GovCloud or any Jamf Pro instance, with an API client (OAuth2). Walks you through jamf-cli auth and workspace setup.",
+                title: L("Connect a Jamf Pro server"),
+                body: L("For on-prem, GovCloud or any Jamf Pro instance, with an API client (OAuth2). Walks you through jamf-cli auth and workspace setup."),
                 pills: [
-                    ("OAuth2", "key.fill", Pill.Tone.teal),
-                    ("Local workspace", "folder", Pill.Tone.muted),
+                    (L("OAuth2"), "key.fill", Pill.Tone.teal),
+                    (L("Local workspace"), "folder", Pill.Tone.muted),
                 ],
-                cta: "Get started",
+                cta: L("Get started"),
                 ctaIcon: "arrow.right",
                 ctaStyle: .neutral,
                 action: { startOnboarding(.pro, connection: nil) }
@@ -117,13 +117,13 @@ struct FirstLaunchChooserView: View {
 
             chooserCard(
                 icon: "graduationcap.fill",
-                title: "Connect Jamf School",
-                body: "Sets up a Jamf School-only workspace — jamf-cli auth with your Network ID and API key, then reports from Jamf School data.",
+                title: L("Connect Jamf School"),
+                body: L("Sets up a Jamf School-only workspace — jamf-cli auth with your Network ID and API key, then reports from Jamf School data."),
                 pills: [
-                    ("API key", "key.fill", Pill.Tone.teal),
-                    ("K-12 / EDU", "building.columns", Pill.Tone.muted),
+                    (L("API key"), "key.fill", Pill.Tone.teal),
+                    (L("K-12 / EDU"), "building.columns", Pill.Tone.muted),
                 ],
-                cta: "Set up School",
+                cta: L("Set up School"),
                 ctaIcon: "arrow.right",
                 ctaStyle: .neutral,
                 action: { startOnboarding(.school, connection: nil) }
@@ -131,13 +131,13 @@ struct FirstLaunchChooserView: View {
 
             chooserCard(
                 icon: "sparkles",
-                title: "Try the demo first",
-                body: "Loads synthetic fleet data so you can explore every screen without hitting a Jamf Pro API.",
+                title: L("Try the demo first"),
+                body: L("Loads synthetic fleet data so you can explore every screen without hitting a Jamf Pro API."),
                 pills: [
-                    ("No API calls", "wifi.slash", Pill.Tone.muted),
-                    ("Read-only", "eye", Pill.Tone.teal),
+                    (L("No API calls"), "wifi.slash", Pill.Tone.muted),
+                    (L("Read-only"), "eye", Pill.Tone.teal),
                 ],
-                cta: "Use demo data",
+                cta: L("Use demo data"),
                 ctaIcon: "play.fill",
                 ctaStyle: .neutral,
                 action: { workspace.setDemoMode(true) }
@@ -193,9 +193,7 @@ struct FirstLaunchChooserView: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "questionmark.circle")
                 .foregroundStyle(Theme.Colors.fgMuted)
-            Text("Only Jamf Protect or Jamf Security Cloud? Jamf Reports reports on a Jamf Pro or "
-                + "Jamf School fleet. Jamf Protect is added to a Jamf Pro or Jamf School "
-                + "workspace, and Jamf Security Cloud is not supported yet.")
+            Text("Only Jamf Protect or Jamf Security Cloud? Jamf Reports reports on a Jamf Pro or Jamf School fleet. Jamf Protect is added to a Jamf Pro or Jamf School workspace, and Jamf Security Cloud is not supported yet.")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)

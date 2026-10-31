@@ -15,13 +15,13 @@ struct MobileOverviewCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        SectionHeader(title: "Mobile Devices")
+                        SectionHeader(title: L("Mobile Devices"))
                         Text(subtitle)
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer(minLength: 8)
-                    PNPButton(title: "Open", icon: "chevron.right", size: .sm, action: onOpen)
+                    PNPButton(title: L("Open"), icon: "chevron.right", size: .sm, action: onOpen)
                         .help("Open Mobile Devices")
                         .accessibilityLabel("Open Mobile Devices")
                 }

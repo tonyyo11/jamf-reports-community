@@ -61,11 +61,11 @@ enum AppUpdateCheck {
 
         var reason: String {
             switch self {
-            case .httpStatus(let code): "GitHub answered HTTP \(code)"
-            case .unexpectedHost: "the answer came from a host other than api.github.com"
-            case .tooLarge: "the answer was larger than a release"
-            case .notAStableRelease: "the latest release is not a stable version"
-            case .timedOut: "GitHub did not finish answering in time"
+            case .httpStatus(let code): L("GitHub answered HTTP \(code)")
+            case .unexpectedHost: L("the answer came from a host other than api.github.com")
+            case .tooLarge: L("the answer was larger than a release")
+            case .notAStableRelease: L("the latest release is not a stable version")
+            case .timedOut: L("GitHub did not finish answering in time")
             }
         }
     }
@@ -172,14 +172,14 @@ enum AppUpdateCheck {
     static func check(
         current: String, fetch: @escaping Fetch, deadline: TimeInterval = overallDeadline
     ) async -> Outcome {
-        guard let request else { return .failed("the GitHub address could not be built") }
+        guard let request else { return .failed(L("the GitHub address could not be built")) }
         do {
             let data = try await Self.fetch(request, using: fetch, deadline: deadline)
             return outcome(current: current, release: try release(from: data))
         } catch let error as CheckError {
             return .failed(error.reason)
         } catch is DecodingError {
-            return .failed("the answer was not a GitHub release")
+            return .failed(L("the answer was not a GitHub release"))
         } catch {
             return .failed(error.localizedDescription)
         }
@@ -293,12 +293,12 @@ final class AppUpdateModel {
 
     /// The Settings line under the switch.
     var statusText: String {
-        if !isEnabled { return "Off. Jamf Reports does not contact GitHub for updates." }
-        if isChecking { return "Checking GitHub…" }
-        if let latest { return "Jamf Reports \(latest.version) is available." }
-        if let lastError { return "Last check failed: \(lastError)." }
-        guard let lastCheck else { return "Checks GitHub once a day for a new stable release." }
+        if !isEnabled { return L("Off. Jamf Reports does not contact GitHub for updates.") }
+        if isChecking { return L("Checking GitHub…") }
+        if let latest { return L("Jamf Reports \(latest.version) is available.") }
+        if let lastError { return L("Last check failed: \(lastError).") }
+        guard let lastCheck else { return L("Checks GitHub once a day for a new stable release.") }
         let when = lastCheck.formatted(date: .abbreviated, time: .shortened)
-        return "Up to date (\(currentVersion)). Last checked \(when)."
+        return L("Up to date (\(currentVersion)). Last checked \(when).")
     }
 }

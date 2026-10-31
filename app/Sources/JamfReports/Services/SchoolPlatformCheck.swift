@@ -20,8 +20,7 @@ enum SchoolPlatformCheck {
     static let permission = "blueprints:read"
 
     /// Shown on the switch and the Data Sources row.
-    static let experimentalNote = "Experimental: Jamf School blueprints through the Platform "
-        + "API; report results on GitHub."
+    static let experimentalNote = L("Experimental: Jamf School blueprints through the Platform API; report results on GitHub.")
 
     static func arguments(profile: String) -> [String] {
         ["-p", profile, "--no-input", "school", "blueprints", "list", "--output", "json"]
@@ -30,7 +29,7 @@ enum SchoolPlatformCheck {
     static func verdict(_ attempt: ConnectionCheck.Attempt?, profile: String? = nil) -> Verdict {
         guard let attempt else { return .undecided(reason: "jamf-cli did not start") }
         if attempt.exitCode == CLIBridge.exitCodeTimedOut {
-            return .undecided(reason: "no answer within \(Int(ConnectionCheck.timeout)) seconds")
+            return .undecided(reason: L("no answer within \(Int(ConnectionCheck.timeout)) seconds"))
         }
         if attempt.exitCode == 0 {
             let list = ReportEngine.jsonPayload(from: attempt.stdout)
@@ -47,8 +46,8 @@ enum SchoolPlatformCheck {
             let shown = message.map {
                 String(LogRedactor.redactedForSharing($0, profile: profile).prefix(200))
             }
-            return .undecided(reason: shown.map { "exit \(attempt.exitCode): \($0)" }
-                ?? "exit \(attempt.exitCode)")
+            return .undecided(reason: shown.map { L("exit \(attempt.exitCode): \($0)") }
+                ?? L("exit \(attempt.exitCode)"))
         }
     }
 
@@ -66,19 +65,15 @@ extension SchoolPlatformCheck.Verdict {
     var message: String {
         switch self {
         case .accepted(let count):
-            return "The Platform API answered: "
-                + (count.map { "\($0) blueprint\($0 == 1 ? "" : "s")" } ?? "blueprints")
-                + " listed."
+            return L("The Platform API answered: ")
+                + (count.map { ($0 == 1 ? L("\($0) blueprint") : L("\($0) blueprints")) } ?? "blueprints")
+                + L(" listed.")
         case .missingPermission:
-            return "The gateway accepted the tenant ID, but the integration lacks "
-                + "\(SchoolPlatformCheck.permission). Grant it on the integration in Jamf Account."
+            return L("The gateway accepted the tenant ID, but the integration lacks \(SchoolPlatformCheck.permission). Grant it on the integration in Jamf Account.")
         case .rejectedTenant:
-            return "The Jamf Account gateway does not accept this tenant ID. The profile was "
-                + "kept and the Jamf School API still works; correct the Platform API fields "
-                + "with Update."
+            return L("The Jamf Account gateway does not accept this tenant ID. The profile was kept and the Jamf School API still works; correct the Platform API fields with Update.")
         case .undecided(let reason):
-            return "The Platform API check could not tell (\(reason)). The Jamf School API "
-                + "still works."
+            return L("The Platform API check could not tell (\(reason)). The Jamf School API still works.")
         }
     }
 }
@@ -103,17 +98,17 @@ enum SchoolPlatformRow: Equatable, Sendable {
 
     var label: String {
         switch self {
-        case .unknown: "Platform API: could not read the jamf-cli profile"
-        case .notConfigured: "Platform API: not configured"
-        case .configured: "Platform API: configured"
-        case .rejected: "Platform API fields rejected"
+        case .unknown: L("Platform API: could not read the jamf-cli profile")
+        case .notConfigured: L("Platform API: not configured")
+        case .configured: L("Platform API: configured")
+        case .rejected: L("Platform API fields rejected")
         }
     }
 
     var actionTitle: String {
         switch self {
-        case .unknown, .notConfigured: "Add\u{2026}"
-        case .configured, .rejected: "Update\u{2026}"
+        case .unknown, .notConfigured: L("Add\u{2026}")
+        case .configured, .rejected: L("Update\u{2026}")
         }
     }
 

@@ -131,12 +131,7 @@ extension ConnectionCheck.Verdict {
 
     /// At tenant level (legacy) a tenant that is not Jamf Pro can be Jamf School, Jamf Protect
     /// or Jamf Security Cloud; an environment's MDM is Jamf Pro or Jamf School, so it is School.
-    static let notJamfProTenantText = "The gateway recognises this tenant ID, but it is not a "
-        + "Jamf Pro tenant. If it is Jamf School, set it up as a Jamf School workspace (Settings › "
-        + "Add connection, then Jamf School). If it is Jamf Protect or Jamf "
-        + "Security Cloud, Jamf Reports cannot report from it on its own: Jamf Protect is added "
-        + "to a Jamf Pro or Jamf School workspace (Data Sources › Add Jamf Protect), and Jamf "
-        + "Security Cloud is not supported yet."
+    static let notJamfProTenantText = L("The gateway recognises this tenant ID, but it is not a Jamf Pro tenant. If it is Jamf School, set it up as a Jamf School workspace (Settings › Add connection, then Jamf School). If it is Jamf Protect or Jamf Security Cloud, Jamf Reports cannot report from it on its own: Jamf Protect is added to a Jamf Pro or Jamf School workspace (Data Sources › Add Jamf Protect), and Jamf Security Cloud is not supported yet.")
 
     /// What the verdict says without its advice on continuing, for a list of results.
     static func missingPermissionText(names: [String]) -> String {
@@ -144,15 +139,10 @@ extension ConnectionCheck.Verdict {
         // for a path it does not route, so a refusal is about the integration or the environment
         // as a whole, not about one permission the check needs.
         if !names.isEmpty {
-            return "The gateway did not reject this ID, but the integration lacks a permission ("
-                + names.joined(separator: "; ") + "). Grant it on the integration in Jamf "
-                + "Account, or on the API role for a Jamf Pro privilege."
+            return L("The gateway did not reject this ID, but the integration lacks a permission (")
+                + names.joined(separator: "; ") + L("). Grant it on the integration in Jamf Account, or on the API role for a Jamf Pro privilege.")
         }
-        return "The gateway did not reject this ID but refused the request. Either the "
-            + "integration holds no Jamf Pro permission for this environment, or no Jamf Pro "
-            + "answers behind it. Grant the Jamf Pro permissions Jamf Reports reads on the "
-            + "integration in Jamf Account, and check that the ID is for the environment that "
-            + "holds your Jamf Pro tenant."
+        return L("The gateway did not reject this ID but refused the request. Either the integration holds no Jamf Pro permission for this environment, or no Jamf Pro answers behind it. Grant the Jamf Pro permissions Jamf Reports reads on the integration in Jamf Account, and check that the ID is for the environment that holds your Jamf Pro tenant.")
     }
 
     var message: String { message(tenantLevel: false) }
@@ -161,34 +151,22 @@ extension ConnectionCheck.Verdict {
         if tenantLevel, case .noJamfPro = self { return Self.notJamfProTenantText }
         switch self {
         case .accepted(let version):
-            return "Jamf Pro " + (version.map { "\($0) " } ?? "")
-                + "answered through the Jamf Platform API in this environment."
+            return L("Jamf Pro ") + (version.map { "\($0) " } ?? "")
+                + L("answered through the Jamf Platform API in this environment.")
         case .rejectedID(.unknownEnvironment):
-            return "The gateway does not recognise this environment ID. Copy the platform "
-                + "environment ID from Jamf Account: open the integration and click the "
-                + "environment pill in Integration details. A tenant ID or client ID here is "
-                + "rejected."
+            return L("The gateway does not recognise this environment ID. Copy the platform environment ID from Jamf Account: open the integration and click the environment pill in Integration details. A tenant ID or client ID here is rejected.")
         case .rejectedID:
-            return "The integration's scope level does not match this ID. An environment-level "
-                + "integration needs its environment ID, and a tenant-level (legacy) integration "
-                + "its tenant ID. Correct the scope level or the ID, then save again."
+            return L("The integration's scope level does not match this ID. An environment-level integration needs its environment ID, and a tenant-level (legacy) integration its tenant ID. Correct the scope level or the ID, then save again.")
         case .noJamfPro:
-            return "The gateway recognises this ID, but no Jamf Pro server answers for it. This "
-                + "environment's MDM is probably Jamf School. Jamf Reports reads Jamf School with "
-                + "a School API key, so set it up as a Jamf School workspace (Settings › Add "
-                + "connection, then Jamf School). If it should be Jamf Pro, check "
-                + "that the ID is for the environment that holds your Jamf Pro tenant."
+            return L("The gateway recognises this ID, but no Jamf Pro server answers for it. This environment's MDM is probably Jamf School. Jamf Reports reads Jamf School with a School API key, so set it up as a Jamf School workspace (Settings › Add connection, then Jamf School). If it should be Jamf Pro, check that the ID is for the environment that holds your Jamf Pro tenant.")
         case .missingPermission(let names):
             return Self.missingPermissionText(names: names)
-                + " You can continue; data that needs the permission will not collect until it "
-                + "is granted."
+                + L(" You can continue; data that needs the permission will not collect until it is granted.")
         case .undecided(let exitCode):
             let cause = exitCode == CLIBridge.exitCodeTimedOut
-                ? " (no answer within \(Int(ConnectionCheck.timeout)) seconds)"
-                : exitCode.map { " (exit \($0))" } ?? ""
-            return "The connection check could not confirm the ID" + cause
-                + ". You can continue; if screens stay empty after the first collect, check the "
-                + "ID with Update credentials in Data Sources."
+                ? L(" (no answer within \(Int(ConnectionCheck.timeout)) seconds)")
+                : exitCode.map { L(" (exit \($0))") } ?? ""
+            return L("The connection check could not confirm the ID\(cause). You can continue; if screens stay empty after the first collect, check the ID with Update credentials in Data Sources.")
         }
     }
 }

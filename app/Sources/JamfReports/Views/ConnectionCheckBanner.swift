@@ -23,7 +23,7 @@ struct ConnectionCheckBanner: View {
     private var schoolAction: InlineBannerAction? {
         guard verdict.suggestsJamfSchool, let onSetUpSchool else { return nil }
         return InlineBannerAction(
-            label: "Set up Jamf School", icon: "graduationcap.fill", handler: onSetUpSchool
+            label: L("Set up Jamf School"), icon: "graduationcap.fill", handler: onSetUpSchool
         )
     }
 

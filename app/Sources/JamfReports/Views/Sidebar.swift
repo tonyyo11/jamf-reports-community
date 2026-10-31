@@ -339,7 +339,7 @@ struct Sidebar: View {
 
     /// Spoken name of the workspace chip; the red dot on the avatar is `hasError`.
     static func workspaceChipLabel(profile: String, subtitle: String, hasError: Bool) -> String {
-        "Workspace: \(profile). \(subtitle).\(hasError ? " Has an error." : "")"
+        (hasError ? L("Workspace: \(profile). \(subtitle). Has an error.") : L("Workspace: \(profile). \(subtitle)."))
     }
 
     /// Profiles that belong to a connection sit under a section titled with its name and show
@@ -376,8 +376,8 @@ struct Sidebar: View {
     /// it's informative (>0); otherwise falls back to the static label.
     private var workspaceSubtitle: String {
         let count = workspace.initializedProfiles.count
-        guard count > 0 else { return "Active workspace" }
-        return "\(count) workspace\(count == 1 ? "" : "s")"
+        guard count > 0 else { return L("Active workspace") }
+        return (count == 1 ? L("\(count) workspace") : L("\(count) workspaces"))
     }
 
     /// Distinctive avatar: gradient derived from a hue keyed off the profile's first

@@ -13,11 +13,11 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
 
     var description: String {
         switch self {
-        case .xlsx: "Full data, all sheets"
-        case .html: "Executive summary, browser"
-        case .pdf:  "Paginated audit artifact"
-        case .csv:  "Wide inventory export"
-        case .csvFolder: "One CSV per tab, with the workbook"
+        case .xlsx: L("Full data, all sheets")
+        case .html: L("Executive summary, browser")
+        case .pdf:  L("Paginated audit artifact")
+        case .csv:  L("Wide inventory export")
+        case .csvFolder: L("One CSV per tab, with the workbook")
         }
     }
 
@@ -53,8 +53,8 @@ enum APIScope: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .fullAdmin: "Full Admin"
-        case .limited:   "Limited"
+        case .fullAdmin: L("Full Admin")
+        case .limited:   L("Limited")
         }
     }
 }
@@ -110,9 +110,9 @@ struct MultiTarget: Sendable, Equatable {
 
     var displayLabel: String {
         switch scope {
-        case .all:           return "All profiles"
+        case .all:           return L("All profiles")
         case .filter(let g): return "~\(g)"
-        case .list(let ps):  return "\(ps.count) profile\(ps.count == 1 ? "" : "s")"
+        case .list(let ps):  return (ps.count == 1 ? L("\(ps.count) profile") : L("\(ps.count) profiles"))
         }
     }
 
@@ -150,23 +150,23 @@ struct Schedule: Identifiable, Sendable {
 
         var displayTitle: String {
             switch self {
-            case .snapshotOnly: "Refresh data only"
-            case .jamfCLIOnly: "Generate from cached data"
-            case .jamfCLIFull: "Refresh + Generate"
-            case .backup: "Configuration Backup"
+            case .snapshotOnly: L("Refresh data only")
+            case .jamfCLIOnly: L("Generate from cached data")
+            case .jamfCLIFull: L("Refresh + Generate")
+            case .backup: L("Configuration Backup")
             }
         }
 
         var displayDescription: String {
             switch self {
             case .snapshotOnly:
-                "Runs jamf-cli pro collect, archives JSON snapshots, and updates the Trends summary. Does NOT generate a workbook. Use this when you want fresh data for trend tracking but don't need a report delivered."
+                L("Runs jamf-cli pro collect, archives JSON snapshots, and updates the Trends summary. Does NOT generate a workbook. Use this when you want fresh data for trend tracking but don't need a report delivered.")
             case .jamfCLIOnly:
-                "Generates a workbook from the latest cached jamf-cli data. Does NOT collect fresh data first. Use this for a fast re-render after a recent collect — for example, after editing config.yaml or templates."
+                L("Generates a workbook from the latest cached jamf-cli data. Does NOT collect fresh data first. Use this for a fast re-render after a recent collect — for example, after editing config.yaml or templates.")
             case .jamfCLIFull:
-                "Runs collect to refresh jamf-cli data, then generates a workbook. Use this for a self-contained scheduled run."
+                L("Runs collect to refresh jamf-cli data, then generates a workbook. Use this for a self-contained scheduled run.")
             case .backup:
-                "Runs jamf-cli pro backup to export Jamf Pro configuration objects (policies, profiles, scripts, groups) into the workspace's backups folder. Keeps the last 10 scheduled backups. No data collection, no report."
+                L("Runs jamf-cli pro backup to export Jamf Pro configuration objects (policies, profiles, scripts, groups) into the workspace's backups folder. Keeps the last 10 scheduled backups. No data collection, no report.")
             }
         }
 
@@ -226,10 +226,10 @@ struct Schedule: Identifiable, Sendable {
         /// VoiceOver label for a status pill describing the last run outcome.
         var accessibilityLabel: String {
             switch self {
-            case .ok:      "Last run status: OK"
-            case .warn:    "Last run status: Warning"
-            case .fail:    "Last run status: Failed"
-            case .partial: "Last run status: Partial"
+            case .ok:      L("Last run status: OK")
+            case .warn:    L("Last run status: Warning")
+            case .fail:    L("Last run status: Failed")
+            case .partial: L("Last run status: Partial")
             }
         }
     }
@@ -337,7 +337,7 @@ struct Report: Identifiable, Sendable, Equatable {
 
     /// VoiceOver label for a report row.
     var accessibilityLabel: String {
-        let sheetText = hasSheets ? "\(sheets) sheet\(sheets == 1 ? "" : "s"), " : ""
+        let sheetText = hasSheets ? (sheets == 1 ? L("\(sheets) sheet, ") : L("\(sheets) sheets, ")) : ""
         return "\(name), \(sheetText)\(size)"
     }
 }
@@ -409,15 +409,15 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     /// VoiceOver label for a backup row: display name, file count, size, date.
     var accessibilityLabel: String {
         let displayName = label.isEmpty ? name : label
-        let failed = proFailed ? ", Jamf Pro part failed"
-            : proSkipped ? ", Jamf Pro part skipped" : ""
-        return "\(displayName)\(failed), \(fileCount) files, \(sizeLabel), created \(createdLabel)"
+        let failed = proFailed ? L(", Jamf Pro part failed")
+            : proSkipped ? L(", Jamf Pro part skipped") : ""
+        return L("\(displayName)\(failed), \(fileCount) files, \(sizeLabel), created \(createdLabel)")
     }
 
     /// VoiceOver summary describing the backup's content and purpose.
     var accessibilitySummary: String {
         let displayName = label.isEmpty ? name : label
-        return "Configuration backup: \(displayName), \(fileCount) files, created \(createdLabel)"
+        return L("Configuration backup: \(displayName), \(fileCount) files, created \(createdLabel)")
     }
 }
 
@@ -536,8 +536,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     /// so a missing check-in or inventory date means it never had one.
     var carriesDates = false
 
-    var displayName: String { name.isEmpty ? "Unknown device" : name }
-    var displaySerial: String { serial.isEmpty ? "No serial" : serial }
+    var displayName: String { name.isEmpty ? L("Unknown device") : name }
+    var displaySerial: String { serial.isEmpty ? L("No serial") : serial }
     var patchFailureCount: Int { patchFailures.count }
     var numericJamfID: String? {
         guard let trimmed = jamfID?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -783,9 +783,9 @@ struct DeviceDetail: Identifiable, Sendable {
         let sections = buildSections(from: object)
         return DeviceDetail(
             lookupID: lookupID,
-            title: lookupID.isEmpty ? "Device Detail" : lookupID,
+            title: lookupID.isEmpty ? L("Device Detail") : lookupID,
             sections: sections,
-            warnings: sections.isEmpty ? ["jamf-cli returned no displayable detail rows."] : []
+            warnings: sections.isEmpty ? [L("jamf-cli returned no displayable detail rows.")] : []
         )
     }
 }
@@ -816,13 +816,13 @@ private extension DeviceDetail {
         var order: [String] = []
 
         func append(_ section: String, _ item: DeviceDetailItem) {
-            let title = cleaned(section).isEmpty ? "Details" : cleaned(section)
+            let title = cleaned(section).isEmpty ? L("Details") : cleaned(section)
             if grouped[title] == nil { order.append(title) }
             grouped[title, default: []].append(item)
         }
 
         if let rows = object as? [[String: Any]] {
-            appendRows(rows, defaultSection: "Details", append: append)
+            appendRows(rows, defaultSection: L("Details"), append: append)
         } else if let dict = object as? [String: Any] {
             appendDictionary(dict, append: append)
         }
@@ -847,7 +847,7 @@ private extension DeviceDetail {
             } else {
                 let display = displayValue(value)
                 if !display.isEmpty {
-                    append("Details", DeviceDetailItem(label: titleLabel(key), value: display))
+                    append(L("Details"), DeviceDetailItem(label: titleLabel(key), value: display))
                 }
             }
         }
@@ -896,7 +896,7 @@ private extension DeviceDetail {
                 append(
                     section,
                     DeviceDetailItem(
-                        label: labelText.isEmpty ? "Value" : labelText,
+                        label: labelText.isEmpty ? L("Value") : labelText,
                         value: valueText.isEmpty ? "N/A" : valueText,
                         note: note
                     )
@@ -940,9 +940,9 @@ private extension DeviceDetail {
         case let value as NSNumber:
             return value.stringValue
         case let value as [Any]:
-            return value.isEmpty ? "" : "\(value.count) items"
+            return value.isEmpty ? "" : L("\(value.count) items")
         case let value as [String: Any]:
-            return value.isEmpty ? "" : "\(value.count) fields"
+            return value.isEmpty ? "" : L("\(value.count) fields")
         default:
             return ""
         }
@@ -1189,28 +1189,28 @@ struct TrendSeries: Identifiable, Sendable {
 
         var displayLabel: String {
             switch self {
-            case .stability:     return "Stability Index"
-            case .activeDevices: return "Active Computers"
-            case .compliance:    return "Compliance Benchmark"
-            case .fileVault:     return "FileVault Encryption"
-            case .osCurrent:     return "On Current macOS"
-            case .edrAgent:      return "EDR agent coverage"
-            case .stale:         return "Stale Computers (>30d)"
-            case .patch:         return "Patch Compliance"
-            case .securityScore: return "Security Score (Weighted)"
-            case .mscpBandTrend: return "mSCP Compliance Bands"
-            case .managedDevices: return "Managed Computers"
-            case .sip:           return "System Integrity Protection"
-            case .firewall:      return "Firewall Enabled"
-            case .gatekeeper:    return "Gatekeeper Enabled"
-            case .agent(let name): return "\(name) coverage"
-            case .mobileManaged: return "Managed mobile devices"
-            case .mobileOSCurrent: return "Mobile devices on current OS"
-            case .mobilePasscode: return "Mobile passcode compliant"
-            case .mobileSupervised: return "Supervised mobile devices"
-            case .mobileDataProtection: return "Mobile data protection"
-            case .mobileStale: return "Stale mobile devices"
-            case .mobileJailbroken: return "Jailbroken mobile devices"
+            case .stability:     return L("Stability Index")
+            case .activeDevices: return L("Active Computers")
+            case .compliance:    return L("Compliance Benchmark")
+            case .fileVault:     return L("FileVault Encryption")
+            case .osCurrent:     return L("On Current macOS")
+            case .edrAgent:      return L("EDR agent coverage")
+            case .stale:         return L("Stale Computers (>30d)")
+            case .patch:         return L("Patch Compliance")
+            case .securityScore: return L("Security Score (Weighted)")
+            case .mscpBandTrend: return L("mSCP Compliance Bands")
+            case .managedDevices: return L("Managed Computers")
+            case .sip:           return L("System Integrity Protection")
+            case .firewall:      return L("Firewall Enabled")
+            case .gatekeeper:    return L("Gatekeeper Enabled")
+            case .agent(let name): return L("\(name) coverage")
+            case .mobileManaged: return L("Managed mobile devices")
+            case .mobileOSCurrent: return L("Mobile devices on current OS")
+            case .mobilePasscode: return L("Mobile passcode compliant")
+            case .mobileSupervised: return L("Supervised mobile devices")
+            case .mobileDataProtection: return L("Mobile data protection")
+            case .mobileStale: return L("Stale mobile devices")
+            case .mobileJailbroken: return L("Jailbroken mobile devices")
             }
         }
 
@@ -1327,17 +1327,17 @@ struct TrendSeries: Identifiable, Sendable {
         staleMeasured: Bool = true
     ) -> String? {
         let proxyNote: String = compliancePct != nil && complianceIsProxy == true
-            ? " Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data."
+            ? L(" Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data.")
             : ""
         let staleNote = staleMeasured
-            ? "" : " Stale-device pressure not measured (no device-compliance snapshot)."
+            ? "" : L(" Stale-device pressure not measured (no device-compliance snapshot).")
         switch (compliancePct != nil, patchPct != nil) {
         case (true, true):
-            return "Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)\(staleNote)"
+            return L("Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)\(staleNote)")
         case (false, true):
-            return "Composite of patch posture and stale-device pressure (compliance not collected).\(staleNote)"
+            return L("Composite of patch posture and stale-device pressure (compliance not collected).\(staleNote)")
         case (true, false):
-            return "Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)\(staleNote)"
+            return L("Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)\(staleNote)")
         case (false, false):
             return nil
         }
@@ -1387,20 +1387,20 @@ struct CustomSheetGroup: Sendable {
     /// Order matches the sidebar grouping in the main app for consistency. Together they
     /// list every `SheetID` once; a test holds that when a sheet is added.
     static let allGroups: [CustomSheetGroup] = [
-        CustomSheetGroup(name: "Executive", sheets: [
+        CustomSheetGroup(name: L("Executive"), sheets: [
             .executiveSummary,
             .cover,
             .fleetOverview,
             .auditSummary,
         ]),
-        CustomSheetGroup(name: "Posture", sheets: [
+        CustomSheetGroup(name: L("Posture"), sheets: [
             .securityPosture,
             .compliancePosture,
             .deviceCompliance,
             .mscpCompliance,
             .complianceTrend,
         ]),
-        CustomSheetGroup(name: "Operations", sheets: [
+        CustomSheetGroup(name: L("Operations"), sheets: [
             .patchCompliance,
             .patchFailures,
             .patchSummaryDashboard,
@@ -1417,7 +1417,7 @@ struct CustomSheetGroup: Sendable {
             .mdmCommandHealth,
             .blueprintStatus,
         ]),
-        CustomSheetGroup(name: "Fleet", sheets: [
+        CustomSheetGroup(name: L("Fleet"), sheets: [
             .inventorySummary,
             .hardwareModels,
             .mobileFleetSummary,
@@ -1430,7 +1430,7 @@ struct CustomSheetGroup: Sendable {
             .smartGroups,
             .environmentStats,
         ]),
-        CustomSheetGroup(name: "Security", sheets: [
+        CustomSheetGroup(name: L("Security"), sheets: [
             .deviceSecurityState,
             .protectOverview,
             .protectAlerts,
@@ -1439,7 +1439,7 @@ struct CustomSheetGroup: Sendable {
             .protectPlans,
             .protectThreatOverview,
         ]),
-        CustomSheetGroup(name: "System", sheets: [
+        CustomSheetGroup(name: L("System"), sheets: [
             .osCurrency,
             .appStatus,
             .softwareInstalls,

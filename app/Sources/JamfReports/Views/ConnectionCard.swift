@@ -47,8 +47,7 @@ struct ConnectionCard: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 header(connection)
-                Text("These profiles share one Jamf Account integration's client ID and secret. "
-                    + "Removing a profile here changes only this grouping.")
+                Text("These profiles share one Jamf Account integration's client ID and secret. Removing a profile here changes only this grouping.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -72,8 +71,7 @@ struct ConnectionCard: View {
             Button("Remove from connection", role: .destructive) { removePending() }
             Button("Cancel", role: .cancel) { pendingRemoval = nil }
         } message: {
-            Text("The jamf-cli profile and its workspace are not deleted. The profile moves out "
-                + "of this connection's group.")
+            Text("The jamf-cli profile and its workspace are not deleted. The profile moves out of this connection's group.")
         }
     }
 
@@ -82,10 +80,10 @@ struct ConnectionCard: View {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .foregroundStyle(Theme.Colors.goldBright)
                 .font(.system(size: 16))
-            SectionHeader(title: "Connection · \(connection.name)")
+            SectionHeader(title: L("Connection · \(connection.name)"))
             Spacer()
-            Pill(text: GatewayRegion(rawValue: connection.region.rawValue)?.label ?? "Other region")
-            Pill(text: connection.level == .tenant ? "Tenant (legacy)" : "Environment", tone: .gold)
+            Pill(text: GatewayRegion(rawValue: connection.region.rawValue)?.label ?? L("Other region"))
+            Pill(text: connection.level == .tenant ? L("Tenant (legacy)") : L("Environment"), tone: .gold)
         }
     }
 
@@ -94,13 +92,13 @@ struct ConnectionCard: View {
         return HStack(spacing: 8) {
             Text(member.label).font(.callout.weight(.medium)).foregroundStyle(Theme.Colors.fg)
             Mono(text: member.profile, size: 11, color: Theme.Colors.fg2)
-            if member.profile == workspace.profile { Pill(text: "Active", tone: .gold) }
+            if member.profile == workspace.profile { Pill(text: L("Active"), tone: .gold) }
             Spacer()
             Pill(text: productLabel(member.product),
                  tone: member.product == .unknown ? .muted : .teal)
-            Pill(text: hasWorkspace ? "Workspace" : "No workspace",
+            Pill(text: hasWorkspace ? L("Workspace") : L("No workspace"),
                  tone: hasWorkspace ? .teal : .muted)
-            PNPButton(title: "Remove", style: .ghost, size: .sm) {
+            PNPButton(title: L("Remove"), style: .ghost, size: .sm) {
                 guard !workspace.demoMode else { return }
                 pendingRemoval = member
             }
@@ -113,20 +111,20 @@ struct ConnectionCard: View {
 
     private func productLabel(_ product: Connection.Member.Product) -> String {
         switch product {
-        case .pro: "Jamf Pro"
-        case .school: "Jamf School"
-        case .unknown: "Product unknown"
+        case .pro: L("Jamf Pro")
+        case .school: L("Jamf School")
+        case .unknown: L("Product unknown")
         }
     }
 
     private var actions: some View {
-        HStack(spacing: 8) {
-            actionButton("Add environments\u{2026}", icon: "plus", help: "") { sheet = .add }
+        WrappingRow(spacing: 8) {
+            actionButton(L("Add environments\u{2026}"), icon: "plus", help: "") { sheet = .add }
             actionButton(
-                "Update credentials for all\u{2026}", icon: "key.horizontal",
-                help: "Re-register every profile in this connection with a new client secret."
+                L("Update credentials for all\u{2026}"), icon: "key.horizontal",
+                help: L("Re-register every profile in this connection with a new client secret.")
             ) { sheet = .updateAll }
-            actionButton("Rename\u{2026}", icon: "pencil", help: "") { sheet = .rename }
+            actionButton(L("Rename\u{2026}"), icon: "pencil", help: "") { sheet = .rename }
         }
     }
 
@@ -150,15 +148,13 @@ struct ConnectionCard: View {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
                         .foregroundStyle(Theme.Colors.goldBright)
                         .font(.system(size: 16))
-                    SectionHeader(title: "Connection")
+                    SectionHeader(title: L("Connection"))
                 }
-                Text("This profile uses the Jamf Platform API but is not part of a connection. "
-                    + "Start one to add the other environments of the same Jamf Account "
-                    + "integration, each with its own jamf-cli profile.")
+                Text("This profile uses the Jamf Platform API but is not part of a connection. Start one to add the other environments of the same Jamf Account integration, each with its own jamf-cli profile.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Start a connection with \(workspace.profile)", icon: "plus",
+                PNPButton(title: L("Start a connection with \(workspace.profile)"), icon: "plus",
                           size: .sm, action: startConnection)
                     .disabled(workspace.demoMode)
                     .help(liveOnlyHelp)
@@ -213,7 +209,7 @@ struct ConnectionCard: View {
             try workspace.connectionStore.removeMember(profile: member.profile)
             actionError = nil
         } catch {
-            actionError = "Could not update the connection: \(error.localizedDescription)"
+            actionError = L("Could not update the connection: \(error.localizedDescription)")
         }
         workspace.reloadConnections()
     }
@@ -231,7 +227,7 @@ struct ConnectionCard: View {
                     configText: text, store: workspace.connectionStore)
                 actionError = nil
             } catch {
-                actionError = "Could not start the connection: \(error.localizedDescription)"
+                actionError = L("Could not start the connection: \(error.localizedDescription)")
             }
             workspace.reloadConnections()
         }

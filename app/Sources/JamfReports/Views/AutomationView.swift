@@ -78,10 +78,9 @@ struct AutomationView: View {
     var body: some View {
         PageScaffold(spacing: 16) {
             PageHeader(
-                kicker: "Automation",
-                title: "Automation Policy",
-                subtitle: "Set how often data refreshes and reports generate — it applies to "
-                    + "every profile automatically, adjusting as profiles are added or removed."
+                kicker: L("Automation"),
+                title: L("Automation Policy"),
+                subtitle: L("Set how often data refreshes and reports generate — it applies to every profile automatically, adjusting as profiles are added or removed.")
             )
             if workspace.demoMode {
                 Card { Text("Automation is unavailable in demo mode.")
@@ -98,19 +97,16 @@ struct AutomationView: View {
                 ) {
                     InlineBanner(
                         icon: "exclamationmark.triangle", tone: .danger,
-                        action: .init(label: "Open Login Items") {
+                        action: .init(label: L("Open Login Items")) {
                             workspace.tickerRegistrar.openLoginItems()
                         }
                     ) {
-                        Text("Automation is off: JamfReports is not allowed to run in the "
-                            + "background. Turn it on under Login Items › Allow in the "
-                            + "Background.")
+                        Text("Automation is off: JamfReports is not allowed to run in the background. Turn it on under Login Items › Allow in the Background.")
                             .font(.callout)
                     }
                 } else if workspace.tickerStatus == .unavailable {
                     InlineBanner(icon: "hammer", tone: .info) {
-                        Text("Ticker unavailable in this build — schedules run only via "
-                            + "`JamfReports --tick` until the app is installed.")
+                        Text("Ticker unavailable in this build — schedules run only via `JamfReports --tick` until the app is installed.")
                             .font(.callout)
                     }
                 }
@@ -214,10 +210,9 @@ struct AutomationView: View {
         await MainActor.run {
             refreshConsolidationCandidates()
             let n = result.removed.count
-            let suffix = result.rejected.isEmpty ? "" : " (\(result.rejected.count) skipped)"
+            let suffix = result.rejected.isEmpty ? "" : L(" (\(result.rejected.count) skipped)")
             workspace.toast = Toast(
-                message: "Retired \(n) hand-built schedule\(n == 1 ? "" : "s")\(suffix) — "
-                    + "archived under Application Support/JamfReports/archived-launchagents",
+                message: (n == 1 ? L("Retired \(n) hand-built schedule\(suffix) — archived under Application Support/JamfReports/archived-launchagents") : L("Retired \(n) hand-built schedules\(suffix) — archived under Application Support/JamfReports/archived-launchagents")),
                 style: result.rejected.isEmpty ? .success : .danger
             )
         }
@@ -232,9 +227,7 @@ struct AutomationView: View {
                     Text("Manage automation").font(.headline)
                 }
                 .toggleStyle(.switch)
-                Text("When on, the background item keeps every profile's jamf-cli data fresh "
-                    + "and generates reports on the cadence below — no hand-built schedules "
-                    + "needed. When off, nothing runs automatically from this policy.")
+                Text("When on, the background item keeps every profile's jamf-cli data fresh and generates reports on the cadence below — no hand-built schedules needed. When off, nothing runs automatically from this policy.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
@@ -246,29 +239,25 @@ struct AutomationView: View {
     private var freshnessCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                sectionTitle("Data Freshness")
+                sectionTitle(L("Data Freshness"))
                 Toggle("Keep data fresh daily", isOn: binding(\.freshnessEnabled))
                     .toggleStyle(.switch)
                 Text(workspace.isSchoolWorkspace
-                    ? "A daily collect of every Jamf School source, so the Overview, Devices and "
-                        + "reports stay current."
-                    : "A daily collect (everything except the two heavy per-device scans) so "
-                        + "Trends and reports stay current.")
+                    ? "A daily collect of every Jamf School source, so the Overview, Devices and reports stay current."
+                    : "A daily collect (everything except the two heavy per-device scans) so Trends and reports stay current.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                 Divider().background(Theme.Colors.hairline)
                 if !workspace.isSchoolWorkspace {
                     Toggle("Weekly deep scan", isOn: binding(\.scanEnabled))
                         .toggleStyle(.switch)
                     if policy.scanEnabled {
-                        weekdayPicker("Scan day", binding(\.scanWeekday))
+                        weekdayPicker(L("Scan day"), binding(\.scanWeekday))
                     }
                 }
                 // The policy covers every profile; only Jamf Pro has a deep scan.
                 Text(workspace.isSchoolWorkspace
-                    ? "Jamf Pro workspaces only. Jamf School has no deep scan: its daily collect "
-                        + "covers every School source."
-                    : "The two per-device --scan-failures queries (patch + update failures) that "
-                        + "can stall on-prem Jamf Pro — run weekly, never daily.")
+                    ? "Jamf Pro workspaces only. Jamf School has no deep scan: its daily collect covers every School source."
+                    : "The two per-device --scan-failures queries (patch + update failures) that can stall on-prem Jamf Pro — run weekly, never daily.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
             }
         }
@@ -279,7 +268,7 @@ struct AutomationView: View {
     private var reportsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                sectionTitle("Reports")
+                sectionTitle(L("Reports"))
                 Picker("Generate reports", selection: binding(\.reportsCadence)) {
                     Text("Off").tag(AutomationPolicy.ReportsCadence.off)
                     Text("Daily").tag(AutomationPolicy.ReportsCadence.daily)
@@ -289,7 +278,7 @@ struct AutomationView: View {
                 .pickerStyle(.segmented)
                 switch policy.reportsCadence {
                 case .weekly:
-                    weekdayPicker("Report day", binding(\.reportsWeekday))
+                    weekdayPicker(L("Report day"), binding(\.reportsWeekday))
                 case .monthly:
                     Stepper("Day of month: \(policy.reportsDayOfMonth)",
                             value: binding(\.reportsDayOfMonth), in: 1...28)
@@ -307,11 +296,11 @@ struct AutomationView: View {
     private var backupsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                sectionTitle("Configuration Backups")
+                sectionTitle(L("Configuration Backups"))
                 Toggle("Weekly configuration backup", isOn: binding(\.backupsEnabled))
                     .toggleStyle(.switch)
                 if policy.backupsEnabled {
-                    weekdayPicker("Backup day", binding(\.backupsWeekday))
+                    weekdayPicker(L("Backup day"), binding(\.backupsWeekday))
                 }
             }
         }
@@ -322,7 +311,7 @@ struct AutomationView: View {
     private var scheduleCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                sectionTitle("Run Time")
+                sectionTitle(L("Run Time"))
                 HStack {
                     Text("Run automation at")
                     TextField("06:00", text: binding(\.runTime))
@@ -341,7 +330,7 @@ struct AutomationView: View {
     private var exclusionsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                sectionTitle("Excluded Profiles")
+                sectionTitle(L("Excluded Profiles"))
                 if discoveredProfiles.isEmpty {
                     Text("No profiles discovered.").font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
@@ -350,8 +339,7 @@ struct AutomationView: View {
                         Toggle(profile, isOn: exclusionBinding(profile))
                             .toggleStyle(.checkbox)
                     }
-                    Text("Excluded profiles are skipped by all managed automation (e.g. a "
-                        + "dummy/test tenant).")
+                    Text("Excluded profiles are skipped by all managed automation (e.g. a dummy/test tenant).")
                         .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -421,7 +409,7 @@ struct AutomationView: View {
 // MARK: - Shared card constants
 
 private enum AutomationCardShared {
-    static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    static let weekdays = [L("Sun"), L("Mon"), L("Tue"), L("Wed"), L("Thu"), L("Fri"), L("Sat")]
 
     static func sectionTitle(_ text: String) -> some View {
         Text(text).font(.headline)
@@ -444,7 +432,7 @@ private struct HealthCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                AutomationCardShared.sectionTitle("Automation Health")
+                AutomationCardShared.sectionTitle(L("Automation Health"))
                 if issues.isEmpty {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "checkmark.circle")
@@ -473,7 +461,7 @@ private struct HealthCard: View {
             healthSummary(issue)
             if issue.kind == .tickerDisabled {
                 // Nothing is firing — the fix is in Login Items, not a re-run.
-                PNPButton(title: "Open Login Items", size: .sm) {
+                PNPButton(title: L("Open Login Items"), size: .sm) {
                     workspace.tickerRegistrar.openLoginItems()
                 }
             } else {
@@ -496,7 +484,7 @@ private struct HealthCard: View {
     /// `.navigateToTab` notification (same shape the other views post).
     private var runHistoryButton: some View {
         PNPButton(
-            title: "Run History",
+            title: L("Run History"),
             icon: "list.bullet.rectangle",
             style: .ghost,
             size: .sm
@@ -538,7 +526,7 @@ private struct HealthCard: View {
     private func runNowButton(_ issue: AutomationHealthIssue) -> some View {
         let isRunning = runningLabels.contains(issue.label)
         return PNPButton(
-            title: isRunning ? "Running…" : "Run now",
+            title: isRunning ? L("Running…") : L("Run now"),
             icon: isRunning ? "hourglass" : "play.fill",
             size: .sm
         ) {
@@ -555,8 +543,8 @@ private struct HealthCard: View {
         let started = await workspace.runNowFromHealthRow(label: issue.label)
         workspace.toast = Toast(
             message: started
-                ? "Run started for \(issue.displayName) — health updates when it finishes."
-                : "Couldn't start \(issue.displayName) — see Console for details.",
+                ? L("Run started for \(issue.displayName) — health updates when it finishes.")
+                : L("Couldn't start \(issue.displayName) — see Console for details."),
             style: started ? .success : .danger
         )
     }
@@ -567,9 +555,9 @@ private struct HealthCard: View {
 
     private func healthStatusLabel(_ issue: AutomationHealthIssue) -> String {
         switch issue.kind {
-        case .overdue: "Overdue"
-        case .failing: "Failing"
-        case .tickerDisabled: "Disabled"
+        case .overdue: L("Overdue")
+        case .failing: L("Failing")
+        case .tickerDisabled: L("Disabled")
         }
     }
 
@@ -589,14 +577,14 @@ private struct HealthCard: View {
     private func healthDetail(_ issue: AutomationHealthIssue) -> String {
         let formatter = Self.relativeFormatter
         let last = issue.lastRunFinishedAt.map {
-            "last run \(formatter.localizedString(for: $0, relativeTo: Date()))"
-        } ?? "no run recorded"
+            L("last run \(formatter.localizedString(for: $0, relativeTo: Date()))")
+        } ?? L("no run recorded")
         switch issue.kind {
         case .overdue:
             let when = issue.expectedFire.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
-            } ?? "on schedule"
-            return "Should have run \(when) — \(last)."
+            } ?? L("on schedule")
+            return L("Should have run \(when) — \(last).")
         case .failing:
             // Name the CAUSE when the run recorded an exit code (#213: the row
             // could previously only ever say "reported failure", leaving the
@@ -605,11 +593,10 @@ private struct HealthCard: View {
             if let reason = issue.reason { return reason + managedRerunHint(issue) }
             let cause = issue.lastRunExitCode.map {
                 "\(CLIBridge.explainExit($0, operation: "Last run")) (\(last))."
-            } ?? "Last run reported failure — \(last)."
+            } ?? L("Last run reported failure — \(last).")
             return cause + managedRerunHint(issue)
         case .tickerDisabled:
-            return "Scheduled runs are paused until \"Allow in the Background\" is turned on "
-                + "for JamfReports in Login Items."
+            return L("Scheduled runs are paused until \"Allow in the Background\" is turned on for JamfReports in Login Items.")
         }
     }
 
@@ -620,7 +607,7 @@ private struct HealthCard: View {
     /// Omitted for hand-built agents, whose "Run now" lives on Schedules.
     private func managedRerunHint(_ issue: AutomationHealthIssue) -> String {
         guard issue.isManagedAgent else { return "" }
-        return " Use Run now here — a manual run from another screen won't clear this."
+        return L(" Use Run now here — a manual run from another screen won't clear this.")
     }
 }
 
@@ -638,10 +625,8 @@ private struct GroupsCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                AutomationCardShared.sectionTitle("Report Groups")
-                Text("Each group's profiles roll up into one consolidated fleet report; profiles "
-                    + "in no group get a per-profile report. Combine prod/dev/sandbox into one "
-                    + "fleet, or make one group per customer.")
+                AutomationCardShared.sectionTitle(L("Report Groups"))
+                Text("Each group's profiles roll up into one consolidated fleet report; profiles in no group get a per-profile report. Combine prod/dev/sandbox into one fleet, or make one group per customer.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
 
                 ForEach(reportGroups) { group in
@@ -693,7 +678,7 @@ private struct AddGroupForm: View {
                         .toggleStyle(.checkbox)
                 }
             }
-            PNPButton(title: "Add group", style: .gold, size: .sm) { addGroup() }
+            PNPButton(title: L("Add group"), style: .gold, size: .sm) { addGroup() }
                 .disabled(!canAddGroup)
         }
     }
@@ -736,11 +721,8 @@ private struct ConsolidationCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                AutomationCardShared.sectionTitle("Schedules now run by JamfReports")
-                Text("These schedules were imported and now run from the JamfReports "
-                    + "background item, but their old LaunchAgent files are still loaded — "
-                    + "each runs twice per fire until retired. Retiring archives the file to "
-                    + "this Mac's Application Support first.")
+                AutomationCardShared.sectionTitle(L("Schedules now run by JamfReports"))
+                Text("These schedules were imported and now run from the JamfReports background item, but their old LaunchAgent files are still loaded — each runs twice per fire until retired. Retiring archives the file to this Mac's Application Support first.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
 
                 ForEach(candidates) { candidate in
@@ -757,15 +739,16 @@ private struct ConsolidationCard: View {
                 }
 
                 PNPButton(
-                    title: "Retire \(selectedForRemoval.count) selected",
+                    title: L("Retire \(selectedForRemoval.count) selected"),
                     style: .danger, size: .sm
                 ) { showRemovalConfirm = true }
                 .disabled(selectedForRemoval.isEmpty)
             }
         }
         .confirmationDialog(
-            "Retire \(selectedForRemoval.count) hand-built schedule"
-                + (selectedForRemoval.count == 1 ? "" : "s") + "?",
+            selectedForRemoval.count == 1
+                ? L("Retire \(selectedForRemoval.count) hand-built schedule?")
+                : L("Retire \(selectedForRemoval.count) hand-built schedules?"),
             isPresented: $showRemovalConfirm, titleVisibility: .visible
         ) {
             Button("Retire & archive", role: .destructive) {
@@ -773,9 +756,7 @@ private struct ConsolidationCard: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Each schedule is archived in Application Support/JamfReports/"
-                + "archived-launchagents and can be restored by copying its plist back to "
-                + "~/Library/LaunchAgents.")
+            Text("Each schedule is archived in Application Support/JamfReports/archived-launchagents and can be restored by copying its plist back to ~/Library/LaunchAgents.")
         }
     }
 

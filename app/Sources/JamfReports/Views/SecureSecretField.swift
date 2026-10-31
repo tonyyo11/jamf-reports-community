@@ -62,7 +62,7 @@ struct SecureSecretField: View {
             field.delegate = context.coordinator
             field.target = context.coordinator
             field.action = #selector(Coordinator.fieldAction(_:))
-            field.setAccessibilityLabel("Client Secret")
+            field.setAccessibilityLabel(L("Client Secret"))
             field.setAccessibilityPlaceholderValue(placeholder)
             return field
         }

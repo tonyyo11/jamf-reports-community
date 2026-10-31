@@ -201,7 +201,7 @@ enum CollectRouter {
         // refused above.
         guard let mdm = environment.mdm else {
             throw CLIBridgeError.wrongProduct(
-                "'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile")
+                L("'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile"))
         }
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
@@ -256,8 +256,7 @@ enum CollectRouter {
         guard SharedConfigPin.protectAllowed(profile: profile) else {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[skip] protect: \(environment.protectKey) changed in the shared "
-                            + "config.yaml and is not confirmed on this Mac — "
-                            + "Protect not collected"))
+                            + "config.yaml and is not confirmed on this Mac — Protect not collected"))
             return
         }
         guard disposition == .collected else {
@@ -312,8 +311,7 @@ enum CollectRouter {
     /// Why `pro backup` has nothing to do for a Jamf School workspace; the scheduled skip, the
     /// CLI `backup` and `schedules add --mode backup` all say this.
     static func schoolBackupReason(profile: String) -> String {
-        "`pro backup` is a Jamf Pro command and '\(profile)' is configured for Jamf School "
-            + "(school_cli.enabled in config.yaml)"
+        L("`pro backup` is a Jamf Pro command and '\(profile)' is configured for Jamf School (school_cli.enabled in config.yaml)")
     }
 
     /// Why a backup of `profile` must not run, or nil: a Jamf School workspace (decided from
@@ -324,7 +322,7 @@ enum CollectRouter {
         if environment.isSchool {
             return schoolBackupReason(profile: profile)
         }
-        return proRunRefusal(profile: profile, operation: "Backup", config: config)
+        return proRunRefusal(profile: profile, operation: L("Backup"), config: config)
     }
 
     /// The refusals `scheduledRunSingleBody` applies to a per-profile schedule: a case variant
@@ -335,7 +333,7 @@ enum CollectRouter {
         if let refusal = ProfileService.caseVariantRefusal(of: schedule.profile) { return refusal }
         guard schedule.mode != .jamfCLIOnly else { return nil }
         return proRunRefusal(
-            profile: schedule.profile, operation: "Scheduled \(schedule.mode.rawValue) run",
+            profile: schedule.profile, operation: L("Scheduled \(schedule.mode.rawValue) run"),
             config: collectRoutingConfig(profile: schedule.profile))
     }
 
@@ -351,7 +349,8 @@ enum CollectRouter {
 
     static let realProEngine: ProEngine = {
         workspace, profile, workspacePaths, tiers, skipExpensive, force, now, onLine in
-        try await ReportEngine.collect(
+        try await Localization.english {
+try await ReportEngine.collect(
             workspace: workspace,
             profile: profile,
             workspacePaths: workspacePaths,
@@ -361,12 +360,14 @@ enum CollectRouter {
             now: now,
             onLine: onLine
         )
+}
     }
 
     /// Default production closure wrapping `ReportEngine.schoolCollect`.
     static let defaultSchoolCollect: SchoolCollect = {
         workspace, profile, workspacePaths, tiers, force, onLine in
-        try await ReportEngine.schoolCollect(
+        try await Localization.english {
+try await ReportEngine.schoolCollect(
             workspace: workspace,
             profile: profile,
             workspacePaths: workspacePaths,
@@ -374,15 +375,18 @@ enum CollectRouter {
             force: force,
             onLine: onLine
         )
+}
     }
 
     /// Default production closure wrapping `ReportEngine.protectCollect`.
     static let defaultProtectCollect: ProtectCollect = { profile, dataDir, onLine in
-        try await ReportEngine.protectCollect(
+        try await Localization.english {
+try await ReportEngine.protectCollect(
             profile: profile,
             dataDir: dataDir,
             onLine: onLine
         )
+}
     }
 }
 

@@ -21,15 +21,15 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .managedDevices:  "Managed Devices"
-        case .scoreCards:      "Score Cards"
-        case .aiInsight:       "AI Fleet Insight"
-        case .osDistribution:  "macOS Distribution"
-        case .mobileDevices:   "Mobile Devices"
-        case .topFailingRules: "Top Failing Rules"
-        case .securityAgents:  "Security Agents"
-        case .recentActivity:  "Recent Activity"
-        case .workspaceStatus: "Workspace Status"
+        case .managedDevices:  L("Managed Devices")
+        case .scoreCards:      L("Score Cards")
+        case .aiInsight:       L("AI Fleet Insight")
+        case .osDistribution:  L("macOS Distribution")
+        case .mobileDevices:   L("Mobile Devices")
+        case .topFailingRules: L("Top Failing Rules")
+        case .securityAgents:  L("Security Agents")
+        case .recentActivity:  L("Recent Activity")
+        case .workspaceStatus: L("Workspace Status")
         }
     }
 
@@ -38,24 +38,23 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
     var summary: String {
         switch self {
         case .managedDevices:
-            "Computers and mobile devices in the latest daily summary."
+            L("Computers and mobile devices in the latest daily summary.")
         case .scoreCards:
-            "The metric tiles you pick below, each with its trend."
+            L("The metric tiles you pick below, each with its trend.")
         case .aiInsight:
-            "A plain-language reading of the latest summary, generated on this Mac."
+            L("A plain-language reading of the latest summary, generated on this Mac.")
         case .osDistribution:
-            "Macs per macOS version, and the share on a current release."
+            L("Macs per macOS version, and the share on a current release.")
         case .mobileDevices:
-            "Managed, supervised, passcode, current-OS, stale and jailbroken figures for "
-                + "iPads and iPhones, from the latest daily summary."
+            L("Managed, supervised, passcode, current-OS, stale and jailbroken figures for iPads and iPhones, from the latest daily summary.")
         case .topFailingRules:
-            "Compliance rules failing on the most Macs."
+            L("Compliance rules failing on the most Macs.")
         case .securityAgents:
-            "Coverage of each agent listed under security_agents in Config."
+            L("Coverage of each agent listed under security_agents in Config.")
         case .recentActivity:
-            "The Macs that checked in most recently."
+            L("The Macs that checked in most recently.")
         case .workspaceStatus:
-            "jamf-cli version and how many daily summaries this workspace holds."
+            L("jamf-cli version and how many daily summaries this workspace holds.")
         }
     }
 
@@ -84,12 +83,12 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
     func availability(in composition: EnvironmentComposition) -> OverviewAvailability {
         switch self {
         case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
-            return composition.allowsMacs ? .shown : .leftOut("No Macs in this environment.")
+            return composition.allowsMacs ? .shown : .leftOut(L("No Macs in this environment."))
         case .mobileDevices:
             switch composition {
             case .mobileOnly, .mixed: return .shown
-            case .macsOnly: return .leftOut("No mobile devices in the latest daily summary.")
-            case .unknown: return .leftOut("No daily summary lists mobile devices yet.")
+            case .macsOnly: return .leftOut(L("No mobile devices in the latest daily summary."))
+            case .unknown: return .leftOut(L("No daily summary lists mobile devices yet."))
             }
         case .aiInsight, .managedDevices, .scoreCards, .workspaceStatus:
             return .shown
@@ -263,26 +262,26 @@ extension TrendSeries.Metric {
     var dataRequirement: String {
         switch self {
         case .stability:
-            "Needs patch status, jamf-cli's security report, or a compliance EA."
+            L("Needs patch status, jamf-cli's security report, or a compliance EA.")
         case .activeDevices, .stale:
-            "Needs the device-compliance report."
+            L("Needs the device-compliance report.")
         case .compliance:
-            "Needs jamf-cli's security report, or a compliance EA mapped in Config."
+            L("Needs jamf-cli's security report, or a compliance EA mapped in Config.")
         case .fileVault, .securityScore, .sip, .firewall, .gatekeeper:
-            "Needs jamf-cli's security report."
+            L("Needs jamf-cli's security report.")
         case .osCurrent:
-            "Needs the inventory summary and the SOFA feed."
+            L("Needs the inventory summary and the SOFA feed.")
         case .edrAgent, .agent:
-            "Needs a security agent in Config and extension-attribute results."
+            L("Needs a security agent in Config and extension-attribute results.")
         case .patch:
-            "Needs the patch-status report."
+            L("Needs the patch-status report.")
         case .mscpBandTrend:
-            "Needs a compliance baseline mapped in Config."
+            L("Needs a compliance baseline mapped in Config.")
         case .managedDevices:
-            "Needs a collected inventory."
+            L("Needs a collected inventory.")
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
-            "Needs the mobile device inventory."
+            L("Needs the mobile device inventory.")
         }
     }
 

@@ -93,20 +93,20 @@ struct SecurityScoreFactor: Sendable, Hashable {
     /// `staleBasis` the dates it counts.
     func label(staleDays: Int? = nil, staleBasis: [StaleBasis] = StaleBasis.default) -> String {
         switch kind {
-        case .fileVault: return "FileVault"
-        case .sip: return "SIP"
-        case .firewall: return "Firewall"
-        case .gatekeeper: return "Gatekeeper"
-        case .secureBoot: return "Secure Boot at full security"
-        case .bootstrapToken: return "Bootstrap token escrowed"
-        case .osCurrent: return "macOS current (\(resolvedGraceDays)-day grace)"
-        case .xprotectCurrent: return "XProtect current (\(resolvedGraceDays)-day grace)"
-        case .patchCompliance: return "Patch compliance"
+        case .fileVault: return L("FileVault")
+        case .sip: return L("SIP")
+        case .firewall: return L("Firewall")
+        case .gatekeeper: return L("Gatekeeper")
+        case .secureBoot: return L("Secure Boot at full security")
+        case .bootstrapToken: return L("Bootstrap token escrowed")
+        case .osCurrent: return L("macOS current (\(resolvedGraceDays)-day grace)")
+        case .xprotectCurrent: return L("XProtect current (\(resolvedGraceDays)-day grace)")
+        case .patchCompliance: return L("Patch compliance")
         case .checkedIn:
             return staleDays.map { StaleRule(days: $0, basis: staleBasis).checkedInLabel() }
-                ?? "Checked in recently"
-        case .mscp: return target.map { "mSCP: \($0)" } ?? "mSCP baseline"
-        case .agent: return "\(target ?? "Agent") connected"
+                ?? L("Checked in recently")
+        case .mscp: return target.map { L("mSCP: \($0)") } ?? L("mSCP baseline")
+        case .agent: return L("\(target ?? L("Agent")) connected")
         }
     }
 
@@ -129,7 +129,7 @@ struct SecurityScoreFactor: Sendable, Hashable {
         basis.split(separator: ",").compactMap { entry in
             let id = unescaped(String(entry.split(separator: "=").first ?? ""))
             if id == "crowdstrike", let name = edrAgentName, !name.isEmpty {
-                return "\(name) connected"
+                return L("\(name) connected")
             }
             if let label = legacyBasisLabels[id] { return label }
             let parts = id.split(separator: ":", maxSplits: 1).map(String.init)
@@ -140,8 +140,8 @@ struct SecurityScoreFactor: Sendable, Hashable {
     }
 
     private static let legacyBasisLabels: [String: String] = [
-        "fileVault": "FileVault", "crowdstrike": "EDR agent", "xprotect": "XProtect",
-        "cve": "CVE", "secureBoot": "Secure Boot",
+        "fileVault": L("FileVault"), "crowdstrike": L("EDR agent"), "xprotect": L("XProtect"),
+        "cve": L("CVE"), "secureBoot": L("Secure Boot"),
     ]
 
     static func weightText(_ weight: Double) -> String {

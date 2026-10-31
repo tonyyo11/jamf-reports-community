@@ -106,13 +106,13 @@ struct ComplianceBandingService: Sendable {
     /// A macOS major as the Per-OS Breakdown and the posture insight name it.
     static func osLabel(_ major: Int) -> String {
         switch major {
-        case 12: return "macOS Monterey 12"
-        case 13: return "macOS Ventura 13"
-        case 14: return "macOS Sonoma 14"
-        case 15: return "macOS Sequoia 15"
-        case 26: return "macOS Tahoe 26"
-        case 27: return "macOS Golden Gate 27"
-        default: return "macOS \(major)"
+        case 12: return L("macOS Monterey 12")
+        case 13: return L("macOS Ventura 13")
+        case 14: return L("macOS Sonoma 14")
+        case 15: return L("macOS Sequoia 15")
+        case 26: return L("macOS Tahoe 26")
+        case 27: return L("macOS Golden Gate 27")
+        default: return L("macOS \(major)")
         }
     }
 }

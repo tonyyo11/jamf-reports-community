@@ -4,7 +4,7 @@ import Foundation
 /// "From config.yaml" tab. Nothing here writes the file. A value under a key that looks like
 /// a secret is reduced to `(set)` or `(empty)` when a row is built, so it is never carried.
 struct ConfigFileSections: Equatable, Sendable {
-    static let nothingToShow = "Everything in config.yaml is editable on the other tabs."
+    static let nothingToShow = L("Everything in config.yaml is editable on the other tabs.")
     /// Rows listed per section; the rest are counted.
     static let settingCap = 200
     static let noteCap = 50
@@ -132,9 +132,9 @@ struct ConfigFileSections: Equatable, Sendable {
     /// The value as listed. A key whose path names a secret shows only whether it is set.
     static func displayValue(_ value: YAMLCodec.YAMLValue, keyPath: String) -> String {
         let text = typedText(value)
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return "(empty)" }
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return L("(empty)") }
         let path = keyPath.lowercased()
-        guard !secretWords.contains(where: { path.contains($0) }) else { return "(set)" }
+        guard !secretWords.contains(where: { path.contains($0) }) else { return L("(set)") }
         return ConfigSchema.displayText(text)
     }
 
@@ -165,16 +165,16 @@ enum ConfigFileReading: Equatable, Sendable {
     /// Demo mode reads no file and shows the demo workspace's nothing-to-show state.
     static func read(at url: URL?, demoMode: Bool = false) -> ConfigFileReading {
         guard !demoMode else { return .sections(ConfigFileSections()) }
-        guard let url else { return .unavailable("The workspace folder was not found.") }
+        guard let url else { return .unavailable(L("The workspace folder was not found.")) }
         guard FileManager.default.fileExists(atPath: url.path) else {
             return .unavailable(
-                "config.yaml does not exist yet. Saving from another tab creates it.")
+                L("config.yaml does not exist yet. Saving from another tab creates it."))
         }
         let text: String
         do {
             text = try ConfigLoader.readText(at: url)
         } catch {
-            return .unavailable("config.yaml could not be read: \(error.localizedDescription)")
+            return .unavailable(L("config.yaml could not be read: \(error.localizedDescription)"))
         }
         do {
             return .sections(try ConfigFileSections.build(fromYAML: text))

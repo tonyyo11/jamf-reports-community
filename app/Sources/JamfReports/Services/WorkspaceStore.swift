@@ -422,8 +422,8 @@ final class WorkspaceStore {
         if profiles.first(where: { $0.name == id })?.status == .error {
             let reason = ProfileService.unusableProfiles(in: profiles.map(\.name))[id]
             toast = Toast(
-                message: reason.map { "\(id) can't be used. \($0.explanation)" }
-                    ?? "\(id) can't be used.",
+                message: reason.map { L("\(id) can't be used. \($0.explanation)") }
+                    ?? L("\(id) can't be used."),
                 style: .danger
             )
             return
@@ -554,21 +554,21 @@ final class WorkspaceStore {
             if removedWorkspace || removedAgents > 0 {
                 var parts: [String] = []
                 if removedWorkspace {
-                    parts.append("workspace \(demoProfile)")
+                    parts.append(L("workspace \(demoProfile)"))
                 }
                 if removedAgents > 0 {
-                    let suffix = removedAgents == 1 ? "" : "s"
-                    parts.append("\(removedAgents) demo schedule\(suffix)")
+                    parts.append(removedAgents == 1
+                        ? L("\(removedAgents) demo schedule") : L("\(removedAgents) demo schedules"))
                 }
-                return "Removed demo \(parts.joined(separator: " and "))."
+                return L("Removed demo \(parts.joined(separator: " and ")).")
             }
         } catch {
             if removedAgents > 0 {
-                return "Removed \(removedAgents) demo schedule"
-                    + (removedAgents == 1 ? "" : "s")
-                    + ", but could not remove workspace \(demoProfile): \(error.localizedDescription)"
+                return removedAgents == 1
+                    ? L("Removed \(removedAgents) demo schedule, but could not remove workspace \(demoProfile): \(error.localizedDescription)")
+                    : L("Removed \(removedAgents) demo schedules, but could not remove workspace \(demoProfile): \(error.localizedDescription)")
             }
-            return "Could not remove demo workspace \(demoProfile): \(error.localizedDescription)"
+            return L("Could not remove demo workspace \(demoProfile): \(error.localizedDescription)")
         }
         return nil
     }
@@ -621,7 +621,7 @@ final class WorkspaceStore {
     func restoreDefaultConfig() async -> String? {
         guard !demoMode else { return nil }
         guard let workspaceURL = ProfileService.workspaceURL(for: profile) else {
-            return "Invalid profile name."
+            return L("Invalid profile name.")
         }
         let config = workspaceURL.appendingPathComponent("config.yaml")
         let stamp = Self.backupStampFormatter.string(from: Date())
@@ -642,15 +642,13 @@ final class WorkspaceStore {
                 profile: profile, onLine: CLIBridge.noOpOnLine
             )
             guard exit == 0, FileManager.default.fileExists(atPath: config.path) else {
-                return "Could not reseed the default config — your old file is preserved "
-                    + "as \(backupName)."
+                return L("Could not reseed the default config — your old file is preserved as \(backupName).")
             }
         } catch {
             // The rename may have already happened — never let the error hide
             // that the user's config.yaml now lives under the backup name.
             if movedAside {
-                return "\(error.localizedDescription) Your old config.yaml was moved aside "
-                    + "as \(backupName); no replacement was written."
+                return L("\(error.localizedDescription) Your old config.yaml was moved aside as \(backupName); no replacement was written.")
             }
             return error.localizedDescription
         }
@@ -658,12 +656,11 @@ final class WorkspaceStore {
         reloadFromDisk()
         let rebuildHint = priorSummary.isEmpty
             ? ""
-            : " Previous config (\(priorSummary)) saved as \(backupName); re-run the "
-                + "CSV → EA guide and Columns scaffold to rebuild from your CSV."
+            : L(" Previous config (\(priorSummary)) saved as \(backupName); re-run the CSV → EA guide and Columns scaffold to rebuild from your CSV.")
         toast = Toast(
             message: rebuildHint.isEmpty
-                ? "Default config restored — old file kept as \(backupName)"
-                : "Default config restored." + rebuildHint,
+                ? L("Default config restored — old file kept as \(backupName)")
+                : L("Default config restored.\(rebuildHint)"),
             style: .success
         )
         return nil
@@ -675,11 +672,11 @@ final class WorkspaceStore {
     func clearedConfigSummary() -> String {
         var parts: [String] = []
         let agents = configState.securityAgents.count
-        if agents > 0 { parts.append("\(agents) security agent\(agents == 1 ? "" : "s")") }
+        if agents > 0 { parts.append((agents == 1 ? L("\(agents) security agent") : L("\(agents) security agents"))) }
         let eas = configState.customEAs.count
-        if eas > 0 { parts.append("\(eas) custom EA\(eas == 1 ? "" : "s")") }
+        if eas > 0 { parts.append((eas == 1 ? L("\(eas) custom EA") : L("\(eas) custom EAs"))) }
         let benches = configState.complianceBenchmarks.count
-        if benches > 0 { parts.append("\(benches) benchmark\(benches == 1 ? "" : "s")") }
+        if benches > 0 { parts.append((benches == 1 ? L("\(benches) benchmark") : L("\(benches) benchmarks"))) }
         return parts.joined(separator: ", ")
     }
 
@@ -697,7 +694,7 @@ final class WorkspaceStore {
         guard !demoMode, !isWorkspaceInitialized, !isInitializingWorkspace else { return }
         isInitializingWorkspace = true
         defer { isInitializingWorkspace = false }
-        workspaceInitMessage = "Initializing workspace…"
+        workspaceInitMessage = L("Initializing workspace…")
         globalStatus = "initializing workspace · profile=\(profile)"
         let bridge = CLIBridge()
         do {
@@ -705,17 +702,17 @@ final class WorkspaceStore {
                 profile: profile, onLine: CLIBridge.bufferingOnLine
             )
             guard exit == 0 else {
-                workspaceInitFailed("Workspace init failed · exit \(exit)")
+                workspaceInitFailed(L("Workspace init failed · exit \(exit)"))
                 return
             }
         } catch {
-            workspaceInitFailed("Workspace init failed · \(error.localizedDescription)")
+            workspaceInitFailed(L("Workspace init failed · \(error.localizedDescription)"))
             return
         }
         globalStatus = nil
         reloadFromDisk()
         guard bridge.isJamfCLIAvailable else {
-            toast = Toast(message: "Workspace initialized · jamf-cli not installed", style: .info)
+            toast = Toast(message: L("Workspace initialized · jamf-cli not installed"), style: .info)
             return
         }
         // The banner that carried this method's progress text disappears the
@@ -738,7 +735,7 @@ final class WorkspaceStore {
         do {
             _ = try WorkspaceRootStore.set(url)
         } catch {
-            return "Couldn't use that folder: \(error.localizedDescription)"
+            return L("Couldn't use that folder: \(error.localizedDescription)")
         }
         reloadFromDisk()
         guard !initializedProfiles.isEmpty else {
@@ -764,7 +761,7 @@ final class WorkspaceStore {
     func checkJamfCLIUpdate() async {
         guard !isUpdatingJamfCLI else { return }
         isUpdatingJamfCLI = true
-        jamfCLIUpdateMessage = "Checking jamf-cli updates..."
+        jamfCLIUpdateMessage = L("Checking jamf-cli updates...")
         let result = await JamfCLIInstaller().checkForUpdate()
         jamfCLIUpdateMessage = result.message
         jamfCLIUpdateAvailable = result.updateAvailable
@@ -775,7 +772,7 @@ final class WorkspaceStore {
     func updateJamfCLI() async {
         guard !isUpdatingJamfCLI else { return }
         isUpdatingJamfCLI = true
-        jamfCLIUpdateMessage = "Updating jamf-cli..."
+        jamfCLIUpdateMessage = L("Updating jamf-cli...")
         let result = await JamfCLIInstaller().update()
         jamfCLIUpdateMessage = result.message
         if !result.refused { jamfCLIUpdateAvailable = false }
@@ -1035,22 +1032,22 @@ final class WorkspaceStore {
     func lastSyncedRelative(for profile: String) -> String {
         // The demo was last synced by its Daily Snapshot Collection run; reading the
         // disk would say "Never synced" on every demo screen.
-        if demoMode { return "Synced Apr 25, 06:01" }
-        guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return "Never synced" }
+        if demoMode { return L("Synced Apr 25, 06:01") }
+        guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return L("Never synced") }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return "Never synced" }
+        ) else { return L("Never synced") }
         let newest = files.compactMap { url -> Date? in
             (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         }.max()
-        guard let date = newest else { return "Never synced" }
+        guard let date = newest else { return L("Never synced") }
         let components = Calendar.current.dateComponents([.minute, .hour, .day], from: date, to: Date())
-        if let days = components.day, days > 0 { return "Synced \(days)d ago" }
-        if let hours = components.hour, hours > 0 { return "Synced \(hours)h ago" }
-        if let minutes = components.minute, minutes > 0 { return "Synced \(minutes)m ago" }
-        return "Synced just now"
+        if let days = components.day, days > 0 { return L("Synced \(days)d ago") }
+        if let hours = components.hour, hours > 0 { return L("Synced \(hours)h ago") }
+        if let minutes = components.minute, minutes > 0 { return L("Synced \(minutes)m ago") }
+        return L("Synced just now")
     }
 
     // MARK: Console deep-links
@@ -1311,34 +1308,34 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .overview:          "Overview"
-        case .fleet:             "Fleet Overview"
-        case .devices:           "Computers"
-        case .deviceLookup:      "Device Lookup"
-        case .trends:            "Trends"
-        case .audit:             "Health Audit"
-        case .reports:           "Generated"
-        case .schedules:         "Automation"
-        case .runs:              "Run History"
-        case .config:            "Config"
-        case .customize:         "Customize"
-        case .sources:           "Data Sources"
-        case .backups:           "Backups"
-        case .settings:          "Settings"
-        case .onboarding:        "Onboarding"
-        case .securityPosture:   "Security Posture"
-        case .compliancePosture: "Compliance Posture"
-        case .complianceBenchmarks: "Compliance Benchmarks"
-        case .patch:             "Patch Compliance"
-        case .updates:           "OS Updates"
-        case .ddmBlueprints:     "DDM Blueprints"
-        case .policyProfile:     "Policies & Profiles"
-        case .extensionAttributes: "Extension Attributes"
-        case .outreach:          "Offline Outreach"
-        case .protectDashboard:  "Jamf Protect"
-        case .mobileFleet:       "Mobile Devices"
-        case .groupInventory:    "Groups & Searches"
-        case .schoolDevices:     "Devices"
+        case .overview:          L("Overview")
+        case .fleet:             L("Fleet Overview")
+        case .devices:           L("Computers")
+        case .deviceLookup:      L("Device Lookup")
+        case .trends:            L("Trends")
+        case .audit:             L("Health Audit")
+        case .reports:           L("Generated")
+        case .schedules:         L("Automation")
+        case .runs:              L("Run History")
+        case .config:            L("Config")
+        case .customize:         L("Customize")
+        case .sources:           L("Data Sources")
+        case .backups:           L("Backups")
+        case .settings:          L("Settings")
+        case .onboarding:        L("Onboarding")
+        case .securityPosture:   L("Security Posture")
+        case .compliancePosture: L("Compliance Posture")
+        case .complianceBenchmarks: L("Compliance Benchmarks")
+        case .patch:             L("Patch Compliance")
+        case .updates:           L("OS Updates")
+        case .ddmBlueprints:     L("DDM Blueprints")
+        case .policyProfile:     L("Policies & Profiles")
+        case .extensionAttributes: L("Extension Attributes")
+        case .outreach:          L("Offline Outreach")
+        case .protectDashboard:  L("Jamf Protect")
+        case .mobileFleet:       L("Mobile Devices")
+        case .groupInventory:    L("Groups & Searches")
+        case .schoolDevices:     L("Devices")
         }
     }
 
@@ -1415,20 +1412,20 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     /// `sidebarOrder` is derived from them so the two cannot diverge.
     /// `.onboarding` is intentionally absent: the sidebar never lists it.
     static let navGroups: [NavGroup] = [
-        .init(label: "REPORTS",
+        .init(label: L("REPORTS"),
               items: [.overview, .fleet, .trends, .audit, .reports]),
-        .init(label: "FLEET",
+        .init(label: L("FLEET"),
               items: [.devices, .schoolDevices, .mobileFleet, .deviceLookup, .protectDashboard,
                       .groupInventory]),
-        .init(label: "POSTURE",
+        .init(label: L("POSTURE"),
               items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        .init(label: "OPERATIONS",
+        .init(label: L("OPERATIONS"),
               items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
-        .init(label: "AUTOMATION",
+        .init(label: L("AUTOMATION"),
               items: [.schedules, .runs]),
-        .init(label: "CONFIGURATION",
+        .init(label: L("CONFIGURATION"),
               items: [.config, .customize, .sources, .backups]),
-        .init(label: "SYSTEM",
+        .init(label: L("SYSTEM"),
               items: [.settings]),
     ]
 

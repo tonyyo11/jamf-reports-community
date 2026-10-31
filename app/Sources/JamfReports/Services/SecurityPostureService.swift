@@ -109,9 +109,9 @@ struct SecurityPostureService: Sendable {
             snapshot.staleBasis = config?.thresholds?.resolvedStaleBasis ?? StaleBasis.default
             return snapshot
         } catch let LoadError.decodeFailed(reason) {
-            return .failed("Couldn't read the latest security snapshot — \(reason).")
+            return .failed(L("Couldn't read the latest security snapshot — \(reason)."))
         } catch {
-            return .failed("Couldn't read the latest security snapshot.")
+            return .failed(L("Couldn't read the latest security snapshot."))
         }
     }
 
@@ -139,13 +139,13 @@ struct SecurityPostureService: Sendable {
     ) throws -> Snapshot {
         guard let data = BoundedFile.readLogged(url) else {
             throw LoadError.decodeFailed(
-                "could not read \(ConfigSchema.displayText(url.lastPathComponent))")
+                L("could not read \(ConfigSchema.displayText(url.lastPathComponent))"))
         }
         guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
             AppLogger.platform.warning(
                 "SecurityPostureService: failed to decode security file \(url.lastPathComponent, privacy: .private)"
             )
-            throw LoadError.decodeFailed("failed to decode \(url.lastPathComponent)")
+            throw LoadError.decodeFailed(L("failed to decode \(url.lastPathComponent)"))
         }
 
         var summary: SecuritySummaryData?

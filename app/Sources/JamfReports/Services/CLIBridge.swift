@@ -514,10 +514,12 @@ final class CLIBridge {
             }
         }
         do {
-            let generated = try await engine.generateReport(
+            let generated = try await Localization.english {
+try await engine.generateReport(
                 outputURL: outputURL, template: template,
                 aiNarrative: aiNarrative, csvFolder: csvFolder, now: now, onLine: onLine
             )
+}
             let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -533,9 +535,11 @@ final class CLIBridge {
             }
             var htmlURL: URL?
             if htmlWithWorkbook {
-                htmlURL = await engine.writeHTMLWithWorkbook(
+                htmlURL = await Localization.english {
+await engine.writeHTMLWithWorkbook(
                     besideWorkbook: outputURL, template: template,
                     aiNarrative: aiNarrative, onLine: onLine)
+}
             }
             await RunArtifacts.record(
                 [outputURL, htmlURL, generated.csvFolder].compactMap { $0 }, in: written,
@@ -662,7 +666,8 @@ final class CLIBridge {
             }
         }
         do {
-            let generated = try await ReportEngine.schoolGenerateReport(
+            let generated = try await Localization.english {
+try await ReportEngine.schoolGenerateReport(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
@@ -671,6 +676,7 @@ final class CLIBridge {
                 now: now,
                 onLine: onLine
             )
+}
             let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -887,61 +893,38 @@ final class CLIBridge {
     }
 
     /// The sentence for a locked login keychain, shared by `explainExit` and the auth probe.
-    nonisolated static let keychainLockedDetail = "the login keychain is locked, so jamf-cli "
-        + "could not read this profile's stored credentials. "
-        + FailureCause.keychainLockedHint + "."
+    nonisolated static let keychainLockedDetail = L("the login keychain is locked, so jamf-cli could not read this profile's stored credentials. \(FailureCause.keychainLockedHint).")
 
     /// `cause` (from `FailureCause.classify`) names a failure the exit code alone cannot: a
     /// locked keychain exits 1, like a network error.
     nonisolated static func explainExit(
         _ code: Int32, operation: String, cause: FailureCause? = nil
     ) -> String {
-        if cause?.kind == .keychainLocked { return "\(operation) failed: \(keychainLockedDetail)" }
+        if cause?.kind == .keychainLocked { return L("\(operation) failed: \(keychainLockedDetail)") }
         let detail: String
         switch code {
         case exitCodeUnauthorized:
-            detail = "authentication failed (401) — this profile's credentials are invalid or "
-                + "expired. Re-authenticate it from Data Sources. A Jamf Platform API "
-                + "integration is valid for six months; an expired one needs a replacement in "
-                + "Jamf Account. A gateway URL in a different region (US, EU, APAC) from the "
-                + "integration fails the same way."
+            detail = L("authentication failed (401) — this profile's credentials are invalid or expired. Re-authenticate it from Data Sources. A Jamf Platform API integration is valid for six months; an expired one needs a replacement in Jamf Account. A gateway URL in a different region (US, EU, APAC) from the integration fails the same way.")
         case exitCodePermissionDenied:
-            detail = "permission denied (403) — this profile lacks a required permission. For a "
-                + "Jamf Pro API client, grant the privilege to its API role in Jamf Pro; for a "
-                + "Jamf Platform API integration, grant the permission to the integration in "
-                + "Jamf Account."
+            detail = L("permission denied (403) — this profile lacks a required permission. For a Jamf Pro API client, grant the privilege to its API role in Jamf Pro; for a Jamf Platform API integration, grant the permission to the integration in Jamf Account.")
         case exitCodeNotFound:
-            detail = "not found (404) — the server didn't have the requested resource."
+            detail = L("not found (404) — the server didn't have the requested resource.")
         case exitCodeRateLimited:
-            detail = "rate limited (429) — Jamf Pro is throttling requests. Wait a minute, "
-                + "then try again."
+            detail = L("rate limited (429) — Jamf Pro is throttling requests. Wait a minute, then try again.")
         case exitCodePartialFailure:
-            detail = "partial failure (exit 7) — some sub-operations failed but partial data "
-                + "was returned and saved. Review this run's log output for the specific "
-                + "failures."
+            detail = L("partial failure (exit 7) — some sub-operations failed but partial data was returned and saved. Review this run's log output for the specific failures.")
         case exitCodeTimedOut:
-            detail = "timed out: jamf-cli did not answer within its time limit and was "
-                + "stopped. The server may be overloaded or unreachable; the next run tries "
-                + "again."
+            detail = L("timed out: jamf-cli did not answer within its time limit and was stopped. The server may be overloaded or unreachable; the next run tries again.")
         case exitCodeUsage:
-            detail = "internal argument error (exit 2) — please report this along with this "
-                + "run's log output. On a Platform API profile, exit 2 is also the retired "
-                + "`apigw.jamf.com` host or an environment/tenant scope conflict — run "
-                + "`jamf-cli config validate`."
+            detail = L("internal argument error (exit 2) — please report this along with this run's log output. On a Platform API profile, exit 2 is also the retired `apigw.jamf.com` host or an environment/tenant scope conflict — run `jamf-cli config validate`.")
         case exitCodeRefusedByPolicy:
-            detail = "refused by policy (exit 8) — the command is outside what this "
-                + "profile's API publishes: on a Platform gateway profile, a Jamf Pro or "
-                + "Classic command the Platform API does not serve; on an instance "
-                + "profile, a Platform-only command. Use an oauth2 profile against the "
-                + "Jamf Pro instance for this command. `jamf-cli commands -o json` lists "
-                + "the refusals for the binary in hand (gateway == \"unserved\")."
+            detail = L("refused by policy (exit 8) — the command is outside what this profile's API publishes: on a Platform gateway profile, a Jamf Pro or Classic command the Platform API does not serve; on an instance profile, a Platform-only command. Use an oauth2 profile against the Jamf Pro instance for this command. `jamf-cli commands -o json` lists the refusals for the binary in hand (gateway == \"unserved\").")
         case 1:
-            detail = "exit 1 — usually a network error or a per-command failure. Review this "
-                + "run's log output for the failing command."
+            detail = L("exit 1 — usually a network error or a per-command failure. Review this run's log output for the failing command.")
         default:
-            detail = "exit \(code) — review this run's log output for details."
+            detail = L("exit \(code) — review this run's log output for details.")
         }
-        return "\(operation) failed: \(detail)"
+        return L("\(operation) failed: \(detail)")
     }
 
     /// Maps a thrown operation error to a user-facing cause+remediation string,
@@ -968,18 +951,16 @@ final class CLIBridge {
             case .noPermission:
                 return explainExit(exitCodePermissionDenied, operation: operation)
             case .keychainLocked:
-                return "\(operation) failed: \(keychainLockedDetail)"
+                return L("\(operation) failed: \(keychainLockedDetail)")
             case .rejectedID:
-                return "\(operation) failed: the Jamf Platform gateway rejected this profile's "
-                    + "environment or tenant ID. Correct it with Update credentials in Data "
-                    + "Sources; the environment ID is in the integration's details in Jamf Account."
+                return L("\(operation) failed: the Jamf Platform gateway rejected this profile's environment or tenant ID. Correct it with Update credentials in Data Sources; the environment ID is in the integration's details in Jamf Account.")
             }
         }
         // An error that carries jamf-cli's own text (a launch or decode failure quoting it).
         if FailureCause.mentionsLockedKeychain(error.localizedDescription) {
-            return "\(operation) failed: \(keychainLockedDetail)"
+            return L("\(operation) failed: \(keychainLockedDetail)")
         }
-        return "\(operation) failed — \(error.localizedDescription)"
+        return L("\(operation) failed — \(error.localizedDescription)")
     }
 
     /// Guards a live-API operation by probing `pro auth token` first.
@@ -1573,7 +1554,8 @@ final class CLIBridge {
             }
         }
         do {
-            try await ReportEngine.generateHTML(
+            try await Localization.english {
+try await ReportEngine.generateHTML(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
@@ -1582,6 +1564,7 @@ final class CLIBridge {
                 aiNarrative: aiNarrative,
                 onLine: onLine
             )
+}
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
             await RunArtifacts.record(
@@ -1649,7 +1632,8 @@ final class CLIBridge {
             }
         }
         do {
-            try await ReportEngine.generatePDF(
+            try await Localization.english {
+try await ReportEngine.generatePDF(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
@@ -1657,6 +1641,7 @@ final class CLIBridge {
                 template: template,
                 onLine: onLine
             )
+}
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] PDF report written: \(outputURL.lastPathComponent)"))
             await RunArtifacts.record(
@@ -1709,11 +1694,13 @@ final class CLIBridge {
                 .deletingPathExtension().appendingPathExtension("csv")
         }
         do {
-            try await ReportEngine.inventoryCSV(
+            try await Localization.english {
+try await ReportEngine.inventoryCSV(
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
                 outputURL: outputURL
             )
+}
             // No sidecar for a CSV; the hash line is what lists it as a file the run wrote, and
             // a Generate run's manifest lists it.
             if let line = ReportEngine.sha256LogLine(for: outputURL) { onLine(line) }

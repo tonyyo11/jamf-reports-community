@@ -53,26 +53,23 @@ struct BackupProductResult: Sendable, Hashable {
     var protectSummary: String {
         let counts = objectCounts.sorted { $0.key < $1.key }
             .map { "\($0.key) \($0.value)" }.joined(separator: ", ")
-        let found = "\(objectTotal) object\(objectTotal == 1 ? "" : "s")"
+        let found = (objectTotal == 1 ? L("\(objectTotal) object") : L("\(objectTotal) objects"))
             + (counts.isEmpty ? "" : " (\(counts))")
-        if isEmptyExport { return "The latest backup includes Jamf Protect: it has no objects." }
+        if isEmptyExport { return L("The latest backup includes Jamf Protect: it has no objects.") }
         switch state {
         case .ok:
-            return "The latest backup includes Jamf Protect: \(found)."
+            return L("The latest backup includes Jamf Protect: \(found).")
         case .partial:
-            return "The latest backup's Jamf Protect part is incomplete: \(found) saved. "
+            return L("The latest backup's Jamf Protect part is incomplete: \(found) saved. ")
                 + (hasFailuresFile
-                    ? "Resources that failed are listed in "
-                        + "\(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName) "
-                        + "in the backup folder. "
+                    ? L("Resources that failed are listed in \(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName) in the backup folder. ")
                     : "")
-                + "It is kept until a later backup's Jamf Protect part completes."
+                + L("It is kept until a later backup's Jamf Protect part completes.")
         case .failed:
-            let code = exitCode.map { " (exit \($0))" } ?? ""
-            return "The latest backup has no Jamf Protect part: the Protect backup failed\(code). "
-                + "It is kept until a later backup's Jamf Protect part completes."
+            let code = exitCode.map { L(" (exit \($0))") } ?? ""
+            return L("The latest backup has no Jamf Protect part: the Protect backup failed\(code). It is kept until a later backup's Jamf Protect part completes.")
         case .skipped:
-            return "Jamf Protect was not backed up: \(reason ?? "skipped")."
+            return L("Jamf Protect was not backed up: \(reason ?? "skipped").")
         }
     }
 
@@ -174,8 +171,7 @@ enum ProtectBackup {
         guard !environment.isSchool, environment.runsProtect else { return .notConnected }
         let key = environment.protectKey
         guard pinAllows() else {
-            return .skip(reason: "\(key) changed in the shared config.yaml and is not "
-                + "confirmed on this Mac (Config Doctor)")
+            return .skip(reason: "\(key) changed in the shared config.yaml and is not confirmed on this Mac (Config Doctor)")
         }
         guard let protectProfile = environment.protect else {
             return .skip(reason: "protect.enabled is set but protect.profile is empty")
@@ -192,10 +188,7 @@ enum ProtectBackup {
 
     /// The concern and how to allow it; the organization's storage policy decides, not the app.
     static func syncedStorageReason(place: String) -> String {
-        "this workspace is \(place), and a Protect backup contains action configurations with "
-            + "request headers and data-forwarding settings. If your organization's storage "
-            + "policy allows it, turn on Protect backups for this folder in Backups "
-            + "(\(SharedConfigPin.Key.protectBackupOnSyncedStorage.rawValue))"
+        "this workspace is \(place), and a Protect backup contains action configurations with request headers and data-forwarding settings. If your organization's storage policy allows it, turn on Protect backups for this folder in Backups (\(SharedConfigPin.Key.protectBackupOnSyncedStorage.rawValue))"
     }
 
     /// Where a Protect-connected workspace's backups sit on storage other Macs reach, and
@@ -345,9 +338,7 @@ extension CLIBridge {
         if let syncedPlace {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] backing up Jamf Protect to synced storage: this workspace "
-                             + "is \(syncedPlace), and "
-                             + "\(SharedConfigPin.Key.protectBackupOnSyncedStorage.rawValue) "
-                             + "allows it on this Mac"))
+                             + "is \(syncedPlace), and \(SharedConfigPin.Key.protectBackupOnSyncedStorage.rawValue) allows it on this Mac"))
         }
 
         let output = staging.appendingPathComponent(ProtectBackup.folderName, isDirectory: true)
@@ -410,8 +401,7 @@ extension CLIBridge {
         if exit == Self.exitCodeTimedOut {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] protect backup stopped after the "
-                             + "\(Int(timeout.rounded(.up))) s limit; the unfinished Protect "
-                             + "files were discarded"))
+                             + "\(Int(timeout.rounded(.up))) s limit; the unfinished Protect files were discarded"))
         } else if exit != 0 {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] " + Self.explainExit(exit, operation: "Protect backup")))
@@ -429,9 +419,7 @@ extension CLIBridge {
         if result.state == .failed {
             detail = "no Protect files were kept"
         } else if result.hasFailuresFile {
-            detail = "resources that failed are listed in "
-                + "\(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName) "
-                + "in the backup folder"
+            detail = "resources that failed are listed in \(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName) in the backup folder"
         } else {
             detail = result.reason ?? "see the lines above for the resources that failed"
         }
@@ -440,7 +428,7 @@ extension CLIBridge {
                          + "\(result.state == .partial ? "PARTIAL" : "FAILED"): \(detail)"))
         AttentionLog.raise(
             .protectBackupPartial,
-            "Protect backup \(result.state == .partial ? "partial" : "failed")"
+            (result.state == .partial ? "Protect backup partial" : "Protect backup failed")
                 + (result.reason.map { ": \($0)" } ?? ""))
         onLine(.init(timestamp: Date(), level: .warn,
                      text: "[partial] Jamf Protect configuration is not fully backed up; "

@@ -22,14 +22,14 @@ final class OnboardingFlow {
 
         var label: String {
             switch self {
-            case .welcome: "Welcome"
-            case .installCLI: "Install jamf-cli"
-            case .workspace: "Workspace"
-            case .authenticate: "Authenticate"
-            case .validate: "Validate"
-            case .addProducts: "Add products"
-            case .firstReport: "First report"
-            case .schoolConnect: "Connect School"
+            case .welcome: L("Welcome")
+            case .installCLI: L("Install jamf-cli")
+            case .workspace: L("Workspace")
+            case .authenticate: L("Authenticate")
+            case .validate: L("Validate")
+            case .addProducts: L("Add products")
+            case .firstReport: L("First report")
+            case .schoolConnect: L("Connect School")
             }
         }
     }
@@ -65,8 +65,8 @@ final class OnboardingFlow {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .oauth2: "Jamf Pro server (OAuth2)"
-            case .platformGateway: "Jamf Account (Platform API, recommended for Jamf Cloud)"
+            case .oauth2: L("Jamf Pro server (OAuth2)")
+            case .platformGateway: L("Jamf Account (Platform API, recommended for Jamf Cloud)")
             }
         }
     }
@@ -107,21 +107,19 @@ final class OnboardingFlow {
         var errorDescription: String? {
             switch self {
             case .invalidProfile:
-                "Use a name without a line break or tab, that doesn't start or end with a space, "
-                    + "and is short enough to be a folder name."
+                L("Use a name without a line break or tab, that doesn't start or end with a space, and is short enough to be a folder name.")
             case .profileCaseConflict(let existing):
-                "A workspace named \(existing) already exists, and a name that differs from it "
-                    + "only by letter case would share its folder. Choose a different name."
+                L("A workspace named \(existing) already exists, and a name that differs from it only by letter case would share its folder. Choose a different name.")
             case .invalidJamfURL:
-                "Jamf Pro URL must start with https:// and include a valid host."
+                L("Jamf Pro URL must start with https:// and include a valid host.")
             case .invalidGatewayHost(let problem):
                 problem
             case .invalidScopeID:
                 OnboardingFlow.scopeIDProblemText
             case .missingJamfCLI:
-                "Could not find jamf-cli on PATH."
+                L("Could not find jamf-cli on PATH.")
             case .missingWorkspace:
-                "Create the workspace before running this step."
+                L("Create the workspace before running this step.")
             case .processFailed(let message):
                 message
             }
@@ -154,20 +152,18 @@ final class OnboardingFlow {
 
         var label: String {
             switch self {
-            case .environment: "Environment"
-            case .tenant: "Tenant (legacy)"
+            case .environment: L("Environment")
+            case .tenant: L("Tenant (legacy)")
             }
         }
 
         /// Shown under the scope picker in onboarding and Update credentials.
-        static let caption = "Environment is the level to use: it reaches Jamf Pro, Blueprints, "
-            + "Compliance Benchmarks and DDM. Tenant is legacy: "
-            + "direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints."
+        static let caption = L("Environment is the level to use: it reaches Jamf Pro, Blueprints, Compliance Benchmarks and DDM. Tenant is legacy: direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints.")
 
         var idFieldLabel: String {
             switch self {
-            case .environment: "Environment ID"
-            case .tenant: "Tenant ID"
+            case .environment: L("Environment ID")
+            case .tenant: L("Tenant ID")
             }
         }
     }
@@ -403,7 +399,7 @@ final class OnboardingFlow {
     /// configured root so it agrees with `workspaceURL` directly above — the
     /// two used to answer the same question differently once the root moved.
     var workspacePreviewPath: String {
-        let name = profileName.trimmed.isEmpty ? "<profile>" : profileName.trimmed
+        let name = profileName.trimmed.isEmpty ? L("<profile>") : profileName.trimmed
         return WorkspaceRootStore.displayPath(profile: name) + "/"
     }
 
@@ -567,7 +563,7 @@ final class OnboardingFlow {
 
         guard result.exitCode == 0 else {
             let combined = redactedCredentialOutput(result.combined.trimmed)
-            let message = combined.isEmpty ? "jamf-cli exited \(result.exitCode)." : combined
+            let message = combined.isEmpty ? L("jamf-cli exited \(result.exitCode).") : combined
             throw FlowError.processFailed(message)
         }
 
@@ -670,7 +666,7 @@ final class OnboardingFlow {
             )
             guard result.exitCode == 0 else {
                 let redacted = protectRedactedOutput(result.combined.trimmed)
-                let msg = redacted.isEmpty ? "jamf-cli exited \(result.exitCode)." : redacted
+                let msg = redacted.isEmpty ? L("jamf-cli exited \(result.exitCode).") : redacted
                 protectConnectionError = msg
                 return
             }
@@ -772,7 +768,7 @@ final class OnboardingFlow {
             )
             guard result.exitCode == 0 else {
                 let redacted = schoolRedactedOutput(result.combined.trimmed)
-                let msg = redacted.isEmpty ? "jamf-cli exited \(result.exitCode)." : redacted
+                let msg = redacted.isEmpty ? L("jamf-cli exited \(result.exitCode).") : redacted
                 schoolConnectionError = msg
                 return
             }
@@ -983,7 +979,7 @@ final class OnboardingFlow {
         validationExitCode = exit
         guard exit == 0 else {
             lastError = "jamf-cli config validate failed for \(profile). Review the URL, "
-                + "client ID, secret, and API role privileges, then retry."
+                + L("client ID, secret, and API role privileges, then retry.")
             return
         }
         guard proConnectionType == .platformGateway else {
@@ -1109,7 +1105,7 @@ final class OnboardingFlow {
         }
         guard collectExit == 0 else {
             firstReportExitCode = collectExit
-            lastError = "Collect exited \(collectExit) — check the log above."
+            lastError = L("Collect exited \(collectExit) — check the log above.")
             return
         }
 
@@ -1131,7 +1127,7 @@ final class OnboardingFlow {
         if exit == 0 {
             await finishSetup(in: workspaceStore)
         } else {
-            lastError = "Generate exited \(exit) — check the log above."
+            lastError = L("Generate exited \(exit) — check the log above.")
         }
     }
 
@@ -1178,8 +1174,7 @@ final class OnboardingFlow {
             // The reason is left out: a config error can quote the file.
             AppLogger.webhook.warning("onboarding: could not save the notify block")
             workspaceStore.toast = Toast(
-                message: "Setup finished, but the webhook was not saved — add it under "
-                    + "Automation › Notifications",
+                message: L("Setup finished, but the webhook was not saved — add it under Automation › Notifications"),
                 style: .warning)
         }
     }
@@ -1209,7 +1204,7 @@ final class OnboardingFlow {
         if enforce {
             guard let teamID = expectedTeamID, verify(binary, teamID) else {
                 throw FlowError.processFailed(
-                    "jamf-cli signature verification failed — binary may be untrusted"
+                    L("jamf-cli signature verification failed — binary may be untrusted")
                 )
             }
         } else {
@@ -1226,9 +1221,7 @@ final class OnboardingFlow {
     /// environments applies to each ID.
     var isPlatformScopeIDValid: Bool { ConnectionEnvironments.isUsableID(platformScopeID.trimmed) }
 
-    nonisolated static let scopeIDProblemText = "Use only letters, digits, dots, hyphens and "
-        + "underscores, and don't start with a hyphen. Copy the ID from Jamf Account without "
-        + "spaces."
+    nonisolated static let scopeIDProblemText = L("Use only letters, digits, dots, hyphens and underscores, and don't start with a hyphen. Copy the ID from Jamf Account without spaces.")
 
     /// Shown under the ID field once something is typed that the check refuses.
     var platformScopeIDProblem: String? {
@@ -1466,25 +1459,25 @@ final class OnboardingFlow {
         try await Task.detached(priority: .userInitiated) {
             let master = Darwin.posix_openpt(O_RDWR | O_NOCTTY)
             guard master >= 0 else {
-                throw FlowError.processFailed("posix_openpt failed: errno \(errno)")
+                throw FlowError.processFailed(L("posix_openpt failed: errno \(errno)"))
             }
             guard Darwin.grantpt(master) == 0 else {
                 Darwin.close(master)
-                throw FlowError.processFailed("grantpt failed: errno \(errno)")
+                throw FlowError.processFailed(L("grantpt failed: errno \(errno)"))
             }
             guard Darwin.unlockpt(master) == 0 else {
                 Darwin.close(master)
-                throw FlowError.processFailed("unlockpt failed: errno \(errno)")
+                throw FlowError.processFailed(L("unlockpt failed: errno \(errno)"))
             }
             guard let slaveCStr = Darwin.ptsname(master) else {
                 Darwin.close(master)
-                throw FlowError.processFailed("ptsname failed: errno \(errno)")
+                throw FlowError.processFailed(L("ptsname failed: errno \(errno)"))
             }
             let slavePath = String(cString: slaveCStr)
             let slave = Darwin.open(slavePath, O_RDWR | O_NOCTTY)
             guard slave >= 0 else {
                 Darwin.close(master)
-                throw FlowError.processFailed("open(slave) failed: errno \(errno)")
+                throw FlowError.processFailed(L("open(slave) failed: errno \(errno)"))
             }
 
             // Disable echo on the slave so the secret written to stdin is not
@@ -1534,7 +1527,7 @@ final class OnboardingFlow {
                 try process.run()
             } catch {
                 Darwin.close(slave)
-                throw FlowError.processFailed("launch failed: \(error.localizedDescription)")
+                throw FlowError.processFailed(L("launch failed: \(error.localizedDescription)"))
             }
 
             box.stopIfClosing()
@@ -1594,7 +1587,7 @@ final class OnboardingFlow {
             try? masterHandle.close()
             if box.didTimeOut {
                 throw FlowError.processFailed(
-                    "jamf-cli did not finish within \(Int(timeout.rounded())) s")
+                    L("jamf-cli did not finish within \(Int(timeout.rounded())) s"))
             }
 
             let combined = collector.snapshot()

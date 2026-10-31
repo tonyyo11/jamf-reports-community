@@ -12,7 +12,7 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
     var id: String { rawValue }
 
     /// The Health Audit category all seven share.
-    static let category = "Mobile devices"
+    static let category = L("Mobile devices")
 
     /// What the rules judge devices against.
     struct Context: Sendable, Equatable {
@@ -29,26 +29,26 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
 
     func name(staleDays: Int) -> String {
         switch self {
-        case .jailbreak: "Jailbreak detected"
-        case .unmanaged: "Not managed"
-        case .passcode: "Passcode not compliant"
-        case .dataProtection: "Data protection off"
-        case .osBehind: "OS behind the current release"
-        case .updateErrors: "Software update errors"
-        case .stale: "No inventory update in more than \(staleDays) days"
+        case .jailbreak: L("Jailbreak detected")
+        case .unmanaged: L("Not managed")
+        case .passcode: L("Passcode not compliant")
+        case .dataProtection: L("Data protection off")
+        case .osBehind: L("OS behind the current release")
+        case .updateErrors: L("Software update errors")
+        case .stale: L("No inventory update in more than \(staleDays) days")
         }
     }
 
     /// The filter chip's and menu's label.
     var filterLabel: String {
         switch self {
-        case .jailbreak: "Jailbreak detected"
-        case .unmanaged: "Not managed"
-        case .passcode: "Passcode not compliant"
-        case .dataProtection: "Data protection off"
-        case .osBehind: "OS behind"
-        case .updateErrors: "Update errors"
-        case .stale: "Stale inventory"
+        case .jailbreak: L("Jailbreak detected")
+        case .unmanaged: L("Not managed")
+        case .passcode: L("Passcode not compliant")
+        case .dataProtection: L("Data protection off")
+        case .osBehind: L("OS behind")
+        case .updateErrors: L("Update errors")
+        case .stale: L("Stale inventory")
         }
     }
 
@@ -64,54 +64,46 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
     func recommendation(staleDays: Int) -> String {
         switch self {
         case .jailbreak:
-            "A jailbroken device can bypass the protections MDM relies on. Take it out of "
-                + "use, investigate it, and re-enroll it only after it is restored."
+            L("A jailbroken device can bypass the protections MDM relies on. Take it out of use, investigate it, and re-enroll it only after it is restored.")
         case .unmanaged:
-            "Jamf Pro lists these devices as unmanaged: no profile or restriction is "
-                + "enforced on them. Re-enroll them, or retire the records."
+            L("Jamf Pro lists these devices as unmanaged: no profile or restriction is enforced on them. Re-enroll them, or retire the records.")
         case .passcode:
-            "These devices do not meet the passcode requirement. Check that a passcode "
-                + "configuration profile is scoped to them."
+            L("These devices do not meet the passcode requirement. Check that a passcode configuration profile is scoped to them.")
         case .dataProtection:
-            "Data protection is off on these devices, usually because no passcode is set. "
-                + "Require a passcode with a configuration profile."
+            L("Data protection is off on these devices, usually because no passcode is set. Require a passcode with a configuration profile.")
         case .osBehind:
-            "These devices run an older iOS or iPadOS than the newest release of their "
-                + "major version. Push the update, or check that nothing defers it."
+            L("These devices run an older iOS or iPadOS than the newest release of their major version. Push the update, or check that nothing defers it.")
         case .updateErrors:
-            "The software update scan found errors on these devices. Open OS Updates for "
-                + "the products and status, and check that the device can reach Apple."
+            L("The software update scan found errors on these devices. Open OS Updates for the products and status, and check that the device can reach Apple.")
         case .stale:
-            "These devices have not submitted inventory for more than \(staleDays) days "
-                + "(last inventory update). Check that they are on, enrolled and reach Jamf Pro."
+            L("These devices have not submitted inventory for more than \(staleDays) days (last inventory update). Check that they are on, enrolled and reach Jamf Pro.")
         }
     }
 
     /// The HTML report's "Needs attention" line for `count` devices (above zero).
     func sentence(count: Int, staleDays: Int) -> String {
         let one = count == 1
-        let devices = one ? "1 mobile device" : "\(count) mobile devices"
+        let devices = one ? L("1 mobile device") : L("\(count) mobile devices")
         switch self {
-        case .jailbreak: return "\(devices) \(one ? "has" : "have") a jailbreak detected."
-        case .unmanaged: return "\(devices) \(one ? "is" : "are") not managed."
+        case .jailbreak: return (one ? L("\(devices) has a jailbreak detected.") : L("\(devices) have a jailbreak detected."))
+        case .unmanaged: return (one ? L("\(devices) is not managed.") : L("\(devices) are not managed."))
         case .passcode:
-            return "\(devices) \(one ? "does" : "do") not meet the passcode requirement."
-        case .dataProtection: return "\(devices) \(one ? "has" : "have") data protection off."
+            return (one ? L("\(devices) does not meet the passcode requirement.") : L("\(devices) do not meet the passcode requirement."))
+        case .dataProtection: return (one ? L("\(devices) has data protection off.") : L("\(devices) have data protection off."))
         case .osBehind:
-            return "\(devices) \(one ? "is" : "are") behind the current iOS or iPadOS release."
+            return (one ? L("\(devices) is behind the current iOS or iPadOS release.") : L("\(devices) are behind the current iOS or iPadOS release."))
         case .updateErrors:
-            return "\(devices) \(one ? "has" : "have") software update errors."
+            return (one ? L("\(devices) has software update errors.") : L("\(devices) have software update errors."))
         case .stale:
-            return "\(devices) \(one ? "has" : "have") not updated inventory for more than "
-                + "\(staleDays) days."
+            return (one ? L("\(devices) has not updated inventory for more than \(staleDays) days.") : L("\(devices) have not updated inventory for more than \(staleDays) days."))
         }
     }
 
     /// "3 fewer than on 2026-10-18", for the card's change against the previous summary.
     static func changeText(current: Int, previous: Int, since date: String) -> String {
         let difference = current - previous
-        if difference == 0 { return "No change since \(date)" }
-        return "\(abs(difference)) \(difference < 0 ? "fewer" : "more") than on \(date)"
+        if difference == 0 { return L("No change since \(date)") }
+        return (difference < 0 ? L("\(abs(difference)) fewer than on \(date)") : L("\(abs(difference)) more than on \(date)"))
     }
 
     // MARK: - The rule

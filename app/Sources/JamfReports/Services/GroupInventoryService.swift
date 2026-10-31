@@ -274,7 +274,7 @@ struct GroupInventoryService: Sendable {
 // MARK: - Search criteria text
 
 extension AdvancedMobileSearchRow {
-    static let noCriteriaText = "No criteria (matches every device)"
+    static let noCriteriaText = L("No criteria (matches every device)")
 
     /// The search as a sentence: `(Model like iPad OR Model like iPhone) AND Last Inventory
     /// Update more than x days ago 7`. A criterion's connector joins it to the one before.
@@ -290,7 +290,7 @@ extension AdvancedMobileSearchRow {
         for (index, criterion) in ordered.enumerated() {
             if index > 0 {
                 let joiner = criterion.andOr?.trimmingCharacters(in: .whitespaces).uppercased()
-                text += " \(joiner.flatMap { $0.isEmpty ? nil : $0 } ?? "AND") "
+                text += " \(joiner.flatMap { $0.isEmpty ? nil : $0 } ?? L("AND")) "
             }
             text += criterion.sentence
         }
@@ -303,7 +303,7 @@ private extension AdvancedMobileSearchCriterion {
         let parts = [name, searchType, value]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let body = parts.isEmpty ? "Unnamed criterion" : parts.joined(separator: " ")
+        let body = parts.isEmpty ? L("Unnamed criterion") : parts.joined(separator: " ")
         return (openingParen == true ? "(" : "") + body + (closingParen == true ? ")" : "")
     }
 }

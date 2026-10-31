@@ -23,9 +23,9 @@ enum StaleBasis: String, CaseIterable, Sendable {
     /// The date's name on screens and in reports.
     var label: String {
         switch self {
-        case .checkIn: "Last check-in"
-        case .inventory: "Last inventory update"
-        case .contact: "Last contact"
+        case .checkIn: L("Last check-in")
+        case .inventory: L("Last inventory update")
+        case .contact: L("Last contact")
         }
     }
 
@@ -33,7 +33,7 @@ enum StaleBasis: String, CaseIterable, Sendable {
     fileprivate var noun: String {
         switch self {
         case .checkIn: "check-in"
-        case .inventory: "inventory update"
+        case .inventory: L("inventory update")
         case .contact: "contact"
         }
     }
@@ -41,9 +41,9 @@ enum StaleBasis: String, CaseIterable, Sendable {
     /// The verb phrase for a Mac that is current on this date.
     fileprivate var currentPhrase: String {
         switch self {
-        case .checkIn: "checked in"
+        case .checkIn: L("checked in")
         case .inventory: "inventoried"
-        case .contact: "in contact"
+        case .contact: L("in contact")
         }
     }
 }
@@ -162,7 +162,7 @@ struct StaleRule: Sendable, Equatable {
     var basisPhrase: String {
         let nouns = basis.map(\.noun)
         guard nouns.count > 1 else { return nouns.joined() }
-        return nouns.dropLast().joined(separator: ", ") + " or " + (nouns.last ?? "")
+        return nouns.dropLast().joined(separator: ", ") + L(" or ") + (nouns.last ?? "")
     }
 
     /// `basisPhrase` as a table heading: "Check-in", "Check-in or Inventory Update".
@@ -177,9 +177,9 @@ struct StaleRule: Sendable, Equatable {
     func checkedInLabel(shortUnit: Bool = false) -> String {
         let phrases = basis.map(\.currentPhrase)
         let joined = phrases.count > 1
-            ? phrases.dropLast().joined(separator: ", ") + " and " + (phrases.last ?? "")
+            ? phrases.dropLast().joined(separator: ", ") + L(" and ") + (phrases.last ?? "")
             : phrases.joined()
         return joined.prefix(1).uppercased() + joined.dropFirst()
-            + " within \(days)" + (shortUnit ? "d" : " days")
+            + L(" within \(days)") + (shortUnit ? "d" : L(" days"))
     }
 }

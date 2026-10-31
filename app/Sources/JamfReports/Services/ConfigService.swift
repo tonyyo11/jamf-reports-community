@@ -136,26 +136,22 @@ struct ConfigSaveReport: Equatable, Sendable {
     /// One sentence for each thing the save left as typed or did not keep.
     var notes: [String] {
         var lines = keptBlocks.map { key in
-            "\(key) in config.yaml is not a list, so it was left as typed and nothing was "
-                + "written to it. Write each entry as a \"- name:\" list item so the app can "
-                + "read and edit it."
+            L("\(key) in config.yaml is not a list, so it was left as typed and nothing was written to it. Write each entry as a \"- name:\" list item so the app can read and edit it.")
         }
         if !removedRetiredKeys.isEmpty {
             let named = removedRetiredKeys.map { key in
-                ConfigSchema.retiredKeys[key].map { "\(key) (since \($0))" } ?? key
+                ConfigSchema.retiredKeys[key].map { L("\(key) (since \($0))") } ?? key
             }
-            lines.append("Settings the app no longer reads were removed from config.yaml: "
+            lines.append(L("Settings the app no longer reads were removed from config.yaml: ")
                 + named.joined(separator: ", ") + "."
-                + (backupName.map { " A copy of the file as it was is at \($0)." } ?? ""))
+                + (backupName.map { L(" A copy of the file as it was is at \($0).") } ?? ""))
         }
         guard let copy = backupName else { return lines }
         if droppedComments {
-            lines.append("Comments inside the blocks this screen edits are not kept. A copy of "
-                + "the file as it was is at \(copy).")
+            lines.append(L("Comments inside the blocks this screen edits are not kept. A copy of the file as it was is at \(copy)."))
         }
         if droppedUnreadLines {
-            lines.append("Lines this screen could not read inside the blocks it edits are not "
-                + "kept. A copy of the file as it was is at \(copy).")
+            lines.append(L("Lines this screen could not read inside the blocks it edits are not kept. A copy of the file as it was is at \(copy)."))
         }
         return lines
     }
@@ -242,23 +238,18 @@ enum ConfigService {
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile): ProfileName.invalidMessage(profile)
-            case .pathTraversal: "Refusing config path with a '..' component."
-            case .symlinkDestination(let url): "Refusing to write symlink: \(url.path)"
-            case .missingConfig(let url): "No config.yaml at \(url.path)"
-            case .credentialKey(let key): "Refusing to load credential-shaped key: \(key)"
-            case .invalidTopLevel: "config.yaml must contain a top-level mapping."
-            case .changedOnDisk: "config.yaml changed on disk since this screen loaded it."
+            case .pathTraversal: L("Refusing config path with a '..' component.")
+            case .symlinkDestination(let url): L("Refusing to write symlink: \(url.path)")
+            case .missingConfig(let url): L("No config.yaml at \(url.path)")
+            case .credentialKey(let key): L("Refusing to load credential-shaped key: \(key)")
+            case .invalidTopLevel: L("config.yaml must contain a top-level mapping.")
+            case .changedOnDisk: L("config.yaml changed on disk since this screen loaded it.")
             case .notASettingsBlock(let key):
-                "\(key) in config.yaml is not a set of settings, so it was left as typed and "
-                    + "nothing was written. Write its settings indented under \"\(key):\", "
-                    + "or remove that line."
+                L("\(key) in config.yaml is not a set of settings, so it was left as typed and nothing was written. Write its settings indented under \"\(key):\", or remove that line.")
             case .notAWholeNumber(let key, let value):
-                "\(key) must be a whole number, and \"\(ConfigSchema.displayText(value))\" is "
-                    + "not one, so nothing was saved. Enter a number, or clear the field to "
-                    + "use the default."
+                L("\(key) must be a whole number, and \"\(ConfigSchema.displayText(value))\" is not one, so nothing was saved. Enter a number, or clear the field to use the default.")
             case .profilesBlock(let slot):
-                "config.yaml has a profiles block, so nothing was written here; edit "
-                    + "profiles.\(slot) in config.yaml instead."
+                L("config.yaml has a profiles block, so nothing was written here; edit profiles.\(slot) in config.yaml instead.")
             }
         }
     }
@@ -473,11 +464,11 @@ enum ConfigService {
     /// screen writes, "Customize Apply" for `charts`, nil for a block no app writer rewrites.
     static func retiredKeyRemover(inBlock block: String) -> String? {
         if managedTopLevelKeys.contains(block) || retiredTopLevelKeys.contains(block) {
-            return "Config save"
+            return L("Config save")
         }
         switch block {
-        case "charts": return "Customize Apply"
-        case "security_policy": return "Scoring save"
+        case "charts": return L("Customize Apply")
+        case "security_policy": return L("Scoring save")
         default: return nil
         }
     }
@@ -609,8 +600,8 @@ enum ConfigService {
     /// URL and the timestamp authority address. Empty when neither was there.
     static func backupOmissions(_ backup: URL) -> [String] {
         let text = (try? ConfigLoader.readText(at: backup)) ?? ""
-        return [("notify.url", "webhook URL"), ("output.timestamp_authority",
-                                                "timestamp authority address")]
+        return [("notify.url", L("webhook URL")), ("output.timestamp_authority",
+                                                L("timestamp authority address"))]
             .filter { text.contains("# \($0.0) removed from this copy") }.map(\.1)
     }
 

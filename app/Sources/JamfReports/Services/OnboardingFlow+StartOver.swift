@@ -13,17 +13,16 @@ extension OnboardingFlow {
 
     /// What Start over removes, for its confirmation.
     var startOverMessage: String {
-        var lines = ["This setup has created:"]
+        var lines = [L("This setup has created:")]
         for profile in createdWorkspaces {
             let folder = WorkspaceRootStore.displayPath(profile: profile)
-            lines.append("• the workspace folder \(folder), which moves to the Trash")
+            lines.append(L("• the workspace folder \(folder), which moves to the Trash"))
         }
         for profile in createdProfiles {
-            lines.append("• the jamf-cli profile \(profile), which is removed with its saved "
-                + "credentials")
+            lines.append(L("• the jamf-cli profile \(profile), which is removed with its saved credentials"))
         }
         lines.append("")
-        lines.append("You go back to the first screen to choose how to connect.")
+        lines.append(L("You go back to the first screen to choose how to connect."))
         return lines.joined(separator: "\n")
     }
 
@@ -45,8 +44,7 @@ extension OnboardingFlow {
             do {
                 try connectionStore.removeMember(profile: profile)
             } catch {
-                problems.append("The jamf-cli profile \(profile) was removed, but its connection "
-                    + "record was not: \(error.localizedDescription)")
+                problems.append(L("The jamf-cli profile \(profile) was removed, but its connection record was not: \(error.localizedDescription)"))
             }
         }
 
@@ -55,9 +53,7 @@ extension OnboardingFlow {
                 try workspaceTrasher(profile)
                 createdWorkspaces.removeAll { $0 == profile }
             } catch {
-                problems.append("The workspace folder "
-                    + "\(WorkspaceRootStore.displayPath(profile: profile)) was not moved to the "
-                    + "Trash: \(error.localizedDescription)")
+                problems.append(L("The workspace folder \(WorkspaceRootStore.displayPath(profile: profile)) was not moved to the Trash: \(error.localizedDescription)"))
             }
         }
         return problems
@@ -90,14 +86,13 @@ extension OnboardingFlow {
 
     /// `jamf-cli config remove-profile`, which also deletes the profile's keychain items.
     nonisolated static func removeJamfCLIProfile(_ name: String) async -> String? {
-        let manual = "Remove it in Terminal: jamf-cli config remove-profile -- "
+        let manual = L("Remove it in Terminal: jamf-cli config remove-profile -- ")
             + ProfileName.shellWord(name)
         guard let binary = ExecutableLocator.locate("jamf-cli") else {
-            return "jamf-cli was not found, so the profile \(name) was not removed. \(manual)"
+            return L("jamf-cli was not found, so the profile \(name) was not removed. \(manual)")
         }
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
-            return "jamf-cli failed its signature check, so the profile \(name) was not "
-                + "removed. \(manual)"
+            return L("jamf-cli failed its signature check, so the profile \(name) was not removed. \(manual)")
         }
         let outcome = await JamfCLIProbe.runOutcomeAsync(
             executable: binary, arguments: removeProfileArguments(name: name))
@@ -105,12 +100,11 @@ extension OnboardingFlow {
         case .completed(let output) where output.exitCode == 0:
             return nil
         case .completed(let output):
-            return "jamf-cli could not remove the profile \(name) (exit \(output.exitCode)). "
-                + manual
+            return L("jamf-cli could not remove the profile \(name) (exit \(output.exitCode)). \(manual)")
         case .timedOut:
-            return "jamf-cli did not finish removing the profile \(name). \(manual)"
+            return L("jamf-cli did not finish removing the profile \(name). \(manual)")
         case .launchFailed:
-            return "jamf-cli could not be started to remove the profile \(name). \(manual)"
+            return L("jamf-cli could not be started to remove the profile \(name). \(manual)")
         }
     }
 }

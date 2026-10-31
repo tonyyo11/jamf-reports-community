@@ -54,10 +54,9 @@ struct PeriodReportSheet: View {
     /// Built from cached `syncedProvider` state — no disk access here, so
     /// this stays a plain computed property safe to read from `body`.
     private var eaSectionCaption: String {
-        var text = "Not included unless you choose them. Values come from your own "
-                  + "scripts and may identify individual devices."
+        var text = L("Not included unless you choose them. Values come from your own scripts and may identify individual devices.")
         if let provider = syncedProvider {
-            text += " This report will be written to \(provider.displayName), a synced folder."
+            text += L(" This report will be written to \(provider.displayName), a synced folder.")
         }
         return text
     }
@@ -67,8 +66,7 @@ struct PeriodReportSheet: View {
             Text("Period report")
                 .font(Theme.Fonts.title)
                 .foregroundStyle(Theme.Colors.fg)
-            Text("Fleet numbers for a window, with a start, an end and the change. "
-                 + "Each figure carries the date it came from.")
+            Text("Fleet numbers for a window, with a start, an end and the change. Each figure carries the date it came from.")
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(Theme.Colors.fgMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -104,14 +102,14 @@ struct PeriodReportSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("PERIOD").font(Theme.Fonts.kicker).foregroundStyle(Theme.Colors.fgMuted)
             Picker("", selection: $rangeChoice) {
-                ForEach(RangeChoice.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(RangeChoice.allCases) { Text(LShown($0.rawValue)).tag($0) }
             }
             .labelsHidden()
             .pickerStyle(.menu)
             if rangeChoice == .custom {
                 HStack(spacing: 12) {
-                    DatePicker("From", selection: $customStart, displayedComponents: .date)
-                    DatePicker("To", selection: $customEnd, displayedComponents: .date)
+                    DatePicker(L("From"), selection: $customStart, displayedComponents: .date)
+                    DatePicker(L("To"), selection: $customEnd, displayedComponents: .date)
                 }
                 .font(Theme.Fonts.caption)
             }
@@ -169,11 +167,11 @@ struct PeriodReportSheet: View {
 
     private var footer: some View {
         HStack {
-            PNPButton(title: "Cancel", style: .ghost) { dismiss() }
+            PNPButton(title: L("Cancel"), style: .ghost) { dismiss() }
                 .keyboardShortcut(.cancelAction)
             Spacer()
             PNPButton(
-                title: isGenerating ? "Generating..." : "Generate",
+                title: isGenerating ? L("Generating...") : L("Generate"),
                 icon: "calendar.badge.clock",
                 style: .gold
             ) { generate() }
@@ -198,8 +196,7 @@ struct PeriodReportSheet: View {
         guard PeriodMetricCatalog.looksLikeIdentifier(
             distinct: cardinality.distinct, devices: cardinality.devices)
         else { return nil }
-        return "Nearly one value per device — this looks like an identifier, "
-             + "so including it puts per-device data in the workbook."
+        return L("Nearly one value per device — this looks like an identifier, so including it puts per-device data in the workbook.")
     }
 
     private func loadCatalog() {

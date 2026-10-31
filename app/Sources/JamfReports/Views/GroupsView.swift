@@ -14,8 +14,8 @@ struct GroupsView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Fleet",
-                title: "Groups & Searches",
+                kicker: L("Fleet"),
+                title: L("Groups & Searches"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
@@ -36,11 +36,11 @@ struct GroupsView: View {
                 } else {
                     summaryTiles
                     GroupTableCard(
-                        title: "Computer Groups", emptyText: "No computer groups found.",
+                        title: L("Computer Groups"), emptyText: L("No computer groups found."),
                         groups: snapshot.classicComputerGroups, platform: .computer,
                         snapshot: snapshot)
                     GroupTableCard(
-                        title: "Mobile Device Groups", emptyText: "No mobile device groups found.",
+                        title: L("Mobile Device Groups"), emptyText: L("No mobile device groups found."),
                         groups: snapshot.classicMobileGroups, platform: .mobile,
                         snapshot: snapshot)
                     if !snapshot.advancedMobileSearches.isEmpty {
@@ -61,11 +61,13 @@ struct GroupsView: View {
         let totalSearches = snapshot.advancedSearchCount
 
         if totalGroups > 0 && totalSearches > 0 {
-            return "\(totalGroups) group\(totalGroups == 1 ? "" : "s") and \(totalSearches) search\(totalSearches == 1 ? "" : "es")."
+            let groups = totalGroups == 1 ? L("\(totalGroups) group") : L("\(totalGroups) groups")
+            let searches = totalSearches == 1 ? L("\(totalSearches) search") : L("\(totalSearches) searches")
+            return L("\(groups) and \(searches).")
         } else if totalGroups > 0 {
-            return "\(totalGroups) group\(totalGroups == 1 ? "" : "s") tracked across computer and mobile platforms."
+            return (totalGroups == 1 ? L("\(totalGroups) group tracked across computer and mobile platforms.") : L("\(totalGroups) groups tracked across computer and mobile platforms."))
         } else if totalSearches > 0 {
-            return "\(totalSearches) advanced mobile search\(totalSearches == 1 ? "" : "es")."
+            return (totalSearches == 1 ? L("\(totalSearches) advanced mobile search.") : L("\(totalSearches) advanced mobile searches."))
         } else {
             return nil
         }
@@ -100,7 +102,7 @@ struct GroupsView: View {
     /// `-1` and empty / nil both represent "All Sites" (no site restriction).
     private func siteLabel(_ siteId: String?) -> String {
         switch siteId {
-        case nil, "", "-1": return "All Sites"
+        case nil, "", "-1": return L("All Sites")
         case let id?: return id
         }
     }
@@ -111,9 +113,8 @@ struct GroupsView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "rectangle.3.group",
-                title: "No group data detected",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No group data detected"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: [
                         "classic-computer-groups", "classic-mobile-device-groups",
@@ -127,33 +128,31 @@ struct GroupsView: View {
         VStack(alignment: .leading, spacing: 12) {
             EqualHeightTileGrid(minTileWidth: 200) {
                 StatTile(
-                    label: "Computer Groups",
+                    label: L("Computer Groups"),
                     value: "\(snapshot.classicComputerGroupCount)",
-                    sub: "\(snapshot.classicComputerSmartGroupCount) smart, "
-                        + "\(snapshot.classicComputerStaticGroupCount) static",
+                    sub: L("\(snapshot.classicComputerSmartGroupCount) smart, \(snapshot.classicComputerStaticGroupCount) static"),
                     fillsHeight: true)
                 StatTile(
-                    label: "Mobile Device Groups",
+                    label: L("Mobile Device Groups"),
                     value: "\(snapshot.classicMobileGroupCount)",
-                    sub: "\(snapshot.classicMobileSmartGroupCount) smart, "
-                        + "\(snapshot.classicMobileStaticGroupCount) static",
+                    sub: L("\(snapshot.classicMobileSmartGroupCount) smart, \(snapshot.classicMobileStaticGroupCount) static"),
                     fillsHeight: true)
                 StatTile(
-                    label: "Empty Groups",
+                    label: L("Empty Groups"),
                     value: snapshot.emptyGroupCount.map(String.init) ?? "—",
                     sub: snapshot.emptyGroupCount == nil
-                        ? "Member counts not collected yet" : "No members",
+                        ? L("Member counts not collected yet") : L("No members"),
                     fillsHeight: true)
                 StatTile(
-                    label: "Unused Groups",
+                    label: L("Unused Groups"),
                     value: snapshot.unusedGroupCount.map(String.init) ?? "—",
                     sub: unusedCaption,
                     fillsHeight: true)
                 StatTile(
-                    label: "Policies With No Scope",
+                    label: L("Policies With No Scope"),
                     value: snapshot.unscopedPolicyCount.map(String.init) ?? "—",
                     sub: snapshot.unscopedPolicyCount == nil
-                        ? "Policy status not collected yet" : "Target no computers",
+                        ? L("Policy status not collected yet") : L("Target no computers"),
                     fillsHeight: true)
             }
             tileActions
@@ -162,9 +161,9 @@ struct GroupsView: View {
 
     private var unusedCaption: String {
         guard let date = snapshot.analysisDate else {
-            return "Run Analyze Groups in Health Audit"
+            return L("Run Analyze Groups in Health Audit")
         }
-        return "Computer groups no policy or profile uses, from Health Audit, "
+        return L("Computer groups no policy or profile uses, from Health Audit, ")
             + date.formatted(date: .abbreviated, time: .omitted)
     }
 
@@ -172,13 +171,13 @@ struct GroupsView: View {
     private var tileActions: some View {
         HStack(spacing: 8) {
             if snapshot.analysisDate == nil {
-                PNPButton(title: "Open Health Audit", icon: "arrow.right", size: .sm) {
+                PNPButton(title: L("Open Health Audit"), icon: "arrow.right", size: .sm) {
                     open(.audit)
                 }
                 .help("Analyze Groups on the Health Audit screen finds unused groups.")
             }
             if (snapshot.unscopedPolicyCount ?? 0) > 0 {
-                PNPButton(title: "Review policies with no scope", icon: "arrow.right", size: .sm) {
+                PNPButton(title: L("Review policies with no scope"), icon: "arrow.right", size: .sm) {
                     open(.policyProfile)
                 }
             }
@@ -194,15 +193,15 @@ struct GroupsView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Advanced Mobile Searches",
-                    trailing: "\(snapshot.advancedSearchCount) search\(snapshot.advancedSearchCount == 1 ? "" : "es")"
+                    title: L("Advanced Mobile Searches"),
+                    trailing: (snapshot.advancedSearchCount == 1 ? L("\(snapshot.advancedSearchCount) search") : L("\(snapshot.advancedSearchCount) searches"))
                 )
 
                 Table(snapshot.advancedMobileSearches.enumerated().map {
                     SearchRowWrapper(search: $0.element, index: $0.offset)
                 }) {
                     TableColumn("Name") { wrapper in
-                        Text(wrapper.search.name ?? "Untitled Search")
+                        Text(wrapper.search.name ?? L("Untitled Search"))
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                     }
@@ -264,7 +263,7 @@ private struct GroupTableCard: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: title, trailing: groups.isEmpty ? nil : "\(groups.count) total")
+                    title: title, trailing: groups.isEmpty ? nil : L("\(groups.count) total"))
                 if groups.isEmpty {
                     Text(emptyText)
                         .font(.footnote)
@@ -280,7 +279,7 @@ private struct GroupTableCard: View {
     private func table(_ visible: [GroupRowWrapper]) -> some View {
         Table(visible) {
             TableColumn("Name") { wrapper in
-                Text(wrapper.group.name ?? "Untitled Group")
+                Text(wrapper.group.name ?? L("Untitled Group"))
                     .font(.callout.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
             }
@@ -288,7 +287,7 @@ private struct GroupTableCard: View {
 
             TableColumn("Type") { wrapper in
                 Pill(
-                    text: wrapper.group.isSmart ? "Smart" : "Static",
+                    text: wrapper.group.isSmart ? L("Smart") : L("Static"),
                     tone: wrapper.group.isSmart ? .teal : .muted
                 )
                 .accessibilityLabel("\(wrapper.group.isSmart ? "Smart" : "Static") group")
@@ -297,8 +296,8 @@ private struct GroupTableCard: View {
 
             TableColumn("Status") { wrapper in
                 HStack(spacing: 4) {
-                    if wrapper.detail.isEmpty { Pill(text: "Empty", tone: .warn) }
-                    if wrapper.detail.unused == true { Pill(text: "Unused", tone: .gold) }
+                    if wrapper.detail.isEmpty { Pill(text: L("Empty"), tone: .warn) }
+                    if wrapper.detail.unused == true { Pill(text: L("Unused"), tone: .gold) }
                 }
             }
             .width(min: 90, ideal: 130)

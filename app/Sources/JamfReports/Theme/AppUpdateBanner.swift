@@ -12,8 +12,8 @@ struct AppUpdateBanner: View {
                 icon: "arrow.down.circle",
                 tone: .info,
                 action: InlineBannerAction(
-                    label: "View release", icon: "arrow.up.right.square",
-                    help: "Open the release notes on GitHub. Nothing is downloaded."
+                    label: L("View release"), icon: "arrow.up.right.square",
+                    help: L("Open the release notes on GitHub. Nothing is downloaded.")
                 ) { if let page = release.page { NSWorkspace.shared.open(page) } }
             ) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -37,6 +37,6 @@ struct AppUpdateBanner: View {
     }
 
     static func detail(current: String) -> String {
-        "You have \(current). Read what changed, then update when it suits you."
+        L("You have \(current). Read what changed, then update when it suits you.")
     }
 }

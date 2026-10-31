@@ -123,14 +123,13 @@ struct CustomizeView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "Report Options",
-            title: "Customize Reports",
-            subtitle: "Chart and HTML options for generated reports, and where to change "
-                + "what else a report shows"
+            kicker: L("Report Options"),
+            title: L("Customize Reports"),
+            subtitle: L("Chart and HTML options for generated reports, and where to change what else a report shows")
         ) {
             HStack(spacing: 8) {
                 PNPButton(
-                    title: "How to customize",
+                    title: L("How to customize"),
                     icon: "questionmark.circle",
                     style: .ghost,
                     size: .sm
@@ -140,7 +139,7 @@ struct CustomizeView: View {
                 // Apply writes the options into config.yaml, which in
                 // demo mode would create one under the demo profile's name.
                 PNPButton(
-                    title: applySaved ? "Saved" : "Apply",
+                    title: applySaved ? L("Saved") : L("Apply"),
                     icon: applySaved ? "checkmark.circle" : "checkmark",
                     style: .gold
                 ) {
@@ -162,11 +161,8 @@ struct CustomizeView: View {
     private var sheetsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Workbook sheets", style: .body)
-                Text("The Overview's Generate makes the Full Instance report, with every "
-                     + "sheet. For a shorter one, choose a template or your own sheets with "
-                     + "Generate\u{2026} on the Generated Reports screen, or use the "
-                     + "command-line tool:")
+                SectionHeader(title: L("Workbook sheets"), style: .body)
+                Text("The Overview's Generate makes the Full Instance report, with every sheet. For a shorter one, choose a template or your own sheets with Generate\u{2026} on the Generated Reports screen, or use the command-line tool:")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -187,7 +183,7 @@ struct CustomizeView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Command-line tool", icon: "terminal", size: .sm) {
+                PNPButton(title: L("Command-line tool"), icon: "terminal", size: .sm) {
                     NotificationCenter.default.post(
                         name: .navigateToTab,
                         object: nil,
@@ -223,14 +219,12 @@ struct CustomizeView: View {
     private var scoreCardsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Overview", style: .body)
-                Text("Score cards and Overview sections — what shows, in what order — "
-                     + "are chosen on the Overview. \(offeredScoreCardCount) "
-                     + "score cards selected.")
+                SectionHeader(title: L("Overview"), style: .body)
+                Text("Score cards and Overview sections — what shows, in what order — are chosen on the Overview. \(offeredScoreCardCount) score cards selected.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Customize Overview", icon: "slider.horizontal.3", size: .sm) {
+                PNPButton(title: L("Customize Overview"), icon: "slider.horizontal.3", size: .sm) {
                     workspace.overviewCustomizeRequested = true
                     NotificationCenter.default.post(
                         name: .navigateToTab,
@@ -246,23 +240,22 @@ struct CustomizeView: View {
     private var chartsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Charts", style: .body)
+                SectionHeader(title: L("Charts"), style: .body)
                     .padding(.bottom, 10)
 
                 chartToggleRow(
-                    title: "Per-major macOS charts",
-                    detail: "Majors found in the fleet",
+                    title: L("Per-major macOS charts"),
+                    detail: L("Majors found in the fleet"),
                     isOn: $chartPerMajor,
                     hasDivider: true
                 )
                 chartToggleRow(
-                    title: "Save PNGs alongside xlsx",
-                    detail: "Charts/*.png",
+                    title: L("Save PNGs alongside xlsx"),
+                    detail: L("Charts/*.png"),
                     isOn: $chartSavePNGs,
                     hasDivider: false
                 )
-                Text("The device-state trend and the compliance trend are set under "
-                     + "charts in config.yaml.")
+                Text("The device-state trend and the compliance trend are set under charts in config.yaml.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -350,12 +343,12 @@ private struct HTMLWithWorkbookCard: View {
 
     @Environment(\.colorSchemeContrast) private var contrast
 
-    private static let title = "Write the HTML report with every workbook"
+    private static let title = L("Write the HTML report with every workbook")
 
     var body: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(title: "HTML report", style: .body)
+                SectionHeader(title: L("HTML report"), style: .body)
                 HStack(alignment: .top, spacing: 12) {
                     Text(Self.title)
                         .font(.footnote.weight(.medium))

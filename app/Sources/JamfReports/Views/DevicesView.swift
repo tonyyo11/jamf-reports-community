@@ -60,13 +60,13 @@ struct DevicesView: View {
 
         var label: String {
             switch self {
-            case .all:            "All"
-            case .stale:          "Stale"
-            case .contactGap:     "Contact gap"
-            case .binaryMissing:  "Binary missing"
-            case .patch:          "Patch"
-            case .security:       "Security"
-            case .priorityAction: "Priority"
+            case .all:            L("All")
+            case .stale:          L("Stale")
+            case .contactGap:     L("Contact gap")
+            case .binaryMissing:  L("Binary missing")
+            case .patch:          L("Patch")
+            case .security:       L("Security")
+            case .priorityAction: L("Priority")
             }
         }
 
@@ -326,21 +326,22 @@ struct DevicesView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: isLoading ? "Loading inventory" : "Detailed Inventory · \(activeSnapshot.generatedAt)",
-            breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-            title: "Computers",
-            subtitle: "\(activeSnapshot.totalDevices) records · \(workspace.profile)",
+            kicker: isLoading ? L("Loading inventory") : L("Detailed Inventory · \(activeSnapshot.generatedAt)"),
+            breadcrumbs: [Breadcrumb(label: L("Overview"), action: { navigateToOverview() })],
+            title: L("Computers"),
+            subtitle: L("\(activeSnapshot.totalDevices) records · \(workspace.profile)"),
             // The demo dataset is frozen on purpose; an age warning on it is noise.
-            lastModified: workspace.demoMode ? nil : activeSnapshot.generatedDate
+            lastModified: workspace.demoMode ? nil : activeSnapshot.generatedDate,
+            wrapsTrailing: true
         ) {
             HStack(spacing: 8) {
                 staleDaysPicker
-                PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                PNPButton(title: L("Refresh"), icon: "arrow.clockwise") {
                     Task { await reload() }
                 }
                 .help("Reload computer inventory from the cached jamf-cli snapshots.")
                 PNPButton(
-                    title: isExportingCSV ? "Exporting…" : "Export CSV",
+                    title: isExportingCSV ? L("Exporting…") : L("Export CSV"),
                     icon: "square.and.arrow.up",
                     style: .neutral
                 ) {
@@ -359,11 +360,10 @@ struct DevicesView: View {
         EditableNumberStepper(
             value: $staleDays,
             range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
-            prefix: "Stale",
+            prefix: L("Stale"),
             suffix: "d",
-            label: "Stale after days",
-            help: "Computers with no \(staleRule.basisPhrase) for more than this many days are "
-                + "flagged stale."
+            label: L("Stale after days"),
+            help: L("Computers with no \(staleRule.basisPhrase) for more than this many days are flagged stale.")
         )
     }
 
@@ -450,7 +450,7 @@ struct DevicesView: View {
                     .foregroundStyle(Theme.Colors.goldBright)
             }
             Pill(
-                text: "\(filteredDevices.count) shown",
+                text: L("\(filteredDevices.count) shown"),
                 tone: isFiltered ? .gold : .muted
             )
         }
@@ -458,13 +458,13 @@ struct DevicesView: View {
 
     private var summary: some View {
         HStack(spacing: 12) {
-            StatTile(label: "Computers", value: "\(activeSnapshot.totalDevices)",
-                     sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
-            StatTile(label: "Stale", value: "\(figures.staleCount)",
+            StatTile(label: L("Computers"), value: "\(activeSnapshot.totalDevices)",
+                     sub: activeSnapshot.isDemo ? L("Demo inventory") : L("Current workspace"))
+            StatTile(label: L("Stale"), value: "\(figures.staleCount)",
                      sub: staleTileSub)
-            StatTile(label: "Patch Issues", value: "\(figures.patchIssueCount)",
-                     sub: "\(activeSnapshot.patchTitles.count) patch titles")
-            StatTile(label: "FileVault",
+            StatTile(label: L("Patch Issues"), value: "\(figures.patchIssueCount)",
+                     sub: L("\(activeSnapshot.patchTitles.count) patch titles"))
+            StatTile(label: L("FileVault"),
                      value: Self.fileVaultTileValue(figures.fileVaultPercent),
                      sub: fileVaultTileSub)
         }
@@ -473,9 +473,9 @@ struct DevicesView: View {
     /// The stale rule in words, plus the Macs it leaves out because their Jamf binary is
     /// missing (`BinaryMissing`).
     private var staleTileSub: String {
-        let rule = ">\(staleDays) days since \(staleRule.basisPhrase)"
+        let rule = L(">\(staleDays) days since \(staleRule.basisPhrase)")
         let missing = figures.binaryMissingCount
-        return missing == 0 ? rule : rule + " · \(missing) without the Jamf binary not counted"
+        return missing == 0 ? rule : rule + L(" · \(missing) without the Jamf binary not counted")
     }
 
     /// "—" when no Mac's FileVault value reads as on or off.
@@ -488,8 +488,8 @@ struct DevicesView: View {
     private var fileVaultTileSub: String {
         let gaps = figures.securityGapCount
         let moved = figures.fileVaultOffHardwareEncryptedCount
-        guard moved > 0 else { return "\(gaps) security gaps" }
-        return "\(gaps) security gaps · \(moved) more hardware-encrypted, FileVault off"
+        guard moved > 0 else { return L("\(gaps) security gaps") }
+        return L("\(gaps) security gaps · \(moved) more hardware-encrypted, FileVault off")
     }
 
     private var inventoryTable: some View {
@@ -500,12 +500,12 @@ struct DevicesView: View {
                 // instead of hyphenating its words.
                 ViewThatFits(in: .horizontal) {
                     HStack {
-                        SectionHeader(title: "Computer Inventory")
+                        SectionHeader(title: L("Computer Inventory"))
                         Spacer()
                         riskLegend
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "Computer Inventory")
+                        SectionHeader(title: L("Computer Inventory"))
                         riskLegend
                     }
                 }
@@ -546,7 +546,7 @@ struct DevicesView: View {
                     }
                     .width(min: 100, ideal: 112, max: 140)
                     TableColumn("macOS", value: \.device.osVersion) { row in
-                        Mono(text: row.device.osVersion.isEmpty ? "Unknown" : row.device.osVersion)
+                        Mono(text: row.device.osVersion.isEmpty ? L("Unknown") : row.device.osVersion)
                     }
                     .width(min: 64, ideal: 72, max: 96)
                     // Empty when compact, so it keeps a sliver rather than a share of the row.
@@ -595,8 +595,8 @@ struct DevicesView: View {
                     if filteredDevices.isEmpty && !activeSnapshot.devices.isEmpty {
                         EmptyStateView(
                             systemImage: "line.3.horizontal.decrease.circle",
-                            title: "No matching computers",
-                            message: "No inventory rows match the current filters."
+                            title: L("No matching computers"),
+                            message: L("No inventory rows match the current filters.")
                         )
                         .padding(24)
                     }
@@ -622,14 +622,13 @@ struct DevicesView: View {
     }
 
     private var riskLegend: some View {
-        HStack(spacing: 8) {
+        WrappingRow(spacing: 8) {
             legendDot(color: Theme.Colors.danger, label: DeviceRisk.Level.critical.displayLabel)
             legendDot(color: Theme.Colors.warn, label: DeviceRisk.Level.high.displayLabel)
             legendDot(color: Theme.Colors.gold, label: DeviceRisk.Level.medium.displayLabel)
             legendDot(color: Theme.Colors.fgMuted, label: DeviceRisk.Level.low.displayLabel)
             legendDot(color: Theme.Colors.ok, label: DeviceRisk.Level.clean.displayLabel)
         }
-        .fixedSize()
     }
 
     private func detailPanel(_ device: DeviceInventoryRecord?) -> some View {
@@ -646,17 +645,17 @@ struct DevicesView: View {
                         riskPill(priorityRisk(for: device).level)
                     }
 
-                    detailSection("Inventory", rows: [
-                        ("Model", device.model),
+                    detailSection(L("Inventory"), rows: [
+                        (L("Model"), device.model),
                         ("macOS", device.osVersion),
-                        ("Managed", device.managedState),
-                        ("Last check-in", device.lastContact),
-                        ("Last inventory", device.lastInventory),
-                        ("Last contact", Self.contactText(device)),
-                        ("Contact gap", contactGap(of: device)?.label ?? ""),
-                        ("User", userLabel(device)),
-                        ("Department", device.department),
-                        ("Site", device.site),
+                        (L("Managed"), device.managedState),
+                        (L("Last check-in"), device.lastContact),
+                        (L("Last inventory"), device.lastInventory),
+                        (L("Last contact"), Self.contactText(device)),
+                        (L("Contact gap"), contactGap(of: device)?.label ?? ""),
+                        (L("User"), userLabel(device)),
+                        (L("Department"), device.department),
+                        (L("Site"), device.site),
                     ])
 
                     binaryMissingSection(for: device)
@@ -668,7 +667,7 @@ struct DevicesView: View {
                     scanSections(for: device)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "Patch")
+                        SectionHeader(title: L("Patch"))
                         if device.patchFailures.isEmpty {
                             PatchClearPill()
                                 .id("patch-clear-\(device.id)")
@@ -702,7 +701,7 @@ struct DevicesView: View {
                             .truncationMode(.middle)
                             .help(device.source)
                         Spacer()
-                        PNPButton(title: "Copy Serial", icon: "doc.on.doc", size: .sm) {
+                        PNPButton(title: L("Copy Serial"), icon: "doc.on.doc", size: .sm) {
                             SystemActions.copyToClipboard(device.serial)
                         }
                         .help("Copy this computer's serial number to the clipboard.")
@@ -711,7 +710,7 @@ struct DevicesView: View {
                 .textSelection(.enabled)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: "No Computer Selected")
+                    SectionHeader(title: L("No Computer Selected"))
                     Text("No inventory rows match the current filters.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -724,16 +723,16 @@ struct DevicesView: View {
     private func liveDeviceDetailSection(for device: DeviceInventoryRecord) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                SectionHeader(title: "jamf-cli Detail")
+                SectionHeader(title: L("jamf-cli Detail"))
                 Spacer()
                 if workspace.demoMode {
-                    Pill(text: "Live mode only", tone: .muted)
+                    Pill(text: L("Live mode only"), tone: .muted)
                 } else if case .loading = deviceDetailState {
-                    Pill(text: "Loading", tone: .gold)
+                    Pill(text: L("Loading"), tone: .gold)
                 } else if case .loaded = deviceDetailState {
-                    Pill(text: "Loaded", tone: .teal, icon: "checkmark")
+                    Pill(text: L("Loaded"), tone: .teal, icon: "checkmark")
                 } else if case .unavailable = deviceDetailState {
-                    Pill(text: "Unavailable", tone: .warn)
+                    Pill(text: L("Unavailable"), tone: .warn)
                 }
             }
 
@@ -796,7 +795,7 @@ struct DevicesView: View {
                         .padding(.vertical, 2)
                     }
                     if section.items.count > 8 {
-                        Mono(text: "+ \(section.items.count - 8) more", size: 10.5)
+                        Mono(text: L("+ \(section.items.count - 8) more"), size: 10.5)
                     }
                 }
             }
@@ -812,7 +811,7 @@ struct DevicesView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "macOS Versions")
+                    SectionHeader(title: L("macOS Versions"))
                     Spacer()
                     Pill(text: "\(figures.osDistribution.count)", tone: .muted)
                 }
@@ -839,8 +838,8 @@ struct DevicesView: View {
                     }
                     .frame(height: 150)
                     .accessibilityChartDescriptor(BarDistributionChartDescriptor(
-                        title: "macOS Version Distribution",
-                        unit: " computers",
+                        title: L("macOS Version Distribution"),
+                        unit: L(" computers"),
                         bars: figures.osDistribution.prefix(6).map {
                             .init(label: $0.version, value: Double($0.count))
                         }
@@ -878,9 +877,9 @@ struct DevicesView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    SectionHeader(title: "Sources")
+                    SectionHeader(title: L("Sources"))
                     Spacer()
-                    Pill(text: activeSnapshot.isDemo ? "Demo" : "Workspace",
+                    Pill(text: activeSnapshot.isDemo ? L("Demo") : L("Workspace"),
                          tone: activeSnapshot.isDemo ? .gold : .teal)
                 }
 
@@ -925,8 +924,8 @@ struct DevicesView: View {
         Card(padding: 32) {
             EmptyStateView(
                 systemImage: "desktopcomputer.and.arrow.down",
-                title: "No computer inventory yet",
-                message: "run Generate Report to populate"
+                title: L("No computer inventory yet"),
+                message: L("run Generate Report to populate")
             )
             .frame(maxWidth: .infinity)
         }
@@ -938,9 +937,9 @@ struct DevicesView: View {
     private var deviceErrorState: some View {
         Card(padding: 32) {
             ErrorStateView(
-                title: "Couldn't read computer inventory",
+                title: L("Couldn't read computer inventory"),
                 message: activeSnapshot.warnings.joined(separator: "\n"),
-                commands: ["Re-run collection from Data Sources, then Refresh."],
+                commands: [L("Re-run collection from Data Sources, then Refresh.")],
                 retry: { Task { await reload() } }
             )
             .frame(maxWidth: .infinity)
@@ -959,7 +958,7 @@ struct DevicesView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(width: Self.detailLabelWidth, alignment: .leading)
                         Text(row.1)
-                            .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .footnote)
+                            .font(row.0 == L("Serial") ? Theme.Fonts.mono(11.5) : .footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .lineLimit(2)
                         Spacer(minLength: 0)
@@ -976,8 +975,7 @@ struct DevicesView: View {
         if device.isBinaryMissing {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: BinaryMissing.title)
-                Text("Jamf Pro lists this Mac as not managed and it has never checked in. "
-                    + "It needs manual intervention. Any one of these gets the binary on:")
+                Text("Jamf Pro lists this Mac as not managed and it has never checked in. It needs manual intervention. Any one of these gets the binary on:")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(Array(BinaryMissing.remediation.enumerated()), id: \.offset) { step in
@@ -991,17 +989,17 @@ struct DevicesView: View {
 
     private func securitySection(for device: DeviceInventoryRecord) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Security State")
+            SectionHeader(title: L("Security State"))
             VStack(spacing: 0) {
-                securityRow("FileVault", value: fileVaultText(device, short: true),
+                securityRow(L("FileVault"), value: fileVaultText(device, short: true),
                             tone: securityTone(.fileVault, of: device))
-                securityRow("SIP", value: device.sip, tone: securityTone(.sip, of: device))
-                securityRow("Firewall", value: device.firewall,
+                securityRow(L("SIP"), value: device.sip, tone: securityTone(.sip, of: device))
+                securityRow(L("Firewall"), value: device.firewall,
                             tone: securityTone(.firewall, of: device))
-                securityRow("Gatekeeper", value: device.gatekeeper,
+                securityRow(L("Gatekeeper"), value: device.gatekeeper,
                             tone: securityTone(.gatekeeper, of: device))
                 if !device.bootstrapToken.isEmpty {
-                    securityRow("Bootstrap", value: device.bootstrapToken,
+                    securityRow(L("Bootstrap"), value: device.bootstrapToken,
                                 tone: bootstrapTone(device.bootstrapToken))
                 }
             }
@@ -1022,7 +1020,7 @@ struct DevicesView: View {
         if !risk.triggered.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    SectionHeader(title: "Priority Risk")
+                    SectionHeader(title: L("Priority Risk"))
                     Spacer()
                     Pill(
                         text: Self.priorityRiskBadgeText(risk),
@@ -1049,8 +1047,7 @@ struct DevicesView: View {
                         .padding(.vertical, 3)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(
-                            "\(entry.factor.displayLabel(agentName: agentName)), \(entry.points) points. " +
-                            "Remediation: \(entry.factor.remediation(agentName: agentName))"
+                            "\(entry.factor.displayLabel(agentName: agentName)), \(entry.points) points. Remediation: \(entry.factor.remediation(agentName: agentName))"
                         )
                     }
                 }
@@ -1073,27 +1070,27 @@ struct DevicesView: View {
         guard let jamfID, !jamfID.isEmpty else { return ScanSectionModel() }
         var m = ScanSectionModel(ddmDate: ddm.snapshotDate, mdmDate: health.snapshotDate)
         if let r = ddm.record(forDeviceId: jamfID) {
-            m.ddmLines.append(("Reported", r.ddmReported ? "Yes" : "Not yet"))
+            m.ddmLines.append((L("Reported"), r.ddmReported ? L("Yes") : L("Not yet")))
             let inactive = r.declarations.filter { $0.active == false }.count
             let invalid = r.declarations.filter { $0.valid == false }.count
             var decl = "\(r.declarations.count)"
             var notes: [String] = []
-            if inactive > 0 { notes.append("\(inactive) inactive") }
-            if invalid > 0 { notes.append("\(invalid) invalid") }
+            if inactive > 0 { notes.append(L("\(inactive) inactive")) }
+            if invalid > 0 { notes.append(L("\(invalid) invalid")) }
             if !notes.isEmpty { decl += " (" + notes.joined(separator: ", ") + ")" }
-            m.ddmLines.append(("Declarations", decl))
+            m.ddmLines.append((L("Declarations"), decl))
             if let v = r.softwareUpdate.pendingOSVersion {
                 let state = r.softwareUpdate.installState.map { " (\($0))" } ?? ""
-                m.ddmLines.append(("Pending update", v + state))
+                m.ddmLines.append((L("Pending update"), v + state))
             }
-            if let f = r.softwareUpdate.failureReason { m.ddmLines.append(("Update failure", f)) }
+            if let f = r.softwareUpdate.failureReason { m.ddmLines.append((L("Update failure"), f)) }
         }
         if let h = health.record(forDeviceId: jamfID) {
             let names = h.failedCommands.isEmpty
                 ? "" : " — " + h.failedCommands.joined(separator: ", ")
-            m.mdmLines.append(("Failed", "\(h.failedCount)\(names)"))
-            let oldest = h.oldestPendingDays.map { ", oldest \($0)d" } ?? ""
-            m.mdmLines.append(("Pending", "\(h.pendingCount)\(oldest)"))
+            m.mdmLines.append((L("Failed"), "\(h.failedCount)\(names)"))
+            let oldest = h.oldestPendingDays.map { L(", oldest \($0)d") } ?? ""
+            m.mdmLines.append((L("Pending"), "\(h.pendingCount)\(oldest)"))
         }
         return m
     }
@@ -1103,10 +1100,10 @@ struct DevicesView: View {
         let m = Self.scanSectionModel(
             ddm: ddmSnapshot, health: healthSnapshot, jamfID: device.jamfID)
         if !m.ddmLines.isEmpty {
-            scanSection(title: "DDM", lines: m.ddmLines, date: m.ddmDate)
+            scanSection(title: L("DDM"), lines: m.ddmLines, date: m.ddmDate)
         }
         if !m.mdmLines.isEmpty {
-            scanSection(title: "MDM commands", lines: m.mdmLines, date: m.mdmDate)
+            scanSection(title: L("MDM commands"), lines: m.mdmLines, date: m.mdmDate)
         }
     }
 
@@ -1114,7 +1111,7 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let date {
                 let caption = Mono(
-                    text: "snapshot " + date.formatted(date: .abbreviated, time: .shortened),
+                    text: L("snapshot ") + date.formatted(date: .abbreviated, time: .shortened),
                     size: 10.5)
                     .fixedSize()
                 // The detail panel is too narrow at the minimum width for both on one
@@ -1221,11 +1218,11 @@ struct DevicesView: View {
     @ViewBuilder
     private func securityIndicators(for device: DeviceInventoryRecord) -> some View {
         let controls: [(String, String, Pill.Tone)] = [
-            ("FV", fileVaultText(device), securityTone(.fileVault, of: device)),
-            ("SIP", device.sip, securityTone(.sip, of: device)),
-            ("FW", device.firewall, securityTone(.firewall, of: device)),
-            ("GK", device.gatekeeper, securityTone(.gatekeeper, of: device)),
-            ("BT", device.bootstrapToken, bootstrapTone(device.bootstrapToken)),
+            (L("FV"), fileVaultText(device), securityTone(.fileVault, of: device)),
+            (L("SIP"), device.sip, securityTone(.sip, of: device)),
+            (L("FW"), device.firewall, securityTone(.firewall, of: device)),
+            (L("GK"), device.gatekeeper, securityTone(.gatekeeper, of: device)),
+            (L("BT"), device.bootstrapToken, bootstrapTone(device.bootstrapToken)),
         ]
         HStack(spacing: 3) {
             ForEach(controls, id: \.0) { (label, value, tone) in
@@ -1251,7 +1248,7 @@ struct DevicesView: View {
             symbol = "minus.circle"
             color = Theme.Colors.fgMuted
         }
-        let display = value.isEmpty ? "Not collected" : value
+        let display = value.isEmpty ? L("Not collected") : value
         return Image(systemName: symbol)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(color)
@@ -1265,7 +1262,7 @@ struct DevicesView: View {
 
     private func patchPill(_ device: DeviceInventoryRecord) -> Pill {
         if device.patchFailureCount == 0 {
-            return Pill(text: "Clear", tone: .teal)
+            return Pill(text: L("Clear"), tone: .teal)
         }
         return Pill(text: "\(device.patchFailureCount)", tone: device.patchFailureCount > 2 ? .danger : .warn)
     }
@@ -1302,11 +1299,11 @@ struct DevicesView: View {
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {
         if let days = device.daysSinceContact {
-            if days == 0 { return "Today" }
-            if days == 1 { return "1 day" }
-            return "\(days) days"
+            if days == 0 { return L("Today") }
+            if days == 1 { return L("1 day") }
+            return L("\(days) days")
         }
-        return device.lastContact.isEmpty ? "Unknown" : device.lastContact
+        return device.lastContact.isEmpty ? L("Unknown") : device.lastContact
     }
 
     private func userLabel(_ device: DeviceInventoryRecord) -> String {
@@ -1409,7 +1406,7 @@ struct DevicesView: View {
         guard let lookup = detailLookupID(for: device) else {
             deviceDetail = nil
             deviceDetailState = .unavailable(
-                "Computer detail needs a serial number or computer name.")
+                L("Computer detail needs a serial number or computer name."))
             return
         }
 
@@ -1421,7 +1418,7 @@ struct DevicesView: View {
 
         guard let data = await CLIBridge().deviceDetailWithProvenance(profile: profile, deviceID: lookup)?.data else {
             if deviceDetailRequestKey == requestKey {
-                deviceDetailState = .unavailable("Computer detail unavailable for \(lookup).")
+                deviceDetailState = .unavailable(L("Computer detail unavailable for \(lookup)."))
             }
             return
         }
@@ -1434,7 +1431,7 @@ struct DevicesView: View {
             }
         } catch {
             if deviceDetailRequestKey == requestKey {
-                deviceDetailState = .unavailable("Could not decode computer detail for \(lookup).")
+                deviceDetailState = .unavailable(L("Could not decode computer detail for \(lookup)."))
             }
         }
     }
@@ -1460,9 +1457,11 @@ struct DevicesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isExportingCSV = true
         defer { isExportingCSV = false }
-        let text = Self.exportCSV(
-            devices: filteredDevices, policy: activeSnapshot.securityPolicy,
-            riskLevel: { priorityRisk(for: $0).level })
+        let text = Localization.english {
+            Self.exportCSV(
+                devices: filteredDevices, policy: activeSnapshot.securityPolicy,
+                riskLevel: { priorityRisk(for: $0).level })
+        }
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             // Path is user-confirmed via NSSavePanel — safe to reveal directly.
@@ -1507,7 +1506,7 @@ private struct PatchClearPill: View {
     @State private var pulsed = false
 
     var body: some View {
-        Pill(text: "No patch failures", tone: .teal, icon: "checkmark")
+        Pill(text: L("No patch failures"), tone: .teal, icon: "checkmark")
             .scaleEffect(pulsed ? 1.0 : 1.05)
             .opacity(pulsed ? 1.0 : 0.6)
             .onAppear {

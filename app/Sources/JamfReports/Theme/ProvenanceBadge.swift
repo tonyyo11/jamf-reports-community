@@ -29,8 +29,8 @@ struct ProvenanceBadge: View {
 
     /// Public for tests.
     var label: String {
-        let base = asOf.map { "Daily summary digest · \($0)" }
-            ?? "Daily summary digest · none yet"
+        let base = asOf.map { L("Daily summary digest · \($0)") }
+            ?? L("Daily summary digest · none yet")
         guard let degradedNote else { return base }
         return "\(base) · \(degradedNote)"
     }
@@ -43,19 +43,18 @@ struct ProvenanceBadge: View {
         let absent = sources.values.filter { $0 == "absent" }.count
         guard cached > 0 || absent > 0 else { return nil }
         var parts: [String] = []
-        if cached > 0 { parts.append("\(cached) cached") }
-        if absent > 0 { parts.append("\(absent) missing") }
-        return "sources: \(parts.joined(separator: ", "))"
+        if cached > 0 { parts.append(L("\(cached) cached")) }
+        if absent > 0 { parts.append(L("\(absent) missing")) }
+        return L("sources: \(parts.joined(separator: ", "))")
     }
 
     private var helpText: String {
-        var text = "This screen renders the once-a-day summary digest, not live inventory. "
-            + "Per-device truth lives on the Computers, Patch, Updates, and posture screens."
+        var text = L("This screen renders the once-a-day summary digest, not live inventory. Per-device truth lives on the Computers, Patch, Updates, and posture screens.")
         if let sources, !sources.isEmpty {
             let detail = sources.sorted { $0.key < $1.key }
                 .map { "\($0.key): \($0.value)" }
                 .joined(separator: ", ")
-            text += "\nDigest inputs — \(detail)."
+            text += L("\nDigest inputs — \(detail).")
         }
         return text
     }

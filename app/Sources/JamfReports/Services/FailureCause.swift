@@ -77,14 +77,11 @@ struct FailureCause: Codable, Equatable, Sendable {
     /// jamf-cli's refusal of `apigw.jamf.com` (`refuseRetiredGatewayURL`, exit 2), which it makes
     /// before any request: "<url> is the retired Jamf Platform gateway and does not serve ...".
     static let retiredGatewayMarker = "is the retired Jamf Platform gateway"
-    static let retiredGatewayHint = "Re-run setup with the us, eu or apac api.jamfcloud.com host "
-        + "(jamf-cli platform setup --profile-name <profile>), or set url: in the profile."
+    static let retiredGatewayHint = L("Re-run setup with the us, eu or apac api.jamfcloud.com host (jamf-cli platform setup --profile-name <profile>), or set url: in the profile.")
     /// The gateway's 400 when a command is sent at a scope level it does not accept; its message
     /// names both levels.
     static let invalidContextTypeMarker = "INVALID_REQUEST_CONTEXT_TYPE"
-    static let invalidContextTypeHint = "This command accepts a different scope level than this "
-        + "profile's integration; the error names both. An environment-level integration is the "
-        + "level Jamf recommends, and a tenant-level one cannot reach every command."
+    static let invalidContextTypeHint = L("This command accepts a different scope level than this profile's integration; the error names both. An environment-level integration is the level Jamf recommends, and a tenant-level one cannot reach every command.")
 
     /// jamf-cli reports an unreadable `keychain:` credential as
     /// "reading keychain item <service>/<account>: <error>".
@@ -94,8 +91,7 @@ struct FailureCause: Codable, Equatable, Sendable {
     static let keychainInteractionMarkers = ["User interaction is not allowed", "exit status 36"]
     /// jamf-cli's own wording when the login keychain refuses a write.
     static let keychainRejectedWriteMarker = "login keychain rejected"
-    static let keychainLockedHint = "Unlock the login keychain (open Keychain Access, or run "
-        + "`security unlock-keychain`), then try again"
+    static let keychainLockedHint = L("Unlock the login keychain (open Keychain Access, or run `security unlock-keychain`), then try again")
 
     /// True for jamf-cli text that says it could not read credentials because the login
     /// keychain is locked. A missing item ("keychain item not found") is not a lock.
@@ -120,32 +116,29 @@ struct FailureCause: Codable, Equatable, Sendable {
     /// Plain-language cause for log lines and the health banner.
     var label: String {
         switch kind {
-        case .scopeRejected: "the gateway rejected the integration's scope level or ID"
-        case .unknownEnvironment: "the gateway does not recognise the environment ID"
-        case .edgeBlocked: "blocked at the Jamf gateway edge"
-        case .retiredGateway: "the profile uses the retired apigw.jamf.com gateway host"
-        case .notServed: "not served through this connection"
+        case .scopeRejected: L("the gateway rejected the integration's scope level or ID")
+        case .unknownEnvironment: L("the gateway does not recognise the environment ID")
+        case .edgeBlocked: L("blocked at the Jamf gateway edge")
+        case .retiredGateway: L("the profile uses the retired apigw.jamf.com gateway host")
+        case .notServed: L("not served through this connection")
         case .keychainLocked:
-            "the login keychain is locked, so jamf-cli could not read this profile's stored "
-                + "credentials"
+            L("the login keychain is locked, so jamf-cli could not read this profile's stored credentials")
         case .missingPermission:
             names.isEmpty
-                ? "missing permission"
-                : "missing permission: " + names.joined(separator: "; ")
+                ? L("missing permission")
+                : L("missing permission: ") + names.joined(separator: "; ")
         case .noDeclarationData:
-            "no DDM declaration data: the environment has none, or each device's report was "
-                + "refused (Deployment > Declarations reporting)"
+            L("no DDM declaration data: the environment has none, or each device's report was refused (Deployment > Declarations reporting)")
         case .softwareUpdatePlansOff:
-            "Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this "
-                + "source to jamf_cli.collect_skip"
+            L("Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this source to jamf_cli.collect_skip")
         case .noConfiguredBenchmark:
             names.isEmpty
-                ? "no benchmark in platform.compliance_benchmarks can be collected"
-                : "no benchmark in platform.compliance_benchmarks can be collected: "
+                ? L("no benchmark in platform.compliance_benchmarks can be collected")
+                : L("no benchmark in platform.compliance_benchmarks can be collected: ")
                     + names.joined(separator: "; ")
         case .other:
             exitCode == CLIBridge.exitCodeTimedOut
-                ? "timed out and was stopped" : "exit \(exitCode)"
+                ? L("timed out and was stopped") : L("exit \(exitCode)")
         }
     }
 

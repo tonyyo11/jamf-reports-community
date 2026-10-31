@@ -43,20 +43,18 @@ enum WorkspaceRootStore {
         var message: String? {
             switch self {
             case .ok, .missing: return nil
-            case .notADirectory: return "That path is a file, not a folder."
-            case .notWritable: return "That folder is not writable by your account."
+            case .notADirectory: return L("That path is a file, not a folder.")
+            case .notWritable: return L("That folder is not writable by your account.")
             case .sensitiveLocation:
-                return "That location is reserved by macOS or holds credentials."
+                return L("That location is reserved by macOS or holds credentials.")
             case .notOwned:
-                return "That folder belongs to another account. Pick a folder you own."
+                return L("That folder belongs to another account. Pick a folder you own.")
             case .groupOrWorldWritable:
-                return "Other accounts can write to that folder. Remove group and world write "
-                    + "access (chmod go-w) or pick another folder."
+                return L("Other accounts can write to that folder. Remove group and world write access (chmod go-w) or pick another folder.")
             case .hasACL:
                 return "That folder has an access control list that can give other accounts "
                     + "access. macOS puts one on its own home subfolders (Documents, Desktop), "
-                    + "so a folder created inside one is fine. Otherwise remove it (chmod -N) or "
-                    + "pick another folder."
+                    + L("so a folder created inside one is fine. Otherwise remove it (chmod -N) or pick another folder.")
             }
         }
     }
@@ -303,10 +301,9 @@ enum WorkspaceRootStore {
         var errorDescription: String? {
             switch self {
             case .managed:
-                return "The workspace location is set by your organization's configuration "
-                    + "profile, so it cannot be changed here."
+                return L("The workspace location is set by your organization's configuration profile, so it cannot be changed here.")
             case .rejected(let validation):
-                return validation.message ?? "That folder cannot be used as a workspace root."
+                return validation.message ?? L("That folder cannot be used as a workspace root.")
             }
         }
     }

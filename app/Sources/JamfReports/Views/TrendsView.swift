@@ -68,7 +68,7 @@ struct TrendsView: View {
     }
 
     private static func archivedSummaries(_ count: Int) -> String {
-        "\(count) archived summar\(count == 1 ? "y" : "ies")"
+        (count == 1 ? L("\(count) archived summary") : L("\(count) archived summaries"))
     }
 
     private var chartYDomain: ClosedRange<Double> {
@@ -184,20 +184,20 @@ struct TrendsView: View {
     }
 
     nonisolated static func snapshotCountText(_ count: Int) -> String {
-        "\(count) snapshot\(count == 1 ? "" : "s")"
+        (count == 1 ? L("\(count) snapshot") : L("\(count) snapshots"))
     }
 
     /// What one point of the line is, from the lower median gap between the snapshots: a
     /// daily history reads "Daily snapshot", not the weekly one a legacy import had.
     nonisolated static func snapshotCadenceLabel(_ dates: [Date]) -> String {
         let sorted = dates.sorted()
-        guard sorted.count > 1 else { return "Snapshot" }
+        guard sorted.count > 1 else { return L("Snapshot") }
         let gaps = zip(sorted.dropFirst(), sorted).map { $0.timeIntervalSince($1) }.sorted()
         let typical = gaps[(gaps.count - 1) / 2]
         let day: TimeInterval = 24 * 3600
-        if typical < 1.5 * day { return "Daily snapshot" }
-        if (6 * day)...(8 * day) ~= typical { return "Weekly snapshot" }
-        return "Snapshot"
+        if typical < 1.5 * day { return L("Daily snapshot") }
+        if (6 * day)...(8 * day) ~= typical { return L("Weekly snapshot") }
+        return L("Snapshot")
     }
 
     /// A metric value as the hero shows it. No value is a dash: "0%" would read as measured.
@@ -252,7 +252,7 @@ struct TrendsView: View {
     private var rangeBadgeText: String {
         let f = SummaryJSONParser.dateFormatter
         guard let first = trendDates.first, let last = trendDates.last else {
-            return "No snapshots"
+            return L("No snapshots")
         }
         if first == last {
             return f.string(from: first)
@@ -261,7 +261,7 @@ struct TrendsView: View {
             1,
             Int((last.timeIntervalSince(first) / (7 * 24 * 3600)).rounded())
         )
-        let suffix = weeks == 1 ? "1 week" : "\(weeks) weeks"
+        let suffix = weeks == 1 ? L("1 week") : L("\(weeks) weeks")
         return "\(f.string(from: first)) → \(f.string(from: last)) · \(suffix)"
     }
 
@@ -368,9 +368,9 @@ struct TrendsView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "chart.line.uptrend.xyaxis",
-                title: "No trend data yet",
-                message: "Historical trends populate after 2+ scheduled runs.",
-                primaryAction: EmptyStateAction(label: "Go to Schedules", icon: "calendar") {
+                title: L("No trend data yet"),
+                message: L("Historical trends populate after 2+ scheduled runs."),
+                primaryAction: EmptyStateAction(label: L("Go to Schedules"), icon: "calendar") {
                     NotificationCenter.default.post(
                         name: .navigateToTab,
                         object: nil,
@@ -385,10 +385,10 @@ struct TrendsView: View {
 
     private var heroHeader: some View {
         PageHeader(
-            kicker: "Trends · \(range.rawValue)",
-            breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-            title: "Historical Trends",
-            subtitle: "Snapshot history · \(Self.snapshotCountText(trendDates.count))",
+            kicker: L("Trends · \(range.rawValue)"),
+            breadcrumbs: [Breadcrumb(label: L("Overview"), action: { navigateToOverview() })],
+            title: L("Historical Trends"),
+            subtitle: L("Snapshot history · \(Self.snapshotCountText(trendDates.count))"),
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspaceStore.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
@@ -397,7 +397,7 @@ struct TrendsView: View {
                     selection: $range,
                     options: TrendRange.allCases.map { ($0, $0.rawValue, nil) }
                 )
-                PNPButton(title: isExporting ? "Exporting…" : "Export PNG", icon: "arrow.down.circle") {
+                PNPButton(title: isExporting ? L("Exporting…") : L("Export PNG"), icon: "arrow.down.circle") {
                     Task { await exportChartPNG() }
                 }
                 .disabled(isExporting)
@@ -612,7 +612,7 @@ struct TrendsView: View {
                     .layoutPriority(1)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 6) {
-                        Kicker(text: "Min · Max · Avg")
+                        Kicker(text: L("Min · Max · Avg"))
                         let stats = Self.valueStats(values)
                         HStack(spacing: 14) {
                             Text(Self.metricValueText(stats?.min, unit: metric.unit))
@@ -760,7 +760,7 @@ struct TrendsView: View {
                     .motionSafeAnimation(.snappy(duration: 0.35), value: metric)
                     .accessibilityLabel(Self.metricTrendChartLabel(metricLabel(metric)))
                     .accessibilityChartDescriptor(TrendLineChartDescriptor(
-                        title: "\(metricLabel(metric)) Trend",
+                        title: L("\(metricLabel(metric)) Trend"),
                         seriesName: metricLabel(metric),
                         dates: trendPoints.map(\.date),
                         values: trendPoints.map(\.value),
@@ -785,14 +785,13 @@ struct TrendsView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
-                    PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm) {
+                    PNPButton(title: L("Open in Finder"), icon: "folder", style: .ghost, size: .sm) {
                         openSummariesFolder()
                     }
                     .disabled(workspaceStore.demoMode)
                     .help(workspaceStore.demoMode
                           ? Self.demoSummariesFolderHelp
-                          : "Open the summaries directory where archived summary.json "
-                            + "snapshots live.")
+                          : "Open the summaries directory where archived summary.json snapshots live.")
                 }
             }
         }
@@ -844,7 +843,7 @@ struct TrendsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        SectionHeader(title: "Compliance Distribution Over Time")
+                        SectionHeader(title: L("Compliance Distribution Over Time"))
                         Text(complianceBandCardSubtitle)
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -877,9 +876,9 @@ struct TrendsView: View {
         guard !workspaceStore.demoMode,
               let name = trendStore.primaryMSCPBaseline,
               trendStore.mscpBaselineNames.count > 1 else {
-            return "Devices grouped by failed-rule count, weekly"
+            return L("Devices grouped by failed-rule count, weekly")
         }
-        return "\(name) · devices grouped by failed-rule count, weekly"
+        return L("\(name) · devices grouped by failed-rule count, weekly")
     }
 
     /// Compact baseline switcher — visible only when multiple mSCP/STIG
@@ -900,7 +899,7 @@ struct TrendsView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "list.bullet.indent").font(.system(size: 10, weight: .semibold))
-                Text(trendStore.primaryMSCPBaseline ?? "Baseline")
+                Text(trendStore.primaryMSCPBaseline ?? L("Baseline"))
                     .font(.callout.weight(.medium))
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
             }
@@ -917,7 +916,7 @@ struct TrendsView: View {
         .buttonStyle(.plain)
         .fixedSize()
         .accessibilityLabel("mSCP baseline")
-        .accessibilityValue(trendStore.primaryMSCPBaseline ?? "None selected")
+        .accessibilityValue(trendStore.primaryMSCPBaseline ?? L("None selected"))
         .help("Switch which compliance baseline this chart shows")
     }
 
@@ -925,7 +924,7 @@ struct TrendsView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    SectionHeader(title: "Security Posture · Compared")
+                    SectionHeader(title: L("Security Posture · Compared"))
                     Text("FileVault vs. Compliance vs. macOS Current")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -933,9 +932,9 @@ struct TrendsView: View {
                 multilineComparisonChart
                 HStack(spacing: 14) {
                     legendDot(color: Theme.ChartColors.color(forMetric: .fileVault),
-                              label: "FileVault")
+                              label: L("FileVault"))
                     legendDot(color: Theme.ChartColors.color(forMetric: .compliance),
-                              label: workspaceStore.complianceBenchmarkLabel ?? "Compliance")
+                              label: workspaceStore.complianceBenchmarkLabel ?? L("Compliance"))
                     legendDot(color: Theme.ChartColors.color(forMetric: .osCurrent), label: "macOS")
                 }
             }
@@ -960,8 +959,8 @@ struct TrendsView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "chart.bar.doc.horizontal",
-                title: "Compliance band history unavailable",
-                message: "No ea-results snapshots or summary band data found. Run a collect to populate."
+                title: L("Compliance band history unavailable"),
+                message: L("No ea-results snapshots or summary band data found. Run a collect to populate.")
             )
         }
     }
@@ -1045,7 +1044,7 @@ struct TrendsView: View {
     /// requires a non-empty domain/range even before data loads).
     private var mscpBandChartScale: (labels: [String], colors: [Color]) {
         let series = mscpStackedSeries
-        guard !series.isEmpty else { return (["Band"], [Theme.Colors.fg2]) }
+        guard !series.isEmpty else { return ([L("Band")], [Theme.Colors.fg2]) }
         return (series.map(\.label), series.map { Color(cgColor: $0.color) })
     }
 
@@ -1130,7 +1129,7 @@ struct TrendsView: View {
                 .frame(height: 200)
                 .accessibilityLabel(Self.complianceTrendChartLabel)
                 .accessibilityChartDescriptor(StackedBarChartDescriptor(
-                    title: "Compliance Distribution Over Time",
+                    title: L("Compliance Distribution Over Time"),
                     dateLabels: dateLabels,
                     bands: bands.map { band in
                         StackedBarChartDescriptor.Band(
@@ -1151,12 +1150,12 @@ struct TrendsView: View {
         Group {
             if let domain = chartDomain {
                 Chart {
-                    series("FileVault", color: Theme.ChartColors.color(forMetric: .fileVault),
+                    series(L("FileVault"), color: Theme.ChartColors.color(forMetric: .fileVault),
                            points: points(for: .fileVault))
-                    series(workspaceStore.complianceBenchmarkLabel ?? "Compliance",
+                    series(workspaceStore.complianceBenchmarkLabel ?? L("Compliance"),
                            color: Theme.ChartColors.color(forMetric: .compliance),
                            points: points(for: .compliance))
-                    series("macOS Current", color: Theme.ChartColors.color(forMetric: .osCurrent),
+                    series(L("macOS Current"), color: Theme.ChartColors.color(forMetric: .osCurrent),
                            points: points(for: .osCurrent))
                 }
                 .chartXScale(domain: domain)
@@ -1175,15 +1174,15 @@ struct TrendsView: View {
                 .frame(height: 200)
                 .accessibilityLabel(Self.multilineComparisonChartLabel)
                 .accessibilityChartDescriptor(MultiLineChartDescriptor(
-                    title: "Security Posture Comparison",
+                    title: L("Security Posture Comparison"),
                     seriesList: [
-                        .init(name: "FileVault",
+                        .init(name: L("FileVault"),
                               dates: points(for: .fileVault).map(\.date),
                               values: points(for: .fileVault).map(\.value)),
-                        .init(name: workspaceStore.complianceBenchmarkLabel ?? "Compliance",
+                        .init(name: workspaceStore.complianceBenchmarkLabel ?? L("Compliance"),
                               dates: points(for: .compliance).map(\.date),
                               values: points(for: .compliance).map(\.value)),
-                        .init(name: "macOS Current",
+                        .init(name: L("macOS Current"),
                               dates: points(for: .osCurrent).map(\.date),
                               values: points(for: .osCurrent).map(\.value)),
                     ]
@@ -1203,16 +1202,16 @@ struct TrendsView: View {
         series: [Double]
     ) -> String {
         guard let change = trendChange(metric: metric, series: series) else {
-            return "\(label), no snapshots in range"
+            return L("\(label), no snapshots in range")
         }
-        if change.direction == .flat { return "\(label), unchanged" }
+        if change.direction == .flat { return L("\(label), unchanged") }
         let direction = switch (change.verdict, change.direction) {
         case (.better, _): "improving"
         case (.worse, _): "declining"
         case (.neutral, .up): "up"
         case (.neutral, _): "down"
         }
-        return "\(label), \(direction), \(change.pillText) change"
+        return L("\(label), \(direction), \(change.pillText) change")
     }
 
     /// Shared X-axis marks for all three trend charts. The step and label format come from
@@ -1269,28 +1268,26 @@ struct TrendsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        SectionHeader(title: "Snapshot Archive")
+                        SectionHeader(title: L("Snapshot Archive"))
                         HStack(spacing: 4) {
                             Text("snapshots/summaries/")
                                 .font(Theme.Fonts.mono(11.5))
-                            Text("· \(Self.archivedSummaries(trendDates.count)) · one per day, "
-                                 + "written by collect")
+                            Text("· \(Self.archivedSummaries(trendDates.count)) · one per day, written by collect")
                         }
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     HStack(spacing: 8) {
-                        PNPButton(title: "Show in Finder", icon: "folder", size: .sm) {
+                        PNPButton(title: L("Show in Finder"), icon: "folder", size: .sm) {
                             openSummariesFolder()
                         }
                         .disabled(workspaceStore.demoMode)
                         .help(workspaceStore.demoMode
                               ? Self.demoSummariesFolderHelp
-                              : "Open the archived summaries folder so you can inspect or copy "
-                                + "snapshot JSON.")
+                              : "Open the archived summaries folder so you can inspect or copy snapshot JSON.")
                         PNPButton(
-                            title: isArchiving ? "Archiving…" : "Archive now",
+                            title: isArchiving ? L("Archiving…") : L("Archive now"),
                             icon: isArchiving ? "hourglass" : "icloud.and.arrow.up",
                             style: .gold,
                             size: .sm
@@ -1398,14 +1395,14 @@ struct TrendsView: View {
         let dateStr = SummaryJSONParser.dateFormatter.string(from: date)
         let valueStr = "\(Int(value.rounded()))\(metric.unit)"
         return isLatest
-            ? "\(dateStr): \(valueStr), latest snapshot"
+            ? L("\(dateStr): \(valueStr), latest snapshot")
             : "\(dateStr): \(valueStr)"
     }
 
     // MARK: Archive
 
     private static let demoSummariesFolderHelp =
-        "Demo summaries are not on disk. Opening their folder needs a live profile."
+        L("Demo summaries are not on disk. Opening their folder needs a live profile.")
 
     /// Opens the archived summaries folder. Never in demo mode: the demo's
     /// summaries are not on disk, and its profile's name could match a real
@@ -1437,13 +1434,13 @@ struct TrendsView: View {
             isArchiving = false
             workspaceStore.globalStatus = nil
             if exit == 0 {
-                workspaceStore.toast = Toast(message: "Archive generated successfully", style: .success)
+                workspaceStore.toast = Toast(message: L("Archive generated successfully"), style: .success)
                 // Archive just wrote new files on the same profile — force a
                 // re-scan, off-main like every other load (a sync reload here
                 // was the last surviving main-thread scan).
                 reloadCount += 1
             } else {
-                workspaceStore.toast = Toast(message: "Archive failed · exit \(exit)", style: .danger)
+                workspaceStore.toast = Toast(message: L("Archive failed · exit \(exit)"), style: .danger)
             }
         } catch {
             isArchiving = false
@@ -1459,7 +1456,7 @@ struct TrendsView: View {
     /// A scheduled run holding the tick lock, or another collect running, is a refusal, shown
     /// as information.
     nonisolated static func archiveFailureToast(_ error: Error) -> Toast {
-        WorkspaceStore.collectFailureToast(error, operation: "Archive")
+        WorkspaceStore.collectFailureToast(error, operation: L("Archive"))
     }
 
     // MARK: Export PNG
@@ -1477,8 +1474,8 @@ struct TrendsView: View {
         if let first = pts.first, let last = pts.last {
             let f = SummaryJSONParser.dateFormatter
             subtitle = first.date == last.date
-                ? "\(f.string(from: first.date)) · 1 snapshot"
-                : "\(f.string(from: first.date)) → \(f.string(from: last.date)) · \(pts.count) snapshots"
+                ? L("\(f.string(from: first.date)) · 1 snapshot")
+                : L("\(f.string(from: first.date)) → \(f.string(from: last.date)) · \(pts.count) snapshots")
         }
 
         let label = metricLabel(m)
@@ -1498,16 +1495,16 @@ struct TrendsView: View {
     /// VoiceOver container label for the hero metric trend chart. `nonisolated`
     /// so unit tests can call it without inheriting View `@MainActor` isolation.
     nonisolated static func metricTrendChartLabel(_ displayLabel: String) -> String {
-        "\(displayLabel) trend over time"
+        L("\(displayLabel) trend over time")
     }
 
     /// VoiceOver container label for the stacked compliance-band chart.
-    nonisolated static let complianceTrendChartLabel = "Compliance trend"
+    nonisolated static let complianceTrendChartLabel = L("Compliance trend")
 
     /// VoiceOver container label for the multi-metric comparison chart.
     /// Static — cannot read workspace config; uses generic label.
     nonisolated static let multilineComparisonChartLabel =
-        "Multi-metric comparison: FileVault, Compliance, macOS currency"
+        L("Multi-metric comparison: FileVault, Compliance, macOS currency")
 }
 
 
@@ -1788,7 +1785,7 @@ private struct ChartExportView: View {
                 }
             }
         }
-        .chartXAxisLabel("Snapshot date", position: .bottom, alignment: .center)
+        .chartXAxisLabel(L("Snapshot date"), position: .bottom, alignment: .center)
         .chartYAxisLabel(axisLabel, position: .leading, alignment: .center)
         .chartPlotStyle { plotArea in
             plotArea.background(Color.white)
@@ -1828,19 +1825,17 @@ private struct TrendsAIInsightCard: View {
 
     var body: some View {
         AIInsightCard(
-            title: "AI Trend Insight",
-            idleText: "Summarize how these metrics moved over the selected range using "
-                + "on-device intelligence.",
-            provenanceText: "AI-generated from the snapshots in this range — verify "
-                + "against the chart above."
+            title: L("AI Trend Insight"),
+            idleText: L("Summarize how these metrics moved over the selected range using on-device intelligence."),
+            provenanceText: L("AI-generated from the snapshots in this range — verify against the chart above.")
         ) {
             // `trends` leaves out the band metric and any metric with fewer than two
             // points, which is what the screen's picker hides on a live profile.
-            FleetInsightInput.trends(
+            Localization.english { FleetInsightInput.trends(
                 metrics: metrics,
                 points: { trendStore.points(metric: $0) },
                 label: { $0.displayLabel(
-                    benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) })
+                    benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) }) }
         }
     }
 }

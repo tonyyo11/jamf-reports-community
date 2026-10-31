@@ -29,7 +29,7 @@ enum SchoolFleetService {
         /// The platform word in `os` ("iOS", "iPadOS", "macOS", "tvOS"), or "Unknown".
         var platform: String {
             let word = os.prefix { !$0.isNumber && $0 != " " }
-            return word.isEmpty ? "Unknown" : String(word)
+            return word.isEmpty ? L("Unknown") : String(word)
         }
 
         /// Whole days since the last check-in, or nil when it is unknown.

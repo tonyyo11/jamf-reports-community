@@ -19,8 +19,8 @@ struct PolicyProfileView: View {
 
         var label: String {
             switch self {
-            case .policies: "Policies"
-            case .profiles: "Profiles"
+            case .policies: L("Policies")
+            case .profiles: L("Profiles")
             }
         }
 
@@ -35,8 +35,8 @@ struct PolicyProfileView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Operations",
-                title: "Policy & Profile Health",
+                kicker: L("Operations"),
+                title: L("Policy & Profile Health"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
@@ -48,7 +48,7 @@ struct PolicyProfileView: View {
             )
 
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "policies and profiles")
+                ScreenLoadingCard(what: L("policies and profiles"))
             } else {
                 // Shared StaleDataBanner surfaces snapshot freshness above the main content.
                 // Suppressed in demo mode (the demo dataset is intentionally static and
@@ -99,12 +99,12 @@ struct PolicyProfileView: View {
         case .policies:
             guard let summary = snapshot.summary else { return nil }
             let totalFindings = snapshot.findings.count
-            return "\(summary.totalPolicies) policies tracked, \(totalFindings) finding\(totalFindings == 1 ? "" : "s") identified."
+            return (totalFindings == 1 ? L("\(summary.totalPolicies) policies tracked, \(totalFindings) finding identified.") : L("\(summary.totalPolicies) policies tracked, \(totalFindings) findings identified."))
         case .profiles:
             guard snapshot.hasProfileData else { return nil }
             let count = snapshot.profilesWithFailures
-            let days = snapshot.profileLookbackDays.map { " in the last \($0) days" } ?? ""
-            return "\(count) profile\(count == 1 ? "" : "s") with failures\(days)."
+            let days = snapshot.profileLookbackDays.map { L(" in the last \($0) days") } ?? ""
+            return (count == 1 ? L("\(count) profile with failures\(days).") : L("\(count) profiles with failures\(days)."))
         }
     }
 
@@ -137,9 +137,8 @@ struct PolicyProfileView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "list.bullet.indent",
-                title: "No policy data yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No policy data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["policy-status"])]
             )
@@ -151,34 +150,34 @@ struct PolicyProfileView: View {
         return LazyVGrid(columns: columns, spacing: 12) {
             if let summary = snapshot.summary {
                 StatTile(
-                    label: "Total Policies",
+                    label: L("Total Policies"),
                     value: "\(summary.totalPolicies)",
-                    sub: "Tracked in Jamf Pro"
+                    sub: L("Tracked in Jamf Pro")
                 )
                 StatTile(
-                    label: "Enabled",
+                    label: L("Enabled"),
                     value: "\(summary.enabled)",
-                    sub: "Active policies"
+                    sub: L("Active policies")
                 )
                 StatTile(
-                    label: "Disabled",
+                    label: L("Disabled"),
                     value: "\(summary.disabled)",
-                    sub: "Inactive policies"
+                    sub: L("Inactive policies")
                 )
                 StatTile(
-                    label: "Config Findings",
+                    label: L("Config Findings"),
                     value: "\(summary.configFindings)",
-                    sub: "Requiring attention"
+                    sub: L("Requiring attention")
                 )
                 StatTile(
-                    label: "Warnings",
+                    label: L("Warnings"),
                     value: "\(summary.warnings)",
-                    sub: "Configuration warnings"
+                    sub: L("Configuration warnings")
                 )
                 StatTile(
-                    label: "Info",
+                    label: L("Info"),
                     value: "\(summary.info)",
-                    sub: "Informational notices"
+                    sub: L("Informational notices")
                 )
             }
         }
@@ -187,7 +186,7 @@ struct PolicyProfileView: View {
     private var findingsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Configuration Findings", trailingTag: snapshot.findings.count <= 100 ? nil : "\(min(100, snapshot.findings.count)) of \(snapshot.findings.count)")
+                SectionHeader(title: L("Configuration Findings"), trailingTag: snapshot.findings.count <= 100 ? nil : L("\(min(100, snapshot.findings.count)) of \(snapshot.findings.count)"))
                 Table(sortedFindings) {
                     TableColumn("Severity") { finding in
                         Pill(
@@ -264,9 +263,8 @@ struct PolicyProfileView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "doc.badge.gearshape",
-                title: "No profile data yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No profile data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["profile-status"])]
             )
@@ -277,39 +275,39 @@ struct PolicyProfileView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "checkmark.seal",
-                title: "No profile failures",
+                title: L("No profile failures"),
                 message: lookbackMessage
             )
         }
     }
 
     private var lookbackMessage: String {
-        let days = snapshot.profileLookbackDays.map { "the last \($0) days" } ?? "the lookback window"
-        return "No configuration profile reported installation errors in \(days)."
+        let days = snapshot.profileLookbackDays.map { L("the last \($0) days") } ?? L("the lookback window")
+        return L("No configuration profile reported installation errors in \(days).")
     }
 
     private var profileKpiGrid: some View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Total Errors",
+                label: L("Total Errors"),
                 value: "\(snapshot.profileTotalErrors)",
-                sub: "Profile installation errors"
+                sub: L("Profile installation errors")
             )
             StatTile(
-                label: "Profiles with Failures",
+                label: L("Profiles with Failures"),
                 value: "\(snapshot.profilesWithFailures)",
-                sub: "Requiring attention"
+                sub: L("Requiring attention")
             )
             StatTile(
-                label: "Devices Affected",
+                label: L("Devices Affected"),
                 value: snapshot.profileDevicesAffected.map { "\($0)" } ?? "—",
-                sub: "Unique devices with errors"
+                sub: L("Unique devices with errors")
             )
             StatTile(
-                label: "Lookback",
+                label: L("Lookback"),
                 value: snapshot.profileLookbackDays.map { "\($0)d" } ?? "—",
-                sub: "Report window"
+                sub: L("Report window")
             )
         }
     }
@@ -317,7 +315,7 @@ struct PolicyProfileView: View {
     private var profileStatusCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Profile Failures")
+                SectionHeader(title: L("Profile Failures"))
                 Table(snapshot.profiles) {
                     TableColumn("Profile") { profile in
                         Text(profile.name)
@@ -339,7 +337,7 @@ struct PolicyProfileView: View {
                             .font(.caption.monospaced())
                             .foregroundStyle(profile.errors > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel("\(profile.errors) error\(profile.errors == 1 ? "" : "s")")
+                            .accessibilityLabel(profile.errors == 1 ? "\(profile.errors) error" : "\(profile.errors) errors")
                     }
                     .width(min: 60, ideal: 80)
 

@@ -224,9 +224,7 @@ struct OverviewView: View {
               let claim = SharedWorkspace.readClaim(profile: workspace.profile),
               claim.host.id != SharedWorkspace.currentHost.id,
               !claim.isExpired(at: Date()) else { return nil }
-        return "\(claim.host.display) is running \(claim.operation) in this shared workspace "
-            + "\(ReportEngine.approximateAge(until: claim.expiresAt)). Scheduled runs here wait "
-            + "for it; Refresh still works."
+        return L("\(claim.host.display) is running \(claim.operation) in this shared workspace \(ReportEngine.approximateAge(until: claim.expiresAt)). Scheduled runs here wait for it; Refresh still works.")
     }
 
     /// Mirrors StaleDataBanner's visual language but adds the action button —
@@ -236,9 +234,9 @@ struct OverviewView: View {
             icon: "clock.badge.exclamationmark",
             tone: .warn,
             action: InlineBannerAction(
-                label: isRefreshingHeavyTiers ? "Refreshing…" : "Refresh now",
+                label: isRefreshingHeavyTiers ? L("Refreshing…") : L("Refresh now"),
                 icon: isRefreshingHeavyTiers ? "hourglass" : "arrow.clockwise",
-                help: "Run the per-device collections now. Can take several minutes on on-prem servers."
+                help: L("Run the per-device collections now. Can take several minutes on on-prem servers.")
             ) {
                 guard !isRefreshingHeavyTiers else { return }
                 Task {
@@ -264,11 +262,9 @@ struct OverviewView: View {
         // All stale tiers produced no data in a recent collect → "missing"
         // would contradict the just-succeeded collection (#181 field report).
         if !tiers.isEmpty, workspace.heavyTiersWithNoData.isSuperset(of: tiers) {
-            return "\(names) data couldn't be collected in the last run — the tenant may "
-                + "not return it (e.g. no update plans). Retry, or check Run History."
+            return L("\(names) data couldn't be collected in the last run — the tenant may not return it (e.g. no update plans). Retry, or check Run History.")
         }
-        return "\(names) data is missing or more than \(WorkspaceStore.heavyTierStaleDays) "
-            + "days old — Patch, Updates, and EA dashboards show stale values."
+        return L("\(names) data is missing or more than \(WorkspaceStore.heavyTierStaleDays) days old — Patch, Updates, and EA dashboards show stale values.")
     }
 
     /// 2.6 dead-man switch banner — one summary of overdue/failing scheduled
@@ -279,9 +275,9 @@ struct OverviewView: View {
             icon: "clock.badge.xmark",
             tone: .warn,
             action: InlineBannerAction(
-                label: "Open Automation",
+                label: L("Open Automation"),
                 icon: "gearshape.2",
-                help: "Review scheduled runs that are overdue or failing."
+                help: L("Review scheduled runs that are overdue or failing.")
             ) {
                 navigate(to: .schedules)
             }
@@ -297,8 +293,7 @@ struct OverviewView: View {
     private var automationHealthMessage: String {
         let issues = workspace.automationHealthIssues
         if issues.contains(where: { $0.kind == .tickerDisabled }) {
-            return "Automation is off — JamfReports is not allowed to run in the "
-                + "background. Open Automation to fix it."
+            return L("Automation is off — JamfReports is not allowed to run in the background. Open Automation to fix it.")
         }
         let overdue = issues.filter { $0.kind == .overdue }
         let failing = issues.filter { $0.kind == .failing }
@@ -308,31 +303,28 @@ struct OverviewView: View {
         if let first = overdue.first {
             let when = first.expectedFire.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
-            } ?? "on schedule"
+            } ?? L("on schedule")
             let last = first.lastRunFinishedAt.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
             } ?? "never"
-            let more = overdue.count > 1 ? " (+\(overdue.count - 1) more)" : ""
+            let more = overdue.count > 1 ? L(" (+\(overdue.count - 1) more)") : ""
             if first.isMulti {
                 // Global all-profiles managed agent — label it fleet-wide so a
                 // fresh per-profile operator doesn't read it as this workspace's
                 // own backup/collect.
-                return "Managed automation (all profiles) — "
-                    + "\(WorkspaceStore.fleetWideDisplayName(first.displayName)) should have run "
-                    + "\(when); last success \(last)\(more)."
+                return L("Managed automation (all profiles) — \(WorkspaceStore.fleetWideDisplayName(first.displayName)) should have run \(when); last success \(last)\(more).")
             }
-            return "Scheduled run overdue — \(first.displayName) should have run "
-                + "\(when); last success \(last)\(more)."
+            return L("Scheduled run overdue — \(first.displayName) should have run \(when); last success \(last)\(more).")
         }
-        let more = failing.count > 1 ? " (+\(failing.count - 1) more)" : ""
+        let more = failing.count > 1 ? L(" (+\(failing.count - 1) more)") : ""
         guard let firstFailing = failing.first else {
-            return "A scheduled run failed on its last run\(more) — check Automation."
+            return L("A scheduled run failed on its last run\(more) — check Automation.")
         }
         // Global all-profiles managed agent — same fleet-wide framing the
         // overdue branch uses.
         let name: String
         if firstFailing.isMulti {
-            name = "Managed automation (all profiles) — "
+            name = L("Managed automation (all profiles) — ")
                 + WorkspaceStore.fleetWideDisplayName(firstFailing.displayName)
         } else {
             name = firstFailing.displayName
@@ -342,12 +334,12 @@ struct OverviewView: View {
         } ?? "never"
         // Name the cause when the run recorded an exit code, so the banner
         // says WHY (401 / 403 / 429 / network) rather than just "failed".
-        if let reason = firstFailing.reason { return "\(name) can't run\(more). \(reason)" }
+        if let reason = firstFailing.reason { return L("\(name) can't run\(more). \(reason)") }
         if let code = firstFailing.lastRunExitCode {
-            return "\(name) failed \(last)\(more). "
-                + CLIBridge.explainExit(code, operation: "Last run")
+            return L("\(name) failed \(last)\(more). ")
+                + CLIBridge.explainExit(code, operation: L("Last run"))
         }
-        return "\(name) failed on its last run \(last)\(more) — check Automation."
+        return L("\(name) failed on its last run \(last)\(more) — check Automation.")
     }
 
 
@@ -429,11 +421,11 @@ struct OverviewView: View {
                     ProgressView().controlSize(.small)
                         .accessibilityLabel("Setting up the workspace")
                 } else {
-                    PNPButton(title: "Choose existing folder…", icon: "folder", size: .sm) {
+                    PNPButton(title: L("Choose existing folder…"), icon: "folder", size: .sm) {
                         chooseExistingRoot()
                     }
                     .help("Point the app at a folder that already holds this profile's workspace.")
-                    PNPButton(title: "Initialize", style: .gold, size: .sm) {
+                    PNPButton(title: L("Initialize"), style: .gold, size: .sm) {
                         Task { await workspace.initializeWorkspace() }
                     }
                     .help("Create the workspace directory and seed it with a default config.yaml.")
@@ -468,16 +460,16 @@ struct OverviewView: View {
         }
         let config = url.appendingPathComponent("config.yaml")
         if FileManager.default.fileExists(atPath: url.path) {
-            return "\(config.path) is missing. Initialize it to seed config.yaml and helper folders."
+            return L("\(config.path) is missing. Initialize it to seed config.yaml and helper folders.")
         }
-        return "\(url.path) does not exist yet. Initialize it to seed config.yaml and helper folders."
+        return L("\(url.path) does not exist yet. Initialize it to seed config.yaml and helper folders.")
     }
 
     private var liveWorkspaceState: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Live Workspace")
+                    SectionHeader(title: L("Live Workspace"))
                     Spacer()
                     Pill(text: workspace.profile, tone: .gold)
                 }
@@ -485,12 +477,12 @@ struct OverviewView: View {
                 HStack(spacing: 12) {
                     liveStateTile(
                         label: "jamf-cli",
-                        value: workspace.jamfCLIVersion ?? "Missing",
-                        sub: workspace.jamfCLIPath ?? "Not found",
+                        value: workspace.jamfCLIVersion ?? L("Missing"),
+                        sub: workspace.jamfCLIPath ?? L("Not found"),
                         ok: workspace.jamfCLIPath != nil
                     )
                     liveStateTile(
-                        label: "Trend summaries",
+                        label: L("Trend summaries"),
                         value: "\(trendStore.filteredSummaries.count)",
                         sub: WorkspaceRootStore.displayPath(profile: workspace.profile) + "/",
                         ok: !trendStore.filteredSummaries.isEmpty
@@ -532,33 +524,32 @@ struct OverviewView: View {
 
     private var headerKicker: String {
         // The demo's snapshot is its daily collect, which finished at 06:01.
-        if workspace.demoMode { return "Snapshot · Apr 25, 2026 · 06:01" }
-        return "Snapshot · \(trendStore.filteredSummaries.last?.date ?? "No Data")"
+        if workspace.demoMode { return L("Snapshot · Apr 25, 2026 · 06:01") }
+        return L("Snapshot · \(trendStore.filteredSummaries.last?.date ?? L("No Data"))")
     }
 
     private var headerSubtitle: String {
-        let baseline = "\(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline"
+        let baseline = L("\(workspace.complianceBenchmarkLabel ?? L("Compliance Benchmark")) baseline")
         if workspace.demoMode {
-            return "\(DemoData.totalDevices) Macs across \(Self.demoDepartmentCount) departments · "
-                + baseline
+            return L("\(DemoData.totalDevices) Macs across \(Self.demoDepartmentCount) departments · \(baseline)")
         }
-        return "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(baseline)"
+        return L("\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(baseline)")
     }
 
     private var header: some View {
         PageHeader(
             kicker: headerKicker,
-            title: "\(workspace.org.name) Fleet Overview",
+            title: L("\(workspace.org.name) Fleet Overview"),
             subtitle: headerSubtitle,
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspace.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
             HStack(spacing: 8) {
-                PNPButton(title: "Customize", icon: "slider.horizontal.3") {
+                PNPButton(title: L("Customize"), icon: "slider.horizontal.3") {
                     showCustomize = true
                 }
                 .help("Choose the Overview's sections and score cards, and their order.")
-                PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                PNPButton(title: L("Refresh"), icon: "arrow.clockwise") {
                     workspace.reloadFromDisk()
                     Task {
                         // Off-main scan so the explicit Refresh doesn't freeze
@@ -570,7 +561,7 @@ struct OverviewView: View {
                 }
                 .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
                 PNPButton(
-                    title: isRunning ? "Running…" : "Generate Report",
+                    title: isRunning ? L("Running…") : L("Generate Report"),
                     icon: isRunning ? "hourglass" : "play.fill",
                     style: .gold
                 ) {
@@ -591,7 +582,7 @@ struct OverviewView: View {
     private func runGenerate() async {
         guard !workspace.demoMode else { return }
         guard ProfileService.isValid(workspace.profile) else {
-            workspace.toast = Toast(message: "Invalid profile name — generate aborted", style: .danger)
+            workspace.toast = Toast(message: L("Invalid profile name — generate aborted"), style: .danger)
             return
         }
 
@@ -661,7 +652,7 @@ struct OverviewView: View {
                 let skipMessage: String
                 if case .fresh(let ageMinutes) = freshnessDecision {
                     skipMessage = "[info] snapshots are fresh (\(ageMinutes)m old) — skipped collect;" +
-                        " Trends will not gain a new data point this run"
+                        L(" Trends will not gain a new data point this run")
                 } else {
                     skipMessage = "[info] snapshots are fresh — skipped collect"
                 }
@@ -707,8 +698,8 @@ struct OverviewView: View {
             if exit == 0 {
                 let suffix = firstFingerprintSummary()
                 let message = suffix.isEmpty
-                    ? "Report generated successfully"
-                    : "Report generated · \(suffix)"
+                    ? L("Report generated successfully")
+                    : L("Report generated · \(suffix)")
                 workspace.toast = Toast(message: message, style: .success)
                 workspace.reloadFromDisk()
                 generatedHashes.removeAll()
@@ -718,7 +709,7 @@ struct OverviewView: View {
                 // it so the card ticks "Generate a report" and auto-hides.
                 await reloadChecklist()
             } else {
-                workspace.toast = Toast(message: "Generate failed · exit \(exit)", style: .danger)
+                workspace.toast = Toast(message: L("Generate failed · exit \(exit)"), style: .danger)
                 generatedHashes.removeAll()
             }
         } catch {
@@ -735,7 +726,7 @@ struct OverviewView: View {
     /// A scheduled run holding the tick lock, or another collect running, is a refusal, shown
     /// as information.
     nonisolated static func generateFailureToast(_ error: Error) -> Toast {
-        WorkspaceStore.collectFailureToast(error, operation: "Generate")
+        WorkspaceStore.collectFailureToast(error, operation: L("Generate"))
     }
 
     /// Format the first artifact's 12-char short fingerprint for the toast.
@@ -747,7 +738,7 @@ struct OverviewView: View {
         let workbook = generatedHashes.first { $0.key.hasSuffix(".xlsx") }
         guard let first = workbook ?? generatedHashes.first else { return "" }
         let short = String(first.value.prefix(12))
-        return "sha256: \(short)…"
+        return L("sha256: \(short)…")
     }
 
     // MARK: - Layout
@@ -822,13 +813,11 @@ struct OverviewView: View {
     private func unavailableReason(_ section: OverviewSection) -> OverviewUnavailable? {
         if section == .scoreCards {
             if workspace.selectedScoreCards.isEmpty {
-                return OverviewUnavailable(reason: "No score cards are selected.")
+                return OverviewUnavailable(reason: L("No score cards are selected."))
             }
             if offeredScoreCards.isEmpty {
                 return OverviewUnavailable(
-                    reason: "None of the selected score cards applies here: the security policy "
-                        + "does not count its control (Config › Scoring), or this environment "
-                        + "has no devices of its type.",
+                    reason: L("None of the selected score cards applies here: the security policy does not count its control (Config › Scoring), or this environment has no devices of its type."),
                     remedy: .config)
             }
         }
@@ -836,13 +825,12 @@ struct OverviewView: View {
         switch section {
         case .managedDevices:
             return trendStore.filteredSummaries.isEmpty
-                ? OverviewUnavailable(reason: "No daily summary yet. A collect writes one.")
+                ? OverviewUnavailable(reason: L("No daily summary yet. A collect writes one."))
                 : nil
         case .mobileDevices:
             return mobileSummary == nil
                 ? OverviewUnavailable(
-                    reason: "The latest daily summary has no mobile figures yet. "
-                        + "A collect writes them.")
+                    reason: L("The latest daily summary has no mobile figures yet. A collect writes them."))
                 : nil
         case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
             return liveLoaded ? live.unavailable[section] : nil
@@ -878,11 +866,11 @@ struct OverviewView: View {
                 }
                 Spacer(minLength: 12)
                 if section == .scoreCards {
-                    PNPButton(title: "Customize", icon: "slider.horizontal.3", size: .sm) {
+                    PNPButton(title: L("Customize"), icon: "slider.horizontal.3", size: .sm) {
                         showCustomize = true
                     }
                 } else if let tab = why.remedy {
-                    PNPButton(title: "Open \(tab.label)", icon: tab.sfSymbol, size: .sm) {
+                    PNPButton(title: L("Open \(tab.label)"), icon: tab.sfSymbol, size: .sm) {
                         navigate(to: tab)
                     }
                 }
@@ -981,7 +969,7 @@ struct OverviewView: View {
 
     private var failingRulesLabel: String {
         if !workspace.demoMode, !live.failingRulesLabel.isEmpty { return live.failingRulesLabel }
-        return workspace.complianceBenchmarkLabel ?? "Compliance Benchmark"
+        return workspace.complianceBenchmarkLabel ?? L("Compliance Benchmark")
     }
 
     /// The Macs the failing-rules card counted: the demo fleet, or live, the
@@ -1011,13 +999,14 @@ struct OverviewView: View {
     private var aiInsightCard: some View {
         let summaries = trendStore.filteredSummaries
         return AIInsightCard(
-            title: "AI Fleet Insight",
-            idleText: "Turn today's fleet data into a plain-language summary using "
-                + "on-device intelligence.",
-            provenanceText: "AI-generated from the daily digest — verify against the tiles below.",
+            title: L("AI Fleet Insight"),
+            idleText: L("Turn today's fleet data into a plain-language summary using on-device intelligence."),
+            provenanceText: L("AI-generated from the daily digest — verify against the tiles below."),
             input: summaries.last.map { current in
-                .fleet(current: current, previous: summaries.count >= 2
-                    ? FleetReportEmitter.priorSummary(summaries, lookbackDays: 1) : nil)
+                Localization.english {
+                    .fleet(current: current, previous: summaries.count >= 2
+                        ? FleetReportEmitter.priorSummary(summaries, lookbackDays: 1) : nil)
+                }
             }
         )
     }
@@ -1054,8 +1043,8 @@ struct OverviewView: View {
     private var mobileDevicesSection: some View {
         let latest = trendStore.filteredSummaries.last
         let subtitle = workspace.demoMode
-            ? "Demo fleet" : latest.map { "Daily summary \(FleetInsightInput.safeDate($0.date))" }
-                ?? "Daily summary"
+            ? L("Demo fleet") : latest.map { L("Daily summary \(FleetInsightInput.safeDate($0.date))") }
+                ?? L("Daily summary")
         return Group {
             if let summary = mobileSummary {
                 MobileOverviewCard(
@@ -1074,14 +1063,14 @@ struct OverviewView: View {
         sparkMetric: TrendSeries.Metric = .managedDevices
     ) -> some View {
         let total = computers + (mobile ?? 0)
-        let computerLabel = "\(computers) computer\(computers == 1 ? "" : "s")"
+        let computerLabel = (computers == 1 ? L("\(computers) computer") : L("\(computers) computers"))
         // No Macs: the caption names the mobile devices alone, not "0 computers".
         let caption = computers == 0 && mobile != nil
-            ? "\(mobile ?? 0) mobile"
-            : mobile.map { "\(computerLabel) · \($0) mobile" } ?? computerLabel
+            ? L("\(mobile ?? 0) mobile")
+            : mobile.map { L("\(computerLabel) · \($0) mobile") } ?? computerLabel
 
         return StatTile(
-            label: "Managed Devices",
+            label: L("Managed Devices"),
             value: "\(total)",
             sub: caption,
             sparkValues: spark,
@@ -1139,7 +1128,7 @@ struct OverviewView: View {
     private static let comparisonDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.setLocalizedDateFormatFromTemplate("MMMd")
+        f.setLocalizedDateFormatFromTemplate(L("MMMd"))
         return f
     }()
 
@@ -1171,8 +1160,8 @@ struct OverviewView: View {
         }()
 
         let deltaStr: String = {
-            guard lastValue != nil, values.count >= 2 else { return "No Data" }
-            guard comparable else { return "Not comparable" }
+            guard lastValue != nil, values.count >= 2 else { return L("No Data") }
+            guard comparable else { return L("Not comparable") }
             let absDiff = abs(diff)
             if metric.unit == "%" {
                 return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"
@@ -1197,13 +1186,13 @@ struct OverviewView: View {
         //
         // A card with no value says so rather than showing a bare "--".
         let subText: String? = {
-            guard lastValue != nil else { return "Not reported by this profile" }
+            guard lastValue != nil else { return L("Not reported by this profile") }
             var parts: [String] = []
             if metric == .activeDevices {
                 parts.append(workspace.configState.staleRule.checkedInLabel(shortUnit: true))
             }
             if values.count >= 2, let comparisonDate {
-                parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
+                parts.append(L("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))"))
             }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
@@ -1281,9 +1270,9 @@ struct OverviewView: View {
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        SectionHeader(title: "macOS Distribution")
+                        SectionHeader(title: L("macOS Distribution"))
                         Spacer()
-                        Pill(text: "\(osVersionCount) versions", tone: .muted)
+                        Pill(text: L("\(osVersionCount) versions"), tone: .muted)
                     }
                     HStack(alignment: .center, spacing: 18) {
                         donut
@@ -1327,14 +1316,14 @@ struct OverviewView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
-                            SectionHeader(title: "Top Failing Rules")
+                            SectionHeader(title: L("Top Failing Rules"))
                             Text(failingRulesSubtitle(
                                 baseline: failingRulesLabel, macsWithResults: failingRulesMacCount))
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         Spacer()
-                        Pill(text: "View all \(failingRuleTotal)", tone: .gold)
+                        Pill(text: L("View all \(failingRuleTotal)"), tone: .gold)
                     }
                     if failingRules.isEmpty {
                         Text("No rule is failing on any Mac that reported results.")
@@ -1358,9 +1347,8 @@ struct OverviewView: View {
         let share = osCurrentShare
         let centre = share.map { "\(String(format: "%.1f", $0))%" } ?? "\(osDeviceCount)"
         let summary = share.map {
-            "macOS distribution donut chart: \(String(format: "%.1f", $0)) percent of Macs "
-                + "are on the newest release of their macOS version"
-        } ?? "macOS distribution donut chart: \(osDeviceCount) Macs"
+            L("macOS distribution donut chart: \(String(format: "%.1f", $0)) percent of Macs are on the newest release of their macOS version")
+        } ?? L("macOS distribution donut chart: \(osDeviceCount) Macs")
         return Chart(osRows) { o in
             SectorMark(
                 angle: .value("Devices", o.pct),
@@ -1378,12 +1366,12 @@ struct OverviewView: View {
                 Text(centre)
                     .font(Theme.Fonts.serif(deviceCountSize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
-                Kicker(text: share == nil ? "Macs" : "On Current")
+                Kicker(text: share == nil ? L("Macs") : L("On Current"))
             }
             .accessibilityHidden(true)
         )
         .accessibilityChartDescriptor(SectorChartDescriptor(
-            title: "macOS Distribution",
+            title: L("macOS Distribution"),
             unit: "%",
             slices: osRows.map { .init(label: $0.version, value: $0.pct) }
         ))
@@ -1439,9 +1427,9 @@ struct OverviewView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Security Agents")
+                    SectionHeader(title: L("Security Agents"))
                     Spacer()
-                    Kicker(text: "\(agents.count) tracked")
+                    Kicker(text: L("\(agents.count) tracked"))
                 }
                 EqualHeightTileGrid(minTileWidth: 160, spacing: 10) {
                     ForEach(agents) { a in
@@ -1456,9 +1444,7 @@ struct OverviewView: View {
                     }
                 }
                 if !workspace.demoMode, !live.agentsWithoutValues.isEmpty {
-                    Text("No values collected for "
-                         + "\(live.agentsWithoutValues.joined(separator: ", ")). "
-                         + "Check that each column matches its extension attribute in Config.")
+                    Text("No values collected for \(live.agentsWithoutValues.joined(separator: ", ")). Check that each column matches its extension attribute in Config.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -1479,7 +1465,7 @@ struct OverviewView: View {
         Card(padding: 0) {
             VStack(spacing: 0) {
                 HStack {
-                    SectionHeader(title: "Recent Activity")
+                    SectionHeader(title: L("Recent Activity"))
                     Spacer()
                     Pill(text: recentCountLabel, tone: .muted)
                     Button {
@@ -1507,7 +1493,7 @@ struct OverviewView: View {
 
     private var recentCountLabel: String {
         let fleet = workspace.demoMode ? DemoData.totalDevices : overviewFleetCount
-        return fleet > 0 ? "\(recentRows.count) of \(fleet)" : "\(recentRows.count) Macs"
+        return fleet > 0 ? L("\(recentRows.count) of \(fleet)") : L("\(recentRows.count) Macs")
     }
 
     /// Shared by the card and its drill-down.
@@ -1568,7 +1554,7 @@ struct OverviewView: View {
     private func failurePill(_ count: Int?) -> some View {
         if let count {
             switch count {
-            case 0:        Pill(text: "PASS", tone: .teal)
+            case 0:        Pill(text: L("PASS"), tone: .teal)
             case 1...10:   Pill(text: "\(count)", tone: .muted)
             case 11...30:  Pill(text: "\(count)", tone: .warn)
             default:       Pill(text: "\(count)", tone: .danger)
@@ -1637,7 +1623,7 @@ struct OverviewView: View {
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: metricDetailTitle(metric),
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
+                breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
                 title: metricDetailTitle(metric),
                 subtitle: MetricDetailFigures.summaryCount(values.count)
                     + " · \(workspace.profile)"
@@ -1645,18 +1631,18 @@ struct OverviewView: View {
             // DRAFT — needs visual verification at PageScaffold.minSupportedWidth; same fix as
             // the security-agent drill-down: one height for the row.
             EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
-                StatTile(label: "Current", value: figures.current, fillsHeight: true)
-                StatTile(label: "Previous", value: figures.previous, sub: previousLabel,
+                StatTile(label: L("Current"), value: figures.current, fillsHeight: true)
+                StatTile(label: L("Previous"), value: figures.previous, sub: previousLabel,
                          fillsHeight: true)
-                StatTile(label: "Change", value: figures.change,
+                StatTile(label: L("Change"), value: figures.change,
                          sub: figures.hasChange
-                            ? firstLabel.map { "Since \($0)" } ?? "Since first snapshot"
+                            ? firstLabel.map { L("Since \($0)") } ?? L("Since first snapshot")
                             : nil,
                          fillsHeight: true)
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Snapshot Values")
+                    SectionHeader(title: L("Snapshot Values"))
                     if values.isEmpty {
                         Text("No data yet: no trend summary has a value for this metric.")
                             .font(.footnote)
@@ -1665,9 +1651,9 @@ struct OverviewView: View {
                         Sparkline(values: values, color: Color(hex: metric.colorHex))
                             .frame(height: 90)
                         HStack {
-                            Mono(text: "First \(metricValueLabel(first, metric: metric))")
+                            Mono(text: L("First \(metricValueLabel(first, metric: metric))"))
                             Spacer()
-                            Mono(text: "Latest \(metricValueLabel(current, metric: metric))",
+                            Mono(text: L("Latest \(metricValueLabel(current, metric: metric))"),
                                  color: Theme.Colors.goldBright)
                         }
                     }
@@ -1689,10 +1675,10 @@ struct OverviewView: View {
     private var osDistributionDetail: some View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(
-                kicker: "macOS Distribution",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
-                title: "macOS Distribution",
-                subtitle: "\(osDeviceCount) devices across \(osVersionCount) versions"
+                kicker: L("macOS Distribution"),
+                breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
+                title: L("macOS Distribution"),
+                subtitle: L("\(osDeviceCount) devices across \(osVersionCount) versions")
             )
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1706,12 +1692,11 @@ struct OverviewView: View {
                     }
                     Divider().background(Theme.Colors.hairline)
                     HStack {
-                        Text("Use Computers to inspect individual records and filter by OS "
-                             + "version.")
+                        Text("Use Computers to inspect individual records and filter by OS version.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                         Spacer()
-                        PNPButton(title: "Open Computers", icon: Tab.devices.sfSymbol, size: .sm) {
+                        PNPButton(title: L("Open Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
                             navigate(to: .devices)
                         }
                     }
@@ -1723,10 +1708,10 @@ struct OverviewView: View {
     private var failingRulesDetail: some View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(
-                kicker: "Top Failing Rules",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
-                title: "Top Failing Rules",
-                subtitle: "\(failingRulesLabel) · highest failure counts"
+                kicker: L("Top Failing Rules"),
+                breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
+                title: L("Top Failing Rules"),
+                subtitle: L("\(failingRulesLabel) · highest failure counts")
             )
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1735,13 +1720,12 @@ struct OverviewView: View {
                             label: rule.ruleID,
                             value: Double(rule.fails),
                             maxValue: Double(failingRules.map(\.fails).max() ?? 1),
-                            trailing: "\(rule.fails) devices",
+                            trailing: L("\(rule.fails) devices"),
                             color: Theme.Colors.gold
                         )
                     }
                     if failingRuleTotal > failingRules.count {
-                        Text("Showing the \(failingRules.count) rules failing on the most Macs, "
-                             + "of \(failingRuleTotal) failing in all.")
+                        Text("Showing the \(failingRules.count) rules failing on the most Macs, of \(failingRuleTotal) failing in all.")
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -1751,7 +1735,7 @@ struct OverviewView: View {
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                         Spacer()
-                        PNPButton(title: "Open Health Audit", icon: Tab.audit.sfSymbol, size: .sm) {
+                        PNPButton(title: L("Open Health Audit"), icon: Tab.audit.sfSymbol, size: .sm) {
                             navigate(to: .audit)
                         }
                     }
@@ -1765,22 +1749,22 @@ struct OverviewView: View {
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: agent.name,
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
+                breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
                 title: agent.name,
-                subtitle: "\(agent.installed) installed · mapped from \(agent.column)"
+                subtitle: L("\(agent.installed) installed · mapped from \(agent.column)")
             )
             // DRAFT — needs visual verification at PageScaffold.minSupportedWidth. An HStack
             // left the tile without a caption shorter than its neighbour; the grid gives
             // the row one height, three across at the minimum width (3 x 180 + 2 x 12).
             EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
-                StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%",
+                StatTile(label: L("Coverage"), value: "\(String(format: "%.1f", agent.pct))%",
                          fillsHeight: true)
-                StatTile(label: "Installed", value: "\(agent.installed)",
-                         sub: fleet > 0 ? "of \(fleet) managed Macs" : "managed Macs",
+                StatTile(label: L("Installed"), value: "\(agent.installed)",
+                         sub: fleet > 0 ? L("of \(fleet) managed Macs") : L("managed Macs"),
                          fillsHeight: true)
                 if let trend = agent.trend {
-                    StatTile(label: "Trend", value: trend.rawValue.capitalized,
-                             sub: "vs the previous snapshot", fillsHeight: true)
+                    StatTile(label: L("Trend"), value: LShown(trend.rawValue.capitalized),
+                             sub: L("vs the previous snapshot"), fillsHeight: true)
                 }
             }
             Card(padding: 18) {
@@ -1797,10 +1781,10 @@ struct OverviewView: View {
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                         Spacer()
-                        PNPButton(title: "Computers", icon: Tab.devices.sfSymbol, size: .sm) {
+                        PNPButton(title: L("Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
                             navigate(to: .devices)
                         }
-                        PNPButton(title: "Config", icon: Tab.config.sfSymbol, size: .sm) {
+                        PNPButton(title: L("Config"), icon: Tab.config.sfSymbol, size: .sm) {
                             navigate(to: .config)
                         }
                     }
@@ -1812,17 +1796,17 @@ struct OverviewView: View {
     private var recentActivityDetail: some View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(
-                kicker: "Recent Activity",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
-                title: "Recent Activity",
-                subtitle: "The \(recentRows.count) Macs that checked in most recently"
+                kicker: L("Recent Activity"),
+                breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
+                title: L("Recent Activity"),
+                subtitle: L("The \(recentRows.count) Macs that checked in most recently")
             )
             Card(padding: 0) {
                 recentTable(minHeight: 340)
             }
             HStack {
                 Spacer()
-                PNPButton(title: "Open Full Computer Inventory", icon: Tab.devices.sfSymbol) {
+                PNPButton(title: L("Open Full Computer Inventory"), icon: Tab.devices.sfSymbol) {
                     navigate(to: .devices)
                 }
             }
@@ -1867,37 +1851,37 @@ struct OverviewView: View {
                 patchPct: latest?.patchPct,
                 complianceIsProxy: latest?.complianceIsProxy,
                 staleMeasured: latest?.staleCount != nil
-            ) ?? "Composite of compliance, patch posture, and stale-device pressure."
+            ) ?? L("Composite of compliance, patch posture, and stale-device pressure.")
         case .activeDevices:
-            "Excludes devices stale beyond \(workspace.configState.staleRule.days)d"
+            L("Excludes devices stale beyond \(workspace.configState.staleRule.days)d")
             + (workspace.configState.staleRule.usesDefaultBasis
                 ? "" : " (\(workspace.configState.staleRule.basisPhrase))")
-            + ". Open Computers to inspect records contributing to this count."
+            + L(". Open Computers to inspect records contributing to this count.")
         case .compliance:
             latest?.complianceIsProxy == true
-                ? "Control-gap proxy (FileVault/SIP/Firewall/Gatekeeper). Configure a Compliance EA for true mSCP banding."
-                : "Open Health Audit for controls, findings, and recommendations."
+                ? L("Control-gap proxy (FileVault/SIP/Firewall/Gatekeeper). Configure a Compliance EA for true mSCP banding.")
+                : L("Open Health Audit for controls, findings, and recommendations.")
         case .fileVault:
-            "Open Computers to inspect FileVault state on individual Macs."
+            L("Open Computers to inspect FileVault state on individual Macs.")
         case .osCurrent:
-            "Open Computers to inspect macOS versions and filter inventory."
+            L("Open Computers to inspect macOS versions and filter inventory.")
         case .edrAgent, .agent:
-            "Open Computers or Config to review security-agent tracking."
+            L("Open Computers or Config to review security-agent tracking.")
         case .stale:
-            "Open Computers to focus on stale inventory records."
+            L("Open Computers to focus on stale inventory records.")
         case .patch:
-            "Open Computers to review computers with patch failures."
+            L("Open Computers to review computers with patch failures.")
         case .securityScore:
-            "Weighted composite from Security Posture. Open that tab to see the breakdown."
+            L("Weighted composite from Security Posture. Open that tab to see the breakdown.")
         case .mscpBandTrend:
-            "Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution."
+            L("Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution.")
         case .managedDevices:
-            "Historical Mac count. Open Computers to inspect current records."
+            L("Historical Mac count. Open Computers to inspect current records.")
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
-            "Open Mobile Devices to inspect current records."
+            L("Open Mobile Devices to inspect current records.")
         case .sip, .firewall, .gatekeeper:
-            "Open Security Posture for the per-control breakdown."
+            L("Open Security Posture for the per-control breakdown.")
         }
         return Text(text)
             .font(.footnote)
@@ -2182,22 +2166,22 @@ struct AgentCardView: View {
 /// unknown" (e.g. live mode before any trend snapshot lands) — render the
 /// count alone rather than nonsensical "47 of 0 Macs".
 func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return "\(installed) Macs" }
-    return "\(installed) of \(fleetCount) Macs"
+    guard fleetCount > 0 else { return L("\(installed) Macs") }
+    return L("\(installed) of \(fleetCount) Macs")
 }
 
 /// Composite accessibility label announcing coverage and gap.
 /// `fleetCount <= 0` omits the "of N installed" and gap clauses.
 func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> String {
     var parts: [String] = [
-        "\(agent.name): \(String(format: "%.1f", agent.pct))% coverage",
+        L("\(agent.name): \(String(format: "%.1f", agent.pct))% coverage"),
     ]
     if fleetCount > 0 {
-        parts.append("\(agent.installed) of \(fleetCount) installed")
+        parts.append(L("\(agent.installed) of \(fleetCount) installed"))
     } else {
-        parts.append("\(agent.installed) installed")
+        parts.append(L("\(agent.installed) installed"))
     }
-    if agent.trend == .up { parts.append("trending up") }
+    if agent.trend == .up { parts.append(L("trending up")) }
     if let notInstalled = agentNotInstalledLabel(
         installed: agent.installed, fleetCount: fleetCount) {
         parts.append(notInstalled)
@@ -2210,7 +2194,7 @@ func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> Strin
 func agentNotInstalledLabel(installed: Int, fleetCount: Int) -> String? {
     let gap = fleetCount - installed
     guard fleetCount > 0, gap > 0 else { return nil }
-    return "\(gap) not installed"
+    return L("\(gap) not installed")
 }
 
 /// "Top Failing Rules" card subtitle — "<baseline> · across <N> Macs with results".
@@ -2219,8 +2203,8 @@ func agentNotInstalledLabel(installed: Int, fleetCount: Int) -> String? {
 /// rather than "across 0 Macs with results".
 func failingRulesSubtitle(baseline: String, macsWithResults: Int) -> String {
     guard macsWithResults > 0 else { return baseline }
-    let macs = "\(macsWithResults) Mac\(macsWithResults == 1 ? "" : "s")"
-    return "\(baseline) · across \(macs) with results"
+    let macs = (macsWithResults == 1 ? L("\(macsWithResults) Mac") : L("\(macsWithResults) Macs"))
+    return L("\(baseline) · across \(macs) with results")
 }
 
 /// Pure "set up a schedule" coverage rule for `reloadChecklist`. A profile is
@@ -2241,7 +2225,7 @@ struct MetricDetailFigures: Equatable {
     /// Whether `change` is a figure rather than a dash.
     let hasChange: Bool
 
-    static let noData = "No data yet"
+    static let noData = L("No data yet")
 
     static func make(
         values: [Double], value: (Double) -> String, delta: (Double) -> String
@@ -2261,6 +2245,6 @@ struct MetricDetailFigures: Equatable {
 
     /// "1 summary", "0 summaries".
     static func summaryCount(_ count: Int) -> String {
-        count == 1 ? "1 summary" : "\(count) summaries"
+        count == 1 ? L("1 summary") : L("\(count) summaries")
     }
 }

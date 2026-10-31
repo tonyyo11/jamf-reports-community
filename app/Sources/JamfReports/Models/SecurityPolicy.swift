@@ -6,10 +6,10 @@ enum SecurityControl: String, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .fileVault: "FileVault"
-        case .sip: "System Integrity Protection"
-        case .firewall: "Firewall"
-        case .gatekeeper: "Gatekeeper"
+        case .fileVault: L("FileVault")
+        case .sip: L("System Integrity Protection")
+        case .firewall: L("Firewall")
+        case .gatekeeper: L("Gatekeeper")
         }
     }
 }
@@ -21,9 +21,9 @@ enum SecurityControlLevel: String, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .fail: "Fail"
-        case .warning: "Warning"
-        case .ignore: "Not counted"
+        case .fail: L("Fail")
+        case .warning: L("Warning")
+        case .ignore: L("Not counted")
         }
     }
 
@@ -364,9 +364,9 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
                 fileVaultReading: fileVaultReading, hardwareEncrypted: hardwareEncrypted)
     }
 
-    static let hardwareEncryptedFileVaultOffLabel = "FileVault off (hardware-encrypted)"
+    static let hardwareEncryptedFileVaultOffLabel = L("FileVault off (hardware-encrypted)")
     /// For a pill or cell that already sits under a "FileVault" label.
-    static let hardwareEncryptedFileVaultOffShortLabel = "Off (hardware-encrypted)"
+    static let hardwareEncryptedFileVaultOffShortLabel = L("Off (hardware-encrypted)")
 
     /// A FileVault value as the Devices screen shows it: a label above when the hardware
     /// rule lowers this Mac, so its amber or grey tone is explained; else the value itself.

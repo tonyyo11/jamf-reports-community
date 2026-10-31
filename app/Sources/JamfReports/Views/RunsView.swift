@@ -51,7 +51,7 @@ struct RunsView: View {
         .alert("Export Failed", isPresented: $showExportError) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(exportError ?? "Unknown error")
+            Text(exportError ?? L("Unknown error"))
         }
     }
 
@@ -60,26 +60,26 @@ struct RunsView: View {
     private var header: some View {
         let kickerText: String
         if let r = selectedRun {
-            kickerText = "Run · \(Self.dateFmt.string(from: r.date)) · \(r.name)"
+            kickerText = L("Run · \(Self.dateFmt.string(from: r.date)) · \(r.name)")
         } else {
-            kickerText = "Run History · \(workspace.profile)"
+            kickerText = L("Run History · \(workspace.profile)")
         }
         return PageHeader(
             kicker: kickerText,
-            title: "Run History",
-            subtitle: "\(runs.count) log\(runs.count == 1 ? "" : "s") · \(workspace.profile)"
+            title: L("Run History"),
+            subtitle: (runs.count == 1 ? L("\(runs.count) log · \(workspace.profile)") : L("\(runs.count) logs · \(workspace.profile)"))
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
+                    PNPButton(title: L("Refresh"), icon: "arrow.clockwise") { reload() }
                         .help("Reload run logs from disk")
-                    PNPButton(title: "Reveal", icon: "folder") { revealLog() }
+                    PNPButton(title: L("Reveal"), icon: "folder") { revealLog() }
                         .disabled(workspace.demoMode)
                         .help(revealHelp)
-                    PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
+                    PNPButton(title: L("Copy log"), icon: "doc.on.doc") { copyLog() }
                         .disabled(selectedRun == nil)
                         .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
-                    PNPButton(title: "Export", icon: "arrow.down.circle") { exportLog() }
+                    PNPButton(title: L("Export"), icon: "arrow.down.circle") { exportLog() }
                         .disabled(selectedRun == nil || workspace.demoMode)
                         .help(exportHelp)
                 }
@@ -91,13 +91,13 @@ struct RunsView: View {
     private var revealHelp: String {
         workspace.demoMode
             ? DemoData.liveOnlyHelp
-            : "Reveal the selected log in Finder, or open the run history folder"
+            : L("Reveal the selected log in Finder, or open the run history folder")
     }
 
     private var exportHelp: String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
         return selectedRun == nil
-            ? "Select a run to export its log" : "Save log file to a chosen location"
+            ? L("Select a run to export its log") : L("Save log file to a chosen location")
     }
 
     // MARK: - Empty state
@@ -106,8 +106,8 @@ struct RunsView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "terminal",
-                title: "No run logs yet",
-                message: "Logs appear here after a scheduled run or a manual \"Run now\"."
+                title: L("No run logs yet"),
+                message: L("Logs appear here after a scheduled run or a manual \"Run now\".")
             )
         }
     }
@@ -201,9 +201,9 @@ struct RunsView: View {
         _ run: RunHistoryService.RunSummary
     ) -> String {
         var label = "\(run.name), \(Self.dateFmt.string(from: run.date)), "
-        label += "status \(run.isRunning ? "running" : run.status.rawValue)"
+        label += L("status \(run.isRunning ? "running" : run.status.rawValue)")
         if let duration = run.duration {
-            label += ", duration \(duration)"
+            label += L(", duration \(duration)")
         }
         return label
     }
@@ -212,7 +212,7 @@ struct RunsView: View {
     @ViewBuilder
     private func statusPill(for run: RunHistoryService.RunSummary) -> some View {
         if run.isRunning {
-            Pill(text: "RUNNING", tone: .gold, icon: "hourglass")
+            Pill(text: L("RUNNING"), tone: .gold, icon: "hourglass")
                 .accessibilityLabel("Status: Running")
         } else {
             statusPill(for: run.status)
@@ -221,13 +221,13 @@ struct RunsView: View {
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
         switch s {
-        case .ok:      Pill(text: "OK",      tone: .teal,   icon: "checkmark")
+        case .ok:      Pill(text: L("OK"),      tone: .teal,   icon: "checkmark")
             .accessibilityLabel("Status: OK")
-        case .warn:    Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
+        case .warn:    Pill(text: L("WARN"),    tone: .warn,   icon: "exclamationmark")
             .accessibilityLabel("Status: Warning")
-        case .fail:    Pill(text: "FAIL",    tone: .danger, icon: "xmark")
+        case .fail:    Pill(text: L("FAIL"),    tone: .danger, icon: "xmark")
             .accessibilityLabel("Status: Failed")
-        case .partial: Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
+        case .partial: Pill(text: L("PARTIAL"), tone: .warn,   icon: "exclamationmark.triangle.fill")
             .accessibilityLabel("Status: Partial")
         }
     }
@@ -244,11 +244,11 @@ struct RunsView: View {
                         Mono(text: Self.displayPath(run.logURL.path),
                              size: 12, color: Theme.Colors.fg2)
                     } else {
-                        Mono(text: "Select a run to view its log", size: 12, color: Theme.Text.tertiary(contrast))
+                        Mono(text: L("Select a run to view its log"), size: 12, color: Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     if let run = selectedRun, let code = run.exitCode {
-                        Pill(text: "EXIT \(code)", tone: code == 0 ? .teal : .danger)
+                        Pill(text: L("EXIT \(code)"), tone: code == 0 ? .teal : .danger)
                     }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 10)
@@ -261,7 +261,7 @@ struct RunsView: View {
 
                 ScrollView {
                     if logLines.isEmpty {
-                        Mono(text: selectedRun == nil ? "—" : "Empty log", size: 11.5)
+                        Mono(text: selectedRun == nil ? "—" : L("Empty log"), size: 11.5)
                             .padding(14)
                     } else {
                         LazyVStack(alignment: .leading, spacing: 4, pinnedViews: []) {
@@ -300,17 +300,17 @@ struct RunsView: View {
                     .foregroundStyle(Theme.Colors.fg)
                     .fixedSize(horizontal: false, vertical: true)
                 if !explanation.likelyCause.isEmpty {
-                    explainDetailRow(label: "Likely cause", text: explanation.likelyCause)
+                    explainDetailRow(label: L("Likely cause"), text: explanation.likelyCause)
                 }
                 if !explanation.firstStep.isEmpty {
-                    explainDetailRow(label: "First step", text: explanation.firstStep)
+                    explainDetailRow(label: L("First step"), text: explanation.firstStep)
                 }
                 // Same provenance-cue pattern as AIInsightCard.
                 Text("AI-generated — verify against the log.")
                     .font(.caption2)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Explain again", icon: "sparkles", size: .sm) { explainRun() }
+                PNPButton(title: L("Explain again"), icon: "sparkles", size: .sm) { explainRun() }
             } else if isExplaining {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -324,9 +324,9 @@ struct RunsView: View {
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.warn)
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Try again", icon: "sparkles", size: .sm) { explainRun() }
+                PNPButton(title: L("Try again"), icon: "sparkles", size: .sm) { explainRun() }
             } else {
-                PNPButton(title: "Explain this run", icon: "sparkles", size: .sm) { explainRun() }
+                PNPButton(title: L("Explain this run"), icon: "sparkles", size: .sm) { explainRun() }
                     .help("Summarize why this run failed using on-device intelligence")
             }
         }
@@ -375,7 +375,7 @@ struct RunsView: View {
             } catch {
                 AppLogger.platform.error(
                     "Run explanation failed: \(error.localizedDescription, privacy: .private)")
-                if selectedRun?.id == runID { explainError = "Explanation failed." }
+                if selectedRun?.id == runID { explainError = L("Explanation failed.") }
             }
         }
     }
@@ -461,7 +461,7 @@ struct RunsView: View {
                 try text.write(to: dest, atomically: true, encoding: .utf8)
             } catch {
                 Task { @MainActor in
-                    exportError = "Could not export \(url.lastPathComponent): \(error.localizedDescription)"
+                    exportError = L("Could not export \(url.lastPathComponent): \(error.localizedDescription)")
                     showExportError = true
                 }
             }

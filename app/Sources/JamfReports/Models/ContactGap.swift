@@ -38,30 +38,25 @@ enum ContactGap: String, CaseIterable, Sendable, Equatable {
     /// The finding's name in the Health Audit.
     var findingName: String {
         switch self {
-        case .binarySilent: "Jamf binary not checking in while MDM reaches the Mac"
-        case .inventoryStale: "Inventory not updating while the Mac checks in"
+        case .binarySilent: L("Jamf binary not checking in while MDM reaches the Mac")
+        case .inventoryStale: L("Inventory not updating while the Mac checks in")
         }
     }
 
     /// The short label for a table cell.
     var label: String {
         switch self {
-        case .binarySilent: "Jamf binary silent"
-        case .inventoryStale: "Inventory not updating"
+        case .binarySilent: L("Jamf binary silent")
+        case .inventoryStale: L("Inventory not updating")
         }
     }
 
     func recommendation(gapDays: Int) -> String {
         switch self {
         case .binarySilent:
-            "Last Contact is current but Last Check-in is more than \(gapDays) days behind it: "
-                + "MDM reaches these Macs and the Jamf binary does not. Check that the Jamf "
-                + "binary is installed and its launch daemons are loaded, run "
-                + "sudo jamf policy on the Mac, and check the network path to Jamf Pro."
+            L("Last Contact is current but Last Check-in is more than \(gapDays) days behind it: MDM reaches these Macs and the Jamf binary does not. Check that the Jamf binary is installed and its launch daemons are loaded, run sudo jamf policy on the Mac, and check the network path to Jamf Pro.")
         case .inventoryStale:
-            "These Macs check in, but Last Inventory Update is more than \(gapDays) days behind "
-                + "Last Contact. Run sudo jamf recon on the Mac, and check the scope of the "
-                + "policy that submits inventory."
+            L("These Macs check in, but Last Inventory Update is more than \(gapDays) days behind Last Contact. Run sudo jamf recon on the Mac, and check the scope of the policy that submits inventory.")
         }
     }
 }

@@ -211,7 +211,7 @@ struct PolicyHealthService: Sendable {
             guard row.name != nil || rawId != nil else { return nil }
             return ProfileFailure(
                 id: "\(index)-\(rawId ?? row.name ?? "")",
-                name: row.name ?? "Profile \(rawId ?? "?")",
+                name: row.name ?? L("Profile \(rawId ?? "?")"),
                 deviceType: row.deviceType ?? "—",
                 errors: row.errors?.intValue ?? 0,
                 devices: row.devices?.intValue ?? 0,

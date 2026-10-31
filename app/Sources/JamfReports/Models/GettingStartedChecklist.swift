@@ -48,44 +48,43 @@ struct GettingStartedChecklist: Sendable, Equatable {
         let steps: [GettingStartedStep] = [
             GettingStartedStep(
                 kind: .connect,
-                title: "Connect to Jamf",
-                detail: "Authenticate jamf-cli so the app can pull live fleet data.",
+                title: L("Connect to Jamf"),
+                detail: L("Authenticate jamf-cli so the app can pull live fleet data."),
                 done: connected,
-                actionLabel: "Go to Sources",
+                actionLabel: L("Go to Sources"),
                 destinationTab: Tab.sources.rawValue
             ),
             GettingStartedStep(
                 kind: .collect,
-                title: "Run your first collect",
-                detail: "Pull a snapshot from Jamf Pro to populate dashboards.",
+                title: L("Run your first collect"),
+                detail: L("Pull a snapshot from Jamf Pro to populate dashboards."),
                 done: collected,
-                actionLabel: "Collect now",
+                actionLabel: L("Collect now"),
                 destinationTab: Tab.sources.rawValue
             ),
             GettingStartedStep(
                 kind: .customize,
-                title: "Track your Extension Attributes",
-                detail: "Pick the collected Extension Attributes and agents to report on. "
-                    + "Optional — jamf-cli data alone covers most dashboards.",
+                title: L("Track your Extension Attributes"),
+                detail: L("Pick the collected Extension Attributes and agents to report on. Optional — jamf-cli data alone covers most dashboards."),
                 done: customized,
-                actionLabel: "Open Data Sources",
+                actionLabel: L("Open Data Sources"),
                 destinationTab: Tab.sources.rawValue,
                 isOptional: true
             ),
             GettingStartedStep(
                 kind: .schedule,
-                title: "Set up a schedule",
-                detail: "Automate daily collects so dashboards stay current.",
+                title: L("Set up a schedule"),
+                detail: L("Automate daily collects so dashboards stay current."),
                 done: scheduled,
-                actionLabel: "Set up automation",
+                actionLabel: L("Set up automation"),
                 destinationTab: Tab.schedules.rawValue
             ),
             GettingStartedStep(
                 kind: .report,
-                title: "Generate a report",
-                detail: "Export a workbook or HTML report to share with your team.",
+                title: L("Generate a report"),
+                detail: L("Export a workbook or HTML report to share with your team."),
                 done: reported,
-                actionLabel: "Generate report",
+                actionLabel: L("Generate report"),
                 destinationTab: Tab.reports.rawValue
             ),
         ]
@@ -102,9 +101,9 @@ struct GettingStartedChecklist: Sendable, Equatable {
             switch step.kind {
             case .customize: return nil
             case .connect:
-                return step.with(detail: "Authenticate jamf-cli with your Jamf School API key.")
+                return step.with(detail: L("Authenticate jamf-cli with your Jamf School API key."))
             case .collect:
-                return step.with(detail: "Pull a snapshot from Jamf School to list its devices.")
+                return step.with(detail: L("Pull a snapshot from Jamf School to list its devices."))
             case .schedule, .report: return step
             }
         }

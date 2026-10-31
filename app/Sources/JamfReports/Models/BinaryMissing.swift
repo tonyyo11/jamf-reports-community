@@ -8,15 +8,15 @@ import Foundation
 /// Detected from data, never from the name, which admins rename.
 enum BinaryMissing {
     /// What the app calls the state.
-    static let title = "Not managed: Jamf binary missing"
+    static let title = L("Not managed: Jamf binary missing")
     /// The cell value in a table.
-    static let shortLabel = "Jamf binary missing"
+    static let shortLabel = L("Jamf binary missing")
 
     /// The three ways to get the binary onto the Mac, in the order to try them.
     static let remediation: [String] = [
-        "Mark the computer as managed in Jamf Pro, so it tries to push the binary again.",
-        "Deploy the Jamf binary through the API or another tool.",
-        "Run sudo profiles renew -type enrollment on the Mac to restart enrollment.",
+        L("Mark the computer as managed in Jamf Pro, so it tries to push the binary again."),
+        L("Deploy the Jamf binary through the API or another tool."),
+        L("Run sudo profiles renew -type enrollment on the Mac to restart enrollment."),
     ]
 
     /// The one rule: Jamf reports the Mac as unmanaged and it has never checked in. An unknown
@@ -33,11 +33,9 @@ enum BinaryMissing {
 
     /// The "Needs attention" line, "3 Macs enrolled but never received the Jamf binary."
     static func attentionSentence(count: Int) -> String {
-        let macs = count == 1 ? "1 Mac" : "\(count) Macs"
-        return "\(macs) enrolled but never received the Jamf binary: Jamf Pro lists "
-            + (count == 1 ? "it" : "them") + " as not managed. "
-            + "Mark each computer as managed in Jamf Pro, deploy the binary another way, "
-            + "or run sudo profiles renew -type enrollment on the Mac."
+        let macs = count == 1 ? L("1 Mac") : L("\(count) Macs")
+        return L("\(macs) enrolled but never received the Jamf binary: Jamf Pro lists ")
+            + (count == 1 ? "it" : "them") + L(" as not managed. Mark each computer as managed in Jamf Pro, deploy the binary another way, or run sudo profiles renew -type enrollment on the Mac.")
     }
 }
 

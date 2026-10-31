@@ -218,10 +218,10 @@ struct MobileFleetService: Sendable {
         switch formFactor {
         case .iPad: return "iPad"
         case .iPhone: return "iPhone"
-        case .appleTV: return "Apple TV"
+        case .appleTV: return L("Apple TV")
         case .other:
             let type = (deviceType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return type.isEmpty ? "Unknown" : type
+            return type.isEmpty ? L("Unknown") : type
         }
     }
 
@@ -400,12 +400,12 @@ struct MobileFleetService: Sendable {
         /// through unchanged for forward compatibility.
         static func enrollmentMethodLabel(for raw: String) -> String {
             switch raw {
-            case "Institutional": return "ADE / Institutional"
-            case "UserEnrollment": return "User Enrollment"
-            case "AccountDrivenUserEnrollment": return "Account-Driven User Enrollment"
-            case "AccountDrivenDeviceEnrollment": return "Account-Driven Device Enrollment"
-            case "Personal": return "Personal / BYOD"
-            case "PersonalDeviceProfile": return "Personal Device Profile (legacy)"
+            case "Institutional": return L("ADE / Institutional")
+            case "UserEnrollment": return L("User Enrollment")
+            case "AccountDrivenUserEnrollment": return L("Account-Driven User Enrollment")
+            case "AccountDrivenDeviceEnrollment": return L("Account-Driven Device Enrollment")
+            case "Personal": return L("Personal / BYOD")
+            case "PersonalDeviceProfile": return L("Personal Device Profile (legacy)")
             default: return raw
             }
         }
