@@ -7,8 +7,8 @@ import XCTest
 @MainActor
 final class TrendStoreMobileMetricsTests: XCTestCase {
 
-    private var root: URL!
-    private var dataDir: URL!
+    private nonisolated(unsafe) var root: URL!
+    private nonisolated(unsafe) var dataDir: URL!
 
     override func setUpWithError() throws {
         try super.setUpWithError()

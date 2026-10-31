@@ -13,8 +13,8 @@ import XCTest
 @MainActor
 final class TrendStorePatchRecomputeTests: XCTestCase {
 
-    private var root: URL!
-    private var dataDir: URL!
+    private nonisolated(unsafe) var root: URL!
+    private nonisolated(unsafe) var dataDir: URL!
 
     /// 480 / 610, rounded to a tenth the way the summary writer records it, so a day
     /// recomputed here reads the same as one written after the upgrade.
