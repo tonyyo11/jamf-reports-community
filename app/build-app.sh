@@ -95,6 +95,11 @@ mkdir -p "$APP_OUT/Contents/Resources"
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
+# Translations: Text and String(localized:) look in Bundle.main, which is this .app, although the
+# code lives in the library target. No Bundle.module, which fatalErrors in a signed bundle.
+xcrun xcstringstool compile Localization/Localizable.xcstrings \
+  --output-directory "$APP_OUT/Contents/Resources"
+
 # The one SMAppService agent (2.8.0). Lives outside Sources/ so SwiftPM's
 # .process("Resources") never rewrites it; signed with the bundle below.
 mkdir -p "$APP_OUT/Contents/Library/LaunchAgents"
@@ -145,6 +150,13 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+      <string>en</string>
+      <string>fr</string>
+      <string>es</string>
+      <string>de</string>
+    </array>
     <key>CFBundleExecutable</key>
     <string>JamfReports</string>
     <key>CFBundleIconFile</key>
