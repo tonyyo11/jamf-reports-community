@@ -50,6 +50,16 @@ enum JamfCLIProbe {
         arguments: [String],
         timeout: TimeInterval = defaultTimeout
     ) -> Outcome {
+        AppLogger.signpost("jamf-cli probe") {
+            waitForOutcome(executable: executable, arguments: arguments, timeout: timeout)
+        }
+    }
+
+    private static func waitForOutcome(
+        executable: URL,
+        arguments: [String],
+        timeout: TimeInterval
+    ) -> Outcome {
         let running = Running(executable: executable, arguments: arguments)
         let exited = DispatchSemaphore(value: 0)
         if running.start(timeout: timeout, onExit: { exited.signal() }) == .launchFailed {

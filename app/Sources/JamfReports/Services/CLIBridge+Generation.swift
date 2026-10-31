@@ -244,7 +244,7 @@ extension CLIBridge {
                         profile: profile, outFile: outURL?.path, written: written, onLine: onLine
                     )
                 },
-                tighten: { WorkspacePermissionHardener.tighten(profile: profile) }
+                tighten: { await WorkspacePermissionHardener.tightenOffMain(profile: profile) }
             )
             let files = written.urls
             if !files.isEmpty {
@@ -290,7 +290,7 @@ extension CLIBridge {
         generateHTML: () async throws -> Int32,
         generatePDF: () async throws -> Int32,
         generateCSV: () async throws -> Int32,
-        tighten: () -> Void
+        tighten: () async -> Void
     ) async -> GenerateAllResult {
         var result = GenerateAllResult()
 
@@ -368,7 +368,7 @@ extension CLIBridge {
         // (ReportEngine XLSX, native HTML, PDF) are now Swift; each respects the
         // process umask, so the sweep normalises any 0644 files to 0600.
         if result.anySucceeded {
-            tighten()
+            await tighten()
         }
 
         return result

@@ -362,13 +362,6 @@ final class WorkspaceStore {
         self.jamfCLIProfileNames = jamfCLIProfileNames
         self.discoverProfiles = discoverProfiles
         self.jamfCLIInstallation = jamfCLIInstallation
-        // MFS-2: one-shot Spotlight + permissions backfill on existing
-        // workspaces. Gated on a per-version UserDefaults sentinel so the
-        // walk runs at most once per app version. Wave 1 covers the
-        // going-forward path (`OnboardingFlow.createWorkspace`); this
-        // covers the pre-existing-workspace case.
-        WorkspaceMigration.runIfNeeded()
-
         // First-launch chooser: an empty real-profile list no longer implies
         // demo mode. Only an explicit `demoMode:` override (tests) or the
         // persisted `forceDemoModeKey` (user previously chose demo) enables

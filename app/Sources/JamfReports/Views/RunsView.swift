@@ -8,6 +8,8 @@ struct RunsView: View {
     @State private var runs: [RunHistoryService.RunSummary] = []
     @State private var selectedRun: RunHistoryService.RunSummary? = nil
     @State private var logLines: [CLIBridge.LogLine] = []
+    @State private var logLoad: Task<Void, Never>? = nil
+    @State private var isLoadingLog = false
     /// Demo mode's log lines by run id: its runs have no file to read.
     @State private var demoLogs: [String: [CLIBridge.LogLine]] = [:]
     @State private var showExportError = false
@@ -38,7 +40,7 @@ struct RunsView: View {
             }
         }
         .task(id: workspace.profile) {
-            reload()
+            await reload()
             // A config.yaml under a demo profile's name is not the demo's.
             aiConfig = workspace.demoMode
                 ? AIConfig() : AIConfigLoader.load(profile: workspace.profile)
@@ -46,7 +48,7 @@ struct RunsView: View {
         }
         .onChange(of: AutomationHealthModel.shared.openRunLogRequested) { _, requested in
             // The health banner asks for the run that logged what needs attention.
-            if requested != nil { reload() }
+            if requested != nil { Task { await reload() } }
         }
         .alert("Export Failed", isPresented: $showExportError) {
             Button("OK", role: .cancel) {}
@@ -71,7 +73,7 @@ struct RunsView: View {
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
+                    PNPButton(title: "Refresh", icon: "arrow.clockwise") { Task { await reload() } }
                         .help("Reload run logs from disk")
                     PNPButton(title: "Reveal", icon: "folder") { revealLog() }
                         .disabled(workspace.demoMode)
@@ -116,7 +118,7 @@ struct RunsView: View {
 
     private var runsList: some View {
         Card(padding: 8) {
-            VStack(spacing: 2) {
+            LazyVStack(spacing: 2) {
                 ForEach(runs) { run in
                     runListItem(run)
                 }
@@ -175,9 +177,7 @@ struct RunsView: View {
     @ViewBuilder
     private func runListItemContextMenu(_ run: RunHistoryService.RunSummary) -> some View {
         Button {
-            let text = lines(for: run).map(\.text).joined(separator: "\n")
-            SystemActions.copyToClipboard(
-                LogRedactor.redactedForSharing(text, profile: sharingProfile))
+            copyLog(of: run)
         } label: {
             Label("Copy log", systemImage: "doc.on.doc")
         }
@@ -261,7 +261,7 @@ struct RunsView: View {
 
                 ScrollView {
                     if logLines.isEmpty {
-                        Mono(text: selectedRun == nil ? "—" : "Empty log", size: 11.5)
+                        Mono(text: logPlaceholder, size: 11.5)
                             .padding(14)
                     } else {
                         LazyVStack(alignment: .leading, spacing: 4, pinnedViews: []) {
@@ -382,7 +382,7 @@ struct RunsView: View {
 
     // MARK: - Actions
 
-    private func reload() {
+    private func reload() async {
         if workspace.demoMode {
             // The demo's runs carry their logs; nothing is read from disk.
             let history = DemoData.runHistory(for: workspace.profile)
@@ -391,7 +391,12 @@ struct RunsView: View {
             runs = history.map(\.summary)
         } else {
             demoLogs = [:]
-            runs = RunHistoryService.list(profile: workspace.profile)
+            let profile = workspace.profile
+            guard let listed = await ScreenLoad.paint(
+                stillCurrent: { profile == workspace.profile },
+                read: { RunHistoryService.list(profile: profile) }
+            ) else { return }
+            runs = listed
         }
         if selectRequestedRun() { return }
         if let first = runs.first { selectRun(first) } else { selectedRun = nil; logLines = [] }
@@ -407,21 +412,60 @@ struct RunsView: View {
     }
 
     private func selectRun(_ run: RunHistoryService.RunSummary) {
+        // A refresh of the same run keeps its lines on screen until the new read lands.
+        if selectedRun?.id != run.id { logLines = [] }
         selectedRun = run
-        logLines = lines(for: run)
         explanation = nil
         explainError = nil
-    }
-
-    /// A run's log: its file, or in demo mode the lines the demo history holds.
-    private func lines(for run: RunHistoryService.RunSummary) -> [CLIBridge.LogLine] {
-        workspace.demoMode ? (demoLogs[run.id] ?? []) : RunHistoryService.loadLog(run.logURL)
+        logLoad?.cancel()
+        if workspace.demoMode {
+            logLines = demoLogs[run.id] ?? []
+            isLoadingLog = false
+            return
+        }
+        // Up to 5 MB, then a redaction pass over all of it.
+        let url = run.logURL
+        isLoadingLog = true
+        logLoad = Task {
+            let lines = await ScreenLoad.paint(
+                stillCurrent: { selectedRun?.id == run.id },
+                read: { RunHistoryService.loadLog(url) }
+            )
+            guard let lines else { return }
+            logLines = lines
+            isLoadingLog = false
+        }
     }
 
     private func copyLog() {
         let text = logLines.map(\.text).joined(separator: "\n")
-        SystemActions.copyToClipboard(
-            LogRedactor.redactedForSharing(text, profile: sharingProfile))
+        let profile = sharingProfile
+        Task {
+            let redacted = await Task.detached(priority: .userInitiated) {
+                LogRedactor.redactedForSharing(text, profile: profile)
+            }.value
+            SystemActions.copyToClipboard(redacted)
+        }
+    }
+
+    /// A run other than the shown one: its file, or in demo mode the lines the history holds.
+    private func copyLog(of run: RunHistoryService.RunSummary) {
+        let demoLines = workspace.demoMode ? (demoLogs[run.id] ?? []) : nil
+        let url = run.logURL
+        let profile = sharingProfile
+        Task {
+            let redacted = await Task.detached(priority: .userInitiated) {
+                let lines = demoLines ?? RunHistoryService.loadLog(url)
+                let text = lines.map(\.text).joined(separator: "\n")
+                return LogRedactor.redactedForSharing(text, profile: profile)
+            }.value
+            SystemActions.copyToClipboard(redacted)
+        }
+    }
+
+    private var logPlaceholder: String {
+        if selectedRun == nil { return "—" }
+        return isLoadingLog ? "Loading log…" : "Empty log"
     }
 
     /// The profile whose tenant and environment IDs a copy or export removes; none in demo mode.
@@ -450,17 +494,20 @@ struct RunsView: View {
         panel.allowedContentTypes = [.plainText]
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
-            do {
-                // Redact secrets, the Jamf host and tenant IDs before writing the export. The
-                // raw .log file at `url` is intentionally left untouched on disk — that's
-                // the audit trail. Only the exported copy is sanitized so a
-                // misbehaving subprocess or future debug-mode flag cannot
-                // exfiltrate Bearer tokens / OAuth secrets via accidental
-                // shared file. Matches the clipboard path (copyLog).
-                let text = RunsView.renderExport(from: url, profile: sharingProfile)
-                try text.write(to: dest, atomically: true, encoding: .utf8)
-            } catch {
-                Task { @MainActor in
+            // Redact secrets, the Jamf host and tenant IDs before writing the export. The
+            // raw .log file at `url` is intentionally left untouched on disk — that's
+            // the audit trail. Only the exported copy is sanitized so a
+            // misbehaving subprocess or future debug-mode flag cannot
+            // exfiltrate Bearer tokens / OAuth secrets via accidental
+            // shared file. Matches the clipboard path (copyLog).
+            let profile = sharingProfile
+            Task {
+                do {
+                    try await Task.detached(priority: .userInitiated) {
+                        let text = RunsView.renderExport(from: url, profile: profile)
+                        try text.write(to: dest, atomically: true, encoding: .utf8)
+                    }.value
+                } catch {
                     exportError = "Could not export \(url.lastPathComponent): \(error.localizedDescription)"
                     showExportError = true
                 }
@@ -486,7 +533,7 @@ struct RunsView: View {
     /// should produce. Same shape as `copyLog` (one line per text). Extracted
     /// to a static helper so tests can drive the redaction path without
     /// having to instantiate a SwiftUI view or call the NSSavePanel.
-    static func renderExport(from url: URL, profile: String?) -> String {
+    nonisolated static func renderExport(from url: URL, profile: String?) -> String {
         let text = RunHistoryService.loadLog(url).map(\.text).joined(separator: "\n")
         return LogRedactor.redactedForSharing(text, profile: profile)
     }

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import JamfReports
 
+@MainActor
 final class TrendStoreTests: XCTestCase {
     func testOptionalMetricPointsKeepDatesAlignedWhenValuesAreMissing() {
         let store = TrendStore(

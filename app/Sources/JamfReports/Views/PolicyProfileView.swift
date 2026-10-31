@@ -226,15 +226,15 @@ struct PolicyProfileView: View {
         }
     }
 
-    private var sortedFindings: [PolicyFinding] {
-        snapshot.findings
-            .prefix(100) // Limit to 100 rows
-            .sorted { lhs, rhs in
-                let lhsPriority = severityPriority(lhs.severity)
-                let rhsPriority = severityPriority(rhs.severity)
-                return lhsPriority < rhsPriority
-            }
-            .map { $0 }
+    private var sortedFindings: [PolicyFinding] { Self.shownFindings(snapshot.findings) }
+
+    /// The most severe findings: sorted before the cut, so a critical one is never left out.
+    nonisolated static func shownFindings(
+        _ findings: [PolicyFinding], limit: Int = 100
+    ) -> [PolicyFinding] {
+        Array(findings.sorted {
+            severityPriority($0.severity) < severityPriority($1.severity)
+        }.prefix(limit))
     }
 
     private func severityTone(for severity: String) -> Pill.Tone {
@@ -251,7 +251,7 @@ struct PolicyProfileView: View {
         return Theme.Severity.low.systemImage
     }
 
-    private func severityPriority(_ severity: String) -> Int {
+    private nonisolated static func severityPriority(_ severity: String) -> Int {
         let lower = severity.lowercased()
         if lower.contains("critical") { return 0 }
         if lower.contains("warning") { return 1 }

@@ -220,6 +220,7 @@ final class MobileOnlySummaryTests: XCTestCase {
 
 /// What reads a summary that has no Macs: nil is "not measured", never 0, and never a division
 /// by 0.
+@MainActor
 final class MobileOnlySummaryReaderTests: XCTestCase {
 
     private func day(_ date: String, macs: Int, mobile: Int? = 6, fileVault: Double? = nil,

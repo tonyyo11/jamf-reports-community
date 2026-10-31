@@ -9,6 +9,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     var id: Date { date }
 }
 
+@MainActor
 @Observable final class TrendStore {
     private var allSummaries: [DailySummary] = []
     private(set) var filteredSummaries: [DailySummary] = []
@@ -149,7 +150,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// days from their dated `ea-results` and `mobile-devices-list` snapshots
     /// (`resolvingAgentCoverage`, `resolvingMobile`) off the main actor, then republishes.
     /// Dropped if another load started, or the profile changed, meanwhile.
-    @MainActor
     func backfillHistory(profile: String) async {
         let generation = loadGeneration
         let summaries = allSummaries
