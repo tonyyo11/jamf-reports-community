@@ -5,6 +5,7 @@ import XCTest
 /// weight is a changed definition, not a changed fleet. `comparableSecurityScores` is the run of
 /// scored days, ending at the newest, that share one basis; the Overview card, the Trends hero
 /// and its pills compare inside it.
+@MainActor
 final class TrendStoreScoreBasisTests: XCTestCase {
 
     private func day(_ date: String, score: Double?, basis: String?) -> DailySummary {

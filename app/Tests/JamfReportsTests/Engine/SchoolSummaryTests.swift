@@ -3,10 +3,11 @@ import XCTest
 
 /// The Jamf School daily summary (`ReportEngine.writeSchoolSummary`): written from the newest
 /// `school-devices` snapshot, in jamf-cli's flattened row shape, when a collect landed it.
+@MainActor
 final class SchoolSummaryTests: XCTestCase {
-    private var root: URL!
-    private var dataDir: URL!
-    private var summariesDir: URL!
+    private nonisolated(unsafe) var root: URL!
+    private nonisolated(unsafe) var dataDir: URL!
+    private nonisolated(unsafe) var summariesDir: URL!
     private let landed: Set<String> = [SchoolFleetService.devicesKind]
 
     override func setUpWithError() throws {

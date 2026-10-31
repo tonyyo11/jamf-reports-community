@@ -19,6 +19,10 @@ enum DeviceInventoryService {
 
     static func load(profile: String, demoMode: Bool) -> DeviceInventorySnapshot {
         if demoMode { return DemoData.deviceSnapshot }
+        return AppLogger.signpost("Device inventory load") { loadFromDisk(profile: profile) }
+    }
+
+    private static func loadFromDisk(profile: String) -> DeviceInventorySnapshot {
         guard let root = validatedWorkspaceRoot(profile: profile) else {
             return emptySnapshot(
                 warning: "Workspace is missing or not contained in "

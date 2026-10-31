@@ -544,13 +544,13 @@ await engine.writeHTMLWithWorkbook(
             await RunArtifacts.record(
                 [outputURL, htmlURL, generated.csvFolder].compactMap { $0 }, in: written,
                 config: config, profile: profile, onLine: onLine)
-            tightenOnSuccess(0, profile: profile)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] generate failed: \(error.localizedDescription)"))
             // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -602,8 +602,8 @@ await engine.writeHTMLWithWorkbook(
     /// of a tree walk on a failed run is negligible compared to the security
     /// gain. The caller's `exitCode` parameter is retained for the log entry
     /// so forensic review can correlate the sweep with the underlying run.
-    func tightenOnSuccess(_ exitCode: Int32, profile: String) {
-        let result = WorkspacePermissionHardener.tighten(profile: profile)
+    func tightenOnSuccess(_ exitCode: Int32, profile: String) async {
+        let result = await WorkspacePermissionHardener.tightenOffMain(profile: profile)
         AppLogger.cli.info(
             """
             tightenOnSuccess profile=\(profile, privacy: .private) \
@@ -693,13 +693,13 @@ try await ReportEngine.schoolGenerateReport(
             await RunArtifacts.record(
                 [outputURL, generated.csvFolder].compactMap { $0 }, in: written,
                 config: config, profile: profile, onLine: onLine)
-            tightenOnSuccess(0, profile: profile)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] school-generate failed: \(error.localizedDescription)"))
             // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -775,7 +775,7 @@ try await ReportEngine.schoolGenerateReport(
                 now: now,
                 onLine: onLine
             )
-            tightenOnSuccess(0, profile: profile)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch ReportEngineError.jamfCLINotFound {
             onLine(.init(timestamp: Date(), level: .fail,
@@ -785,7 +785,7 @@ try await ReportEngine.schoolGenerateReport(
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] collect failed: \(error.localizedDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -1569,13 +1569,13 @@ try await ReportEngine.generateHTML(
                          text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
             await RunArtifacts.record(
                 [outputURL], in: written, config: config, profile: profile, onLine: onLine)
-            tightenOnSuccess(0, profile: profile)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] html generation failed: \(error.localizedDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -1646,12 +1646,12 @@ try await ReportEngine.generatePDF(
                          text: "[ok] PDF report written: \(outputURL.lastPathComponent)"))
             await RunArtifacts.record(
                 [outputURL], in: written, config: config, profile: profile, onLine: onLine)
-            tightenOnSuccess(0, profile: profile)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] pdf generation failed: \(error.localizedDescription)"))
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -1708,13 +1708,13 @@ try await ReportEngine.inventoryCSV(
                          text: "[ok] inventory CSV written: \(outputURL.lastPathComponent)"))
             await RunArtifacts.record(
                 [outputURL], in: written, config: config, profile: profile, onLine: onLine)
-            tightenOnSuccess(0, profile: profile)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] inventory-csv failed: \(error.localizedDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -1782,7 +1782,7 @@ try await ReportEngine.inventoryCSV(
         if code == 0, !data.isEmpty {
             saveJSONSnapshot(data: data, profile: profile, type: "audit", onLine: onLine)
         }
-        tightenOnSuccess(code, profile: profile)
+        await tightenOnSuccess(code, profile: profile)
         return code
     }
 
@@ -1818,7 +1818,7 @@ try await ReportEngine.inventoryCSV(
         if code == 0, !data.isEmpty {
             saveJSONSnapshot(data: data, profile: profile, type: "group-tools-analyze", onLine: onLine)
         }
-        tightenOnSuccess(code, profile: profile)
+        await tightenOnSuccess(code, profile: profile)
         return code
     }
 
@@ -2070,7 +2070,7 @@ try await ReportEngine.inventoryCSV(
                                             attributes: [.posixPermissions: 0o700])) != nil
             guard cleared else {
                 discardStaging(validatedTemp, onLine: onLine)
-                tightenOnSuccess(exit, profile: profile)
+                await tightenOnSuccess(exit, profile: profile)
                 return BackupRun(exit: exit, folder: nil)
             }
         }
@@ -2098,7 +2098,7 @@ try await ReportEngine.inventoryCSV(
         // With Jamf Pro failed, the folder is kept only for Protect objects to restore from.
         if proFailed, (protectResult?.objectTotal ?? 0) == 0 {
             discardStaging(validatedTemp, protect: protectResult, onLine: onLine)
-            tightenOnSuccess(exit, profile: profile)
+            await tightenOnSuccess(exit, profile: profile)
             return BackupRun(exit: exit, folder: nil)
         }
         // A skipped Jamf Pro part with no Jamf Protect objects leaves nothing to restore from,
@@ -2111,7 +2111,7 @@ try await ReportEngine.inventoryCSV(
                 text: (proSkip?.isPartial == true ? "[warn]" : "[info]")
                     + " no backup written: Jamf Pro was skipped and Jamf Protect left nothing "
                     + "to keep"))
-            tightenOnSuccess(exit, profile: profile)
+            await tightenOnSuccess(exit, profile: profile)
             return BackupRun(exit: exit, folder: nil)
         }
 
@@ -2197,7 +2197,7 @@ try await ReportEngine.inventoryCSV(
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] Jamf Pro backup failed; kept the Jamf Protect part in "
                              + validatedFinal.lastPathComponent))
-            tightenOnSuccess(exit, profile: profile)
+            await tightenOnSuccess(exit, profile: profile)
             return BackupRun(exit: exit, folder: validatedFinal)
         }
         let protectIncomplete = protectResult?.isIncomplete == true
@@ -2216,7 +2216,7 @@ try await ReportEngine.inventoryCSV(
                     + validatedFinal.lastPathComponent
                 : "[ok] backup written: \(validatedFinal.lastPathComponent)"
         ))
-        tightenOnSuccess(exit, profile: profile)
+        await tightenOnSuccess(exit, profile: profile)
         return BackupRun(exit: exit, folder: validatedFinal)
     }
 

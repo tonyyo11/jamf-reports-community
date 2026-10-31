@@ -10,10 +10,11 @@ import XCTest
 /// Fixture, worked by hand: Chrome 450 of 500, Zoom 20 of 100, Slack 10 of 10.
 /// Device-weighted (450 + 20 + 10) / (500 + 100 + 10) = 78.689%, which the summary writer
 /// records as 78.7; the old mean was 70.0%.
+@MainActor
 final class TrendStorePatchRecomputeTests: XCTestCase {
 
-    private var root: URL!
-    private var dataDir: URL!
+    private nonisolated(unsafe) var root: URL!
+    private nonisolated(unsafe) var dataDir: URL!
 
     /// 480 / 610, rounded to a tenth the way the summary writer records it, so a day
     /// recomputed here reads the same as one written after the upgrade.

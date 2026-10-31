@@ -215,6 +215,10 @@ struct ContentView: View {
             // cheap). Both no-op in demo mode.
             await workspace.checkHeavyTierStaleness()
             await workspace.autoRefreshAuditIfStale()
+            // MFS-2: one-shot Spotlight + permissions backfill on existing workspaces, once per
+            // app version (`OnboardingFlow.createWorkspace` covers new ones). It walks every
+            // workspace and runs mdutil, so it stays off the main actor.
+            Task.detached(priority: .utility) { WorkspaceMigration.runIfNeeded() }
             // v2.2.0 managed automation: make Login Items agree with the
             // policy-driven schedule. No-op in demo mode.
             await workspace.applyAutomationPolicy()

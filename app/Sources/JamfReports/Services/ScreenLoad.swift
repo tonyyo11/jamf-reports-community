@@ -22,7 +22,7 @@ enum ScreenLoad {
         _ read: @Sendable () -> T
     ) async throws -> T {
         try Task.checkCancellation()
-        let value = read()
+        let value = AppLogger.signpost("Screen load") { read() }
         try Task.checkCancellation()
         return value
     }

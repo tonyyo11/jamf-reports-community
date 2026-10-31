@@ -19,6 +19,13 @@ import OSLog
 ///   .debug   fine-grained per-item / per-seam trace (verbose-only)
 enum AppLogger {
     private static let subsystem = "com.github.tonyyo11.jamf-reports-community"
+    private static let signposter = OSSignposter(subsystem: subsystem, category: .pointsOfInterest)
+
+    /// A Points of Interest interval for Instruments. The name is all it records: never attach
+    /// a profile, path or device.
+    static func signpost<T>(_ name: StaticString, _ body: () throws -> T) rethrows -> T {
+        try signposter.withIntervalSignpost(name, id: signposter.makeSignpostID()) { try body() }
+    }
 
     static let cli      = Logger(subsystem: subsystem, category: "cli")       // jamf-cli spawn/exec/exit
     static let collect  = Logger(subsystem: subsystem, category: "collect")   // snapshot collection + parsing

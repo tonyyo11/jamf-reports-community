@@ -38931,6 +38931,28 @@
         }
       }
     },
+    "Loading log…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protokoll wird geladen …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando el registro…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chargement du journal…"
+          }
+        }
+      }
+    },
     "Loading security posture comparison" : {
       "localizations" : {
         "de" : {

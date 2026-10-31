@@ -24,7 +24,7 @@ final class CLIBridgeTightenOnSuccessTests: XCTestCase {
         if let tempRoot { try? FileManager.default.removeItem(at: tempRoot) }
     }
 
-    func test_tightenOnSuccess_secures0644FilesUnderProfile() throws {
+    func test_tightenOnSuccess_secures0644FilesUnderProfile() async throws {
         let profile = "dummy"
         let workspace = tempRoot.appendingPathComponent(profile, isDirectory: true)
         let dataDir = workspace
@@ -44,7 +44,7 @@ final class CLIBridgeTightenOnSuccessTests: XCTestCase {
         let bridge = CLIBridge()
         // Simulated CLI call exited successfully — the bridge wrapper would
         // have called this immediately after `await run(...)`.
-        bridge.tightenOnSuccess(0, profile: profile)
+        await bridge.tightenOnSuccess(0, profile: profile)
 
         XCTAssertEqual(try mode(of: snapshot), 0o600,
                        "post: tightenOnSuccess(0, ...) must walk the workspace to 0600")
@@ -52,7 +52,7 @@ final class CLIBridgeTightenOnSuccessTests: XCTestCase {
                        "post: directory mode must be 0700")
     }
 
-    func test_tightenOnSuccess_runsOnNonZeroExit() throws {
+    func test_tightenOnSuccess_runsOnNonZeroExit() async throws {
         // Per silent-failure audit MUST-FIX #2: the Python CLI may write some
         // files then crash (non-zero exit). Those files would otherwise keep
         // their default-umask 0644 perms indefinitely, so the sweep must run
@@ -68,16 +68,16 @@ final class CLIBridgeTightenOnSuccessTests: XCTestCase {
         )
 
         let bridge = CLIBridge()
-        bridge.tightenOnSuccess(1, profile: profile)
+        await bridge.tightenOnSuccess(1, profile: profile)
         XCTAssertEqual(try mode(of: file), 0o600,
                        "non-zero exit must still tighten — partial writes are still device data")
     }
 
-    func test_tightenOnSuccess_isNoOpForInvalidProfile() throws {
+    func test_tightenOnSuccess_isNoOpForInvalidProfile() async throws {
         let bridge = CLIBridge()
         // Must not crash, must not throw, must not write anywhere.
-        bridge.tightenOnSuccess(0, profile: "../escape")
-        bridge.tightenOnSuccess(0, profile: "")
+        await bridge.tightenOnSuccess(0, profile: "../escape")
+        await bridge.tightenOnSuccess(0, profile: "")
     }
 
     private func mode(of url: URL) throws -> Int {

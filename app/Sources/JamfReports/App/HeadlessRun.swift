@@ -533,7 +533,7 @@ private func scheduledRunSingleBody(
             // Tighten permissions on collected snapshots immediately after
             // collect, before generate, so a crash or early exit still
             // leaves collected files at 0600. Mirrors the GUI's tightenOnSuccess.
-            await WorkspacePermissionHardener.tighten(profile: profile)
+            await WorkspacePermissionHardener.tightenOffMain(profile: profile)
         }
         // snapshot-only stops after collect; summary.json is already written.
         // Only Jamf Pro collect (via ReportEngine.collect) writes summary.json;
@@ -647,7 +647,7 @@ private func scheduledRunSingleBody(
         print(message)
         recorder?.record(message)
         // Tighten permissions on generated report and any newly written files.
-        await WorkspacePermissionHardener.tighten(profile: profile)
+        await WorkspacePermissionHardener.tightenOffMain(profile: profile)
         await ScheduledRunSignals.notifyScheduledRun(
             config: config, profile: profile, mode: mode,
             artifact: outputURL.lastPathComponent,
