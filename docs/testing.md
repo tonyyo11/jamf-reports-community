@@ -31,6 +31,15 @@ cd app && swift build --build-tests 2>&1 | grep "error:" || echo OK
 New services and business-logic functions should have a corresponding
 `<ServiceName>Tests.swift`.
 
+## What a test has to prove
+
+A test that cannot fail proves nothing. Before trusting a new test, ask what it does if the
+code under it returns nothing: an empty list, nil, 0 or an early return. If it still passes,
+rewrite it to assert what the user would see: the figure on the screen, the row in the sheet,
+the line in the log. The quiet forms are a loop over rows that turned out empty, `contains` on
+text that appears either way, and a nil check on a path that returns nil for every input. When
+in doubt, break the code and run the test: it has to fail.
+
 ## Fixture Provenance
 
 The committed fixtures used by the suite are synthetic demo-tenant data, fabricated for

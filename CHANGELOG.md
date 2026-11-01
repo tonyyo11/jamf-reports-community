@@ -98,6 +98,18 @@ versions in this repository map to git tags.
 - Hovering the Trends chart redraws only its card. Removing a row on the Config screen keeps the other
   rows' edits with them. Overview reads another Mac's claim once a minute off the main thread, and
   searching School Devices no longer re-sorts the whole fleet on each keystroke.
+- Generate no longer refuses with "A refresh is already running" when nothing shows one running.
+  The automatic refresh and Device Lookup's refresh now appear in the status bar and in Run
+  History, as do the collects behind Generate and first-time setup, and the Generate sheet says
+  what is running (a collect, a report, a scheduled run or a jamf-cli update) and turns Generate
+  off until it ends. A refresh that finishes with the data still out of date now backs off,
+  instead of starting again each time you return to the app, and a Jamf School workspace no
+  longer reads as out of date right after a collect. (#368)
+- The HTML report's Purchase cohorts section now shows data. Collect never asked Jamf Pro for the
+  Purchasing section, and the report looked for a field Jamf Pro does not have, so the section was
+  left out on every workspace. It now groups Macs by the year of their PO date and says how many
+  Macs have one. Only the PO date is saved in the snapshot; price, PO number and vendor are not.
+  An earlier note here that Jamf Pro's API has no purchasing data was wrong. (#305)
 - Finishing a collect, report or backup no longer freezes the window while workspace permissions
   are checked. Run History opens and switches runs without freezing too, and launch no longer waits
   on the once-per-version workspace check. (#305)

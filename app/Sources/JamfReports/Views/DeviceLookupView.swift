@@ -476,7 +476,16 @@ struct DeviceLookupView: View {
             // CLI bridge surface and keeps this screen from owning bespoke
             // jamf-cli invocation logic.
             do {
-                _ = try await CLIBridge().collect(profile: profile, force: true) { _ in }
+                // Before `beginCollect`, which would replace a running collect's status line.
+                if let refusal = workspace.generateRefusal() { throw refusal }
+                workspace.beginCollect(
+                    for: profile, status: "refreshing device index · profile=\(profile)")
+                defer { workspace.endCollect(for: profile) }
+                _ = try await WorkspaceStore.recordingCollect(
+                    profile: profile, honesty: CollectHonestyWatcher()
+                ) { onLine in
+                    try await CLIBridge().collect(profile: profile, force: true, onLine: onLine)
+                }
             } catch {
                 AppLogger.cli.warning(
                     "DeviceLookupView refreshIndex: collect threw — \(error.localizedDescription, privacy: .private)"

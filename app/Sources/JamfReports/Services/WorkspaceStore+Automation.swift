@@ -781,16 +781,31 @@ extension WorkspaceStore {
     /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultRemediationCollector: RemediationCollector = {
         profile, tiers, config in
-        try await CLIBridge.holdingTickLock {
-            try await CollectRouter.run(
-                workspace: try WorkspaceID(validating: profile),
-                tiers: tiers,
-                skipExpensive: false,
-                force: false,
-                config: config,
-                onLine: CLIBridge.bufferingOnLine
-            )
+        try await recordingAutomaticCollect(profile: profile) { onLine in
+            _ = try await CLIBridge.holdingTickLock {
+                try await CollectRouter.run(
+                    workspace: try WorkspaceID(validating: profile),
+                    tiers: tiers,
+                    skipExpensive: false,
+                    force: false,
+                    config: config,
+                    onLine: onLine
+                )
+            }
+            return 0
         }
+    }
+
+    /// Records an automatic collect under the background refresh's Run History name. A collect
+    /// that returns has exited 0; a failure is thrown.
+    nonisolated private static func recordingAutomaticCollect(
+        profile: String,
+        _ run: @escaping @Sendable (@escaping @Sendable (CLIBridge.LogLine) -> Void)
+            async throws -> Int32
+    ) async throws {
+        _ = try await recordingCollect(
+            profile: profile, label: appRefreshRunLabel, keep: keptAppRefreshRuns,
+            honesty: CollectHonestyWatcher(), run)
     }
 
     /// One-click "Run now" for a failing/overdue managed row on the
@@ -1013,15 +1028,18 @@ extension WorkspaceStore {
 
     /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
-        try await CLIBridge.holdingTickLock {
-            try await CollectRouter.run(
-                workspace: try WorkspaceID(validating: profile),
-                tiers: [.refresh, .inventory],
-                skipExpensive: false,
-                force: false,  // per-kind cadence filter: no-op if this kind already ran today
-                config: config,
-                onLine: CLIBridge.noOpOnLine
-            )
+        try await recordingAutomaticCollect(profile: profile) { onLine in
+            _ = try await CLIBridge.holdingTickLock {
+                try await CollectRouter.run(
+                    workspace: try WorkspaceID(validating: profile),
+                    tiers: [.refresh, .inventory],
+                    skipExpensive: false,
+                    force: false,  // per-kind cadence filter: no-op if this kind already ran today
+                    config: config,
+                    onLine: onLine
+                )
+            }
+            return 0
         }
     }
 

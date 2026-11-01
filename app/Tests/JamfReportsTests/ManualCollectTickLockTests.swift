@@ -333,7 +333,10 @@ final class ManualCollectTickLockTests: XCTestCase {
     /// push the coordinator into backoff.
     func testTheBackgroundRefreshDoesNotCountARefusalAsAFailure() async throws {
         let (_, lock) = try makeStore()
-        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        let coordinator = RefreshCoordinator { profile, tier in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine)
+        }
         try await whileAnotherProcessHolds(lock) {
             coordinator.refreshIfStale(profile: profile, tier: .refresh)
             XCTAssertTrue(coordinator.isRefreshing(profile: profile, tier: .refresh))
