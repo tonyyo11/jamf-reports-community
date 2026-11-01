@@ -88,6 +88,33 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- `jamf-reports generate --output` naming an existing folder now stops with an error. It used to
+  replace the folder with the workbook, deleting what was in it.
+- Jamf School workbooks now follow `output.keep_latest_runs` and move older runs to the archive, as
+  Jamf Pro workbooks do.
+- A cancelled or failed Jamf Pro backup no longer leaves its unfinished files in `backups/`.
+- A cancelled jamf-cli call can no longer crash the app. `jamf-reports generate` on Jamf Pro dates a
+  run that crosses midnight by its start, as every other entry point does.
+- Shared logs and diagnostic bundles now remove the names of connected logins such as Jamf Protect,
+  not only the workspace's own.
+- On shared storage, a backup folder a peer planted no longer earns Jamf Pro backups before the
+  storage choice: this Mac must have its own record of a backup schedule succeeding.
+- `jamf-reports verify` no longer lets a timestamp token's certificates trigger a network fetch.
+- Hovering the Trends chart redraws only its card. Removing a row on the Config screen keeps the other
+  rows' edits with them. Overview reads another Mac's claim once a minute off the main thread, and
+  searching School Devices no longer re-sorts the whole fleet on each keystroke.
+- Generate no longer refuses with "A refresh is already running" when nothing shows one running.
+  The automatic refresh and Device Lookup's refresh now appear in the status bar and in Run
+  History, as do the collects behind Generate and first-time setup, and the Generate sheet says
+  what is running (a collect, a report, a scheduled run or a jamf-cli update) and turns Generate
+  off until it ends. A refresh that finishes with the data still out of date now backs off,
+  instead of starting again each time you return to the app, and a Jamf School workspace no
+  longer reads as out of date right after a collect. (#368)
+- The HTML report's Purchase cohorts section now shows data. Collect never asked Jamf Pro for the
+  Purchasing section, and the report looked for a field Jamf Pro does not have, so the section was
+  left out on every workspace. It now groups Macs by the year of their PO date and says how many
+  Macs have one. Only the PO date is saved in the snapshot; price, PO number and vendor are not.
+  An earlier note here that Jamf Pro's API has no purchasing data was wrong. (#305)
 - Finishing a collect, report or backup no longer freezes the window while workspace permissions
   are checked. Run History opens and switches runs without freezing too, and launch no longer waits
   on the once-per-version workspace check. (#305)

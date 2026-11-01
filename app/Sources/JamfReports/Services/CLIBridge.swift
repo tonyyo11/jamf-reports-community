@@ -809,7 +809,13 @@ try await ReportEngine.schoolGenerateReport(
             // force: true — collectThenGenerate is always a GUI "Run now" action; the
             // once-per-day guard must not silently skip a user-triggered collect+generate.
             collect: {
-                try await self.collect(profile: profile, force: true, now: runStart, onLine: onLine)
+                try await WorkspaceStore.recordingCollect(
+                    profile: profile, honesty: CollectHonestyWatcher()
+                ) { recorded in
+                    try await self.collect(
+                        profile: profile, force: true, now: runStart,
+                        onLine: { onLine($0); recorded($0) })
+                }.exit
             },
             narrative: narrative,
             generate: { aiNarrative in
@@ -2033,14 +2039,20 @@ try await ReportEngine.inventoryCSV(
         let proSkipped = proSkip != nil
         let exit: Int32
         if proSkip == nil {
-            exit = try await run(
-                executable: bin,
-                arguments: Self.backupArguments(
-                    profile: jamfProProfile, outputDirectory: validatedTemp.path),
-                environment: Self.environmentForJamfCLI(),
-                timeout: timeout,
-                onLine: onLine
-            )
+            do {
+                exit = try await run(
+                    executable: bin,
+                    arguments: Self.backupArguments(
+                        profile: jamfProProfile, outputDirectory: validatedTemp.path),
+                    environment: Self.environmentForJamfCLI(),
+                    timeout: timeout,
+                    onLine: onLine
+                )
+            } catch {
+                // Partial configuration must not stay: shared storage never sweeps staging.
+                discardStaging(validatedTemp, onLine: onLine)
+                throw error
+            }
             if exit == Self.exitCodeTimedOut {
                 onLine(.init(timestamp: Date(), level: .fail,
                              text: "[error] backup stopped after the "

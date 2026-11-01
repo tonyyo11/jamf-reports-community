@@ -220,20 +220,7 @@ struct ReportEngine: Sendable {
         }
 
         // Post-write: archive old runs, emit trend summary.
-        let outputDir = outputURL.deletingLastPathComponent()
-        let stem = stemFromURL(outputURL)
-        if config.output?.isArchiveEnabled == true {
-            if let archiveDir = resolvedArchiveDir(profile: profile, onLine: onLine) {
-                let keep = config.output?.resolvedKeepLatestRuns ?? 10
-                archiveOldRuns(
-                    outputDir: outputDir,
-                    archiveDir: archiveDir,
-                    stem: stem,
-                    keep: keep,
-                    onLine: onLine
-                )
-            }
-        }
+        rotateRuns(besides: outputURL, profile: profile, onLine: onLine)
 
         if let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             emitSummaryJSON(summariesDir: summariesDir, provenance: prov, day: day, onLine: onLine)
@@ -241,6 +228,22 @@ struct ReportEngine: Sendable {
     }
 
     // MARK: - Output rotation (mirrors Python _archive_old_output_runs)
+
+    /// Applies `output.archive_enabled` and `keep_latest_runs` to the runs beside a new workbook.
+    private func rotateRuns(
+        besides outputURL: URL, profile: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
+        guard config.output?.isArchiveEnabled == true,
+              let archiveDir = resolvedArchiveDir(profile: profile, onLine: onLine) else { return }
+        archiveOldRuns(
+            outputDir: outputURL.deletingLastPathComponent(),
+            archiveDir: archiveDir,
+            stem: stemFromURL(outputURL),
+            keep: config.output?.resolvedKeepLatestRuns ?? 10,
+            onLine: onLine
+        )
+    }
 
     /// True when `fileStem` is `stem` alone or `stem` plus one run timestamp, so in a shared
     /// output folder `report_acme` does not claim `report_acme-prod_…` or `report_acme_2_…`.
@@ -2521,10 +2524,11 @@ struct ReportEngine: Sendable {
     /// `--section` jamf-cli returns General, Hardware and OS only, so assigned
     /// user, email and the security columns stayed empty on jamf-cli-only
     /// workspaces (2.8.0 field pass). The flag exists on every supported
-    /// jamf-cli — verified live on 1.18.0 and 1.29.0.
+    /// jamf-cli — verified live on 1.18.0 and 1.29.0. PURCHASING feeds the report's purchase
+    /// cohorts; `keepingOnlyPODate` removes the rest of that section before it is saved.
     static let computerInventorySections = [
         "GENERAL", "HARDWARE", "OPERATING_SYSTEM",
-        "USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION",
+        "USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION", "PURCHASING",
     ].joined(separator: ",")
 
     /// Sections `collect` asks `pro mobile-devices list` for, each as its own `--section`.
@@ -2991,6 +2995,16 @@ struct ReportEngine: Sendable {
                 return KindCollectResult(outcome: outcome, saved: false)
             }
             AttentionLog.clear(.lostModeStripFailed)
+            saved = stripped
+        } else if kind == "computers" {
+            guard let stripped = Self.keepingOnlyPODate(payload) else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): purchasing details could not be removed from the "
+                        + "payload — snapshot not saved"))
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+                return KindCollectResult(outcome: outcome, saved: false)
+            }
             saved = stripped
         }
         do {
@@ -3895,6 +3909,10 @@ struct ReportEngine: Sendable {
             onLine: onLine)
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
         _ = writeSHA256Sidecar(for: outputURL)
+        if let workspace {
+            ReportEngine(config: config, dataDir: dataDir, workspace: workspace)
+                .rotateRuns(besides: outputURL, profile: workspace.name, onLine: onLine)
+        }
         return GeneratedReport(failures: schoolFailures, csvFolder: folder)
     }
 
@@ -4259,6 +4277,35 @@ struct ReportEngine: Sendable {
         guard removed else { return data }
         return try? JSONSerialization.data(
             withJSONObject: stripped, options: sortedKeys ? [.sortedKeys] : [])
+    }
+
+    /// The payload with each `purchasing` object cut down to `poDate`, the one key a report
+    /// reads. Price, PO number, vendor and contact stay out of a snapshot that can sync to a
+    /// shared folder. Returned unchanged when there is nothing to remove; nil when the result
+    /// cannot be written back, so the caller saves nothing rather than the full section.
+    static func keepingOnlyPODate(_ data: Data) -> Data? {
+        guard let object = try? JSONSerialization.jsonObject(
+            with: data, options: [.fragmentsAllowed]) else { return nil }
+        var removed = false
+        func strip(_ value: Any) -> Any {
+            if let dict = value as? [String: Any] {
+                var kept: [String: Any] = [:]
+                for (key, child) in dict {
+                    if key == "purchasing", let purchasing = child as? [String: Any] {
+                        if purchasing.keys.contains(where: { $0 != "poDate" }) { removed = true }
+                        kept[key] = purchasing.filter { $0.key == "poDate" }
+                    } else {
+                        kept[key] = strip(child)
+                    }
+                }
+                return kept
+            }
+            if let array = value as? [Any] { return array.map(strip) }
+            return value
+        }
+        let stripped = strip(object)
+        guard removed else { return data }
+        return try? JSONSerialization.data(withJSONObject: stripped)
     }
 
     static func jsonPayload(from data: Data) -> Data? {

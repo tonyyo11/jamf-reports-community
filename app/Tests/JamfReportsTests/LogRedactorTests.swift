@@ -314,6 +314,24 @@ final class LogRedactorTests: XCTestCase {
 
     // MARK: - redactedForSharing
 
+    func testConnectedProfileNamesAreRemovedFromASharedLog() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("redact-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let workspace = root.appendingPathComponent("Acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try "protect:\n  enabled: true\n  profile: Acme-Protect\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let shared = LogRedactor.redactedForSharing(
+            "[info] collecting protect-alerts for Acme-Protect", profiles: ["Acme"],
+            scopeIDs: { _ in [] }, serverHosts: { _ in [] })
+        XCTAssertFalse(shared.contains("Acme"), shared)
+    }
+
     /// The fixture line from `FailureCauseTests`: jamf-cli names the host and the environment ID.
     private let environmentNotFound = "API request failed with status 404 Not Found, traceId "
         + "0000000000000000 (method=GET, url=https://us.api.jamfcloud.com/compliance-benchmarks/"

@@ -60,6 +60,37 @@ final class CSVFolderTests: XCTestCase {
         }
     }
 
+    /// `output.keep_latest_runs` applies to a School workbook, as to a Jamf Pro one.
+    func testAJamfSchoolRunRotatesOlderWorkbooks() async throws {
+        try await withScratch { scratch in
+            let workspace = scratch.appendingPathComponent("district", isDirectory: true)
+            let dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+            try SchoolRows.write(
+                [SchoolRows.row("school-dep-devices", 1)],
+                kind: "school-dep-devices", into: dataDir)
+            let reports = workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+            try FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
+            let old = reports.appendingPathComponent("report_district_2026-01-01_090000.xlsx")
+            try Data("old".utf8).write(to: old)
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date(timeIntervalSince1970: 1_700_000_000)],
+                ofItemAtPath: old.path)
+            let config = try ConfigLoader.loadFromString("""
+            output:
+              archive_enabled: true
+              keep_latest_runs: 1
+            """)
+            _ = try await ReportEngine.schoolGenerateReport(
+                config: config, dataDir: dataDir,
+                outputURL: reports.appendingPathComponent("report_district_2026-11-01_090000.xlsx"),
+                workspace: try WorkspaceID(validating: "district"))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+            XCTAssertTrue(FileManager.default.fileExists(
+                atPath: reports.appendingPathComponent(
+                    "report_district_2026-11-01_090000.xlsx").path))
+        }
+    }
+
     func testTheJamfSchoolTabsHoldTheSameRows() async throws {
         try await withScratch { scratch in
             let dataDir = scratch.appendingPathComponent("jamf-cli-data", isDirectory: true)

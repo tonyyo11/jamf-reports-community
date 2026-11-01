@@ -64,7 +64,7 @@ fi
 
 echo "→ swift build (${CONFIG})"
 if [[ "$CONFIG" == "release" ]]; then
-  swift build -c release
+  swift build -c release --force-resolved-versions
 else
   swift build
 fi

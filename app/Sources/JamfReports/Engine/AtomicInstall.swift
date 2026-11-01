@@ -11,7 +11,10 @@ enum AtomicInstall {
     /// On a volume without swap support (some network shares) the old entry is renamed aside,
     /// the staged one renamed in, and the old one removed, which leaves a short gap with no
     /// entry at the final name but still never follows a link.
+    /// A file never replaces a real folder: the swap would hand the folder to `discard`, which
+    /// removes it and its contents with no Trash.
     static func install(_ staged: URL, at final: URL) throws {
+        if isRealFolder(final), !isRealFolder(staged) { throw POSIXError(.EISDIR) }
         var lastError: Int32 = EEXIST
         for _ in 0..<2 {
             let exists = isEntry(final)
@@ -148,6 +151,11 @@ enum AtomicInstall {
             let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
             if now.timeIntervalSince(modified) > staleStagingAge { discard(url) }
         }
+    }
+
+    private static func isRealFolder(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
     }
 
     /// Removes what `url` names: a real folder with its contents, anything else (a link

@@ -585,7 +585,9 @@ final class HtmlReportTests: XCTestCase {
 
     func testDaysAgoReadsTheFormatsTheOtherReadersDo() {
         let report = makeReport()
-        let past = Date().addingTimeInterval(-3 * 86_400 - 3_600)
+        // Calendar arithmetic: 86_400 s is not a day on a clock-change day.
+        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        let past = threeDaysAgo.addingTimeInterval(-3_600)
         for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "MM/dd/yyyy HH:mm:ss"] {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")

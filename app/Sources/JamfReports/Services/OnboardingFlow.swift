@@ -1067,10 +1067,14 @@ final class OnboardingFlow {
         workspaceStore: WorkspaceStore,
         now: Date = Date(),
         collect: @escaping FirstReportStep = { profile, now, onLine in
-            try await CLIBridge().collect(
-                profile: profile, tiers: [.refresh, .inventory], force: true, now: now,
-                onLine: onLine
-            )
+            try await WorkspaceStore.recordingCollect(
+                profile: profile, honesty: CollectHonestyWatcher()
+            ) { recorded in
+                try await CLIBridge().collect(
+                    profile: profile, tiers: [.refresh, .inventory], force: true, now: now,
+                    onLine: { onLine($0); recorded($0) }
+                )
+            }.exit
         },
         generate: @escaping FirstReportStep = { profile, now, onLine in
             try await CLIBridge.holdingGenerate {
