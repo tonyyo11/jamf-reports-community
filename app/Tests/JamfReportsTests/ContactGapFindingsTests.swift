@@ -102,13 +102,17 @@ final class ContactGapFindingsTests: XCTestCase {
     // MARK: - Records from each source
 
     func testAComputersRecordCarriesTheThreeDatesAndMarksItselfDated() throws {
-        func stamp(_ days: Double) -> String {
-            ISO8601DateFormatter().string(from: Date().addingTimeInterval(-days * 86_400))
+        // Calendar days, as the reader counts them: 72 hours is 2 days just after clocks go back.
+        let now = Date()
+        func stamp(_ days: Int) throws -> String {
+            ISO8601DateFormatter().string(from: try XCTUnwrap(
+                Calendar.current.date(byAdding: .day, value: -days, to: now)))
         }
+        let checkIn = try stamp(3)
         let record = DeviceInventoryService.recordFromComputer([
             "id": "7", "general": [
-                "name": "M", "lastCheckIn": stamp(3), "reportDate": stamp(9),
-                "lastContact": stamp(1),
+                "name": "M", "lastCheckIn": checkIn, "reportDate": try stamp(9),
+                "lastContact": try stamp(1),
             ], "hardware": ["serialNumber": "S7"],
         ], source: "computers.json")
         XCTAssertNotNil(record.checkInDate)
@@ -116,7 +120,7 @@ final class ContactGapFindingsTests: XCTestCase {
         XCTAssertNotNil(record.contactDate)
         XCTAssertTrue(record.carriesDates)
         XCTAssertEqual(record.daysSinceContact, 3)
-        XCTAssertEqual(record.lastContact, stamp(3), "the check-in's text is unchanged")
+        XCTAssertEqual(record.lastContact, checkIn, "the check-in's text is unchanged")
         XCTAssertEqual(DevicesView.contactText(record),
                        ISO8601DateFormatter().string(from: try XCTUnwrap(record.contactDate)))
     }
