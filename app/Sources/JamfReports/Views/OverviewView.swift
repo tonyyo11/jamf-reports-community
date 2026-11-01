@@ -26,6 +26,8 @@ struct OverviewView: View {
     /// toast can surface the first artifact's 12-char short hash. Cleared
     /// after each run completes. PR-15.
     @State private var generatedHashes: [String: String] = [:]
+    /// Another Mac's live claim on this workspace, phrased for the banner; see `peerActivityText`.
+    @State private var peerActivity: String?
     @State private var activitySelection: RecentDeviceRow.ID? = nil
     /// The Customize Overview sheet.
     @State private var showCustomize = false
@@ -211,17 +213,29 @@ struct OverviewView: View {
                 trendsLoadingOverlay
             }
         }
+        .task(id: PeerActivityKey(profile: workspace.profile, demoMode: workspace.demoMode)) {
+            await pollPeerActivity(profile: workspace.profile, demoMode: workspace.demoMode)
+        }
     }
 
     /// Prompt shown when .inventory / .scan data is older than a week.
     /// A live claim held by another machine, phrased for the operator.
     ///
-    /// Read straight from disk rather than cached in state: it changes on
-    /// another Mac's schedule, and a stale "someone is collecting" is worse
-    /// than none. Cheap — one small file, only on a shared workspace.
-    private var peerActivity: String? {
-        guard !workspace.demoMode,
-              let claim = SharedWorkspace.readClaim(profile: workspace.profile),
+    /// Read off the main actor into `peerActivity` once a minute while the screen is up: the
+    /// claim changes on another Mac's schedule, and a stale "someone is collecting" is worse
+    /// than none, so each pass replaces the text (nil clears it). One small file.
+    private func pollPeerActivity(profile: String, demoMode: Bool) async {
+        while !Task.isCancelled {
+            peerActivity = await Task.detached {
+                Self.peerActivityText(profile: profile, demoMode: demoMode)
+            }.value
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+
+    private nonisolated static func peerActivityText(profile: String, demoMode: Bool) -> String? {
+        guard !demoMode,
+              let claim = SharedWorkspace.readClaim(profile: profile),
               claim.host.id != SharedWorkspace.currentHost.id,
               !claim.isExpired(at: Date()) else { return nil }
         return "\(claim.host.display) is running \(claim.operation) in this shared workspace "
@@ -2263,4 +2277,9 @@ struct MetricDetailFigures: Equatable {
     static func summaryCount(_ count: Int) -> String {
         count == 1 ? "1 summary" : "\(count) summaries"
     }
+}
+
+private struct PeerActivityKey: Equatable {
+    let profile: String
+    let demoMode: Bool
 }
