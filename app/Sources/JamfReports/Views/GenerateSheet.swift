@@ -271,18 +271,23 @@ final class GenerateSheetState {
         return (hashCandidate, filename)
     }
 
-    /// The footer button labels. Done keeps its name while a run goes (the button is disabled
-    /// then), so only Generate says Running.
-    /// What the footer says while another collect holds Generate back, or nil when nothing does.
-    /// `status` names the collect when it set one; a scheduled run in another process does not
-    /// reach here, and the click-time `generateRefusal` is the backstop for it.
+    /// What the footer says while something else holds Generate back, or nil when nothing does.
+    /// `status` names a collect that set one; otherwise the refusal says what is running.
     nonisolated static func waitingMessage(
-        isRunning: Bool, collectInFlight: Bool, status: String?
+        isRunning: Bool, refusal: CLIBridgeError?, status: String?
     ) -> String? {
-        guard !isRunning, collectInFlight else { return nil }
-        return "Waiting for: \(status ?? "a refresh to finish")"
+        guard !isRunning, let refusal else { return nil }
+        if let status { return "Waiting for: \(status)" }
+        switch refusal {
+        case .generateInProgress: return "Waiting for: a report to finish"
+        case .toolUpdateInProgress: return "Waiting for: the jamf-cli update to finish"
+        case .tickLockHeld: return "Waiting for: a scheduled run to finish"
+        default: return "Waiting for: a refresh to finish"
+        }
     }
 
+    /// The footer button labels. Done keeps its name while a run goes (the button is disabled
+    /// then), so only Generate says Running.
     nonisolated static func footerTitles(isRunning: Bool) -> (dismiss: String, generate: String) {
         ("Done", isRunning ? "Running\u{2026}" : "Generate")
     }
@@ -935,9 +940,16 @@ struct GenerateSheet: View {
         }
     }
 
+    /// Re-read on a timer: a hold in this process and a scheduled run's lock are not observable,
+    /// so nothing else redraws the footer when they end.
     private var footer: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { _ in footerRow }
+    }
+
+    private var footerRow: some View {
         let waiting = GenerateSheetState.waitingMessage(
-            isRunning: state.isRunning, collectInFlight: workspace.isAnyCollectInFlight,
+            isRunning: state.isRunning,
+            refusal: state.isRunning ? nil : workspace.generateRefusal(),
             status: workspace.collectStatus)
         return HStack {
             if let waiting {
@@ -1065,8 +1077,13 @@ struct GenerateSheet: View {
             profile: profile,
             onLine: onLine,
             collect: {
-                try await bridge.collect(
-                    profile: profile, force: true, now: runStart, onLine: onLine)
+                try await WorkspaceStore.recordingCollect(
+                    profile: profile, honesty: CollectHonestyWatcher()
+                ) { recorded in
+                    try await bridge.collect(
+                        profile: profile, force: true, now: runStart,
+                        onLine: { onLine($0); recorded($0) })
+                }.exit
             },
             narrative: { await ReportNarrative.makeForGUIGenerate(profile: profile) },
             generateAll: { types, dir, profile, school, template, narrative, onLine in

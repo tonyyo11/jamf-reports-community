@@ -476,6 +476,8 @@ struct DeviceLookupView: View {
             // CLI bridge surface and keeps this screen from owning bespoke
             // jamf-cli invocation logic.
             do {
+                // Before `beginCollect`, which would replace a running collect's status line.
+                if let refusal = workspace.generateRefusal() { throw refusal }
                 workspace.beginCollect(
                     for: profile, status: "refreshing device index · profile=\(profile)")
                 defer { workspace.endCollect(for: profile) }

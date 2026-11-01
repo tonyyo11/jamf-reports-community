@@ -37,8 +37,10 @@ extension WorkspaceStore {
     }
 
     /// The coordinator's collect, shown and recorded like every other GUI collect. It holds the
-    /// lock that makes Generate refuse, so it must not run unseen (#368).
-    private func runBackgroundRefresh(profile: String, tier: CollectionTier) async throws -> Int32 {
+    /// lock that makes Generate refuse, so it must not run unseen (#368). A refusal comes first:
+    /// `beginCollect` would replace the status line of the collect that is running.
+    func runBackgroundRefresh(profile: String, tier: CollectionTier) async throws -> Int32 {
+        if let refusal = generateRefusal() { throw refusal }
         beginCollect(for: profile, status: "refreshing data in the background · profile=\(profile)")
         defer { endCollect(for: profile) }
         let (exit, _) = try await Self.recordingCollect(

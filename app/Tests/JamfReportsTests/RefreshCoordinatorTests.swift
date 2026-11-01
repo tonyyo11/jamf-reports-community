@@ -244,17 +244,58 @@ final class RefreshCoordinatorOutcomeTests: XCTestCase {
     }
 
     func testGenerateSheetNamesTheCollectItWaitsFor() {
-        XCTAssertEqual(
-            GenerateSheetState.waitingMessage(
-                isRunning: false, collectInFlight: true, status: "refreshing data"),
-            "Waiting for: refreshing data")
-        XCTAssertEqual(
-            GenerateSheetState.waitingMessage(isRunning: false, collectInFlight: true, status: nil),
-            "Waiting for: a refresh to finish")
+        func message(_ refusal: CLIBridgeError?, status: String? = nil) -> String? {
+            GenerateSheetState.waitingMessage(isRunning: false, refusal: refusal, status: status)
+        }
+        XCTAssertEqual(message(.collectInProgress, status: "refreshing data"),
+                       "Waiting for: refreshing data")
+        XCTAssertEqual(message(.collectInProgress), "Waiting for: a refresh to finish")
+        XCTAssertEqual(message(.generateInProgress), "Waiting for: a report to finish")
+        XCTAssertEqual(message(.toolUpdateInProgress),
+                       "Waiting for: the jamf-cli update to finish")
+        XCTAssertEqual(message(.tickLockHeld), "Waiting for: a scheduled run to finish")
+        XCTAssertNil(message(nil))
         XCTAssertNil(GenerateSheetState.waitingMessage(
-            isRunning: true, collectInFlight: true, status: "x"))
-        XCTAssertNil(GenerateSheetState.waitingMessage(
-            isRunning: false, collectInFlight: false, status: nil))
+            isRunning: true, refusal: .collectInProgress, status: "x"))
+    }
+
+    /// A refused background refresh must leave the running collect's status line alone (#368).
+    func testARefusedBackgroundRefreshKeepsTheRunningCollectsStatus() async throws {
+        let store = WorkspaceStore(
+            demoMode: false, tickerRegistrar: StubTickerRegistrar(),
+            jamfCLIProfileNames: { [] }, discoverProfiles: { [] }, jamfCLIInstallation: { nil })
+        store.beginCollect(for: "alpha", status: "refreshing Inventory data")
+        do {
+            _ = try await store.runBackgroundRefresh(profile: "alpha", tier: .refresh)
+            XCTFail("expected a refusal")
+        } catch {
+            XCTAssertEqual(error as? CLIBridgeError, .collectInProgress)
+        }
+        XCTAssertEqual(store.collectStatus, "refreshing Inventory data")
+        store.endCollect(for: "alpha")
+    }
+
+    /// A School collect writes no `overview`: its devices snapshot says whether it is stale.
+    func testASchoolWorkspaceIsJudgedByItsDevicesSnapshot() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("refresh-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let workspace = root.appendingPathComponent("district", isDirectory: true)
+        let devices = workspace.appendingPathComponent("jamf-cli-data/school-devices")
+        try FileManager.default.createDirectory(at: devices, withIntermediateDirectories: true)
+        try "school_cli:\n  enabled: true\n".write(
+            to: workspace.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        var isStale = await RefreshCoordinator.dataIsStale(profile: "district", tier: .refresh)
+        XCTAssertTrue(isStale, "no devices snapshot yet")
+        try Data("[]".utf8).write(to: devices.appendingPathComponent(
+            "school-devices_2026-11-01_090000.json"))
+        isStale = await RefreshCoordinator.dataIsStale(profile: "district", tier: .refresh)
+        XCTAssertFalse(isStale, "a fresh devices snapshot with no overview folder")
     }
 
     func testBackgroundRefreshHasItsOwnRunHistoryName() {

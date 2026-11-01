@@ -202,7 +202,8 @@ final class RefreshCoordinator {
         return await Task.detached(priority: .utility) {
             guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return true }
 
-            switch (tier.stalenessProbeKind, Self.resolvedStalenessThreshold(for: tier)) {
+            switch (Self.probeKind(for: tier, profile: profile),
+                    Self.resolvedStalenessThreshold(for: tier)) {
             case (.none, _), (_, .none):
                 // No probe kind, or one resolving to cadence .never — not stale.
                 return false
@@ -225,6 +226,19 @@ final class RefreshCoordinator {
                 return Date().timeIntervalSince(newest) >= threshold
             }
         }.value
+    }
+
+    /// The kind whose age says `tier` is stale. A School collect never writes `overview`, so that
+    /// probe would call a School workspace stale after every collect.
+    nonisolated private static func probeKind(
+        for tier: CollectionTier, profile: String
+    ) -> String? {
+        guard let probe = tier.stalenessProbeKind else { return nil }
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        return ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
+            ? SchoolFleetService.devicesKind : probe
     }
 
     /// Resolve the staleness threshold for `tier`: the fixed collection
