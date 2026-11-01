@@ -88,6 +88,14 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- HTML and period reports, Fleet Drift and other dates the app writes or reads back no longer follow
+  the Mac's language or calendar. A report on a Mac set to Japanese read "午後9:52"; on a Mac using
+  a Buddhist or Japanese calendar, a fixed date could also read a different year. Report times now
+  use one English format everywhere, so a report on a UK Mac reads "Nov 1, 2026" instead of
+  "1 Nov 2026". (#305)
+- On the Generate sheet, "CSV folder" and the template names, descriptions and audiences are now
+  translated, and the Reports title in Japanese no longer reads "date generated". Reports keep the
+  English template names. (#305)
 - `jamf-reports generate --output` naming an existing folder now stops with an error. It used to
   replace the folder with the workbook, deleting what was in it.
 - Jamf School workbooks now follow `output.keep_latest_runs` and move older runs to the archive, as

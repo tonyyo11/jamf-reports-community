@@ -160,7 +160,8 @@ enum PeriodReportEmitter {
     private static func dateLabel(_ d: Date) -> String { format(d, "yyyy-MM-dd") }
     private static func stamp(_ d: Date) -> String { format(d, "yyyyMMdd") }
     private static func format(_ d: Date, _ pattern: String) -> String {
-        let f = DateFormatter(); f.dateFormat = pattern; f.timeZone = .current
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = pattern; f.timeZone = .current
         return f.string(from: d)
     }
 }

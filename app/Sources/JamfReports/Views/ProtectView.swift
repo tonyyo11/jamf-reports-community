@@ -1065,6 +1065,7 @@ struct ProtectView: View {
     // after, so sharing is safe.
     nonisolated private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         // A formatter built per call read the zone at that moment; this one follows changes.
         formatter.timeZone = .autoupdatingCurrent

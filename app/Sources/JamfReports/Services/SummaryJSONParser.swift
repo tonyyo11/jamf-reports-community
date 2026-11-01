@@ -436,6 +436,7 @@ extension DailySummary {
 struct SummaryJSONParser {
     static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd"
         f.calendar = Calendar(identifier: .iso8601)
         // Use system timezone to match Calendar.current in TrendStore

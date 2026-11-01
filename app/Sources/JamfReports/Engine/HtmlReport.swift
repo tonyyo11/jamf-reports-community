@@ -820,6 +820,7 @@ struct HtmlReport: Sendable {
 
     func formattedNow() -> String {
         let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return fmt.string(from: Date())

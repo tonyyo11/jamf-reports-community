@@ -28183,6 +28183,46 @@
         }
       }
     },
+    "Asset Inventory" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestandsinventar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventario de activos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventaire des actifs"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventario degli asset"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資産インベントリ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventário de ativos"
+          }
+        }
+      }
+    },
     "Asset checksum mismatch for %@ — possible tampering or corrupted download (expected %@, got %@)." : {
       "localizations" : {
         "de" : {
@@ -28225,6 +28265,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Checksum do recurso não confere para %@ — possível adulteração ou download corrompido (esperado %@, obtido %@)."
+          }
+        }
+      }
+    },
+    "Asset managers, finance teams, IT procurement" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asset-Manager, Finanzteams, IT-Einkauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestores de activos, equipos financieros, compras de TI"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestionnaires d'actifs, équipes financières, achats informatiques"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asset manager, team finanziari, acquisti IT"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資産管理者、財務チーム、IT調達担当者"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestores de ativos, equipes financeiras, compras de TI"
+          }
+        }
+      }
+    },
+    "Asset view for asset managers: purchase-date cohorts and building/department breakdowns. The device inventory is in the workbook." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestandsansicht für Asset-Manager: Kohorten nach Kaufdatum und Aufschlüsselung nach Gebäude und Abteilung. Das Geräteinventar steht in der Arbeitsmappe."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vista de activos para gestores de activos: cohortes por fecha de compra y desgloses por edificio y departamento. El inventario de dispositivos está en el libro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vue des actifs pour les gestionnaires d'actifs : cohortes par date d'achat et répartitions par bâtiment et service. L'inventaire des appareils se trouve dans le classeur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vista degli asset per gli asset manager: coorti per data di acquisto e suddivisioni per edificio e reparto. L'inventario dei dispositivi è nella cartella di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資産管理者向けの資産ビューです。購入日別のコホートと、建物および部署別の内訳を含みます。デバイスインベントリはワークブックにあります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Visão de ativos para gestores de ativos: coortes por data de compra e detalhamento por prédio e departamento. O inventário de dispositivos está na pasta de trabalho."
           }
         }
       }
@@ -28425,6 +28545,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Auditoria em andamento…"
+          }
+        }
+      }
+    },
+    "Auditor-grade deliverable: mSCP results, patch compliance bands, OS adoption, exception list, DDM status, and evidence appendix." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfungstaugliches Ergebnis: mSCP-Ergebnisse, Patch-Compliance-Stufen, OS-Verbreitung, Ausnahmeliste, DDM-Status und Nachweisanhang."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entregable apto para auditoría: resultados de mSCP, bandas de cumplimiento de parches, adopción del SO, lista de excepciones, estado de DDM y apéndice de evidencias."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Livrable de niveau audit : résultats mSCP, niveaux de conformité des correctifs, adoption de l'OS, liste des exceptions, état DDM et annexe de preuves."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Documento adatto agli audit: risultati mSCP, fasce di conformità delle patch, adozione del sistema operativo, elenco delle eccezioni, stato DDM e appendice delle evidenze."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "監査に対応した成果物です。mSCPの結果、パッチコンプライアンスの区分、OSの導入状況、例外リスト、DDMの状態、証跡の付録を含みます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrega para auditoria: resultados do mSCP, faixas de conformidade de patches, adoção do SO, lista de exceções, status do DDM e apêndice de evidências."
           }
         }
       }
@@ -36055,6 +36215,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compare este backup com o mais recente que tem arquivos."
+          }
+        }
+      }
+    },
+    "Complete instance report with every available section — all sheets, all HTML sections, full detail." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vollständiger Instanzbericht mit allen verfügbaren Abschnitten: alle Tabellenblätter, alle HTML-Abschnitte, alle Details."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informe completo de la instancia con todas las secciones disponibles: todas las hojas, todas las secciones HTML y todo el detalle."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rapport complet de l'instance avec toutes les sections disponibles : toutes les feuilles, toutes les sections HTML, tous les détails."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report completo dell'istanza con tutte le sezioni disponibili: tutti i fogli, tutte le sezioni HTML, tutti i dettagli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用可能なすべてのセクションを含むインスタンス完全レポートです。すべてのシート、すべてのHTMLセクション、すべての詳細を含みます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relatório completo da instância com todas as seções disponíveis: todas as planilhas, todas as seções HTML e todos os detalhes."
           }
         }
       }
@@ -44285,6 +44485,86 @@
         }
       }
     },
+    "Custom reporting requirements" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Individuelle Berichtsanforderungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requisitos de informes personalizados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Besoins de rapport personnalisés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esigenze di report personalizzate"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カスタムレポートの要件"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requisitos de relatórios personalizados"
+          }
+        }
+      }
+    },
+    "Custom — choose sheets" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzerdefiniert: Tabellenblätter wählen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalizado: elegir las hojas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personnalisé : choisir les feuilles"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalizzato: scegli i fogli"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カスタム：シートを選択"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalizado: escolher planilhas"
+          }
+        }
+      }
+    },
     "Customize" : {
       "localizations" : {
         "de" : {
@@ -44681,6 +44961,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Diário"
+          }
+        }
+      }
+    },
+    "Daily NOC view for ops engineers: failures, patch queue, stale devices, check-in anomalies, and group hygiene." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tägliche NOC-Ansicht für Betriebstechniker: Fehler, Patch-Warteschlange, veraltete Geräte, Check-in-Auffälligkeiten und Gruppenpflege."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vista diaria del NOC para ingenieros de operaciones: errores, cola de parches, dispositivos obsoletos, anomalías de registro de actividad e higiene de grupos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vue quotidienne du NOC pour les ingénieurs d'exploitation : échecs, file de correctifs, appareils obsolètes, anomalies de signalement et hygiène des groupes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vista giornaliera del NOC per i tecnici operativi: errori, coda delle patch, dispositivi obsoleti, anomalie di check-in e igiene dei gruppi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "運用エンジニア向けの日次NOCビューです。障害、パッチキュー、長期未接続デバイス、チェックインの異常、グループの整理状況を含みます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Visão diária do NOC para engenheiros de operações: falhas, fila de patches, dispositivos desatualizados, anomalias de check-in e higiene de grupos."
           }
         }
       }
@@ -48441,6 +48761,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Comparando..."
+          }
+        }
+      }
+    },
+    "Directors, VPs, CISOs" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Führungskräfte, Vice Presidents, CISOs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Directores, vicepresidentes, CISO"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Directeurs, vice-présidents, RSSI"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dirigenti, vicepresidenti, CISO"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "役員、VP、CISO"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diretores, vice-presidentes, CISOs"
           }
         }
       }
@@ -57865,6 +58225,46 @@
         }
       }
     },
+    "Full Instance Report" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vollständiger Instanzbericht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informe completo de la instancia"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rapport complet de l'instance"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report completo dell'istanza"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インスタンス完全レポート"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relatório completo da instância"
+          }
+        }
+      }
+    },
     "Full data, all sheets" : {
       "localizations" : {
         "de" : {
@@ -59054,7 +59454,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "生成日時"
+            "value" : "生成済み"
           }
         },
         "pt-BR" : {
@@ -63815,6 +64215,46 @@
         }
       }
     },
+    "Internal auditors, security teams, compliance officers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interne Prüfer, Sicherheitsteams, Compliance-Beauftragte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auditores internos, equipos de seguridad, responsables de cumplimiento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auditeurs internes, équipes de sécurité, responsables de la conformité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisori interni, team di sicurezza, responsabili della conformità"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内部監査担当者、セキュリティチーム、コンプライアンス担当者"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auditores internos, equipes de segurança, responsáveis por conformidade"
+          }
+        }
+      }
+    },
     "Invalid argument: %@" : {
       "localizations" : {
         "de" : {
@@ -64251,6 +64691,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inventário sem atualização enquanto o Mac faz check-in"
+          }
+        }
+      }
+    },
+    "Inventory, classes, users, profiles, and device status for Jamf School-managed iPads and Macs." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventar, Klassen, Benutzer, Profile und Gerätestatus für mit Jamf School verwaltete iPads und Macs."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventario, clases, usuarios, perfiles y estado de los dispositivos para los iPad y Mac gestionados con Jamf School."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventaire, classes, utilisateurs, profils et état des appareils pour les iPad et Mac gérés par Jamf School."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventario, classi, utenti, profili e stato dei dispositivi per iPad e Mac gestiti da Jamf School."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Schoolで管理されているiPadとMacのインベントリ、クラス、ユーザ、プロファイル、デバイスの状態を含みます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inventário, turmas, usuários, perfis e status dos dispositivos para iPads e Macs gerenciados pelo Jamf School."
           }
         }
       }
@@ -66673,6 +67153,46 @@
         }
       }
     },
+    "Jamf admins, MacAdmins, full-detail review" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf-Administratoren, MacAdmins, Detailprüfung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Administradores de Jamf, MacAdmins, revisión detallada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Administrateurs Jamf, MacAdmins, examen détaillé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amministratori Jamf, MacAdmins, revisione dettagliata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf管理者、MacAdmins、詳細レビュー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Administradores do Jamf, MacAdmins, revisão detalhada"
+          }
+        }
+      }
+    },
     "Jamf binary missing" : {
       "localizations" : {
         "de" : {
@@ -66869,6 +67389,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "K-12 / EDU"
+          }
+        }
+      }
+    },
+    "K-12 IT, lab managers, education sysadmin" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schul-IT, Laborverantwortliche, Systemadministratoren im Bildungswesen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TI de educación escolar, responsables de laboratorios, administradores de sistemas educativos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informatique scolaire, responsables de salles informatiques, administrateurs système de l'éducation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IT scolastico, responsabili di laboratorio, amministratori di sistema dell'istruzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "K-12のIT担当者、ラボ管理者、教育機関のシステム管理者"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TI escolar, gerentes de laboratório, administradores de sistemas educacionais"
           }
         }
       }
@@ -70521,6 +71081,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MMMd"
+          }
+        }
+      }
+    },
+    "Mac ops engineers, NOC staff" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac-Betriebstechniker, NOC-Personal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingenieros de operaciones de Mac, personal del NOC"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingénieurs d'exploitation Mac, équipe NOC"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tecnici operativi Mac, personale NOC"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac運用エンジニア、NOC担当者"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engenheiros de operações de Mac, equipe do NOC"
           }
         }
       }
@@ -85323,6 +85923,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre um seletor de pasta para o local do espaço de trabalho."
+          }
+        }
+      }
+    },
+    "Operational" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Betrieb"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Operativo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opérationnel"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Operativo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "運用"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Operacional"
           }
         }
       }
@@ -101109,6 +101749,46 @@
         }
       }
     },
+    "School (Jamf School)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schule (Jamf School)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escuela (Jamf School)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "École (Jamf School)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scuola (Jamf School)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学校（Jamf School）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escola (Jamf School)"
+          }
+        }
+      }
+    },
     "School API key" : {
       "localizations" : {
         "de" : {
@@ -102349,6 +103029,46 @@
         }
       }
     },
+    "Security engineers, CISO staff" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicherheitstechniker, CISO-Team"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingenieros de seguridad, personal del CISO"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingénieurs sécurité, équipe du RSSI"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tecnici della sicurezza, staff del CISO"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セキュリティエンジニア、CISOスタッフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engenheiros de segurança, equipe do CISO"
+          }
+        }
+      }
+    },
     "Security policy configuration" : {
       "localizations" : {
         "de" : {
@@ -102511,6 +103231,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pontuação de segurança: %@"
+          }
+        }
+      }
+    },
+    "Security-engineer deep-dive: Protect alerts, mSCP findings, FileVault/SIP/Gatekeeper/Firewall health, agent coverage, and insights drift." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detailanalyse für Sicherheitstechniker: Protect-Warnungen, mSCP-Befunde, Zustand von FileVault/SIP/Gatekeeper/Firewall, Agent-Abdeckung und Insights-Abweichungen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis detallado para ingenieros de seguridad: alertas de Protect, hallazgos de mSCP, estado de FileVault/SIP/Gatekeeper/firewall, cobertura de agentes y deriva de insights."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse approfondie pour les ingénieurs sécurité : alertes Protect, constats mSCP, santé de FileVault/SIP/Gatekeeper/du pare-feu, couverture des agents et dérive des insights."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analisi approfondita per i tecnici della sicurezza: avvisi di Protect, rilevamenti mSCP, stato di FileVault/SIP/Gatekeeper/firewall, copertura degli agenti e deriva degli insight."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セキュリティエンジニア向けの詳細分析です。Protectのアラート、mSCPの検出事項、FileVault/SIP/Gatekeeper/ファイアウォールの状態、エージェントのカバレッジ、インサイトの変化を含みます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análise detalhada para engenheiros de segurança: alertas do Protect, achados do mSCP, integridade de FileVault/SIP/Gatekeeper/firewall, cobertura de agentes e desvio de insights."
           }
         }
       }
@@ -110267,6 +111027,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detalhes do resumo"
+          }
+        }
+      }
+    },
+    "Summary for directors and CISOs: six figures with their change, what needs attention, and the fleet dashboard. No detail tables in the HTML report." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenfassung für Führungskräfte und CISOs: sechs Kennzahlen mit ihrer Veränderung, was Aufmerksamkeit erfordert, und das Flotten-Dashboard. Keine Detailtabellen im HTML-Bericht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumen para directivos y CISO: seis cifras con su variación, lo que requiere atención y el panel de la flota. Sin tablas de detalle en el informe HTML."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synthèse pour les directeurs et les RSSI : six chiffres avec leur évolution, ce qui demande attention et le tableau de bord du parc. Aucun tableau détaillé dans le rapport HTML."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riepilogo per dirigenti e CISO: sei valori con la loro variazione, ciò che richiede attenzione e la dashboard del parco dispositivi. Nessuna tabella di dettaglio nel report HTML."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "役員およびCISO向けの概要です。6つの数値とその変化、対応が必要な項目、フリートダッシュボードを含みます。HTMLレポートに詳細テーブルは含みません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumo para diretores e CISOs: seis números com sua variação, o que precisa de atenção e o painel da frota. Sem tabelas de detalhes no relatório HTML."
           }
         }
       }
@@ -121487,6 +122287,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Contato com o usuário — localizar dispositivo, forçar check-in."
+          }
+        }
+      }
+    },
+    "User-selected sheets only — choose exactly which sections to include." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur die ausgewählten Tabellenblätter: Wählen Sie genau, welche Abschnitte enthalten sein sollen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo las hojas seleccionadas: elija exactamente qué secciones incluir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uniquement les feuilles sélectionnées : choisissez précisément les sections à inclure."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo i fogli selezionati: scegli esattamente quali sezioni includere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したシートのみを含みます。含めるセクションを正確に選択できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Somente as planilhas selecionadas: escolha exatamente quais seções incluir."
           }
         }
       }
