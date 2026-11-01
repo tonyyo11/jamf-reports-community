@@ -1,4 +1,4 @@
-# Localizing the app: French, Spanish, German
+# Localizing the app: French, Spanish, German, Brazilian Portuguese
 
 Machine translated. Nobody fluent reviewed it. Automated checks prove completeness and format
 safety, not nuance.
@@ -31,7 +31,7 @@ rest go through house components and models that take `String`, which SwiftUI ne
   `Text` and `String(localized:)` default to `Bundle.main`, which is the `.app`, although the code
   lives in the library target. `swift run` and tests have no table and show English.
 - **Plurals:** `n == 1 ? L("\(n) device") : L("\(n) devices")`, two whole sentences. Right for
-  fr, es and de; a language with more plural forms would need catalog variations.
+  fr, es, de and pt-BR; a language with more plural forms would need catalog variations.
 - **Floors:** `String(localized:)` is macOS 12. `#bundle` is not used (Swift 6.2+).
 - **Displayed value compared to a value:** a literal that is also compared, switched on or
   parsed is not wrapped by the sweep, and each is reviewed.

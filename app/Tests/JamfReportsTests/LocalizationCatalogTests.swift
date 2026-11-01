@@ -4,7 +4,7 @@ import Testing
 /// Machine translations nobody fluent reviews, so these are the proof they are complete and safe to
 /// show: every key has every language, format specifiers line up, and product and config names stay.
 struct LocalizationCatalogTests {
-    static let languages = ["fr", "es", "de"]
+    static let languages = ["fr", "es", "de", "pt-BR"]
     static let appDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
@@ -124,7 +124,9 @@ struct LocalizationCatalogTests {
             /`[^`]+`/, /\b[a-z]+(?:_[a-z0-9]+)+\b/, /\B--[a-z][a-z-]+/, /~\/[\w.\/-]*[\w\/]/,
             /\/(?:usr|opt|Users|Library|Applications)\/[\w.\/-]*[\w\/]/, /\b[\w-]+\.(?:yaml|json|xlsx|html|csv|plist|mobileconfig)\b/,
         ]
+        // A backticked argument (`%@`) may become positional (`%1$@`); the specifier test covers it.
         return patterns.flatMap { text.matches(of: $0).map { String($0.output) } }
+            .filter { !$0.contains("%") }
     }
 
     @Test func protectedTermsStayUntranslated() {

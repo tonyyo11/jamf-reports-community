@@ -156,6 +156,7 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
       <string>fr</string>
       <string>es</string>
       <string>de</string>
+      <string>pt-BR</string>
     </array>
     <key>CFBundleExecutable</key>
     <string>JamfReports</string>

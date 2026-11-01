@@ -1580,7 +1580,7 @@ dependency floor), unrelated to app versioning.
 
 #### Localization (2.12)
 
-The GUI ships in English, French, Spanish and German: machine translated, reviewed by nobody fluent. `app/Localization/Localizable.xcstrings` lives outside the SwiftPM target, and `build-app.sh` compiles it into `Contents/Resources/<lang>.lproj`, so there is no `Bundle.module` and `Text` and `String(localized:)` find it in `Bundle.main` although the code is in the library target. `swift run` and tests have no table and show English.
+The GUI ships in English, French, Spanish, German and Brazilian Portuguese (best effort: machine translated, reviewed by nobody fluent). A language with more plural forms than one and other (Polish, Russian) needs catalog plural variations first. `app/Localization/Localizable.xcstrings` lives outside the SwiftPM target, and `build-app.sh` compiles it into `Contents/Resources/<lang>.lproj`, so there is no `Bundle.module` and `Text` and `String(localized:)` find it in `Bundle.main` although the code is in the library target. `swift run` and tests have no table and show English.
 
 `L("text \(n)")` (`Services/Localization.swift`) returns a `String`, so house components and models keep `String` APIs; its `String.LocalizationValue` parameter is what `swiftc -emit-localized-strings` extracts. Numbers format under POSIX (no separator in a port, year or exit code). Plurals are two whole strings, `n == 1 ? L("\(n) device") : L("\(n) devices")`; never a suffix or a sentence built from fragments.
 
