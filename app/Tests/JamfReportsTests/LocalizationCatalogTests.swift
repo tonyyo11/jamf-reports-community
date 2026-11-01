@@ -4,7 +4,7 @@ import Testing
 /// Machine translations nobody fluent reviews, so these are the proof they are complete and safe to
 /// show: every key has every language, format specifiers line up, and product and config names stay.
 struct LocalizationCatalogTests {
-    static let languages = ["fr", "es", "de", "pt-BR"]
+    static let languages = ["fr", "es", "de", "pt-BR", "it", "ja"]
     static let appDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 

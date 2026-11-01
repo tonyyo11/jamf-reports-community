@@ -97,7 +97,7 @@ Every non-core dashboard is toggleable, so unused screens disappear from the sid
 - **Patch adoption velocity** — track how many days each patch title lags its release
   date and how long it took to reach 50%/90% fleet adoption. See
   [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity).
-- **French, Spanish, German and Brazilian Portuguese** — the app follows your Mac's language, or the one set for it in
+- **French, Spanish, German, Brazilian Portuguese, Italian and Japanese** — the app follows your Mac's language, or the one set for it in
   System Settings. Machine translated, best effort. Reports, logs and the CLI stay in English.
 - **On-device AI insights** — optional plain-language insight cards on Overview, Trends,
   Audit, Security Posture and Compliance Posture, powered by Apple's on-device Foundation

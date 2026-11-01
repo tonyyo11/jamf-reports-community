@@ -9,7 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
-- The app now speaks **French, Spanish, German and Brazilian Portuguese**, following your Mac's language, or the one you
+- The app now speaks **French, Spanish, German, Brazilian Portuguese, Italian and Japanese**, following your Mac's language, or the one you
   pick for Jamf Reports in System Settings › General › Language & Region. Language support is best effort: these are machine translations nobody fluent has reviewed, so please
   report wording that reads wrong. Reports, CSVs,
   log lines, webhook cards and the command-line tool stay in English, so workbooks and anything
