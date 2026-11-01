@@ -530,7 +530,7 @@ private struct AgentsTab: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(16)
             } else {
-                ForEach(ws.configState.securityAgents.indices, id: \.self) { i in
+                ForEach(Array(ws.configState.securityAgents.enumerated()), id: \.element.id) { i, _ in
                     agentRow(i)
                     if i < ws.configState.securityAgents.count - 1 { Divider().background(Theme.Hairline.standard) }
                 }
@@ -638,7 +638,7 @@ private struct EasTab: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     VStack(spacing: 12) {
-                        ForEach(ws.configState.customEAs.indices, id: \.self) { i in
+                        ForEach(Array(ws.configState.customEAs.enumerated()), id: \.element.id) { i, _ in
                             EACardEdit(index: i)
                         }
                     }
@@ -896,7 +896,8 @@ private struct PlatformTab: View {
                 Divider().background(Theme.Hairline.standard)
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Compliance benchmarks")
-                    ForEach(ws.configState.complianceBenchmarks.indices, id: \.self) { i in
+                    ForEach(benchmarkRows) { row in
+                        let i = row.index
                         let benchmark = safeElementBinding(
                             $ws.configState.complianceBenchmarks, i, default: "")
                         HStack(spacing: 8) {
@@ -916,6 +917,19 @@ private struct PlatformTab: View {
                     FieldHelp(text: "Exact titles, case-sensitive. Empty collects every benchmark.")
                 }
             }
+        }
+    }
+
+    /// Position plus a stable id, so a removed title does not hand its field state to the next.
+    private struct BenchmarkRow: Identifiable {
+        let index: Int
+        let id: UUID
+    }
+
+    private var benchmarkRows: [BenchmarkRow] {
+        let state = workspace.configState
+        return state.complianceBenchmarks.indices.map {
+            BenchmarkRow(index: $0, id: state.benchmarkRowIDs.id(at: $0))
         }
     }
 
