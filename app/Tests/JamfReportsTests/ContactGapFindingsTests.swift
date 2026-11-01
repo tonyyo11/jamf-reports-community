@@ -105,9 +105,11 @@ final class ContactGapFindingsTests: XCTestCase {
         func stamp(_ days: Double) -> String {
             ISO8601DateFormatter().string(from: Date().addingTimeInterval(-days * 86_400))
         }
+        // Half a day past 3, so a clock change inside the span still reads as 3 calendar days.
+        let checkIn = stamp(3.5)
         let record = DeviceInventoryService.recordFromComputer([
             "id": "7", "general": [
-                "name": "M", "lastCheckIn": stamp(3), "reportDate": stamp(9),
+                "name": "M", "lastCheckIn": checkIn, "reportDate": stamp(9),
                 "lastContact": stamp(1),
             ], "hardware": ["serialNumber": "S7"],
         ], source: "computers.json")
@@ -116,7 +118,7 @@ final class ContactGapFindingsTests: XCTestCase {
         XCTAssertNotNil(record.contactDate)
         XCTAssertTrue(record.carriesDates)
         XCTAssertEqual(record.daysSinceContact, 3)
-        XCTAssertEqual(record.lastContact, stamp(3), "the check-in's text is unchanged")
+        XCTAssertEqual(record.lastContact, checkIn, "the check-in's text is unchanged")
         XCTAssertEqual(DevicesView.contactText(record),
                        ISO8601DateFormatter().string(from: try XCTUnwrap(record.contactDate)))
     }
