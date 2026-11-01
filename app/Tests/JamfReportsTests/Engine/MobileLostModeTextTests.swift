@@ -32,11 +32,36 @@ final class MobileLostModeTextTests: XCTestCase {
         XCTAssertEqual((record["general"] as? [String: Any])?["udid"] as? String, "UDID-1")
     }
 
-    /// Only the mobile list is rewritten; any other kind is saved as jamf-cli printed it.
-    func testOtherKindsAreSavedUnchanged() throws {
+    /// Only the mobile list loses lost-mode text.
+    func testOtherKindsKeepLostModeText() throws {
         let saved = try saveAndRead(kind: "computers", payload: Self.record)
         let security = try XCTUnwrap(saved.first?["security"] as? [String: Any])
         XCTAssertEqual(security["lostModeMessage"] as? String, "Call the help desk")
+    }
+
+    /// The computers snapshot keeps the PO date and no other purchasing detail.
+    func testCollectedComputersKeepOnlyThePODate() throws {
+        let saved = try saveAndRead(kind: "computers", payload: Self.purchasingRecord)
+        let purchasing = try XCTUnwrap(saved.first?["purchasing"] as? [String: Any])
+        XCTAssertEqual(purchasing as? [String: String], ["poDate": "2022-06-01"])
+        XCTAssertEqual((saved.first?["general"] as? [String: Any])?["name"] as? String, "Mac-A")
+    }
+
+    func testPurchasingOnAnotherKindIsSavedAsPrinted() throws {
+        let saved = try saveAndRead(kind: "policies", payload: Self.purchasingRecord)
+        let purchasing = try XCTUnwrap(saved.first?["purchasing"] as? [String: Any])
+        XCTAssertEqual(purchasing["purchasePrice"] as? String, "$500")
+    }
+
+    func testComputersWithNothingToRemoveKeepTheirBytes() {
+        let null = Data(#"[{"id":"1","purchasing":null}]"#.utf8)
+        XCTAssertEqual(ReportEngine.keepingOnlyPODate(null), null)
+        let dateOnly = Data(#"[{"id":"1","purchasing":{"poDate":"2022-06-01"}}]"#.utf8)
+        XCTAssertEqual(ReportEngine.keepingOnlyPODate(dateOnly), dateOnly)
+    }
+
+    func testAPayloadThatDoesNotParseIsNotSavedWithPurchasingDetails() throws {
+        XCTAssertNil(ReportEngine.keepingOnlyPODate(Data("{".utf8)))
     }
 
     func testPayloadWithoutTheKeysKeepsItsBytes() {
@@ -88,6 +113,12 @@ final class MobileLostModeTextTests: XCTestCase {
           "security": {"lostModeEnabled": true, "passcodeCompliant": true,
                        "lostModePhoneNumber": "555-0100", "lostModeLocation": "Building 4",
                        "lostModeMessage": "Call the help desk", "lostModeFootnote": "Reward"}}]
+        """#
+
+    private static let purchasingRecord = #"""
+        [{"id": "1", "general": {"name": "Mac-A"},
+          "purchasing": {"poDate": "2022-06-01", "poNumber": "53-1", "purchasePrice": "$500",
+                         "vendor": "Example Vendor", "warrantyDate": "2025-06-01"}}]
         """#
 
     private func saveAndRead(kind: String, payload: String) throws -> [[String: Any]] {

@@ -456,11 +456,12 @@ extension HtmlReport {
 
     // MARK: - purchaseCohorts
 
-    /// Macs grouped by purchase-date year, as bars.
+    /// Macs grouped by the year of their PO date, as bars. Jamf Pro holds a PO date only where
+    /// the organization entered one, so the title says how much of the inventory the bars cover.
     func buildPurchaseCohorts(computersInventory: [[String: Any]]) -> HtmlBlock {
         let dates = computersInventory.map { inventoryPurchaseDate($0) }
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        guard !dates.isEmpty else { return .omitted("no purchase dates in the inventory") }
+        guard !dates.isEmpty else { return .omitted("no PO dates in the inventory") }
 
         var byYear: [String: Int] = [:]
         for raw in dates {
@@ -468,12 +469,13 @@ extension HtmlReport {
             guard !year.isEmpty, year.allSatisfy(\.isNumber) else { continue }
             byYear[year, default: 0] += 1
         }
-        guard !byYear.isEmpty else { return .omitted("no purchase date with a readable year") }
+        guard !byYear.isEmpty else { return .omitted("no PO date with a readable year") }
 
         let rows = byYear.keys.sorted().map { (label: $0, count: byYear[$0] ?? 0) }
+        let dated = byYear.values.reduce(0, +)
         return .shown(HtmlSectionFormatters.block(
             id: "purchase-cohorts",
-            title: "Purchase cohorts (\(dates.count) Mac\(dates.count == 1 ? "" : "s"))",
+            title: "Purchase cohorts (\(dated) of \(computersInventory.count) Macs with a PO date)",
             body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll)))
     }
 

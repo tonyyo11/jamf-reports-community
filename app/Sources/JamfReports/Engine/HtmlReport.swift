@@ -893,13 +893,10 @@ struct HtmlReport: Sendable {
         return "—"
     }
 
-    /// Extract purchase date string from a `computers list` record.
+    /// The PO date from a `computers list` record: Jamf Pro's Purchasing section has no field
+    /// named purchase date. Blank when the record has none.
     func inventoryPurchaseDate(_ item: [String: Any]) -> String {
-        if let purchasing = item["purchasing"] as? [String: Any] {
-            if let d = purchasing["purchaseDate"] as? String, !d.isEmpty { return d }
-            if let d = purchasing["purchase_date"] as? String, !d.isEmpty { return d }
-        }
-        return item["purchase_date"] as? String ?? item["purchaseDate"] as? String ?? ""
+        (item["purchasing"] as? [String: Any])?["poDate"] as? String ?? ""
     }
 
     /// Fill each record's department and building name from its `departmentId` and

@@ -600,9 +600,9 @@ final class HtmlSectionTests: XCTestCase {
     func testPurchaseCohortsWithData() {
         let report = makeReport()
         let inventory: [[String: Any]] = [
-            ["name": "Mac-A", "purchase_date": "2022-06-01"],
-            ["name": "Mac-B", "purchase_date": "2022-11-15"],
-            ["name": "Mac-C", "purchase_date": "2023-02-01"],
+            ["name": "Mac-A", "purchasing": ["poDate": "2022-06-01"]],
+            ["name": "Mac-B", "purchasing": ["poDate": "2022-11-15"]],
+            ["name": "Mac-C", "purchasing": ["poDate": "2023-02-01"]],
         ]
         let html = report.buildPurchaseCohorts(computersInventory: inventory).html
         XCTAssertTrue(html.contains("purchase-cohorts"))
@@ -613,18 +613,35 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertFalse(html.contains("Mac-A"), "a year's count, not the Macs in it")
     }
 
-    func testPurchaseCohortsAreLeftOutWithoutPurchaseDates() {
+    /// From the shape Jamf Pro's API documents, through the save-time strip, to the section:
+    /// Macs with a null or blank Purchasing section count in the denominator only.
+    func testPurchaseCohortsReadTheSectionAsCollected() throws {
+        let collected = Data(#"""
+            [{"id": "1", "purchasing": {"poDate": "2022-06-01", "purchasePrice": "$500",
+                                        "poNumber": "53-1", "vendor": "Example Vendor"}},
+             {"id": "2", "purchasing": {"poDate": "", "vendor": "Example Vendor"}},
+             {"id": "3", "purchasing": null}]
+            """#.utf8)
+        let saved = try XCTUnwrap(ReportEngine.keepingOnlyPODate(collected))
+        let inventory = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: saved) as? [[String: Any]])
+        let html = makeReport().buildPurchaseCohorts(computersInventory: inventory).html
+        XCTAssertTrue(html.contains("Purchase cohorts (1 of 3 Macs with a PO date)"), html)
+        XCTAssertTrue(html.contains("2022"))
+    }
+
+    func testPurchaseCohortsAreLeftOutWithoutPODates() {
         let none = makeReport().buildPurchaseCohorts(computersInventory: [])
         XCTAssertTrue(none.html.isEmpty)
-        XCTAssertEqual(none.omission, "no purchase dates in the inventory")
+        XCTAssertEqual(none.omission, "no PO dates in the inventory")
         let undated = makeReport().buildPurchaseCohorts(computersInventory: [["name": "Mac"]])
-        XCTAssertEqual(undated.omission, "no purchase dates in the inventory")
+        XCTAssertEqual(undated.omission, "no PO dates in the inventory")
     }
 
     func testPurchaseCohortsXSS() {
         let report = makeReport()
         let inventory: [[String: Any]] = [
-            ["name": Self.xssPayload, "purchase_date": "2024-01-01"],
+            ["name": Self.xssPayload, "purchasing": ["poDate": "2024-01-01"]],
         ]
         let html = report.buildPurchaseCohorts(computersInventory: inventory).html
         XCTAssertFalse(html.contains("<script>"))

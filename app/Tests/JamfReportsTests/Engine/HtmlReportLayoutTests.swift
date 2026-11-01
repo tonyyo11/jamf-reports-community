@@ -622,7 +622,7 @@ final class HtmlReportLayoutTests: XCTestCase {
             "Protect alerts — not configured: protect.enabled is off in config.yaml",
             "Exception list — not configured: no exceptions: block in config.yaml",
             "Security agent health — not configured: no security_agents in config.yaml",
-            "Purchase cohorts — no purchase dates in the inventory",
+            "Purchase cohorts — no PO dates in the inventory",
             "Cleanup analysis — no classic-policies snapshot",
         ] {
             XCTAssertTrue(html.contains(line), "appendix lacks: \(line)")
