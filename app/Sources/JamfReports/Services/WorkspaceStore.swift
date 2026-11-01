@@ -675,6 +675,7 @@ final class WorkspaceStore {
 
     private static let backupStampFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter
     }()

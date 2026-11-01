@@ -135,7 +135,7 @@ extension HtmlReport {
         } catch BoundedFile.Failure.tooLarge {
             let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]
                 as? Int64) ?? Int64(Self.maxEmbeddedDashboardBytes)
-            let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+            let size = String(format: "%.1f MB", Double(bytes) / 1_000_000)
             return .notEmbedded(Self.dashboardNoteSection(
                 "The dashboard collected \(collected) is \(size), too large to embed. Open "
                     + "\(url.lastPathComponent) from the jamf-cli-data/dashboard folder."))
@@ -238,6 +238,7 @@ extension HtmlReport {
 
     private static func dashboardDateText(_ date: Date) -> String {
         let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return "on " + fmt.string(from: date)

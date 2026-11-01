@@ -147,6 +147,50 @@ struct LocalizationCatalogTests {
         #expect(problems.isEmpty, "\(problems.count): \(problems.prefix(10))")
     }
 
+    /// A formatter with no locale takes the Mac's language and calendar: a report's times change
+    /// language, and a fixed `yyyy-MM-dd` reads another year under a Buddhist or Japanese calendar.
+    /// Only the Reports list's own display may follow the Mac.
+    @Test func reportAndFixedFormatDatesSetTheirLocale() throws {
+        let root = Self.appDirectory.appendingPathComponent("Sources/JamfReports")
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+        #expect(files.count > 100)
+        let declaration = try Regex(#"\bDateFormatter\(\)"#)
+        var missing: [String] = []
+        for file in files where file.lastPathComponent != "ReportLibrary.swift" {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where line.contains(declaration) {
+                let window = lines[index..<min(index + 7, lines.count)].joined(separator: "\n")
+                let inReport = file.path.contains("/Engine/")
+                guard (inReport || window.contains("dateFormat")), !window.contains(".locale")
+                else { continue }
+                missing.append("\(file.lastPathComponent):\(index + 1)")
+            }
+        }
+        #expect(missing == [])
+    }
+
+    /// `LShown` finds a template's text only by its exact English, so a reworded template must
+    /// reword its key too. The templates' own text is what `shownKeys` has to list.
+    @Test func everyTemplateStringIsInTheCatalog() throws {
+        let folder = Self.appDirectory.appendingPathComponent("Sources/JamfReports/Engine/Templates")
+        let keys = Set(Self.catalog.map(\.key))
+        let property = try Regex(#"let (?:displayName|description|audience) = ((?:"[^"]*"(?: \+\s*)?)+)"#)
+        let literal = try Regex(#""([^"]*)""#)
+        var found = 0
+        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            for match in source.matches(of: property) {
+                guard let value = match.output[1].substring else { continue }
+                let text = value.matches(of: literal)
+                    .compactMap { $0.output[1].substring }.joined()
+                found += 1
+                #expect(keys.contains(text), "\(file.lastPathComponent): \(text)")
+            }
+        }
+        #expect(found == 24)
+    }
+
     @Test func noXMLEntitiesOrPlaceholdersInTranslations() {
         var problems: [String] = []
         for entry in Self.translatable {

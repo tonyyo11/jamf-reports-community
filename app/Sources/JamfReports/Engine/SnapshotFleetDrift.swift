@@ -128,6 +128,7 @@ extension CoreDashboard {
 
         let ws = workbook.addSheet("Fleet Drift")
         let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
         stamp.dateFormat = "yyyy-MM-dd HH:mm"
         var row = ws.writeSheetHeader(
             title: "Fleet Drift",
@@ -139,6 +140,7 @@ extension CoreDashboard {
         ws.setColumnWidth(1, 5, 22)
         if let percent = drift.largeChangePercent {
             let day = DateFormatter()
+            day.locale = Locale(identifier: "en_US_POSIX")
             day.dateFormat = "yyyy-MM-dd"
             let warning = "Large change: \(drift.joined.count) joined and \(drift.left.count) left "
                 + "since \(day.string(from: pair.prior.date)) (\(percent)% of the fleet). If this "

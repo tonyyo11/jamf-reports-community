@@ -221,6 +221,7 @@ private struct DashboardExportCanvas<Content: View>: View {
 
     private static func timestamp() -> String {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: Date())

@@ -27,6 +27,7 @@ enum DemoData {
         let cal = Calendar(identifier: .iso8601)
         var end = DateComponents(calendar: cal, year: 2026, month: 4, day: 20).date!
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         for i in stride(from: 25, through: 0, by: -1) {
             let d = cal.date(byAdding: .day, value: -i * 7, to: end)!

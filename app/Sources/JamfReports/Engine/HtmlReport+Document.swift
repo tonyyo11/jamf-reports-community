@@ -121,6 +121,7 @@ extension HtmlReport {
 
     private static func mediumDateTime(_ date: Date) -> String {
         let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return fmt.string(from: date)

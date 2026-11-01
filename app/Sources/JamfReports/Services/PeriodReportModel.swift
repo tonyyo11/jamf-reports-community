@@ -171,7 +171,8 @@ struct PeriodReportModel: Sendable {
     }
 
     private static func dayDate(_ s: String, _ c: Calendar) -> Date? {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.calendar = c; f.timeZone = .current
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"; f.calendar = c; f.timeZone = .current
         return f.date(from: s).map(c.startOfDay(for:))
     }
 }

@@ -330,11 +330,12 @@ final class GenerateSheetState {
         }
         let causes = codes.map { code in
             let formats = result.failed.filter { $0.exitCode == code }
-                .map(\.type.rawValue).joined(separator: ", ")
+                .map { LShown($0.type.rawValue) }.joined(separator: ", ")
             return CLIBridge.explainExit(code, operation: L("\(formats) generation"))
         }.joined(separator: " ")
         guard !result.succeeded.isEmpty else { return (0, causes) }
-        let written = result.succeeded.map(\.rawValue).sorted().joined(separator: ", ")
+        let written = result.succeeded.map(\.rawValue).sorted().map(LShown)
+            .joined(separator: ", ")
         return (result.succeeded.count, L("Generated \(written). \(causes)"))
     }
 }
@@ -517,7 +518,7 @@ struct GenerateSheet: View {
             FieldLabel(label: L("Template"))
             Picker("Template", selection: $state.selectedTemplateID) {
                 ForEach(state.offeredTemplates, id: \.identifier) { template in
-                    Text(template.displayName).tag(template.identifier)
+                    Text(LShown(template.displayName)).tag(template.identifier)
                 }
             }
             .labelsHidden()
@@ -546,7 +547,7 @@ struct GenerateSheet: View {
         }()
 
         return VStack(alignment: .leading, spacing: 4) {
-            Text(template.description)
+            Text(LShown(template.description))
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(Theme.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -557,7 +558,7 @@ struct GenerateSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
-                Text("For: \(template.audience)")
+                Text("For: \(LShown(template.audience))")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
 
@@ -693,7 +694,7 @@ struct GenerateSheet: View {
                     .font(Theme.Fonts.bodyText)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(type.rawValue)
+                    Text(LShown(type.rawValue))
                         .font(Theme.Fonts.bodyText.weight(.medium))
                         .foregroundStyle(Theme.Text.primary)
                     Text(type.description)

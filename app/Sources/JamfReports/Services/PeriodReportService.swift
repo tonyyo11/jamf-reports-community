@@ -183,7 +183,8 @@ enum PeriodReportService {
     }
 
     private static func dayDate(_ s: String) -> Date? {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
         return f.date(from: s)
     }
 }
