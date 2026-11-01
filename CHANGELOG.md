@@ -83,6 +83,21 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- `jamf-reports generate --output` naming an existing folder now stops with an error. It used to
+  replace the folder with the workbook, deleting what was in it.
+- Jamf School workbooks now follow `output.keep_latest_runs` and move older runs to the archive, as
+  Jamf Pro workbooks do.
+- A cancelled or failed Jamf Pro backup no longer leaves its unfinished files in `backups/`.
+- A cancelled jamf-cli call can no longer crash the app. `jamf-reports generate` on Jamf Pro dates a
+  run that crosses midnight by its start, as every other entry point does.
+- Shared logs and diagnostic bundles now remove the names of connected logins such as Jamf Protect,
+  not only the workspace's own.
+- On shared storage, a backup folder a peer planted no longer earns Jamf Pro backups before the
+  storage choice: this Mac must have its own record of a backup schedule succeeding.
+- `jamf-reports verify` no longer lets a timestamp token's certificates trigger a network fetch.
+- Hovering the Trends chart redraws only its card. Removing a row on the Config screen keeps the other
+  rows' edits with them. Overview reads another Mac's claim once a minute off the main thread, and
+  searching School Devices no longer re-sorts the whole fleet on each keystroke.
 - Finishing a collect, report or backup no longer freezes the window while workspace permissions
   are checked. Run History opens and switches runs without freezing too, and launch no longer waits
   on the once-per-version workspace check. (#305)

@@ -255,10 +255,15 @@ enum BackupMaintenance {
 
     /// Whether this Mac already made a scheduled backup with a Jamf Pro part in `backups/`: the
     /// workspace relied on them before the choice existed. One with a skipped or failed Jamf Pro
-    /// part is not that, and neither is a folder without this Mac's `.jrc-host` stamp, since a
-    /// peer can plant one in a synced folder.
-    static func hasScheduledJamfProBackup(profile: String) -> Bool {
-        guard let root = backupsRoot(for: profile),
+    /// part is not that, and neither is a folder without this Mac's `.jrc-host` stamp. A peer can
+    /// plant a folder and read this Mac's host ID from `automation/hosts`, so a backup schedule
+    /// that succeeded here, on record in this Mac's own state, must back it up.
+    static func hasScheduledJamfProBackup(
+        profile: String,
+        backupRanHere: (String) -> Bool = thisMacRanABackupSchedule(covering:)
+    ) -> Bool {
+        guard backupRanHere(profile),
+              let root = backupsRoot(for: profile),
               let entries = try? FileManager.default.contentsOfDirectory(
                   at: root, includingPropertiesForKeys: [.isDirectoryKey],
                   options: [.skipsHiddenFiles]) else { return false }
@@ -267,6 +272,18 @@ enum BackupMaintenance {
                 && manifestLabel(of: url)?.hasPrefix("scheduled-") == true
                 && ownerHostID(of: url) == SharedWorkspace.currentHost.id
                 && BackupProductResult.pro(inBackup: url)?.leavesNoJamfProBackup != true
+        }
+    }
+
+    /// Whether a backup schedule covering `profile` has succeeded on this Mac (`TickState`, which
+    /// no peer can write). An all-profiles schedule covers every workspace; a workspace added
+    /// after it last ran is the limit of this answer.
+    static func thisMacRanABackupSchedule(covering profile: String) -> Bool {
+        let succeeded = TickState.load().lastSucceeded
+        return WorkspaceStore.loadSchedules(baseProfile: profile).contains { schedule in
+            guard schedule.mode == .backup, schedule.isMulti || schedule.profile == profile,
+                  let label = schedule.launchAgentLabel else { return false }
+            return succeeded[label] != nil
         }
     }
 

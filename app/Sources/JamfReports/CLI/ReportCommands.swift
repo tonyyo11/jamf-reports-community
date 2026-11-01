@@ -77,7 +77,8 @@ struct Generate: AsyncParsableCommand {
                     now: signals.startedAt, onLine: onLine)
             } else {
                 generated = try await engine.generateReport(
-                    outputURL: outputURL, template: resolved, csvFolder: csvFolder, onLine: onLine)
+                    outputURL: outputURL, template: resolved, csvFolder: csvFolder,
+                    now: signals.startedAt, onLine: onLine)
             }
             let failures = generated.failures
             // html.with_workbook, then the run manifest over everything written. Before the

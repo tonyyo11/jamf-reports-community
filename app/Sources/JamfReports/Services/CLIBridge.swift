@@ -2046,14 +2046,20 @@ final class CLIBridge {
         let proSkipped = proSkip != nil
         let exit: Int32
         if proSkip == nil {
-            exit = try await run(
-                executable: bin,
-                arguments: Self.backupArguments(
-                    profile: jamfProProfile, outputDirectory: validatedTemp.path),
-                environment: Self.environmentForJamfCLI(),
-                timeout: timeout,
-                onLine: onLine
-            )
+            do {
+                exit = try await run(
+                    executable: bin,
+                    arguments: Self.backupArguments(
+                        profile: jamfProProfile, outputDirectory: validatedTemp.path),
+                    environment: Self.environmentForJamfCLI(),
+                    timeout: timeout,
+                    onLine: onLine
+                )
+            } catch {
+                // Partial configuration must not stay: shared storage never sweeps staging.
+                discardStaging(validatedTemp, onLine: onLine)
+                throw error
+            }
             if exit == Self.exitCodeTimedOut {
                 onLine(.init(timestamp: Date(), level: .fail,
                              text: "[error] backup stopped after the "

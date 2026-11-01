@@ -73,6 +73,13 @@ final class TerminateRunningChildrenTests: XCTestCase {
         XCTAssertEqual(code, SIGTERM)
     }
 
+    /// `Process.terminate()` raises for a process that never launched; cancellation can get here.
+    func testTerminatingAProcessThatNeverLaunchedDoesNothing() {
+        let box = TimedProcessBox()
+        box.set(Process())
+        box.terminate()
+    }
+
     /// A launch after the pass gets the pass's SIGTERM, grace, SIGKILL, not SIGTERM alone. The
     /// test waits for the child's trap before calling `stopIfClosing`, which production cannot
     /// do: that is the case where the signal arrives first.
