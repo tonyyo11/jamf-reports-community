@@ -24,4 +24,5 @@ PR body lists the grep that found them.
 Smaller but recurring: a decoder that fails a whole list on one odd value (decode per field;
 fixtures captured from real jamf-cli output, never written from documentation); local-day
 arithmetic from the file-name stamp, never mtime, with future stamps clamped and tests that take
-a fixed day; SwiftUI layout verified at `PageScaffold.minSupportedWidth`.
+a fixed day; SwiftUI layout verified at `PageScaffold.minSupportedWidth`; a test that would still
+pass if the code under it returned nothing (`docs/testing.md`).

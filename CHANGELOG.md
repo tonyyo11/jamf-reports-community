@@ -90,6 +90,11 @@ versions in this repository map to git tags.
   off until it ends. A refresh that finishes with the data still out of date now backs off,
   instead of starting again each time you return to the app, and a Jamf School workspace no
   longer reads as out of date right after a collect. (#368)
+- The HTML report's Purchase cohorts section now shows data. Collect never asked Jamf Pro for the
+  Purchasing section, and the report looked for a field Jamf Pro does not have, so the section was
+  left out on every workspace. It now groups Macs by the year of their PO date and says how many
+  Macs have one. Only the PO date is saved in the snapshot; price, PO number and vendor are not.
+  An earlier note here that Jamf Pro's API has no purchasing data was wrong. (#305)
 - Finishing a collect, report or backup no longer freezes the window while workspace permissions
   are checked. Run History opens and switches runs without freezing too, and launch no longer waits
   on the once-per-version workspace check. (#305)

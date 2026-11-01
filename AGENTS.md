@@ -1255,7 +1255,9 @@ additions. A frame can still navigate itself (accepted, threat model T-24).
 
 **Computer inventory sections (2.8.0).** `collect` passes `--section` with
 `ReportEngine.computerInventorySections` (General, Hardware, Operating System, User and
-Location, Security, Disk Encryption) to `pro computers list`. Without the flag jamf-cli returns
+Location, Security, Disk Encryption, Purchasing) to `pro computers list`. `saveCollectedPayload`
+keeps only `purchasing.poDate` (`keepingOnlyPODate`), which the report's Purchase cohorts read;
+price, PO number and vendor never reach the snapshot. Without the flag jamf-cli returns
 the first three only, so `DeviceInventoryService.recordFromComputer` read every device as
 Unassigned with no email and no security state on jamf-cli-only workspaces. The flag is on
 every supported jamf-cli (verified live on 1.18.0 and 1.29.0). When Jamf holds the address in
