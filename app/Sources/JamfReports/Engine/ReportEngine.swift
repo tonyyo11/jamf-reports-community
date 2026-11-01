@@ -220,20 +220,7 @@ struct ReportEngine: Sendable {
         }
 
         // Post-write: archive old runs, emit trend summary.
-        let outputDir = outputURL.deletingLastPathComponent()
-        let stem = stemFromURL(outputURL)
-        if config.output?.isArchiveEnabled == true {
-            if let archiveDir = resolvedArchiveDir(profile: profile, onLine: onLine) {
-                let keep = config.output?.resolvedKeepLatestRuns ?? 10
-                archiveOldRuns(
-                    outputDir: outputDir,
-                    archiveDir: archiveDir,
-                    stem: stem,
-                    keep: keep,
-                    onLine: onLine
-                )
-            }
-        }
+        rotateRuns(besides: outputURL, profile: profile, onLine: onLine)
 
         if let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             emitSummaryJSON(summariesDir: summariesDir, provenance: prov, day: day, onLine: onLine)
@@ -241,6 +228,22 @@ struct ReportEngine: Sendable {
     }
 
     // MARK: - Output rotation (mirrors Python _archive_old_output_runs)
+
+    /// Applies `output.archive_enabled` and `keep_latest_runs` to the runs beside a new workbook.
+    private func rotateRuns(
+        besides outputURL: URL, profile: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
+        guard config.output?.isArchiveEnabled == true,
+              let archiveDir = resolvedArchiveDir(profile: profile, onLine: onLine) else { return }
+        archiveOldRuns(
+            outputDir: outputURL.deletingLastPathComponent(),
+            archiveDir: archiveDir,
+            stem: stemFromURL(outputURL),
+            keep: config.output?.resolvedKeepLatestRuns ?? 10,
+            onLine: onLine
+        )
+    }
 
     /// True when `fileStem` is `stem` alone or `stem` plus one run timestamp, so in a shared
     /// output folder `report_acme` does not claim `report_acme-prod_…` or `report_acme_2_…`.
@@ -3906,6 +3909,10 @@ struct ReportEngine: Sendable {
             onLine: onLine)
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
         _ = writeSHA256Sidecar(for: outputURL)
+        if let workspace {
+            ReportEngine(config: config, dataDir: dataDir, workspace: workspace)
+                .rotateRuns(besides: outputURL, profile: workspace.name, onLine: onLine)
+        }
         return GeneratedReport(failures: schoolFailures, csvFolder: folder)
     }
 

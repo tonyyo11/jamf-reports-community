@@ -206,6 +206,30 @@ final class ProBackupTests: XCTestCase {
         XCTAssertEqual(ProBackupGrace.used(profile: ctx.profile), 0)
     }
 
+    /// A peer can read this Mac's host ID and stamp a folder with it; it cannot write this Mac's
+    /// own record of the schedule.
+    func test_aFolderStampedWithThisMacsIDIsNoHistoryWithoutThisMacsRecord() throws {
+        let ctx = try makeContext(config: shared)
+        try addHistory(ctx, "20260101T010101")
+        XCTAssertFalse(BackupMaintenance.hasScheduledJamfProBackup(
+            profile: ctx.profile, backupRanHere: { _ in false }))
+        try FileManager.default.removeItem(at: AppSupport.directory())
+        XCTAssertFalse(BackupMaintenance.hasScheduledJamfProBackup(profile: ctx.profile))
+    }
+
+    func test_aFailedBackupLaunchLeavesNoStagingFolder() async throws {
+        let ctx = try makeContext(config: nil)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: ctx.stub.path)
+        do {
+            _ = try await backup(ctx, label: nil)
+            XCTFail("a jamf-cli that cannot launch throws")
+        } catch {}
+        let backups = ctx.workspace.appendingPathComponent("backups")
+        let left = try FileManager.default.contentsOfDirectory(atPath: backups.path)
+        XCTAssertEqual(left.filter { $0.hasPrefix(".tmp-") }, [])
+    }
+
     func test_backup_aSkippedOrFailedEarlierBackupIsNotHistory() async throws {
         let ctx = try makeContext(config: shared)
         try addHistory(ctx, "20260101T010101", pro: "skipped")
@@ -740,6 +764,20 @@ final class ProBackupTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: manifest)
             .write(to: dir.appendingPathComponent("manifest.json"))
         if stamped { BackupMaintenance.stampOwnership(of: dir) }
+        try recordBackupScheduleRanHere(ctx)
+    }
+
+    /// What this Mac's own state holds after a backup schedule succeeded here.
+    private func recordBackupScheduleRanHere(_ ctx: Context) throws {
+        let label = "\(LaunchAgentWriter.labelPrefix).\(ctx.profile).weekly"
+        let schedule = Schedule(
+            name: "weekly", profile: ctx.profile, schedule: "Mon 07:00", cadence: "custom",
+            mode: .backup, next: "—", last: "—", lastStatus: .ok, artifacts: [], enabled: true,
+            launchAgentLabel: label)
+        try ScheduleStore().upsert(try XCTUnwrap(ScheduleRecord(schedule: schedule)))
+        var state = TickState.load()
+        state.lastSucceeded[label] = Date()
+        try state.save()
     }
 
     private func newestBackup(_ ctx: Context) throws -> URL {

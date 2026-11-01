@@ -17,7 +17,13 @@ final class TimedProcessBox: Sendable {
         state.withLock { $0.process = p }
         Self.live.add(self)
     }
-    func terminate() { state.withLock { $0.process?.terminate() } }
+    /// `Process.terminate()` raises for a process that never launched, which cancellation can
+    /// reach between `set` and `run`, or after a failed launch.
+    func terminate() {
+        state.withLock { state in
+            if state.process?.isRunning == true { state.process?.terminate() }
+        }
+    }
 
     /// Right after `process.run()` at every launch site: a process that is exiting
     /// (`terminateAllRunning` ran) must not leave a child it started after that pass. Same

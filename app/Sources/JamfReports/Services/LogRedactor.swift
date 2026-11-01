@@ -223,10 +223,18 @@ enum LogRedactor {
         redactor.seedScopeIDs(profiles.flatMap(scopeIDs))
         redactor.seedServerHosts(profiles.flatMap(serverHosts))
         // The profile is often the organisation's name; the bundle seeds the same forms.
-        redactor.seedWorkspaceNames(profiles.flatMap { profile in
-            [profile] + [ProfileName.pathComponent, ProfileName.labelComponent].map { $0(profile) }
-        })
+        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:)))
         return redactor.redactText(redact(text))
+    }
+
+    /// A profile's name and the logins its workspace names (`Acme-Protect`), each as typed and in
+    /// its folder and label forms: run logs and config.yaml carry all of them.
+    static func profileNameForms(of profile: String) -> [String] {
+        let environment = EnvironmentProfiles.read(workspace: profile)
+        return ([profile, environment.mdm].compactMap { $0 } + environment.connectedProfiles)
+            .flatMap { name in
+                [name, ProfileName.pathComponent(name), ProfileName.labelComponent(name)]
+            }
     }
 
     /// Apply all credential patterns to a single line of text. Returns the

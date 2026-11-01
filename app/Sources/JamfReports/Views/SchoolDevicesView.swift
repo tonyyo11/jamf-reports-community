@@ -12,6 +12,7 @@ struct SchoolDevicesView: View {
     /// The `dataSource` `snapshot` was read for; the content waits for it to match.
     @State private var loadedSource: String?
     @State private var reloads = 0
+    @State private var rowCache = RowCache()
 
     enum Filter: String, CaseIterable, Identifiable {
         case all = "All", managed = "Managed", unmanaged = "Unmanaged", stale = "Stale"
@@ -83,21 +84,17 @@ struct SchoolDevicesView: View {
         }
     }
 
+    /// The filtered list, kept in `rowCache`: the name sort reruns only when the data changes and
+    /// the filter only when a filter input does, so a search keystroke does not re-sort the fleet.
     private var rows: [SchoolFleetService.Device] {
         let now = Date()
-        let query = search.trimmingCharacters(in: .whitespaces)
-        return snapshot.devices.filter { device in
-            switch filter {
-            case .all: break
-            case .managed: guard device.isManaged == true else { return false }
-            case .unmanaged: guard device.isManaged == false else { return false }
-            case .stale: guard device.isStale(atDays: staleDays, now: now) else { return false }
-            }
-            guard !query.isEmpty else { return true }
-            return [device.name, device.serial, device.model, device.os]
-                .contains { $0.localizedCaseInsensitiveContains(query) }
-        }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let key = RowCache.Key(
+            data: RowCache.DataKey(
+                source: dataSource, reloads: reloads, collectedAt: snapshot.devicesDate,
+                count: snapshot.devices.count),
+            filter: filter, query: search.trimmingCharacters(in: .whitespaces),
+            staleDays: staleDays, hourBucket: Int(now.timeIntervalSince1970 / 3600))
+        return rowCache.rows(for: key, devices: snapshot.devices, now: now)
     }
 
     private var devicesCard: some View {
@@ -144,6 +141,76 @@ struct SchoolDevicesView: View {
                 .font(.callout)
                 .pageTableHeight(rows: snapshot.depDevices.count)
             }
+        }
+    }
+}
+
+extension SchoolDevicesView {
+    nonisolated static func sortedByName(
+        _ devices: [SchoolFleetService.Device]
+    ) -> [SchoolFleetService.Device] {
+        devices.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    nonisolated static func filtered(
+        _ devices: [SchoolFleetService.Device], filter: Filter, query: String, staleDays: Int,
+        now: Date
+    ) -> [SchoolFleetService.Device] {
+        devices.filter { device in
+            switch filter {
+            case .all: break
+            case .managed: guard device.isManaged == true else { return false }
+            case .unmanaged: guard device.isManaged == false else { return false }
+            case .stale: guard device.isStale(atDays: staleDays, now: now) else { return false }
+            }
+            guard !query.isEmpty else { return true }
+            return [device.name, device.serial, device.model, device.os]
+                .contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    /// Holds the name-sorted fleet and the last filtered list, each rebuilt only when its key
+    /// changes. `sortBuilds` and `filterBuilds` are the seam tests count through.
+    @MainActor
+    final class RowCache {
+        struct DataKey: Equatable {
+            let source: String
+            let reloads: Int
+            let collectedAt: Date?
+            let count: Int
+        }
+
+        struct Key: Equatable {
+            let data: DataKey
+            let filter: Filter
+            let query: String
+            let staleDays: Int
+            /// Staleness moves with the clock; an hour is coarse enough for day counts.
+            let hourBucket: Int
+        }
+
+        private(set) var sortBuilds = 0
+        private(set) var filterBuilds = 0
+        private var dataKey: DataKey?
+        private var sorted: [SchoolFleetService.Device] = []
+        private var listKey: Key?
+        private var list: [SchoolFleetService.Device] = []
+
+        func rows(
+            for key: Key, devices: [SchoolFleetService.Device], now: Date
+        ) -> [SchoolFleetService.Device] {
+            if dataKey != key.data {
+                dataKey = key.data
+                sorted = SchoolDevicesView.sortedByName(devices)
+                sortBuilds += 1
+                listKey = nil
+            }
+            if listKey == key { return list }
+            list = SchoolDevicesView.filtered(
+                sorted, filter: key.filter, query: key.query, staleDays: key.staleDays, now: now)
+            filterBuilds += 1
+            listKey = key
+            return list
         }
     }
 }

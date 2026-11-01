@@ -11,8 +11,45 @@ struct ConfigEntryAsRead: Equatable, Sendable {
     static func == (lhs: Self, rhs: Self) -> Bool { true }
 }
 
+/// Identity of an editor row, so removing a row does not hand the ones below it its per-row
+/// state. Never written to config.yaml and always equal, so it cannot make the form dirty.
+struct ConfigRowID: Equatable, Sendable {
+    let value = UUID()
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
+}
+
+/// Row identities for the benchmark titles, which are plain strings. Filled on the first add or
+/// remove (a loaded list has none yet and falls back to a fixed id per position); always equal.
+struct ConfigRowIDs: Equatable, Sendable {
+    private var values: [UUID] = []
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
+
+    func id(at index: Int) -> UUID {
+        if values.indices.contains(index) { return values[index] }
+        return UUID(uuidString: String(format: "00000000-0000-0000-0000-%012x", index)) ?? UUID()
+    }
+
+    /// Called with the row count before the change, since rows may not have ids yet.
+    mutating func append(rowCount: Int) {
+        pad(to: rowCount)
+        values.append(UUID())
+    }
+
+    mutating func remove(at index: Int, rowCount: Int) {
+        pad(to: rowCount)
+        if values.indices.contains(index) { values.remove(at: index) }
+    }
+
+    private mutating func pad(to count: Int) {
+        while values.count < count { values.append(UUID()) }
+    }
+}
+
 struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
-    var id: String { "\(name)|\(column)|\(connectedValue)" }
+    var rowID = ConfigRowID()
+    var id: UUID { rowID.value }
     var name: String
     var column: String
     var connectedValue: String
@@ -20,7 +57,8 @@ struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
 }
 
 struct ConfigCustomEA: Identifiable, Equatable, Sendable {
-    var id: String { "\(name)|\(column)|\(type)" }
+    var rowID = ConfigRowID()
+    var id: UUID { rowID.value }
     var name: String
     var column: String
     var type: String
@@ -60,6 +98,7 @@ struct ConfigState: Equatable, Sendable {
     var orgName: String
     var logoPath: String
     var accentColor: String
+    var benchmarkRowIDs = ConfigRowIDs()
 
     /// The stale rule the screen's thresholds describe.
     var staleRule: StaleRule {

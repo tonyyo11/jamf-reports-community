@@ -968,11 +968,13 @@ final class WorkspaceStore {
     }
 
     func addComplianceBenchmark() {
+        configState.benchmarkRowIDs.append(rowCount: configState.complianceBenchmarks.count)
         configState.complianceBenchmarks.append("New Benchmark")
     }
 
     func removeComplianceBenchmark(at index: Int) {
         guard configState.complianceBenchmarks.indices.contains(index) else { return }
+        configState.benchmarkRowIDs.remove(at: index, rowCount: configState.complianceBenchmarks.count)
         configState.complianceBenchmarks.remove(at: index)
     }
 

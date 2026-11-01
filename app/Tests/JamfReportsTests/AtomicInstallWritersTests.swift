@@ -43,6 +43,17 @@ final class AtomicInstallWritersTests: XCTestCase {
         return (attrs[.posixPermissions] as? NSNumber)?.int16Value ?? -1
     }
 
+    func testAFileNeverReplacesARealFolder() throws {
+        let folder = root.appendingPathComponent("Reports", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let kept = folder.appendingPathComponent("kept.txt")
+        try Data("keep".utf8).write(to: kept)
+        XCTAssertThrowsError(try AtomicInstall.write(Data("x".utf8), to: folder))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: kept.path))
+        let left = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        XCTAssertFalse(left.contains { $0.contains(".tmp-") }, "\(left)")
+    }
+
     func testWriteReplacesALinkAndSetsTheMode() throws {
         let dest = root.appendingPathComponent("out.json")
         try plantLink(at: dest)

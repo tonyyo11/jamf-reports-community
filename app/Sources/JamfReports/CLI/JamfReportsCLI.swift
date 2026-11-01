@@ -146,6 +146,10 @@ enum CLIRun {
         if WorkspacePaths.isSensitiveAbsolutePath(URL(fileURLWithPath: path)) {
             fail("refusing to write into a sensitive path: \(path)")
         }
+        var isFolder: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue {
+            fail("--output names a folder, not a file: \(path)")
+        }
     }
 
     /// Load a profile's parsed config + snapshot data dir — the setup the

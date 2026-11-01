@@ -184,12 +184,14 @@ enum TimestampToken {
         }
 
         /// The signer's chain under the time-stamping policy at `date`, against this Mac's
-        /// trust settings. A self-signed authority (FreeTSA) is not trusted.
+        /// trust settings. A self-signed authority (FreeTSA) is not trusted. No network: a token's
+        /// certificates are peer-writable input, and their AIA or OCSP URL must not get a fetch.
         func chainTrusted(at date: Date) -> Bool {
             guard let trust else { return false }
             let policy = SecPolicyCreateWithProperties(kSecPolicyAppleTimeStamping, nil)
                 ?? SecPolicyCreateBasicX509()
             guard SecTrustSetPolicies(trust, policy) == errSecSuccess,
+                  SecTrustSetNetworkFetchAllowed(trust, false) == errSecSuccess,
                   SecTrustSetVerifyDate(trust, date as CFDate) == errSecSuccess
             else { return false }
             return SecTrustEvaluateWithError(trust, nil)

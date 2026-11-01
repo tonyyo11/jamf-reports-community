@@ -19,7 +19,6 @@ struct TrendsView: View {
     /// Bumped to re-run the keyed load task (refresh, archive).
     @State private var reloadCount = 0
     @State private var range: TrendRange = .w4
-    @State private var selectedDate: Date? = nil
     @State private var isArchiving = false
     @State private var isExporting = false
     /// Index of the snapshot bar currently hovered, for floating tooltip in archive timeline.
@@ -112,20 +111,20 @@ struct TrendsView: View {
         return (target / step).rounded(.up) * step
     }
 
-    private var selectedPoint: TrendPoint? {
-        guard let selectedDate else { return nil }
+    private func nearestPoint(to date: Date?) -> TrendPoint? {
+        guard let date else { return nil }
         return trendPoints.min {
-            abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate))
+            abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date))
         }
     }
 
     /// Nil when the metric has no points in range.
-    private var displayVal: Double? {
-        selectedPoint?.value ?? trendPoints.last?.value
+    private func displayVal(_ selected: TrendPoint?) -> Double? {
+        selected?.value ?? trendPoints.last?.value
     }
 
-    private var displayDate: String {
-        let d = selectedPoint?.date ?? trendPoints.last?.date ?? Date()
+    private func displayDate(_ selected: TrendPoint?) -> String {
+        let d = selected?.date ?? trendPoints.last?.date ?? Date()
         return SummaryJSONParser.dateFormatter.string(from: d)
     }
 
@@ -285,7 +284,7 @@ struct TrendsView: View {
                     }
                 }
                 metricPicker
-                heroChart
+                HeroSelectionHost(resetOn: range) { heroChart(selection: $0) }
                 aiInsightCard
                 comparisonRow
                 snapshotArchive
@@ -305,7 +304,6 @@ struct TrendsView: View {
             await loadTrendsOffMain()
         }
         .onChange(of: range) { _, newValue in
-            selectedDate = nil
             // A managed default stays as the profile sets it; the picker changes this view only.
             if !ManagedPreference.isForced("defaultTrendRange") {
                 defaultTrendRangeRaw = newValue.rawValue
@@ -559,17 +557,17 @@ struct TrendsView: View {
     }
 
     /// Number plus the delta (idle) or hovered date; the range pill joins only when asked.
-    private func heroValueRow(showsRange: Bool) -> some View {
+    private func heroValueRow(showsRange: Bool, selected: TrendPoint?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(Self.metricValueText(displayVal, unit: metric.unit))
+            Text(Self.metricValueText(displayVal(selected), unit: metric.unit))
                 .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()
                 .contentTransition(.numericText(countsDown: delta < 0))
-                .motionSafeAnimation(.snappy(duration: 0.35), value: displayVal)
+                .motionSafeAnimation(.snappy(duration: 0.35), value: displayVal(selected))
                 .fixedSize()
 
-            if selectedPoint == nil {
+            if selected == nil {
                 heroIdleDetail(showsRange: showsRange)
             } else {
                 // The hidden idle detail keeps the row as wide as it is idle, so hovering
@@ -579,7 +577,7 @@ struct TrendsView: View {
                         heroIdleDetail(showsRange: showsRange)
                     }
                     .hidden()
-                    Text("at \(displayDate)")
+                    Text("at \(displayDate(selected))")
                         .font(Theme.Fonts.mono(14, weight: .semibold))
                         .foregroundStyle(Theme.Colors.goldBright)
                         .lineLimit(1)
@@ -588,8 +586,9 @@ struct TrendsView: View {
         }
     }
 
-    private var heroChart: some View {
-        Card(padding: 22) {
+    private func heroChart(selection: Binding<Date?>) -> some View {
+        let selectedPoint = nearestPoint(to: selection.wrappedValue)
+        return Card(padding: 22) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -597,9 +596,9 @@ struct TrendsView: View {
                         // The range pill drops under the number only when the one-line row
                         // does not fit, so the wide layout is unchanged.
                         ViewThatFits(in: .horizontal) {
-                            heroValueRow(showsRange: true)
+                            heroValueRow(showsRange: true, selected: selectedPoint)
                             VStack(alignment: .leading, spacing: 6) {
-                                heroValueRow(showsRange: false)
+                                heroValueRow(showsRange: false, selected: selectedPoint)
                                 // Hidden, not removed, on hover so the chart below stays put.
                                 Pill(text: rangeBadgeText, tone: .muted)
                                     .opacity(selectedPoint == nil ? 1 : 0)
@@ -732,7 +731,7 @@ struct TrendsView: View {
                         range: .plotDimension(padding: metric == .mscpBandTrend ? 0 : 10)
                     )
                     .chartYScale(domain: chartYDomain)
-                    .chartXSelection(value: $selectedDate)
+                    .chartXSelection(value: selection)
                     .chartXAxis {
                         trendXAxisMarks(for: range)
                     }
@@ -1877,4 +1876,21 @@ private struct TrendsLoadKey: Equatable {
     let profile: String
     let demoMode: Bool
     let reloads: Int
+}
+
+/// Owns the hero chart's hover selection so a mouse move re-evaluates the card, not the screen.
+private struct HeroSelectionHost<Key: Equatable, Content: View>: View {
+    let resetOn: Key
+    let content: (Binding<Date?>) -> Content
+    @State private var selectedDate: Date?
+
+    init(resetOn: Key, @ViewBuilder content: @escaping (Binding<Date?>) -> Content) {
+        self.resetOn = resetOn
+        self.content = content
+    }
+
+    var body: some View {
+        content($selectedDate)
+            .onChange(of: resetOn) { _, _ in selectedDate = nil }
+    }
 }

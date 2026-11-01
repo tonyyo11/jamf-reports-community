@@ -769,9 +769,8 @@ enum DiagnosticBundleService {
         redactor?.seedServerHosts(sources.serverHosts)
         if !sources.cliProfile.isEmpty {
             redactor?.seedWorkspaceNames(
-                [sources.cliProfile, sources.workspaceName, profileSlug]
-                    + [ProfileName.pathComponent, ProfileName.labelComponent]
-                        .map { $0(sources.cliProfile) })
+                [sources.workspaceName, profileSlug]
+                    + LogRedactor.profileNameForms(of: sources.cliProfile))
         }
 
         let entries = try stageFiles(
