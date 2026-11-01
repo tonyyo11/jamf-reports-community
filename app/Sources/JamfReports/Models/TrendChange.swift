@@ -43,7 +43,7 @@ struct TrendChange: Equatable, Sendable {
     /// baseline is large enough for a ratio to mean something. A percentage-point change
     /// has no second percentage, which read as a different, relative change.
     func heroText(relativeChange: Double?) -> String {
-        guard direction != .flat else { return "No change" }
+        guard direction != .flat else { return L("No change") }
         guard let relativeChange else { return size }
         return "\(size) (\(String(format: "%.1f", relativeChange))%)"
     }

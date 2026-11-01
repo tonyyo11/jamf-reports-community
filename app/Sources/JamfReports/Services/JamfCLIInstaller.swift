@@ -11,9 +11,9 @@ final class JamfCLIInstaller {
 
         var label: String {
             switch self {
-            case .homebrew:      "Homebrew"
-            case .githubRelease: "GitHub release"
-            case .unknown:       "Unknown source"
+            case .homebrew:      L("Homebrew")
+            case .githubRelease: L("GitHub release")
+            case .unknown:       L("Unknown source")
             }
         }
     }
@@ -171,9 +171,7 @@ final class JamfCLIInstaller {
     /// The `[error]` line that stops a scheduled run on a jamf-cli below the floor.
     nonisolated static func floorLine(installed: String, profile: String) -> String {
         "[error] jamf-cli \(installed) is below \(minimumSupportedVersion), the "
-            + "oldest Jamf Reports can run — aborting '\(profile)' to avoid writing data "
-            + "from an unsupported binary. Update jamf-cli in Settings or with "
-            + "brew upgrade jamf-cli."
+            + L("oldest Jamf Reports can run — aborting '\(profile)' to avoid writing data from an unsupported binary. Update jamf-cli in Settings or with brew upgrade jamf-cli.")
     }
 
     /// First release with the top-level `dashboard` command: one self-contained
@@ -203,8 +201,8 @@ final class JamfCLIInstaller {
         // include that exact wording.
         var description: String {
             switch self {
-            case .untrustedHost(let h): "Untrusted host: \(h ?? "<nil>")"
-            case .invalidName(let n):    "Invalid asset name: \(n)"
+            case .untrustedHost(let h): L("Untrusted host: \(h ?? "<nil>")")
+            case .invalidName(let n):    L("Invalid asset name: \(n)")
             }
         }
     }
@@ -411,13 +409,13 @@ final class JamfCLIInstaller {
             return "jamf-cli is already being updated."
         case .tickLockHeld:
             return "jamf-cli was not updated: a scheduled run is in progress. "
-                + "Update it again when the run finishes."
+                + L("Update it again when the run finishes.")
         case .generateInProgress:
             return "jamf-cli was not updated: a report is being generated. "
-                + "Update it again when the report finishes."
+                + L("Update it again when the report finishes.")
         default:
             return "jamf-cli was not updated: a refresh is running. "
-                + "Update it again when the refresh finishes."
+                + L("Update it again when the refresh finishes.")
         }
     }
 
@@ -434,7 +432,7 @@ final class JamfCLIInstaller {
         case .unknown:
             return UpdateResult(
                 succeeded: false,
-                message: "Refusing to update unknown jamf-cli install at \(installation.path)."
+                message: L("Refusing to update unknown jamf-cli install at \(installation.path).")
             )
         }
     }
@@ -494,7 +492,7 @@ final class JamfCLIInstaller {
         timeout: TimeInterval = brewTimeout
     ) async -> UpdateResult {
         guard let brew = brewExecutable(for: installation) else {
-            return UpdateResult(succeeded: false, message: "Homebrew install detected, but brew was not found.")
+            return UpdateResult(succeeded: false, message: L("Homebrew install detected, but brew was not found."))
         }
         let brewEnv = environmentForBrew()
         let update = await runProcess(
@@ -518,15 +516,15 @@ final class JamfCLIInstaller {
         if output.isEmpty {
             return UpdateResult(
                 succeeded: true,
-                message: "Homebrew jamf-cli is current at \(installation.version ?? "unknown")."
+                message: L("Homebrew jamf-cli is current at \(installation.version ?? "unknown").")
             )
         }
-        return UpdateResult(succeeded: true, message: "Homebrew update available for jamf-cli.", updateAvailable: true)
+        return UpdateResult(succeeded: true, message: L("Homebrew update available for jamf-cli."), updateAvailable: true)
     }
 
     private static func updateHomebrew(_ installation: Installation) async -> UpdateResult {
         guard let brew = brewExecutable(for: installation) else {
-            return UpdateResult(succeeded: false, message: "Homebrew install detected, but brew was not found.")
+            return UpdateResult(succeeded: false, message: L("Homebrew install detected, but brew was not found."))
         }
         let brewEnv = environmentForBrew()
         let update = await runProcess(
@@ -552,7 +550,7 @@ final class JamfCLIInstaller {
 
         let version = await installedVersionOffMain(at: URL(fileURLWithPath: installation.path))
             ?? "unknown"
-        return UpdateResult(succeeded: true, message: "Homebrew jamf-cli is updated to \(version).")
+        return UpdateResult(succeeded: true, message: L("Homebrew jamf-cli is updated to \(version)."))
     }
 
     private static func checkGitHubUpdate(for installation: Installation) async -> UpdateResult {
@@ -561,21 +559,21 @@ final class JamfCLIInstaller {
             guard let local = installation.version else {
                 return UpdateResult(
                     succeeded: true,
-                    message: "Latest GitHub release is \(release.tagName); local version is unknown."
+                    message: L("Latest GitHub release is \(release.tagName); local version is unknown.")
                 )
             }
             if compareVersions(local, release.tagName) == .orderedAscending {
                 return UpdateResult(
                     succeeded: true,
-                    message: "GitHub release \(release.tagName) is available for \(installation.path).",
+                    message: L("GitHub release \(release.tagName) is available for \(installation.path)."),
                     updateAvailable: true
                 )
             }
-            return UpdateResult(succeeded: true, message: "GitHub jamf-cli is current at \(local).")
+            return UpdateResult(succeeded: true, message: L("GitHub jamf-cli is current at \(local)."))
         } catch {
             return UpdateResult(
                 succeeded: false,
-                message: "Could not check GitHub releases: \(error.localizedDescription)"
+                message: L("Could not check GitHub releases: \(error.localizedDescription)")
             )
         }
     }
@@ -586,7 +584,7 @@ final class JamfCLIInstaller {
                 let release = try await fetchLatestGitHubRelease()
                 if compareVersions(local, release.tagName) != .orderedAscending {
                     return UpdateResult(
-                        succeeded: true, message: "GitHub jamf-cli is current at \(local)."
+                        succeeded: true, message: L("GitHub jamf-cli is current at \(local).")
                     )
                 }
                 // Version is outdated; reuse the already-fetched release to avoid
@@ -598,7 +596,7 @@ final class JamfCLIInstaller {
             } catch {
                 return UpdateResult(
                     succeeded: false,
-                    message: "Could not check GitHub releases: \(error.localizedDescription)"
+                    message: L("Could not check GitHub releases: \(error.localizedDescription)")
                 )
             }
         }
@@ -615,7 +613,7 @@ final class JamfCLIInstaller {
         } catch {
             return UpdateResult(
                 succeeded: false,
-                message: "GitHub jamf-cli install failed: \(error.localizedDescription)"
+                message: L("GitHub jamf-cli install failed: \(error.localizedDescription)")
             )
         }
     }
@@ -628,7 +626,7 @@ final class JamfCLIInstaller {
             guard let asset = preferredAsset(from: release.assets) else {
                 return UpdateResult(
                     succeeded: false,
-                    message: "No macOS asset found for \(release.tagName). Open \(githubReleasesURL.absoluteString)."
+                    message: L("No macOS asset found for \(release.tagName). Open \(githubReleasesURL.absoluteString).")
                 )
             }
 
@@ -662,7 +660,7 @@ final class JamfCLIInstaller {
                         code: 5,
                         userInfo: [NSLocalizedDescriptionKey:
                             "jamf-cli codesign verification failed: signature missing,"
-                            + " invalid, or not issued by team \(Self.expectedJamfTeamID)."]
+                            + L(" invalid, or not issued by team \(Self.expectedJamfTeamID).")]
                     )
                 }
             } else {
@@ -683,7 +681,7 @@ final class JamfCLIInstaller {
         } catch {
             return UpdateResult(
                 succeeded: false,
-                message: "GitHub jamf-cli install failed: \(error.localizedDescription)"
+                message: L("GitHub jamf-cli install failed: \(error.localizedDescription)")
             )
         }
     }
@@ -702,8 +700,7 @@ final class JamfCLIInstaller {
                 domain: "JamfCLIInstaller",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Release \(release.tagName) does not publish a checksums file;"
-                    + " refusing to install unverified asset."]
+                    L("Release \(release.tagName) does not publish a checksums file; refusing to install unverified asset.")]
             )
         }
 
@@ -719,8 +716,7 @@ final class JamfCLIInstaller {
                 domain: "JamfCLIInstaller",
                 code: 6,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Checksums asset host is not in the trusted allow-list;"
-                    + " refusing to download from \(checksumsAsset.browserDownloadURL.host ?? "<nil>")."]
+                    L("Checksums asset host is not in the trusted allow-list; refusing to download from \(checksumsAsset.browserDownloadURL.host ?? "<nil>").")]
             )
         }
 
@@ -732,8 +728,7 @@ final class JamfCLIInstaller {
                 domain: "JamfCLIInstaller",
                 code: 2,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "No SHA256 entry for \(asset.name) in \(checksumsAsset.name);"
-                    + " refusing to install."]
+                    L("No SHA256 entry for \(asset.name) in \(checksumsAsset.name); refusing to install.")]
             )
         }
 
@@ -743,9 +738,7 @@ final class JamfCLIInstaller {
                 domain: "JamfCLIInstaller",
                 code: 3,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Asset checksum mismatch for \(asset.name) — possible"
-                    + " tampering or corrupted download (expected \(expected),"
-                    + " got \(actual))."]
+                    L("Asset checksum mismatch for \(asset.name) — possible tampering or corrupted download (expected \(expected), got \(actual)).")]
             )
         }
     }
@@ -795,7 +788,7 @@ final class JamfCLIInstaller {
                     domain: "JamfCLIInstaller",
                     code: 4,
                     userInfo: [NSLocalizedDescriptionKey:
-                        "\(parent.path) exists but is not a directory."]
+                        L("\(parent.path) exists but is not a directory.")]
                 )
             }
             return
@@ -876,7 +869,7 @@ final class JamfCLIInstaller {
             throw NSError(
                 domain: "JamfCLIInstaller",
                 code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"]
+                userInfo: [NSLocalizedDescriptionKey: L("HTTP \(http.statusCode)")]
             )
         }
     }
@@ -993,8 +986,8 @@ final class JamfCLIInstaller {
                 code: 7,
                 userInfo: [NSLocalizedDescriptionKey:
                     listing.timedOut
-                        ? failureText("Archive listing for \(assetName)", listing)
-                        : "Archive listing failed for \(assetName): \(summarize(listing))"]
+                        ? failureText(L("Archive listing for \(assetName)"), listing)
+                        : L("Archive listing failed for \(assetName): \(summarize(listing))")]
             )
         }
 
@@ -1014,7 +1007,7 @@ final class JamfCLIInstaller {
                 domain: "JamfCLIInstaller",
                 code: 8,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Archive entry rejected (absolute path): \(entry)"]
+                    L("Archive entry rejected (absolute path): \(entry)")]
             )
         }
         // Catches `..`, `../foo`, `foo/../bar`, and tar verbose `name -> ../target` symlinks.
@@ -1023,7 +1016,7 @@ final class JamfCLIInstaller {
                 domain: "JamfCLIInstaller",
                 code: 8,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Archive entry rejected (traversal): \(entry)"]
+                    L("Archive entry rejected (traversal): \(entry)")]
             )
         }
         if entry.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
@@ -1031,7 +1024,7 @@ final class JamfCLIInstaller {
                 domain: "JamfCLIInstaller",
                 code: 9,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Archive entry rejected (control character in name)"]
+                    L("Archive entry rejected (control character in name)")]
             )
         }
     }
@@ -1050,7 +1043,7 @@ final class JamfCLIInstaller {
         throw NSError(
             domain: "JamfCLIInstaller",
             code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "download did not contain a jamf-cli binary"]
+            userInfo: [NSLocalizedDescriptionKey: L("download did not contain a jamf-cli binary")]
         )
     }
 
@@ -1278,14 +1271,14 @@ final class JamfCLIInstaller {
     /// "<command> did not finish within N s".
     nonisolated static func failureText(_ command: String, _ result: CommandResult) -> String {
         if result.timedOut {
-            return "\(command) did not finish within \(Int(result.timeout.rounded())) s"
+            return L("\(command) did not finish within \(Int(result.timeout.rounded())) s")
         }
-        return "\(command) failed: \(summarize(result))"
+        return L("\(command) failed: \(summarize(result))")
     }
 
     private nonisolated static func summarize(_ result: CommandResult) -> String {
         let text = result.combinedOutput
-        if text.isEmpty { return "exit \(result.exitCode)" }
+        if text.isEmpty { return L("exit \(result.exitCode)") }
         return text.split(separator: "\n").prefix(3).joined(separator: " ")
     }
 

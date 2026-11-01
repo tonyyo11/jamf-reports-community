@@ -115,16 +115,16 @@ struct FreshnessChipRow: View {
                 icon: "clock",
                 label: "\(model.kind) · \(relative)",
                 tone: stale ? Theme.Colors.warn : Theme.Colors.fgMuted,
-                help: "\(model.kind): last collected \(absoluteLabel(for: date))",
+                help: L("\(model.kind): last collected \(absoluteLabel(for: date))"),
                 accessibilityLabel: "\(model.kind), \(relative)"
             )
         case .absent:
             return ChipDisplay(
                 icon: "exclamationmark.triangle",
-                label: "\(model.kind) · never",
+                label: L("\(model.kind) · never"),
                 tone: Theme.Colors.danger,
-                help: "\(model.kind): never collected",
-                accessibilityLabel: "\(model.kind), never collected"
+                help: L("\(model.kind): never collected"),
+                accessibilityLabel: L("\(model.kind), never collected")
             )
         }
     }
@@ -138,10 +138,10 @@ struct FreshnessChipRow: View {
     nonisolated static func relativeLabel(for date: Date, now: Date = Date()) -> String {
         let seconds = max(0, now.timeIntervalSince(date))
         let hours = Int(seconds / 3600)
-        if hours < 1 { return "just now" }
-        if hours < 24 { return "\(hours)h ago" }
+        if hours < 1 { return L("just now") }
+        if hours < 24 { return L("\(hours)h ago") }
         let days = hours / 24
-        return "\(days)d ago"
+        return L("\(days)d ago")
     }
 
     /// Absolute timestamp for the `.help` tooltip.

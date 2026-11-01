@@ -12,10 +12,9 @@ enum AddSheetPlan {
         name: String, status: ExistingCLISetupFlow.ProfileStatus?, note: String? = nil
     ) -> (message: String?, error: String?) {
         if case .failed(let reason) = status {
-            return (nil, "\(name)'s workspace was created, but its first collect failed "
-                + "(\(reason)). Fix the cause, then collect from that workspace.")
+            return (nil, L("\(name)'s workspace was created, but its first collect failed (\(reason)). Fix the cause, then collect from that workspace."))
         }
-        let done = "\(name) is set up. Switch to it from the workspace menu."
+        let done = L("\(name) is set up. Switch to it from the workspace menu.")
         return (note.map { done + " " + $0 } ?? done, nil)
     }
 
@@ -24,8 +23,7 @@ enum AddSheetPlan {
     /// leave that profile behind as unassigned.
     static func addRefusal(onboardingRunHasWork: Bool) -> String? {
         onboardingRunHasWork
-            ? "Finish the setup in progress before adding another connection. It has already "
-                + "saved a jamf-cli profile or workspace folder."
+            ? L("Finish the setup in progress before adding another connection. It has already saved a jamf-cli profile or workspace folder.")
             : nil
     }
 
@@ -139,9 +137,7 @@ enum AddSheetPlan {
                 }?.name
             }
             guard let other else { continue }
-            notes[profile.name] = "Same Jamf Pro as \(other), which has a workspace. A second "
-                + "workspace collects the fleet twice, so history is split and fleet totals count "
-                + "it twice. Set it up only to collect it anyway."
+            notes[profile.name] = L("Same Jamf Pro as \(other), which has a workspace. A second workspace collects the fleet twice, so history is split and fleet totals count it twice. Set it up only to collect it anyway.")
         }
         return notes
     }
@@ -211,11 +207,10 @@ enum AddSheetPlan {
         if step(choice: choice, takesProtect: takesProtect) == .addToCurrent {
             return .empty(
                 currentAcceptsProtect(takesProtect: takesProtect, discovery: discovery)
-                    ? "No Jamf Protect profile in jamf-cli is free to add. Connect new above."
-                    : "This workspace already has Jamf Protect.")
+                    ? L("No Jamf Protect profile in jamf-cli is free to add. Connect new above.")
+                    : L("This workspace already has Jamf Protect."))
         }
-        return .empty("Every jamf-cli profile already has a workspace. Profiles made in "
-            + "Terminal appear here after Re-check.")
+        return .empty(L("Every jamf-cli profile already has a workspace. Profiles made in Terminal appear here after Re-check."))
     }
 
     /// The choice after Re-check read `found`. Rows come from `found` alone, so a profile added

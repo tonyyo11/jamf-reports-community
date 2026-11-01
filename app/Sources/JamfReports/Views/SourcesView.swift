@@ -124,7 +124,7 @@ struct SourcesView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Kicker(text: "Inputs to the workbook", tone: .gold)
+            Kicker(text: L("Inputs to the workbook"), tone: .gold)
             Text("Data Sources")
                 .font(Theme.Fonts.serifTitle())
                 .foregroundStyle(Theme.Text.primary)
@@ -141,12 +141,12 @@ struct SourcesView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "bolt.fill").foregroundStyle(Theme.Colors.gold)
                         .font(.system(size: 16))
-                    SectionHeader(title: "jamf-cli · live")
+                    SectionHeader(title: L("jamf-cli · live"))
                     Spacer()
                     Pill(
                         text: cachedSourceCount == 0
-                            ? "No cache"
-                            : "\(cachedSourceCount) cached",
+                            ? L("No cache")
+                            : L("\(cachedSourceCount) cached"),
                         tone: cachedSourceCount == 0 ? .muted : .teal
                     )
                 }
@@ -225,7 +225,7 @@ struct SourcesView: View {
             }
         } label: {
             HStack(alignment: .firstTextBaseline) {
-                Text(product.rawValue)
+                Text(LShown(product.rawValue))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(Theme.Text.primary)
                 Spacer()
@@ -261,18 +261,18 @@ struct SourcesView: View {
         let running = sources.filter { $0.skipReason == nil }
         let cached = running.filter { cachedAt[$0.kind] != nil }.count
         let skipped = sources.count - running.count
-        var parts = ["\(running.count) run"]
-        if cached > 0 { parts.append("\(cached) cached") }
-        if skipped > 0 { parts.append("\(skipped) skipped") }
+        var parts = [L("\(running.count) run")]
+        if cached > 0 { parts.append(L("\(cached) cached")) }
+        if skipped > 0 { parts.append(L("\(skipped) skipped")) }
         return parts.joined(separator: " · ")
     }
 
     nonisolated static func sourceStatus(
         _ source: CollectSourcesPlan.Source, cachedAt: Date?
     ) -> String {
-        if let reason = source.skipReason { return "skipped: \(reason)" }
-        guard let cachedAt else { return "not cached" }
-        return "cached \(FileDisplay.date(cachedAt))"
+        if let reason = source.skipReason { return L("skipped: \(reason)") }
+        guard let cachedAt else { return L("not cached") }
+        return L("cached \(FileDisplay.date(cachedAt))")
     }
 
     private func cliProfileLine(label: String) -> some View {
@@ -304,8 +304,7 @@ struct SourcesView: View {
     /// before running an operation, and it never reaches jamf-cli, so it cannot widen or
     /// narrow the API client's rights. The text says so rather than promising a gate.
     static func scopeExplanation(_ scope: APIScope) -> String {
-        "\(scope.displayName) is a label kept on this Mac for this profile. It does not change "
-            + "what the jamf-cli credentials can do, and nothing in the app is gated on it yet."
+        L("\(scope.displayName) is a label kept on this Mac for this profile. It does not change what the jamf-cli credentials can do, and nothing in the app is gated on it yet.")
     }
 
     private var cliCacheLine: some View {
@@ -325,22 +324,20 @@ struct SourcesView: View {
                     Image(systemName: "tablecells.badge.ellipsis")
                         .foregroundStyle(Theme.Colors.tealBright)
                         .font(.system(size: 16))
-                    SectionHeader(title: "Extension Attributes")
+                    SectionHeader(title: L("Extension Attributes"))
                 }
-                Text("Pick the Extension Attributes and security agents collected from Jamf "
-                    + "Pro to track in config.yaml. A CSV export can be imported once instead.")
+                Text("Pick the Extension Attributes and security agents collected from Jamf Pro to track in config.yaml. A CSV export can be imported once instead.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Adopt EAs", icon: "tablecells.badge.ellipsis", size: .sm) {
+                PNPButton(title: L("Adopt EAs"), icon: "tablecells.badge.ellipsis", size: .sm) {
                     guard !workspace.demoMode else { return }
                     showingEAWalkthrough = true
                 }
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Pick collected Extension Attributes (or import a CSV once) to "
-                          + "track in config.yaml.")
+                      : "Pick collected Extension Attributes (or import a CSV once) to track in config.yaml.")
                 TipView(SourcesTips.eaTracking)
                     .frame(maxWidth: 460, alignment: .leading)
             }
@@ -361,10 +358,10 @@ struct SourcesView: View {
                     Image(systemName: "stethoscope")
                         .foregroundStyle(Theme.Colors.tealBright)
                         .font(.system(size: 16))
-                    SectionHeader(title: "jamf-cli · connection health")
+                    SectionHeader(title: L("jamf-cli · connection health"))
                     Spacer()
                     if doctorRunning {
-                        Pill(text: "probing…", tone: .muted)
+                        Pill(text: L("probing…"), tone: .muted)
                     } else if case .report(let r) = doctorOutcome {
                         let v = Self.healthPill(r.health)
                         Pill(text: v.label, tone: v.tone, icon: v.icon)
@@ -379,8 +376,7 @@ struct SourcesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Re-register this profile's jamf-cli credentials (URL, client ID, "
-                              + "and secret) without leaving the app.")
+                          : "Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app.")
                     Button(doctorOutcome == nil ? "Check connection" : "Re-check") {
                         runDoctor()
                     }
@@ -400,15 +396,13 @@ struct SourcesView: View {
     private var doctorBody: some View {
         switch doctorOutcome {
         case .none:
-            Text("Run a live diagnosis of the active profile's credentials and "
-                + "server reachability — useful when a collect returns 401 or no data.")
+            Text("Run a live diagnosis of the active profile's credentials and server reachability — useful when a collect returns 401 or no data.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .padding(.vertical, 6)
         case .notInstalled:
             doctorMessageRow(
-                "jamf-cli is not installed — install it via Homebrew or from the jamf-cli "
-                    + "GitHub releases page, then click Re-check above.",
+                L("jamf-cli is not installed — install it via Homebrew or from the jamf-cli GitHub releases page, then click Re-check above."),
                 tone: .warn)
         case .failed(let reason):
             doctorMessageRow(reason, tone: .danger)
@@ -432,11 +426,11 @@ struct SourcesView: View {
     @ViewBuilder
     private func doctorReportRows(_ report: CLIDoctorReport) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            doctorRow("Profile", report.profile?.name ?? "—")
-            doctorRow("Server", report.profile?.effectiveUrl ?? report.profile?.url ?? "—")
-            doctorRow("Auth method", report.profile?.authMethod ?? "—")
-            doctorRow("Credentials", Self.credentialSummary(report))
-            doctorRow("Connectivity", Self.connectivitySummary(report.connectivity))
+            doctorRow(L("Profile"), report.profile?.name ?? "—")
+            doctorRow(L("Server"), report.profile?.effectiveUrl ?? report.profile?.url ?? "—")
+            doctorRow(L("Auth method"), report.profile?.authMethod ?? "—")
+            doctorRow(L("Credentials"), Self.credentialSummary(report))
+            doctorRow(L("Connectivity"), Self.connectivitySummary(report.connectivity))
 
             if report.health == .environmentReference {
                 doctorMessageRow(Self.environmentReferenceNote, tone: .warn)
@@ -449,7 +443,7 @@ struct SourcesView: View {
                         .font(.caption)
                         .foregroundStyle(Theme.Text.secondary)
                     Spacer()
-                    PNPButton(title: "Update credentials\u{2026}", icon: "key.horizontal", size: .sm) {
+                    PNPButton(title: L("Update credentials\u{2026}"), icon: "key.horizontal", size: .sm) {
                         reauthOpensPlatform = false
                         showingReauth = true
                     }
@@ -460,9 +454,7 @@ struct SourcesView: View {
     }
 
     static let environmentReferenceNote =
-        "Credential is an environment-variable reference; the app starts jamf-cli with a "
-        + "cleaned environment, so it cannot sign in from here. Use a keychain or file "
-        + "reference (jamf-cli config add-profile)."
+        L("Credential is an environment-variable reference; the app starts jamf-cli with a cleaned environment, so it cannot sign in from here. Use a keychain or file reference (jamf-cli config add-profile).")
 
     /// Health verdicts where re-registering credentials is the likely remedy.
     static func healthNeedsCredentials(_ health: CLIDoctorReport.Health) -> Bool {
@@ -504,31 +496,31 @@ struct SourcesView: View {
     ) -> (label: String, tone: Pill.Tone, icon: String) {
         switch health {
         case .healthy:
-            return ("Healthy", .teal, "checkmark.circle.fill")
+            return (L("Healthy"), .teal, "checkmark.circle.fill")
         case .credentialsUnresolved:
-            return ("Credentials unresolved", .warn, "key.slash")
+            return (L("Credentials unresolved"), .warn, "key.slash")
         case .unauthorized:
-            return ("Unauthorized", .danger, "lock.trianglebadge.exclamationmark")
+            return (L("Unauthorized"), .danger, "lock.trianglebadge.exclamationmark")
         case .unreachable:
-            return ("Unreachable", .danger, "wifi.slash")
+            return (L("Unreachable"), .danger, "wifi.slash")
         case .noProfile:
-            return ("No profile", .danger, "questionmark.circle")
+            return (L("No profile"), .danger, "questionmark.circle")
         case .environmentReference:
-            return ("Environment credential", .warn, "key.slash")
+            return (L("Environment credential"), .warn, "key.slash")
         }
     }
 
     static func credentialSummary(_ report: CLIDoctorReport) -> String {
         let creds = report.profile?.credentials ?? []
-        guard !creds.isEmpty else { return "none resolved" }
+        guard !creds.isEmpty else { return L("none resolved") }
         let resolved = creds.filter { $0.resolved == true }.count
-        return "\(resolved)/\(creds.count) resolved"
+        return L("\(resolved)/\(creds.count) resolved")
     }
 
     static func connectivitySummary(_ c: CLIDoctorReport.Connectivity?) -> String {
-        guard let c, let code = c.statusCode, code > 0 else { return "no response" }
-        if let ms = c.latencyMs { return "HTTP \(code) · \(ms)ms" }
-        return "HTTP \(code)"
+        guard let c, let code = c.statusCode, code > 0 else { return L("no response") }
+        if let ms = c.latencyMs { return L("HTTP \(code) · \(ms)ms") }
+        return L("HTTP \(code)")
     }
 
     private func runDoctor() {
@@ -551,18 +543,18 @@ struct SourcesView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "checklist").foregroundStyle(Theme.Colors.tealBright)
                         .font(.system(size: 16))
-                    SectionHeader(title: "jamf-cli · command matrix")
+                    SectionHeader(title: L("jamf-cli · command matrix"))
                     Spacer()
                     if workspace.demoMode {
                         Pill(text: "demo", tone: .muted)
                     } else if capabilitySnapshot == nil {
-                        Pill(text: "probing…", tone: .muted)
+                        Pill(text: L("probing…"), tone: .muted)
                     } else if let ver = capabilitySnapshot?.version {
                         Pill(text: "v\(ver)", tone: .muted)
                     } else if capabilitySnapshot?.availability.isEmpty == true {
-                        Pill(text: "not installed", tone: .warn)
+                        Pill(text: L("not installed"), tone: .warn)
                     } else {
-                        Pill(text: "version unknown", tone: .muted)
+                        Pill(text: L("version unknown"), tone: .muted)
                     }
                 }
 
@@ -602,9 +594,9 @@ struct SourcesView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "externaldrive").foregroundStyle(Theme.Text.tertiary(contrast))
                         .font(.system(size: 16))
-                    SectionHeader(title: "Snapshot Archive Families")
+                    SectionHeader(title: L("Snapshot Archive Families"))
                     Spacer()
-                    PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
+                    PNPButton(title: L("Open in Finder"), icon: "folder", size: .sm) {
                         guard !workspace.demoMode else { return }
                         let url = (try? WorkspacePaths.historicalDir(for: workspace.profile))
                                     ?? (ProfileService.workspaceURL(for: workspace.profile)
@@ -656,15 +648,8 @@ struct SourcesView: View {
                     .frame(height: min(CGFloat(families.count) * 28 + 34, 200))
                     .scrollContentBackground(.hidden)
                     Text(isSchoolWorkspace
-                        ? "Families appear as snapshot types are archived: summaries "
-                        + "(daily trend data: a day's first collect writes it, and each later "
-                        + "collect that fetches new data rebuilds it) plus dated Jamf School "
-                        + "device, group, and user archives."
-                        : "Families appear as snapshot types are archived: summaries "
-                        + "(daily trend data: a day's first collect writes it, and each later "
-                        + "collect that fetches new data rebuilds it) plus dated computers, "
-                        + "mobile, compliance, and patching archives. A jamf-cli-only workspace "
-                        + "typically shows only summaries.")
+                        ? "Families appear as snapshot types are archived: summaries (daily trend data: a day's first collect writes it, and each later collect that fetches new data rebuilds it) plus dated Jamf School device, group, and user archives."
+                        : "Families appear as snapshot types are archived: summaries (daily trend data: a day's first collect writes it, and each later collect that fetches new data rebuilds it) plus dated computers, mobile, compliance, and patching archives. A jamf-cli-only workspace typically shows only summaries.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -676,10 +661,8 @@ struct SourcesView: View {
     private var emptyFamiliesState: some View {
         EmptyStateView(
             systemImage: "archivebox",
-            title: "No snapshot families yet",
-            message: "Families appear after collection runs: "
-                + "summaries (written by a collect that fetches data), plus dated computers, "
-                + "mobile, compliance, and patching archives."
+            title: L("No snapshot families yet"),
+            message: L("Families appear after collection runs: summaries (written by a collect that fetches data), plus dated computers, mobile, compliance, and patching archives.")
         )
         .frame(maxWidth: .infinity, minHeight: 160)
         .padding(.vertical, 8)
@@ -723,9 +706,7 @@ struct SourcesView: View {
             resolutionError = nil
         } catch {
             let rootPath = WorkspaceRootStore.displayPath(profile: workspace.profile)
-            resolutionError = "Couldn't resolve this profile's workspace folders: "
-                + "\(error.localizedDescription). Check the profile name and that "
-                + "\(rootPath) exists and is writable."
+            resolutionError = L("Couldn't resolve this profile's workspace folders: \(error.localizedDescription). Check the profile name and that \(rootPath) exists and is writable.")
         }
     }
 
@@ -852,7 +833,7 @@ struct SourcesView: View {
 
     private func scopeHelp(_ scope: APIScope) -> String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
-        return Self.scopeExplanation(scope) + " Click to change."
+        return Self.scopeExplanation(scope) + L(" Click to change.")
     }
 
     /// Older builds wrote these kinds under other folder names; their snapshots still count.
@@ -949,7 +930,7 @@ struct SourcesView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "plus.app.fill").foregroundStyle(Theme.Colors.goldBright)
                         .font(.system(size: 16))
-                    SectionHeader(title: "Additional Products")
+                    SectionHeader(title: L("Additional Products"))
                 }
                 Text("Connect Jamf Protect to extend report coverage for the active workspace.")
                     .font(.caption)
@@ -973,8 +954,7 @@ struct SourcesView: View {
                     onDisconnected: reloadEnvironment)
 
                 if !isSchoolWorkspace {
-                    Text("Jamf School uses its own workspace: add one with Settings › Add "
-                        + "connection.")
+                    Text("Jamf School uses its own workspace: add one with Settings › Add connection.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -987,8 +967,7 @@ struct SourcesView: View {
     /// Jamf Protect on a Jamf School workspace (2.11): collected and reported as on Jamf Pro,
     /// but not backed up, since a School workspace has no backups.
     nonisolated static let schoolProtectNote =
-        "Experimental: Jamf Protect with Jamf School. Protect is collected and reported; "
-            + "it is not backed up, as a Jamf School workspace has no backups."
+        L("Experimental: Jamf Protect with Jamf School. Protect is collected and reported; it is not backed up, as a Jamf School workspace has no backups.")
 
     /// JSON snapshots, and the jamf-cli dashboard's page, the one kind saved as HTML.
     private nonisolated static func cacheDates(

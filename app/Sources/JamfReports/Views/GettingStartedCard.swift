@@ -13,8 +13,7 @@ struct GettingStartedCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Kicker(
-                        text: "Getting started — \(checklist.completedCount) of "
-                            + "\(checklist.steps.count)",
+                        text: L("Getting started — \(checklist.completedCount) of \(checklist.steps.count)"),
                         tone: checklist.completedCount > 0 ? .teal : .muted
                     )
                     Spacer(minLength: 8)

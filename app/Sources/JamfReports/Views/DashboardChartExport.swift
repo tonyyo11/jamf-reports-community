@@ -25,9 +25,9 @@ enum DashboardChartExport {
         var userMessage: String {
             switch self {
             case .renderFailed:
-                return "Could not render the chart for export."
+                return L("Could not render the chart for export.")
             case .writeFailed(let error):
-                return "Could not save PNG: \(error.localizedDescription)"
+                return L("Could not save PNG: \(error.localizedDescription)")
             }
         }
     }
@@ -51,7 +51,7 @@ enum DashboardChartExport {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = suggestedFilename
-        panel.title = "Export Chart as PNG"
+        panel.title = L("Export Chart as PNG")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
         let exportView = DashboardExportCanvas(
@@ -98,7 +98,7 @@ enum DashboardChartExport {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = suggestedFilename
-        panel.title = "Export Chart as PNG"
+        panel.title = L("Export Chart as PNG")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
         let framed = content()
@@ -206,7 +206,7 @@ private struct DashboardExportCanvas<Content: View>: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack {
-                Text(footnote ?? "Source: jamf-cli snapshots · Generated \(Self.timestamp())")
+                Text(footnote ?? L("Source: jamf-cli snapshots · Generated \(Self.timestamp())"))
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color(hex: 0x64748B))
                 Spacer()

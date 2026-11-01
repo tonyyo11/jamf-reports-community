@@ -18,14 +18,14 @@ struct UpdatesView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Operations",
-                title: "OS Updates",
+                kicker: L("Operations"),
+                title: L("OS Updates"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "OS updates")
+                ScreenLoadingCard(what: L("OS updates"))
             } else {
                 // Shared StaleDataBanner surfaces snapshot freshness above the main content.
                 // Suppressed in demo mode (the demo dataset is intentionally static and
@@ -72,7 +72,7 @@ struct UpdatesView: View {
     /// fetches `/v1/managed-software-updates/update-statuses`), so it is not a device count.
     nonisolated static func subtitle(total: Int) -> String? {
         guard total > 0 else { return nil }
-        return "\(total) update status\(total == 1 ? "" : "es"), one per device and update."
+        return (total == 1 ? L("\(total) update status, one per device and update.") : L("\(total) update statuses, one per device and update."))
     }
 
     // MARK: - Data loading
@@ -125,8 +125,8 @@ struct UpdatesView: View {
 
     private var errorDevicesSubtitle: String {
         snapshot.scanFailuresAvailable
-            ? "Device-level failures"
-            : "Failure scan not run"
+            ? L("Device-level failures")
+            : L("Failure scan not run")
     }
 
     // MARK: - Sections
@@ -135,9 +135,8 @@ struct UpdatesView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "arrow.triangle.2.circlepath",
-                title: "Jamf Pro reports no managed software updates",
-                message: "The latest collection found no update statuses and no update plans, "
-                    + "so there is nothing to chart here."
+                title: L("Jamf Pro reports no managed software updates"),
+                message: L("The latest collection found no update statuses and no update plans, so there is nothing to chart here.")
             )
         }
     }
@@ -146,9 +145,8 @@ struct UpdatesView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "arrow.triangle.2.circlepath",
-                title: "No update status data yet",
-                message: "Collect data for this screen with the Collect now banner when it "
-                    + "shows, or collect the Inventory and Scan tiers from the command line.",
+                title: L("No update status data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or collect the Inventory and Scan tiers from the command line."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["update-status", "update-device-failures"])]
             )
@@ -159,31 +157,31 @@ struct UpdatesView: View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Update Statuses",
+                label: L("Update Statuses"),
                 value: "\(snapshot.total)",
-                sub: "One per device and update"
+                sub: L("One per device and update")
             )
             // plan_total is every plan, completed and failed ones included (the
             // donut's percentages divide by it); "Plans Active" misnamed it.
             StatTile(
-                label: "Total Plans",
+                label: L("Total Plans"),
                 value: "\(snapshot.planTotal)",
-                sub: "Update plans tracked"
+                sub: L("Update plans tracked")
             )
             StatTile(
-                label: "Failing Plans",
+                label: L("Failing Plans"),
                 value: "\(failingPlansCount)",
-                sub: "Failed or exception state"
+                sub: L("Failed or exception state")
             )
             StatTile(
-                label: "Error Devices",
+                label: L("Error Devices"),
                 value: errorDevicesValue,
                 sub: errorDevicesSubtitle
             )
             StatTile(
-                label: "Plans Completed",
+                label: L("Plans Completed"),
                 value: "\(plansCompleted)",
-                sub: "Successfully finished"
+                sub: L("Successfully finished")
             )
         }
     }
@@ -194,9 +192,9 @@ struct UpdatesView: View {
             Card {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        SectionHeader(title: "Plan State Distribution")
+                        SectionHeader(title: L("Plan State Distribution"))
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
@@ -247,8 +245,8 @@ struct UpdatesView: View {
         .accessibilityLabel("Update plan state distribution")
         .accessibilityChartDescriptor(
             SectorChartDescriptor(
-                title: "Update Plan State Distribution",
-                unit: " plans",
+                title: L("Update Plan State Distribution"),
+                unit: L(" plans"),
                 slices: snapshot.planStateBreakdown.filter { $0.count > 0 }.map { slice in
                     SectorChartDescriptor.Slice(
                         label: UpdateStatusService.planStateDisplayName(slice.label),
@@ -295,7 +293,7 @@ struct UpdatesView: View {
         if !snapshot.statusBreakdown.isEmpty {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Update Status Summary")
+                    SectionHeader(title: L("Update Status Summary"))
                     ForEach(snapshot.statusBreakdown) { slice in
                         statusBar(for: slice)
                     }
@@ -321,7 +319,7 @@ struct UpdatesView: View {
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
-                Text("\(slice.count) status\(slice.count == 1 ? "" : "es")")
+                Text(slice.count == 1 ? "\(slice.count) status" : "\(slice.count) statuses")
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", pct))
@@ -359,12 +357,11 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Failed Plans",
+                    title: L("Failed Plans"),
                     trailing: Self.failedPlansTrailing(
                         listed: snapshot.failedPlans.count, failing: failingPlansCount))
                 if snapshot.failedPlans.count < failingPlansCount {
-                    Text("jamf-cli looks up a random sample of failing plans, not all of them. "
-                        + "The Failing Plans tile counts every one.")
+                    Text("jamf-cli looks up a random sample of failing plans, not all of them. The Failing Plans tile counts every one.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -426,7 +423,7 @@ struct UpdatesView: View {
     private var errorDevicesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Error Devices", trailing: "\(snapshot.errorDevices.count) total")
+                SectionHeader(title: L("Error Devices"), trailing: L("\(snapshot.errorDevices.count) total"))
                 Table(Array(snapshot.errorDevices.prefix(50))) {
                     TableColumn("Device") { device in
                         Text(device.name)
@@ -475,7 +472,7 @@ struct UpdatesView: View {
 
     /// jamf-cli's --scan-failures samples failing plans (max(10%, 100) by default).
     nonisolated static func failedPlansTrailing(listed: Int, failing: Int) -> String {
-        listed < failing ? "\(listed) sampled of \(failing)" : "\(listed) total"
+        listed < failing ? L("\(listed) sampled of \(failing)") : L("\(listed) total")
     }
 
     private func pillTone(for state: String) -> Pill.Tone {
@@ -519,7 +516,7 @@ struct UpdatesView: View {
     private var sofaLatestCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "OS Latest Versions")
+                SectionHeader(title: L("OS Latest Versions"))
                 ForEach(sofaRows, id: \.osFamily) { row in
                     HStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -549,7 +546,7 @@ struct UpdatesView: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(
                         "\(row.osFamily): \(row.productVersion)" +
-                        (row.daysSinceRelease.map { ", released \($0) days ago" } ?? "")
+                        (row.daysSinceRelease.map { L(", released \($0) days ago") } ?? "")
                     )
                     if row.osFamily != sofaRows.last?.osFamily {
                         Divider()

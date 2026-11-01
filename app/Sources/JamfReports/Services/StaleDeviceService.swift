@@ -13,10 +13,10 @@ struct StaleDeviceService: Sendable {
 
         var label: String {
             switch self {
-            case .recent:  return "Recent"
-            case .offline: return "Offline"
-            case .inactive: return "Inactive"
-            case .dormant:  return "Dormant"
+            case .recent:  return L("Recent")
+            case .offline: return L("Offline")
+            case .inactive: return L("Inactive")
+            case .dormant:  return L("Dormant")
             }
         }
 
@@ -234,9 +234,9 @@ struct StaleDeviceService: Sendable {
 
         /// What the Outreach screen shows after the copy.
         var confirmation: String {
-            let copied = "Copied \(count) email\(count == 1 ? "" : "s")"
+            let copied = (count == 1 ? L("Copied \(count) email") : L("Copied \(count) emails"))
             guard skipped > 0 else { return copied }
-            return copied + ", skipped \(skipped) that are not a single address"
+            return copied + L(", skipped \(skipped) that are not a single address")
         }
     }
 

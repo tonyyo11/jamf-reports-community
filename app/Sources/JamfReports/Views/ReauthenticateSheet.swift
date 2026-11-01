@@ -115,11 +115,10 @@ struct ReauthenticateSheet: View {
     ) -> String? {
         guard !enabled, let platform else { return nil }
         if platform.hasFields {
-            return "This profile has Platform API access. Saving with the switch off removes it."
+            return L("This profile has Platform API access. Saving with the switch off removes it.")
         }
         if platform == .unknown {
-            return "Could not read whether this profile has Platform API access. If it does, "
-                + "turn the switch on and fill in the fields, or saving removes it."
+            return L("Could not read whether this profile has Platform API access. If it does, turn the switch on and fill in the fields, or saving removes it.")
         }
         return nil
     }
@@ -206,7 +205,7 @@ struct ReauthenticateSheet: View {
     private var connectionTypePicker: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 8) {
-                FieldLabel(label: "Connection type")
+                FieldLabel(label: L("Connection type"))
                 Picker("", selection: Binding(
                     get: { flow.proConnectionType },
                     set: { flow.proConnectionType = $0 }
@@ -229,22 +228,22 @@ struct ReauthenticateSheet: View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Jamf Pro URL")
+                    FieldLabel(label: L("Jamf Pro URL"))
                     PNPTextField(value: binding(\.jamfURL), placeholder: "https://example.jamfcloud.com")
                     validationLine(ok: flow.isJamfURLValid, text: "Must use https:// and include a host")
                 }
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Client ID")
+                        FieldLabel(label: L("Client ID"))
                         PNPTextField(value: binding(\.clientID), mono: true)
                     }
                     .frame(maxWidth: .infinity)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Client Secret")
+                        FieldLabel(label: L("Client Secret"))
                         SecureSecretField(
-                            placeholder: "OAuth client secret",
+                            placeholder: L("OAuth client secret"),
                             onTextChange: { flow.secretFieldHasText = $0 }
                         ) { data in
                             flow.setClientSecret(data)
@@ -266,7 +265,7 @@ struct ReauthenticateSheet: View {
                     .disabled(isBusy)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    FieldLabel(label: "Platform API scope")
+                    FieldLabel(label: L("Platform API scope"))
                     SegmentedControl(
                         selection: Binding(
                             get: { flow.platformScope },
@@ -295,15 +294,15 @@ struct ReauthenticateSheet: View {
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Client ID")
+                        FieldLabel(label: L("Client ID"))
                         PNPTextField(value: binding(\.platformClientID), mono: true)
                     }
                     .frame(maxWidth: .infinity)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Client Secret")
+                        FieldLabel(label: L("Client Secret"))
                         SecureSecretField(
-                            placeholder: "Platform client secret",
+                            placeholder: L("Platform client secret"),
                             onTextChange: { flow.platformSecretFieldHasText = $0 }
                         ) { data in
                             flow.setPlatformClientSecret(data)
@@ -321,34 +320,33 @@ struct ReauthenticateSheet: View {
     private var schoolForm: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Find your Network ID at Devices → Enroll Device(s). Generate an API key at "
-                     + "Organization → Settings → API.")
+                Text("Find your Network ID at Devices → Enroll Device(s). Generate an API key at Organization → Settings → API.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Jamf School URL")
+                    FieldLabel(label: L("Jamf School URL"))
                     PNPTextField(
                         value: binding(\.schoolURL), placeholder: "https://yourorg.jamfcloud.com")
                     validationLine(
                         ok: flow.isSchoolURLValid,
-                        text: "An https:// address with a host; a trailing /api is removed")
+                        text: L("An https:// address with a host; a trailing /api is removed"))
                 }
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Network ID")
+                        FieldLabel(label: L("Network ID"))
                         PNPTextField(
-                            value: binding(\.schoolNetworkID), placeholder: "Network ID",
+                            value: binding(\.schoolNetworkID), placeholder: L("Network ID"),
                             mono: true)
                     }
                     .frame(maxWidth: .infinity)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "API Key")
+                        FieldLabel(label: L("API Key"))
                         SecureSecretField(
-                            placeholder: "School API key",
+                            placeholder: L("School API key"),
                             onTextChange: { flow.schoolAPIKeyFieldHasText = $0 }
                         ) { data in
                             flow.setSchoolAPIKey(data)
@@ -367,9 +365,7 @@ struct ReauthenticateSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Text("Saving re-runs jamf-cli's School setup for this profile, which rebuilds it "
-                     + "from these fields: enter all of them, Platform API included, or that "
-                     + "access is removed.")
+                Text("Saving re-runs jamf-cli's School setup for this profile, which rebuilds it from these fields: enter all of them, Platform API included, or that access is removed.")
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.fg2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -388,7 +384,7 @@ struct ReauthenticateSheet: View {
             }
         }
         if flow.schoolConnected {
-            Pill(text: "CREDENTIALS SAVED", tone: .teal, icon: "checkmark")
+            Pill(text: L("CREDENTIALS SAVED"), tone: .teal, icon: "checkmark")
             if let note = flow.schoolConfigNote {
                 Text(note)
                     .font(.caption)
@@ -416,11 +412,11 @@ struct ReauthenticateSheet: View {
         }
 
         if flow.connectionValidated {
-            Pill(text: "CREDENTIALS VERIFIED & SAVED", tone: .teal, icon: "checkmark")
+            Pill(text: L("CREDENTIALS VERIFIED & SAVED"), tone: .teal, icon: "checkmark")
         } else if flow.profileRegistered {
             // Credentials were written, but validation didn't pass — keep the
             // sheet open so the operator can correct and retry.
-            Pill(text: "SAVED — VALIDATION FAILED, RETRY", tone: .warn, icon: "exclamationmark")
+            Pill(text: L("SAVED — VALIDATION FAILED, RETRY"), tone: .warn, icon: "exclamationmark")
         }
 
         if !flow.validationOutput.isEmpty {
@@ -437,7 +433,7 @@ struct ReauthenticateSheet: View {
                     Mono(text: "jamf-cli config validate", size: 12, color: Theme.Colors.fg2)
                     Spacer()
                     if let exit = flow.validationExitCode {
-                        Pill(text: "EXIT \(exit)", tone: exit == 0 ? .teal : .danger)
+                        Pill(text: L("EXIT \(exit)"), tone: exit == 0 ? .teal : .danger)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -464,7 +460,7 @@ struct ReauthenticateSheet: View {
     private var footer: some View {
         HStack {
             PNPButton(
-                title: flow.profileRegistered || flow.schoolConnected ? "Close" : "Cancel",
+                title: flow.profileRegistered || flow.schoolConnected ? L("Close") : L("Cancel"),
                 style: .neutral,
                 size: .md
             ) {
@@ -475,7 +471,7 @@ struct ReauthenticateSheet: View {
             Spacer()
 
             PNPButton(
-                title: isBusy ? "Verifying\u{2026}" : "Verify & save",
+                title: isBusy ? L("Verifying\u{2026}") : L("Verify & save"),
                 icon: isBusy ? "hourglass" : "checkmark.shield",
                 style: .gold,
                 size: .md

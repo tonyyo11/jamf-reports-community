@@ -14,8 +14,8 @@ enum WorkspaceFolderPicker {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Use Folder"
-        panel.message = "Choose the folder that holds your Jamf Reports workspaces."
+        panel.prompt = L("Use Folder")
+        panel.message = L("Choose the folder that holds your Jamf Reports workspaces.")
         panel.directoryURL = existingFolder(atOrAbove: ProfileService.workspacesRoot())
         guard panel.runModal() == .OK else { return nil }
         return panel.url
@@ -41,10 +41,9 @@ enum WorkspaceFolderPicker {
     /// Named for what it actually shares, not for the feature.
     nonisolated static func consentTitle(for url: URL?) -> String {
         guard let url, let provider = CloudStorage.syncProvider(for: url) else {
-            return "Use this shared folder?"
+            return L("Use this shared folder?")
         }
-        return "Everyone with access to this \(provider.displayName) folder will be able to "
-            + "read your fleet's device data"
+        return L("Everyone with access to this \(provider.displayName) folder will be able to read your fleet's device data")
     }
 
     nonisolated static let consentMessage: String = """

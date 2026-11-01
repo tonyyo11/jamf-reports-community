@@ -21,8 +21,8 @@ extension CLIBridge {
 
         var label: String {
             switch self {
-            case .collect: "Collect"
-            case .generate: "Report"
+            case .collect: L("Collect")
+            case .generate: L("Report")
             case .toolUpdate: "jamf-cli update"
             }
         }

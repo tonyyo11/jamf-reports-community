@@ -86,7 +86,7 @@ struct CompliancePostureService: Sendable {
         let policy = SecurityPolicyConfigLoader.load(profile: profile)
         let hardware = HardwareEncryption.index(dataDir: dir, for: policy)
         guard let snapshot = decode(at: newest, policy: policy, hardware: hardware) else {
-            return .failed("Couldn't read the latest compliance snapshot — \(newest.lastPathComponent) may be corrupt.")
+            return .failed(L("Couldn't read the latest compliance snapshot — \(newest.lastPathComponent) may be corrupt."))
         }
         return snapshot
     }
@@ -185,10 +185,10 @@ struct CompliancePostureService: Sendable {
 
     static func label(_ control: SecurityControl) -> String {
         switch control {
-        case .fileVault: "FileVault"
-        case .sip: "SIP"
-        case .firewall: "Firewall"
-        case .gatekeeper: "Gatekeeper"
+        case .fileVault: L("FileVault")
+        case .sip: L("SIP")
+        case .firewall: L("Firewall")
+        case .gatekeeper: L("Gatekeeper")
         }
     }
 }
@@ -245,16 +245,12 @@ extension FleetInsightInput {
     /// on-device model states each control twice, once as failing and once as a warning.
     private static func postureGapNote(warnings: Bool) -> String {
         "Failing is a gap under this workspace's security policy."
-            + (warnings ? " A warning is a Mac with the control off that the policy does not "
-                + "count as a gap." : "")
-            + " A control's share line and its Macs-failing line count the same Macs unless a "
-            + "line says otherwise: report each control once."
+            + (warnings ? " A warning is a Mac with the control off that the policy does not count as a gap." : "")
+            + " A control's share line and its Macs-failing line count the same Macs unless a line says otherwise: report each control once."
     }
 
-    private static let postureActionNote = "P0 and P1 add up each control's gaps, so a Mac "
-        + "failing two of their controls counts twice."
-    private static let postureBandNote = "Bands count the controls a Mac fails: Pass is none, "
-        + "Low and above one or more, No Data none measured."
+    private static let postureActionNote = "P0 and P1 add up each control's gaps, so a Mac failing two of their controls counts twice."
+    private static let postureBandNote = "Bands count the controls a Mac fails: Pass is none, Low and above one or more, No Data none measured."
 
     /// One control as a posture screen shows it.
     private struct PostureRow {
@@ -321,7 +317,7 @@ extension FleetInsightInput {
             Fact(label: "Macs failing \(name)", value: .count(row.failing), prior: nil,
                  polarity: .lowerIsBetter),
         ]
-        let hardware = "Macs with " + SecurityFleetCounts.hardwareEncryptedRowLabel
+        let hardware = "Macs with \(SecurityFleetCounts.hardwareEncryptedRowLabel)"
         if row.warning > 0 {
             // Only with FileVault at `fail` is every FileVault warning a hardware-encrypted Mac.
             let isHardware = row.control == .fileVault && policy.usesHardwareRule

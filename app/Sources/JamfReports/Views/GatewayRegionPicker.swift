@@ -8,7 +8,7 @@ struct GatewayRegionPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            FieldLabel(label: "Region")
+            FieldLabel(label: L("Region"))
             Picker("", selection: selection) {
                 ForEach(GatewayRegion.allCases) { region in
                     Text(region.label).tag(Optional(region))
@@ -61,8 +61,8 @@ struct GatewayRegionPicker: View {
 
     private var caption: String {
         if let problem { return problem }
-        if let region = flow.gatewayPickerSelection { return "Gateway: \(region.host)" }
-        return "Gateway: the host above, sent as https://. Pick a region to replace it."
+        if let region = flow.gatewayPickerSelection { return L("Gateway: \(region.host)") }
+        return L("Gateway: the host above, sent as https://. Pick a region to replace it.")
     }
 
     private var captionStyle: Color {

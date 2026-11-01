@@ -23,6 +23,12 @@ struct ExtensionAttributesView: View {
     /// Cap the drift callout's row list; the rest collapse into "+N more".
     private static let driftDisplayCap = 5
 
+    private static func otherValuesNote(values: Int, buckets: Int) -> String {
+        let valuePhrase = values == 1 ? L("+\(values) value") : L("+\(values) values")
+        let bucketPhrase = buckets == 1 ? L("\(buckets) other bucket") : L("\(buckets) other buckets")
+        return L("\(valuePhrase) in \(bucketPhrase)")
+    }
+
     private enum SortOrder: String, CaseIterable {
         case devices = "Devices"
         case name = "Name"
@@ -40,15 +46,15 @@ struct ExtensionAttributesView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Inventory",
-                title: "Extension Attributes",
+                kicker: L("Inventory"),
+                title: L("Extension Attributes"),
                 subtitle: subtitle,
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             ) {
                 PNPButton(
-                    title: "Adopt EAs…", icon: "plus.circle", style: .ghost, size: .sm
+                    title: L("Adopt EAs…"), icon: "plus.circle", style: .ghost, size: .sm
                 ) { showingAdopt = true }
                 // Demo mode never writes a workspace.
                 .disabled(workspace.demoMode)
@@ -57,7 +63,7 @@ struct ExtensionAttributesView: View {
                       : "Pick collected Extension Attributes to track in config.yaml.")
             }
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "extension attributes")
+                ScreenLoadingCard(what: L("extension attributes"))
             } else {
                 if !workspace.demoMode {
                     CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
@@ -107,11 +113,11 @@ struct ExtensionAttributesView: View {
         let defined = snapshot.definedEAs
         let reporting = snapshot.reportingEAs
         guard defined > 0 || reporting > 0 else { return nil }
-        let devices = "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s")"
-        let noun = { (count: Int) in "Extension Attribute\(count == 1 ? "" : "s")" }
-        if defined == 0 { return "\(reporting) \(noun(reporting)) across \(devices)." }
-        if reporting == 0 { return "\(defined) \(noun(defined)) defined; no results yet." }
-        return "\(defined) \(noun(defined)) defined, \(reporting) with results across \(devices)."
+        let devices = (snapshot.totalDevices == 1 ? L("\(snapshot.totalDevices) device") : L("\(snapshot.totalDevices) devices"))
+        let noun = { (count: Int) in (count == 1 ? L("Extension Attribute") : L("Extension Attributes")) }
+        if defined == 0 { return L("\(reporting) \(noun(reporting)) across \(devices).") }
+        if reporting == 0 { return L("\(defined) \(noun(defined)) defined; no results yet.") }
+        return L("\(defined) \(noun(defined)) defined, \(reporting) with results across \(devices).")
     }
 
     // MARK: - Data loading
@@ -179,16 +185,16 @@ struct ExtensionAttributesView: View {
             totalRowCount: fleet * definitions.count,
             valueDistributions: [
                 .init(
-                    eaName: "FileVault Status",
+                    eaName: L("FileVault Status"),
                     top: [
                         .init(value: "encrypted", count: controls.fileVault),
-                        .init(value: "not encrypted", count: controls.total - controls.fileVault),
+                        .init(value: L("not encrypted"), count: controls.total - controls.fileVault),
                     ],
                     otherCount: 0,
                     distinctValueCount: 2
                 ),
                 .init(
-                    eaName: "mSCP Version",
+                    eaName: L("mSCP Version"),
                     top: [
                         .init(value: "v1.0.3", count: 304),
                         .init(value: "v1.0.2", count: 144),
@@ -205,44 +211,44 @@ struct ExtensionAttributesView: View {
 
     private static let demoDefinitions: [ExtensionAttribute] = [
         ExtensionAttribute(
-            id: "1", name: "FileVault Status", dataType: "STRING",
-            description: "Reports FileVault encryption status",
-            inputType: "SCRIPT", enabled: true
+            id: "1", name: L("FileVault Status"), dataType: L("STRING"),
+            description: L("Reports FileVault encryption status"),
+            inputType: L("SCRIPT"), enabled: true
         ),
         ExtensionAttribute(
-            id: "2", name: "mSCP Version", dataType: "STRING",
-            description: "Installed mSCP compliance baseline version",
-            inputType: "SCRIPT", enabled: true
+            id: "2", name: L("mSCP Version"), dataType: L("STRING"),
+            description: L("Installed mSCP compliance baseline version"),
+            inputType: L("SCRIPT"), enabled: true
         ),
         ExtensionAttribute(
-            id: "3", name: "Last Patched", dataType: "DATE",
-            description: "Date of last software update",
-            inputType: "SCRIPT", enabled: true
+            id: "3", name: L("Last Patched"), dataType: "DATE",
+            description: L("Date of last software update"),
+            inputType: L("SCRIPT"), enabled: true
         ),
         ExtensionAttribute(
-            id: "4", name: "Disk Usage", dataType: "INTEGER",
-            description: "Disk usage percentage",
-            inputType: "SCRIPT", enabled: true
+            id: "4", name: L("Disk Usage"), dataType: "INTEGER",
+            description: L("Disk usage percentage"),
+            inputType: L("SCRIPT"), enabled: true
         ),
         ExtensionAttribute(
-            id: "5", name: "CrowdStrike Status", dataType: "STRING",
-            description: "CrowdStrike Falcon sensor status",
-            inputType: "SCRIPT", enabled: true
+            id: "5", name: L("CrowdStrike Status"), dataType: L("STRING"),
+            description: L("CrowdStrike Falcon sensor status"),
+            inputType: L("SCRIPT"), enabled: true
         ),
         ExtensionAttribute(
-            id: "6", name: "Legacy Test EA", dataType: "BOOLEAN",
-            description: "Deprecated test attribute",
-            inputType: "TEXT", enabled: false
+            id: "6", name: L("Legacy Test EA"), dataType: L("BOOLEAN"),
+            description: L("Deprecated test attribute"),
+            inputType: L("TEXT"), enabled: false
         ),
         ExtensionAttribute(
-            id: "7", name: "Office Version", dataType: "STRING",
-            description: "Microsoft Office version",
-            inputType: "SCRIPT", enabled: true
+            id: "7", name: L("Office Version"), dataType: L("STRING"),
+            description: L("Microsoft Office version"),
+            inputType: L("SCRIPT"), enabled: true
         ),
         ExtensionAttribute(
-            id: "8", name: "VPN Connection", dataType: "BOOLEAN",
-            description: "VPN connectivity status",
-            inputType: "SCRIPT", enabled: true
+            id: "8", name: L("VPN Connection"), dataType: L("BOOLEAN"),
+            description: L("VPN connectivity status"),
+            inputType: L("SCRIPT"), enabled: true
         ),
     ]
 
@@ -263,9 +269,8 @@ struct ExtensionAttributesView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "slider.horizontal.below.rectangle",
-                title: "No Extension Attribute data yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No Extension Attribute data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["ea-results", "computer-extension-attributes"])]
             )
@@ -276,19 +281,19 @@ struct ExtensionAttributesView: View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Defined EAs",
+                label: L("Defined EAs"),
                 value: snapshot.definedEAs > 0 ? "\(snapshot.definedEAs)" : "--",
-                sub: snapshot.definedEAs > 0 ? "In Jamf Pro" : "Definitions not collected"
+                sub: snapshot.definedEAs > 0 ? L("In Jamf Pro") : L("Definitions not collected")
             )
             StatTile(
-                label: "EAs With Results",
+                label: L("EAs With Results"),
                 value: "\(snapshot.reportingEAs)",
-                sub: "In the latest results"
+                sub: L("In the latest results")
             )
             StatTile(
-                label: "Total Computers",
+                label: L("Total Computers"),
                 value: "\(snapshot.totalDevices)",
-                sub: "With EA result data"
+                sub: L("With EA result data")
             )
         }
     }
@@ -312,12 +317,10 @@ struct ExtensionAttributesView: View {
                         Image(systemName: "arrow.down.right.circle.fill")
                             .foregroundStyle(Theme.Colors.warn)
                             .accessibilityHidden(true)
-                        SectionHeader(title: "Coverage Drift")
+                        SectionHeader(title: L("Coverage Drift"))
                         Spacer()
                     }
-                    Text("Fleet coverage dropped sharply for these Extension Attributes since "
-                        + "the previous collect. Check the source (script, EA config, or agent "
-                        + "rollout) if this is unexpected.")
+                    Text("Fleet coverage dropped sharply for these Extension Attributes since the previous collect. Check the source (script, EA config, or agent rollout) if this is unexpected.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -363,8 +366,7 @@ struct ExtensionAttributesView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(drift.eaName) coverage dropped from \(Int(drift.previousPct.rounded())) "
-            + "percent to \(Int(drift.currentPct.rounded())) percent"
+            "\(drift.eaName) coverage dropped from \(Int(drift.previousPct.rounded())) percent to \(Int(drift.currentPct.rounded())) percent"
         )
     }
 
@@ -375,11 +377,11 @@ struct ExtensionAttributesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "Extension Attributes")
+                    SectionHeader(title: L("Extension Attributes"))
                     Spacer()
                     SegmentedControl(
                         selection: $sortOrder,
-                        options: SortOrder.allCases.map { ($0, $0.rawValue, nil) }
+                        options: SortOrder.allCases.map { ($0, LShown($0.rawValue), nil) }
                     )
                 }
 
@@ -391,8 +393,7 @@ struct ExtensionAttributesView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            "\(coverage.eaName) extension attribute, "
-                                + "\(coverage.populatedDevices) devices reporting a value")
+                            "\(coverage.eaName) extension attribute, \(coverage.populatedDevices) devices reporting a value")
                         .accessibilityHint("Shows its value distribution")
                         .accessibilityAddTraits(selectedEA == coverage.eaName ? .isSelected : [])
                     }
@@ -417,7 +418,7 @@ struct ExtensionAttributesView: View {
                 .font(.callout.weight(isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? Theme.Colors.fg : Theme.Colors.fg2)
             Spacer()
-            Text("\(coverage.populatedDevices) device\(coverage.populatedDevices == 1 ? "" : "s")")
+            Text(coverage.populatedDevices == 1 ? "\(coverage.populatedDevices) device" : "\(coverage.populatedDevices) devices")
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .monospacedDigit()
@@ -437,9 +438,9 @@ struct ExtensionAttributesView: View {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        SectionHeader(title: "Value Distribution", trailingValue: eaName)
+                        SectionHeader(title: L("Value Distribution"), trailingValue: eaName)
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm
@@ -465,8 +466,8 @@ struct ExtensionAttributesView: View {
                     .accessibilityLabel("Value distribution for \(eaName) extension attribute")
                     .accessibilityChartDescriptor(
                         BarDistributionChartDescriptor(
-                            title: "Value distribution for \(eaName) extension attribute",
-                            unit: " devices",
+                            title: L("Value distribution for \(eaName) extension attribute"),
+                            unit: L(" devices"),
                             bars: distribution.top.map { item in
                                 BarDistributionChartDescriptor.Bar(
                                     label: item.value,
@@ -504,7 +505,9 @@ struct ExtensionAttributesView: View {
         if distribution.otherCount > 0 || snapshot.totalRowCount > Self.largeFleetRowThreshold {
             VStack(alignment: .leading, spacing: 2) {
                 if distribution.otherCount > 0 {
-                    Text("+\(distribution.otherCount) value\(distribution.otherCount == 1 ? "" : "s") in \(distribution.distinctValueCount - distribution.top.count) other bucket\(distribution.distinctValueCount - distribution.top.count == 1 ? "" : "s")")
+                    Text(Self.otherValuesNote(
+                        values: distribution.otherCount,
+                        buckets: distribution.distinctValueCount - distribution.top.count))
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -521,9 +524,9 @@ struct ExtensionAttributesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "EA Definitions",
+                    title: L("EA Definitions"),
                     trailing: snapshot.definitions.count > Self.definitionsDisplayCap
-                        ? "\(Self.definitionsDisplayCap) of \(snapshot.definitions.count) shown"
+                        ? L("\(Self.definitionsDisplayCap) of \(snapshot.definitions.count) shown")
                         : nil
                 )
 
@@ -534,10 +537,10 @@ struct ExtensionAttributesView: View {
                 } else {
                     Table(Array(snapshot.definitions.prefix(Self.definitionsDisplayCap))) {
                         TableColumn("Name") { definition in
-                            Text(definition.name ?? "Unknown")
+                            Text(definition.name ?? L("Unknown"))
                                 .font(.callout.weight(.medium))
                                 .foregroundStyle(Theme.Colors.fg)
-                                .accessibilityLabel("\(definition.name ?? "Unknown"), extension attribute name")
+                                .accessibilityLabel("\(definition.name ?? L("Unknown")), extension attribute name")
                         }
                         .width(min: 150, ideal: 200)
 
@@ -550,7 +553,7 @@ struct ExtensionAttributesView: View {
                         .width(min: 80, ideal: 100)
 
                         TableColumn("Input") { definition in
-                            Text(definition.inputType ?? "Unknown")
+                            Text(definition.inputType ?? L("Unknown"))
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
@@ -642,8 +645,8 @@ private struct BarChartExportView: View {
     private var totalPopulated: Int { distribution.top.reduce(0) { $0 + $1.count } + distribution.otherCount }
 
     private var dateText: String {
-        guard let snapshotDate else { return "No snapshot date" }
-        return "Snapshot \(Self.dayFormatter.string(from: snapshotDate))"
+        guard let snapshotDate else { return L("No snapshot date") }
+        return L("Snapshot \(Self.dayFormatter.string(from: snapshotDate))")
     }
 
     // Built once, never mutated after creation.
@@ -718,11 +721,11 @@ private struct BarChartExportView: View {
             .accessibilityHidden(true)
 
             HStack(spacing: 14) {
-                exportStat("Distinct values", "\(distribution.distinctValueCount)")
-                exportStat("Top shown", "\(distribution.top.count)")
-                exportStat("Other bucket", "\(distribution.otherCount)")
-                exportStat("Populated", "\(totalPopulated)")
-                exportStat("Devices", "\(totalDevices)")
+                exportStat(L("Distinct values"), "\(distribution.distinctValueCount)")
+                exportStat(L("Top shown"), "\(distribution.top.count)")
+                exportStat(L("Other bucket"), "\(distribution.otherCount)")
+                exportStat(L("Populated"), "\(totalPopulated)")
+                exportStat(L("Devices"), "\(totalDevices)")
                 Spacer()
                 Text("Source: ea-results · Rows: \(totalRowCount)")
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))

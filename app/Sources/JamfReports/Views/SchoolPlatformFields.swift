@@ -28,7 +28,7 @@ struct SchoolPlatformFields: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 5) {
-                FieldLabel(label: "Region")
+                FieldLabel(label: L("Region"))
                 Picker("", selection: Binding(
                     get: { flow.schoolPlatformRegion },
                     set: { flow.schoolPlatformRegion = $0 }
@@ -40,7 +40,7 @@ struct SchoolPlatformFields: View {
                 .accessibilityLabel("Platform API region")
             }
             VStack(alignment: .leading, spacing: 5) {
-                FieldLabel(label: "Tenant ID")
+                FieldLabel(label: L("Tenant ID"))
                 PNPTextField(value: text(\.schoolPlatformTenantID), placeholder: "your-tenant-id",
                              mono: true)
                 if tenantIDProblem {
@@ -51,15 +51,15 @@ struct SchoolPlatformFields: View {
             }
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Client ID")
+                    FieldLabel(label: L("Client ID"))
                     PNPTextField(value: text(\.schoolPlatformClientID),
-                                 placeholder: "Platform client ID", mono: true)
+                                 placeholder: L("Platform client ID"), mono: true)
                 }
                 .frame(maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Client Secret")
+                    FieldLabel(label: L("Client Secret"))
                     SecureSecretField(
-                        placeholder: "Platform client secret",
+                        placeholder: L("Platform client secret"),
                         onTextChange: { flow.schoolPlatformSecretFieldHasText = $0 }
                     ) { data in
                         flow.setSchoolPlatformClientSecret(data)

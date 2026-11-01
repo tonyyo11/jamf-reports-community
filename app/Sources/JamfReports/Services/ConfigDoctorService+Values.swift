@@ -55,10 +55,10 @@ extension ConfigDoctorService {
                       uses: notify.resolvedDetail.rawValue),
         ].compactMap { $0 }
         if notify.isEnabled, !notify.isUsable {
-            let why = notify.resolvedURL.isEmpty ? "is empty" : "does not start with https://"
+            let why = notify.resolvedURL.isEmpty ? L("is empty") : L("does not start with https://")
             rows.append(valueRow(
-                "notify.url", "notify.enabled is true but url \(why). The app sends no webhook.",
-                "Set url to an https:// address, or set enabled to false."))
+                "notify.url", L("notify.enabled is true but url \(why). The app sends no webhook."),
+                L("Set url to an https:// address, or set enabled to false.")))
         }
         if notify.isUsable, let row = unknownWebhookHostRow(notify.resolvedURL) { rows.append(row) }
         return rows
@@ -73,19 +73,16 @@ extension ConfigDoctorService {
            !(value is String), !(value is NSNull) {
             return [valueRow(
                 "output.timestamp_authority",
-                "output.timestamp_authority is not text, so the app reads it as unset. Run "
-                    + "manifests are written but not timestamped.",
-                "Set it to the https:// address of an RFC 3161 time-stamp authority in quotes, "
-                    + "or remove it.", tag: ".type")]
+                L("output.timestamp_authority is not text, so the app reads it as unset. Run manifests are written but not timestamped."),
+                L("Set it to the https:// address of an RFC 3161 time-stamp authority in quotes, or remove it."), tag: ".type")]
         }
         guard let typed = output?.timestampAuthority?.trimmingCharacters(in: .whitespaces),
               !typed.isEmpty, output?.timestampAuthorityURL == nil else { return [] }
-        let host = URL(string: typed)?.host.map { " (host \(shown($0)))" } ?? ""
+        let host = URL(string: typed)?.host.map { L(" (host \(shown($0)))") } ?? ""
         return [valueRow(
             "output.timestamp_authority",
-            "output.timestamp_authority\(host) is not an https:// address. Run manifests are "
-                + "written but not timestamped.",
-            "Set it to the https:// address of an RFC 3161 time-stamp authority, or remove it.")]
+            L("output.timestamp_authority\(host) is not an https:// address. Run manifests are written but not timestamped."),
+            L("Set it to the https:// address of an RFC 3161 time-stamp authority, or remove it."))]
     }
 
     /// Warns, never refuses: a relay or proxy may front a webhook. The host only is shown; the
@@ -93,13 +90,11 @@ extension ConfigDoctorService {
     private static func unknownWebhookHostRow(_ url: String) -> DoctorRow? {
         let host = URL(string: url)?.host ?? ""
         guard !LogRedactor.isKnownNotifyWebhookHost(host) else { return nil }
-        let what = host.isEmpty ? "has no readable host" : "points at \(shown(host))"
+        let what = host.isEmpty ? L("has no readable host") : L("points at \(shown(host))")
         return valueRow(
             "notify.url",
-            "notify.url \(what), which is not a known Microsoft Teams, Power Automate or Slack "
-                + "webhook host. The app still sends to it.",
-            "Check the address was copied whole from the Teams Workflows or Slack webhook setup. "
-                + "Ignore this if a relay you run fronts the webhook.",
+            L("notify.url \(what), which is not a known Microsoft Teams, Power Automate or Slack webhook host. The app still sends to it."),
+            L("Check the address was copied whole from the Teams Workflows or Slack webhook setup. Ignore this if a relay you run fronts the webhook."),
             tag: ".host")
     }
 
@@ -114,10 +109,8 @@ extension ConfigDoctorService {
         if retention.isEnabled, !SnapshotRetentionService.policy(from: retention).isActive {
             rows.append(valueRow(
                 "retention.enabled",
-                "retention.enabled is true but snapshot_keep_days is \(retention.keepDays) and "
-                    + "snapshot_keep_count is \(retention.keepCount), so no snapshot is ever "
-                    + "archived or deleted.",
-                "Set snapshot_keep_days or snapshot_keep_count above 0, or set enabled to false."))
+                L("retention.enabled is true but snapshot_keep_days is \(retention.keepDays) and snapshot_keep_count is \(retention.keepCount), so no snapshot is ever archived or deleted."),
+                L("Set snapshot_keep_days or snapshot_keep_count above 0, or set enabled to false.")))
         }
         if let workspace, let row = archiveDirRow(retention, workspace: workspace) {
             rows.append(row)
@@ -134,10 +127,8 @@ extension ConfigDoctorService {
         } catch {
             return valueRow(
                 "retention.archive_dir",
-                "\(shown(retention.resolvedArchiveDir)) is outside the workspace. The app "
-                    + "archives to _archive in the workspace instead.",
-                "Use a path inside the workspace, or an absolute path with "
-                    + "output.allow_absolute_paths: true. System folders are always refused.")
+                L("\(shown(retention.resolvedArchiveDir)) is outside the workspace. The app archives to _archive in the workspace instead."),
+                L("Use a path inside the workspace, or an absolute path with output.allow_absolute_paths: true. System folders are always refused."))
         }
     }
 
@@ -146,10 +137,10 @@ extension ConfigDoctorService {
         let hours = Int(shared.minCollectInterval / 3600)
         return [
             clampRow("shared_workspace.claim_ttl_minutes", typed: shared.claimTtlMinutes,
-                     used: Int(shared.claimTTL / 60), range: "5 to 720"),
+                     used: Int(shared.claimTTL / 60), range: L("5 to 720")),
             clampRow("shared_workspace.min_collect_interval_hours",
-                     typed: shared.minCollectIntervalHours, used: hours, range: "0 to 168",
-                     note: hours == 0 ? ", which turns the freshness check off" : ""),
+                     typed: shared.minCollectIntervalHours, used: hours, range: L("0 to 168"),
+                     note: hours == 0 ? L(", which turns the freshness check off") : ""),
         ].compactMap { $0 }
     }
 
@@ -161,25 +152,21 @@ extension ConfigDoctorService {
             let many = skipped.count > 1
             rows.append(valueRow(
                 "jamf_cli.collect_skip",
-                "\(listed(skipped)) \(many ? "are not kinds" : "is not a kind") collect can skip, "
-                    + "so \(many ? "they skip" : "it skips") nothing and the stall guard does "
-                    + "not apply to \(many ? "them" : "it").",
-                "Kinds that can be skipped: "
-                    + "\(ReportEngine.skippableKinds.sorted().joined(separator: ", "))."))
+                (many ? L("\(listed(skipped)) are not kinds collect can skip, so they skip nothing and the stall guard does not apply to them.") : L("\(listed(skipped)) is not a kind collect can skip, so it skips nothing and the stall guard does not apply to it.")),
+                L("Kinds that can be skipped: \(ReportEngine.skippableKinds.sorted().joined(separator: ", ")).")))
         }
         if let output = config.output, let typed = output.keepLatestRuns, typed < 1 {
             rows.append(valueRow(
                 "output.keep_latest_runs",
-                "\(typed) is below 1. The app keeps the newest \(output.resolvedKeepLatestRuns) "
-                    + "report.", "Set a number from 1 up."))
+                L("\(typed) is below 1. The app keeps the newest \(output.resolvedKeepLatestRuns) report."), L("Set a number from 1 up.")))
         }
         if let limits = config.html?.sectionLimits {
             rows += [
                 clampRow("html.section_limits.protect_alerts", typed: limits.protectAlerts,
-                         used: limits.resolvedProtectAlerts, range: "1 to 200"),
+                         used: limits.resolvedProtectAlerts, range: L("1 to 200")),
                 clampRow("html.section_limits.insights_drift_snapshots",
                          typed: limits.insightsDriftSnapshots,
-                         used: limits.resolvedInsightsDriftSnapshots, range: "1 to 12"),
+                         used: limits.resolvedInsightsDriftSnapshots, range: L("1 to 12")),
             ].compactMap { $0 }
         }
         if let ai = config.ai {
@@ -201,9 +188,8 @@ extension ConfigDoctorService {
            config.branding?.sanitizedAccentColor != typed {
             rows.append(valueRow(
                 "branding.accent_color",
-                "\(shown(typed)) is not a hex colour such as #2D5EA2. The workbook and the "
-                    + "HTML report use #2D5EA2 instead.",
-                "Write it as #RRGGBB."))
+                L("\(shown(typed)) is not a hex colour such as #2D5EA2. The workbook and the HTML report use #2D5EA2 instead."),
+                L("Write it as #RRGGBB.")))
         }
         return rows
     }
@@ -223,11 +209,10 @@ extension ConfigDoctorService {
             guard !unmatched.isEmpty else { return nil }
             // `ReportEngine.sheetSettings` drops an only list that matches no tab.
             let detail = key == "only" && unmatched.count == names?.count
-                ? "\(listed(unmatched)) \(unmatched.count == 1 ? "matches" : "match") no sheet, "
-                    + "so the app ignores the whole only list and says so in the run log."
-                : "\(listed(unmatched)) matches no sheet, so the app ignores it."
+                ? (unmatched.count == 1 ? L("\(listed(unmatched)) matches no sheet, so the app ignores the whole only list and says so in the run log.") : L("\(listed(unmatched)) match no sheet, so the app ignores the whole only list and says so in the run log."))
+                : L("\(listed(unmatched)) matches no sheet, so the app ignores it.")
             return valueRow("sheets.\(key)", detail,
-                            "Names are matched against the tab names, ignoring case.")
+                            L("Names are matched against the tab names, ignoring case."))
         }
     }
 
@@ -239,9 +224,9 @@ extension ConfigDoctorService {
         return (config.exceptions ?? []).enumerated().compactMap { index, exception in
             guard let typed = exception.expiresDate, !typed.isEmpty,
                   day.date(from: typed) == nil else { return nil }
-            return valueRow("exceptions[\(index)].expires_date",
+            return valueRow(L("exceptions[\(index)].expires_date"),
                             "\(shown(typed)) is not a yyyy-MM-dd date. The report never marks "
-                                + "this exception expired.",
+                                + L("this exception expired."),
                             "Write it as yyyy-MM-dd, for example 2027-03-31.")
         }
     }
@@ -250,29 +235,28 @@ extension ConfigDoctorService {
         let limits = config.thresholds ?? ThresholdsConfig()
         let positive: [(key: String, typed: Int?, effect: String)] = [
             ("stale_device_days", limits.staleDeviceDays,
-             "a Mac counts as stale as soon as a day passes without a check-in"),
+             L("a Mac counts as stale as soon as a day passes without a check-in")),
             ("warning_disk_percent", limits.warningDiskPercent,
-             "every percentage value counts as over it"),
+             L("every percentage value counts as over it")),
             ("critical_disk_percent", limits.criticalDiskPercent,
-             "every percentage value counts as over it"),
+             L("every percentage value counts as over it")),
             ("cert_warning_days", limits.certWarningDays,
-             "no date is flagged ahead of its expiry"),
+             L("no date is flagged ahead of its expiry")),
             ("profile_error_warning", limits.profileErrorWarning,
-             "every profile is highlighted"),
+             L("every profile is highlighted")),
         ]
         var rows = positive.compactMap { key, typed, effect -> DoctorRow? in
             guard let typed, typed <= 0 else { return nil }
             return valueRow("thresholds.\(key)",
-                            "\(typed) is not above 0. The app uses it as written, so \(effect).",
-                            "Set a number above 0, or remove the key for the default.")
+                            L("\(typed) is not above 0. The app uses it as written, so \(effect)."),
+                            L("Set a number above 0, or remove the key for the default."))
         }
         rows += staleBasisRows(limits)
         let (warn, crit) = (limits.resolvedWarningDisk, limits.resolvedCriticalDisk)
         if limits.warningDiskPercent != nil || limits.criticalDiskPercent != nil, warn > crit {
             rows.append(valueRow(
                 "thresholds.warning_disk_percent",
-                "warning_disk_percent (\(warn)) is above critical_disk_percent (\(crit)), so the "
-                    + "warning band never applies.", "Set the warning below the critical one.",
+                L("warning_disk_percent (\(warn)) is above critical_disk_percent (\(crit)), so the warning band never applies."), L("Set the warning below the critical one."),
                 tag: ".order"))
         }
         for (index, ea) in (config.customEas ?? []).enumerated() where ea.type == .percentage {
@@ -280,9 +264,8 @@ extension ConfigDoctorService {
             let (eaWarn, eaCrit) = (ea.warningThreshold ?? warn, ea.criticalThreshold ?? crit)
             guard eaWarn > eaCrit else { continue }
             rows.append(valueRow(
-                "custom_eas[\(index)].warning_threshold",
-                "warning_threshold (\(eaWarn)) is above critical_threshold (\(eaCrit)), so the "
-                    + "warning band never applies.", "Set the warning below the critical one.",
+                L("custom_eas[\(index)].warning_threshold"),
+                L("warning_threshold (\(eaWarn)) is above critical_threshold (\(eaCrit)), so the warning band never applies."), L("Set the warning below the critical one."),
                 tag: ".order"))
         }
         return rows
@@ -312,9 +295,8 @@ extension ConfigDoctorService {
             let path = key.path.joined(separator: ".")
             return valueRow(
                 path,
-                "\(shown(setting.typed)) is not a whole number. The app uses "
-                    + "\(key.fallback).",
-                "Write a whole number, such as \(key.fallback), or remove the key.",
+                L("\(shown(setting.typed)) is not a whole number. The app uses \(key.fallback)."),
+                L("Write a whole number, such as \(key.fallback), or remove the key."),
                 tag: ".number")
         }
     }
@@ -324,35 +306,33 @@ extension ConfigDoctorService {
     private static func staleBasisRows(_ limits: ThresholdsConfig) -> [DoctorRow] {
         var rows: [DoctorRow] = []
         let known = StaleBasis.allCases.map(\.rawValue).joined(separator: ", ")
-        let hint = "List any of: \(known). A single word is read as a one-item list."
+        let hint = L("List any of: \(known). A single word is read as a one-item list.")
         if let setting = limits.staleBasis {
             if setting.wrongShape {
                 rows.append(valueRow(
                     "thresholds.stale_basis",
-                    "stale_basis is neither a date nor a list of dates. The app counts check_in.",
+                    L("stale_basis is neither a date nor a list of dates. The app counts check_in."),
                     hint))
             } else if setting.words.isEmpty {
                 rows.append(valueRow(
                     "thresholds.stale_basis",
-                    "stale_basis is an empty list. The app counts check_in.", hint))
+                    L("stale_basis is an empty list. The app counts check_in."), hint))
             } else if !setting.skipped.isEmpty {
                 let many = setting.skipped.count > 1
                 let outcome = setting.known.isEmpty
-                    ? "the app counts check_in"
-                    : "the app skips \(many ? "them" : "it")"
+                    ? L("the app counts check_in")
+                    : (many ? L("the app skips them") : L("the app skips it"))
                 rows.append(valueRow(
                     "thresholds.stale_basis",
-                    "\(listed(setting.skipped)) \(many ? "name" : "names") no date the app "
-                        + "counts, so \(outcome).", hint))
+                    (many ? L("\(listed(setting.skipped)) name no date the app counts, so \(outcome).") : L("\(listed(setting.skipped)) names no date the app counts, so \(outcome).")), hint))
             }
         }
         if let typed = limits.contactGapDays,
            typed.value.map({ !ContactGap.dayRange.contains($0) }) ?? true {
             rows.append(valueRow(
                 "thresholds.contact_gap_days",
-                "\(shown(typed.typed)) is not a whole number from 1 to 365. The app uses "
-                    + "\(ContactGap.defaultDays).",
-                "Set a whole number of days from 1 to 365, or remove the key."))
+                L("\(shown(typed.typed)) is not a whole number from 1 to 365. The app uses \(ContactGap.defaultDays)."),
+                L("Set a whole number of days from 1 to 365, or remove the key.")))
         }
         return rows
     }
@@ -369,10 +349,9 @@ extension ConfigDoctorService {
             ]
             for (key, applies, set) in typed where set && ea.type != applies {
                 rows.append(valueRow(
-                    "custom_eas[\(index)].\(key)",
-                    "\(key) applies to \(applies.rawValue) extension attributes, and this one is "
-                        + "\(ea.type.rawValue). The app ignores it.",
-                    "Move it to a \(applies.rawValue) entry, or remove it."))
+                    L("custom_eas[\(index)].\(key)"),
+                    L("\(key) applies to \(applies.rawValue) extension attributes, and this one is \(ea.type.rawValue). The app ignores it."),
+                    L("Move it to a \(applies.rawValue) entry, or remove it.")))
             }
         }
         return rows
@@ -387,10 +366,8 @@ extension ConfigDoctorService {
         if alerts.enabled == nil, !rules.isEmpty {
             rows.append(valueRow(
                 "alerts.enabled",
-                "alerts.rules lists \(rules.count) rule\(rules.count == 1 ? "" : "s") but "
-                    + "alerts.enabled is not set. Alerts are off unless it is true, so no rule "
-                    + "runs.",
-                "Set enabled: true under alerts, or remove the rules."))
+                (rules.count == 1 ? L("alerts.rules lists \(rules.count) rule but alerts.enabled is not set. Alerts are off unless it is true, so no rule runs.") : L("alerts.rules lists \(rules.count) rules but alerts.enabled is not set. Alerts are off unless it is true, so no rule runs.")),
+                L("Set enabled: true under alerts, or remove the rules.")))
         }
         let typedRules = ((raw["alerts"] as? [String: Any])?["rules"] as? [Any]) ?? []
         for (index, rule) in rules.enumerated()
@@ -398,10 +375,9 @@ extension ConfigDoctorService {
             guard index < typedRules.count, let item = typedRules[index] as? [String: Any],
                   let typed = item["lookback_days"], !(typed is NSNull) else { continue }
             rows.append(valueRow(
-                "alerts.rules[\(index)].lookback_days",
-                "\(shown("\(typed)")) is not a whole number of days. The app uses "
-                    + "\(rule.resolvedLookbackDays).",
-                "Set lookback_days to a whole number, or remove it."))
+                L("alerts.rules[\(index)].lookback_days"),
+                L("\(shown("\(typed)")) is not a whole number of days. The app uses \(rule.resolvedLookbackDays)."),
+                L("Set lookback_days to a whole number, or remove it.")))
         }
         return rows
     }
@@ -411,11 +387,8 @@ extension ConfigDoctorService {
             .foreignSchool else { return [] }
         return [valueRow(
             "school_cli.profile",
-            "school_cli.profile names \(shown(foreign)), not this workspace's "
-                + "profile. The app collects Jamf Pro for this workspace and does not use that "
-                + "Jamf School profile here. Jamf School needs its own workspace.",
-            "Set school_cli.enabled to false here, and add Jamf School as a separate "
-                + "workspace.")]
+            L("school_cli.profile names \(shown(foreign)), not this workspace's profile. The app collects Jamf Pro for this workspace and does not use that Jamf School profile here. Jamf School needs its own workspace."),
+            L("Set school_cli.enabled to false here, and add Jamf School as a separate workspace."))]
     }
 
     // MARK: - Row builders
@@ -432,7 +405,7 @@ extension ConfigDoctorService {
 
     private static func listed(_ names: [String]) -> String {
         let head = names.prefix(5).map(shown).joined(separator: ", ")
-        return names.count > 5 ? head + ", and \(names.count - 5) more" : head
+        return names.count > 5 ? head + L(", and \(names.count - 5) more") : head
     }
 
     /// A text value that is not one of the enum's cases, read case-insensitively as the app does.
@@ -441,8 +414,8 @@ extension ConfigDoctorService {
     ) -> DoctorRow? where Choice.RawValue == String {
         guard let typed, Choice(rawValue: typed.lowercased()) == nil else { return nil }
         let names = Choice.allCases.map(\.rawValue).joined(separator: ", ")
-        return valueRow(key, "\(shown(typed)) is not one of \(names). The app uses \(uses).",
-                        "Set it to one of: \(names).")
+        return valueRow(key, L("\(shown(typed)) is not one of \(names). The app uses \(uses)."),
+                        L("Set it to one of: \(names)."))
     }
 
     /// A number the app clamped into `range`.
@@ -450,7 +423,7 @@ extension ConfigDoctorService {
         _ key: String, typed: Int?, used: Int, range: String, note: String = ""
     ) -> DoctorRow? {
         guard let typed, typed != used else { return nil }
-        return valueRow(key, "\(typed) is outside \(range). The app uses \(used)\(note).",
-                        "Set a value from \(range).")
+        return valueRow(key, L("\(typed) is outside \(range). The app uses \(used)\(note)."),
+                        L("Set a value from \(range)."))
     }
 }

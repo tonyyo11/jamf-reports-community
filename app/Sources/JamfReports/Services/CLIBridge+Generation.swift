@@ -72,55 +72,47 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .notImplemented(let detail):
-            return "Not implemented: \(detail)"
+            return L("Not implemented: \(detail)")
         case .codesignRejected:
             return "jamf-cli signature verification failed — reinstall jamf-cli via Homebrew."
         case .launchFailed:
             // Reason omitted: may contain a system path or sandbox detail.
-            return "Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact."
+            return L("Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact.")
         case .invalidProfile(let slug):
             let why = ProfileName.problem(with: slug)?.explanation ?? ""
-            return "Profile name '\(ConfigSchema.displayText(slug))' isn't supported. \(why)"
+            return L("Profile name '\(ConfigSchema.displayText(slug))' isn't supported. \(why)")
         case .workspaceMissing(let profile):
-            return "Workspace not found for profile '\(profile)'."
+            return L("Workspace not found for profile '\(profile)'.")
         case .profileCaseConflict(let profile, let owner):
-            return "The workspace folder for '\(profile)' belongs to profile "
-                + "'\(ConfigSchema.displayText(owner))', which "
-                + "differs from it only by letter case, so nothing runs for '\(profile)'. Use "
-                + "'\(ConfigSchema.displayText(owner))', or add this profile again in jamf-cli "
-                + "under a name that differs by more than case."
+            return L("The workspace folder for '\(profile)' belongs to profile '\(ConfigSchema.displayText(owner))', which differs from it only by letter case, so nothing runs for '\(profile)'. Use '\(ConfigSchema.displayText(owner))', or add this profile again in jamf-cli under a name that differs by more than case.")
         case .configLoadFailed(_, let detail):
             // Path omitted: may contain the home directory. The detail is a
             // YAML key path from the decoder, safe to display.
             if let detail {
-                return "config.yaml could not be parsed — \(detail). Fix it on the Config "
-                    + "page, or restore the default config from there."
+                return L("config.yaml could not be parsed — \(detail). Fix it on the Config page, or restore the default config from there.")
             }
-            return "config.yaml could not be parsed — the file may be corrupt. The Config "
-                + "page can restore the default config."
+            return L("config.yaml could not be parsed — the file may be corrupt. The Config page can restore the default config.")
         case .configWriteRefused(let key, let fix):
-            return "\(key) was not written to config.yaml: \(fix)"
+            return L("\(key) was not written to config.yaml: \(fix)")
         case .executableNotFound:
             return "jamf-cli not found — install via Homebrew: brew install jamf-cli"
         case .invalidArgument(let detail):
-            return "Invalid argument: \(detail)"
+            return L("Invalid argument: \(detail)")
         case .wrongProduct(let refusal):
             return refusal
         case .backupWithoutPro(let name):
-            return "Backup \(name) has no Jamf Pro part (its Jamf Pro backup failed or was "
-                + "skipped), so there is nothing to compare. Choose two backups that hold a "
-                + "Jamf Pro backup."
+            return L("Backup \(name) has no Jamf Pro part (its Jamf Pro backup failed or was skipped), so there is nothing to compare. Choose two backups that hold a Jamf Pro backup.")
         case .directoryOperationFailed:
             // Path omitted: may contain the home directory or workspace layout.
-            return "A required directory could not be created or moved — check available disk space and folder permissions."
+            return L("A required directory could not be created or moved — check available disk space and folder permissions.")
         case .tickLockHeld:
-            return "A scheduled run is in progress — try again when it finishes"
+            return L("A scheduled run is in progress — try again when it finishes")
         case .collectInProgress:
-            return "A refresh is already running — try again when it finishes"
+            return L("A refresh is already running — try again when it finishes")
         case .toolUpdateInProgress:
             return "jamf-cli is being updated — try again when it finishes"
         case .generateInProgress:
-            return "A report is being generated — try again when it finishes"
+            return L("A report is being generated — try again when it finishes")
         }
     }
 }
@@ -382,7 +374,7 @@ extension CLIBridge {
     /// when that command is available.
     nonisolated func listExtensionAttributes(profile: String) async throws -> [ExtensionAttribute] {
         throw CLIBridgeError.notImplemented(
-            "listExtensionAttributes: wire jamf-cli pro computer-extension-attributes list --output json"
+            L("listExtensionAttributes: wire jamf-cli pro computer-extension-attributes list --output json")
         )
     }
 

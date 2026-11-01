@@ -7,7 +7,7 @@ extension Schedule {
         if schedule.contains("Daily") {
             cadenceSummary = "daily"
         } else if schedule.contains("Weekdays") {
-            cadenceSummary = "every weekday"
+            cadenceSummary = L("every weekday")
         } else if schedule.lowercased().contains("sun") ||
                   schedule.lowercased().contains("mon") ||
                   schedule.lowercased().contains("tue") ||
@@ -17,12 +17,12 @@ extension Schedule {
                   schedule.lowercased().contains("sat") {
             // Check if it's multiple times per week
             if schedule.contains("×") || schedule.contains("x") {
-                cadenceSummary = "multiple times per week"
+                cadenceSummary = L("multiple times per week")
             } else {
                 cadenceSummary = "weekly"
             }
         } else if schedule.contains("×") || schedule.contains("x") {
-            cadenceSummary = "multiple times per week"
+            cadenceSummary = L("multiple times per week")
         } else {
             cadenceSummary = schedule.lowercased()
         }
@@ -30,17 +30,17 @@ extension Schedule {
         let modeSummary: String
         switch mode {
         case .snapshotOnly:
-            modeSummary = "collects snapshots only"
+            modeSummary = L("collects snapshots only")
         case .jamfCLIOnly:
-            modeSummary = "builds a workbook from cached data"
+            modeSummary = L("builds a workbook from cached data")
         case .jamfCLIFull:
-            modeSummary = "collects snapshots and builds a workbook"
+            modeSummary = L("collects snapshots and builds a workbook")
         case .backup:
-            modeSummary = "backs up Jamf Pro configuration objects"
+            modeSummary = L("backs up Jamf Pro configuration objects")
         }
 
         let timeComponent = schedule.firstMatch(of: #/\d{2}:\d{2}/#)
-            .map { " at " + String($0.0) } ?? ""
+            .map { L(" at ") + String($0.0) } ?? ""
 
         // Capitalize only the first character of the cadence summary
         let capitalizedCadence = cadenceSummary.prefix(1).uppercased() + cadenceSummary.dropFirst()

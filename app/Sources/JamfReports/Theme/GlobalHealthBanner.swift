@@ -41,7 +41,7 @@ struct GlobalHealthBanner: View {
             banner(
                 icon: "arrow.triangle.2.circlepath",
                 tone: .info,
-                text: "Re-collecting stale data…",
+                text: L("Re-collecting stale data…"),
                 detail: nil,
                 action: nil
             )
@@ -76,7 +76,7 @@ struct GlobalHealthBanner: View {
             return InlineBannerAction(
                 label: PrimaryAction.openBackups.label,
                 icon: "externaldrive",
-                help: "Run a backup and see what it kept",
+                help: L("Run a backup and see what it kept"),
                 handler: onOpenBackups ?? onOpenAutomation
             )
         case .openRunHistory:
@@ -84,7 +84,7 @@ struct GlobalHealthBanner: View {
             return InlineBannerAction(
                 label: PrimaryAction.openRunHistory.label,
                 icon: "list.bullet.rectangle",
-                help: "Open the run that logged it",
+                help: L("Open the run that logged it"),
                 handler: {
                     if let onOpenRunHistory { onOpenRunHistory(log) } else { onOpenAutomation() }
                 }
@@ -93,14 +93,14 @@ struct GlobalHealthBanner: View {
             return InlineBannerAction(
                 label: PrimaryAction.openConfigDoctor.label,
                 icon: "stethoscope",
-                help: "Review what Config Doctor reports about this workspace",
+                help: L("Review what Config Doctor reports about this workspace"),
                 handler: onOpenConfigDoctor ?? onOpenAutomation
             )
         case .collectNow:
             return InlineBannerAction(
                 label: PrimaryAction.collectNow.label,
                 icon: "arrow.clockwise",
-                help: "Collect the data sources that are behind",
+                help: L("Collect the data sources that are behind"),
                 handler: onCollectNow ?? onOpenAutomation
             )
         case .openAutomation:
@@ -149,11 +149,11 @@ struct GlobalHealthBanner: View {
 
         var label: String {
             switch self {
-            case .openConfigDoctor: return "Review"
-            case .collectNow: return "Collect now"
-            case .openAutomation: return "Open Automation"
-            case .openBackups: return "Open Backups"
-            case .openRunHistory: return "Open Run History"
+            case .openConfigDoctor: return L("Review")
+            case .collectNow: return L("Collect now")
+            case .openAutomation: return L("Open Automation")
+            case .openBackups: return L("Open Backups")
+            case .openRunHistory: return L("Open Run History")
             }
         }
     }
@@ -232,7 +232,7 @@ struct GlobalHealthBanner: View {
             return Headline(
                 icon: "exclamationmark.triangle.fill",
                 tone: .danger,
-                text: countPhrase(failing.count, "data source") + " failing to collect",
+                text: countPhrase(failing.count, L("data source")) + L(" failing to collect"),
                 detail: kindList(failing) + " — " + failingReason(failing)
             )
         }
@@ -244,18 +244,17 @@ struct GlobalHealthBanner: View {
             return Headline(
                 icon: "lock.trianglebadge.exclamationmark",
                 tone: .warn,
-                text: "Shared config needs confirming on this Mac",
-                detail: named + (extra > 0 ? " +\(extra) more" : "")
-                    + " — background runs use safe values until you confirm"
+                text: L("Shared config needs confirming on this Mac"),
+                detail: named + (extra > 0 ? L(" +\(extra) more") : "")
+                    + L(" — background runs use safe values until you confirm")
             )
         }
         if automationFolderRefused {
             return Headline(
                 icon: "link",
                 tone: .warn,
-                text: "The automation folder is a link",
-                detail: "Alert records are kept on this Mac; Run History is not written until "
-                    + "the link is removed"
+                text: L("The automation folder is a link"),
+                detail: L("Alert records are kept on this Mac; Run History is not written until the link is removed")
             )
         }
         // A warning a run logged that the admin has to fix: below what stops runs, above
@@ -267,24 +266,24 @@ struct GlobalHealthBanner: View {
                 icon: "exclamationmark.bubble",
                 tone: .warn,
                 text: attention.count == 1
-                    ? "1 thing needs attention" : "\(attention.count) things need attention",
-                detail: named + (extra > 0 ? " +\(extra) more" : "")
+                    ? L("1 thing needs attention") : L("\(attention.count) things need attention"),
+                detail: named + (extra > 0 ? L(" +\(extra) more") : "")
             )
         }
         if !stale.isEmpty {
             return Headline(
                 icon: "clock.badge.exclamationmark",
                 tone: .warn,
-                text: countPhrase(stale.count, "data source") + " far behind schedule",
-                detail: kindList(stale) + " — a re-scan is needed"
+                text: countPhrase(stale.count, L("data source")) + L(" far behind schedule"),
+                detail: kindList(stale) + L(" — a re-scan is needed")
             )
         }
         if !neverCollected.isEmpty {
             return Headline(
                 icon: "clock",
                 tone: .info,
-                text: countPhrase(neverCollected.count, "data source") + " not collected yet",
-                detail: kindList(neverCollected) + " — not attempted yet on this workspace"
+                text: countPhrase(neverCollected.count, L("data source")) + L(" not collected yet"),
+                detail: kindList(neverCollected) + L(" — not attempted yet on this workspace")
             )
         }
         // A disabled background item is not a run that failed: nothing was allowed to run.
@@ -292,16 +291,16 @@ struct GlobalHealthBanner: View {
             return Headline(
                 icon: "calendar.badge.exclamationmark",
                 tone: .warn,
-                text: "Automation is off",
-                detail: "JamfReports is not allowed to run in the background"
+                text: L("Automation is off"),
+                detail: L("JamfReports is not allowed to run in the background")
             )
         }
         if !automation.isEmpty {
             let overdue = automation.filter { $0.kind == .overdue }.count
             let failed = automation.count - overdue
             let text = overdue > 0
-                ? countPhrase(overdue, "scheduled run") + " overdue"
-                : countPhrase(failed, "scheduled run") + " failing"
+                ? countPhrase(overdue, L("scheduled run")) + L(" overdue")
+                : countPhrase(failed, L("scheduled run")) + L(" failing")
             return Headline(
                 icon: "calendar.badge.exclamationmark",
                 tone: .warn,
@@ -313,7 +312,7 @@ struct GlobalHealthBanner: View {
     }
 
     nonisolated private static func countPhrase(_ n: Int, _ noun: String) -> String {
-        n == 1 ? "1 \(noun) is" : "\(n) \(noun)s are"
+        n == 1 ? L("1 \(noun) is") : L("\(n) \(noun)s are")
     }
 
     /// The cause when every failing kind recorded the same one (spec §10.1), with the
@@ -322,16 +321,16 @@ struct GlobalHealthBanner: View {
         let causes = failing.compactMap(\.cause)
         guard causes.count == failing.count, let first = causes.first, first.kind != .other,
               causes.allSatisfy({ $0.kind == first.kind }) else {
-            return "data on screens using " + (failing.count == 1 ? "it" : "them")
-                + " is out of date"
+            return L("data on screens using ") + (failing.count == 1 ? "it" : "them")
+                + L(" is out of date")
         }
         guard first.kind == .missingPermission else { return first.label }
         var seen: Set<String> = []
         let names = causes.flatMap(\.names).filter { seen.insert($0).inserted }
         guard !names.isEmpty else { return first.label }
         let extra = names.count - min(names.count, maxNamedKinds)
-        return "missing permission: " + names.prefix(maxNamedKinds).joined(separator: "; ")
-            + (extra > 0 ? " +\(extra) more" : "")
+        return L("missing permission: ") + names.prefix(maxNamedKinds).joined(separator: "; ")
+            + (extra > 0 ? L(" +\(extra) more") : "")
     }
 
     /// How many kinds the detail line names before collapsing to "+N more".
@@ -346,6 +345,6 @@ struct GlobalHealthBanner: View {
         let named = issues.prefix(maxNamedKinds).map(\.snapshotKind)
         let names = named.joined(separator: ", ")
         let extra = issues.count - named.count
-        return extra > 0 ? "\(names) +\(extra) more" : names
+        return extra > 0 ? L("\(names) +\(extra) more") : names
     }
 }

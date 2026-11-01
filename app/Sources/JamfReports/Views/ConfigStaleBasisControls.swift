@@ -10,24 +10,20 @@ struct StaleBasisControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            FieldLabel(label: "Stale counts", trailing: "stale_basis")
+            FieldLabel(label: L("Stale counts"), trailing: "stale_basis")
             ForEach(StaleBasis.allCases, id: \.self) { date in
                 basisRow(date)
             }
-            FieldHelp(text: "A Mac is stale when any date turned on is more than the stale "
-                + "threshold ago. Last contact counts MDM and declarative device management "
-                + "too; a Mac with none recorded is not judged by it.")
+            FieldHelp(text: L("A Mac is stale when any date turned on is more than the stale threshold ago. Last contact counts MDM and declarative device management too; a Mac with none recorded is not judged by it."))
         }
         .padding(.bottom, 12)
         VStack(alignment: .leading, spacing: 4) {
-            FieldLabel(label: "Contact gap", trailing: "contact_gap_days")
+            FieldLabel(label: L("Contact gap"), trailing: "contact_gap_days")
             EditableNumberStepper(
                 value: gapDays, range: ContactGap.dayRange, suffix: "days",
-                label: "Contact gap days",
-                help: "How far a Mac's check-in or inventory may lag its last contact.")
-            FieldHelp(text: "The Health Audit and Computers flag a Mac MDM still reaches when its "
-                + "last check-in, or its last inventory, is more than this many days behind its "
-                + "last contact.")
+                label: L("Contact gap days"),
+                help: L("How far a Mac's check-in or inventory may lag its last contact."))
+            FieldHelp(text: L("The Health Audit and Computers flag a Mac MDM still reaches when its last check-in, or its last inventory, is more than this many days behind its last contact."))
         }
         .padding(.bottom, 12)
     }

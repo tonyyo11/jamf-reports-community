@@ -39,8 +39,8 @@ struct ProtectView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Protect",
-                title: "Jamf Protect",
+                kicker: L("Protect"),
+                title: L("Jamf Protect"),
                 subtitle: subtitle,
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
@@ -49,7 +49,7 @@ struct ProtectView: View {
             )
 
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "Jamf Protect data")
+                ScreenLoadingCard(what: L("Jamf Protect data"))
             } else {
                 // Shared StaleDataBanner surfaces snapshot freshness above the main content.
                 // Suppressed in demo mode (the demo dataset is intentionally static and
@@ -104,14 +104,16 @@ struct ProtectView: View {
         // than leave the gap to read as missing data.
         let computers = snapshot.totalComputers
         let computersPart: String? = computers == 0 ? nil : (workspace.demoMode
-            ? "Pilot: \(computers) of \(DemoData.totalDevices) Macs"
-            : "\(computers) computer\(computers == 1 ? "" : "s")")
+            ? L("Pilot: \(computers) of \(DemoData.totalDevices) Macs")
+            : (computers == 1 ? L("\(computers) computer") : L("\(computers) computers")))
         let parts: [String] = [
             computersPart,
-            !snapshot.alerts.isEmpty ? "\(snapshot.alerts.count) alert\(snapshot.alerts.count == 1 ? "" : "s")" :
+            !snapshot.alerts.isEmpty
+                ? (snapshot.alerts.count == 1 ? L("\(snapshot.alerts.count) alert") : L("\(snapshot.alerts.count) alerts")) :
                 (severityAlertCount > 0 ?
-                 "\(severityAlertCount) alert\(severityAlertCount == 1 ? "" : "s")" : nil),
-            !snapshot.insights.isEmpty ? "\(snapshot.insights.count) insight\(snapshot.insights.count == 1 ? "" : "s")" : nil
+                 (severityAlertCount == 1 ? L("\(severityAlertCount) alert") : L("\(severityAlertCount) alerts")) : nil),
+            !snapshot.insights.isEmpty
+                ? (snapshot.insights.count == 1 ? L("\(snapshot.insights.count) insight") : L("\(snapshot.insights.count) insights")) : nil
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
@@ -212,9 +214,8 @@ struct ProtectView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "shield.lefthalf.filled",
-                title: "No Jamf Protect data yet",
-                message: "Jamf Protect is connected. Its data arrives with the next collect: "
-                    + "Refresh on the Overview, or the next scheduled run."
+                title: L("No Jamf Protect data yet"),
+                message: L("Jamf Protect is connected. Its data arrives with the next collect: Refresh on the Overview, or the next scheduled run.")
             )
         }
     }
@@ -224,12 +225,10 @@ struct ProtectView: View {
             VStack(alignment: .leading, spacing: 12) {
                 EmptyStateView(
                     systemImage: "shield.lefthalf.filled",
-                    title: "Jamf Protect is not connected",
-                    message: "Connect Jamf Protect to this workspace with an API client from "
-                        + "the Protect console. Its alerts, computers and insights are then "
-                        + "collected with the workspace's data."
+                    title: L("Jamf Protect is not connected"),
+                    message: L("Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and insights are then collected with the workspace's data.")
                 )
-                PNPButton(title: "Connect Jamf Protect", icon: "link", style: .gold) {
+                PNPButton(title: L("Connect Jamf Protect"), icon: "link", style: .gold) {
                     showingConnect = true
                 }
             }
@@ -270,7 +269,7 @@ struct ProtectView: View {
         let total = buckets.reduce(0) { $0 + $1.count }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Kill-Chain Stage")
+                SectionHeader(title: L("Kill-Chain Stage"))
                 if total == 0 {
                     Text("No alert event types to bucket.")
                         .font(.caption.monospaced())
@@ -326,7 +325,7 @@ struct ProtectView: View {
         let total = versions.reduce(0) { $0 + $1.count }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Endpoint Agent Versions")
+                SectionHeader(title: L("Endpoint Agent Versions"))
                 if total == 0 {
                     Text("No Protect computers reporting agent version.")
                         .font(.caption.monospaced())
@@ -345,7 +344,7 @@ struct ProtectView: View {
     private var deviceTimelineCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Per-Device Alert Timeline")
+                SectionHeader(title: L("Per-Device Alert Timeline"))
                 let devices = uniqueDeviceIdentifiers
                 if devices.isEmpty {
                     Text("No devices with alert history.")
@@ -399,7 +398,7 @@ struct ProtectView: View {
         EqualHeightTileGrid(minTileWidth: 220) {
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Total Computers",
+                    label: L("Total Computers"),
                     value: "\(snapshot.totalComputers)",
                     fillsHeight: true
                 )
@@ -407,34 +406,34 @@ struct ProtectView: View {
 
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Web Protection",
+                    label: L("Web Protection"),
                     value: "\(snapshot.webProtectionActiveCount)",
-                    sub: "\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    sub: L("\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
 
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Full Disk Access",
+                    label: L("Full Disk Access"),
                     value: "\(snapshot.fullDiskAccessCount)",
-                    sub: "\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    sub: L("\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
 
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Connected",
+                    label: L("Connected"),
                     value: "\(snapshot.connectedCount)",
-                    sub: "\(snapshot.connectedCount) of \(snapshot.totalComputers)",
+                    sub: L("\(snapshot.connectedCount) of \(snapshot.totalComputers)"),
                     fillsHeight: true
                 )
             }
 
             if !snapshot.alerts.isEmpty {
                 StatTile(
-                    label: "High Alerts",
+                    label: L("High Alerts"),
                     value: "\(snapshot.highAlerts)",
                     fillsHeight: true
                 )
@@ -442,7 +441,7 @@ struct ProtectView: View {
 
             if snapshot.failingInsights > 0 {
                 StatTile(
-                    label: "Failing Insights",
+                    label: L("Failing Insights"),
                     value: "\(snapshot.failingInsights)",
                     fillsHeight: true
                 )
@@ -456,10 +455,10 @@ struct ProtectView: View {
                 let totalAlerts = snapshot.highAlerts + snapshot.mediumAlerts
                     + snapshot.lowAlerts + snapshot.informationalAlerts
                 HStack {
-                    SectionHeader(title: "Alerts by Severity")
+                    SectionHeader(title: L("Alerts by Severity"))
                     if totalAlerts > 0 {
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
@@ -472,17 +471,17 @@ struct ProtectView: View {
                 if totalAlerts > 0 {
                     VStack(spacing: 6) {
                         if snapshot.highAlerts > 0 {
-                            alertSeverityBar(label: "High", count: snapshot.highAlerts, total: totalAlerts, color: Theme.Severity.high.inApp)
+                            alertSeverityBar(label: L("High"), count: snapshot.highAlerts, total: totalAlerts, color: Theme.Severity.high.inApp)
                         }
                         if snapshot.mediumAlerts > 0 {
-                            alertSeverityBar(label: "Medium", count: snapshot.mediumAlerts, total: totalAlerts, color: Theme.Severity.medium.inApp)
+                            alertSeverityBar(label: L("Medium"), count: snapshot.mediumAlerts, total: totalAlerts, color: Theme.Severity.medium.inApp)
                         }
                         if snapshot.lowAlerts > 0 {
-                            alertSeverityBar(label: "Low", count: snapshot.lowAlerts, total: totalAlerts, color: Theme.Severity.low.inApp)
+                            alertSeverityBar(label: L("Low"), count: snapshot.lowAlerts, total: totalAlerts, color: Theme.Severity.low.inApp)
                         }
                         if snapshot.informationalAlerts > 0 {
                             alertSeverityBar(
-                                label: "Informational", count: snapshot.informationalAlerts,
+                                label: L("Informational"), count: snapshot.informationalAlerts,
                                 total: totalAlerts, color: Theme.Severity.informational.inApp
                             )
                         }
@@ -561,9 +560,9 @@ struct ProtectView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Recent Alerts",
+                    title: L("Recent Alerts"),
                     trailing: snapshot.alerts.count > 50
-                        ? "Showing 50 of \(snapshot.alerts.count)" : nil)
+                        ? L("Showing 50 of \(snapshot.alerts.count)") : nil)
 
                 let sortedAlerts = snapshot.alerts
                     .sorted { ($0.created ?? "") > ($1.created ?? "") }
@@ -590,7 +589,7 @@ struct ProtectView: View {
                     .frame(width: 124, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(alert.eventType ?? "Unknown")
+                    Text(alert.eventType ?? L("Unknown"))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
@@ -623,7 +622,7 @@ struct ProtectView: View {
     }
 
     private func severityPill(_ severity: String?) -> some View {
-        let text = severity?.capitalized ?? "Unknown"
+        let text = severity?.capitalized ?? L("Unknown")
         let (tone, icon): (Pill.Tone, String) = {
             guard let sev = severity?.lowercased() else { return (.muted, "circle.fill") }
             if sev.contains("high") { return (Theme.Severity.high.pillTone, Theme.Severity.high.systemImage) }
@@ -659,12 +658,12 @@ struct ProtectView: View {
     /// ALERT_STATUS values) get a spaced display form; anything else passes
     /// through unchanged; empty/nil is "Unknown".
     nonisolated static func statusLabel(_ status: String?) -> String {
-        guard let status, !status.isEmpty else { return "Unknown" }
+        guard let status, !status.isEmpty else { return L("Unknown") }
         switch status.lowercased() {
-        case "new": return "New"
-        case "inprogress": return "In Progress"
-        case "resolved": return "Resolved"
-        case "autoresolved": return "Auto Resolved"
+        case "new": return L("New")
+        case "inprogress": return L("In Progress")
+        case "resolved": return L("Resolved")
+        case "autoresolved": return L("Auto Resolved")
         default: return status
         }
     }
@@ -683,9 +682,9 @@ struct ProtectView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Computers",
+                    title: L("Computers"),
                     trailing: snapshot.computers.count > 50
-                        ? "Showing 50 of \(snapshot.computers.count)" : nil)
+                        ? L("Showing 50 of \(snapshot.computers.count)") : nil)
 
                 let displayedComputers = Array(snapshot.computers.prefix(50))
 
@@ -707,12 +706,12 @@ struct ProtectView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(computer.hostName ?? "Unknown")
+                    Text(computer.hostName ?? L("Unknown"))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
 
-                    Text(computer.osString ?? "Unknown OS")
+                    Text(computer.osString ?? L("Unknown OS"))
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -726,12 +725,12 @@ struct ProtectView: View {
                 // INACTIVE fits the 92 pt column. UNKNOWN, which both columns can show, is wider
                 // than the 56 pt Full Disk Access column and overhangs it; `Pill` is fixed-size,
                 // so nothing truncates.
-                booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
+                booleanPill(computer.webProtectionActive, trueLabel: L("Active"), falseLabel: L("Inactive"))
                     .frame(width: 92, alignment: .center)
                     .accessibilityLabel("Web Protection " + Self.spokenState(
                         computer.webProtectionActive, trueWord: "active", falseWord: "inactive"))
 
-                booleanPill(computer.fullDiskAccess, trueLabel: "Yes", falseLabel: "No")
+                booleanPill(computer.fullDiskAccess, trueLabel: L("Yes"), falseLabel: L("No"))
                     .frame(width: 56, alignment: .center)
                     .accessibilityLabel("Full Disk Access " + Self.spokenState(
                         computer.fullDiskAccess, trueWord: "granted", falseWord: "denied"))
@@ -767,7 +766,7 @@ struct ProtectView: View {
         case .noInventory(let inventory):
             Card {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: "\(inventory.product) match")
+                    SectionHeader(title: L("\(inventory.product) match"))
                     matchExperimentalNote(inventory)
                     Text(Self.noInventoryText(inventory))
                         .font(.footnote)
@@ -778,7 +777,7 @@ struct ProtectView: View {
             let product = match.inventory.product
             Card {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "\(product) match")
+                    SectionHeader(title: L("\(product) match"))
                     matchExperimentalNote(match.inventory)
                     Text(Self.matchSummary(match))
                         .font(.footnote.weight(.medium))
@@ -793,14 +792,14 @@ struct ProtectView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                     if !match.notInPro.isEmpty {
                         unmatchedList(
-                            title: "Not in \(product)", total: match.notInPro.count,
+                            title: L("Not in \(product)"), total: match.notInPro.count,
                             rows: match.notInPro.prefix(Self.proMatchRowLimit).map {
-                                ($0.hostName ?? "Unknown", $0.serial ?? "—")
+                                ($0.hostName ?? L("Unknown"), $0.serial ?? "—")
                             })
                     }
                     if !match.proWithoutProtect.isEmpty {
                         unmatchedList(
-                            title: "\(product) Macs without Protect",
+                            title: L("\(product) Macs without Protect"),
                             total: match.proWithoutProtect.count,
                             rows: match.proWithoutProtect.prefix(Self.proMatchRowLimit).map {
                                 ($0.displayName, $0.serial.isEmpty ? "—" : $0.serial)
@@ -817,7 +816,7 @@ struct ProtectView: View {
         VStack(alignment: .leading, spacing: 4) {
             SectionHeader(
                 title: title,
-                trailing: total > rows.count ? "Showing \(rows.count) of \(total)" : nil,
+                trailing: total > rows.count ? L("Showing \(rows.count) of \(total)") : nil,
                 style: .headline)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 12) {
@@ -844,40 +843,38 @@ struct ProtectView: View {
     }
 
     nonisolated static let schoolMatchExperimentalText =
-        "Experimental: Jamf Protect with Jamf School."
+        L("Experimental: Jamf Protect with Jamf School.")
 
     nonisolated static func noInventoryText(
         _ inventory: ProtectProCorrelation.Inventory
     ) -> String {
-        "Collect \(inventory.product) inventory to match Protect computers to "
-            + "\(inventory.product)."
+        L("Collect \(inventory.product) inventory to match Protect computers to \(inventory.product).")
     }
     nonisolated static let matchFootnote =
-        "Matched by hardware UUID or serial number, never by name."
+        L("Matched by hardware UUID or serial number, never by name.")
 
     nonisolated static func matchSummary(_ match: ProtectProCorrelation) -> String {
         let many = match.protectCount != 1
-        return "\(match.matched) of \(match.protectCount) Protect computer\(many ? "s" : "") "
-            + "match\(many ? "" : "es") a \(match.inventory.product) computer."
+        return (many ? L("\(match.matched) of \(match.protectCount) Protect computers match a \(match.inventory.product) computer.") : L("\(match.matched) of \(match.protectCount) Protect computer matches a \(match.inventory.product) computer."))
     }
 
     /// One line per nonzero count, singular or plural.
     nonisolated static func matchNotes(_ match: ProtectProCorrelation) -> [String] {
         func protectLine(_ count: Int, one: String, many: String) -> String? {
-            count == 0 ? nil : "\(count) Protect computer\(count == 1 ? " " + one : "s " + many)"
+            count == 0 ? nil
+                : (count == 1 ? L("\(count) Protect computer \(one)") : L("\(count) Protect computers \(many)"))
         }
         let proCount = match.proWithoutProtect.count
         let product = match.inventory.product
         return [
-            protectLine(match.notInPro.count, one: "has no \(product) record.",
-                        many: "have no \(product) record."),
-            proCount == 0 ? nil : "\(proCount) \(product) Mac\(proCount == 1 ? " has" : "s have") "
-                + "no Protect record.",
+            protectLine(match.notInPro.count, one: L("has no \(product) record."),
+                        many: L("have no \(product) record.")),
+            proCount == 0 ? nil : (proCount == 1 ? L("\(proCount) \(product) Mac has no Protect record.") : L("\(proCount) \(product) Macs have no Protect record.")),
             protectLine(match.ambiguous,
-                        one: "matches more than one \(product) computer and is not counted.",
-                        many: "match more than one \(product) computer and are not counted."),
-            protectLine(match.noIdentifier, one: "reports no UUID or serial.",
-                        many: "report no UUID or serial."),
+                        one: L("matches more than one \(product) computer and is not counted."),
+                        many: L("match more than one \(product) computer and are not counted.")),
+            protectLine(match.noIdentifier, one: L("reports no UUID or serial."),
+                        many: L("report no UUID or serial.")),
         ].compactMap { $0 }
     }
 
@@ -894,7 +891,7 @@ struct ProtectView: View {
         case true?: return (trueLabel, .teal, "checkmark")
         case false?: return (falseLabel, .muted, "xmark")
         // No icon: the word alone is wider than the narrow Full Disk Access column.
-        case nil: return ("Unknown", .muted, nil)
+        case nil: return (L("Unknown"), .muted, nil)
         }
     }
 
@@ -910,7 +907,7 @@ struct ProtectView: View {
     private func connectionPill(_ status: String?) -> some View {
         let isConnected = ProtectDashboardService.isConnected(status)
         return Pill(
-            text: isConnected ? "Online" : "Offline",
+            text: isConnected ? L("Online") : L("Offline"),
             tone: isConnected ? .teal : .warn
         )
         .accessibilityLabel("\(isConnected ? "Online" : "Offline") connection status")
@@ -919,7 +916,7 @@ struct ProtectView: View {
     private var insightsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Insights")
+                SectionHeader(title: L("Insights"))
 
                 VStack(spacing: 8) {
                     ForEach(Array(snapshot.insights.enumerated()), id: \.offset) { index, insight in
@@ -938,14 +935,14 @@ struct ProtectView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(insight.label ?? "Unknown Insight")
+                Text(insight.label ?? L("Unknown Insight"))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
 
                 Spacer()
 
                 if let enabled = insight.enabled {
-                    Pill(text: enabled ? "Enabled" : "Disabled", tone: enabled ? .teal : .muted)
+                    Pill(text: enabled ? L("Enabled") : L("Disabled"), tone: enabled ? .teal : .muted)
                 }
             }
 
@@ -988,7 +985,7 @@ struct ProtectView: View {
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(insight.label ?? "Unknown insight"), \(pass) pass, \(fail) fail")
+        .accessibilityLabel("\(insight.label ?? L("Unknown insight")), \(pass) pass, \(fail) fail")
     }
 
     // MARK: - Plans
@@ -997,9 +994,9 @@ struct ProtectView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "Plans")
+                    SectionHeader(title: L("Plans"))
                     Spacer()
-                    Pill(text: "\(snapshot.plans.count) plan\(snapshot.plans.count == 1 ? "" : "s")",
+                    Pill(text: (snapshot.plans.count == 1 ? L("\(snapshot.plans.count) plan") : L("\(snapshot.plans.count) plans")),
                          tone: .muted)
                 }
                 VStack(spacing: 8) {
@@ -1015,29 +1012,29 @@ struct ProtectView: View {
     private func planRow(_ plan: ProtectPlanRow) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(plan.name ?? "Unnamed Plan")
+                Text(plan.name ?? L("Unnamed Plan"))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
             }
             HStack(spacing: 10) {
                 if let level = plan.logLevel, !level.isEmpty {
-                    planTag("Log: \(level)")
+                    planTag(L("Log: \(level)"))
                 }
-                planTag(plan.autoUpdate == true ? "Auto-update on" : "Auto-update off")
+                planTag(plan.autoUpdate == true ? L("Auto-update on") : L("Auto-update off"))
                 planTag(Self.telemetryTag(plan.telemetry))
                 Spacer()
             }
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(plan.name ?? "Unnamed plan"), \(Self.telemetryTag(plan.telemetry))")
+        .accessibilityLabel("\(plan.name ?? L("Unnamed plan")), \(Self.telemetryTag(plan.telemetry))")
     }
 
     /// Plan card telemetry tag: the assigned configuration's name, or "No telemetry".
     nonisolated static func telemetryTag(_ telemetry: String?) -> String {
-        guard let telemetry, !telemetry.isEmpty else { return "No telemetry" }
-        return "Telemetry: \(telemetry)"
+        guard let telemetry, !telemetry.isEmpty else { return L("No telemetry") }
+        return L("Telemetry: \(telemetry)")
     }
 
     private func planTag(_ text: String) -> some View {
@@ -1049,7 +1046,7 @@ struct ProtectView: View {
     // MARK: - Utilities
 
     private func formatCreatedDate(_ dateString: String) -> String {
-        guard let date = ISO8601Time.parse(dateString) else { return "Unknown" }
+        guard let date = ISO8601Time.parse(dateString) else { return L("Unknown") }
 
         // Demo ages are measured from the demo's own "now", not today's date.
         let now = workspace.demoMode ? DemoData.referenceDate : Date()
@@ -1102,10 +1099,10 @@ private struct ProtectAlertsSeverityExport: View {
 
     private var rows: [Row] {
         [
-            Row(label: "High",          count: high,          color: Theme.Severity.high.export),
-            Row(label: "Medium",        count: medium,        color: Theme.Severity.medium.export),
-            Row(label: "Low",           count: low,           color: Theme.Severity.low.export),
-            Row(label: "Informational", count: informational,
+            Row(label: L("High"),          count: high,          color: Theme.Severity.high.export),
+            Row(label: L("Medium"),        count: medium,        color: Theme.Severity.medium.export),
+            Row(label: L("Low"),           count: low,           color: Theme.Severity.low.export),
+            Row(label: L("Informational"), count: informational,
                 color: Theme.Severity.informational.export)
         ].filter { $0.count > 0 }
     }
@@ -1147,7 +1144,7 @@ private struct ProtectAlertsSeverityExport: View {
             if total > 0 {
                 HStack {
                     Spacer()
-                    Text("Total: \(total) alert\(total == 1 ? "" : "s")")
+                    Text(total == 1 ? "Total: \(total) alert" : "Total: \(total) alerts")
                         .font(.caption.monospaced().weight(.semibold))
                         .foregroundStyle(Theme.Chart.textSecondary)
                 }

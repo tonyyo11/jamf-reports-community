@@ -55,18 +55,15 @@ struct ExistingCLISetupView: View {
                 Text("Already have a workspace folder?")
                     .font(.headline)
                     .foregroundStyle(Theme.Colors.fg)
-                Text("If your reporting workspace already exists — a synced team folder, or a "
-                    + "folder from a previous install — point the app at it and skip the steps "
-                    + "below. Pick the folder that contains the profile folders.")
+                Text("If your reporting workspace already exists — a synced team folder, or a folder from a previous install — point the app at it and skip the steps below. Pick the folder that contains the profile folders.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Choose workspace folder…", icon: "folder", size: .sm) {
+                PNPButton(title: L("Choose workspace folder…"), icon: "folder", size: .sm) {
                     chooseExistingRoot()
                 }
                 .disabled(isLocked || isFinishing)
-                .help("Use a folder that already holds \(WorkspaceRootStore.displayRoot)-style "
-                    + "profile workspaces.")
+                .help("Use a folder that already holds \(WorkspaceRootStore.displayRoot)-style profile workspaces.")
                 if let existingRootMessage {
                     Text(existingRootMessage)
                         .font(.footnote)
@@ -108,15 +105,12 @@ struct ExistingCLISetupView: View {
     private var headerSubtitle: String {
         let count = flow.profileNames.count
         let noun = count == 1 ? "profile" : "profiles"
-        return "Found \(count) configured \(noun). Three steps and the app is live: "
-            + "create a reporting workspace for each profile, choose how often data "
-            + "refreshes automatically, and run a first collection so the dashboards "
-            + "and trend history have a starting point."
+        return L("Found \(count) configured \(noun). Three steps and the app is live: create a reporting workspace for each profile, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point.")
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Kicker(text: "First launch", tone: .gold)
+            Kicker(text: L("First launch"), tone: .gold)
             Text("jamf-cli is already set up.")
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
@@ -133,14 +127,14 @@ struct ExistingCLISetupView: View {
     private var profilesCard: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 10) {
-                stepTitle(number: 1, title: "Profiles to set up")
+                stepTitle(number: 1, title: L("Profiles to set up"))
                 ForEach(flow.profileNames, id: \.self) { name in
                     Toggle(profileTitle(name), isOn: selectionBinding(name))
                         .toggleStyle(.checkbox)
                         .disabled(isLocked || flow.unusable[name] != nil
                             || flow.refusals[name] != nil)
                     if let reason = flow.unusable[name] {
-                        profileNote("\(name) can't be used. \(reason.explanation)")
+                        profileNote(L("\(name) can't be used. \(reason.explanation)"))
                     }
                     if let reason = flow.refusals[name] {
                         profileNote(reason)
@@ -153,9 +147,7 @@ struct ExistingCLISetupView: View {
                     }
                 }
                 Text(
-                    "Each profile gets its own workspace under "
-                        + "\(WorkspaceRootStore.displayRoot)/ — "
-                        + "config, cached snapshots, and generated reports stay per-tenant."
+                    "Each profile gets its own workspace under \(WorkspaceRootStore.displayRoot)/ — config, cached snapshots, and generated reports stay per-tenant."
                 )
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
@@ -164,7 +156,7 @@ struct ExistingCLISetupView: View {
     }
 
     private func profileTitle(_ name: String) -> String {
-        flow.products[name] == .school ? "\(name) (Jamf School)" : name
+        flow.products[name] == .school ? L("\(name) (Jamf School)") : name
     }
 
     private func profileNote(_ text: String) -> some View {
@@ -179,7 +171,7 @@ struct ExistingCLISetupView: View {
     private var automationCard: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 10) {
-                stepTitle(number: 2, title: "Automated scans")
+                stepTitle(number: 2, title: L("Automated scans"))
                 AutomationChoiceFields(choice: automationChoice, isLocked: isLocked)
             }
         }
@@ -206,9 +198,8 @@ struct ExistingCLISetupView: View {
     private var runCard: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 12) {
-                stepTitle(number: 3, title: "First collection")
-                Text("Initializes each workspace, then fetches live jamf-cli data. "
-                    + "A few minutes per profile on on-prem servers; faster on cloud.")
+                stepTitle(number: 3, title: L("First collection"))
+                Text("Initializes each workspace, then fetches live jamf-cli data. A few minutes per profile on on-prem servers; faster on cloud.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
 
@@ -226,14 +217,14 @@ struct ExistingCLISetupView: View {
                 }
                 if flow.canContinue {
                     PNPButton(
-                        title: isFinishing ? "Finishing…" : "Continue to dashboard",
+                        title: isFinishing ? L("Finishing…") : L("Continue to dashboard"),
                         icon: "arrow.right", style: .gold, size: .lg
                     ) { finish() }
                     .disabled(isFinishing)
                 } else {
                     PNPButton(
-                        title: flow.isRunning ? "Collecting…"
-                            : (flow.canRetry ? "Try again" : "Initialize & run first collection"),
+                        title: flow.isRunning ? L("Collecting…")
+                            : (flow.canRetry ? L("Try again") : L("Initialize & run first collection")),
                         icon: flow.isRunning ? "hourglass" : "play.fill",
                         style: .gold, size: .lg
                     ) {
@@ -243,7 +234,7 @@ struct ExistingCLISetupView: View {
                     .disabled(flow.isRunning || flow.selected.isEmpty)
                     if flow.canRetry {
                         PNPButton(
-                            title: "Skip — set up later", icon: "arrow.right",
+                            title: L("Skip — set up later"), icon: "arrow.right",
                             style: .ghost, size: .lg
                         ) { skip() }
                     }
@@ -313,7 +304,7 @@ struct ExistingCLISetupView: View {
     private var collectingCaption: String {
         var caption = flow.progress.summary
         if let kind = flow.progress.currentKind {
-            caption += " · fetching \(kind)…"
+            caption += L(" · fetching \(kind)…")
         }
         return caption
     }

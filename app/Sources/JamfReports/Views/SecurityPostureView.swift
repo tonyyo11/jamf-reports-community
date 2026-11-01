@@ -20,8 +20,8 @@ struct SecurityPostureView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Posture",
-                title: "Security Posture",
+                kicker: L("Posture"),
+                title: L("Security Posture"),
                 subtitle: subtitle,
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
@@ -29,7 +29,7 @@ struct SecurityPostureView: View {
             )
 
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "security posture")
+                ScreenLoadingCard(what: L("security posture"))
             } else {
                 content
             }
@@ -59,9 +59,9 @@ struct SecurityPostureView: View {
         if let reason = snapshot.loadError {
             Card(padding: 24) {
                 ErrorStateView(
-                    title: "Couldn't read security data",
+                    title: L("Couldn't read security data"),
                     message: reason,
-                    commands: ["Re-run collection from Data Sources, then Refresh."],
+                    commands: [L("Re-run collection from Data Sources, then Refresh.")],
                     retry: { reloads += 1 }
                 )
             }
@@ -79,7 +79,7 @@ struct SecurityPostureView: View {
     private var subtitle: String? {
         if snapshot.totalDevices == 0 { return nil }
         let count = snapshot.totalDevices
-        return "Weighted across \(count) computer\(count == 1 ? "" : "s")."
+        return (count == 1 ? L("Weighted across \(count) computer.") : L("Weighted across \(count) computers."))
     }
 
     // MARK: - Data loading
@@ -125,7 +125,7 @@ struct SecurityPostureView: View {
     /// An Action Items caption with the values the tile leaves out because Jamf did not
     /// report them.
     static func actionCaption(_ base: String, notReported: Int) -> String {
-        notReported > 0 ? base + " · not reported: \(notReported)" : base
+        notReported > 0 ? base + L(" · not reported: \(notReported)") : base
     }
 
     /// summary.json writes no P0 without a FileVault count; the tile still sums the
@@ -141,15 +141,15 @@ struct SecurityPostureView: View {
         _ control: SecurityControl, on: Int, total: Int, fleet: SecurityFleetCounts
     ) -> String {
         let counts = fleet.controls[control]
-        if counts?.level == .ignore { return "Not counted by this workspace's policy" }
-        var base = "\(on) of \(total)"
-        if let missing = counts?.notReported, missing > 0 { base += " · not reported: \(missing)" }
+        if counts?.level == .ignore { return L("Not counted by this workspace's policy") }
+        var base = L("\(on) of \(total)")
+        if let missing = counts?.notReported, missing > 0 { base += L(" · not reported: \(missing)") }
         let lowered = fleet.fileVaultOffHardwareEncrypted
         if control == .fileVault, lowered > 0 {
-            return base + " · \(lowered) more hardware-encrypted, FileVault off"
+            return base + L(" · \(lowered) more hardware-encrypted, FileVault off")
         }
         if let warnings = counts?.warning, warnings > 0 {
-            return base + " · \(warnings) warning\(warnings == 1 ? "" : "s")"
+            return base + (warnings == 1 ? L(" · \(warnings) warning") : L(" · \(warnings) warnings"))
         }
         return base
     }
@@ -160,9 +160,8 @@ struct SecurityPostureView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "lock.shield",
-                title: "No security snapshot yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No security snapshot yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["security"])]
             )
@@ -208,7 +207,7 @@ struct SecurityPostureView: View {
         }
     }
 
-    static let noScoreCaption = "No factor had data"
+    static let noScoreCaption = L("No factor had data")
 
     /// The ring's number: a dash when nothing was scored, never a 0.0 that reads as grade F.
     static func scoreText(_ score: SecurityScore) -> String {
@@ -233,11 +232,10 @@ struct SecurityPostureView: View {
         // (an agent no Mac reports, a SOFA feed not yet cached). The line says what has no
         // data and asks for no collect.
         if !names.isEmpty {
-            sentences.append("No data for \(names), so not scored.")
+            sentences.append(L("No data for \(names), so not scored."))
         }
         if fileVaultNotCounted {
-            sentences.append("FileVault is not scored: every Mac with it off is "
-                + "hardware-encrypted and not counted by this workspace's policy.")
+            sentences.append(L("FileVault is not scored: every Mac with it off is hardware-encrypted and not counted by this workspace's policy."))
         }
         return sentences.joined(separator: " ")
     }
@@ -254,14 +252,14 @@ struct SecurityPostureView: View {
     private var kpiGrid: some View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
-            kpiTile(label: "FileVault", control: .fileVault, count: snapshot.fileVaultEncrypted)
-            kpiTile(label: "SIP", control: .sip, count: snapshot.sipEnabled)
-            kpiTile(label: "Firewall", control: .firewall, count: snapshot.firewallEnabled)
-            kpiTile(label: "Gatekeeper", control: .gatekeeper, count: snapshot.gatekeeperEnabled)
+            kpiTile(label: L("FileVault"), control: .fileVault, count: snapshot.fileVaultEncrypted)
+            kpiTile(label: L("SIP"), control: .sip, count: snapshot.sipEnabled)
+            kpiTile(label: L("Firewall"), control: .firewall, count: snapshot.firewallEnabled)
+            kpiTile(label: L("Gatekeeper"), control: .gatekeeper, count: snapshot.gatekeeperEnabled)
             StatTile(
-                label: "Total Computers",
+                label: L("Total Computers"),
                 value: "\(snapshot.totalDevices)",
-                sub: "Across active and recently inactive"
+                sub: L("Across active and recently inactive")
             )
         }
     }
@@ -282,7 +280,7 @@ struct SecurityPostureView: View {
             StatTile(
                 label: label,
                 value: "—",
-                sub: "Not in snapshot"
+                sub: L("Not in snapshot")
             )
         }
     }
@@ -292,13 +290,11 @@ struct SecurityPostureView: View {
     @ViewBuilder
     private var aiInsightCard: some View {
         if AIInsightCard.isOffered(demoMode: workspace.demoMode),
-           let input = FleetInsightInput.posture(.security(snapshot)) {
+           let input = Localization.english { FleetInsightInput.posture(.security(snapshot)) } {
             AIInsightCard(
-                title: "AI Posture Insight",
-                idleText: "Suggest which security control to work first using on-device "
-                    + "intelligence.",
-                provenanceText: "AI-generated from the counts on this screen — verify against "
-                    + "the tiles above.",
+                title: L("AI Posture Insight"),
+                idleText: L("Suggest which security control to work first using on-device intelligence."),
+                provenanceText: L("AI-generated from the counts on this screen — verify against the tiles above."),
                 input: input
             )
         }
@@ -307,16 +303,16 @@ struct SecurityPostureView: View {
     private var actionItemsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Action Items", trailing: "By priority")
+                SectionHeader(title: L("Action Items"), trailing: L("By priority"))
                 HStack(spacing: 12) {
                     actionTile(level: "P0", count: actionItems.p0,
                                caption: Self.actionCaption(
-                                   "FileVault / SIP / Firewall gaps",
+                                   L("FileVault / SIP / Firewall gaps"),
                                    notReported: snapshot.fleetCounts.p0NotReported),
                                tone: .danger)
                     actionTile(level: "P1", count: actionItems.p1,
                                caption: Self.actionCaption(
-                                   "Gatekeeper gaps",
+                                   L("Gatekeeper gaps"),
                                    notReported: snapshot.fleetCounts.p1NotReported),
                                tone: .warn)
                 }
@@ -332,7 +328,7 @@ struct SecurityPostureView: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Spacer()
-            PNPButton(title: "Open Computers", icon: Tab.devices.sfSymbol, size: .sm) {
+            PNPButton(title: L("Open Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
                 NotificationCenter.default.post(
                     name: .navigateToTab, object: nil,
                     userInfo: DevicesView.DeviceFilter.security.navigationUserInfo())
@@ -370,10 +366,10 @@ struct SecurityPostureView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "macOS Version Distribution")
+                    SectionHeader(title: L("macOS Version Distribution"))
                     if !snapshot.osVersions.isEmpty {
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
@@ -423,7 +419,7 @@ struct SecurityPostureView: View {
         let tail = sorted.dropFirst(Self.osChartTopCount)
         let tailCount = tail.reduce(0) { $0 + $1.count }
         let tailPct = tail.reduce(0.0) { $0 + $1.pct }
-        return top + [.init(osVersion: "Other (\(tail.count))", count: tailCount, pct: tailPct)]
+        return top + [.init(osVersion: L("Other (\(tail.count))"), count: tailCount, pct: tailPct)]
     }
 
     private var osChart: some View {
@@ -447,8 +443,8 @@ struct SecurityPostureView: View {
         .accessibilityLabel("macOS version distribution across the fleet")
         .accessibilityChartDescriptor(
             SectorChartDescriptor(
-                title: "macOS Version Distribution",
-                unit: " devices",
+                title: L("macOS Version Distribution"),
+                unit: L(" devices"),
                 slices: osChartRows.map { row in
                     SectorChartDescriptor.Slice(
                         label: row.osVersion,

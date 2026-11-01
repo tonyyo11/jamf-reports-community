@@ -33,8 +33,7 @@ struct ProtectProductControl: View {
             Button("Disconnect", role: .destructive, action: disconnect)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This turns off protect in this workspace's config.yaml and removes the "
-                + "profile name from it. The jamf-cli profile is not removed.")
+            Text("This turns off protect in this workspace's config.yaml and removes the profile name from it. The jamf-cli profile is not removed.")
         }
     }
 
@@ -42,20 +41,20 @@ struct ProtectProductControl: View {
     private var row: some View {
         switch state {
         case .notConnected:
-            PNPButton(title: "Add Jamf Protect", icon: "shield.lefthalf.filled", size: .sm,
+            PNPButton(title: L("Add Jamf Protect"), icon: "shield.lefthalf.filled", size: .sm,
                       action: onConnect)
                 .disabled(demoMode)
                 .help(demoMode ? DemoData.liveOnlyHelp : "")
         case .connected(let profile):
             HStack(spacing: 8) {
-                Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
-                profileText("Jamf Protect · \(profile)")
+                Pill(text: L("CONNECTED"), tone: .teal, icon: "checkmark")
+                profileText(L("Jamf Protect · \(profile)"))
                 actions
             }
         case .profileMissing(let profile):
             HStack(spacing: 8) {
-                Pill(text: "NOT FOUND", tone: .warn, icon: "exclamationmark.triangle")
-                profileText("Profile \(profile) not found in jamf-cli")
+                Pill(text: L("NOT FOUND"), tone: .warn, icon: "exclamationmark.triangle")
+                profileText(L("Profile \(profile) not found in jamf-cli"))
                 actions
             }
         }
@@ -63,11 +62,11 @@ struct ProtectProductControl: View {
 
     @ViewBuilder
     private var actions: some View {
-        PNPButton(title: "Reconnect", icon: "arrow.triangle.2.circlepath", size: .sm,
+        PNPButton(title: L("Reconnect"), icon: "arrow.triangle.2.circlepath", size: .sm,
                   action: onConnect)
             .disabled(demoMode)
             .help(demoMode ? DemoData.liveOnlyHelp : "")
-        PNPButton(title: "Disconnect", icon: "xmark.circle", style: .ghost, size: .sm) {
+        PNPButton(title: L("Disconnect"), icon: "xmark.circle", style: .ghost, size: .sm) {
             guard !demoMode else { return }
             confirmDisconnect = true
         }
@@ -103,10 +102,10 @@ struct ProtectProductControl: View {
             let report = try ProtectConnection.disconnect(workspace: workspace)
             errorText = nil
             note = ProtectConnection.disconnectedNote(profile: profile, profileMissing: missing)
-                + (report.backupName.map { " A copy of config.yaml is in \($0)." } ?? "")
+                + (report.backupName.map { L(" A copy of config.yaml is in \($0).") } ?? "")
             onDisconnected()
         } catch {
-            errorText = "Couldn't disconnect Jamf Protect: \(error.localizedDescription)"
+            errorText = L("Couldn't disconnect Jamf Protect: \(error.localizedDescription)")
         }
     }
 }

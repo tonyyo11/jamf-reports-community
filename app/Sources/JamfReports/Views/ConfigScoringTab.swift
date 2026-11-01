@@ -27,9 +27,8 @@ struct SecurityPolicyCard: View {
         let fileVaultIgnored = workspace.securityPolicy.fileVault == .ignore
         return Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
-                SectionHeader(title: "Security Policy")
-                Text("Decides what counts as a security gap on every screen, report and "
-                     + "scheduled run for this workspace. Saved to config.yaml.")
+                SectionHeader(title: L("Security Policy"))
+                Text("Decides what counts as a security gap on every screen, report and scheduled run for this workspace. Saved to config.yaml.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 VStack(alignment: .leading, spacing: 10) {
@@ -110,14 +109,13 @@ struct SecurityPolicyCard: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            Text("Apple silicon Macs and Intel Macs with the T2 chip always encrypt the "
-                 + "internal disk; with FileVault off it unlocks without a password.")
+            Text("Apple silicon Macs and Intel Macs with the T2 chip always encrypt the internal disk; with FileVault off it unlocks without a password.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
             if let issue {
                 writeNote(issue, level: workspace.securityPolicy.fileVaultOffHardwareEncrypted,
-                          for: "FileVault off on a hardware-encrypted Mac") {
+                          for: L("FileVault off on a hardware-encrypted Mac")) {
                     Self.writeAppliedHardwareLevel(in: workspace,
                         failure: $saveFailure, note: $saveNote)
                 }
@@ -228,7 +226,7 @@ struct SecurityPolicyCard: View {
     }
 
     static func writeTitle(for level: SecurityControlLevel?) -> String {
-        level.map { "Write \($0.rawValue)" } ?? "Remove the entry"
+        level.map { L("Write \($0.rawValue)") } ?? L("Remove the entry")
     }
 
     /// A successful write clears the failure and keeps what it did not keep as the card's note
@@ -243,7 +241,7 @@ struct SecurityPolicyCard: View {
             if let saved = report.note(for: profile) { note.wrappedValue = saved }
         } catch {
             failure.wrappedValue = SaveFailure(
-                message: "Couldn't save the security policy: \(error.localizedDescription)")
+                message: L("Couldn't save the security policy: \(error.localizedDescription)"))
         }
     }
 
@@ -277,20 +275,18 @@ struct SecurityPolicyCard: View {
     }
 
     static func levelCaption(_ issue: SecurityPolicyIssue) -> String {
-        "config.yaml says \"\(shown(issue.value))\", which is not fail, warning or ignore — "
-            + "using \(shown(issue.used))."
+        L("config.yaml says \"\(shown(issue.value))\", which is not fail, warning or ignore — using \(shown(issue.used)).")
     }
 
     /// Names the entry as `score_factors[N]`, with what the app did with it.
     static func factorCaption(_ issue: SecurityPolicyIssue) -> String {
         let path = issue.keyPath.replacingOccurrences(of: "security_policy.", with: "")
         let typed = issue.value.isEmpty ? "" : " (\"\(shown(issue.value))\")"
-        return "config.yaml's \(shownPath(path))\(typed): \(issue.used)."
+        return L("config.yaml's \(shownPath(path))\(typed): \(issue.used).")
     }
 
     static func shapeCaption(_ issue: SecurityPolicyIssue) -> String {
-        "config.yaml's \(shownPath(issue.keyPath)) is \"\(shown(issue.value))\", which is not "
-            + "a set of settings — using \(shown(issue.used))."
+        L("config.yaml's \(shownPath(issue.keyPath)) is \"\(shown(issue.value))\", which is not a set of settings — using \(shown(issue.used)).")
     }
 
     /// Nil when every key in the block is one the app reads.
@@ -298,7 +294,7 @@ struct SecurityPolicyCard: View {
         let paths = issues.filter { $0.used.isEmpty }.map { shownPath($0.keyPath) }
         guard !paths.isEmpty else { return nil }
         let noun = paths.count == 1 ? "setting" : "settings"
-        return "config.yaml has \(paths.count) security_policy \(noun) the app does not read: "
+        return L("config.yaml has \(paths.count) security_policy \(noun) the app does not read: ")
             + paths.joined(separator: ", ") + "."
     }
 

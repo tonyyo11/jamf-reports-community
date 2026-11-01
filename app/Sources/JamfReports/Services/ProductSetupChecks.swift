@@ -7,9 +7,9 @@ enum ProductSetupChecks {
     enum Product: Sendable {
         case protect, school
 
-        var name: String { self == .protect ? "Jamf Protect" : "Jamf School" }
+        var name: String { self == .protect ? L("Jamf Protect") : L("Jamf School") }
         var credentials: String {
-            self == .protect ? "client ID and secret" : "network ID and API key"
+            self == .protect ? L("client ID and secret") : L("network ID and API key")
         }
     }
 
@@ -35,28 +35,24 @@ enum ProductSetupChecks {
     static func verdict(_ attempt: ConnectionCheck.Attempt?, product: Product) -> Verdict {
         guard let attempt else {
             return .note(
-                "The \(product.name) credentials were not checked: jamf-cli did not start.")
+                L("The \(product.name) credentials were not checked: jamf-cli did not start."))
         }
         switch attempt.exitCode {
         case 0:
             return .accepted
         case CLIBridge.exitCodeTimedOut:
-            return .note("The \(product.name) credentials were not checked: no answer within "
-                + "\(Int(ConnectionCheck.timeout)) seconds.")
+            return .note(L("The \(product.name) credentials were not checked: no answer within \(Int(ConnectionCheck.timeout)) seconds."))
         case CLIBridge.exitCodePermissionDenied:
-            return .note("\(product.name) accepted the credentials, but they lack a permission "
-                + "the reports read.")
+            return .note(L("\(product.name) accepted the credentials, but they lack a permission the reports read."))
         case CLIBridge.exitCodeRateLimited:
-            return .note("The \(product.name) credentials were not checked: the server is "
-                + "throttling requests.")
+            return .note(L("The \(product.name) credentials were not checked: the server is throttling requests."))
         default:
             let detail = JamfCLIErrorEnvelope.parse(attempt.stdout)?.message
-                .map { "exit \(attempt.exitCode): \(String(LogRedactor.redact($0).prefix(200)))" }
-                ?? "exit \(attempt.exitCode)"
+                .map { L("exit \(attempt.exitCode): \(String(LogRedactor.redact($0).prefix(200)))") }
+                ?? L("exit \(attempt.exitCode)")
             // School and Protect answer a rejected login with exit 1, so a failure is not
             // proof the credentials are wrong; the profile stays and connecting again replaces it.
-            return .failed("jamf-cli saved the profile, but reading \(product.name) with it "
-                + "failed (\(detail)). Check the \(product.credentials) and connect again.")
+            return .failed(L("jamf-cli saved the profile, but reading \(product.name) with it failed (\(detail)). Check the \(product.credentials) and connect again."))
         }
     }
 
@@ -91,8 +87,7 @@ enum ProductSetupChecks {
         previous: (readable: Bool, name: String?), setUp: String, binary: URL
     ) async -> String? {
         guard previous.readable else {
-            return "jamf-cli may now use \(setUp) as its default profile; check with "
-                + "jamf-cli config list."
+            return L("jamf-cli may now use \(setUp) as its default profile; check with jamf-cli config list.")
         }
         let previous = previous.name
         guard let arguments = setDefaultArguments(previous: previous, setUp: setUp),
@@ -100,7 +95,6 @@ enum ProductSetupChecks {
         let outcome = await JamfCLIProbe.runOutcomeAsync(
             executable: binary, arguments: arguments)
         if case .completed(let output) = outcome, output.exitCode == 0 { return nil }
-        return "jamf-cli now uses \(setUp) as its default profile. To use \(previous) again: "
-            + "jamf-cli config set-default -- " + ProfileName.shellWord(previous)
+        return L("jamf-cli now uses \(setUp) as its default profile. To use \(previous) again: jamf-cli config set-default -- ") + ProfileName.shellWord(previous)
     }
 }

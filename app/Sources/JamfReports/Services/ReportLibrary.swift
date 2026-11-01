@@ -251,26 +251,26 @@ struct ReportLibrary {
     static func kindLabel(forFilename filename: String) -> String {
         let lowered = filename.lowercased()
         let exports: [(prefix: String, label: String)] = [
-            ("period-report-", "Period report"),
-            ("patch-compliance-", "Patch compliance CSV"),
-            ("audit-findings-", "Audit findings CSV"),
-            ("outreach-stale-devices-", "Offline outreach CSV"),
-            ("devices-", "Devices CSV"),
-            ("school-report_", "Jamf School workbook"),
+            ("period-report-", L("Period report")),
+            ("patch-compliance-", L("Patch compliance CSV")),
+            ("audit-findings-", L("Audit findings CSV")),
+            ("outreach-stale-devices-", L("Offline outreach CSV")),
+            ("devices-", L("Devices CSV")),
+            ("school-report_", L("Jamf School workbook")),
         ]
         if let match = exports.first(where: { lowered.hasPrefix($0.prefix) }) {
             return match.label
         }
-        if ReportEngine.isCSVFolderName(lowered) { return "CSV folder" }
+        if ReportEngine.isCSVFolderName(lowered) { return L("CSV folder") }
         switch URL(fileURLWithPath: lowered).pathExtension {
-        case "xlsx": return "Workbook"
-        case "html": return "HTML report"
-        case "pdf": return "PDF report"
+        case "xlsx": return L("Workbook")
+        case "html": return L("HTML report")
+        case "pdf": return L("PDF report")
         case "csv":
             let isInventory = lowered.hasPrefix("inventory_")
                 || lowered.hasPrefix("automation_inventory_")
-            return isInventory ? "Inventory CSV" : "CSV export"
-        default: return "Report file"
+            return isInventory ? L("Inventory CSV") : L("CSV export")
+        default: return L("Report file")
         }
     }
 

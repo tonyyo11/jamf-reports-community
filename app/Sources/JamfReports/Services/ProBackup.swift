@@ -90,8 +90,7 @@ enum ProBackup {
             return .skip(reason: syncedStorageReason(place: place), kind: .declined)
         case .awaitingConfirmation:
             return .skip(
-                reason: "\(SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue) is on in "
-                    + "config.yaml and waiting for confirmation on this Mac (Config Doctor)",
+                reason: "\(SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue) is on in config.yaml and waiting for confirmation on this Mac (Config Doctor)",
                 kind: .awaitingConfirmation)
         case .notChosen:
             let left = BackupMaintenance.graceRunsBeforeAsking - graceRunsUsed()
@@ -104,10 +103,7 @@ enum ProBackup {
 
     /// The concern and how to allow it; the organization's storage policy decides, not the app.
     static func syncedStorageReason(place: String) -> String {
-        "this workspace is \(place), and a Jamf Pro backup contains LDAP, SMTP and API-client "
-            + "configuration and scripts that can hold secrets. If your organization's storage "
-            + "policy allows it, turn on Jamf Pro backups for this folder in Backups "
-            + "(\(SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue))"
+        "this workspace is \(place), and a Jamf Pro backup contains LDAP, SMTP and API-client configuration and scripts that can hold secrets. If your organization's storage policy allows it, turn on Jamf Pro backups for this folder in Backups (\(SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue))"
     }
 
     /// The `[warn]` line for a skipped Jamf Pro part.
@@ -122,9 +118,9 @@ enum ProBackup {
 
     static func choiceNeededMessage(place: String, runsLeft: Int?) -> String {
         let tail = runsLeft.map {
-            "; \($0) scheduled backup\($0 == 1 ? "" : "s") will still run before they stop"
+            ($0 == 1 ? "; \($0) scheduled backup will still run before they stop" : "; \($0) scheduled backups will still run before they stop")
         } ?? "; Jamf Pro backups are stopped until it is made"
-        return "Jamf Pro backups on this workspace (\(place)) need a choice in Backups" + tail
+        return "Jamf Pro backups on this workspace (\(place)) need a choice in Backups\(tail)"
     }
 
     /// Where a Jamf Pro workspace's backups sit on storage other Macs reach, and whether this

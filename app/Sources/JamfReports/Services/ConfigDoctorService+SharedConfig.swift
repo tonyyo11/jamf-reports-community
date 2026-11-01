@@ -18,20 +18,15 @@ extension ConfigDoctorService {
             return DoctorRowItem(
                 id: drift.key.rawValue,
                 text: sharedConfigText(drift, workspace: check.workspace)
-                    + (hidden ? "\n  contains hidden characters: fix it in config.yaml; it "
-                        + "cannot be confirmed here" : ""),
+                    + (hidden ? L("\n  contains hidden characters: fix it in config.yaml; it cannot be confirmed here") : ""),
                 action: unreadable || hidden ? nil : .confirmSharedConfig([drift]))
         }
         return [DoctorRow(
             id: "shared_config.drift",
             severity: .warn,
-            title: "Shared config changed since this Mac pinned it",
+            title: L("Shared config changed since this Mac pinned it"),
             detail: items.map(\.text).joined(separator: "\n\n"),
-            hint: "A Mac sharing this workspace edited config.yaml, or it was edited here. Until "
-                + "you confirm, every screen, report and run on this Mac uses the safe value "
-                + "for each key (workspace Generated Reports folder, archive instead of "
-                + "delete, no webhook send, no Protect collection, no logo, the history file "
-                + "beside the report, no report timestamp).",
+            hint: L("A Mac sharing this workspace edited config.yaml, or it was edited here. Until you confirm, every screen, report and run on this Mac uses the safe value for each key (workspace Generated Reports folder, archive instead of delete, no webhook send, no Protect collection, no logo, the history file beside the report, no report timestamp)."),
             action: unreadable ? .confirmSharedConfig(check.drifts) : nil,
             items: items
         )]
@@ -47,22 +42,21 @@ extension ConfigDoctorService {
         let key = drift.key == .notifyURL ? "notify.url" : drift.key.rawValue
         var lines = [
             key,
-            "  pinned: " + (drift.pinnedIsNote ? drift.pinned : sharedConfigValue(drift.pinned)),
-            "  now:    " + sharedConfigValue(drift.current),
+            L("  pinned: ") + (drift.pinnedIsNote ? drift.pinned : sharedConfigValue(drift.pinned)),
+            L("  now:    ") + sharedConfigValue(drift.current),
         ]
         if drift.key.isFolder, let workspace, !drift.current.isEmpty {
             let destination = WorkspacePaths.destination(of: drift.current, workspace: workspace)
             let place = destination.insideWorkspace ? "inside" : "outside"
             let path = ConfigSchema.fullDisplayText(destination.path)
-            lines.append("  lands:  \(path.text)\(path.truncated ? " (truncated)" : "") "
-                + "(\(place) this workspace)")
+            lines.append((path.truncated ? L("  lands:  \(path.text) (truncated) (\(place) this workspace)") : L("  lands:  \(path.text) (\(place) this workspace)")))
         }
         return lines.joined(separator: "\n")
     }
 
     private static func sharedConfigValue(_ value: String) -> String {
-        guard !value.isEmpty else { return "(not set)" }
+        guard !value.isEmpty else { return L("(not set)") }
         let shown = ConfigSchema.fullDisplayText(value)
-        return "\"\(shown.text)\"" + (shown.truncated ? " (truncated)" : "")
+        return "\"\(shown.text)\"" + (shown.truncated ? L(" (truncated)") : "")
     }
 }

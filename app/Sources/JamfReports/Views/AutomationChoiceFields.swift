@@ -6,7 +6,7 @@ struct AutomationChoiceFields: View {
     @Binding var choice: AutomationSetupChoice
     var isLocked = false
 
-    private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private static let weekdays = [L("Sun"), L("Mon"), L("Tue"), L("Wed"), L("Thu"), L("Fri"), L("Sat")]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -15,8 +15,7 @@ struct AutomationChoiceFields: View {
             }
             .toggleStyle(.switch)
             .disabled(isLocked)
-            Text("A daily collect keeps dashboards and Trends current; a weekly deep scan "
-                + "runs the two per-device queries. Adjust anytime from the Automation tab.")
+            Text("A daily collect keeps dashboards and Trends current; a weekly deep scan runs the two per-device queries. Adjust anytime from the Automation tab.")
                 .font(.footnote)
                 .foregroundStyle(Theme.Colors.fgMuted)
             if choice.enabled {

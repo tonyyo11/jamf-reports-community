@@ -66,41 +66,36 @@ private struct GuideRow: Identifiable {
         GuideRow(
             id: "templates",
             icon: "doc.badge.plus",
-            title: "Report templates",
-            description: "Generate\u{2026} on the Generated Reports screen makes the Executive, "
-                + "Operational, Compliance, Asset, Security Posture or School template, or "
-                + "your own choice of sheets. The Overview's Generate makes the Full Instance "
-                + "report, with every sheet; the command-line tool takes the same templates.",
+            title: L("Report templates"),
+            description: L("Generate\u{2026} on the Generated Reports screen makes the Executive, Operational, Compliance, Asset, Security Posture or School template, or your own choice of sheets. The Overview's Generate makes the Full Instance report, with every sheet; the command-line tool takes the same templates."),
             destination: .reports
         ),
         GuideRow(
             id: "charts",
             icon: "chart.bar.xaxis",
-            title: "Chart options",
-            description: "Per-major-version macOS charts, and whether chart images are saved "
-                + "beside the workbook.",
+            title: L("Chart options"),
+            description: L("Per-major-version macOS charts, and whether chart images are saved beside the workbook."),
             destination: nil
         ),
         GuideRow(
             id: "score",
             icon: "gauge.medium",
-            title: "Score weights",
-            description: "Adjust the Security Score factor weights (FileVault, SIP, Firewall, "
-                + "EDR, mSCP, and more) on the Config → Scoring tab.",
+            title: L("Score weights"),
+            description: L("Adjust the Security Score factor weights (FileVault, SIP, Firewall, EDR, mSCP, and more) on the Config → Scoring tab."),
             destination: .config
         ),
         GuideRow(
             id: "sidebar",
             icon: "sidebar.left",
-            title: "Sidebar & tab visibility",
-            description: "Show or hide tabs from the sidebar on the Settings screen.",
+            title: L("Sidebar & tab visibility"),
+            description: L("Show or hide tabs from the sidebar on the Settings screen."),
             destination: .settings
         ),
         GuideRow(
             id: "groups",
             icon: "rectangle.3.group",
-            title: "Report groups",
-            description: "Group profiles into consolidated fleet reports on the Automation screen.",
+            title: L("Report groups"),
+            description: L("Group profiles into consolidated fleet reports on the Automation screen."),
             destination: .schedules
         ),
     ]
@@ -130,7 +125,7 @@ private struct GuideRowView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let dest = row.destination {
                     PNPButton(
-                        title: "Go to \(dest.label)",
+                        title: L("Go to \(dest.label)"),
                         icon: "arrow.right",
                         style: .ghost,
                         size: .sm

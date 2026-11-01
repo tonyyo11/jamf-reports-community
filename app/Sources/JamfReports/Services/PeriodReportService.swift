@@ -150,16 +150,18 @@ enum PeriodReportService {
                 .compactMap { $0 }
         }
 
-        let model = PeriodReportModel.build(
-            period: period, metrics: selected, summaries: summaries,
-            eaSnapshots: eaSnapshots, profile: profile, generatedAt: now)
+        let model = Localization.english {
+            PeriodReportModel.build(
+                period: period, metrics: selected, summaries: summaries,
+                eaSnapshots: eaSnapshots, profile: profile, generatedAt: now)
+        }
 
         let dir = try WorkspacePaths.outputDir(for: profile)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(ExportNaming.filename(
             kind: PeriodReportEmitter.reportKind(for: model),
             profile: profile, ext: "xlsx", now: now))
-        try PeriodReportEmitter.emit(model: model, to: url)
+        try Localization.english { try PeriodReportEmitter.emit(model: model, to: url) }
         return url
     }
 

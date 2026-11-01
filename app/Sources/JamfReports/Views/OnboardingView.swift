@@ -17,11 +17,7 @@ struct OnboardingView: View {
 
     /// One profile holds one environment ID; an integration scoped to several needs one profile
     /// each, with the same client ID and secret.
-    static let platformProfileNote = "A profile holds one environment. To report on more "
-        + "environments from the same integration, use Add environments in Data Sources after "
-        + "setup; they reuse this client ID and secret. jamf-cli's Jamf Pro and Classic "
-        + "commands that the gateway refuses need a separate Jamf Pro OAuth profile; Jamf "
-        + "Reports runs none of them."
+    static let platformProfileNote = L("A profile holds one environment. To report on more environments from the same integration, use Add environments in Data Sources after setup; they reuse this client ID and secret. jamf-cli's Jamf Pro and Classic commands that the gateway refuses need a separate Jamf Pro OAuth profile; Jamf Reports runs none of them.")
 
     /// The privileges for the commands a collect runs, each labelled with its source; the 1.31.1
     /// list until the installed jamf-cli's catalog has been read.
@@ -147,8 +143,7 @@ struct OnboardingView: View {
     private var stepHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
             Kicker(
-                text: "Step \(flow.stepPosition) of \(flow.stepCount) - "
-                    + flow.currentStep.label,
+                text: L("Step \(flow.stepPosition) of \(flow.stepCount) - \(flow.currentStep.label)"),
                 tone: .gold
             )
             Text(headerTitle)
@@ -164,47 +159,45 @@ struct OnboardingView: View {
 
     private var headerTitle: String {
         switch flow.currentStep {
-        case .welcome: "Build your Jamf Reports workspace."
-        case .installCLI: "Install the Jamf CLI."
-        case .workspace: "Name the workspace."
+        case .welcome: L("Build your Jamf Reports workspace.")
+        case .installCLI: L("Install the Jamf CLI.")
+        case .workspace: L("Name the workspace.")
         case .authenticate:
             flow.proConnectionType == .platformGateway
-                ? "Connect with Jamf Account."
-                : "Connect to Jamf Pro."
-        case .validate: "Validate the profile."
-        case .addProducts: "Add more products."
+                ? L("Connect with Jamf Account.")
+                : L("Connect to Jamf Pro.")
+        case .validate: L("Validate the profile.")
+        case .addProducts: L("Add more products.")
         case .firstReport:
             flow.productPath == .school
-                ? "Generate the first report."
-                : "Collect and generate the first report."
-        case .schoolConnect: "Connect Jamf School."
+                ? L("Generate the first report.")
+                : L("Collect and generate the first report.")
+        case .schoolConnect: L("Connect Jamf School.")
         }
     }
 
     private var headerSubtitle: String {
         switch flow.currentStep {
         case .welcome:
-            "This wizard creates the workspace folders, registers a jamf-cli profile, writes config.yaml and runs the first report."
+            L("This wizard creates the workspace folders, registers a jamf-cli profile, writes config.yaml and runs the first report.")
         case .installCLI:
-            "The app detects jamf-cli locally. Installation stays under your control; copy the Homebrew command if it is missing."
+            L("The app detects jamf-cli locally. Installation stays under your control; copy the Homebrew command if it is missing.")
         case .workspace:
-            "The profile name becomes both the jamf-cli profile id and the folder under "
-            + "\(WorkspaceRootStore.displayRoot)."
+            L("The profile name becomes both the jamf-cli profile id and the folder under \(WorkspaceRootStore.displayRoot).")
         case .authenticate:
             flow.proConnectionType == .platformGateway
-                ? "Registers a jamf-cli profile with Platform API auth. Secrets are passed over stdin and cleared immediately."
-                : "Jamf Reports passes the client secret to jamf-cli over stdin and clears it as soon as jamf-cli has saved the profile."
+                ? L("Registers a jamf-cli profile with Platform API auth. Secrets are passed over stdin and cleared immediately.")
+                : L("Jamf Reports passes the client secret to jamf-cli over stdin and clears it as soon as jamf-cli has saved the profile.")
         case .validate:
-            "jamf-cli validates the saved profile before report setup continues."
+            L("jamf-cli validates the saved profile before report setup continues.")
         case .addProducts:
-            "Optionally connect Jamf Protect. It is skippable — you can add it later from Data Sources. Jamf School uses its own workspace."
+            L("Optionally connect Jamf Protect. It is skippable — you can add it later from Data Sources. Jamf School uses its own workspace.")
         case .firstReport:
             flow.productPath == .school
-                ? "The final step runs generate for the new profile and streams output here."
-                : "Collects a snapshot, then generates the first report. The per-device scans "
-                    + "run later on their schedule, or via Collect now on Overview."
+                ? L("The final step runs generate for the new profile and streams output here.")
+                : L("Collects a snapshot, then generates the first report. The per-device scans run later on their schedule, or via Collect now on Overview.")
         case .schoolConnect:
-            "Registers a jamf-cli Jamf School profile with your Network ID and API key over stdin, then sets this workspace to report on Jamf School."
+            L("Registers a jamf-cli Jamf School profile with your Network ID and API key over stdin, then sets this workspace to report on Jamf School.")
         }
     }
 
@@ -245,7 +238,7 @@ struct OnboardingView: View {
                     }
                     Spacer()
                     if let exit = flow.validationExitCode {
-                        Pill(text: "EXIT \(exit)", tone: exit == 0 ? .teal : .danger)
+                        Pill(text: L("EXIT \(exit)"), tone: exit == 0 ? .teal : .danger)
                     }
                 }
             }
@@ -258,20 +251,19 @@ struct OnboardingView: View {
 
             if flow.offersContinueWithoutValidating {
                 HStack(spacing: 10) {
-                    Text("The profile is saved even though validation failed. Fix the URL, "
-                        + "client ID, or secret later from Data Sources, or continue now.")
+                    Text("The profile is saved even though validation failed. Fix the URL, client ID, or secret later from Data Sources, or continue now.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    PNPButton(title: "Continue without validating") {
+                    PNPButton(title: L("Continue without validating")) {
                         flow.nextStep()
                     }
                 }
             }
 
             logViewer(
-                title: flow.isValidatingConnection ? "jamf-cli validate running" : "jamf-cli validate output",
+                title: flow.isValidatingConnection ? L("jamf-cli validate running") : L("jamf-cli validate output"),
                 lines: flow.validationOutput,
                 exitCode: flow.validationExitCode
             )
@@ -295,9 +287,9 @@ struct OnboardingView: View {
                     // Wraps: one row of these pills is wider than the setup column opened
                     // from Settings, and it pushed the sidebar off the window.
                     FlowLayout(spacing: 8) {
-                        Pill(text: "Owner-only folders", tone: .teal, icon: "lock.fill")
-                        Pill(text: "Secret never stored by the app", tone: .gold, icon: "key.fill")
-                        Pill(text: "No Terminal needed", tone: .muted, icon: "terminal")
+                        Pill(text: L("Owner-only folders"), tone: .teal, icon: "lock.fill")
+                        Pill(text: L("Secret never stored by the app"), tone: .gold, icon: "key.fill")
+                        Pill(text: L("No Terminal needed"), tone: .muted, icon: "terminal")
                     }
                 }
             }
@@ -314,12 +306,12 @@ struct OnboardingView: View {
                             .font(.headline)
                             .foregroundStyle(Theme.Colors.fg)
                         Mono(
-                            text: flow.jamfCLIVersion.map { "Version \($0)" } ?? "Search paths: /opt/homebrew/bin, /usr/local/bin, /usr/bin, /bin",
+                            text: flow.jamfCLIVersion.map { L("Version \($0)") } ?? L("Search paths: /opt/homebrew/bin, /usr/local/bin, /usr/bin, /bin"),
                             size: 11.5
                         )
                     }
                     Spacer()
-                    PNPButton(title: "Re-check", icon: "arrow.clockwise") {
+                    PNPButton(title: L("Re-check"), icon: "arrow.clockwise") {
                         Task { await flow.refreshJamfCLIStatus() }
                     }
                     .disabled(flow.isCheckingJamfCLI)
@@ -329,8 +321,7 @@ struct OnboardingView: View {
             // Setup is the way out of demo mode, so it checks the real jamf-cli rather than
             // showing a demo one; say so, since the title bar still reads demo.
             if workspaceStore.demoMode {
-                Text("Demo mode is on. Setup checks the jamf-cli on this Mac because it "
-                    + "creates a real profile, and demo mode ends when setup finishes.")
+                Text("Demo mode is on. Setup checks the jamf-cli on this Mac because it creates a real profile, and demo mode ends when setup finishes.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -340,7 +331,7 @@ struct OnboardingView: View {
                 HStack(spacing: 10) {
                     Mono(text: flow.brewCommand, size: 12, color: Theme.Colors.fg2)
                     Spacer()
-                    PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
+                    PNPButton(title: L("Copy"), icon: "doc.on.doc", size: .sm) {
                         SystemActions.copyToClipboard(flow.brewCommand)
                     }
                 }
@@ -349,8 +340,7 @@ struct OnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("No Homebrew? Download the installer package (.pkg) from the jamf-cli "
-                    + "GitHub releases page, run it, then click Re-check above.")
+                Text("No Homebrew? Download the installer package (.pkg) from the jamf-cli GitHub releases page, run it, then click Re-check above.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -373,15 +363,15 @@ struct OnboardingView: View {
     }
 
     private var cliStatusTitle: String {
-        if flow.isCheckingJamfCLI { return "Checking for jamf-cli\u{2026}" }
-        return flow.jamfCLIInstalled ? "jamf-cli detected" : "jamf-cli not detected"
+        if flow.isCheckingJamfCLI { return L("Checking for jamf-cli\u{2026}") }
+        return flow.jamfCLIInstalled ? L("jamf-cli detected") : L("jamf-cli not detected")
     }
 
     private var workspaceStep: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Profile name", trailing: "required")
+                    FieldLabel(label: L("Profile name"), trailing: "required")
                     PNPTextField(value: binding(\.profileName), placeholder: "my-tenant", mono: true)
                     HStack(spacing: 6) {
                         switch OnboardingFlow.feedback(
@@ -396,21 +386,21 @@ struct OnboardingView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(Theme.Colors.danger)
                         }
-                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
+                        FieldHelp(text: L("Any name without line breaks or spaces at either end."))
                     }
                 }
 
                 Divider().background(Theme.Colors.hairline)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    FieldLabel(label: "Workspace folder")
+                    FieldLabel(label: L("Workspace folder"))
                     HStack(spacing: 8) {
                         Image(systemName: "folder")
                             .foregroundStyle(Theme.Colors.goldBright)
                         Mono(text: flow.workspacePreviewPath, size: 12.5, color: Theme.Colors.fg2)
                     }
                     if flow.workspaceCreated {
-                        Pill(text: "CREATED", tone: .teal, icon: "checkmark")
+                        Pill(text: L("CREATED"), tone: .teal, icon: "checkmark")
                     }
                 }
 
@@ -436,7 +426,7 @@ struct OnboardingView: View {
     private var connectionTypePicker: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 8) {
-                FieldLabel(label: "Connection type")
+                FieldLabel(label: L("Connection type"))
                 Picker("", selection: Binding(
                     get: { flow.proConnectionType },
                     set: { flow.proConnectionType = $0 }
@@ -456,26 +446,26 @@ struct OnboardingView: View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Jamf Pro URL")
+                    FieldLabel(label: L("Jamf Pro URL"))
                     PNPTextField(value: binding(\.jamfURL), placeholder: "https://example.jamfcloud.com")
                     validationLine(
                         value: flow.jamfURL, ok: flow.isJamfURLValid,
-                        text: "Must use https:// and include a host"
+                        text: L("Must use https:// and include a host")
                     )
                 }
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Client ID")
+                        FieldLabel(label: L("Client ID"))
                         PNPTextField(
-                            value: binding(\.clientID), placeholder: "OAuth client ID", mono: true)
+                            value: binding(\.clientID), placeholder: L("OAuth client ID"), mono: true)
                     }
                     .frame(maxWidth: .infinity)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Client Secret")
+                        FieldLabel(label: L("Client Secret"))
                         SecureSecretField(
-                            placeholder: "OAuth client secret",
+                            placeholder: L("OAuth client secret"),
                             onTextChange: { flow.secretFieldHasText = $0 }
                         ) { data in
                             flow.setClientSecret(data)
@@ -489,9 +479,9 @@ struct OnboardingView: View {
                 privilegesBox
 
                 if flow.profileRegistered {
-                    Pill(text: "PROFILE REGISTERED", tone: .teal, icon: "checkmark")
+                    Pill(text: L("PROFILE REGISTERED"), tone: .teal, icon: "checkmark")
                 } else if flow.isRegisteringProfile {
-                    Pill(text: "SAVING PROFILE", tone: .gold, icon: "arrow.clockwise")
+                    Pill(text: L("SAVING PROFILE"), tone: .gold, icon: "arrow.clockwise")
                 }
             }
         }
@@ -511,13 +501,10 @@ struct OnboardingView: View {
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("1. In account.jamf.com, open Integrations → Create integration")
-                        Text("2. Scope level: Platform environment (recommended), choosing "
-                            + "the environment that holds your Jamf Pro tenant. Tenant level "
-                            + "is legacy and cannot reach Compliance Benchmarks or Blueprints")
+                        Text("2. Scope level: Platform environment (recommended), choosing the environment that holds your Jamf Pro tenant. Tenant level is legacy and cannot reach Compliance Benchmarks or Blueprints")
                         Text("3. Permissions: Read only, for the report areas you want")
                         Text("4. Copy the client ID and the client secret (shown only once)")
-                        Text("5. Copy the environment ID: open the integration and click the "
-                            + "environment pill")
+                        Text("5. Copy the environment ID: open the integration and click the environment pill")
                         Text("6. Integrations are valid for six months")
                     }
                     .font(.footnote)
@@ -535,7 +522,7 @@ struct OnboardingView: View {
                     GatewayRegionPicker(flow: flow)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        FieldLabel(label: "Platform API scope")
+                        FieldLabel(label: L("Platform API scope"))
                         SegmentedControl(
                             selection: Binding(
                                 get: { flow.platformScope },
@@ -564,17 +551,17 @@ struct OnboardingView: View {
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Client ID")
+                            FieldLabel(label: L("Client ID"))
                             PNPTextField(
                                 value: binding(\.platformClientID),
-                                placeholder: "Platform client ID", mono: true)
+                                placeholder: L("Platform client ID"), mono: true)
                         }
                         .frame(maxWidth: .infinity)
 
                         VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Client Secret")
+                            FieldLabel(label: L("Client Secret"))
                             SecureSecretField(
-                                placeholder: "Platform client secret",
+                                placeholder: L("Platform client secret"),
                                 onTextChange: { flow.platformSecretFieldHasText = $0 }
                             ) { data in
                                 flow.setPlatformClientSecret(data)
@@ -585,9 +572,9 @@ struct OnboardingView: View {
                     }
 
                     if flow.profileRegistered {
-                        Pill(text: "PROFILE REGISTERED", tone: .teal, icon: "checkmark")
+                        Pill(text: L("PROFILE REGISTERED"), tone: .teal, icon: "checkmark")
                     } else if flow.isRegisteringProfile {
-                        Pill(text: "SAVING PROFILE", tone: .gold, icon: "arrow.clockwise")
+                        Pill(text: L("SAVING PROFILE"), tone: .gold, icon: "arrow.clockwise")
                     }
                 }
             }
@@ -597,8 +584,7 @@ struct OnboardingView: View {
     private var addProductsStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             protectProductCard
-            Text("Jamf School uses its own workspace. Add one later with Settings › Add "
-                + "connection, or Add workspace or product in the sidebar's workspace menu.")
+            Text("Jamf School uses its own workspace. Add one later with Settings › Add connection, or Add workspace or product in the sidebar's workspace menu.")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -638,7 +624,7 @@ struct OnboardingView: View {
                     }
                     Spacer()
                     if flow.protectConnected {
-                        Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+                        Pill(text: L("CONNECTED"), tone: .teal, icon: "checkmark")
                     }
                 }
 
@@ -655,7 +641,7 @@ struct OnboardingView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
 
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Protect URL")
+                        FieldLabel(label: L("Protect URL"))
                         PNPTextField(
                             value: binding(\.protectURL),
                             placeholder: "https://yourorg.protect.jamfcloud.com"
@@ -663,22 +649,22 @@ struct OnboardingView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Profile name")
+                        FieldLabel(label: L("Profile name"))
                         PNPTextField(value: binding(\.protectProfileName), placeholder: "protect", mono: true)
-                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
+                        FieldHelp(text: L("Any name without line breaks or spaces at either end."))
                     }
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Client ID")
+                            FieldLabel(label: L("Client ID"))
                             PNPTextField(value: binding(\.protectClientID), mono: true)
                         }
                         .frame(maxWidth: .infinity)
 
                         VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Client Secret")
+                            FieldLabel(label: L("Client Secret"))
                             SecureSecretField(
-                                placeholder: "Protect client secret",
+                                placeholder: L("Protect client secret"),
                                 onTextChange: { flow.protectSecretFieldHasText = $0 }
                             ) { data in
                                 flow.setProtectClientSecret(data)
@@ -697,7 +683,7 @@ struct OnboardingView: View {
 
                     HStack(spacing: 10) {
                         PNPButton(
-                            title: flow.isConnectingProtect ? "Connecting…" : "Connect Protect",
+                            title: flow.isConnectingProtect ? L("Connecting…") : L("Connect Protect"),
                             icon: "shield.lefthalf.filled",
                             style: .gold,
                             size: .sm
@@ -748,7 +734,7 @@ struct OnboardingView: View {
                         }
                         Spacer()
                         if flow.schoolConnected {
-                            Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+                            Pill(text: L("CONNECTED"), tone: .teal, icon: "checkmark")
                         }
                     }
 
@@ -772,30 +758,30 @@ struct OnboardingView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
 
                         VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "School URL")
+                            FieldLabel(label: L("School URL"))
                             PNPTextField(
                                 value: binding(\.schoolURL),
                                 placeholder: "https://yourorg.jamfcloud.com"
                             )
                             validationLine(
                                 value: flow.schoolURL, ok: flow.isSchoolURLValid,
-                                text: "Must use https:// and include a host"
+                                text: L("Must use https:// and include a host")
                             )
                         }
 
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 5) {
-                                FieldLabel(label: "Network ID")
+                                FieldLabel(label: L("Network ID"))
                                 PNPTextField(
-                                    value: binding(\.schoolNetworkID), placeholder: "Network ID",
+                                    value: binding(\.schoolNetworkID), placeholder: L("Network ID"),
                                     mono: true)
                             }
                             .frame(maxWidth: .infinity)
 
                             VStack(alignment: .leading, spacing: 5) {
-                                FieldLabel(label: "API Key")
+                                FieldLabel(label: L("API Key"))
                                 SecureSecretField(
-                                    placeholder: "School API key",
+                                    placeholder: L("School API key"),
                                     onTextChange: { flow.schoolAPIKeyFieldHasText = $0 }
                                 ) { data in
                                     flow.setSchoolAPIKey(data)
@@ -816,7 +802,7 @@ struct OnboardingView: View {
 
                         HStack(spacing: 10) {
                             PNPButton(
-                                title: flow.isConnectingSchool ? "Connecting…" : "Connect School",
+                                title: flow.isConnectingSchool ? L("Connecting…") : L("Connect School"),
                                 icon: "graduationcap.fill",
                                 style: .gold,
                                 size: .sm
@@ -847,7 +833,7 @@ struct OnboardingView: View {
                     }
                     Spacer()
                     if let exit = flow.firstReportExitCode {
-                        Pill(text: "EXIT \(exit)", tone: exit == 0 ? .teal : .danger)
+                        Pill(text: L("EXIT \(exit)"), tone: exit == 0 ? .teal : .danger)
                     }
                 }
             }
@@ -857,7 +843,7 @@ struct OnboardingView: View {
             skipFinishCard
 
             logViewer(
-                title: flow.isRunningFirstReport ? "Generate running" : "Generate output",
+                title: flow.isRunningFirstReport ? L("Generate running") : L("Generate output"),
                 lines: flow.firstReportOutput,
                 exitCode: flow.firstReportExitCode
             )
@@ -877,9 +863,7 @@ struct OnboardingView: View {
                 Divider().background(Theme.Colors.hairline)
                 Text("Webhook (optional)").font(.callout.weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg)
-                Text("Scheduled runs post digests and failure alerts to a Teams or Slack "
-                    + "incoming webhook. Leave empty to skip; change it anytime under "
-                    + "Automation › Notifications.")
+                Text("Scheduled runs post digests and failure alerts to a Teams or Slack incoming webhook. Leave empty to skip; change it anytime under Automation › Notifications.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -929,7 +913,7 @@ struct OnboardingView: View {
                 }
                 Spacer()
                 PNPButton(
-                    title: "Skip & finish setup",
+                    title: L("Skip & finish setup"),
                     icon: "checkmark",
                     style: .neutral,
                     size: .md,
@@ -942,11 +926,8 @@ struct OnboardingView: View {
 
     nonisolated static func skipFinishText(validated: Bool) -> String {
         validated
-            ? "Your workspace is fully set up. Skip if the generate output below looks off — "
-                + "you can run reports later from the Reports tab."
-            : "Your workspace is saved, but the profile did not validate, so the first run "
-                + "will probably fail. Skip it, fix the connection from Data Sources, then run "
-                + "reports from the Reports tab."
+            ? L("Your workspace is fully set up. Skip if the generate output below looks off — you can run reports later from the Reports tab.")
+            : L("Your workspace is saved, but the profile did not validate, so the first run will probably fail. Skip it, fix the connection from Data Sources, then run reports from the Reports tab.")
     }
 
     /// Dismiss onboarding without running a report.
@@ -1002,9 +983,7 @@ struct OnboardingView: View {
                     }
                 }
             }
-            Text("Names marked jamf-cli come from jamf-cli's command list. It lists none for "
-                + "report and Classic commands, so Jamf Reports adds those from its own "
-                + "permissions page.")
+            Text("Names marked jamf-cli come from jamf-cli's command list. It lists none for report and Classic commands, so Jamf Reports adds those from its own permissions page.")
                 .font(.caption2)
                 .foregroundStyle(Theme.Colors.fg2)
         }
@@ -1037,7 +1016,7 @@ struct OnboardingView: View {
 
     private var navigationButtons: some View {
         HStack {
-            PNPButton(title: "Back") {
+            PNPButton(title: L("Back")) {
                 if flow.currentStep == .welcome { requestStartOver() } else { flow.previousStep() }
             }
             .disabled(!backEnabled)
@@ -1046,7 +1025,7 @@ struct OnboardingView: View {
                 ? "Back to the first screen" : "Back to step \(max(1, flow.stepPosition - 1))")
 
             if onStartOver != nil && flow.currentStep != .welcome {
-                PNPButton(title: "Start over", icon: "arrow.uturn.backward") {
+                PNPButton(title: L("Start over"), icon: "arrow.uturn.backward") {
                     requestStartOver()
                 }
                 .disabled(flow.isBusy || isStartingOver)
@@ -1099,16 +1078,16 @@ struct OnboardingView: View {
 
     private var primaryButtonTitle: String {
         switch flow.currentStep {
-        case .welcome: "Get started"
-        case .installCLI: "Next"
-        case .workspace: "Create workspace"
-        case .authenticate: flow.isRegisteringProfile ? "Saving" : "Save & continue"
+        case .welcome: L("Get started")
+        case .installCLI: L("Next")
+        case .workspace: L("Create workspace")
+        case .authenticate: flow.isRegisteringProfile ? L("Saving") : L("Save & continue")
         case .validate:
-            if flow.isValidatingConnection { "Validating" }
-            else { flow.connectionValidated ? "Continue" : "Validate" }
-        case .addProducts: "Continue"
-        case .firstReport: flow.isRunningFirstReport ? "Running" : "Run now"
-        case .schoolConnect: flow.schoolConnected ? "Continue" : "Connect School to continue"
+            if flow.isValidatingConnection { L("Validating") }
+            else { flow.connectionValidated ? L("Continue") : L("Validate") }
+        case .addProducts: L("Continue")
+        case .firstReport: flow.isRunningFirstReport ? L("Running") : L("Run now")
+        case .schoolConnect: flow.schoolConnected ? L("Continue") : L("Connect School to continue")
         }
     }
 
@@ -1204,7 +1183,7 @@ struct OnboardingView: View {
                     Mono(text: title, size: 12, color: Theme.Colors.fg2)
                     Spacer()
                     if let exitCode {
-                        Pill(text: "EXIT \(exitCode)", tone: exitCode == 0 ? .teal : .danger)
+                        Pill(text: L("EXIT \(exitCode)"), tone: exitCode == 0 ? .teal : .danger)
                     }
                 }
                 .padding(.horizontal, 14)

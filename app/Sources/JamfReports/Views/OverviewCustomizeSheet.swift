@@ -46,8 +46,7 @@ struct OverviewCustomizeSheet: View {
                 Text("Customize Overview")
                     .font(.headline)
                     .foregroundStyle(Theme.Colors.fg)
-                Text("Pick what the Overview shows and in what order. "
-                     + "A section this profile can't fill says what it needs.")
+                Text("Pick what the Overview shows and in what order. A section this profile can't fill says what it needs.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -69,14 +68,14 @@ struct OverviewCustomizeSheet: View {
 
     private var footer: some View {
         HStack {
-            PNPButton(title: "Reset to Defaults", icon: "arrow.counterclockwise",
+            PNPButton(title: L("Reset to Defaults"), icon: "arrow.counterclockwise",
                       style: .ghost, size: .sm) {
                 workspace.overviewLayout = .standard
                 workspace.selectedScoreCards = WorkspaceStore.defaultScoreCards
             }
             .help("Show every section in the standard order, with the four standard score cards.")
             Spacer()
-            PNPButton(title: "Done", style: .gold) {
+            PNPButton(title: L("Done"), style: .gold) {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
@@ -97,7 +96,7 @@ struct OverviewCustomizeSheet: View {
     private var sectionsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Sections", style: .body)
+                SectionHeader(title: L("Sections"), style: .body)
                 Text("Shown top to bottom beneath the page header and any banners.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -151,7 +150,7 @@ struct OverviewCustomizeSheet: View {
                 up: { workspace.overviewLayout.swap(section, with: listed[index - 1]) },
                 down: { workspace.overviewLayout.swap(section, with: listed[index + 1]) }
             )
-            PNPToggle(isOn: isOn, label: "Show \(section.title)")
+            PNPToggle(isOn: isOn, label: L("Show \(section.title)"))
         }
         .padding(.vertical, 8)
         // The switch still saves the choice for when the environment has the devices.
@@ -178,9 +177,8 @@ struct OverviewCustomizeSheet: View {
     private var scoreCardsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Score Cards", style: .body)
-                Text("Tiles in the Score Cards section, left to right. Each shows the "
-                     + "latest daily summary and its change since the one before.")
+                SectionHeader(title: L("Score Cards"), style: .body)
+                Text("Tiles in the Score Cards section, left to right. Each shows the latest daily summary and its change since the one before.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -223,7 +221,7 @@ struct OverviewCustomizeSheet: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if !metricHasData(metric) {
-                    unavailableNote("No value in the loaded summaries. \(metric.dataRequirement)")
+                    unavailableNote(L("No value in the loaded summaries. \(metric.dataRequirement)"))
                 }
                 if isLast {
                     Text("To remove them, turn off Show Score Cards under Sections.")
@@ -241,7 +239,7 @@ struct OverviewCustomizeSheet: View {
                     down: { moveScoreCard(metric, to: shown[safe: position + 1]) }
                 )
             }
-            PNPToggle(isOn: isOn, label: "Show \(label)")
+            PNPToggle(isOn: isOn, label: L("Show \(label)"))
                 .disabled(isLast)
         }
         .padding(.vertical, 8)
@@ -285,9 +283,9 @@ struct OverviewCustomizeSheet: View {
         down: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 2) {
-            moveButton(symbol: "chevron.up", label: "Move \(name) up",
+            moveButton(symbol: "chevron.up", label: L("Move \(name) up"),
                        enabled: canMoveUp, action: up)
-            moveButton(symbol: "chevron.down", label: "Move \(name) down",
+            moveButton(symbol: "chevron.down", label: L("Move \(name) down"),
                        enabled: canMoveDown, action: down)
         }
     }

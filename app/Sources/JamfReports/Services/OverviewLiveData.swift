@@ -52,10 +52,10 @@ extension RecentDeviceRow {
     /// The Devices screen's wording: "Today", "1 day", "12 days".
     static func lastSeenLabel(_ record: DeviceInventoryRecord) -> String {
         if let days = record.daysSinceContact {
-            if days <= 0 { return "Today" }
-            return days == 1 ? "1 day" : "\(days) days"
+            if days <= 0 { return L("Today") }
+            return days == 1 ? L("1 day") : L("\(days) days")
         }
-        return record.lastContact.isEmpty ? "Unknown" : record.lastContact
+        return record.lastContact.isEmpty ? L("Unknown") : record.lastContact
     }
 }
 
@@ -113,7 +113,7 @@ enum OverviewLiveDataLoader {
         let wanted = sections.intersection(OverviewLiveData.sections)
         guard !wanted.isEmpty else { return data }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-            let why = OverviewUnavailable(reason: "This profile's workspace isn't set up yet.")
+            let why = OverviewUnavailable(reason: L("This profile's workspace isn't set up yet."))
             for section in wanted { data.unavailable[section] = why }
             return data
         }
@@ -160,7 +160,7 @@ enum OverviewLiveDataLoader {
               let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: raw),
               !rows.isEmpty else {
             data.unavailable[.osDistribution] = OverviewUnavailable(
-                reason: "No inventory summary yet. Every collect writes one.",
+                reason: L("No inventory summary yet. Every collect writes one."),
                 remedy: .sources)
             return
         }
@@ -191,24 +191,20 @@ enum OverviewLiveDataLoader {
         }
         guard let baseline, let listColumn = baseline.failuresListColumn else {
             data.unavailable[.topFailingRules] = OverviewUnavailable(
-                reason: "Map your compliance failures-list extension attribute "
-                    + "(compliance.failures_list_column) in Config, or collect Compliance "
-                    + "Benchmarks with a Jamf Platform API profile.",
+                reason: L("Map your compliance failures-list extension attribute (compliance.failures_list_column) in Config, or collect Compliance Benchmarks with a Jamf Platform API profile."),
                 remedy: .config)
             return
         }
         guard let eaRows else {
             data.unavailable[.topFailingRules] = OverviewUnavailable(
-                reason: "No extension-attribute results yet. They are collected with the "
-                    + "inventory.",
+                reason: L("No extension-attribute results yet. They are collected with the inventory."),
                 remedy: .sources)
             return
         }
         let built = failingRules(rows: eaRows, listColumn: listColumn, baseline: baseline.name)
         guard built.reportingMacs > 0 else {
             data.unavailable[.topFailingRules] = OverviewUnavailable(
-                reason: "No Mac reports \"\(listColumn)\" in the collected extension "
-                    + "attributes. Check the column name in Config.",
+                reason: L("No Mac reports \"\(listColumn)\" in the collected extension attributes. Check the column name in Config."),
                 remedy: .config)
             return
         }
@@ -225,14 +221,13 @@ enum OverviewLiveDataLoader {
     ) {
         guard !agents.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
-                reason: "List your security agents under Security Agents in Config.",
+                reason: L("List your security agents under Security Agents in Config."),
                 remedy: .config)
             return
         }
         guard let eaRows else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
-                reason: "No extension-attribute results yet. They are collected with the "
-                    + "inventory.",
+                reason: L("No extension-attribute results yet. They are collected with the inventory."),
                 remedy: .sources)
             return
         }
@@ -240,8 +235,7 @@ enum OverviewLiveDataLoader {
         let reported = coverage.filter { $0.reporting > 0 }
         guard !reported.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
-                reason: "No Mac reports a value for any configured agent's column. Check "
-                    + "each column matches its extension attribute's name in Config.",
+                reason: L("No Mac reports a value for any configured agent's column. Check each column matches its extension attribute's name in Config."),
                 remedy: .config)
             return
         }
@@ -266,7 +260,7 @@ enum OverviewLiveDataLoader {
         let inventory = DeviceInventoryService.load(profile: profile, demoMode: false)
         guard !inventory.devices.isEmpty else {
             data.unavailable[.recentActivity] = OverviewUnavailable(
-                reason: "No computer inventory yet. A collect writes it.",
+                reason: L("No computer inventory yet. A collect writes it."),
                 remedy: .sources)
             return
         }
@@ -360,7 +354,7 @@ enum OverviewLiveDataLoader {
     ) -> (rules: [FailingRule], label: String, reportingMacs: Int) {
         let names = snapshot.benchmarks
         let scoped = names.count > 1 ? snapshot.filtered(to: names[0]) : snapshot
-        let label = names.first ?? "Compliance Benchmark"
+        let label = names.first ?? L("Compliance Benchmark")
         let rules = scoped.rules.compactMap { rule -> FailingRule? in
             guard let failed = rule.failed, failed > 0 else { return nil }
             // The title, which a benchmark always carries; the ID only when a row lacks one.

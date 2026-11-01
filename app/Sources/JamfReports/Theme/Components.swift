@@ -41,7 +41,7 @@ struct Kicker: View {
                     .accessibilityHidden(true)
             }
 
-            Text(text.uppercased())
+            Text(LShown(text).localizedUppercase)
                 .font(Theme.Fonts.mono(10.5, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(color)
@@ -167,7 +167,7 @@ struct PageHeader<Trailing: View>: View {
 
         if let days = components.day, days >= 1 {
             if effectiveKickerTone == .gold { return nil } // Only show if stale
-            return "Updated \(days) \(days == 1 ? "day" : "days") ago"
+            return (days == 1 ? L("Updated \(days) day ago") : L("Updated \(days) days ago"))
         }
         return nil
     }
@@ -253,7 +253,7 @@ struct Pill: View {
     var body: some View {
         HStack(spacing: 4) {
             if let icon { Image(systemName: icon).font(.system(size: 9, weight: .semibold)) }
-            Text(text.uppercased())
+            Text(LShown(text).localizedUppercase)
         }
         .font(Theme.Fonts.mono(10.5, weight: .semibold))
         .tracking(0.6)
@@ -415,7 +415,15 @@ struct SegmentedControl<Value: Hashable>: View {
         self.options = options.map { ($0.0, $0.1, $0.2) }
     }
 
+    /// A row too long for the window (German runs long) scrolls instead of widening the page.
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            segments
+            ScrollView(.horizontal, showsIndicators: false) { segments }
+        }
+    }
+
+    private var segments: some View {
         HStack(spacing: 1) {
             ForEach(Array(options.enumerated()), id: \.offset) { _, opt in
                 Button {
@@ -549,8 +557,8 @@ struct StatTile: View {
         // stale count that fell reads "down, better" and one that rose reads "up, worse".
         if let delta {
             let verdict = switch deltaTrend {
-            case .up: ", better"
-            case .down: ", worse"
+            case .up: L(", better")
+            case .down: L(", worse")
             case .flat: ""
             }
             // A flat tile still draws a signed delta, so it is announced without a verdict;
@@ -848,7 +856,7 @@ struct EditableNumberStepper: View {
     static func accessibilityName(label: String?, prefix: String?, suffix: String?) -> String {
         if let label, !label.isEmpty { return label }
         let joined = [prefix, suffix].compactMap { $0 }.joined(separator: " ")
-        return joined.isEmpty ? "Value" : joined
+        return joined.isEmpty ? L("Value") : joined
     }
 
     private var name: String {

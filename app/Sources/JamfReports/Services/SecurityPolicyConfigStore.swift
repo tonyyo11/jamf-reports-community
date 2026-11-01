@@ -74,9 +74,9 @@ enum SecurityPolicyConfigLoader {
         _ block: YAMLCodec.YAMLValue, applied: SecurityControlPolicy
     ) -> [SecurityPolicyIssue] {
         guard case .mapping(let mapping) = block else {
-            return shapeIssues(blockPath, block, used: "the default policy")
+            return shapeIssues(blockPath, block, used: L("the default policy"))
         }
-        let hardwareUsed = applied.fileVaultOffHardwareEncrypted?.rawValue ?? "the FileVault level"
+        let hardwareUsed = applied.fileVaultOffHardwareEncrypted?.rawValue ?? L("the FileVault level")
         return settings(mapping).flatMap { key, node -> [SecurityPolicyIssue] in
             switch key {
             case "controls":
@@ -107,7 +107,7 @@ enum SecurityPolicyConfigLoader {
         default:
             return [SecurityPolicyIssue(
                 keyPath: edrAgentPath, value: ConfigSchema.displayText(typedText(node)),
-                used: "the first agent")]
+                used: L("the first agent"))]
         }
     }
 
@@ -115,7 +115,7 @@ enum SecurityPolicyConfigLoader {
         _ node: YAMLCodec.YAMLValue, applied: SecurityControlPolicy
     ) -> [SecurityPolicyIssue] {
         guard case .mapping(let controls) = node else {
-            return shapeIssues(controlsPath, node, used: "fail for every control")
+            return shapeIssues(controlsPath, node, used: L("fail for every control"))
         }
         return settings(controls).flatMap { key, node -> [SecurityPolicyIssue] in
             let path = "\(controlsPath).\(ConfigSchema.displayText(key))"
@@ -133,7 +133,7 @@ enum SecurityPolicyConfigLoader {
             if case .scalar(.null) = node { return [] }
             return [SecurityPolicyIssue(
                 keyPath: factorsPath, value: ConfigSchema.displayText(typedText(node)),
-                used: "the default factors, since this is not a list")]
+                used: L("the default factors, since this is not a list"))]
         }
         var seen: [String: Int] = [:]
         var issues: [SecurityPolicyIssue] = []
@@ -145,7 +145,7 @@ enum SecurityPolicyConfigLoader {
                 if let earlier = seen[key] {
                     issues.append(SecurityPolicyIssue(
                         keyPath: "\(factorsPath)[\(earlier)]", value: displayText(key),
-                        used: "replaced by score_factors[\(index)], which lists it again"))
+                        used: L("replaced by score_factors[\(index)], which lists it again")))
                 }
                 seen[key] = index
             }
@@ -160,7 +160,7 @@ enum SecurityPolicyConfigLoader {
         guard case .mapping(let entry) = item else {
             return ([SecurityPolicyIssue(
                 keyPath: path, value: ConfigSchema.displayText(typedText(item)),
-                used: "skipped: an entry needs factor and weight")], nil)
+                used: L("skipped: an entry needs factor and weight"))], nil)
         }
         let fields = Dictionary(settings(entry).map { ($0.key, $0.node) }) { _, last in last }
         var issues = settings(entry).compactMap { key, _ -> SecurityPolicyIssue? in
@@ -172,14 +172,14 @@ enum SecurityPolicyConfigLoader {
             let known = SecurityScoreFactor.Kind.allCases.map(\.rawValue).joined(separator: ", ")
             issues.append(SecurityPolicyIssue(
                 keyPath: path, value: displayText(typedKind),
-                used: "skipped: factor is one of \(known)"))
+                used: L("skipped: factor is one of \(known)")))
             return (issues, nil)
         }
         guard let weightNode = fields["weight"], case .scalar = weightNode,
               SecurityControlPolicy.scoreWeight(typed: typedText(weightNode)) != nil else {
             issues.append(SecurityPolicyIssue(
                 keyPath: path, value: displayText(fields["weight"].map(typedText) ?? ""),
-                used: "skipped: weight is a number from 0 to 100"))
+                used: L("skipped: weight is a number from 0 to 100")))
             return (issues, nil)
         }
         let name = kind == .agent ? fields["agent"] : kind == .mscp ? fields["baseline"] : nil
@@ -188,7 +188,7 @@ enum SecurityPolicyConfigLoader {
         if kind == .agent, target?.isEmpty != false {
             issues.append(SecurityPolicyIssue(
                 keyPath: path, value: displayText(typedKind),
-                used: "skipped: an agent entry needs the agent's name under agent"))
+                used: L("skipped: an agent entry needs the agent's name under agent")))
             return (issues, nil)
         }
         issues += graceIssues(path, kind: kind, fields["grace_days"])
@@ -203,7 +203,7 @@ enum SecurityPolicyConfigLoader {
         guard let days = kind.defaultGraceDays else {
             return [SecurityPolicyIssue(
                 keyPath: "\(path).grace_days", value: displayText(typedText(node)),
-                used: "not read: \(kind.rawValue) has no grace period")]
+                used: L("not read: \(kind.rawValue) has no grace period"))]
         }
         let typed = Int(typedText(node).trimmingCharacters(in: .whitespaces))
         if case .scalar = node, let typed, SecurityControlPolicy.graceDays(typed) != nil {
@@ -211,7 +211,7 @@ enum SecurityPolicyConfigLoader {
         }
         return [SecurityPolicyIssue(
             keyPath: "\(path).grace_days", value: displayText(typedText(node)),
-            used: "\(days) days, since grace_days is a whole number from 0 to 365")]
+            used: L("\(days) days, since grace_days is a whole number from 0 to 365"))]
     }
 
     /// A value the decoder did not keep (not text, or empty) is an issue at its control's key
@@ -222,7 +222,7 @@ enum SecurityPolicyConfigLoader {
         kept: [SecurityControl: Set<String>], overriddenBy: [SecurityControl: Set<String>]
     ) -> [SecurityPolicyIssue] {
         guard case .mapping(let controls) = node else {
-            return shapeIssues(path, node, used: "the built-in values only")
+            return shapeIssues(path, node, used: L("the built-in values only"))
         }
         return settings(controls).flatMap { key, node -> [SecurityPolicyIssue] in
             let keyPath = "\(path).\(ConfigSchema.displayText(key))"

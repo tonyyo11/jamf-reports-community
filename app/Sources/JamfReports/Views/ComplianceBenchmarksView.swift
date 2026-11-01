@@ -36,7 +36,7 @@ struct ComplianceBenchmarksView: View {
         PageScaffold {
             ComplianceBenchmarksView.header()
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "compliance benchmarks")
+                ScreenLoadingCard(what: L("compliance benchmarks"))
             } else {
                 if !workspace.demoMode && lockState == .unlockedWithData {
                     CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
@@ -106,9 +106,9 @@ struct ComplianceBenchmarksView: View {
 
     private static func header() -> some View {
         PageHeader(
-            kicker: "Platform API",
-            title: "Compliance Benchmarks",
-            subtitle: "Browse compliance benchmark results captured by jamf-cli's Platform API.",
+            kicker: L("Platform API"),
+            title: L("Compliance Benchmarks"),
+            subtitle: L("Browse compliance benchmark results captured by jamf-cli's Platform API."),
             lastModified: nil
         )
     }
@@ -118,7 +118,7 @@ struct ComplianceBenchmarksView: View {
             VStack(alignment: .leading, spacing: 16) {
                 EmptyStateView(
                     systemImage: "lock.shield",
-                    title: "Platform API profile required",
+                    title: L("Platform API profile required"),
                     message: ComplianceBenchmarksView.lockReason(),
                     commands: ComplianceBenchmarksView.setupCommands
                 )
@@ -131,9 +131,8 @@ struct ComplianceBenchmarksView: View {
             VStack(alignment: .leading, spacing: 14) {
                 EmptyStateView(
                     systemImage: "checkmark.shield",
-                    title: "No compliance snapshots yet",
-                    message: "Collect this workspace to list its compliance benchmarks and "
-                        + "fetch each one's rule and device results.",
+                    title: L("No compliance snapshots yet"),
+                    message: L("Collect this workspace to list its compliance benchmarks and fetch each one's rule and device results."),
                     commands: [
                         "jamf-cli pro compliance-benchmarks list --output json",
                         "jamf-cli pro report compliance-rules \"<title>\" --output json",
@@ -149,12 +148,8 @@ struct ComplianceBenchmarksView: View {
             VStack(alignment: .leading, spacing: 14) {
                 EmptyStateView(
                     systemImage: "lock.shield",
-                    title: "Needs a platform environment integration",
-                    message: "This profile's Jamf Account integration is tenant level, and "
-                        + "Jamf Account does not offer the Compliance Benchmarks permission at "
-                        + "that level, so collect skips benchmarks. Create an integration at "
-                        + "platform environment level, then switch this profile to it with "
-                        + "Update credentials in Data Sources.",
+                    title: L("Needs a platform environment integration"),
+                    message: L("This profile's Jamf Account integration is tenant level, and Jamf Account does not offer the Compliance Benchmarks permission at that level, so collect skips benchmarks. Create an integration at platform environment level, then switch this profile to it with Update credentials in Data Sources."),
                     commands: []
                 )
             }
@@ -227,7 +222,7 @@ struct ComplianceBenchmarksView: View {
         let agg = shown.ruleAggregate
         return Card {
             VStack(alignment: .leading, spacing: 14) {
-                SectionHeader(title: "Rule Pass / Fail", trailing: "\(shown.totalRules) rules")
+                SectionHeader(title: L("Rule Pass / Fail"), trailing: L("\(shown.totalRules) rules"))
                 HStack(alignment: .top, spacing: 28) {
                     ComplianceBenchmarksView.aggregateDonut(passed: agg.passed,
                                                             failed: agg.failed,
@@ -246,8 +241,8 @@ struct ComplianceBenchmarksView: View {
     private var ruleDistributionCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Per-Rule Distribution",
-                              trailing: "Top 20 by failures, name")
+                SectionHeader(title: L("Per-Rule Distribution"),
+                              trailing: L("Top 20 by failures, name"))
                 ForEach(
                     ComplianceBenchmarksService.rankedRules(shown.rules).prefix(20)
                 ) { rule in
@@ -266,16 +261,16 @@ struct ComplianceBenchmarksView: View {
         let agg = shown.deviceAggregate
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Devices",
-                              trailing: "\(shown.totalDevices) devices, top 30 by failed rules")
+                SectionHeader(title: L("Devices"),
+                              trailing: L("\(shown.totalDevices) devices, top 30 by failed rules"))
                 HStack(spacing: 10) {
-                    ComplianceBenchmarksView.deviceCounter(label: "Failing",
+                    ComplianceBenchmarksView.deviceCounter(label: L("Failing"),
                                                            value: agg.failing,
                                                            color: Theme.Colors.danger)
-                    ComplianceBenchmarksView.deviceCounter(label: "Passing",
+                    ComplianceBenchmarksView.deviceCounter(label: L("Passing"),
                                                            value: agg.passing,
                                                            color: Theme.Colors.ok)
-                    ComplianceBenchmarksView.deviceCounter(label: "Unknown",
+                    ComplianceBenchmarksView.deviceCounter(label: L("Unknown"),
                                                            value: agg.unknown,
                                                            color: Theme.Colors.warn)
                 }
@@ -324,16 +319,14 @@ struct ComplianceBenchmarksView: View {
     ]
 
     private static func lockReason() -> String {
-        "Your active jamf-cli profile does not use auth-method: platform. Connect with a Jamf "
-            + "Account integration (Settings › Add connection, then Platform API) or switch this "
-            + "workspace to a Platform profile."
+        L("Your active jamf-cli profile does not use auth-method: platform. Connect with a Jamf Account integration (Settings › Add connection, then Platform API) or switch this workspace to a Platform profile.")
     }
 
     private static func aggregateDonut(passed: Int, failed: Int, unknown: Int) -> some View {
         let slices: [(label: String, value: Int, color: Color)] = [
-            ("Passed", passed, Theme.Colors.ok),
-            ("Failed", failed, Theme.Colors.danger),
-            ("Unknown", unknown, Theme.Colors.warn),
+            (L("Passed"), passed, Theme.Colors.ok),
+            (L("Failed"), failed, Theme.Colors.danger),
+            (L("Unknown"), unknown, Theme.Colors.warn),
         ].filter { $0.value > 0 }
         return Chart(slices, id: \.label) { slice in
             SectorMark(
@@ -354,9 +347,9 @@ struct ComplianceBenchmarksView: View {
                                         unknown: Int,
                                         contrast: ColorSchemeContrast) -> some View {
         let rows: [(label: String, value: Int, color: Color)] = [
-            ("Passed", passed, Theme.Colors.ok),
-            ("Failed", failed, Theme.Colors.danger),
-            ("Unknown (no result)", unknown, Theme.Colors.warn),
+            (L("Passed"), passed, Theme.Colors.ok),
+            (L("Failed"), failed, Theme.Colors.danger),
+            (L("Unknown (no result)"), unknown, Theme.Colors.warn),
         ]
         return VStack(alignment: .leading, spacing: 8) {
             ForEach(rows, id: \.label) { row in
@@ -453,7 +446,7 @@ struct ComplianceBenchmarksView: View {
                 .foregroundStyle(Theme.Colors.fg2)
                 .frame(width: 90, alignment: .trailing)
                 .monospacedDigit()
-            Text(failed.map { "\($0) failed" } ?? "unknown")
+            Text(failed.map { L("\($0) failed") } ?? "unknown")
                 .font(Theme.Fonts.mono(11, weight: .semibold))
                 .foregroundStyle(failColor)
                 .frame(width: 90, alignment: .trailing)
@@ -470,8 +463,8 @@ struct ComplianceBenchmarksView: View {
     }
 
     private static func deviceA11y(device: ComplianceBenchmarksService.Snapshot.Device) -> String {
-        let name = device.device.isEmpty ? "Unnamed device" : device.device
-        let failed = device.rulesFailed.map { "\($0) failed" } ?? "unknown failures"
-        return "\(name), \(device.rulesPassed) passed, \(failed)"
+        let name = device.device.isEmpty ? L("Unnamed device") : device.device
+        let failed = device.rulesFailed.map { L("\($0) failed") } ?? L("unknown failures")
+        return L("\(name), \(device.rulesPassed) passed, \(failed)")
     }
 }

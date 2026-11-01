@@ -23,15 +23,15 @@ struct PatchView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Operations",
-                title: "Patch Compliance",
+                kicker: L("Operations"),
+                title: L("Patch Compliance"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "patch compliance")
+                ScreenLoadingCard(what: L("patch compliance"))
             } else {
                 // Suppressed in demo mode (the demo dataset is intentionally static and
                 // not user-perceivably "stale"). Renders nothing when source is .fresh.
@@ -69,7 +69,7 @@ struct PatchView: View {
 
     private var subtitle: String? {
         guard snapshot.totalTitles > 0 else { return nil }
-        return "\(snapshot.totalTitles) patch title\(snapshot.totalTitles == 1 ? "" : "s") tracked across the fleet."
+        return (snapshot.totalTitles == 1 ? L("\(snapshot.totalTitles) patch title tracked across the fleet.") : L("\(snapshot.totalTitles) patch titles tracked across the fleet."))
     }
 
     // MARK: - Data loading
@@ -127,9 +127,8 @@ struct PatchView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "shippingbox",
-                title: "No patch data yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No patch data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["patch-status"])]
             )
@@ -140,30 +139,30 @@ struct PatchView: View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Total Titles",
+                label: L("Total Titles"),
                 value: "\(snapshot.totalTitles)",
-                sub: "Patch policies tracked"
+                sub: L("Patch policies tracked")
             )
             StatTile(
-                label: "Fleet Compliance",
+                label: L("Fleet Compliance"),
                 value: snapshot.fleetCompliancePct.map { String(format: "%.1f%%", $0) }
                     ?? "\u{2014}",
-                sub: "Weighted across all devices"
+                sub: L("Weighted across all devices")
             )
             StatTile(
-                label: "Compliant Titles",
+                label: L("Compliant Titles"),
                 value: "\(snapshot.compliantTitleCount)",
-                sub: "≥90% compliance rate"
+                sub: L("≥90% compliance rate")
             )
             StatTile(
-                label: "Failing Titles",
+                label: L("Failing Titles"),
                 value: "\(snapshot.failingTitleCount)",
-                sub: "<50% compliance rate"
+                sub: L("<50% compliance rate")
             )
             StatTile(
-                label: "Devices With Failures",
+                label: L("Devices With Failures"),
                 value: "\(snapshot.devicesWithFailures)",
-                sub: "Requiring attention"
+                sub: L("Requiring attention")
             )
         }
     }
@@ -179,13 +178,13 @@ struct PatchView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     SectionHeader(
-                        title: "Patch Titles",
+                        title: L("Patch Titles"),
                         trailing: sortedTitles.count > Self.titlesDisplayCap
-                            ? "\(Self.titlesDisplayCap) of \(sortedTitles.count) shown"
+                            ? L("\(Self.titlesDisplayCap) of \(sortedTitles.count) shown")
                             : nil
                     )
                     PNPButton(
-                        title: "Export CSV",
+                        title: L("Export CSV"),
                         icon: "tablecells",
                         style: .neutral,
                         size: .sm,
@@ -194,7 +193,7 @@ struct PatchView: View {
                     .accessibilityLabel("Export patch compliance report as CSV")
                     .help("Save the full patch compliance report as a CSV file")
                     PNPButton(
-                        title: "Export PNG",
+                        title: L("Export PNG"),
                         icon: "square.and.arrow.down",
                         style: .neutral,
                         size: .sm,
@@ -238,7 +237,7 @@ struct PatchView: View {
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle((days ?? 0) > 30 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel(days.map { "\($0) days behind the latest release" } ?? "Days behind unavailable")
+                            .accessibilityLabel(days.map { L("\($0) days behind the latest release") } ?? L("Days behind unavailable"))
                     }
                     .width(min: 80, ideal: 100)
 
@@ -272,7 +271,7 @@ struct PatchView: View {
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(failureCount > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel("\(failureCount) device\(failureCount == 1 ? "" : "s") with patch failures")
+                            .accessibilityLabel(failureCount == 1 ? "\(failureCount) device with patch failures" : "\(failureCount) devices with patch failures")
                     }
                     .width(min: 80, ideal: 90)
                 }
@@ -311,7 +310,7 @@ struct PatchView: View {
     private var patchVelocityCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Patch Velocity")
+                SectionHeader(title: L("Patch Velocity"))
                 if slowestVelocityTitles.isEmpty {
                     Text("Velocity appears after a few days of collected patch history.")
                         .font(.caption)
@@ -336,8 +335,7 @@ struct PatchView: View {
     }
 
     private var releaseDatesUnavailableCaption: some View {
-        Text("Release dates unavailable — days behind and adoption speed need "
-            + "the patch-release-dates snapshot.")
+        Text("Release dates unavailable — days behind and adoption speed need the patch-release-dates snapshot.")
             .font(.caption2)
             .foregroundStyle(Theme.Colors.warn)
     }
@@ -352,7 +350,7 @@ struct PatchView: View {
 
     private func velocityRow(for title: TitleVelocity) -> some View {
         let pctText = title.adoptionPct.map { String(format: "%.1f%%", $0) } ?? "—"
-        let daysBehindText = title.daysBehind.map { "\($0)d behind" } ?? "—"
+        let daysBehindText = title.daysBehind.map { L("\($0)d behind") } ?? "—"
         let milestoneText = velocityMilestoneText(for: title)
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
@@ -380,13 +378,13 @@ struct PatchView: View {
     private func velocityMilestoneText(for title: TitleVelocity) -> String {
         switch (title.daysTo50, title.daysTo90) {
         case let (d50?, d90?):
-            return "50% in \(d50)d · 90% in \(d90)d"
+            return L("50% in \(d50)d · 90% in \(d90)d")
         case let (d50?, nil):
-            return "50% in \(d50)d"
+            return L("50% in \(d50)d")
         case let (nil, d90?):
-            return "90% in \(d90)d"
+            return L("90% in \(d90)d")
         default:
-            return "Adoption pace not yet available"
+            return L("Adoption pace not yet available")
         }
     }
 
@@ -455,7 +453,7 @@ struct PatchView: View {
     private var recentFailuresCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Recent Failures")
+                SectionHeader(title: L("Recent Failures"))
                 if snapshot.failures.isEmpty {
                     Text("No recent patch failures recorded.")
                         .font(.footnote)
@@ -543,18 +541,18 @@ struct PatchView: View {
         panel.nameFieldStringValue = ExportNaming.filename(
             kind: "patch-compliance", profile: workspace.profile, ext: "csv"
         )
-        panel.title = "Export Patch Compliance CSV"
+        panel.title = L("Export Patch Compliance CSV")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try PatchStatusService.complianceCSV(snapshot.titles)
+            try Localization.english { PatchStatusService.complianceCSV(snapshot.titles) }
                 .write(to: url, atomically: true, encoding: .utf8)
             workspace.toast = Toast(
-                message: "Exported \(snapshot.totalTitles) patch titles to \(url.lastPathComponent)",
+                message: L("Exported \(snapshot.totalTitles) patch titles to \(url.lastPathComponent)"),
                 style: .success
             )
         } catch {
             workspace.toast = Toast(
-                message: "Could not export CSV: \(error.localizedDescription)",
+                message: L("Could not export CSV: \(error.localizedDescription)"),
                 style: .danger
             )
         }

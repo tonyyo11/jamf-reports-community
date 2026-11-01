@@ -33,17 +33,16 @@ struct ConfigFromFileTab: View {
     private var introCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "From config.yaml")
-                Text("Read only. Lists the settings no screen in the app edits. "
-                    + "Reload re-reads this list; the other tabs keep what they loaded.")
+                SectionHeader(title: L("From config.yaml"))
+                Text("Read only. Lists the settings no screen in the app edits. Reload re-reads this list; the other tabs keep what they loaded.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
                 HStack(spacing: 8) {
-                    PNPButton(title: "Reveal in Finder", icon: "folder", size: .sm, action: reveal)
+                    PNPButton(title: L("Reveal in Finder"), icon: "folder", size: .sm, action: reveal)
                         .disabled(!canReveal)
                         .help(isDemo ? DemoData.liveOnlyHelp : "")
                     PNPButton(
-                        title: "Reload", icon: "arrow.clockwise", size: .sm, action: reload)
+                        title: L("Reload"), icon: "arrow.clockwise", size: .sm, action: reload)
                 }
             }
         }
@@ -63,8 +62,8 @@ struct ConfigFromFileTab: View {
         return Card(padding: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Set in the file, not editable here",
-                    trailingValue: Self.count(count + sections.omittedSettings, "setting"))
+                    title: L("Set in the file, not editable here"),
+                    trailingValue: Self.settingCount(count + sections.omittedSettings))
                 ForEach(sections.fileOnly, id: \.name) { block in
                     VStack(alignment: .leading, spacing: 6) {
                         Kicker(text: block.name)
@@ -82,9 +81,9 @@ struct ConfigFromFileTab: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(
-                    title: "Not read by the app",
-                    trailingValue: Self.count(
-                        sections.unknown.count + sections.omittedUnknown, "key"))
+                    title: L("Not read by the app"),
+                    trailingValue: Self.keyCount(
+                        sections.unknown.count + sections.omittedUnknown))
                 ForEach(Array(sections.unknown.enumerated()), id: \.offset) { _, key in
                     row(key.keyPath, key.note ?? "")
                 }
@@ -97,9 +96,9 @@ struct ConfigFromFileTab: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(
-                    title: "Skipped by the reader",
-                    trailingValue: Self.count(
-                        sections.skipped.count + sections.omittedSkipped, "line"))
+                    title: L("Skipped by the reader"),
+                    trailingValue: Self.lineCount(
+                        sections.skipped.count + sections.omittedSkipped))
                 ForEach(Array(sections.skipped.enumerated()), id: \.offset) { _, note in
                     Text(note)
                         .font(Theme.Fonts.mono(11.5))
@@ -137,13 +136,21 @@ struct ConfigFromFileTab: View {
     @ViewBuilder
     private func moreLine(_ omitted: Int, _ noun: String) -> some View {
         if omitted > 0 {
-            Text("…and \(omitted) more \(noun)\(omitted == 1 ? "" : "s") not listed")
+            Text(omitted == 1 ? "…and \(omitted) more \(noun) not listed" : "…and \(omitted) more \(noun)s not listed")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
         }
     }
 
-    static func count(_ number: Int, _ noun: String) -> String {
-        "\(number) \(noun)\(number == 1 ? "" : "s")"
+    static func settingCount(_ number: Int) -> String {
+        number == 1 ? L("\(number) setting") : L("\(number) settings")
+    }
+
+    static func keyCount(_ number: Int) -> String {
+        number == 1 ? L("\(number) key") : L("\(number) keys")
+    }
+
+    static func lineCount(_ number: Int) -> String {
+        number == 1 ? L("\(number) line") : L("\(number) lines")
     }
 }

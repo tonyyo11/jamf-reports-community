@@ -29,18 +29,17 @@ struct ConnectionRenameSheet: View {
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .accessibilityAddTraits(.isHeader)
-            Text("Names and labels are shown in the sidebar and Fleet Overview. The jamf-cli "
-                + "profiles and workspaces keep their names.")
+            Text("Names and labels are shown in the sidebar and Fleet Overview. The jamf-cli profiles and workspaces keep their names.")
                 .font(.callout)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 5) {
-                FieldLabel(label: "Connection name")
+                FieldLabel(label: L("Connection name"))
                 PNPTextField(value: $name)
             }
             ForEach(connection.members, id: \.profile) { member in
                 VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Label for \(member.profile)")
+                    FieldLabel(label: L("Label for \(member.profile)"))
                     PNPTextField(value: labelBinding(member.profile))
                 }
             }
@@ -48,10 +47,10 @@ struct ConnectionRenameSheet: View {
                 Text(saveError).font(.footnote).foregroundStyle(Theme.Colors.danger)
             }
             HStack {
-                PNPButton(title: "Cancel", style: .neutral, size: .md) { dismiss() }
+                PNPButton(title: L("Cancel"), style: .neutral, size: .md) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                PNPButton(title: "Save", icon: "checkmark", style: .gold, size: .md, action: save)
+                PNPButton(title: L("Save"), icon: "checkmark", style: .gold, size: .md, action: save)
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -70,7 +69,7 @@ struct ConnectionRenameSheet: View {
             onSaved()
             dismiss()
         } catch {
-            saveError = "Could not save: \(error.localizedDescription)"
+            saveError = L("Could not save: \(error.localizedDescription)")
         }
     }
 }
