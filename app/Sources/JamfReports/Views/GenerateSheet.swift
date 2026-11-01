@@ -277,12 +277,12 @@ final class GenerateSheetState {
         isRunning: Bool, refusal: CLIBridgeError?, status: String?
     ) -> String? {
         guard !isRunning, let refusal else { return nil }
-        if let status { return "Waiting for: \(status)" }
+        if let status { return L("Waiting for: \(status)") }
         switch refusal {
-        case .generateInProgress: return "Waiting for: a report to finish"
-        case .toolUpdateInProgress: return "Waiting for: the jamf-cli update to finish"
-        case .tickLockHeld: return "Waiting for: a scheduled run to finish"
-        default: return "Waiting for: a refresh to finish"
+        case .generateInProgress: return L("Waiting for: a report to finish")
+        case .toolUpdateInProgress: return L("Waiting for: the jamf-cli update to finish")
+        case .tickLockHeld: return L("Waiting for: a scheduled run to finish")
+        default: return L("Waiting for: a refresh to finish")
         }
     }
 
