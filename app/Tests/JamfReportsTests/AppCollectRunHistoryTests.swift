@@ -33,6 +33,24 @@ final class AppCollectRunHistoryTests: XCTestCase {
         return (store, lock, workspace)
     }
 
+    /// Self-remediation and catch-up collect unattended, so Run History is the only record.
+    func testAutomaticCollectsAreRecordedAsBackgroundRefreshes() async throws {
+        let collectors: [@Sendable (String) async throws -> Void] = [
+            { try await WorkspaceStore.defaultCatchUpCollector($0, nil) },
+            { try await WorkspaceStore.defaultRemediationCollector($0, [.refresh], nil) },
+        ]
+        for collector in collectors {
+            let (_, _, workspace) = try makeStore()
+            try fm.createDirectory(at: workspace, withIntermediateDirectories: true)
+            try "jamf_cli:\n  profile: alpha\n".write(
+                to: workspace.appendingPathComponent("config.yaml"),
+                atomically: true, encoding: .utf8)
+            // Tests find no jamf-cli, so the collect fails: a run that happened, not a refusal.
+            try? await collector(profile)
+            XCTAssertEqual(entries().map(\.name), ["Background refresh"])
+        }
+    }
+
     private func entries() -> [RunHistoryService.RunSummary] {
         RunHistoryService.list(profile: profile)
     }

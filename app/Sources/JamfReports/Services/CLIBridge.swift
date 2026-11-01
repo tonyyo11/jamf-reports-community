@@ -803,7 +803,13 @@ final class CLIBridge {
             // force: true — collectThenGenerate is always a GUI "Run now" action; the
             // once-per-day guard must not silently skip a user-triggered collect+generate.
             collect: {
-                try await self.collect(profile: profile, force: true, now: runStart, onLine: onLine)
+                try await WorkspaceStore.recordingCollect(
+                    profile: profile, honesty: CollectHonestyWatcher()
+                ) { recorded in
+                    try await self.collect(
+                        profile: profile, force: true, now: runStart,
+                        onLine: { onLine($0); recorded($0) })
+                }.exit
             },
             narrative: narrative,
             generate: { aiNarrative in
