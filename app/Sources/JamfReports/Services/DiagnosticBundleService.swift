@@ -637,17 +637,25 @@ enum DiagnosticBundleService {
     }
 
     /// Every server in the user's own jamf-cli config file, as `host:port` and `host` (just
-    /// `host` when no port is set), plus `profile`'s `output.timestamp_authority` host. The
+    /// `host` when no port is set), plus `profile`'s `output.timestamp_authority` host and the
+    /// system HTTPS proxy a scheduled run hands jamf-cli, whose errors name it. The
     /// workspace's config.yaml is peer-writable on a shared folder, so it only ever adds a host
     /// to redact, never removes one, and over-redacting costs nothing. No file or no `url`
     /// gives none.
     static func serverHosts(
         profile: String,
-        configURL: URL = ProfileService.jamfCLIConfigFileURL()
+        configURL: URL = ProfileService.jamfCLIConfigFileURL(),
+        proxy: SystemProxy.Reading = SystemProxy.current()
     ) -> [String] {
         (ProfileService.readConfigFile(at: configURL) ?? []).flatMap { entry in
             entry.url.map(hostForms(ofURL:)) ?? []
-        } + timestampAuthorityHosts(profile: profile)
+        } + timestampAuthorityHosts(profile: profile) + proxyHosts(proxy)
+    }
+
+    /// `host:port` and `host` of a proxy jamf-cli is given; a skipped one never reaches it.
+    static func proxyHosts(_ proxy: SystemProxy.Reading) -> [String] {
+        guard case .use(let used) = proxy else { return [] }
+        return ["\(used.host):\(used.port)", used.host]
     }
 
     /// `hostForms` of `profile`'s `output.timestamp_authority`, read bounded from its config.yaml.

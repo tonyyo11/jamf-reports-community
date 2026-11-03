@@ -78,6 +78,25 @@ struct LocalizationCatalogTests {
         }.sorted()
     }
 
+    /// The type each argument is read as: `%2$@` is argument 2, an unnumbered one the next in
+    /// order. A translation that moves unnumbered placeholders reads a number as an object.
+    static func argumentTypes(in text: String) -> [Int: String] {
+        let pattern = /%(?:(\d+)\$)?(ld|lld|lu|llu|d|u|f|\.\d+f|@|arg)/
+        var next = 0
+        var types: [Int: String] = [:]
+        for match in text.replacingOccurrences(of: "%%", with: "").matches(of: pattern) {
+            let index: Int
+            if let position = match.output.1.flatMap({ Int($0) }) {
+                index = position
+            } else {
+                next += 1
+                index = next
+            }
+            types[index] = String(match.output.2)
+        }
+        return types
+    }
+
     /// Positions, when used: each argument exactly once and of the source's type.
     static func positionalProblem(source: String, translation: String) -> String? {
         let positional = translation.matches(of: /%(\d+)\$((?:ld|lld|lu|llu|d|u|f|\.\d+f|@))/)
@@ -102,6 +121,9 @@ struct LocalizationCatalogTests {
                 for unit in entry.units[language] ?? [] {
                     if Self.specifiers(in: unit.value) != expected {
                         problems.append("\(language): \(entry.key) -> \(unit.value)")
+                    } else if Self.argumentTypes(in: unit.value)
+                                != Self.argumentTypes(in: entry.key) {
+                        problems.append("\(language) order: \(entry.key) -> \(unit.value)")
                     } else if let why = Self.positionalProblem(source: entry.key, translation: unit.value) {
                         problems.append("\(language) \(why): \(entry.key) -> \(unit.value)")
                     }

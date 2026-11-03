@@ -4967,7 +4967,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Délai de %lld s dépassé pour %@"
+            "value" : "Délai de %2$lld s dépassé pour %1$@"
           }
         },
         "it" : {

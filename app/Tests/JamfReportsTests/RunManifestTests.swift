@@ -1016,13 +1016,15 @@ final class TimestampAuthorityRedactionTests: XCTestCase {
             try? FileManager.default.removeItem(at: root)
         }
         let none = root.appendingPathComponent("no-jamf-cli-config.yaml")
-        XCTAssertEqual(DiagnosticBundleService.serverHosts(profile: "tsaredact", configURL: none),
-                       ["tsa.example.test:8443", "tsa.example.test"])
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "tsaredact", configURL: none, proxy: .none),
+            ["tsa.example.test:8443", "tsa.example.test"])
         let shared = LogRedactor.redactedForSharing(
             "[warn] report timestamp not saved: sending the request to tsa.example.test: "
                 + "the authority answered HTTP 500",
             profile: "tsaredact", scopeIDs: { _ in [] },
-            serverHosts: { DiagnosticBundleService.serverHosts(profile: $0, configURL: none) })
+            serverHosts: { DiagnosticBundleService.serverHosts(
+                profile: $0, configURL: none, proxy: .none) })
         XCTAssertFalse(shared.contains("tsa.example.test"), shared)
     }
 
