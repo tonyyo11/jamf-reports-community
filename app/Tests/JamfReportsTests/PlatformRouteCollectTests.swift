@@ -22,6 +22,7 @@ final class PlatformRouteCollectTests: XCTestCase {
         setenv("JRC_TEST_WORKSPACES_ROOT", workspaces.path, 1)
         addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
         try answer("config", """
             [{"name":"\(ws)","auth-method":"oauth2"},
              {"name":"\(ws)-API","auth-method":"platform","environment-id":"e1"}]
@@ -89,7 +90,9 @@ final class PlatformRouteCollectTests: XCTestCase {
         try await ReportEngine.collect(
             workspace: WorkspaceID(validating: ws), profile: ws,
             workspacePaths: WorkspacePaths.self, tiers: tiers, force: true,
-            locateJamfCLI: { stub }, onLine: { lines.add($0.text) })
+            locateJamfCLI: { stub },
+            platformHosts: { _, _, _ in (nil, nil) },
+            onLine: { lines.add($0.text) })
         return lines.all
     }
 
@@ -188,19 +191,31 @@ final class PlatformRouteCollectTests: XCTestCase {
 
     private let oneMac = #"[{"id":"1","general":{"managementId":"m1"}}]"#
 
+    /// A cached `computers` snapshot with one Mac, so the device scan has someone to fan out to.
+    private func seedComputers() throws {
+        let dir = try XCTUnwrap(ProfileService.workspaceURL(for: ws))
+            .appendingPathComponent("jamf-cli-data/computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try oneMac.write(to: dir.appendingPathComponent("computers_2026-01-01_000000.json"),
+                         atomically: true, encoding: .utf8)
+    }
+
     /// The Jamf Pro credential is dead while the Platform kinds land: the run is auth-dead,
     /// no device scan fans out, and today's summary is not written.
     func testADeadJamfProProfileIsNotHiddenByPlatformKindsThatLanded() async throws {
         try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
         try answer("pro", #"{"error":"unauthorized"}"#, exit: 3)
         try answer("platform", #"[{"id":"1","title":"CIS"}]"#)
+        try seedComputers()
         let stub = try makeStub()
         do {
             try await ReportEngine.collect(
                 workspace: WorkspaceID(validating: ws), profile: ws,
                 workspacePaths: WorkspacePaths.self, tiers: [.inventory, .scan], force: true,
                 authConfirmationProbe: { _, _ in .rejected },
-                locateJamfCLI: { stub }, onLine: { _ in })
+                locateJamfCLI: { stub },
+            platformHosts: { _, _, _ in (nil, nil) },
+            onLine: { _ in })
             XCTFail("expected authExpired")
         } catch ReportEngineError.authExpired(let named, _) {
             XCTAssertEqual(named, ws)
@@ -221,7 +236,9 @@ final class PlatformRouteCollectTests: XCTestCase {
             workspace: WorkspaceID(validating: ws), profile: ws,
             workspacePaths: WorkspacePaths.self, tiers: [.inventory, .scan], force: true,
             authConfirmationProbe: { _, _ in .rejected },
-            locateJamfCLI: { stub }, onLine: { lines.add($0.text) })
+            locateJamfCLI: { stub },
+            platformHosts: { _, _, _ in (nil, nil) },
+            onLine: { lines.add($0.text) })
         XCTAssertTrue(lines.all.contains { $0.contains(ReportEngine.unlandedSourcesMarker)
             && $0.contains("compliance-") }, "\(lines.all)")
         XCTAssertTrue(calls().contains { $0.contains("classic-computer-history") })
@@ -254,7 +271,9 @@ final class PlatformRouteCollectTests: XCTestCase {
         try await ReportEngine.collect(
             workspace: WorkspaceID(validating: ws), profile: ws,
             workspacePaths: WorkspacePaths.self, tiers: [.inventory], force: false,
-            locateJamfCLI: { stub }, onLine: { lines.add($0.text) })
+            locateJamfCLI: { stub },
+            platformHosts: { _, _, _ in (nil, nil) },
+            onLine: { lines.add($0.text) })
         return lines.all
     }
 
@@ -278,6 +297,50 @@ final class PlatformRouteCollectTests: XCTestCase {
         try answer("platform", #"[{"id":"1","title":"CIS"}]"#)
         let lines = try await collectNotForced()
         XCTAssertFalse(lines.contains { $0.contains(ReportEngine.noSourceLandedReason) },
+                       "\(lines)")
+    }
+
+    /// A Platform "not due" skip vouches for the Platform credential only. Every Jamf Pro kind
+    /// failing beside them is still an outage of Jamf Pro (spec 3.1), so the run is dead.
+    func testPlatformNotDueDoesNotVouchForAFailingJamfPro() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: ws))
+        for kind in ReportEngine.platformOnlyKinds { try store.recordRun(report: kind, at: Date()) }
+        try answer("pro", #"{"error":"boom"}"#, exit: 1)
+        do {
+            _ = try await collectNotForced()
+            XCTFail("expected collectDead")
+        } catch ReportEngineError.collectDead {
+        }
+    }
+
+    /// Jamf Pro attempted and none landed (exit 2 is forgiven as an outage) while the Platform
+    /// kinds did: no summary, and the reason does not claim that nothing landed at all.
+    func testJamfProFailingWhilePlatformLandsNamesJamfPro() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        try answer("pro", #"{"error":"usage"}"#, exit: 2)
+        try answer("platform", #"[{"id":"1","title":"CIS"}]"#)
+        let stub = try makeStub()
+        let lines = Lines()
+        try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: ws), profile: ws,
+            workspacePaths: WorkspacePaths.self, tiers: [.inventory], force: true,
+            locateJamfCLI: { stub },
+            platformHosts: { _, _, _ in (nil, nil) },
+            onLine: { lines.add($0.text) })
+        XCTAssertTrue(lines.all.contains {
+            $0.contains(ReportEngine.noJamfProSourceLandedReason) }, "\(lines.all)")
+        XCTAssertFalse(lines.all.contains { $0.contains(ReportEngine.noSourceLandedReason) })
+    }
+
+    /// Every Platform kind skipped by the profile's auth method: no "run as" plan line.
+    func testThePlanLineIsOmittedWhenEveryPlatformKindIsSkipped() async throws {
+        try answer("config", """
+            [{"name":"\(ws)","auth-method":"oauth2"},{"name":"\(ws)-API","auth-method":"oauth2"}]
+            """)
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        let lines = try await collect()
+        XCTAssertFalse(lines.contains { $0.hasPrefix("[plan] Platform API kinds run as") },
                        "\(lines)")
     }
 }

@@ -142,6 +142,9 @@ enum PlatformRoute: Equatable, Sendable {
 
 extension EnvironmentProfiles {
     static let noPlatformReason = "no Platform API profile in this environment"
+    static let invalidPlatformReason = "profiles.platform is not a usable profile name"
+    static let organizationLevelPlatformReason =
+        "profiles.platform names an organization-level profile"
     static let heldPlatformReason =
         "profiles.platform changed in the shared config.yaml and is not confirmed on this Mac"
 
@@ -156,7 +159,11 @@ extension EnvironmentProfiles {
         case .workspaceProfile: return (workspaceAuth, nil)
         case .unavailable(let reason): return (workspaceAuth, reason)
         case .profile(let named):
-            return (named == workspace ? workspaceAuth : resolve(named), nil)
+            guard named != workspace else { return (workspaceAuth, nil) }
+            let auth = resolve(named)
+            // Collect skips these for an organization-level profile (spec 3.1).
+            return auth?.isOrganizationLevel == true
+                ? (workspaceAuth, Self.organizationLevelPlatformReason) : (auth, nil)
         }
     }
 
@@ -164,6 +171,9 @@ extension EnvironmentProfiles {
     func platformRoute(platformPinAllows: Bool) -> PlatformRoute {
         guard source == .profilesBlock else { return .workspaceProfile }
         guard let platform else { return .unavailable(Self.noPlatformReason) }
+        guard ProfileService.isValid(platform) else {
+            return .unavailable(Self.invalidPlatformReason)
+        }
         guard platformPinAllows else { return .unavailable(Self.heldPlatformReason) }
         return .profile(platform)
     }

@@ -158,7 +158,8 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, appSupport: appSupport))
     }
 
-    /// `writeConfig()` pins every key at first sight, so a block added later is drift, not adoption.
+    /// `writeConfig()` pins every key at first sight, so a block added later is drift, not
+    /// adoption.
     func testChangingToAPlatformSlotIsDrift() throws {
         try writeConfig()
         _ = check()

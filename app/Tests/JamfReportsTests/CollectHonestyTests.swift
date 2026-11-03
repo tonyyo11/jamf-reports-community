@@ -365,9 +365,10 @@ final class CollectHonestyTests: XCTestCase {
 
     // MARK: - Same-day retry and failures a retry repeats (#207)
 
-    private func noSourceLandedLine() -> String {
-        "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason) "
-            + "— Trends did not advance"
+    private func noSourceLandedLine(
+        _ reason: String = ReportEngine.noSourceLandedReason
+    ) -> String {
+        "\(ReportEngine.summaryNotWrittenMarker) \(reason) — Trends did not advance"
     }
 
     /// The field case: a freshness run attempted only update-status, which failed because
@@ -384,6 +385,18 @@ final class CollectHonestyTests: XCTestCase {
         watcher.observe(noSourceLandedLine())
         XCTAssertTrue(watcher.incomplete, "Run History still reads the run as Partial")
         XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// The Jamf Pro wording (Platform kinds landed, Jamf Pro did not) is read the same way.
+    func testTheJamfProWordingIsClassifiedLikeTheFirst() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.record(.failed(exitCode: CLIBridge.exitCodeUsage), report: "computers", at: Date())
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["computers"], attempted: 1))
+        watcher.observe(noSourceLandedLine(ReportEngine.noJamfProSourceLandedReason))
+        XCTAssertTrue(watcher.incomplete)
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile),
+                       "an unexplained [partial] would make the retry worthwhile")
     }
 
     /// Exit 2 and 8 repeat on a retry too: the self-remediation rule.

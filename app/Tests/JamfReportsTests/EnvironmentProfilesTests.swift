@@ -48,6 +48,13 @@ final class EnvironmentProfilesTests: XCTestCase {
                        .unavailable(EnvironmentProfiles.heldPlatformReason))
     }
 
+    func testAPlatformSlotWithAnUnusableNameLeavesThePlatformKindsOut() throws {
+        let environment = EnvironmentProfiles(
+            jamfPro: ws, platform: "ws\u{07}API", source: .profilesBlock)
+        XCTAssertEqual(environment.platformRoute(platformPinAllows: true),
+                       .unavailable(EnvironmentProfiles.invalidPlatformReason))
+    }
+
     func testProtectEnabledNamesItsLogin() throws {
         let on = try resolve("protect:\n  enabled: true\n  profile: \" ws-protect \"\n")
         XCTAssertEqual(on.protect, "ws-protect")

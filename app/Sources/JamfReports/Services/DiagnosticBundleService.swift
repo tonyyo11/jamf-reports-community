@@ -651,8 +651,8 @@ enum DiagnosticBundleService {
         (ProfileService.readConfigFile(at: configURL) ?? []).flatMap { entry in
             entry.url.map(hostForms(ofURL:)) ?? []
         } + connections.load().flatMap(\.members).flatMap { member in
-            // The Jamf Pro a platform profile reaches: a custom domain the jamfcloud pattern
-            // misses, named in the host-check warning.
+            // The Jamf Pro host a Platform profile reaches: a custom domain the jamfcloud
+            // pattern misses.
             member.jamfProURL.map(hostForms(ofURL:)) ?? []
         } + timestampAuthorityHosts(profile: profile) + proxyHosts(proxy)
     }

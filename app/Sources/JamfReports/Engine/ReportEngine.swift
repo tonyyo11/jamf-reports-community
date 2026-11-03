@@ -681,6 +681,8 @@ struct ReportEngine: Sendable {
     /// Why no summary is written when every attempted source failed. The watcher reads that
     /// line as a result of the sources named in `unlandedSourcesLine`, not a cause of its own.
     static let noSourceLandedReason = "no source landed this run"
+    /// Jamf Pro attempted and none of it landed while Platform kinds did (spec 7.2, D20).
+    static let noJamfProSourceLandedReason = "no Jamf Pro source landed this run"
 
     /// The `[partial]` line for a collect where some attempted sources did not land.
     static func unlandedSourcesLine(_ kinds: [String], attempted: Int) -> String {
@@ -2028,9 +2030,11 @@ struct ReportEngine: Sendable {
 
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
-        EnvironmentProfiles.resolve(config: config, workspace: workspace.name)
-            .platformRoute(
-                platformPinAllows: SharedConfigPin.platformAllowed(profile: workspace.name))
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: workspace.name)
+        // The pin is a full check; it matters only once a block names the slot.
+        return environment.platformRoute(
+            platformPinAllows: environment.source != .profilesBlock
+                || SharedConfigPin.platformAllowed(profile: workspace.name))
     }
 
     /// Where the Platform kinds run and what skips them, resolved once per run.
@@ -2043,8 +2047,9 @@ struct ReportEngine: Sendable {
 
     /// The profile the Platform kinds run as, why they are skipped when they are, and the auth
     /// method and level of the profile they run as. A separate profile that reaches another
-    /// Jamf Pro (spec 3.1) or is organization-level skips them; `profile` stands in then, so
-    /// `platformProfile != profile` still means "the Platform kinds ran on another profile".
+    /// Jamf Pro (spec 3.1) skips them and `profile` stands in, so `platformProfile != profile`
+    /// still means "the Platform kinds ran on another profile". An organization-level one
+    /// skips them too, but `profile` stays the named one, which its verdicts then judge.
     private static func resolvePlatformRun(
         config: ReportConfig?, workspace: WorkspaceID, profile: String,
         profileAuth: ProfileAuthMethod.Resolved?, bin: URL,
@@ -2092,7 +2097,7 @@ struct ReportEngine: Sendable {
         run.tenantLevel = platformAuth?.isTenantLevel == true
         // Spec 3.1: an organization-level profile reaches no Jamf Pro report.
         if run.profile != profile, platformAuth?.isOrganizationLevel == true {
-            run.unavailable = "profiles.platform names an organization-level profile"
+            run.unavailable = EnvironmentProfiles.organizationLevelPlatformReason
         }
         return run
     }
@@ -2283,7 +2288,8 @@ struct ReportEngine: Sendable {
             profile: profile, plan: plan, afterMatrix: afterMatrix,
             afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
             deviceScan: scanPlan, onLine: onLine)
-        if platformProfile != profile, platformUnavailable == nil {
+        if platformProfile != profile, platformUnavailable == nil,
+           plan.contains(where: { $0.skip == nil && Self.platformOnlyKinds.contains($0.kind) }) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[plan] Platform API kinds run as \(platformProfile)"))
         }
@@ -2375,8 +2381,10 @@ struct ReportEngine: Sendable {
         // Nothing landed when the run attempted something and none landed, or (spec 7.2, D20)
         // Jamf Pro attempted and none of it landed: Platform kinds that landed must not date
         // cached Mac figures today. Jamf Pro not due plus Platform landing is not nothing.
-        let matrixLandedNothing = (!outcomes.isEmpty && savedKinds.isEmpty)
-            || (!judged.outcomes.isEmpty && judged.savedKinds.isEmpty)
+        let nothingLandedReason: String? =
+            (!outcomes.isEmpty && savedKinds.isEmpty) ? Self.noSourceLandedReason
+            : (!judged.outcomes.isEmpty && judged.savedKinds.isEmpty)
+            ? Self.noJamfProSourceLandedReason : nil
 
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
@@ -2392,7 +2400,7 @@ struct ReportEngine: Sendable {
 
         await Self.finalizeCollect(
             workspace: workspace, profile: profile, afterMatrix: afterMatrix, bin: bin,
-            dataDir: dataDir, savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
+            dataDir: dataDir, savedKinds: savedKinds, nothingLandedReason: nothingLandedReason,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore,
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
@@ -2547,7 +2555,7 @@ struct ReportEngine: Sendable {
         bin: URL,
         dataDir: URL,
         savedKinds: Set<String>,
-        nothingLanded: Bool,
+        nothingLandedReason: String?,
         loadedConfig: ReportConfig?,
         refreshSOFA: SOFARefresh,
         workspacePaths: WorkspacePaths.Type,
@@ -2595,10 +2603,10 @@ struct ReportEngine: Sendable {
         // only other site that produces these files, so the trend chart will
         // simply not advance until the next configured run.
         let unwritten: String?
-        if nothingLanded, loadedConfig != nil {
+        if let nothingLandedReason, loadedConfig != nil {
             // Every attempted source failed: a summary now would stamp cached numbers
             // with today's date and chart them as a fresh trend point.
-            unwritten = Self.noSourceLandedReason
+            unwritten = nothingLandedReason
         } else if let config = loadedConfig,
            let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
             let prov = await Provenance.current(

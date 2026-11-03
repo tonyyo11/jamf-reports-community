@@ -169,6 +169,14 @@ final class CollectSourcesPlanTests: XCTestCase {
             route: .profile("ws"), workspace: "ws", workspaceAuth: own, resolve: resolve)
         XCTAssertEqual(same.auth?.authMethod, "oauth2")
         XCTAssertEqual(asked, ["ws-API"])
+        let orgLevel = EnvironmentProfiles.platformInputs(
+            route: .profile("ws-ORG"), workspace: "ws", workspaceAuth: own,
+            resolve: { _ in
+                ProfileAuthMethod.Resolved(
+                    authMethod: "platform", isTenantLevel: false, isOrganizationLevel: true)
+            })
+        XCTAssertEqual(orgLevel.auth?.authMethod, "oauth2")
+        XCTAssertEqual(orgLevel.unavailable, EnvironmentProfiles.organizationLevelPlatformReason)
         let gone = EnvironmentProfiles.platformInputs(
             route: .unavailable("why"), workspace: "ws", workspaceAuth: own, resolve: resolve)
         XCTAssertEqual(gone.auth?.authMethod, "oauth2")
@@ -180,7 +188,8 @@ final class CollectSourcesPlanTests: XCTestCase {
         let own = resolved("apikey")
         let routed = CollectSourcesPlan.routedAuth(
             product: .jamfSchool, route: .profile("ws-API"), workspace: "ws",
-            workspaceAuth: own, resolve: { _ in XCTFail("School never resolves the slot"); return nil })
+            workspaceAuth: own,
+            resolve: { _ in XCTFail("School never resolves the slot"); return nil })
         XCTAssertEqual(routed.auth?.authMethod, "apikey")
         XCTAssertNil(routed.unavailable)
     }
