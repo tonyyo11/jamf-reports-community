@@ -19,16 +19,18 @@ enum PlatformHostCheck {
         return jamfPro == platform ? .same : .different(jamfPro: jamfPro, platform: platform)
     }
 
-    /// The Jamf Pro URL of each side. The platform profile's is asked of the server first: a
-    /// stored URL outlives a profile that was pointed at another tenant, so it only stands in
-    /// when the probe fails. A `jamf_pro` that is itself a Platform profile has the gateway
-    /// for its URL, so its Jamf Pro URL is learned the same way; an OAuth one is configured.
+    /// The Jamf Pro URL of each side, both asked of the server first so the two are compared
+    /// on what each server reports (a custom domain differs from the URL typed into jamf-cli).
+    /// A stored URL outlives a profile that was pointed at another tenant, so it only stands
+    /// in when the probe fails. A `jamf_pro` that is not a Platform profile falls back to the
+    /// URL configured in jamf-cli; a Platform one has the gateway there, so it falls back to
+    /// the stored one.
     static func lookup(
         jamfPro: String, platform: String, jamfProIsPlatform: Bool, configured: String?,
         learned: (String) -> String?, stored: (String) -> String?
     ) -> (jamfPro: String?, platform: String?) {
-        func reached(_ profile: String) -> String? { learned(profile) ?? stored(profile) }
-        return (jamfProIsPlatform ? reached(jamfPro) : configured, reached(platform))
+        (learned(jamfPro) ?? (jamfProIsPlatform ? stored(jamfPro) : configured),
+         learned(platform) ?? stored(platform))
     }
 
     static let live: Lookup = { jamfPro, platform, bin in

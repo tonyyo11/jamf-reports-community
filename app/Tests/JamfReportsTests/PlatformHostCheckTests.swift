@@ -4,8 +4,8 @@ import XCTest
 final class PlatformHostCheckTests: XCTestCase {
     func testHostsCompareCaseInsensitivelyWithOrWithoutScheme() {
         XCTAssertEqual(PlatformHostCheck.verdict(
-            jamfProURL: "https://Example.jamfcloud.com", platformJamfProURL: "example.jamfcloud.com/"),
-            .same)
+            jamfProURL: "https://Example.jamfcloud.com",
+            platformJamfProURL: "example.jamfcloud.com/"), .same)
     }
 
     func testDifferentHostsAreNamed() {
@@ -18,7 +18,8 @@ final class PlatformHostCheckTests: XCTestCase {
     func testAnUnknownHostIsUnknown() {
         XCTAssertEqual(PlatformHostCheck.verdict(
             jamfProURL: "https://a.jamfcloud.com", platformJamfProURL: nil), .unknown)
-        XCTAssertEqual(PlatformHostCheck.verdict(jamfProURL: nil, platformJamfProURL: "b"), .unknown)
+        XCTAssertEqual(
+            PlatformHostCheck.verdict(jamfProURL: nil, platformJamfProURL: "b"), .unknown)
     }
 
     private func lookup(
@@ -41,6 +42,18 @@ final class PlatformHostCheckTests: XCTestCase {
     func testTheStoredURLStandsInOnlyWhenTheProbeFails() {
         XCTAssertEqual(lookup(learned: [:], stored: ["api": "https://old.example.org"]).platform,
                        "https://old.example.org")
+    }
+
+    /// A custom domain: jamf-cli holds the tenant URL, the server reports its own setting, and
+    /// both sides are asked of the server so they compare like with like.
+    func testBothSidesAreAskedOfTheServer() {
+        let found = lookup(
+            learned: ["pro": "https://jamf.acme.org", "api": "https://jamf.acme.org"], stored: [:])
+        XCTAssertEqual(found.jamfPro, "https://jamf.acme.org")
+        XCTAssertEqual(PlatformHostCheck.verdict(
+            jamfProURL: found.jamfPro, platformJamfProURL: found.platform), .same)
+        XCTAssertEqual(lookup(learned: ["api": "https://x.org"], stored: [:]).jamfPro,
+                       "https://configured.example.org")
     }
 
     /// A Platform `jamf_pro` has the gateway as its URL, so it is learned like the other side.
