@@ -112917,6 +112917,46 @@
         }
       }
     },
+    "The Jamf Pro or Jamf School slot always names this workspace's own profile" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Jamf-Pro- oder Jamf-School-Eintrag nennt immer das Profil dieses Arbeitsbereichs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ranura de Jamf Pro o Jamf School siempre nombra el perfil de este espacio de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’emplacement Jamf Pro ou Jamf School désigne toujours le profil de cet espace de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo slot di Jamf Pro o Jamf School indica sempre il profilo di questo spazio di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf ProまたはJamf Schoolのスロットには、常にこのワークスペース自身のプロファイルを指定します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O campo do Jamf Pro ou do Jamf School sempre nomeia o perfil deste espaço de trabalho"
+          }
+        }
+      }
+    },
     "The Jamf Protect login has a workspace folder it does not need" : {
       "localizations" : {
         "de" : {
