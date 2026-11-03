@@ -32687,6 +32687,46 @@
         }
       }
     },
+    "Cannot serve Platform reports" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kann keine Platform-Berichte liefern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No puede servir informes de Platform"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne peut pas fournir de rapports Platform"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non può fornire report Platform"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform のレポートには使用できません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não pode fornecer relatórios da Platform"
+          }
+        }
+      }
+    },
     "Cannot write to %@: %@" : {
       "localizations" : {
         "de" : {
@@ -38685,6 +38725,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirmar tudo"
+          }
+        }
+      }
+    },
+    "Confirm in Config Doctor" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Config Doctor bestätigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmar en Config Doctor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmer dans Config Doctor"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conferma in Config Doctor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Config Doctor で確認"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmar no Config Doctor"
           }
         }
       }
@@ -58317,6 +58397,46 @@
         }
       }
     },
+    "From this workspace's settings. The first change writes a profiles block to config.yaml." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus den Einstellungen dieses Arbeitsbereichs. Die erste Änderung schreibt einen profiles-Block in config.yaml."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Según los ajustes de este espacio de trabajo. El primer cambio escribe un bloque profiles en config.yaml."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D'après les réglages de cet espace de travail. La première modification écrit un bloc profiles dans config.yaml."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dalle impostazioni di questo spazio di lavoro. La prima modifica scrive un blocco profiles in config.yaml."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースの設定から取得しています。最初の変更で profiles ブロックが config.yaml に書き込まれます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das configurações deste espaço de trabalho. A primeira alteração grava um bloco profiles em config.yaml."
+          }
+        }
+      }
+    },
     "Full" : {
       "localizations" : {
         "de" : {
@@ -75149,6 +75269,46 @@
         }
       }
     },
+    "Newest snapshot %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuester Snapshot: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última instantánea: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernier instantané : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot più recente: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新のスナップショット: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot mais recente: %@"
+          }
+        }
+      }
+    },
     "Next" : {
       "localizations" : {
         "de" : {
@@ -81929,6 +82089,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não selecionado"
+          }
+        }
+      }
+    },
+    "Not set" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht festgelegt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin definir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non défini"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non impostato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未設定"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não definido"
           }
         }
       }
@@ -95269,6 +95469,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remover da conexão"
+          }
+        }
+      }
+    },
+    "Remove from this environment?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus dieser Umgebung entfernen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar de este entorno?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer de cet environnement ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovere da questo ambiente?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境から削除しますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover deste ambiente?"
           }
         }
       }
@@ -114609,6 +114849,46 @@
         }
       }
     },
+    "The jamf-cli profile %@ and its snapshots stay." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das jamf-cli-Profil %@ und seine Snapshots bleiben erhalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de jamf-cli %@ y sus instantáneas se conservan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil jamf-cli %@ et ses instantanés sont conservés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo jamf-cli %@ e i suoi snapshot restano."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli プロファイル %@ とそのスナップショットは残ります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil do jamf-cli %@ e seus snapshots são mantidos."
+          }
+        }
+      }
+    },
     "The jamf-cli profile %@ stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile %@." : {
       "localizations" : {
         "de" : {
@@ -132478,6 +132758,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O jamf-cli não está instalado — instale-o pelo Homebrew ou pela página de releases do jamf-cli no GitHub e clique em Verificar novamente acima."
+          }
+        }
+      }
+    },
+    "jamf-cli is not installed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli ist nicht installiert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli no está instalado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli n'est pas installé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli non è installato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli がインストールされていません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O jamf-cli não está instalado."
           }
         }
       }

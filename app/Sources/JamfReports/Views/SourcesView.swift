@@ -28,6 +28,7 @@ struct SourcesView: View {
     @State private var schoolResolved: ProfileAuthMethod.Resolved?
     @State private var schoolPlatformCheck: SchoolPlatformCheck.Verdict?
     @State private var reauthOpensPlatform = false
+    @State private var environmentCard: EnvironmentCardState?
 
     private var isSchoolWorkspace: Bool {
         sourcesPlan?.sources.first?.product == .school
@@ -60,6 +61,12 @@ struct SourcesView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
+            if let card = workspace.demoMode
+                ? EnvironmentCardState.demo(workspace: workspace.profile) : environmentCard {
+                EnvironmentCard(
+                    state: card, onAddProtect: { showingProtectConnect = true },
+                    onChanged: { reloadEnvironment(); reloadSourcesPlan() })
+            }
             HStack(alignment: .top, spacing: 14) {
                 cliCard
                 // Jamf School has no Extension Attributes to adopt.
@@ -739,7 +746,7 @@ struct SourcesView: View {
         let version = workspace.jamfCLIVersion
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
         Task {
-            let (plan, dates, school) = await Task.detached(priority: .userInitiated) {
+            let (plan, dates, school, card) = await Task.detached(priority: .userInitiated) {
                 let config = ProfileService.workspaceURL(for: profile).flatMap {
                     try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
                 }
@@ -769,14 +776,42 @@ struct SourcesView: View {
                     collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
                     platformUnavailable: routed.unavailable))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
+                let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+                // The derived Platform slot can equal the MDM profile: resolve each name once.
+                var resolved: [String: ProfileAuthMethod.Resolved?] = [:]
+                let card = EnvironmentCardState.build(
+                    workspace: profile, environment: environment,
+                    resolve: { name in
+                        if let known = resolved[name] { return known }
+                        let value = ProfileAuthMethod.resolve(profile: name)
+                        resolved[name] = value
+                        return value
+                    },
+                    newest: { Self.newestSnapshot(of: $0, profile: profile) },
+                    drifted: SharedConfigPin.check(profile: profile, persist: false).isDrifted)
                 return (plan, Self.newestSnapshots(
-                    kinds: plan.sources.map(\.kind), profile: profile), school)
+                    kinds: plan.sources.map(\.kind), profile: profile), school, card)
             }.value
             guard profile == workspace.profile, !workspace.demoMode else { return }
             sourcesPlan = plan
             cachedAt = dates
             schoolResolved = school
+            environmentCard = card
         }
+    }
+
+    /// The kind whose newest snapshot stands for a slot on the Environment card.
+    nonisolated private static func newestSnapshot(
+        of slot: ProfilesConfigWriter.Slot, profile: String
+    ) -> Date? {
+        let kind = switch slot {
+        case .jamfPro: "computers"
+        case .jamfSchool: "school-devices"
+        case .platform: "compliance-rules"
+        case .protect: "protect-overview"
+        case .securityCloud: "security"
+        }
+        return newestSnapshots(kinds: [kind], profile: profile)[kind]
     }
 
     private func reloadCapabilities() {
