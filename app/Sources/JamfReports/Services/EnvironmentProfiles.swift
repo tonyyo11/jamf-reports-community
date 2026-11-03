@@ -167,14 +167,18 @@ extension EnvironmentProfiles {
         }
     }
 
-    /// `platformPinAllows` is `SharedConfigPin.platformAllowed`; it matters only under a block.
+    /// `platformPinAllows` is `SharedConfigPin.platformAllowed`; it matters only under a block,
+    /// and only for another profile than the Jamf Pro slot (D18): the writer's seed names the
+    /// workspace's own, which cannot point this Mac at another tenant.
     func platformRoute(platformPinAllows: Bool) -> PlatformRoute {
         guard source == .profilesBlock else { return .workspaceProfile }
         guard let platform else { return .unavailable(Self.noPlatformReason) }
         guard ProfileService.isValid(platform) else {
             return .unavailable(Self.invalidPlatformReason)
         }
-        guard platformPinAllows else { return .unavailable(Self.heldPlatformReason) }
+        guard platformPinAllows || platform == jamfPro else {
+            return .unavailable(Self.heldPlatformReason)
+        }
         return .profile(platform)
     }
 }
