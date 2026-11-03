@@ -141,4 +141,26 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
             localWorkspaces: { ["Fabrikam"] })
         XCTAssertEqual(out, "Fabrikam")
     }
+
+    /// A workspace named like a word the logs use is not masked, so `[partial]` stays readable.
+    func testAWorkspaceNamedLikeALogWordDoesNotMaskThatWord() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("jrc-seed-\(UUID().uuidString)")
+        for name in ["Test", "partial", "Fabri"] {
+            try fm.createDirectory(
+                at: root.appendingPathComponent(name), withIntermediateDirectories: true)
+            fm.createFile(
+                atPath: root.appendingPathComponent("\(name)/config.yaml").path, contents: Data())
+        }
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
+        let forms = LogRedactor.localWorkspaceNameForms()
+        XCTAssertFalse(forms.contains("Test") || forms.contains("partial"), "\(forms)")
+        XCTAssertTrue(forms.contains("Fabri"))
+        let out = LogRedactor.redactedForSharing(
+            "[partial] test failed; Fabri failed", profile: "ws", scopeIDs: { _ in [] },
+            serverHosts: { _ in [] })
+        XCTAssertTrue(out.contains("[partial] test failed"), out)
+        XCTAssertFalse(out.contains("Fabri"), out)
+    }
 }

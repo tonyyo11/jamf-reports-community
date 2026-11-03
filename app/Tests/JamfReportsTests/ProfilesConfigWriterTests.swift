@@ -35,9 +35,17 @@ final class ProfilesConfigWriterTests: XCTestCase {
         EnvironmentProfiles.resolve(
             config: try ConfigLoader.load(from: configURL), workspace: ws)
     }
-    private func save(_ slot: ProfilesConfigWriter.Slot, _ name: String?) throws {
-        try ProfilesConfigWriter.save(slot, to: name, workspace: ws, appSupport: support)
+    private func save(
+        _ slot: ProfilesConfigWriter.Slot, _ name: String?,
+        auth: ProfileAuthMethod.Resolved? = nil
+    ) throws {
+        try ProfilesConfigWriter.save(
+            slot, to: name, workspace: ws, appSupport: support, workspaceAuth: { _ in auth })
     }
+    private func resolved(_ method: String) -> ProfileAuthMethod.Resolved {
+        .init(authMethod: method, isTenantLevel: false)
+    }
+    private let protectOff = "protect:\n  enabled: false\n  profile: \"profileswriter-Protect\"\n"
 
     /// The first write turns the derived slots into the block and leaves the old keys (D14).
     func testTheFirstWriteKeepsTheDerivedSlotsAndTheOldKeys() throws {
@@ -146,5 +154,77 @@ final class ProfilesConfigWriterTests: XCTestCase {
     func testTheWriterKeysAreKnownToTheConfigScreen() {
         XCTAssertTrue(ConfigEditedKeys.paths.contains(["profiles", "platform"]))
         XCTAssertTrue(ConfigEditedKeys.paths.contains(["profiles", "protect"]))
+    }
+
+    // MARK: - The seed keeps the Platform route (D19)
+
+    /// A Platform API workspace on the old shape collects the Platform kinds as its own profile;
+    /// the seeded block must keep that, and nothing may refuse.
+    func testSeedingKeepsPlatformKindsForAPlatformWorkspace() throws {
+        let text = "protect:\n  enabled: true\n  profile: \"\(ws)-Protect\"\n"
+        try write(text)
+        let before = try environment()
+        XCTAssertEqual(before.platformRoute(platformPinAllows: true), .workspaceProfile)
+        try save(.protect, nil, auth: resolved("platform"))
+        let after = try environment()
+        XCTAssertEqual(after.platform, ws)
+        XCTAssertNil(after.protect)
+        XCTAssertNil(after.refusal(workspace: ws))
+        let route = after.platformRoute(platformPinAllows: true)
+        XCTAssertEqual(route, .profile(ws))
+        let auth = resolved("platform")
+        let inputs = EnvironmentProfiles.platformInputs(
+            route: route, workspace: ws, workspaceAuth: auth, resolve: { _ in nil })
+        XCTAssertEqual(inputs.auth, auth, "judged by the workspace's own auth, as before")
+        XCTAssertNil(inputs.unavailable)
+    }
+
+    func testSeedingWritesNoPlatformSlotForAKnownNonPlatformWorkspace() throws {
+        try write("protect:\n  enabled: true\n  profile: \"\(ws)-Protect\"\n")
+        try save(.protect, nil, auth: resolved("oauth2"))
+        let after = try environment()
+        XCTAssertNil(after.platform)
+        XCTAssertEqual(after.platformRoute(platformPinAllows: true),
+                       .unavailable(EnvironmentProfiles.noPlatformReason))
+        XCTAssertNil(after.refusal(workspace: ws))
+    }
+
+    func testSeedingWithUnknownAuthFailsTowardCollecting() throws {
+        try write(protectOff)
+        try save(.protect, nil, auth: nil)
+        XCTAssertEqual(try environment().platform, ws)
+    }
+
+    func testTheFirstWriteLeavesNothingRefusingAndAnExplicitPlatformSlotWins() throws {
+        try write("jamf_cli:\n  data_dir: jamf-cli-data\n")
+        try save(.platform, "\(ws)-API", auth: resolved("platform"))
+        let after = try environment()
+        XCTAssertNil(after.refusal(workspace: ws))
+        XCTAssertEqual(after.platform, "\(ws)-API")
+    }
+
+    func testASchoolSeedGetsNoPlatformSlotWhateverTheAuth() throws {
+        try write("school_cli:\n  enabled: true\n")
+        try save(.protect, "\(ws)-Protect", auth: nil)
+        XCTAssertNil(try environment().platform)
+    }
+
+    // MARK: - Pin tokens the seed moves
+
+    /// The seed drops a disabled `protect.profile` from the pin's view; this Mac's own write
+    /// confirms it, so only a peer sees the drift.
+    func testTheSeedConfirmsTheProtectTokenItMoved() throws {
+        try write("shared_workspace:\n  enabled: true\n" + protectOff)
+        SharedConfigPin.checkpoint(profile: ws, appSupport: support, onLine: nil)
+        try save(.platform, "\(ws)-API", auth: resolved("oauth2"))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: ws, appSupport: support))
+    }
+
+    func testTheSeededPlatformSlotIsNotDriftOnASharedWorkspace() throws {
+        try write("shared_workspace:\n  enabled: true\n" + protectOff)
+        SharedConfigPin.checkpoint(profile: ws, appSupport: support, onLine: nil)
+        try save(.protect, nil, auth: resolved("platform"))
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: ws, appSupport: support))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: ws, appSupport: support))
     }
 }

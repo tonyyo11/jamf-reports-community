@@ -21,7 +21,7 @@ enum ConfigEditedKeys {
         AIConfigWriter.apply(AIConfig(), to: &root)
         BackupChoiceConfigWriter.apply(.protect, on: true, to: &root)
         BackupChoiceConfigWriter.apply(.pro, on: true, to: &root)
-        for slot in ProfilesConfigWriter.Slot.allCases {
+        for slot in [ProfilesConfigWriter.Slot.platform, .protect] {
             ProfilesConfigWriter.apply(slot, to: "probe", derived: .none, root: &root)
         }
         root.set("security_policy", value: .mapping(securityPolicyProbe))

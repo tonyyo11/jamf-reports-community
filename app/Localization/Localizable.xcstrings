@@ -67822,7 +67822,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserve '%1$@' como espacio de trabajo: ejecuta los comandos de Jamf Pro. Añada '%2$@' como profiles.platform en su config.yaml (`profiles:` con `jamf_pro: %3$@` y `platform: %4$@`) y luego excluya '%5$@' en Automatización > Perfiles excluidos. No se cambia nada automáticamente."
+            "value" : "Conserve '%1$@' como espacio de trabajo: ejecuta los comandos de Jamf Pro. Añada '%2$@' como profiles.platform en el config.yaml de ese espacio de trabajo (`profiles:` con `jamf_pro: %3$@` y `platform: %4$@`) y luego excluya '%5$@' en Automatización > Perfiles excluidos. No se cambia nada automáticamente."
           }
         },
         "fr" : {
@@ -67840,7 +67840,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%1$@”をワークスペースとして残してください。Jamf Proのコマンドはこのワークスペースで実行されます。そのconfig.yamlに“%2$@”をprofiles.platformとして追加し（`profiles:`に`jamf_pro: %3$@`と`platform: %4$@`）、“自動化”›“除外するプロファイル”で“%5$@”を除外してください。自動での変更はありません。"
+            "value" : "“%1$@”をワークスペースとして残してください。Jamf Proのコマンドはこのワークスペースで実行されます。そのconfig.yamlに“%2$@”をprofiles.platformとして追加し（`profiles:`に`jamf_pro: %3$@`と`platform: %4$@`）、“自動化”›“除外プロファイル”で“%5$@”を除外してください。自動での変更はありません。"
           }
         },
         "pt-BR" : {
@@ -95473,42 +95473,82 @@
         }
       }
     },
-    "Remove %@ from this environment?" : {
+    "Remove Jamf Protect from this environment?" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ aus dieser Umgebung entfernen?"
+            "value" : "Jamf Protect aus dieser Umgebung entfernen?"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Quitar %@ de este entorno?"
+            "value" : "¿Quitar Jamf Protect de este entorno?"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Retirer %@ de cet environnement ?"
+            "value" : "Retirer Jamf Protect de cet environnement ?"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rimuovere %@ da questo ambiente?"
+            "value" : "Rimuovere Jamf Protect da questo ambiente?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この環境から %@ を削除しますか?"
+            "value" : "この環境から Jamf Protect を削除しますか?"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remover %@ deste ambiente?"
+            "value" : "Remover Jamf Protect deste ambiente?"
+          }
+        }
+      }
+    },
+    "Remove Platform API from this environment?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform API aus dieser Umgebung entfernen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar Platform API de este entorno?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer Platform API de cet environnement ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovere Platform API da questo ambiente?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境から Platform API を削除しますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover Platform API deste ambiente?"
           }
         }
       }

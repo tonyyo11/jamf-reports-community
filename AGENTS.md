@@ -318,8 +318,10 @@ read of `jamf_cli.profile` is `EnvironmentProfiles.namedOwner` (see **Workspace 
 **Profiles writer, Doctor rows and Environment card (P4).** `ProfilesConfigWriter`
 (`Services/ProfilesConfigWriter.swift`) is the one writer of the block: `save(_:to:workspace:appSupport:)`
 sets (a name) or clears (nil) one `Slot` through `saveBlock`. The first write on a file without
-`profiles:` seeds the block from the slots `EnvironmentProfiles` derives from the old keys, so the
-next run uses the same profiles, and leaves the old keys in place (they are not read once the block
+`profiles:` seeds the block from the slots `EnvironmentProfiles` derives from the old keys, plus
+`platform: <workspace>` when the workspace's own profile is a Platform one or its auth cannot be
+read (the old shape routes the Platform kinds to it and a block without the slot would not; a
+School workspace gets none), so the next run collects the same kinds, and leaves the old keys in place (they are not read once the block
 exists; `environment.old_keys` suggests deleting them). It refuses with a `WriteError`:
 `invalidProfile`, `invalidSlotProfile`, `mdmIsTheWorkspace` (the Jamf Pro and Jamf School slots
 always name the workspace), `configDoesNotLoad` and `protectHasNoProfile`. The operator's write

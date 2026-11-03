@@ -34,7 +34,9 @@ struct EnvironmentCard: View {
             }
         }
         .confirmationDialog(
-            pendingRemoval.map { L("Remove \($0.product) from this environment?") }
+            pendingRemoval.map { $0.slot == .protect
+                ? L("Remove Jamf Protect from this environment?")
+                : L("Remove Platform API from this environment?") }
                 ?? L("Remove from this environment?"),
             isPresented: removalBinding,
             presenting: pendingRemoval
@@ -172,8 +174,12 @@ struct EnvironmentCard: View {
         backupNote = nil
         Task {
             do {
+                // Protect goes through its own disconnect, which writes the old keys on a file
+                // without a block and the slot under one.
                 let report = try await Task.detached {
-                    try ProfilesConfigWriter.save(row.slot, to: nil, workspace: started)
+                    row.slot == .protect
+                        ? try ProtectConnection.disconnect(workspace: started)
+                        : try ProfilesConfigWriter.save(row.slot, to: nil, workspace: started)
                 }.value
                 guard started == state.workspace else { return }
                 if let profile = row.profile { checks[profile] = nil }

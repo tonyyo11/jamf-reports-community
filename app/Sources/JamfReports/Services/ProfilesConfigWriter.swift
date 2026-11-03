@@ -31,12 +31,14 @@ enum ProfilesConfigWriter {
     }
 
     /// Sets (`name`) or clears (nil) one slot. On a file without `profiles:`, first writes the
-    /// slots `EnvironmentProfiles` derives from the old keys, so the run that follows uses the
-    /// same profiles; the old keys are left in place (D14). `save` never writes the MDM slots
-    /// (D17): only this seed does. On a file with `protect.enabled: false` and a
-    /// `protect.profile`, the first write moves the pin's `protect.profile` token to "" (the
-    /// block has no protect slot), so each Mac sharing the folder sees one Config Doctor drift
-    /// row until confirmed; this fails safe.
+    /// slots `EnvironmentProfiles` derives from the old keys, plus `platform: <workspace>` when
+    /// the workspace's own profile is a Platform one or its auth is unknown (an old-shape file
+    /// routes the Platform kinds to the workspace's profile; the block must keep that), so the
+    /// run that follows collects the same kinds; the old keys are left in place (D14). `save`
+    /// never writes the MDM slots (D17): only this seed does. On a file with
+    /// `protect.enabled: false` and a `protect.profile`, the seed moves the `protect.profile`
+    /// pin token to "" (the block has no protect slot); this Mac confirms that, so only a peer
+    /// sharing the folder sees one Config Doctor drift row until it confirms; this fails safe.
     static func apply(
         _ slot: Slot, to name: String?, derived: EnvironmentProfiles,
         root: inout YAMLCodec.YAMLMapping
@@ -54,8 +56,8 @@ enum ProfilesConfigWriter {
     private static func seeded(from derived: EnvironmentProfiles) -> YAMLCodec.YAMLMapping {
         var block = YAMLCodec.YAMLMapping(entries: [])
         let slots: [(Slot, String?)] = [
-            (.jamfPro, derived.jamfPro), (.jamfSchool, derived.jamfSchool),
-            (.protect, derived.protect),
+            (.jamfPro, derived.jamfPro), (.platform, derived.platform),
+            (.jamfSchool, derived.jamfSchool), (.protect, derived.protect),
         ]
         for case let (slot, value?) in slots {
             block.set(slot.rawValue, value: .scalar(.string(value)))
@@ -78,7 +80,10 @@ enum ProfilesConfigWriter {
     @discardableResult
     static func save(
         _ slot: Slot, to name: String?, workspace profile: String,
-        appSupport: URL = AppSupport.directory()
+        appSupport: URL = AppSupport.directory(),
+        workspaceAuth: (String) -> ProfileAuthMethod.Resolved? = {
+            ProfileAuthMethod.resolve(profile: $0)
+        }
     ) throws -> ConfigSaveReport {
         guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
         if slot == .jamfPro || slot == .jamfSchool { throw WriteError.mdmIsTheWorkspace }
@@ -91,9 +96,13 @@ enum ProfilesConfigWriter {
                 throw WriteError.configDoesNotLoad(error.localizedDescription)
             }
         }
-        let derived = EnvironmentProfiles.resolve(config: config, workspace: profile)
-        if config?.profiles == nil, derived.protectWithoutProfile {
-            throw WriteError.protectHasNoProfile
+        var derived = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        let seeding = config?.profiles == nil
+        if seeding, derived.protectWithoutProfile { throw WriteError.protectHasNoProfile }
+        // Unknown auth fails toward collecting: a slot equal to the workspace reads its own auth.
+        if seeding, derived.jamfPro != nil,
+           workspaceAuth(profile).map({ $0.method?.isPlatform == true }) ?? true {
+            derived.platform = profile
         }
         let report = try ConfigService.saveBlock(key: "profiles", profile: profile) {
             apply(slot, to: name, derived: derived, root: &$0)
@@ -108,6 +117,17 @@ enum ProfilesConfigWriter {
         if let key {
             SharedConfigPin.confirmWritten(
                 name ?? "", key: key, profile: profile, appSupport: appSupport)
+        }
+        if seeding {
+            // The seed moved these tokens too; the operator's write confirms them on this Mac.
+            if slot != .platform, let seeded = derived.platform {
+                SharedConfigPin.confirmWritten(
+                    seeded, key: .platformProfile, profile: profile, appSupport: appSupport)
+            }
+            if slot != .protect, derived.protect == nil, config?.protect?.profile != nil {
+                SharedConfigPin.confirmWritten(
+                    "", key: .protectProfile, profile: profile, appSupport: appSupport)
+            }
         }
         return report
     }

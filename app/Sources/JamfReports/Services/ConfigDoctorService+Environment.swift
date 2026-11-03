@@ -154,7 +154,7 @@ extension ConfigDoctorService {
         let folders = (try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles])) ?? []
-        let others = folders.compactMap {
+        let others = folders.prefix(200).compactMap {
             otherEnvironment(at: $0, mine: mine, myKey: key)
         }
         return profileSharedRows(profile: profile, environment: environment, others: others)

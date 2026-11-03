@@ -231,20 +231,27 @@ enum LogRedactor {
         return redactor.redactText(redact(text))
     }
 
+    /// Words run logs and their markers are made of; a workspace named one is not masked.
+    private static let commonLogWords: Set<String> = [
+        "test", "demo", "dummy", "prod", "partial", "warn", "error", "info", "skip", "plan",
+        "fail", "ok",
+    ]
+
     /// Every workspace folder under the workspaces root, as typed and in its path and label forms.
     static func localWorkspaceNameForms() -> [String] {
         let folders = (try? FileManager.default.contentsOfDirectory(
             at: ProfileService.workspacesRoot(), includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles])) ?? []
         // Only a folder with a config.yaml is a workspace; a data folder is not a name to hide.
-        // Other workspaces' names are hidden only from 4 characters, so `test` or `dev` as a
-        // workspace name does not mask that word in every shared log; the run's own name keeps
-        // the bundle's two-character rule. The scan is capped like the other folder listings.
+        // Other workspaces' names are hidden only from 4 characters, and never a word the logs
+        // use themselves (`test`, `partial`, `warn`, ...), so such a workspace name does not mask
+        // that word or a `[partial]` marker in every shared log; the run's own name keeps the
+        // bundle's two-character rule. The scan is capped like the other folder listings.
         return folders.prefix(200)
             .filter { FileManager.default.fileExists(
                 atPath: $0.appendingPathComponent("config.yaml").path) }
             .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
-            .filter { $0.count >= 4 }
+            .filter { $0.count >= 4 && !commonLogWords.contains($0.lowercased()) }
             .flatMap { [$0, ProfileName.pathComponent($0), ProfileName.labelComponent($0)] }
     }
 
