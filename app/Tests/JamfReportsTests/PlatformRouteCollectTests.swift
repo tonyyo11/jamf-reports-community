@@ -204,7 +204,10 @@ final class PlatformRouteCollectTests: XCTestCase {
         try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
         try seedJamfProNotDue()
         try answer("platform", #"{"error":"boom"}"#, exit: 1)
-        _ = try? await collectNotForced()
+        let lines = try await collectNotForced()
+        // The reason line is the evidence the rule fired: without it the summary step runs.
+        XCTAssertTrue(lines.contains { $0.contains(ReportEngine.noSourceLandedReason) },
+                      "\(lines)")
         let summaries = try WorkspacePaths.summariesDir(for: ws)
         XCTAssertNil(FileManager.newestJSONFile(in: summaries))
     }
