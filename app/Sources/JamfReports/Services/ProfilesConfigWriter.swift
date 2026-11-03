@@ -63,15 +63,16 @@ enum ProfilesConfigWriter {
         return block
     }
 
-    /// Whether the workspace's config.yaml has a `profiles:` mapping, read as the decoder reads
-    /// it. A file that exists but does not decode counts as having one: the block writer then
-    /// reports that, where old keys would go into a file the app cannot read.
+    /// Whether the workspace's config.yaml has a `profiles:` mapping, read from the raw YAML and
+    /// not the decoder: an old-shape file that does not decode must stay editable by the
+    /// old-key writers (Disconnect is a recovery), while one with a `profiles` mapping goes to
+    /// the block writer, which reports that the file does not load.
     static func hasProfilesBlock(workspace profile: String) -> Bool {
         guard let url = ProfileService.workspaceURL(for: profile)?
             .appendingPathComponent("config.yaml"),
-            FileManager.default.fileExists(atPath: url.path) else { return false }
-        guard let config = try? ConfigLoader.load(from: url) else { return true }
-        return config.profiles != nil
+            let text = try? ConfigLoader.readText(at: url),
+            let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return false }
+        return root["profiles"] is [String: Any]
     }
 
     @discardableResult

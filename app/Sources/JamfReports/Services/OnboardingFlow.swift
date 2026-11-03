@@ -1351,15 +1351,20 @@ final class OnboardingFlow {
     /// The same write for a Protect profile jamf-cli already has (the Add sheet).
     @discardableResult
     static func writeProtectConfig(
-        profileSlug: String, protectProfileName: String
+        profileSlug: String, protectProfileName: String,
+        appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
+        // Decided once; the block writer confirms the slot itself.
+        if ProfilesConfigWriter.hasProfilesBlock(workspace: profileSlug) {
+            return try ProfilesConfigWriter.save(
+                .protect, to: protectProfileName.trimmingCharacters(in: .whitespaces),
+                workspace: profileSlug, appSupport: appSupport)
+        }
         let report = try writeProductBlock(
             "protect", profile: protectProfileName, for: profileSlug)
-        // Under a block the writer has confirmed the slot already.
-        if ProfilesConfigWriter.hasProfilesBlock(workspace: profileSlug) { return report }
         SharedConfigPin.confirmWritten(
             protectProfileName.trimmingCharacters(in: .whitespaces),
-            key: .protectProfile, profile: profileSlug)
+            key: .protectProfile, profile: profileSlug, appSupport: appSupport)
         return report
     }
 
@@ -1374,10 +1379,6 @@ final class OnboardingFlow {
     static func writeProductBlock(
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
-        if key == "protect", ProfilesConfigWriter.hasProfilesBlock(workspace: profileSlug) {
-            return try ProfilesConfigWriter.save(
-                .protect, to: name.trimmingCharacters(in: .whitespaces), workspace: profileSlug)
-        }
         let slot = key == "school_cli" ? "jamf_school" : key
         return try ConfigService.saveBlock(
             key: key, profile: profileSlug, profilesSlot: slot, slotValue: name
