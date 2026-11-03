@@ -86,6 +86,49 @@ final class SharedConfigPinTests: XCTestCase {
         SharedConfigPin.check(profile: profile, appSupport: appSupport)
     }
 
+    private func writeBlock(platform: String) throws {
+        let body = """
+        shared_workspace:
+          enabled: true
+        profiles:
+          jamf_pro: "\(profile)"
+          platform: "\(platform)"
+        """
+        try body.write(to: workspace.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+    }
+
+    /// D18: a Platform profile other than the workspace's own is an address this Mac would send
+    /// `-p` to, so it waits for one Confirm, as `output.timestamp_authority` does.
+    func testAPlatformSlotNamingAnotherProfileIsHeldAtFirstSight() throws {
+        try writeBlock(platform: "\(profile)-API")
+        XCTAssertEqual(check().drifts.map(\.key), [.platformProfile])
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, appSupport: appSupport))
+        try confirmAll()
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: profile, appSupport: appSupport))
+    }
+
+    func testAPlatformSlotNamingTheWorkspaceIsTrustedAtFirstSight() throws {
+        try writeBlock(platform: profile)
+        XCTAssertTrue(check().drifts.isEmpty)
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: profile, appSupport: appSupport))
+    }
+
+    func testAPeerChangingAConfirmedPlatformSlotIsDrift() throws {
+        try writeBlock(platform: "\(profile)-API")
+        try confirmAll()
+        try writeBlock(platform: "other-tenant-API")
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, appSupport: appSupport))
+    }
+
+    /// `writeConfig()` pins every key at first sight, so a block added later is drift, not adoption.
+    func testChangingToAPlatformSlotIsDrift() throws {
+        try writeConfig()
+        _ = check()
+        try writeBlock(platform: "\(profile)-API")
+        XCTAssertTrue(check().drifts.map(\.key).contains(.platformProfile))
+    }
+
     func testFirstSightPinsTheCurrentValuesAndReportsNoDrift() throws {
         try writeConfig()
         XCTAssertNil(SharedConfigPin.load(profile: profile, appSupport: appSupport))

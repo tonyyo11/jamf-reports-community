@@ -55,6 +55,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// the URL, which can carry a token.
     var timestampAuthorityHost: String = ""
     var timestampAuthorityHash: String = ""
+    /// `profiles.platform` as the decoder reads it; "" without a `profiles:` block.
+    var platformProfile: String = ""
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -68,6 +70,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case sharedEnabled = "shared_workspace.enabled"
         case historicalDir = "charts.historical_csv_dir"
         case protectProfile = "protect.profile"
+        case platformProfile = "profiles.platform"
         case notifyDetail = "notify.detail"
         case notifyURL = "notify.url"
         case notifyHeartbeat = "notify.heartbeat"
@@ -111,6 +114,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .sharedEnabled: pin.sharedEnabled
             case .historicalDir: pin.historicalDir
             case .protectProfile: pin.protectProfile
+            case .platformProfile: pin.platformProfile
             case .notifyDetail: pin.notifyDetail
             case .notifyHeartbeat: String(pin.notifyHeartbeat)
             case .htmlHistoryFile: pin.htmlHistoryFile
@@ -139,6 +143,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .sharedEnabled: pin.sharedEnabled = source.sharedEnabled
             case .historicalDir: pin.historicalDir = source.historicalDir
             case .protectProfile: pin.protectProfile = source.protectProfile
+            case .platformProfile: pin.platformProfile = source.platformProfile
             case .notifyDetail: pin.notifyDetail = source.notifyDetail
             case .notifyHeartbeat: pin.notifyHeartbeat = source.notifyHeartbeat
             case .htmlHistoryFile: pin.htmlHistoryFile = source.htmlHistoryFile
@@ -233,6 +238,11 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         if current.proBackupOnSyncedStorage { waiting.append(.proBackupOnSyncedStorage) }
         // An address this Mac would send to is never taken on first sight.
         if !current.timestampAuthorityHash.isEmpty { waiting.append(.timestampAuthority) }
+        // D18: a Platform profile other than the workspace's own is held until confirmed.
+        let workspaceName = ProfileName.name(fromPathComponent: workspace.lastPathComponent)
+        if !current.platformProfile.isEmpty, current.platformProfile != workspaceName {
+            waiting.append(.platformProfile)
+        }
         return waiting.filter(keys.contains)
     }
 
@@ -282,6 +292,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         // Read as the decoder reads it, so the pinned name is the one jamf-cli receives.
         let protectProfile = ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
             ? raw("profiles", "protect") : raw("protect", "profile")
+        let platformProfile = ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
+            ? raw("profiles", "platform") : nil
         return SharedConfigPin(
             allowAbsolutePaths: WorkspacePaths.optIn(raw("output", "allow_absolute_paths")) == true,
             outputDir: path("output", "output_dir"),
@@ -305,7 +317,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             proBackupOnSyncedStorage:
                 (raw("backup", "pro_on_synced_storage") as? Bool) ?? false,
             timestampAuthorityHost: webhookHost(authority),
-            timestampAuthorityHash: authority.isEmpty ? "" : SharedConfigPin.sha256Hex(authority)
+            timestampAuthorityHash: authority.isEmpty ? "" : SharedConfigPin.sha256Hex(authority),
+            platformProfile: (ConfigLoader.textValue(platformProfile) ?? "")
+                .trimmingCharacters(in: .whitespaces)
         )
     }
 
@@ -738,6 +752,12 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         !check(profile: profile, appSupport: appSupport).isDrifted(.protectProfile)
     }
 
+    /// False when `profiles.platform` differs from the pinned one or waits for a Confirm: the
+    /// Platform-only kinds are not collected (`PlatformRoute.unavailable`).
+    static func platformAllowed(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
+        !check(profile: profile, appSupport: appSupport).isDrifted(.platformProfile)
+    }
+
     /// `protect.backup_on_synced_storage` as this Mac may use it: on only while config.yaml
     /// says true and that matches a confirmed pin. A change to false applies at once and is
     /// pinned (`check`); a change to true, or a true first seen, waits for a Confirm here.
@@ -995,6 +1015,7 @@ extension SharedConfigPin {
         sharedEnabled = try c.decodeIfPresent(String.self, forKey: .sharedEnabled) ?? ""
         historicalDir = try c.decodeIfPresent(String.self, forKey: .historicalDir) ?? ""
         protectProfile = try c.decodeIfPresent(String.self, forKey: .protectProfile) ?? ""
+        platformProfile = try c.decodeIfPresent(String.self, forKey: .platformProfile) ?? ""
         notifyDetail = try c.decodeIfPresent(String.self, forKey: .notifyDetail) ?? "full"
         unconfirmed = try c.decodeIfPresent([String].self, forKey: .unconfirmed) ?? []
         // A pin from before `pinnedKeys` held the keys whose fields it has.
