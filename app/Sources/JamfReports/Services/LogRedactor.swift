@@ -226,7 +226,8 @@ enum LogRedactor {
         redactor.seedServerHosts(profiles.flatMap(serverHosts))
         // The profile is often the organisation's name; the bundle seeds the same forms.
         // Config Doctor names another local workspace in a run log, so every one is seeded.
-        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:)) + localWorkspaces())
+        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:))
+            + (profiles.isEmpty ? [] : localWorkspaces()))
         return redactor.redactText(redact(text))
     }
 
@@ -236,10 +237,14 @@ enum LogRedactor {
             at: ProfileService.workspacesRoot(), includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles])) ?? []
         // Only a folder with a config.yaml is a workspace; a data folder is not a name to hide.
-        return folders
+        // Other workspaces' names are hidden only from 4 characters, so `test` or `dev` as a
+        // workspace name does not mask that word in every shared log; the run's own name keeps
+        // the bundle's two-character rule. The scan is capped like the other folder listings.
+        return folders.prefix(200)
             .filter { FileManager.default.fileExists(
                 atPath: $0.appendingPathComponent("config.yaml").path) }
             .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
+            .filter { $0.count >= 4 }
             .flatMap { [$0, ProfileName.pathComponent($0), ProfileName.labelComponent($0)] }
     }
 

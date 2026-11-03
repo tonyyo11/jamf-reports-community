@@ -95,8 +95,50 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
     func testAnotherLocalWorkspaceNameIsRedactedFromARunLogLine() throws {
         let line = "[fail] environment.profile_shared: it is profiles.protect in 'Fabrikam'"
         let out = LogRedactor.redactedForSharing(
-            line, profile: nil, scopeIDs: { _ in [] }, serverHosts: { _ in [] },
+            line, profile: "ws", scopeIDs: { _ in [] }, serverHosts: { _ in [] },
             localWorkspaces: { ["Fabrikam"] })
         XCTAssertFalse(out.contains("Fabrikam"), out)
+    }
+
+    func testOnlyLongEnoughOtherWorkspaceNamesAreSeeded() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("jrc-seed-\(UUID().uuidString)")
+        for name in ["dev", "Fabri"] {
+            try fm.createDirectory(
+                at: root.appendingPathComponent(name), withIntermediateDirectories: true)
+            fm.createFile(
+                atPath: root.appendingPathComponent("\(name)/config.yaml").path, contents: Data())
+        }
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
+        let out = LogRedactor.redactedForSharing(
+            "dev failed; Fabri failed", profile: "ws", scopeIDs: { _ in [] },
+            serverHosts: { _ in [] })
+        XCTAssertTrue(out.contains("dev"), "3 characters would mask a common word: \(out)")
+        XCTAssertFalse(out.contains("Fabri"), out)
+    }
+
+    func testTheRealScanSeedsOnlyFoldersWithAConfig() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-seed-\(UUID().uuidString)")
+        let fm = FileManager.default
+        try fm.createDirectory(
+            at: root.appendingPathComponent("Fabrikam"), withIntermediateDirectories: true)
+        try fm.createDirectory(
+            at: root.appendingPathComponent("datafolder"), withIntermediateDirectories: true)
+        fm.createFile(
+            atPath: root.appendingPathComponent("Fabrikam/config.yaml").path, contents: Data())
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
+        let forms = LogRedactor.localWorkspaceNameForms()
+        XCTAssertTrue(forms.contains("Fabrikam"))
+        XCTAssertFalse(forms.contains("datafolder"))
+    }
+
+    func testNoProfileSeedsNoLocalWorkspaces() {
+        let out = LogRedactor.redactedForSharing(
+            "Fabrikam", profiles: [], scopeIDs: { _ in [] }, serverHosts: { _ in [] },
+            localWorkspaces: { ["Fabrikam"] })
+        XCTAssertEqual(out, "Fabrikam")
     }
 }
