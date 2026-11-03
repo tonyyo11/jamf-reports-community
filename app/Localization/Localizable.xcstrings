@@ -91271,6 +91271,46 @@
         }
       }
     },
+    "Protect is on but has no profile; set protect.profile or disconnect Protect first" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect ist aktiviert, hat aber kein Profil; setzen Sie zuerst protect.profile oder trennen Sie Protect"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect está activado pero no tiene perfil; defina protect.profile o desconecte Protect primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect est activé mais n’a pas de profil ; définissez protect.profile ou déconnectez d’abord Protect"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect è attivo ma non ha un profilo; impostare prima protect.profile o disconnettere Protect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protectは有効ですがプロファイルがありません。先にprotect.profileを設定するか、Protectの接続を解除してください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Protect está ativado mas não tem perfil; defina protect.profile ou desconecte o Protect primeiro"
+          }
+        }
+      }
+    },
     "Pull a snapshot from Jamf Pro to populate dashboards." : {
       "localizations" : {
         "de" : {
@@ -129145,6 +129185,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O config.yaml ainda não existe. Salvar a partir de outra aba o cria."
+          }
+        }
+      }
+    },
+    "config.yaml does not load, so the profiles block was not written: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml lässt sich nicht laden, daher wurde der Block profiles nicht geschrieben: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml no se carga, por lo que no se escribió el bloque profiles: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml ne se charge pas ; le bloc profiles n’a pas été écrit : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml non si carica, quindi il blocco profiles non è stato scritto: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yamlを読み込めないため、profilesブロックは書き込まれませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O config.yaml não carrega, então o bloco profiles não foi gravado: %@"
           }
         }
       }

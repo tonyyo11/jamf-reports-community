@@ -13,6 +13,8 @@ enum ProfilesConfigWriter {
         case invalidProfile(String)
         case invalidSlotProfile(String)
         case mdmIsTheWorkspace
+        case configDoesNotLoad(String)
+        case protectHasNoProfile
 
         var errorDescription: String? {
             switch self {
@@ -20,13 +22,21 @@ enum ProfilesConfigWriter {
                 ProfileName.invalidMessage(name)
             case .mdmIsTheWorkspace:
                 L("The Jamf Pro or Jamf School slot always names this workspace's own profile")
+            case .configDoesNotLoad(let reason):
+                L("config.yaml does not load, so the profiles block was not written: \(reason)")
+            case .protectHasNoProfile:
+                L("Protect is on but has no profile; set protect.profile or disconnect Protect first")
             }
         }
     }
 
     /// Sets (`name`) or clears (nil) one slot. On a file without `profiles:`, first writes the
     /// slots `EnvironmentProfiles` derives from the old keys, so the run that follows uses the
-    /// same profiles; the old keys are left in place (D14).
+    /// same profiles; the old keys are left in place (D14). `save` never writes the MDM slots
+    /// (D17): only this seed does. On a file with `protect.enabled: false` and a
+    /// `protect.profile`, the first write moves the pin's `protect.profile` token to "" (the
+    /// block has no protect slot), so each Mac sharing the folder sees one Config Doctor drift
+    /// row until confirmed; this fails safe.
     static func apply(
         _ slot: Slot, to name: String?, derived: EnvironmentProfiles,
         root: inout YAMLCodec.YAMLMapping
@@ -59,25 +69,33 @@ enum ProfilesConfigWriter {
         appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
         guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
-        if slot == .jamfPro || slot == .jamfSchool, name != profile {
-            throw WriteError.mdmIsTheWorkspace
-        }
+        if slot == .jamfPro || slot == .jamfSchool { throw WriteError.mdmIsTheWorkspace }
         if let name, !ProfileService.isValid(name) { throw WriteError.invalidSlotProfile(name) }
-        let config = ProfileService.workspaceURL(for: profile).flatMap {
-            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        var config: ReportConfig?
+        if let url = ProfileService.workspaceURL(for: profile)?
+            .appendingPathComponent("config.yaml"),
+            FileManager.default.fileExists(atPath: url.path) {
+            do { config = try ConfigLoader.load(from: url) } catch {
+                throw WriteError.configDoesNotLoad(error.localizedDescription)
+            }
         }
         let derived = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        if config?.profiles == nil, derived.protectWithoutProfile {
+            throw WriteError.protectHasNoProfile
+        }
         let report = try ConfigService.saveBlock(key: "profiles", profile: profile) {
             apply(slot, to: name, derived: derived, root: &$0)
         }.report
-        // The operator's own act: confirm what it wrote, so the next run does not read it as drift.
-        let keys: Set<SharedConfigPin.Key> = switch slot {
-        case .platform: [.platformProfile]
-        case .protect: [.protectProfile]
-        default: []
+        // The operator's own act: confirm the token this write put there, not whatever the file
+        // holds by now (a peer's copy synced in between stays drift). A cleared slot reads "".
+        let key: SharedConfigPin.Key? = switch slot {
+        case .platform: .platformProfile
+        case .protect: .protectProfile
+        default: nil
         }
-        if !keys.isEmpty {
-            SharedConfigPin.confirmBestEffort(profile: profile, keys: keys, appSupport: appSupport)
+        if let key {
+            SharedConfigPin.confirmWritten(
+                name ?? "", key: key, profile: profile, appSupport: appSupport)
         }
         return report
     }

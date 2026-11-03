@@ -12,6 +12,8 @@ final class ProfilesConfigWriterTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent(ws, isDirectory: true),
             withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("support"), withIntermediateDirectories: true)
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
     }
@@ -68,13 +70,52 @@ final class ProfilesConfigWriterTests: XCTestCase {
         XCTAssertEqual(after.jamfPro, ws)
     }
 
-    /// D17: the MDM slot is always the workspace; the writer never names another profile there.
-    func testTheMDMSlotCannotNameAnotherProfile() throws {
+    /// D17: only the first-write seed writes the MDM slot; the writer refuses set and clear.
+    func testTheMDMSlotsAreNeverWritten() throws {
         try write("profiles:\n  jamf_pro: \(ws)\n")
-        XCTAssertThrowsError(try save(.jamfPro, "other")) {
-            XCTAssertEqual($0 as? ProfilesConfigWriter.WriteError, .mdmIsTheWorkspace)
+        for (slot, name) in [(ProfilesConfigWriter.Slot.jamfPro, ws as String?),
+                             (.jamfPro, "other"), (.jamfPro, nil), (.jamfSchool, ws)] {
+            XCTAssertThrowsError(try save(slot, name)) {
+                XCTAssertEqual($0 as? ProfilesConfigWriter.WriteError, .mdmIsTheWorkspace)
+            }
         }
-        XCTAssertThrowsError(try save(.jamfPro, nil))
+        XCTAssertEqual(try readBack(), "profiles:\n  jamf_pro: \(ws)\n")
+    }
+
+    func testASchoolPrimarySeedHasJamfSchoolAndNoJamfPro() throws {
+        try write("school_cli:\n  enabled: true\n")
+        try save(.platform, "\(ws)-API")
+        let text = try readBack()
+        XCTAssertTrue(text.contains("jamf_school: \(ws)"))
+        XCTAssertFalse(text.contains("jamf_pro"))
+    }
+
+    func testAnUndecodableConfigIsRefusedAndUnchanged() throws {
+        let bad = "profiles: [unclosed\nthresholds:\n  stale_device_days: {\n"
+        try write(bad)
+        XCTAssertThrowsError(try save(.platform, "\(ws)-API")) {
+            guard case .configDoesNotLoad = $0 as? ProfilesConfigWriter.WriteError else {
+                return XCTFail("wrong error \($0)")
+            }
+        }
+        XCTAssertEqual(try readBack(), bad)
+    }
+
+    func testProtectOnWithNoProfileIsRefusedAndUnchanged() throws {
+        let text = "protect:\n  enabled: true\n"
+        try write(text)
+        XCTAssertThrowsError(try save(.platform, "\(ws)-API")) {
+            XCTAssertEqual($0 as? ProfilesConfigWriter.WriteError, .protectHasNoProfile)
+        }
+        XCTAssertEqual(try readBack(), text)
+    }
+
+    /// The pin takes the written token: on a shared workspace the slot is confirmed.
+    func testAWrittenPlatformSlotIsConfirmedOnASharedWorkspace() throws {
+        try write("shared_workspace:\n  enabled: true\n")
+        SharedConfigPin.checkpoint(profile: ws, appSupport: support, onLine: nil)
+        try save(.platform, "\(ws)-API")
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: ws, appSupport: support))
     }
 
     func testAnUnusableSlotNameIsRefused() throws {

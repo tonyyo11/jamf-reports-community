@@ -53,8 +53,8 @@ enum ProtectConnection {
             block.entries.removeAll { $0.key == "profile" }
             root.set("protect", value: .mapping(block))
         }.report
-        SharedConfigPin.confirmBestEffort(
-            profile: profile, keys: [.protectProfile], appSupport: appSupport)
+        SharedConfigPin.confirmWritten(
+            "", key: .protectProfile, profile: profile, appSupport: appSupport)
         return report
     }
 }
