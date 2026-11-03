@@ -222,7 +222,7 @@ private func previewRow(
 ) -> EnvironmentCardState.Row {
     EnvironmentCardState.Row(
         slot: slot, product: product, profile: profile,
-        authMethod: slot == .platform ? "platform" : "oauth2", level: level,
+        authMethod: profile == nil ? nil : slot == .platform ? "platform" : "oauth2", level: level,
         newestSnapshot: profile == nil ? nil : Date().addingTimeInterval(-7200),
         pinNeedsConfirming: pin)
 }
