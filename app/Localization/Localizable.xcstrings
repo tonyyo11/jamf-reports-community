@@ -67645,48 +67645,48 @@
         }
       }
     },
-    "Keep '%@' as the workspace and exclude '%@' under Automation > Excluded profiles. Keep the oauth2 profile in jamf-cli for the commands the gateway refuses. Nothing is changed for you." : {
+    "Keep '%@' as the workspace: it runs the Jamf Pro commands. Add '%@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %@` and `platform: %@`), then exclude '%@' under Automation > Excluded profiles. Nothing is changed for you." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "„%@“ als Arbeitsbereich beibehalten und „%@“ unter Automatisierung > Ausgeschlossene Profile ausschließen. Das oauth2-Profil in jamf-cli für die Befehle behalten, die das Gateway ablehnt. Es wird nichts für Sie geändert."
+            "value" : "„%1$@“ als Arbeitsbereich beibehalten: Dort laufen die Jamf-Pro-Befehle. „%2$@“ in dessen config.yaml als profiles.platform hinzufügen (`profiles:` mit `jamf_pro: %3$@` und `platform: %4$@`) und „%5$@“ anschließend unter Automatisierung > Ausgeschlossene Profile ausschließen. Es wird nichts für Sie geändert."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Keep '%1$@' as the workspace and exclude '%2$@' under Automation > Excluded profiles. Keep the oauth2 profile in jamf-cli for the commands the gateway refuses. Nothing is changed for you."
+            "value" : "Keep '%1$@' as the workspace: it runs the Jamf Pro commands. Add '%2$@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %3$@` and `platform: %4$@`), then exclude '%5$@' under Automation > Excluded profiles. Nothing is changed for you."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserve '%@' como espacio de trabajo y excluya '%@' en Automatización > Perfiles excluidos. Conserve el perfil oauth2 en jamf-cli para los comandos que rechaza la pasarela. No se cambia nada automáticamente."
+            "value" : "Conserve '%1$@' como espacio de trabajo: ejecuta los comandos de Jamf Pro. Añada '%2$@' como profiles.platform en su config.yaml (`profiles:` con `jamf_pro: %3$@` y `platform: %4$@`) y luego excluya '%5$@' en Automatización > Perfiles excluidos. No se cambia nada automáticamente."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conservez « %@ » comme espace de travail et excluez « %@ » sous Automatisation > Profils exclus. Conservez le profil oauth2 dans jamf-cli pour les commandes que la passerelle refuse. Rien n’est modifié à votre place."
+            "value" : "Conservez « %1$@ » comme espace de travail : il exécute les commandes Jamf Pro. Ajoutez « %2$@ » comme profiles.platform dans son config.yaml (`profiles:` avec `jamf_pro: %3$@` et `platform: %4$@`), puis excluez « %5$@ » sous Automatisation > Profils exclus. Rien n’est modifié à votre place."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mantenere '%@' come spazio di lavoro ed escludere '%@' in Automazione > Profili esclusi. Mantenere il profilo oauth2 in jamf-cli per i comandi che il gateway rifiuta. Nessuna modifica viene applicata automaticamente."
+            "value" : "Mantenere '%1$@' come spazio di lavoro: esegue i comandi di Jamf Pro. Aggiungere '%2$@' come profiles.platform nel suo config.yaml (`profiles:` con `jamf_pro: %3$@` e `platform: %4$@`), quindi escludere '%5$@' in Automazione > Profili esclusi. Nessuna modifica viene applicata automaticamente."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%1$@”をワークスペースとして残し、“自動化”›“除外するプロファイル”で“%2$@”を除外してください。ゲートウェイが拒否するコマンドのため、oauth2プロファイルはjamf-cliに残しておいてください。自動での変更はありません。"
+            "value" : "“%1$@”をワークスペースとして残してください。Jamf Proのコマンドはこのワークスペースで実行されます。そのconfig.yamlに“%2$@”をprofiles.platformとして追加し（`profiles:`に`jamf_pro: %3$@`と`platform: %4$@`）、“自動化”›“除外するプロファイル”で“%5$@”を除外してください。自動での変更はありません。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mantenha '%1$@' como espaço de trabalho e exclua '%2$@' em Automação > Perfis excluídos. Mantenha o perfil oauth2 no jamf-cli para os comandos que o gateway recusa. Nada é alterado por você."
+            "value" : "Mantenha '%1$@' como espaço de trabalho: ele executa os comandos do Jamf Pro. Adicione '%2$@' a ele como profiles.platform no config.yaml (`profiles:` com `jamf_pro: %3$@` e `platform: %4$@`) e depois exclua '%5$@' em Automação > Perfis excluídos. Nada é alterado por você."
           }
         }
       }

@@ -242,6 +242,8 @@ final class PlatformTwinTests: XCTestCase {
             XCTAssertEqual(rows.map(\.id), ["platform.twin"], me)
             XCTAssertEqual(rows.first?.severity, .suggest)
             XCTAssertTrue(rows[0].detail.contains("'gw'") && rows[0].detail.contains("'direct'"))
+            XCTAssertTrue(rows[0].hint?.contains("profiles.platform") == true)
+            XCTAssertTrue(rows[0].hint?.contains("Keep 'direct'") == true, "the OAuth workspace is kept")
         }
     }
 
