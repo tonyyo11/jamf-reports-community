@@ -1355,6 +1355,8 @@ final class OnboardingFlow {
     ) throws -> ConfigSaveReport {
         let report = try writeProductBlock(
             "protect", profile: protectProfileName, for: profileSlug)
+        // Under a block the writer has confirmed the slot already.
+        if ProfilesConfigWriter.hasProfilesBlock(workspace: profileSlug) { return report }
         SharedConfigPin.confirmWritten(
             protectProfileName.trimmingCharacters(in: .whitespaces),
             key: .protectProfile, profile: profileSlug)
@@ -1372,6 +1374,10 @@ final class OnboardingFlow {
     static func writeProductBlock(
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
+        if key == "protect", ProfilesConfigWriter.hasProfilesBlock(workspace: profileSlug) {
+            return try ProfilesConfigWriter.save(
+                .protect, to: name.trimmingCharacters(in: .whitespaces), workspace: profileSlug)
+        }
         let slot = key == "school_cli" ? "jamf_school" : key
         return try ConfigService.saveBlock(
             key: key, profile: profileSlug, profilesSlot: slot, slotValue: name

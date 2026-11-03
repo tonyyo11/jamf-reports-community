@@ -40,11 +40,16 @@ enum ProtectConnection {
     /// writer, so every other key in the block stays and a comment there is copied out first
     /// (`ConfigSaveReport.backupName`). A workspace with no `protect` block is left alone.
     /// The changed profile is then confirmed on this Mac: disconnecting is the operator's own
-    /// act, and an unconfirmed `protect.profile` would read as drift on the next run.
+    /// act, and an unconfirmed `protect.profile` would read as drift on the next run. Under a
+    /// `profiles:` block it clears `profiles.protect` instead.
     @discardableResult
     static func disconnect(
         workspace profile: String, appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
+        if ProfilesConfigWriter.hasProfilesBlock(workspace: profile) {
+            return try ProfilesConfigWriter.save(
+                .protect, to: nil, workspace: profile, appSupport: appSupport)
+        }
         let report = try ConfigService.saveBlock(
             key: "protect", profile: profile, profilesSlot: "protect"
         ) { root in

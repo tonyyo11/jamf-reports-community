@@ -125,18 +125,34 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
                        file: file, line: line)
     }
 
-    func testDisconnectingProtectUnderABlockWritesNothing() throws {
-        try assertWriteRefused(slot: "protect") {
-            try ProtectConnection.disconnect(
-                workspace: ws, appSupport: root.appendingPathComponent(".support"))
-        }
+    private func protectSlot() throws -> String? {
+        EnvironmentProfiles.resolve(config: try ConfigLoader.load(from: configURL), workspace: ws)
+            .protect
+    }
+
+    func testDisconnectingProtectUnderABlockClearsTheSlot() throws {
+        try writeConfig("profiles:\n  jamf_pro: blockws\n  protect: blockws-protect\n")
+        try ProtectConnection.disconnect(
+            workspace: ws, appSupport: root.appendingPathComponent(".support"))
+        XCTAssertNil(try protectSlot())
     }
 
     @MainActor
-    func testConnectingProtectUnderABlockWritesNothing() throws {
-        try assertWriteRefused(slot: "protect") {
-            try OnboardingFlow.writeProtectConfig(profileSlug: ws, protectProfileName: "other")
-        }
+    func testConnectingProtectUnderABlockWritesTheSlot() throws {
+        try writeConfig("profiles:\n  jamf_pro: blockws\n")
+        try OnboardingFlow.writeProductBlock("protect", profile: "blockws-Protect", for: ws)
+        XCTAssertEqual(try protectSlot(), "blockws-Protect")
+        XCTAssertFalse(try String(contentsOf: configURL, encoding: .utf8).contains("enabled"))
+    }
+
+    /// A config.yaml the app cannot read goes to the writer, which says so, rather than
+    /// receiving old keys nothing would read.
+    @MainActor
+    func testConnectingProtectToAFileThatDoesNotLoadThrowsTheWriterError() throws {
+        try writeConfig("profiles:\n  jamf_pro: [\n")
+        XCTAssertThrowsError(
+            try OnboardingFlow.writeProductBlock("protect", profile: "p", for: ws)
+        ) { XCTAssertTrue($0 is ProfilesConfigWriter.WriteError, "\($0)") }
     }
 
     @MainActor
@@ -147,7 +163,7 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
     }
 
     /// The block already names this login: connecting it again changes nothing and is not an
-    /// error. Another login is still refused.
+    /// error.
     @MainActor
     func testConnectingTheLoginTheBlockNamesWritesNothingAndSucceeds() throws {
         try writeConfig("profiles:\n  jamf_pro: blockws\n  protect: blockws-protect\n")
@@ -156,8 +172,6 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
             "protect", profile: " blockws-protect ", for: ws)
         XCTAssertNil(report.backupName)
         XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), before)
-        XCTAssertThrowsError(
-            try OnboardingFlow.writeProductBlock("protect", profile: "other", for: ws))
     }
 
     func testOldShapeWritersStillWrite() throws {
