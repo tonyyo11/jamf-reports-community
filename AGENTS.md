@@ -279,14 +279,14 @@ and lists the longest silence first.
 ```yaml
 profiles:
   jamf_pro: "Example"        # the Jamf Pro profile; must be this workspace's own until P2
-  platform: "Example-API"    # recorded, not read yet (P3)
+  platform: "Example-API"    # runs the Platform-only kinds (P3)
   jamf_school: ""            # never with jamf_pro
   protect: "Example-Protect" # collected after the MDM collect, as protect.profile was
   security_cloud: ""         # recorded, not read yet (P12)
 ```
 
 Decoded by `ProfilesConfig` (`ConfigSchema` from its `CodingKeys`; a slot decodes like
-`jamf_cli.profile`). `EnvironmentProfiles.resolve(config:workspace:auth:)`
+`jamf_cli.profile`). `EnvironmentProfiles.resolve(config:workspace:)`
 (`Services/EnvironmentProfiles.swift`) is the one answer to which jamf-cli profile serves which
 product; it replaced `ConnectedProducts`, and `ProfileProductType.detect`, `CollectRouter` (run,
 `proRunRefusal`, `backupRefusal`), the dashboard's `--include-profile`, `ProtectBackup`, the
@@ -295,15 +295,14 @@ rows, `CLIBridge.backupProfile(for:)`, discovery (`connectedProfiles`) and the s
 it. Without the block it derives the slots from the old keys, so a workspace collects with the
 same command lines as before (`EnvironmentProfilesGoldenTests`, hashes taken before the block
 existed): `jamf_pro` = the workspace ID (P2; `jamf_cli.profile` only sets `namedOwner`),
-`platform` too when `auth` says the
-profile is a Platform one, `jamf_school` instead when `school_cli` is primary, `protect` =
+`jamf_school` instead when `school_cli` is primary, `protect` =
 `protect.profile` when `protect.enabled` (blank sets `protectWithoutProfile`, the "protect.profile
 is blank" warning), a foreign `school_cli.profile` in `foreignSchool`. With the block the old keys
 are not read for profiles, a blank slot is a product the environment does not have, and
 `EnvironmentProfiles.refusal(workspace:)` refuses with one `[error]` when both MDM slots are
 set, neither is, or the MDM slot names another profile than the workspace (commands take `-p`
-from the slots since P2, but the slots are not pinned until P4, so a peer's edit of the MDM slot
-must not point this Mac at another tenant). Every Jamf Pro entry point applies it through
+from the slots since P2, but the MDM slots are not pinned until P4 (`profiles.protect` and `profiles.platform` are), so a peer's
+edit of the MDM slot must not point this Mac at another tenant). Every Jamf Pro entry point applies it through
 `CLIBridge.refusesProCommand`, before the product check: collect (`CollectRouter.run`, which also
 checks the config it was handed, for School), backup, backup diff, Health audit, group analysis,
 device and mobile device lookup and the CLI `device` command (`CLIBridgeError.wrongProduct`);
@@ -316,6 +315,34 @@ write) refuse under a block (`ConfigService.saveBlock(profilesSlot:)`,
 `ConfigError.profilesBlock`, "edit profiles.<slot>"); the scaffold and the binding's
 `jamf_cli.profile` still write old keys, and the block is hand-written until P4. Since P2 the only
 read of `jamf_cli.profile` is `EnvironmentProfiles.namedOwner` (see **Workspace identity** above).
+
+**Platform route (P3).** `EnvironmentProfiles.platformRoute(platformPinAllows:)` (`PlatformRoute`) is the
+one answer to who collects `ReportEngine.platformOnlyKinds`: without a block, the workspace's own profile,
+skipped by its auth method as before; under a block, the `platform` slot's profile
+(`collectCommandMatrix(platformProfile:)`, the benchmark listing too), or none, with the reason as the
+`[skip]`/`[plan]` text (`CollectSkipReason.platformUnavailable`): no slot, a slot `SharedConfigPin` holds
+(`profiles.platform` is pinned with `profiles.protect`, held at first sight when it is not the workspace's
+own profile, `platformAllowed`; a quoted bool-like value stays a string, `ConfigDecoder.nodeToJSONObject`),
+or a slot whose profile reaches another Jamf Pro than `jamf_pro` (`PlatformHostCheck.lookup` asks the server
+first, `PlatformTwin.learnJamfProURL`, and uses the `Connection` member's stored `jamfProURL` only when the
+probe gives none; a `jamf_pro` that is itself a Platform profile is compared by its learned URL;
+`PlatformTwin.invalidateCache()` runs beside every `ProfileAuthMethod.invalidateCache()`). A mismatch skip
+reason and `[warn]` name the two profiles, never the hosts (`profiles.platform (<p>) reaches a different
+Jamf Pro than profiles.jamf_pro (<j>)`); an unknown answer logs one `[warn]` and collects.
+`EnvironmentProfiles.platformInputs(route:workspace:workspaceAuth:resolve:)` is the one helper that turns the
+route into the auth and skip reason for `WorkspaceStore.expectedKinds(profile:)` and Data Sources
+(`CollectSourcesPlan.routedAuth`, Jamf Pro only: a Jamf School workspace never reads the `platform` slot;
+`CollectSourcesPlan.Inputs` carries `platformUnavailable`). In `collect`, a private `resolvePlatformRun`
+(`PlatformRun`) holds the route, the Platform profile's auth and level, the organization-level refusal and
+the host check, which runs only for a separate platform profile that resolves as usable (Platform auth or
+unresolved, not organization-level). `[plan] Platform API kinds run as <profile>` names a separate profile
+and `collectOneKind`'s `[info] collecting <kind> for <profile>` line names the profile a Platform-only kind
+ran as. The dead verdicts judge only the outcomes that ran as `jamf_pro` (`ReportEngine.jamfProGroup`), so
+a dead Platform credential is Partial and a dead Jamf Pro credential is `authExpired` even when Platform
+kinds landed; the device scan follows that verdict, and today's summary is not written when nothing landed at
+all or when Jamf Pro sources were attempted and none landed (`matrixLandedNothing`, two halves).
+`DiagnosticBundleService.serverHosts` also seeds the host forms of every `ConnectionStore` member's
+`jamfProURL`.
 
 ### output config
 

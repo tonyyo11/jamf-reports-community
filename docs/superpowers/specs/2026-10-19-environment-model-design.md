@@ -398,15 +398,15 @@ Platform API: Example-API, Protect: Example-Protect â€” collecting N sources: â€
   today). Without this, Platform kinds that landed would hide a dead OAuth credential: the run
   would read as Partial and the scan would fan out against a server that refused or never
   answered.
-- Today's summary is rebuilt only when a `jamf_pro` source landed. A run where only the
+- Today's summary is not written when `jamf_pro` sources were attempted and none landed. A run where only the
   Platform kinds landed must not date cached Mac figures today (`freshSummaryIsBetter`).
 - A `jamf_pro` group that is auth-dead throws `authExpired` as today: the exit code, the
   failure webhook and Run History are unchanged, and Protect still runs before the rethrow. A
   dead `platform` group with a live `jamf_pro` group records its kinds failed, logs the
   `[partial]` line below, and the run continues.
-- A product that landed nothing logs `[partial] <product>: no source landed` with its causes,
-  built with `ReportEngine.unlandedSourcesMarker` so `CollectHonestyWatcher` reads its kinds:
-  `retryCouldHelp` then asks per kind as today, and a permanent failure is not retried all day.
+- A Platform kind that did not land is named in the run's existing `[partial] N of M source(s) did not
+  land` line (`ReportEngine.unlandedSourcesLine`), which `CollectHonestyWatcher` reads per kind;
+  `retryCouldHelp` then asks per kind as today, so a permanent failure is not retried all day. No new line.
 - Protect's follow rule does not change in P3 (7.1). The day guard and a stand-down already
   stop it, because `collect` does not return `.collected`.
 - Per-kind state (`state/<kind>.*`) is already per workspace, and kind names already carry the

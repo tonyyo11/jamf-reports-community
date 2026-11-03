@@ -127,8 +127,9 @@ jamf_cli:
 #   - jamf_pro or jamf_school must be this workspace's own profile, or nothing
 #     runs and the run log says why;
 #   - protect is collected after each Jamf Pro or Jamf School collect, as
-#     protect.profile is; platform and security_cloud are recorded for later
-#     releases and not used yet.
+#     protect.profile is; platform runs the Platform-only reports (compliance
+#     benchmarks, DDM status, blueprints), leave it blank for none; security_cloud
+#     is not used yet (P12).
 #
 # profiles:
 #   jamf_pro: "Example"           # the Jamf Pro profile (any auth method)
