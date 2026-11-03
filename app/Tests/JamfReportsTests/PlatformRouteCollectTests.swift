@@ -178,4 +178,44 @@ final class PlatformRouteCollectTests: XCTestCase {
             outcomes: outcomes, savedKinds: ["computers"], platformSeparate: true)
         XCTAssertEqual(split.outcomes.map(\.kind), ["computers"])
     }
+
+    /// Every non-Platform kind recorded as just collected, so Jamf Pro has nothing due.
+    private func seedJamfProNotDue() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: ws))
+        let matrix = ReportEngine.collectCommandMatrix(
+            profile: ws, platformProfile: "\(ws)-API", staleDays: 30)
+        for kind in matrix.map(\.kind) where !ReportEngine.platformOnlyKinds.contains(kind) {
+            try store.recordRun(report: kind, at: Date())
+        }
+    }
+
+    private func collectNotForced() async throws -> [String] {
+        let stub = try makeStub()
+        let lines = Lines()
+        try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: ws), profile: ws,
+            workspacePaths: WorkspacePaths.self, tiers: [.inventory], force: false,
+            locateJamfCLI: { stub }, onLine: { lines.add($0.text) })
+        return lines.all
+    }
+
+    /// Jamf Pro not due and every Platform kind failing: nothing landed, so no summary.
+    func testPlatformFailingWithJamfProNotDueWritesNoSummary() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        try seedJamfProNotDue()
+        try answer("platform", #"{"error":"boom"}"#, exit: 1)
+        _ = try? await collectNotForced()
+        let summaries = try WorkspacePaths.summariesDir(for: ws)
+        XCTAssertNil(FileManager.newestJSONFile(in: summaries))
+    }
+
+    /// Jamf Pro not due and the Platform kinds landing is still a run that landed something.
+    func testPlatformLandingWithJamfProNotDueIsNotNothingLanded() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        try seedJamfProNotDue()
+        try answer("platform", #"[{"id":"1","title":"CIS"}]"#)
+        let lines = try await collectNotForced()
+        XCTAssertFalse(lines.contains { $0.contains(ReportEngine.noSourceLandedReason) },
+                       "\(lines)")
+    }
 }

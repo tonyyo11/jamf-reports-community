@@ -1801,7 +1801,8 @@ struct ReportEngine: Sendable {
     /// credentials work, so a co-occurring 401 is transient/per-endpoint and falls
     /// back to cache. An exit code alone proves nothing — some commands exit 0 after
     /// a failed fetch (spec §13.2) — so `savedKinds` is the only evidence of success.
-    /// An empty outcome set is never auth-dead.
+    /// An empty outcome set is never auth-dead. When Platform kinds ran on a profile of their
+    /// own, the caller passes the Jamf Pro group (`jamfProGroup`).
     static func isCollectAuthDead(_ outcomes: [CollectOutcome], savedKinds: Set<String>) -> Bool {
         guard !outcomes.isEmpty, savedKinds.isEmpty else { return false }
         return outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
@@ -1831,6 +1832,9 @@ struct ReportEngine: Sendable {
     ///   too-new command on an old binary) says nothing about server reachability and is
     ///   excluded from the "failure" evidence; an all-exit-2 run is a broken invocation,
     ///   not an outage, and only warns per-kind.
+    ///
+    /// The caller passes the Jamf Pro group (`jamfProGroup`) when Platform kinds ran on their
+    /// own profile.
     ///
     /// Returns false for an empty outcome set, when any kind landed a snapshot this run, when
     /// at least one kind was skipped as not due, and for a failure set that is exit-2-only.
@@ -2301,14 +2305,14 @@ struct ReportEngine: Sendable {
             if result.saved { savedKinds.insert(kind) }
         }
 
+        let platformSeparate = platformProfile != profile
         let judged = Self.jamfProGroup(
-            outcomes: outcomes, savedKinds: savedKinds,
-            platformSeparate: platformProfile != profile)
+            outcomes: outcomes, savedKinds: savedKinds, platformSeparate: platformSeparate)
         // A "not due" skip proves the credential that ran it; Platform skips prove nothing
         // about Jamf Pro when they ran as another profile.
         let judgedNotDue = plan.filter {
             $0.skip?.isNotDue == true
-                && (platformProfile == profile || !Self.platformOnlyKinds.contains($0.kind))
+                && (!platformSeparate || !Self.platformOnlyKinds.contains($0.kind))
         }.count
         let deadAfterScan = try await Self.enforceCollectVerdicts(
             outcomes: outcomes, savedKinds: savedKinds, judged: judged,
@@ -2318,9 +2322,12 @@ struct ReportEngine: Sendable {
 
         // Judged before the scan phase adds its kinds, on the Jamf Pro group. The scan works
         // from the cached `computers` snapshot and lands an EMPTY ddm-device-status for a fleet
-        // with no DDM-enabled Mac, so its kinds cannot show that this run's own sources landed;
-        // Platform kinds that landed must not date cached Mac figures today (spec 7.2).
-        let matrixLandedNothing = !judged.outcomes.isEmpty && judged.savedKinds.isEmpty
+        // with no DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
+        // Nothing landed when the run attempted something and none landed, or (spec 7.2, D20)
+        // Jamf Pro attempted and none of it landed: Platform kinds that landed must not date
+        // cached Mac figures today. Jamf Pro not due plus Platform landing is not nothing.
+        let matrixLandedNothing = (!outcomes.isEmpty && savedKinds.isEmpty)
+            || (!judged.outcomes.isEmpty && judged.savedKinds.isEmpty)
 
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
