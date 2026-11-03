@@ -681,6 +681,8 @@ struct ReportEngine: Sendable {
     /// Why no summary is written when every attempted source failed. The watcher reads that
     /// line as a result of the sources named in `unlandedSourcesLine`, not a cause of its own.
     static let noSourceLandedReason = "no source landed this run"
+    /// Jamf Pro attempted and none of it landed while Platform kinds did (spec 7.2, D20).
+    static let noJamfProSourceLandedReason = "no Jamf Pro source landed this run"
 
     /// The `[partial]` line for a collect where some attempted sources did not land.
     static func unlandedSourcesLine(_ kinds: [String], attempted: Int) -> String {
@@ -1801,7 +1803,8 @@ struct ReportEngine: Sendable {
     /// credentials work, so a co-occurring 401 is transient/per-endpoint and falls
     /// back to cache. An exit code alone proves nothing — some commands exit 0 after
     /// a failed fetch (spec §13.2) — so `savedKinds` is the only evidence of success.
-    /// An empty outcome set is never auth-dead.
+    /// An empty outcome set is never auth-dead. When Platform kinds ran on a profile of their
+    /// own, the caller passes the Jamf Pro group (`jamfProGroup`).
     static func isCollectAuthDead(_ outcomes: [CollectOutcome], savedKinds: Set<String>) -> Bool {
         guard !outcomes.isEmpty, savedKinds.isEmpty else { return false }
         return outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
@@ -1832,6 +1835,9 @@ struct ReportEngine: Sendable {
     ///   excluded from the "failure" evidence; an all-exit-2 run is a broken invocation,
     ///   not an outage, and only warns per-kind.
     ///
+    /// The caller passes the Jamf Pro group (`jamfProGroup`) when Platform kinds ran on their
+    /// own profile.
+    ///
     /// Returns false for an empty outcome set, when any kind landed a snapshot this run, when
     /// at least one kind was skipped as not due, and for a failure set that is exit-2-only.
     /// An exit code is not evidence of success: `pro report update-status` exits 0 after both
@@ -1859,6 +1865,17 @@ struct ReportEngine: Sendable {
         outcomes.filter { $0.exitCode != CLIBridge.exitCodeUsage }.allSatisfy {
             $0.cause.map(causesShowingJamfAnswered.contains) ?? false
         }
+    }
+
+    /// The outcomes and landed kinds the dead verdicts judge (spec 7.2, D20): those that ran as
+    /// the Jamf Pro profile. Platform-only kinds on a profile of their own are another
+    /// credential: they never make the run dead, and never keep a dead Jamf Pro run alive.
+    static func jamfProGroup(
+        outcomes: [CollectOutcome], savedKinds: Set<String>, platformSeparate: Bool
+    ) -> (outcomes: [CollectOutcome], savedKinds: Set<String>) {
+        guard platformSeparate else { return (outcomes, savedKinds) }
+        return (outcomes.filter { !platformOnlyKinds.contains($0.kind) },
+                savedKinds.subtracting(platformOnlyKinds))
     }
 
     /// What a dead run's failures say, for its message (spec §9.6).
@@ -2011,6 +2028,80 @@ struct ReportEngine: Sendable {
     /// True inside the tick's same-day retry of a run that failed or came back incomplete.
     @TaskLocal static var isSameDayRetry = false
 
+    /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
+    static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: workspace.name)
+        // The pin is a full check; it matters only once a block names the slot.
+        return environment.platformRoute(
+            platformPinAllows: environment.source != .profilesBlock
+                || SharedConfigPin.platformAllowed(profile: workspace.name))
+    }
+
+    /// Where the Platform kinds run and what skips them, resolved once per run.
+    private struct PlatformRun {
+        var profile: String
+        var unavailable: String?
+        var nonPlatformAuth: String?
+        var tenantLevel: Bool
+    }
+
+    /// The profile the Platform kinds run as, why they are skipped when they are, and the auth
+    /// method and level of the profile they run as. A separate profile that reaches another
+    /// Jamf Pro (spec 3.1) skips them and `profile` stands in, so `platformProfile != profile`
+    /// still means "the Platform kinds ran on another profile". An organization-level one
+    /// skips them too, but `profile` stays the named one, which its verdicts then judge.
+    private static func resolvePlatformRun(
+        config: ReportConfig?, workspace: WorkspaceID, profile: String,
+        profileAuth: ProfileAuthMethod.Resolved?, bin: URL,
+        platformHosts: PlatformHostCheck.Lookup,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> PlatformRun {
+        var run = PlatformRun(profile: profile, unavailable: nil, nonPlatformAuth: nil,
+                              tenantLevel: false)
+        func warn(_ text: String) {
+            onLine(.init(timestamp: Date(), level: .warn, text: text))
+        }
+        var platformAuth: ProfileAuthMethod.Resolved?
+        switch platformRoute(config: config, workspace: workspace) {
+        case .workspaceProfile: break
+        case .unavailable(let reason): run.unavailable = reason
+        case .profile(let named) where named == profile: break
+        case .profile(let named):
+            run.profile = named
+            platformAuth = ProfileAuthMethod.resolve(profile: named, binary: bin)
+            // Only a profile that can serve Platform kinds is worth a probe; an unresolved one
+            // fails toward collecting, as everywhere.
+            let usable = platformAuth.map {
+                nonPlatformAuthMethod($0.authMethod) == nil && !$0.isOrganizationLevel
+            } ?? true
+            guard usable else { break }
+            let hosts = platformHosts(profile, named, bin)
+            switch PlatformHostCheck.verdict(
+                jamfProURL: hosts.jamfPro, platformJamfProURL: hosts.platform) {
+            case .different:
+                run.profile = profile
+                // Profile names, never the hosts: a custom domain is in no redaction seed.
+                run.unavailable = "profiles.platform (\(ConfigSchema.displayText(named))) reaches "
+                    + "a different Jamf Pro than profiles.jamf_pro "
+                    + "(\(ConfigSchema.displayText(profile)))"
+                warn("[warn] Platform API not collected: \(run.unavailable ?? "")")
+            case .unknown:
+                warn("[warn] could not confirm that profiles.platform reaches the same "
+                    + "Jamf Pro as profiles.jamf_pro; collecting the Platform API anyway")
+            case .same: break
+            }
+        }
+        // The Platform kinds' own profile decides their auth-method and level skips.
+        if run.profile == profile { platformAuth = profileAuth }
+        run.nonPlatformAuth = nonPlatformAuthMethod(platformAuth?.authMethod)
+        run.tenantLevel = platformAuth?.isTenantLevel == true
+        // Spec 3.1: an organization-level profile reaches no Jamf Pro report.
+        if run.profile != profile, platformAuth?.isOrganizationLevel == true {
+            run.unavailable = EnvironmentProfiles.organizationLevelPlatformReason
+        }
+        return run
+    }
+
     /// Collects the Jamf Pro sources into `workspace`, which names every folder the run reads or
     /// writes. `profile` is the jamf-cli profile the commands run as (`-p`):
     /// `EnvironmentProfiles.jamfPro`, which `CollectRouter` resolves.
@@ -2024,6 +2115,7 @@ struct ReportEngine: Sendable {
         force: Bool = false,
         authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        platformHosts: PlatformHostCheck.Lookup = PlatformHostCheck.live,
         refreshSOFA: @escaping SOFARefresh = defaultSOFARefresh,
         kindTimeout: TimeInterval = collectKindTimeout,
         deviceLimits: DeviceCallLimits = DeviceCallLimits(),
@@ -2147,8 +2239,18 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
         }
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
+        // Resolved once per run, not per kind — it spawns `config list`.
+        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
+            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
+        }
+        let platformRun = Self.resolvePlatformRun(
+            config: loadedConfig, workspace: workspace, profile: profile,
+            profileAuth: profileAuth, bin: bin, platformHosts: platformHosts, onLine: onLine)
+        let platformProfile = platformRun.profile
+        let platformUnavailable = platformRun.unavailable
         let commands = Self.collectCommandMatrix(
-            profile: profile,
+            profile: profile, platformProfile: platformProfile,
             staleDays: loadedConfig?.thresholds?.resolvedStaleDays ?? 30)
 
         // Cadence state store: persists per-kind last-success timestamps so
@@ -2164,24 +2266,18 @@ struct ReportEngine: Sendable {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
 
-        // Resolved once per run, not per kind — it spawns `config list`.
-        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
-        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
-            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
-        }
-        let nonPlatformAuth = Self.nonPlatformAuthMethod(profileAuth?.authMethod)
-        let tenantLevel = profileAuth?.isTenantLevel == true
         let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
 
         // Every skip decision is made here, once, before the first command: the `[plan]`
         // lines and the loop below both read this list.
+        var planInputs = CollectPlanInputs(
+            tiers: tiers, force: force, skipExpensive: skipExpensive,
+            nonPlatformAuth: platformRun.nonPlatformAuth, tenantLevel: platformRun.tenantLevel,
+            collectSkip: collectSkip, dashboardSupported: dashboardSupported,
+            installedVersion: detectedVersion, now: collectStart)
+        planInputs.platformUnavailable = platformUnavailable
         let plan = Self.planCollect(
-            commands: commands,
-            inputs: CollectPlanInputs(
-                tiers: tiers, force: force, skipExpensive: skipExpensive,
-                nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel,
-                collectSkip: collectSkip, dashboardSupported: dashboardSupported,
-                installedVersion: detectedVersion, now: collectStart),
+            commands: commands, inputs: planInputs,
             lastRun: { stateStore?.lastRun(report: $0) }
         )
         let scanPlan = Self.planDeviceScan(
@@ -2192,6 +2288,11 @@ struct ReportEngine: Sendable {
             profile: profile, plan: plan, afterMatrix: afterMatrix,
             afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
             deviceScan: scanPlan, onLine: onLine)
+        if platformProfile != profile, platformUnavailable == nil,
+           plan.contains(where: { $0.skip == nil && Self.platformOnlyKinds.contains($0.kind) }) {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[plan] Platform API kinds run as \(platformProfile)"))
+        }
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -2202,7 +2303,6 @@ struct ReportEngine: Sendable {
         // Cadence "not due" skips only — NOT tier-filter skips, which say nothing
         // about server reachability. Feeds isCollectDead's veto: a run that skipped
         // fresh-cache kinds and failed only the chronic residue is not an outage.
-        let skippedNotDueCount = plan.filter { $0.skip?.isNotDue == true }.count
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
         for planned in plan {
@@ -2223,7 +2323,7 @@ struct ReportEngine: Sendable {
             let result: KindCollectResult
             if Self.benchmarkReportKinds.contains(kind) {
                 result = try await Self.collectBenchmarkReport(
-                    kind: kind, profile: profile, arguments: args,
+                    kind: kind, profile: platformProfile, arguments: args,
                     configuredTitles: loadedConfig?.platform?.benchmarkTitles ?? [],
                     discovery: &benchmarkDiscovery,
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
@@ -2245,8 +2345,11 @@ struct ReportEngine: Sendable {
                     collectStart: collectStart, onLine: onLine
                 )
             } else {
+                // The log names the profile the command ran as (its argv carries it).
                 result = try await Self.collectOneKind(
-                    kind: kind, profile: profile, arguments: args,
+                    kind: kind,
+                    profile: Self.platformOnlyKinds.contains(kind) ? platformProfile : profile,
+                    arguments: args,
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
                     dataDir: dataDir, recordManifest: recordManifest,
                     useCachedData: useCachedData, stateStore: stateStore,
@@ -2257,16 +2360,31 @@ struct ReportEngine: Sendable {
             if result.saved { savedKinds.insert(kind) }
         }
 
+        let platformSeparate = platformProfile != profile
+        let judged = Self.jamfProGroup(
+            outcomes: outcomes, savedKinds: savedKinds, platformSeparate: platformSeparate)
+        // A "not due" skip proves the credential that ran it; Platform skips prove nothing
+        // about Jamf Pro when they ran as another profile.
+        let judgedNotDue = plan.filter {
+            $0.skip?.isNotDue == true
+                && (!platformSeparate || !Self.platformOnlyKinds.contains($0.kind))
+        }.count
         let deadAfterScan = try await Self.enforceCollectVerdicts(
-            outcomes: outcomes, savedKinds: savedKinds,
-            skippedNotDueCount: skippedNotDueCount, profile: profile, bin: bin,
+            outcomes: outcomes, savedKinds: savedKinds, judged: judged,
+            skippedNotDueCount: judgedNotDue, profile: profile, bin: bin,
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
 
-        // Judged before the scan phase adds its kinds. The scan works from the cached
-        // `computers` snapshot and lands an EMPTY ddm-device-status for a fleet with no
-        // DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
-        let matrixLandedNothing = !outcomes.isEmpty && savedKinds.isEmpty
+        // Judged before the scan phase adds its kinds, on the Jamf Pro group. The scan works
+        // from the cached `computers` snapshot and lands an EMPTY ddm-device-status for a fleet
+        // with no DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
+        // Nothing landed when the run attempted something and none landed, or (spec 7.2, D20)
+        // Jamf Pro attempted and none of it landed: Platform kinds that landed must not date
+        // cached Mac figures today. Jamf Pro not due plus Platform landing is not nothing.
+        let nothingLandedReason: String? =
+            (!outcomes.isEmpty && savedKinds.isEmpty) ? Self.noSourceLandedReason
+            : (!judged.outcomes.isEmpty && judged.savedKinds.isEmpty)
+            ? Self.noJamfProSourceLandedReason : nil
 
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
@@ -2282,7 +2400,7 @@ struct ReportEngine: Sendable {
 
         await Self.finalizeCollect(
             workspace: workspace, profile: profile, afterMatrix: afterMatrix, bin: bin,
-            dataDir: dataDir, savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
+            dataDir: dataDir, savedKinds: savedKinds, nothingLandedReason: nothingLandedReason,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore,
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
@@ -2303,10 +2421,13 @@ struct ReportEngine: Sendable {
     /// landed. Both dead verdicts abort BEFORE any summary is written, so a run that
     /// fetched nothing can never promote stale cache as fresh data. A dead run whose
     /// failures all show Jamf answered is returned instead of thrown, for the caller to
-    /// throw once the device scan has run (`deadRunAllowsDeviceScan`).
+    /// throw once the device scan has run (`deadRunAllowsDeviceScan`). The dead verdicts judge
+    /// `judged`, the outcomes that ran as the Jamf Pro profile (`jamfProGroup`, spec 7.2); the
+    /// `[partial]` line covers every outcome.
     private static func enforceCollectVerdicts(
         outcomes: [CollectOutcome],
         savedKinds: Set<String>,
+        judged: (outcomes: [CollectOutcome], savedKinds: Set<String>),
         skippedNotDueCount: Int,
         profile: String,
         bin: URL,
@@ -2326,7 +2447,7 @@ struct ReportEngine: Sendable {
         // defect this fixes): one endpoint's 401 is not proof credentials are dead.
         // evaluateAuthDead only calls the probe when isCollectAuthDead is true.
         if let decision = await Self.evaluateAuthDead(
-            outcomes: outcomes, savedKinds: savedKinds, profile: profile, bin: bin,
+            outcomes: judged.outcomes, savedKinds: judged.savedKinds, profile: profile, bin: bin,
             probe: authConfirmationProbe
         ) {
             switch decision {
@@ -2365,12 +2486,13 @@ struct ReportEngine: Sendable {
         // auth-dead: no degraded snapshot should be promoted as fresh data. See
         // isCollectDead's doc comment for the field defect this veto set fixes.
         if Self.isCollectDead(
-            outcomes, savedKinds: savedKinds, skippedNotDueCount: skippedNotDueCount
+            judged.outcomes, savedKinds: judged.savedKinds, skippedNotDueCount: skippedNotDueCount
         ) {
             let error = ReportEngineError.collectDead(
-                profile: profile, failedCount: outcomes.count, cause: Self.deadRunCause(outcomes)
+                profile: profile, failedCount: judged.outcomes.count,
+                cause: Self.deadRunCause(judged.outcomes)
             )
-            if Self.deadRunAllowsDeviceScan(outcomes) { return error }
+            if Self.deadRunAllowsDeviceScan(judged.outcomes) { return error }
             throw Self.reportDeadCollect(error, onLine: onLine)
         }
 
@@ -2433,7 +2555,7 @@ struct ReportEngine: Sendable {
         bin: URL,
         dataDir: URL,
         savedKinds: Set<String>,
-        nothingLanded: Bool,
+        nothingLandedReason: String?,
         loadedConfig: ReportConfig?,
         refreshSOFA: SOFARefresh,
         workspacePaths: WorkspacePaths.Type,
@@ -2481,10 +2603,10 @@ struct ReportEngine: Sendable {
         // only other site that produces these files, so the trend chart will
         // simply not advance until the next configured run.
         let unwritten: String?
-        if nothingLanded, loadedConfig != nil {
+        if let nothingLandedReason, loadedConfig != nil {
             // Every attempted source failed: a summary now would stamp cached numbers
             // with today's date and chart them as a fresh trend point.
-            unwritten = Self.noSourceLandedReason
+            unwritten = nothingLandedReason
         } else if let config = loadedConfig,
            let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
             let prov = await Provenance.current(
@@ -2593,7 +2715,22 @@ struct ReportEngine: Sendable {
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
     /// `knownCollectKinds` — `CollectionTierLookupTests` enforces that in CI.
+    /// The Platform-only kinds take `platformProfile` for `-p` (every row's `-p` value is
+    /// `args[1]`), so one environment can collect Jamf Pro and Platform data through two logins.
     static func collectCommandMatrix(
+        profile: String, platformProfile: String? = nil, staleDays: Int
+    ) -> [(args: [String], kind: String)] {
+        let matrix = jamfProCommandMatrix(profile: profile, staleDays: staleDays)
+        guard let platformProfile, platformProfile != profile else { return matrix }
+        return matrix.map { command in
+            guard platformOnlyKinds.contains(command.kind) else { return command }
+            var args = command.args
+            args[1] = platformProfile
+            return (args, command.kind)
+        }
+    }
+
+    private static func jamfProCommandMatrix(
         profile: String, staleDays: Int
     ) -> [(args: [String], kind: String)] {
         let mobileSections = mobileInventorySections.flatMap { ["--section", $0] }

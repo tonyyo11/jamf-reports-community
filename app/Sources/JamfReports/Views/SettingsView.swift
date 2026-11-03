@@ -107,6 +107,7 @@ struct SettingsView: View {
             // so a profile that just gained platform auth must not stay excluded for the
             // rest of the session.
             ProfileAuthMethod.invalidateCache()
+            PlatformTwin.invalidateCache()
         }
     }
 

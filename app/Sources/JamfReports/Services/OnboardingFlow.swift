@@ -532,6 +532,7 @@ final class OnboardingFlow {
         // the health strip read both through ProfileAuthMethod's process-lifetime cache,
         // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
     }
 
     private func registerOAuth2Profile() async throws {

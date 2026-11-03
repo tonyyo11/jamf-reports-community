@@ -511,7 +511,8 @@ extension WorkspaceStore {
         tenantLevel: Bool = false,
         collectSkip: Set<String> = [],
         dashboardSupported: Bool = false,
-        protectConnected: Bool = false
+        protectConnected: Bool = false,
+        platformUnavailable: Bool = false
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
         let protect = protectConnected ? DataFreshnessHealth.protectKinds : []
@@ -524,7 +525,8 @@ extension WorkspaceStore {
                 return false
             }
             if collectSkip.contains(kind) { return false }
-            return !(skipsPlatform && ReportEngine.platformOnlyKinds.contains(kind))
+            let platformOut = platformUnavailable || skipsPlatform
+            return !(platformOut && ReportEngine.platformOnlyKinds.contains(kind))
         } + protect
     }
 

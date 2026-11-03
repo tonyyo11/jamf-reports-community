@@ -46,6 +46,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A workspace whose config.yaml has a `profiles:` block now collects the compliance benchmark, DDM and blueprint reports with the Platform API profile named in `profiles.platform`, and skips them when none is named. A Platform API profile that reaches a different Jamf Pro is skipped with a warning, and on a shared workspace a new one waits for a Confirm in Config Doctor.
+- In a workspace with a `profiles:` block and a separate Platform API profile, an expired Jamf Pro sign-in is now reported as such even when the Platform API reports still arrive, instead of the run finishing as Partial. (#305)
 - Small monospaced labels (the sidebar's sync time and workspace monogram, the Security Score
   "of 100", the schedule mode tag and the jamf-cli path heading) are 10 pt, the macOS minimum.
 - A workspace whose config.yaml names a different `jamf_cli.profile` than its own, such as a

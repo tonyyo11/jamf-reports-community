@@ -1165,6 +1165,7 @@ final class WorkspaceStore {
     /// the headless cache (`ProfileAuthMethod`) is cleared and the profile list read again.
     func credentialsChanged() {
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
         reloadFromDisk()
     }
 
