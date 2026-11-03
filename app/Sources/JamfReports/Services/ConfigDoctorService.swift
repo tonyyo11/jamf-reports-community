@@ -57,7 +57,9 @@ enum ConfigDoctorService {
 
     /// Load `config.yaml` and cached EA coverage names for `profile`, then evaluate. Missing artifacts are non-fatal — their
     /// checks are skipped rather than crashing.
-    static func run(profile: String, workspaceRoot: URL? = nil) -> DoctorReport {
+    static func run(
+        profile: String, workspaceRoot: URL? = nil, includeProbes: Bool = true
+    ) -> DoctorReport {
         var config: ReportConfig?
         var parseError: String?
         do {
@@ -86,9 +88,11 @@ enum ConfigDoctorService {
             rows += profileOwnerRows(profile: profile, config: config)
             rows += twoMDMRows(profile: profile, config: config)
             rows += oldKeyRows(profile: profile, config: config)
-            rows += unknownSlotProfileRows(profile: profile, config: config)
+            rows += unknownSlotProfileRows(
+                profile: profile, config: config, includeProbes: includeProbes)
             rows += profileSharedRows(profile: profile, config: config)
-            rows += platformHostRows(profile: profile, config: config)
+            rows += platformHostRows(
+                profile: profile, config: config, includeProbes: includeProbes)
             rows += protectProfileFolderRows(profile: profile, config: config)
             rows += protectProfileProductRows(config: config, workspace: profile)
             rows += protectSyncedBackupRows(

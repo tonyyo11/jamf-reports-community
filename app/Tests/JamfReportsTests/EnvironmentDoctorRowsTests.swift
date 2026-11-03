@@ -2,7 +2,9 @@ import XCTest
 @testable import JamfReports
 
 final class EnvironmentDoctorRowsTests: XCTestCase {
-    private func env(_ yaml: String, ws: String = "ws") throws -> (EnvironmentProfiles, ReportConfig) {
+    private func env(
+        _ yaml: String, ws: String = "ws"
+    ) throws -> (EnvironmentProfiles, ReportConfig) {
         let config = try ConfigLoader.loadFromString(yaml)
         return (EnvironmentProfiles.resolve(config: config, workspace: ws), config)
     }
@@ -58,5 +60,43 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
             hosts: ("https://a.jamfcloud.com", "https://a.jamfcloud.com")).isEmpty)
         XCTAssertTrue(ConfigDoctorService.platformHostRows(
             profile: "ws", environment: e, hosts: nil).isEmpty)
+    }
+
+    func testTheProtectSlotIsCheckedToo() throws {
+        let (e, _) = try env("profiles:\n  jamf_pro: ws\n  protect: ws-P\n")
+        let rows = ConfigDoctorService.unknownSlotProfileRows(environment: e, listed: ["ws"])
+        XCTAssertEqual(rows.map(\.id), ["environment.unknown_profile"])
+        XCTAssertTrue(rows[0].detail.contains("Jamf Protect"))
+    }
+
+    func testASecurityCloudProfileInTwoEnvironmentsFails() throws {
+        let (e, _) = try env("profiles:\n  jamf_pro: ws\n  security_cloud: sc\n")
+        let (o, _) = try env("profiles:\n  jamf_pro: other\n  security_cloud: sc\n", ws: "other")
+        XCTAssertEqual(ConfigDoctorService.profileSharedRows(
+            profile: "ws", environment: e, others: [("other", o)]).map(\.id),
+            ["environment.profile_shared"])
+    }
+
+    func testPlatformEqualToJamfProGivesNoHostRow() throws {
+        let (e, _) = try env("profiles:\n  jamf_pro: ws\n  platform: ws\n")
+        XCTAssertTrue(ConfigDoctorService.platformHostRows(
+            profile: "ws", environment: e,
+            hosts: ("https://a.jamfcloud.com", "https://b.jamfcloud.com")).isEmpty)
+    }
+
+    func testProbesOffAsksJamfCLINothing() throws {
+        let (_, c) = try env("profiles:\n  jamf_pro: ws\n  platform: ws-API\n  protect: ws-P\n")
+        XCTAssertTrue(ConfigDoctorService.platformHostRows(
+            profile: "ws", config: c, includeProbes: false).isEmpty)
+        XCTAssertTrue(ConfigDoctorService.unknownSlotProfileRows(
+            profile: "ws", config: c, includeProbes: false).isEmpty)
+    }
+
+    func testAnotherLocalWorkspaceNameIsRedactedFromARunLogLine() throws {
+        let line = "[fail] environment.profile_shared: it is profiles.protect in 'Fabrikam'"
+        let out = LogRedactor.redactedForSharing(
+            line, profile: nil, scopeIDs: { _ in [] }, serverHosts: { _ in [] },
+            localWorkspaces: { ["Fabrikam"] })
+        XCTAssertFalse(out.contains("Fabrikam"), out)
     }
 }

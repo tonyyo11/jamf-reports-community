@@ -18477,48 +18477,82 @@
         }
       }
     },
-    "'%@' is not in jamf-cli's profiles, so %@ fail on every run." : {
+    "'%@' is not in jamf-cli's profiles, so Jamf Protect fails on every run." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "„%1$@“ gehört nicht zu den Profilen von jamf-cli, daher schlägt %2$@ bei jedem Lauf fehl."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "'%1$@' is not in jamf-cli's profiles, so %2$@ fail on every run."
+            "value" : "„%@“ gehört nicht zu den Profilen von jamf-cli, daher schlägt Jamf Protect bei jedem Lauf fehl."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«%1$@» no está en los perfiles de jamf-cli, por lo que %2$@ falla en cada ejecución."
+            "value" : "«%@» no está en los perfiles de jamf-cli, por lo que Jamf Protect falla en cada ejecución."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "« %1$@ » ne figure pas parmi les profils de jamf-cli : %2$@ échoue donc à chaque exécution."
+            "value" : "« %@ » ne figure pas parmi les profils de jamf-cli : Jamf Protect échoue donc à chaque exécution."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "'%1$@' non è tra i profili di jamf-cli, quindi %2$@ non riesce a ogni esecuzione."
+            "value" : "'%@' non è tra i profili di jamf-cli, quindi Jamf Protect non riesce a ogni esecuzione."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%1$@」は jamf-cli のプロファイルにないため、%2$@ は実行のたびに失敗します。"
+            "value" : "「%@」は jamf-cli のプロファイルにないため、Jamf Protect は実行のたびに失敗します。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "'%1$@' não está nos perfis do jamf-cli, então %2$@ falha em toda execução."
+            "value" : "'%@' não está nos perfis do jamf-cli, então o Jamf Protect falha em toda execução."
+          }
+        }
+      }
+    },
+    "'%@' is not in jamf-cli's profiles, so Platform API reports fail on every run." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ gehört nicht zu den Profilen von jamf-cli, daher schlagen die Platform-API-Berichte bei jedem Lauf fehl."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» no está en los perfiles de jamf-cli, por lo que los informes de Platform API fallan en cada ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %@ » ne figure pas parmi les profils de jamf-cli : les rapports Platform API échouent donc à chaque exécution."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' non è tra i profili di jamf-cli, quindi i report della Platform API non riescono a ogni esecuzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は jamf-cli のプロファイルにないため、Platform API レポートは実行のたびに失敗します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' não está nos perfis do jamf-cli, então os relatórios da Platform API falham em toda execução."
           }
         }
       }
@@ -89719,46 +89753,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Região da Platform API"
-          }
-        }
-      }
-    },
-    "Platform API reports" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Platform-API-Berichte"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "los informes de Platform API"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "les rapports Platform API"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "i report della Platform API"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Platform API レポート"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "os relatórios da Platform API"
           }
         }
       }

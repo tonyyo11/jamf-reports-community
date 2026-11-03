@@ -203,11 +203,12 @@ enum LogRedactor {
         _ text: String,
         profile: String?,
         scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) },
-        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) }
+        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) },
+        localWorkspaces: () -> [String] = { localWorkspaceNameForms() }
     ) -> String {
         redactedForSharing(
             text, profiles: profile.map { [$0] } ?? [],
-            scopeIDs: scopeIDs, serverHosts: serverHosts)
+            scopeIDs: scopeIDs, serverHosts: serverHosts, localWorkspaces: localWorkspaces)
     }
 
     /// As above for a log that mixes several profiles' lines (the in-app buffer): every
@@ -216,15 +217,30 @@ enum LogRedactor {
         _ text: String,
         profiles: [String],
         scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) },
-        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) }
+        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) },
+        localWorkspaces: () -> [String] = { localWorkspaceNameForms() }
     ) -> String {
         let redactor = DiagnosticRedactor()
         // Each seed call replaces the last, so hand over every profile's values at once.
         redactor.seedScopeIDs(profiles.flatMap(scopeIDs))
         redactor.seedServerHosts(profiles.flatMap(serverHosts))
         // The profile is often the organisation's name; the bundle seeds the same forms.
-        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:)))
+        // Config Doctor names another local workspace in a run log, so every one is seeded.
+        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:)) + localWorkspaces())
         return redactor.redactText(redact(text))
+    }
+
+    /// Every workspace folder under the workspaces root, as typed and in its path and label forms.
+    static func localWorkspaceNameForms() -> [String] {
+        let folders = (try? FileManager.default.contentsOfDirectory(
+            at: ProfileService.workspacesRoot(), includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? []
+        // Only a folder with a config.yaml is a workspace; a data folder is not a name to hide.
+        return folders
+            .filter { FileManager.default.fileExists(
+                atPath: $0.appendingPathComponent("config.yaml").path) }
+            .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
+            .flatMap { [$0, ProfileName.pathComponent($0), ProfileName.labelComponent($0)] }
     }
 
     /// A profile's name and the logins its workspace names (`Acme-Protect`), each as typed and in

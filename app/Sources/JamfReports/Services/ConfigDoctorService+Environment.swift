@@ -45,18 +45,21 @@ extension ConfigDoctorService {
         environment: EnvironmentProfiles, listed: [String]?
     ) -> [DoctorRow] {
         guard environment.source == .profilesBlock, let listed else { return [] }
-        let slots: [(key: String, name: String?, what: String)] = [
-            ("platform", environment.platform, L("Platform API reports")),
-            ("protect", environment.protect, L("Jamf Protect"))
+        let slots: [(key: String, name: String?, detail: (String) -> String)] = [
+            ("platform", environment.platform, { name in
+                L("'\(name)' is not in jamf-cli's profiles, so Platform API reports fail on every run.")
+            }),
+            ("protect", environment.protect, { name in
+                L("'\(name)' is not in jamf-cli's profiles, so Jamf Protect fails on every run.")
+            })
         ]
         return slots.compactMap { slot in
             guard let name = slot.name, !listed.contains(name) else { return nil }
-            let shown = ConfigSchema.displayText(name)
             return DoctorRow(
                 id: "environment.unknown_profile",
                 severity: .warn,
                 title: L("profiles.\(slot.key) names a profile jamf-cli does not have"),
-                detail: L("'\(shown)' is not in jamf-cli's profiles, so \(slot.what) fail on every run."),
+                detail: slot.detail(ConfigSchema.displayText(name)),
                 hint: L("Run `jamf-cli config list`, then set profiles.\(slot.key) to a profile it shows.")
             )
         }
@@ -96,10 +99,13 @@ extension ConfigDoctorService {
         hosts: (jamfPro: String?, platform: String?)?
     ) -> [DoctorRow] {
         guard let hosts, let platform = environment.platform,
-              case let .different(jamfProHost, platformHost) = PlatformHostCheck.verdict(
+              platform != (environment.jamfPro ?? profile),
+              case let .different(jamfProHostRaw, platformHostRaw) = PlatformHostCheck.verdict(
                 jamfProURL: hosts.jamfPro, platformJamfProURL: hosts.platform)
         else { return [] }
         let jamfPro = ConfigSchema.displayText(environment.jamfPro ?? profile)
+        let jamfProHost = ConfigSchema.displayText(jamfProHostRaw)
+        let platformHost = ConfigSchema.displayText(platformHostRaw)
         let platformName = ConfigSchema.displayText(platform)
         return [DoctorRow(
             id: "environment.platform_host",
@@ -112,44 +118,70 @@ extension ConfigDoctorService {
 
     // MARK: - Live wrappers
 
+    /// Every wrapper reads the environment first and does no IO for a workspace without a
+    /// `profiles:` block, where none of these rows can apply.
+    private static func blockEnvironment(
+        _ profile: String, _ config: ReportConfig
+    ) -> EnvironmentProfiles? {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        return environment.source == .profilesBlock ? environment : nil
+    }
+
     static func twoMDMRows(profile: String, config: ReportConfig) -> [DoctorRow] {
-        twoMDMRows(environment: EnvironmentProfiles.resolve(config: config, workspace: profile))
+        blockEnvironment(profile, config).map { twoMDMRows(environment: $0) } ?? []
     }
 
     static func oldKeyRows(profile: String, config: ReportConfig) -> [DoctorRow] {
-        oldKeyRows(
-            environment: EnvironmentProfiles.resolve(config: config, workspace: profile),
-            config: config)
+        blockEnvironment(profile, config).map { oldKeyRows(environment: $0, config: config) } ?? []
     }
 
-    static func unknownSlotProfileRows(profile: String, config: ReportConfig) -> [DoctorRow] {
-        unknownSlotProfileRows(
-            environment: EnvironmentProfiles.resolve(config: config, workspace: profile),
+    static func unknownSlotProfileRows(
+        profile: String, config: ReportConfig, includeProbes: Bool = true
+    ) -> [DoctorRow] {
+        guard includeProbes, let environment = blockEnvironment(profile, config),
+              environment.platform != nil || environment.protect != nil else { return [] }
+        return unknownSlotProfileRows(
+            environment: environment,
             listed: ProfileService.listJamfCLIProfiles(scheduleCounts: [:])?.map(\.name))
     }
 
     static func profileSharedRows(profile: String, config: ReportConfig) -> [DoctorRow] {
-        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
-        guard environment.source == .profilesBlock else { return [] }
+        guard let environment = blockEnvironment(profile, config),
+              !environment.connectedProfiles.isEmpty else { return [] }
         let root = ProfileService.workspacesRoot()
+        let mine = ProfileService.workspaceURL(for: profile)?.resolvingSymlinksInPath()
+        let key = ProfileName.folderKey(profile)
         let folders = (try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        let others = folders.compactMap { folder -> (workspace: String, environment: EnvironmentProfiles)? in
-            guard let name = ProfileName.name(fromPathComponent: folder.lastPathComponent),
-                  name != profile,
-                  let other = try? ConfigLoader.load(
-                      from: folder.appendingPathComponent("config.yaml"))
-            else { return nil }
-            return (name, EnvironmentProfiles.resolve(config: other, workspace: name))
+            at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles])) ?? []
+        let others = folders.compactMap {
+            otherEnvironment(at: $0, mine: mine, myKey: key)
         }
         return profileSharedRows(profile: profile, environment: environment, others: others)
     }
 
-    static func platformHostRows(profile: String, config: ReportConfig) -> [DoctorRow] {
-        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
-        guard environment.source == .profilesBlock,
-              let platform = environment.platform, platform != environment.jamfPro,
-              let jamfPro = environment.jamfPro,
+    /// Another workspace's environment, or nil for a folder that is this one (a link or a case
+    /// variant), a link, a file, or a config.yaml that does not decode.
+    private static func otherEnvironment(
+        at folder: URL, mine: URL?, myKey: String
+    ) -> (workspace: String, environment: EnvironmentProfiles)? {
+        let values = try? folder.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values?.isDirectory == true, values?.isSymbolicLink != true,
+              let name = ProfileName.name(fromPathComponent: folder.lastPathComponent),
+              ProfileName.folderKey(name) != myKey,
+              folder.resolvingSymlinksInPath() != mine,
+              let other = try? ConfigLoader.load(
+                  from: folder.appendingPathComponent("config.yaml"))
+        else { return nil }
+        return (name, EnvironmentProfiles.resolve(config: other, workspace: name))
+    }
+
+    static func platformHostRows(
+        profile: String, config: ReportConfig, includeProbes: Bool = true
+    ) -> [DoctorRow] {
+        guard includeProbes, let environment = blockEnvironment(profile, config),
+              let platform = environment.platform, let jamfPro = environment.jamfPro,
+              platform != jamfPro,
               let bin = ExecutableLocator.locate("jamf-cli") else { return [] }
         return platformHostRows(
             profile: profile, environment: environment,
