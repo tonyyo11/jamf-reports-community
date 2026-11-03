@@ -2033,15 +2033,58 @@ struct ReportEngine: Sendable {
                 platformPinAllows: SharedConfigPin.platformAllowed(profile: workspace.name))
     }
 
-    /// The profile the Platform kinds run as and, when the route has none, why they are skipped.
-    private static func platformProfile(
-        config: ReportConfig?, workspace: WorkspaceID, profile: String
-    ) -> (profile: String, unavailable: String?) {
-        switch platformRoute(config: config, workspace: workspace) {
-        case .workspaceProfile: return (profile, nil)
-        case .profile(let named): return (named, nil)
-        case .unavailable(let reason): return (profile, reason)
+    /// Where the Platform kinds run and what skips them, resolved once per run.
+    private struct PlatformRun {
+        var profile: String
+        var unavailable: String?
+        var nonPlatformAuth: String?
+        var tenantLevel: Bool
+    }
+
+    /// The profile the Platform kinds run as, why they are skipped when they are, and the auth
+    /// method and level of the profile they run as. A separate profile that reaches another
+    /// Jamf Pro (spec 3.1) or is organization-level skips them; `profile` stands in then, so
+    /// `platformProfile != profile` still means "the Platform kinds ran on another profile".
+    private static func resolvePlatformRun(
+        config: ReportConfig?, workspace: WorkspaceID, profile: String,
+        profileAuth: ProfileAuthMethod.Resolved?, bin: URL,
+        platformHosts: PlatformHostCheck.Lookup,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> PlatformRun {
+        var run = PlatformRun(profile: profile, unavailable: nil, nonPlatformAuth: nil,
+                              tenantLevel: false)
+        func warn(_ text: String) {
+            onLine(.init(timestamp: Date(), level: .warn, text: text))
         }
+        switch platformRoute(config: config, workspace: workspace) {
+        case .workspaceProfile: break
+        case .unavailable(let reason): run.unavailable = reason
+        case .profile(let named) where named == profile: break
+        case .profile(let named):
+            let hosts = platformHosts(profile, named, bin)
+            switch PlatformHostCheck.verdict(
+                jamfProURL: hosts.jamfPro, platformJamfProURL: hosts.platform) {
+            case .different(let jamfPro, let reached):
+                run.unavailable = "profiles.platform reaches \(reached), not \(jamfPro)"
+                warn("[warn] Platform API not collected: \(run.unavailable ?? "")")
+            case .unknown:
+                run.profile = named
+                warn("[warn] could not confirm that profiles.platform reaches the same "
+                    + "Jamf Pro as profiles.jamf_pro; collecting the Platform API anyway")
+            case .same:
+                run.profile = named
+            }
+        }
+        // The Platform kinds' own profile decides their auth-method and level skips.
+        let platformAuth = run.profile == profile
+            ? profileAuth : ProfileAuthMethod.resolve(profile: run.profile, binary: bin)
+        run.nonPlatformAuth = nonPlatformAuthMethod(platformAuth?.authMethod)
+        run.tenantLevel = platformAuth?.isTenantLevel == true
+        // Spec 3.1: an organization-level profile reaches no Jamf Pro report.
+        if run.profile != profile, platformAuth?.isOrganizationLevel == true {
+            run.unavailable = "profiles.platform names an organization-level profile"
+        }
+        return run
     }
 
     /// Collects the Jamf Pro sources into `workspace`, which names every folder the run reads or
@@ -2057,6 +2100,7 @@ struct ReportEngine: Sendable {
         force: Bool = false,
         authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        platformHosts: PlatformHostCheck.Lookup = PlatformHostCheck.live,
         refreshSOFA: @escaping SOFARefresh = defaultSOFARefresh,
         kindTimeout: TimeInterval = collectKindTimeout,
         deviceLimits: DeviceCallLimits = DeviceCallLimits(),
@@ -2180,10 +2224,16 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
         }
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
-        let route = Self.platformProfile(
-            config: loadedConfig, workspace: workspace, profile: profile)
-        let platformProfile = route.profile
-        var platformUnavailable = route.unavailable
+        // Resolved once per run, not per kind — it spawns `config list`.
+        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
+            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
+        }
+        let platformRun = Self.resolvePlatformRun(
+            config: loadedConfig, workspace: workspace, profile: profile,
+            profileAuth: profileAuth, bin: bin, platformHosts: platformHosts, onLine: onLine)
+        let platformProfile = platformRun.profile
+        let platformUnavailable = platformRun.unavailable
         let commands = Self.collectCommandMatrix(
             profile: profile, platformProfile: platformProfile,
             staleDays: loadedConfig?.thresholds?.resolvedStaleDays ?? 30)
@@ -2201,27 +2251,13 @@ struct ReportEngine: Sendable {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
 
-        // Resolved once per run, not per kind — it spawns `config list`.
-        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
-        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
-            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
-        }
-        // The Platform kinds' own profile decides their auth-method and level skips.
-        let platformAuth = platformProfile == profile
-            ? profileAuth : ProfileAuthMethod.resolve(profile: platformProfile, binary: bin)
-        let nonPlatformAuth = Self.nonPlatformAuthMethod(platformAuth?.authMethod)
-        let tenantLevel = platformAuth?.isTenantLevel == true
-        // Spec 3.1: an organization-level profile reaches no Jamf Pro report.
-        if platformProfile != profile, platformAuth?.isOrganizationLevel == true {
-            platformUnavailable = "profiles.platform names an organization-level profile"
-        }
         let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
 
         // Every skip decision is made here, once, before the first command: the `[plan]`
         // lines and the loop below both read this list.
         var planInputs = CollectPlanInputs(
             tiers: tiers, force: force, skipExpensive: skipExpensive,
-            nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel,
+            nonPlatformAuth: platformRun.nonPlatformAuth, tenantLevel: platformRun.tenantLevel,
             collectSkip: collectSkip, dashboardSupported: dashboardSupported,
             installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
@@ -2293,8 +2329,11 @@ struct ReportEngine: Sendable {
                     collectStart: collectStart, onLine: onLine
                 )
             } else {
+                // The log names the profile the command ran as (its argv carries it).
                 result = try await Self.collectOneKind(
-                    kind: kind, profile: profile, arguments: args,
+                    kind: kind,
+                    profile: Self.platformOnlyKinds.contains(kind) ? platformProfile : profile,
+                    arguments: args,
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
                     dataDir: dataDir, recordManifest: recordManifest,
                     useCachedData: useCachedData, stateStore: stateStore,

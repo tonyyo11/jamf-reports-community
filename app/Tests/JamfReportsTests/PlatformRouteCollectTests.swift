@@ -103,6 +103,34 @@ final class PlatformRouteCollectTests: XCTestCase {
             $0.contains("compliance-") }, "\(log)")
     }
 
+    func testAPlatformSlotOnAnotherJamfProSkipsThePlatformKinds() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        let stub = try makeStub()
+        let lines = Lines()
+        try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: ws), profile: ws,
+            workspacePaths: WorkspacePaths.self, tiers: [.inventory], force: true,
+            locateJamfCLI: { stub },
+            platformHosts: { _, _, _ in ("https://a.jamfcloud.com", "https://b.jamfcloud.com") },
+            onLine: { lines.add($0.text) })
+        XCTAssertFalse(calls().contains { $0.hasPrefix("-p \(ws)-API ") })
+        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[warn] ") && $0.contains("b.jamfcloud.com") },
+                      "\(lines.all)")
+        XCTAssertFalse(lines.all.contains { $0.hasPrefix("[plan] Platform API kinds run as") })
+    }
+
+    /// The log names the profile each Platform kind ran as; an old-shape run names the workspace.
+    func testACollectLineNamesTheProfileTheKindRanAs() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        var lines = try await collect()
+        XCTAssertTrue(lines.contains("[info] collecting ddm-status for \(ws)-API"), "\(lines)")
+        XCTAssertTrue(lines.contains("[info] collecting computers for \(ws)"), "\(lines)")
+        try writeConfig("jamf_cli:\n  data_dir: jamf-cli-data\n")
+        lines = try await collect()
+        XCTAssertTrue(lines.contains("[info] collecting computers for \(ws)"), "\(lines)")
+        XCTAssertFalse(lines.contains { $0.hasSuffix("-API") && $0.hasPrefix("[info] collecting") })
+    }
+
     func testThePlanNamesThePlatformProfile() async throws {
         try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
         let lines = try await collect()
