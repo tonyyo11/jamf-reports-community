@@ -211,6 +211,7 @@ final class ConnectionCredentialsModel {
             await updateAll(context, gatewayURL: gatewayURL, clientID: id, secret: secret)
         }
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
     }
 
     private func addEnvironments(

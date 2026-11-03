@@ -2056,28 +2056,35 @@ struct ReportEngine: Sendable {
         func warn(_ text: String) {
             onLine(.init(timestamp: Date(), level: .warn, text: text))
         }
+        var platformAuth: ProfileAuthMethod.Resolved?
         switch platformRoute(config: config, workspace: workspace) {
         case .workspaceProfile: break
         case .unavailable(let reason): run.unavailable = reason
         case .profile(let named) where named == profile: break
         case .profile(let named):
+            run.profile = named
+            platformAuth = ProfileAuthMethod.resolve(profile: named, binary: bin)
+            // Only a profile that can serve Platform kinds is worth a probe; an unresolved one
+            // fails toward collecting, as everywhere.
+            let usable = platformAuth.map {
+                nonPlatformAuthMethod($0.authMethod) == nil && !$0.isOrganizationLevel
+            } ?? true
+            guard usable else { break }
             let hosts = platformHosts(profile, named, bin)
             switch PlatformHostCheck.verdict(
                 jamfProURL: hosts.jamfPro, platformJamfProURL: hosts.platform) {
             case .different(let jamfPro, let reached):
+                run.profile = profile
                 run.unavailable = "profiles.platform reaches \(reached), not \(jamfPro)"
                 warn("[warn] Platform API not collected: \(run.unavailable ?? "")")
             case .unknown:
-                run.profile = named
                 warn("[warn] could not confirm that profiles.platform reaches the same "
                     + "Jamf Pro as profiles.jamf_pro; collecting the Platform API anyway")
-            case .same:
-                run.profile = named
+            case .same: break
             }
         }
         // The Platform kinds' own profile decides their auth-method and level skips.
-        let platformAuth = run.profile == profile
-            ? profileAuth : ProfileAuthMethod.resolve(profile: run.profile, binary: bin)
+        if run.profile == profile { platformAuth = profileAuth }
         run.nonPlatformAuth = nonPlatformAuthMethod(platformAuth?.authMethod)
         run.tenantLevel = platformAuth?.isTenantLevel == true
         // Spec 3.1: an organization-level profile reaches no Jamf Pro report.

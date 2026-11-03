@@ -19,13 +19,26 @@ enum PlatformHostCheck {
         return jamfPro == platform ? .same : .different(jamfPro: jamfPro, platform: platform)
     }
 
-    /// The Jamf Pro profile's URL from jamf-cli's config file, and the Jamf Pro URL the platform
-    /// profile reaches: recorded on its `Connection` member, else asked once per process.
+    /// The Jamf Pro URL of each side. The platform profile's is asked of the server first: a
+    /// stored URL outlives a profile that was pointed at another tenant, so it only stands in
+    /// when the probe fails. A `jamf_pro` that is itself a Platform profile has the gateway
+    /// for its URL, so its Jamf Pro URL is learned the same way; an OAuth one is configured.
+    static func lookup(
+        jamfPro: String, platform: String, jamfProIsPlatform: Bool, configured: String?,
+        learned: (String) -> String?, stored: (String) -> String?
+    ) -> (jamfPro: String?, platform: String?) {
+        func reached(_ profile: String) -> String? { learned(profile) ?? stored(profile) }
+        return (jamfProIsPlatform ? reached(jamfPro) : configured, reached(platform))
+    }
+
     static let live: Lookup = { jamfPro, platform, bin in
-        let configured = ProfileService.readConfigFile(at: ProfileService.jamfCLIConfigFileURL())?
-            .first { $0.name == jamfPro }?.url
-        let learned = ConnectionStore().jamfProURL(profile: platform)
-            ?? PlatformTwin.learnJamfProURL(profile: platform, binary: bin)
-        return (configured, learned)
+        lookup(
+            jamfPro: jamfPro, platform: platform,
+            jamfProIsPlatform: ProfileAuthMethod.resolve(profile: jamfPro, binary: bin)?.method
+                == .platform,
+            configured: ProfileService.readConfigFile(at: ProfileService.jamfCLIConfigFileURL())?
+                .first { $0.name == jamfPro }?.url,
+            learned: { PlatformTwin.learnJamfProURL(profile: $0, binary: bin) },
+            stored: { ConnectionStore().jamfProURL(profile: $0) })
     }
 }

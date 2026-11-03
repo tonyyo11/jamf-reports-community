@@ -119,6 +119,32 @@ final class PlatformRouteCollectTests: XCTestCase {
         XCTAssertFalse(lines.all.contains { $0.hasPrefix("[plan] Platform API kinds run as") })
     }
 
+    /// A platform slot naming a profile that cannot serve Platform kinds is not probed.
+    func testNoHostProbeForANonPlatformProfile() async throws {
+        try answer("config", """
+            [{"name":"\(ws)","auth-method":"oauth2"},{"name":"\(ws)-API","auth-method":"oauth2"}]
+            """)
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        let stub = try makeStub()
+        let lines = Lines()
+        let probed = ProbeFlag()
+        try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: ws), profile: ws,
+            workspacePaths: WorkspacePaths.self, tiers: [.inventory], force: true,
+            locateJamfCLI: { stub },
+            platformHosts: { _, _, _ in probed.set(); return (nil, nil) },
+            onLine: { lines.add($0.text) })
+        XCTAssertFalse(probed.value)
+        XCTAssertFalse(lines.all.contains { $0.contains("collecting the Platform API anyway") })
+    }
+
+    private final class ProbeFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var flag = false
+        func set() { lock.lock(); flag = true; lock.unlock() }
+        var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
+    }
+
     /// The log names the profile each Platform kind ran as; an old-shape run names the workspace.
     func testACollectLineNamesTheProfileTheKindRanAs() async throws {
         try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
