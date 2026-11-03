@@ -153,7 +153,10 @@ final class CollectSourcesPlanTests: XCTestCase {
     func testPlatformInputsForEachRoute() {
         var asked: [String] = []
         let own = resolved("oauth2")
-        let resolve: (String) -> ProfileAuthMethod.Resolved? = { asked.append($0); return self.resolved("platform") }
+        let resolve: (String) -> ProfileAuthMethod.Resolved? = {
+            asked.append($0)
+            return self.resolved("platform")
+        }
         let none = EnvironmentProfiles.platformInputs(
             route: .workspaceProfile, workspace: "ws", workspaceAuth: own, resolve: resolve)
         XCTAssertEqual(none.auth?.authMethod, "oauth2")
