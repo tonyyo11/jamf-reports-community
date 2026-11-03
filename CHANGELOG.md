@@ -88,6 +88,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- In French, a jamf-cli update whose brew, tar or unzip step ran past its time limit could crash
+  the app while it wrote the message.
 - HTML and period reports, Fleet Drift and other dates the app writes or reads back no longer follow
   the Mac's language or calendar. A report on a Mac set to Japanese read "午後9:52"; on a Mac using
   a Buddhist or Japanese calendar, a fixed date could also read a different year. Report times now
@@ -199,6 +201,8 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A scheduled run behind the System Settings proxy no longer leaves the proxy's host name in
+  copied or exported logs and diagnostic bundles when jamf-cli's errors name it.
 - A webhook that answers with a redirect to another host now fails, with the HTTP status in the
   log, instead of the app following the redirect with the report data.
 - The unified log (Console.app, `log show`) now shows `<private>` for profile names, paths and

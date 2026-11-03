@@ -111,14 +111,34 @@ final class ServerHostRedactionTests: XCTestCase {
         """)
         let expected = ["jss.example.org:8443", "jss.example.org",
                         "acme-label.protect.example.com", "other.example.net"]
-        XCTAssertEqual(DiagnosticBundleService.serverHosts(profile: "onprem", configURL: file),
-                       expected)
-        XCTAssertEqual(DiagnosticBundleService.serverHosts(profile: "missing", configURL: file),
-                       expected)
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "onprem", configURL: file, proxy: .none), expected)
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "missing", configURL: file, proxy: .none), expected)
         XCTAssertEqual(DiagnosticBundleService.serverHosts(
             profile: "onprem",
-            configURL: file.deletingLastPathComponent().appendingPathComponent("absent.yaml")),
+            configURL: file.deletingLastPathComponent().appendingPathComponent("absent.yaml"),
+            proxy: .none),
             [])
+    }
+
+    /// A scheduled run hands jamf-cli the system proxy, and a failing proxy is named in
+    /// jamf-cli's errors, so a shared log loses its host too; a skipped proxy never reached it.
+    func testSystemProxyHostIsSeeded() throws {
+        let file = try writeConfig("")
+        let proxy = SystemProxy.Proxy(
+            host: "proxy.corp.example", port: 3128, noProxy: nil, untranslated: 0)
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "onprem", configURL: file, proxy: .use(proxy)),
+            ["proxy.corp.example:3128", "proxy.corp.example"])
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "onprem", configURL: file, proxy: .skipped(reason: "names a user")), [])
+        let line = "Get https://x: proxyconnect tcp: dial tcp: lookup proxy.corp.example: no such host"
+        let shared = LogRedactor.redactedForSharing(
+            line, profile: "onprem", scopeIDs: { _ in [] },
+            serverHosts: { DiagnosticBundleService.serverHosts(
+                profile: $0, configURL: file, proxy: .use(proxy)) })
+        XCTAssertFalse(shared.contains("proxy.corp.example"), shared)
     }
 
     /// A Platform profile on a custom gateway host (Other in the region picker) is seeded like any
@@ -131,7 +151,8 @@ final class ServerHostRedactionTests: XCTestCase {
                 auth-method: platform
                 environment-id: 11111111-2222-3333-4444-555555555555
         """)
-        let hosts = DiagnosticBundleService.serverHosts(profile: "gw", configURL: file)
+        let hosts = DiagnosticBundleService.serverHosts(
+            profile: "gw", configURL: file, proxy: .none)
         XCTAssertEqual(hosts, ["gateway.corp-example.org:8443", "gateway.corp-example.org"])
         let text = "POST https://gateway.corp-example.org:8443/devices failed"
         let redactor = DiagnosticRedactor()
@@ -151,7 +172,8 @@ final class ServerHostRedactionTests: XCTestCase {
         let shared = LogRedactor.redactedForSharing(
             "[error] protect alerts failed at acme-label.protect.example.com", profile: "prod",
             scopeIDs: { _ in [] },
-            serverHosts: { DiagnosticBundleService.serverHosts(profile: $0, configURL: file) })
+            serverHosts: { DiagnosticBundleService.serverHosts(
+                profile: $0, configURL: file, proxy: .none) })
         XCTAssertFalse(shared.contains("acme-label"), "got: \(shared)")
     }
 
