@@ -9,9 +9,11 @@ struct EnvironmentCard: View {
     let onAddProtect: () -> Void
     let onChanged: () -> Void
     @State private var pendingRemoval: EnvironmentCardState.Row?
+    /// Check verdicts by jamf-cli profile name: two slots can name one profile.
     @State private var checks: [String: String] = [:]
     @State private var checking: Set<String> = []
     @State private var actionError: String?
+    @State private var backupNote: String?
 
     private var demo: Bool { workspace.demoMode }
 
@@ -20,6 +22,11 @@ struct EnvironmentCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 ForEach(state.rows) { row in rowView(row) }
+                if let backupNote {
+                    Text(backupNote).font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let actionError {
                     Text(actionError).font(.caption).foregroundStyle(Theme.Colors.danger)
                         .fixedSize(horizontal: false, vertical: true)
@@ -27,12 +34,14 @@ struct EnvironmentCard: View {
             }
         }
         .confirmationDialog(
-            L("Remove from this environment?"), isPresented: removalBinding,
+            pendingRemoval.map { L("Remove \($0.product) from this environment?") }
+                ?? L("Remove from this environment?"),
+            isPresented: removalBinding,
             presenting: pendingRemoval
         ) { row in
             Button(L("Remove"), role: .destructive) { remove(row) }
         } message: { row in
-            Text(L("The jamf-cli profile \(row.profile ?? "") and its snapshots stay."))
+            Text(L("The jamf-cli profile \(ConfigSchema.displayText(row.profile ?? "")) and its snapshots stay."))
         }
     }
 
@@ -64,12 +73,9 @@ struct EnvironmentCard: View {
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 8) {
-                pills(row)
-                Spacer(minLength: 0)
-                actions(row)
-            }
-            if let verdict = checks[row.id] {
+            WrappingRow { pills(row) }
+            WrappingRow { actions(row) }
+            if let verdict = row.profile.flatMap({ checks[$0] }) {
                 Text(verdict).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -102,11 +108,13 @@ struct EnvironmentCard: View {
     @ViewBuilder
     private func actions(_ row: EnvironmentCardState.Row) -> some View {
         let help = demo ? DemoData.liveOnlyHelp : ""
-        if row.profile != nil {
+        if let profile = row.profile {
             PNPButton(title: L("Check"), icon: "stethoscope", style: .ghost, size: .sm) {
                 check(row)
             }
-            .disabled(demo || checking.contains(row.id)).help(help)
+            .disabled(demo || checking.contains(profile) || row.level == .organization)
+            .help(row.level == .organization && !demo
+                  ? EnvironmentProfiles.organizationLevelPlatformReason : help)
         }
         if row.slot == .platform || row.slot == .protect {
             PNPButton(title: row.profile == nil ? L("Add") : L("Change"),
@@ -127,6 +135,7 @@ struct EnvironmentCard: View {
     }
 
     private func add(_ row: EnvironmentCardState.Row) {
+        actionError = nil
         if row.slot == .protect {
             onAddProtect()
         } else {
@@ -138,31 +147,42 @@ struct EnvironmentCard: View {
 
     private func check(_ row: EnvironmentCardState.Row) {
         guard let profile = row.profile else { return }
-        checking.insert(row.id)
+        actionError = nil
+        checking.insert(profile)
+        let started = state.workspace
         let service = CLIDoctorService(executor: DefaultCLIExecutor(bridge: CLIBridge()))
         Task {
             let outcome = await service.run(profile: profile)
-            checking.remove(row.id)
+            // A switch to another workspace rebuilt this view's state; its result is not ours.
+            guard started == state.workspace else { return }
+            checking.remove(profile)
             switch outcome {
-            case .notInstalled: checks[row.id] = L("jamf-cli is not installed.")
-            case .failed(let reason): checks[row.id] = reason
+            case .notInstalled: checks[profile] = L("jamf-cli is not installed.")
+            case .failed(let reason): checks[profile] = ConfigSchema.displayText(reason)
             case .report(let report):
-                checks[row.id] = SourcesView.healthPill(report.health).label + " · "
+                checks[profile] = SourcesView.healthPill(report.health).label + " · "
                     + SourcesView.connectivitySummary(report.connectivity)
             }
         }
     }
 
     private func remove(_ row: EnvironmentCardState.Row) {
-        let profile = state.workspace
+        let started = state.workspace
+        actionError = nil
+        backupNote = nil
         Task {
             do {
-                try await Task.detached {
-                    try ProfilesConfigWriter.save(row.slot, to: nil, workspace: profile)
+                let report = try await Task.detached {
+                    try ProfilesConfigWriter.save(row.slot, to: nil, workspace: started)
                 }.value
-                actionError = nil
+                guard started == state.workspace else { return }
+                if let profile = row.profile { checks[profile] = nil }
+                backupNote = report.backupName.map {
+                    L("A copy of config.yaml is in \($0).")
+                }
                 onChanged()
             } catch {
+                guard started == state.workspace else { return }
                 actionError = error.localizedDescription
             }
         }

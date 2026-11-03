@@ -98,4 +98,13 @@ final class EnvironmentCardStateTests: XCTestCase {
         XCTAssertNil(row.profile)
         XCTAssertFalse(row.canRemove)
     }
+
+    func testSlotKindsCoverTheirOwnData() {
+        XCTAssertEqual(EnvironmentCardState.kinds(for: .jamfPro), ["computers"])
+        XCTAssertEqual(
+            Set(EnvironmentCardState.kinds(for: .platform)), ReportEngine.platformOnlyKinds)
+        XCTAssertEqual(
+            EnvironmentCardState.kinds(for: .protect), DataFreshnessHealth.protectKinds)
+        XCTAssertFalse(EnvironmentCardState.kinds(for: .protect).isEmpty)
+    }
 }

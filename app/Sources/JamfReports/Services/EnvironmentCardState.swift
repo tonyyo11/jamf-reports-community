@@ -19,6 +19,17 @@ struct EnvironmentCardState: Equatable, Sendable {
         var id: String { slot.rawValue }
     }
 
+    /// The snapshot kinds whose newest date stands for a slot's data on the card.
+    static func kinds(for slot: ProfilesConfigWriter.Slot) -> [String] {
+        switch slot {
+        case .jamfPro: ["computers"]
+        case .jamfSchool: ["school-devices"]
+        case .platform: ReportEngine.platformOnlyKinds.sorted()
+        case .protect: DataFreshnessHealth.protectKinds
+        case .securityCloud: ["security"]
+        }
+    }
+
     let workspace: String
     /// False: the slots were derived from the old keys, no `profiles:` block exists.
     let fromBlock: Bool

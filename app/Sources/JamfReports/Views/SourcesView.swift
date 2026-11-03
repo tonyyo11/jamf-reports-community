@@ -66,6 +66,7 @@ struct SourcesView: View {
                 EnvironmentCard(
                     state: card, onAddProtect: { showingProtectConnect = true },
                     onChanged: { reloadEnvironment(); reloadSourcesPlan() })
+                    .id(card.workspace)
             }
             HStack(alignment: .top, spacing: 14) {
                 cliCard
@@ -678,6 +679,7 @@ struct SourcesView: View {
     /// The profile or demo mode changed: nothing of the previous source stays on screen.
     private func sourceChanged() {
         schoolResolved = nil
+        environmentCard = nil
         sourcesPlan = nil
         cachedAt = [:]
         schoolPlatformCheck = nil
@@ -800,18 +802,11 @@ struct SourcesView: View {
         }
     }
 
-    /// The kind whose newest snapshot stands for a slot on the Environment card.
     nonisolated private static func newestSnapshot(
         of slot: ProfilesConfigWriter.Slot, profile: String
     ) -> Date? {
-        let kind = switch slot {
-        case .jamfPro: "computers"
-        case .jamfSchool: "school-devices"
-        case .platform: "compliance-rules"
-        case .protect: "protect-overview"
-        case .securityCloud: "security"
-        }
-        return newestSnapshots(kinds: [kind], profile: profile)[kind]
+        newestSnapshots(kinds: EnvironmentCardState.kinds(for: slot), profile: profile)
+            .values.max()
     }
 
     private func reloadCapabilities() {
