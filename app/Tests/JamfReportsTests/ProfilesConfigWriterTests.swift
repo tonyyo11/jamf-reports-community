@@ -118,6 +118,18 @@ final class ProfilesConfigWriterTests: XCTestCase {
         XCTAssertTrue(SharedConfigPin.platformAllowed(profile: ws, appSupport: support))
     }
 
+    /// The property the writer relies on: a token that differs from the file confirms nothing,
+    /// so a peer's value synced in after the write stays drift.
+    func testConfirmWrittenLeavesAPeersDifferentValueDrifted() throws {
+        try write("shared_workspace:\n  enabled: true\n")
+        SharedConfigPin.checkpoint(profile: ws, appSupport: support, onLine: nil)
+        try save(.platform, "\(ws)-API")
+        try write("profiles:\n  jamf_pro: \(ws)\n  platform: other-tenant\n")
+        SharedConfigPin.confirmWritten(
+            "\(ws)-API", key: .platformProfile, profile: ws, appSupport: support)
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: ws, appSupport: support))
+    }
+
     func testAnUnusableSlotNameIsRefused() throws {
         try write("profiles:\n  jamf_pro: \(ws)\n")
         XCTAssertThrowsError(try save(.platform, "bad\u{7}name"))

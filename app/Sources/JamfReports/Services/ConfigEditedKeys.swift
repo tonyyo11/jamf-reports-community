@@ -4,8 +4,8 @@ import Foundation
 /// `ConfigService.apply` for the Config screen's blocks, and the `apply` of each scoped
 /// writer (`ChartsConfigWriter`, `HTMLReportConfigWriter`, `NotifyConfigWriter`,
 /// `AIConfigWriter`, `SecurityPolicyConfigWriter`, `BackupChoiceConfigWriter`,
-/// `ProfilesConfigWriter`). A key added to an editor joins the set with no second list to update. A path leaves out list indices
-/// (`custom_eas`, `name`), as `ConfigSchema` does.
+/// `ProfilesConfigWriter`). A key added to an editor joins the set with no second list to
+/// update. A path leaves out list indices (`custom_eas`, `name`), as `ConfigSchema` does.
 enum ConfigEditedKeys {
     static let paths: Set<[String]> = derive()
 
