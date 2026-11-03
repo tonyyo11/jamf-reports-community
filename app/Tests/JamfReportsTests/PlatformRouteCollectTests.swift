@@ -114,8 +114,13 @@ final class PlatformRouteCollectTests: XCTestCase {
             platformHosts: { _, _, _ in ("https://a.jamfcloud.com", "https://b.jamfcloud.com") },
             onLine: { lines.add($0.text) })
         XCTAssertFalse(calls().contains { $0.hasPrefix("-p \(ws)-API ") })
-        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[warn] ") && $0.contains("b.jamfcloud.com") },
-                      "\(lines.all)")
+        XCTAssertTrue(lines.all.contains {
+            $0.hasPrefix("[warn] Platform API not collected: ") && $0.contains("(\(ws)-API)")
+                && $0.contains("(\(ws))")
+        }, "\(lines.all)")
+        XCTAssertFalse(lines.all.contains {
+            $0.contains("a.jamfcloud.com") || $0.contains("b.jamfcloud.com")
+        })
         XCTAssertFalse(lines.all.contains { $0.hasPrefix("[plan] Platform API kinds run as") })
     }
 

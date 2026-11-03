@@ -2073,9 +2073,12 @@ struct ReportEngine: Sendable {
             let hosts = platformHosts(profile, named, bin)
             switch PlatformHostCheck.verdict(
                 jamfProURL: hosts.jamfPro, platformJamfProURL: hosts.platform) {
-            case .different(let jamfPro, let reached):
+            case .different:
                 run.profile = profile
-                run.unavailable = "profiles.platform reaches \(reached), not \(jamfPro)"
+                // Profile names, never the hosts: a custom domain is in no redaction seed.
+                run.unavailable = "profiles.platform (\(ConfigSchema.displayText(named))) reaches "
+                    + "a different Jamf Pro than profiles.jamf_pro "
+                    + "(\(ConfigSchema.displayText(profile)))"
                 warn("[warn] Platform API not collected: \(run.unavailable ?? "")")
             case .unknown:
                 warn("[warn] could not confirm that profiles.platform reaches the same "
