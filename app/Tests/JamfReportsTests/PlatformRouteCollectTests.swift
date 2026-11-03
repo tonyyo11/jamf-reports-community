@@ -1,0 +1,128 @@
+import XCTest
+@testable import JamfReports
+
+/// P3 (spec 3.2, D19): under a `profiles:` block the Platform-only kinds run as the `platform`
+/// slot's profile, and without the block exactly as before. A stub answers every command and
+/// logs its argv; `config list` names both profiles.
+final class PlatformRouteCollectTests: XCTestCase {
+    private var root: URL!
+    private var answers: URL!
+    private let ws = "routecollect"
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Route-\(UUID().uuidString)", isDirectory: true)
+        let workspaces = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspaces.appendingPathComponent(ws, isDirectory: true),
+            withIntermediateDirectories: true)
+        answers = root.appendingPathComponent("answers", isDirectory: true)
+        try FileManager.default.createDirectory(at: answers, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspaces.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        ProfileAuthMethod.invalidateCache()
+        try answer("config", """
+            [{"name":"\(ws)","auth-method":"oauth2"},
+             {"name":"\(ws)-API","auth-method":"platform","environment-id":"e1"}]
+            """)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+        try super.tearDownWithError()
+    }
+
+    /// NOT named `jamf-cli`. `answers/<name>` and `<name>.exit` answer `config list` (config),
+    /// any command run as `-p <ws>-API` (platform) and any other (pro); the default is `[]`.
+    private func makeStub() throws -> URL {
+        let url = root.appendingPathComponent("stub-cli")
+        let script = """
+        #!/bin/sh
+        A="\(answers.path)"
+        printf '%s\\n' "$*" >> "$A/calls.log"
+        emit() { f="$A/$1"; if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
+                 if [ -f "$f" ]; then cat "$f"; else printf '[]'; fi; exit "$code"; }
+        case "$*" in
+          "config list"*) emit config ;;
+          "-p \(ws)-API "*) emit platform ;;
+          *) emit pro ;;
+        esac
+        """
+        try script.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
+    }
+
+    private func answer(_ name: String, _ body: String, exit code: Int? = nil) throws {
+        try body.write(to: answers.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        if let code {
+            try "\(code)".write(to: answers.appendingPathComponent("\(name).exit"),
+                                atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func writeConfig(_ yaml: String) throws {
+        let dir = try XCTUnwrap(ProfileService.workspaceURL(for: ws))
+        try yaml.write(to: dir.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+    }
+
+    private func calls() -> [String] {
+        let log = (try? String(contentsOf: answers.appendingPathComponent("calls.log"),
+                               encoding: .utf8)) ?? ""
+        return log.split(separator: "\n").map(String.init)
+    }
+
+    private final class Lines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+        func add(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+    }
+
+    @discardableResult
+    func collect(tiers: Set<CollectionTier> = [.inventory]) async throws -> [String] {
+        let stub = try makeStub()
+        let lines = Lines()
+        try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: ws), profile: ws,
+            workspacePaths: WorkspacePaths.self, tiers: tiers, force: true,
+            locateJamfCLI: { stub }, onLine: { lines.add($0.text) })
+        return lines.all
+    }
+
+    func testABlockRunsThePlatformKindsAsThePlatformProfile() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        try await collect()
+        let log = calls()
+        XCTAssertTrue(log.contains { $0.hasPrefix("-p \(ws)-API ") &&
+            $0.contains("compliance-benchmarks list") }, "\(log)")
+        XCTAssertFalse(log.contains { $0.hasPrefix("-p \(ws) ") &&
+            $0.contains("compliance-") }, "\(log)")
+    }
+
+    func testThePlanNamesThePlatformProfile() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        let lines = try await collect()
+        XCTAssertTrue(lines.contains("[plan] Platform API kinds run as \(ws)-API"), "\(lines)")
+    }
+
+    func testABlockWithoutPlatformSkipsThePlatformKinds() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n")
+        let lines = try await collect()
+        XCTAssertFalse(calls().contains { $0.contains("compliance-") })
+        XCTAssertTrue(lines.contains {
+            $0 == "[skip] compliance-rules: \(EnvironmentProfiles.noPlatformReason)" }, "\(lines)")
+    }
+
+    /// Without the block, a workspace whose own profile is OAuth skips the Platform kinds by
+    /// its auth method, worded as before.
+    func testAnOldShapeSkipsByAuthMethodAsBefore() async throws {
+        try writeConfig("jamf_cli:\n  data_dir: jamf-cli-data\n")
+        let lines = try await collect()
+        XCTAssertTrue(lines.contains {
+            $0 == "[skip] compliance-rules: requires a Platform API profile (auth-method is oauth2)"
+        }, "\(lines)")
+    }
+}

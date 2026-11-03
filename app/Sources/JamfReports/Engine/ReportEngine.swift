@@ -2011,6 +2011,24 @@ struct ReportEngine: Sendable {
     /// True inside the tick's same-day retry of a run that failed or came back incomplete.
     @TaskLocal static var isSameDayRetry = false
 
+    /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
+    static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
+        EnvironmentProfiles.resolve(config: config, workspace: workspace.name)
+            .platformRoute(
+                platformPinAllows: SharedConfigPin.platformAllowed(profile: workspace.name))
+    }
+
+    /// The profile the Platform kinds run as and, when the route has none, why they are skipped.
+    private static func platformProfile(
+        config: ReportConfig?, workspace: WorkspaceID, profile: String
+    ) -> (profile: String, unavailable: String?) {
+        switch platformRoute(config: config, workspace: workspace) {
+        case .workspaceProfile: return (profile, nil)
+        case .profile(let named): return (named, nil)
+        case .unavailable(let reason): return (profile, reason)
+        }
+    }
+
     /// Collects the Jamf Pro sources into `workspace`, which names every folder the run reads or
     /// writes. `profile` is the jamf-cli profile the commands run as (`-p`):
     /// `EnvironmentProfiles.jamfPro`, which `CollectRouter` resolves.
@@ -2147,8 +2165,10 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
         }
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
+        var (platformProfile, platformUnavailable) = Self.platformProfile(
+            config: loadedConfig, workspace: workspace, profile: profile)
         let commands = Self.collectCommandMatrix(
-            profile: profile,
+            profile: profile, platformProfile: platformProfile,
             staleDays: loadedConfig?.thresholds?.resolvedStaleDays ?? 30)
 
         // Cadence state store: persists per-kind last-success timestamps so
@@ -2169,19 +2189,27 @@ struct ReportEngine: Sendable {
         if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
             throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
         }
-        let nonPlatformAuth = Self.nonPlatformAuthMethod(profileAuth?.authMethod)
-        let tenantLevel = profileAuth?.isTenantLevel == true
+        // The Platform kinds' own profile decides their auth-method and level skips.
+        let platformAuth = platformProfile == profile
+            ? profileAuth : ProfileAuthMethod.resolve(profile: platformProfile, binary: bin)
+        let nonPlatformAuth = Self.nonPlatformAuthMethod(platformAuth?.authMethod)
+        let tenantLevel = platformAuth?.isTenantLevel == true
+        // Spec 3.1: an organization-level profile reaches no Jamf Pro report.
+        if platformProfile != profile, platformAuth?.isOrganizationLevel == true {
+            platformUnavailable = "profiles.platform names an organization-level profile"
+        }
         let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
 
         // Every skip decision is made here, once, before the first command: the `[plan]`
         // lines and the loop below both read this list.
+        var planInputs = CollectPlanInputs(
+            tiers: tiers, force: force, skipExpensive: skipExpensive,
+            nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel,
+            collectSkip: collectSkip, dashboardSupported: dashboardSupported,
+            installedVersion: detectedVersion, now: collectStart)
+        planInputs.platformUnavailable = platformUnavailable
         let plan = Self.planCollect(
-            commands: commands,
-            inputs: CollectPlanInputs(
-                tiers: tiers, force: force, skipExpensive: skipExpensive,
-                nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel,
-                collectSkip: collectSkip, dashboardSupported: dashboardSupported,
-                installedVersion: detectedVersion, now: collectStart),
+            commands: commands, inputs: planInputs,
             lastRun: { stateStore?.lastRun(report: $0) }
         )
         let scanPlan = Self.planDeviceScan(
@@ -2192,6 +2220,10 @@ struct ReportEngine: Sendable {
             profile: profile, plan: plan, afterMatrix: afterMatrix,
             afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
             deviceScan: scanPlan, onLine: onLine)
+        if platformProfile != profile, platformUnavailable == nil {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[plan] Platform API kinds run as \(platformProfile)"))
+        }
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -2223,7 +2255,7 @@ struct ReportEngine: Sendable {
             let result: KindCollectResult
             if Self.benchmarkReportKinds.contains(kind) {
                 result = try await Self.collectBenchmarkReport(
-                    kind: kind, profile: profile, arguments: args,
+                    kind: kind, profile: platformProfile, arguments: args,
                     configuredTitles: loadedConfig?.platform?.benchmarkTitles ?? [],
                     discovery: &benchmarkDiscovery,
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,

@@ -381,8 +381,10 @@ final class CollectPlanTests: XCTestCase {
     }
 
     func testOnlyThePlatformKindsTakeThePlatformProfile() {
-        for (args, kind) in ReportEngine.collectCommandMatrix(
-            profile: "ws", platformProfile: "ws-API", staleDays: 30) {
+        let matrix = ReportEngine.collectCommandMatrix(
+            profile: "ws", platformProfile: "ws-API", staleDays: 30)
+        XCTAssertFalse(matrix.filter { ReportEngine.platformOnlyKinds.contains($0.kind) }.isEmpty)
+        for (args, kind) in matrix {
             let expected = ReportEngine.platformOnlyKinds.contains(kind) ? "ws-API" : "ws"
             XCTAssertEqual(Array(args.prefix(2)), ["-p", expected], kind)
         }
@@ -394,6 +396,7 @@ final class CollectPlanTests: XCTestCase {
         planInputs.platformUnavailable = reason
         let plan = ReportEngine.planCollect(
             commands: matrix, inputs: planInputs, lastRun: { _ in nil })
+        XCTAssertFalse(plan.filter { ReportEngine.platformOnlyKinds.contains($0.kind) }.isEmpty)
         for item in plan {
             if ReportEngine.platformOnlyKinds.contains(item.kind) {
                 XCTAssertEqual(item.skip, .platformUnavailable(reason), item.kind)
