@@ -23,6 +23,7 @@ and [JSON](agent-loop-eval/2026-10-28-waves-0-6.json).
 | 3 | Scoped re-review of a small, plain fix round (under about 150 changed source lines, no new seam, file write path or product gate) becomes a controller read | `fold` | Rule written; the baseline already has 8 rounds confirmed handled this way (11 by ledger phrase) | Pending: re-review seats should stay at or below the baseline's 7 while rounds, MUST-FIX and SHOULD-FIX do not rise. |
 | 4 | Ledger line format (one line per event) so the eval parses cleanly | n/a | Written in the plan's SDD section | Pending: next ledger reports no unreadable task lines. |
 | 5 | Personal `vm-test` skill (not in this repository) | `fold` | Written; checked against a stub `tart` only | Pending: first real VM run. |
+| 6 | `wave-review`: a wave's reviewer and security-reviewer seats run as one workflow; dead seats listed for hand dispatch | `as-tool` (same seats, new dispatcher) | Written | Pending: next wave. Expect no change in verdicts or tags; the check is no uncovered seat ledgered as reviewed and no review lost. |
 
 ## Break map
 
@@ -39,6 +40,10 @@ What this loop could get wrong, and what would notice it.
 
 - Whether the 150-line threshold is right: it comes from one wave's experience (8 confirmed
   small rounds, 11 by ledger phrase, no miss recorded). Move it only on the next wave's numbers.
+- Ponytail is a variable the next wave does not control. `PONYTAIL_DEFAULT_MODE` went from `off`
+  to `full` at user level some time after 2026-10-22 (the change is not dated), so the baseline's
+  reviewer and implementer seats may have run without ponytail's rules and the next wave's will
+  run with them. Read the next delta with that in mind; if findings fall, check this first.
 - Whether `class-sweep` should grow a per-class "new site not in the list" check from the diff
   rather than a list of existing sites. Needs its own design.
 
