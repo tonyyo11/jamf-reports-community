@@ -7,9 +7,10 @@ struct EnvironmentCardState: Equatable, Sendable {
         let slot: ProfilesConfigWriter.Slot
         let product: String
         let profile: String?
+        /// As jamf-cli reports it; the view shows it through `ConfigSchema.displayText`.
         let authMethod: String?
-        /// "environment" or "tenant" for a Platform API profile, else nil.
-        let level: String?
+        /// A Platform API profile's scope level; nil for any other profile or an empty slot.
+        let level: PlatformScopeLevel?
         let newestSnapshot: Date?
         let pinNeedsConfirming: Bool
 
@@ -35,8 +36,9 @@ struct EnvironmentCardState: Equatable, Sendable {
         ) -> Row {
             let resolved = profile.flatMap(resolve)
             let isPlatform = resolved?.method == .platform
-            let level = isPlatform && resolved?.isOrganizationLevel == false
-                ? (resolved?.isTenantLevel == true ? "tenant" : "environment") : nil
+            let level: PlatformScopeLevel? = !isPlatform ? nil
+                : resolved?.isOrganizationLevel == true ? .organization
+                : resolved?.isTenantLevel == true ? .tenant : .environment
             return Row(
                 slot: slot, product: product, profile: profile,
                 authMethod: resolved?.authMethod, level: level,
@@ -55,5 +57,15 @@ struct EnvironmentCardState: Equatable, Sendable {
         rows.append(row(.protect, L("Jamf Protect"), environment.protect, pin: .protectProfile))
         return EnvironmentCardState(
             workspace: workspace, fromBlock: environment.source == .profilesBlock, rows: rows)
+    }
+}
+
+extension PlatformScopeLevel {
+    var displayName: String {
+        switch self {
+        case .environment: L("Environment")
+        case .tenant: L("Tenant")
+        case .organization: L("Organization")
+        }
     }
 }
