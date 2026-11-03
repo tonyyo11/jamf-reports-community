@@ -27,7 +27,7 @@ each one holds its OAuth profile and its Platform profile.
 | Piece | Today | Becomes |
 |---|---|---|
 | Workspace folder | `~/Jamf-Reports/<ProfileName.pathComponent(profile)>/`. The folder name is the jamf-cli profile | The folder name is the **workspace ID**. Existing folders keep their names, so nothing on disk moves |
-| `jamf_cli.profile` | Must be blank or equal to the run's profile (`ReportEngine.runProfile`, `profileMismatch`) | Retired. Replaced by `profiles.jamf_pro` |
+| `jamf_cli.profile` | Must be blank or equal to the run's profile (`ReportEngine.runProfile`, `profileMismatch`) | Replaced by `profiles.jamf_pro`. Not read under a `profiles:` block; still read without one (3.3, D14) |
 | `protect.enabled/profile` | Protect runs after a Pro collect that returned `.collected` (`CollectRouter`) | `profiles.protect`. The follow rule is generalised (section 7) |
 | `school_cli.enabled/profile` | Makes the workspace a School one when the profile is blank or the workspace's own (`isPrimary`) | `profiles.jamf_school` |
 | `ProfileProductType` | `.jamfPro` / `.jamfSchool` | Replaced by `EnvironmentProducts`: the set of products present |
@@ -59,8 +59,8 @@ profiles:
 Rules:
 
 - A blank or absent slot means the product is not in this environment. No `enabled` flags: a
-  product is present when its slot names a profile. To pause a product, use
-  `jamf_cli.collect_skip` (extended to whole products, see 7.4) rather than clearing its slot.
+  product is present when its slot names a profile. There is no pause: clearing the slot
+  removes the product (7.4).
 - `jamf_pro` and `jamf_school` are exclusive. Both set is a Config Doctor `.fail` row
   (`environment.two_mdms`) and collect refuses with one `[error]`: one environment has one
   MDM. An organisation with both runs two environments in one report group.
@@ -70,6 +70,8 @@ Rules:
 - A profile is in at most one slot of one workspace on this Mac, apart from the
   `jamf_pro` + `platform` case above. Config Doctor fails `environment.profile_shared`
   across workspaces, because two environments collecting one tenant double every rollup.
+  Under D17 the MDM slots cannot collide (each names its own folder), so the row is about the
+  add-on slots. It is a Doctor row only: collect does not refuse, and there is no tie-break.
 - When `jamf_pro` and `platform` are different profiles, the Jamf Pro host that `platform`
   reaches (`PlatformTwin.learnJamfProURL`) must be `jamf_pro`'s host. If it is not, Doctor
   fails `environment.platform_host` and collect skips the Platform kinds with one `[warn]`,
@@ -102,48 +104,62 @@ inventory sweep off the gateway's rate limit. jamf-cli's own wiki tells gateway 
 OAuth profile for exactly this reason. To send everything through the gateway, a user sets
 `jamf_pro` to the platform profile.
 
-`ReportEngine.nonPlatformAuthMethod` and the `[skip] <kind>: requires a Platform API profile`
-reason change their source. A Platform-only kind is skipped when `platform` is blank
+Under a `profiles:` block, a Platform-only kind is skipped when `platform` is blank
 (`[plan] skipping N sources (no Platform API profile in this environment)`), not when
-`jamf_pro`'s auth method is OAuth. `environmentLevelKinds` still applies to the `platform`
+`jamf_pro`'s auth method is OAuth. Without the block nothing changes (D19): the Platform-only
+kinds run on the workspace's own profile and `ReportEngine.nonPlatformAuthMethod` skips them
+by that profile's auth method, with today's `[skip] <kind>: requires a Platform API profile`
+wording and its fail-toward-collecting rule. `environmentLevelKinds` still applies to the `platform`
 profile's level. #284's catalog item (`commands -o json` scopes) later replaces both fixed
 lists. It does not change this routing.
 
 ### 3.3 Reading old configs (no write needed)
 
-`EnvironmentProfiles.resolve(config:workspace:auth:)` is the one reader. When `profiles:` is
+`EnvironmentProfiles.resolve(config:workspace:)` is the one reader. When `profiles:` is
 absent it derives the slots from the keys in the file today, so every existing workspace runs
 unchanged before anything is written:
 
 | Old shape | Derived slots |
 |---|---|
 | Pro workspace, OAuth or token | `jamf_pro` = workspace ID |
-| Pro workspace whose profile is a platform profile | `jamf_pro` and `platform` = workspace ID |
+| Pro workspace whose profile is a platform profile | `jamf_pro` = workspace ID. No `platform` slot is derived: the Platform-only kinds run on that profile and skip by its auth method, as today (3.2). `resolve`'s `auth:` parameter, which no caller passes, is removed in P3 |
 | `protect.enabled: true` | `protect` = `protect.profile`; a blank `protect.profile` is no Protect (skipped with one `[warn]`), as `protectCollect` does today. Corrected 2026-10-29: the earlier text claimed a fallback to the jamf-cli default Protect profile, which the code never had |
 | `school_cli` primary | `jamf_school` = workspace ID, `jamf_pro` blank |
 | `school_cli` foreign (an old School login in a Pro workspace) | ignored, as today. Doctor keeps its `school_cli.profile` row |
 | `jamf_cli.profile` set and equal to the workspace ID | no effect (it always had to match) |
 
-If `profiles:` is present, it wins and the old keys are not read. Then Doctor names each old key
-as retired ("No longer read since 2.12").
+If `profiles:` is present, it wins and the old keys are not read. Then Config Doctor names each
+old key still in the file (`environment.old_keys`, `.suggest`): "Not read while profiles: is
+set; delete the line." Without the block the old keys are live, so the row is silent. A file
+without `profiles:` keeps running through this derivation for all of 2.x (D14).
 
 A golden test runs each old shape through the collect plan and asserts that today's command lines
 are produced byte for byte. This is the gate for phases P1 to P3.
 
-### 3.4 Writing and retired keys
+### 3.4 Writing the block, and the old keys
 
 The first save from the Data Sources environment card (section 6) writes `profiles:` through
-a scoped `saveBlock`, as `ChartsConfigWriter` does. In the same save it drops `jamf_cli.profile`,
-`protect.enabled`, `protect.profile`, `school_cli.enabled` and `school_cli.profile`
-(`ConfigSchema.retiredKeys`, release 2.12; `ConfigService.dropRetiredKeys`). Like every scoped
-writer, it backs up to `config.yaml.bak-<stamp>` first. An empty `protect:` or `school_cli:`
-block is removed. A hand-edited file that already has `profiles:` is never rewritten from the
-old keys. Onboarding and `jamf-reports scaffold --out` write `profiles:` directly.
+a scoped `saveBlock`, as `ChartsConfigWriter` does, and backs up to `config.yaml.bak-<stamp>`
+first. It leaves `jamf_cli.profile`, `protect.*` and `school_cli.*` where they are (D14):
+under the block they are inert (3.3), and the old-key writers already refuse under a block
+(`ConfigService.saveBlock(profilesSlot:)`). A hand-edited file that already has `profiles:` is
+never rewritten from the old keys. Onboarding and `jamf-reports scaffold --out` write
+`profiles:` directly, with no old keys.
+
+None of these keys joins `ConfigSchema.retiredKeys` while 3.3 reads them. That list is global,
+and every scoped save drops its entries from the block it rewrites
+(`ConfigService.dropRetiredKeys`): on a file without `profiles:`, the Backups screen's Jamf
+Protect switch (`BackupChoiceConfigWriter`, `saveBlock("protect")`) would delete
+`protect.profile` and disconnect Protect. `saveBlock("profiles")` also cannot remove keys from
+other blocks. Retiring them for real needs a migration that writes `profiles:` into every
+legacy file, then removing the 3.3 derivation: a separate decision, not 2.12.
 
 Old builds on a shared workspace: an older build reading a file with `profiles:` gets an
-unknown-key warning and falls back to the folder name for Jamf Pro, with no Protect. The
-design does not write both forms (see decision D3). The release notes tell users to upgrade
-every Mac that shares a workspace together.
+unknown-key warning for the block. A file migrated by the Data Sources save keeps its old keys,
+so the older build still finds Jamf Pro (the folder name), Protect and School as before; a file
+onboarding wrote has only the block, so the older build sees Jamf Pro with no Protect. The design still does not write the old
+keys into a new file (D3), so the release notes recommend upgrading every Mac that shares a
+workspace together; it is advice, not a correctness requirement.
 
 ## 4. Workspace identity
 
@@ -152,9 +168,14 @@ every Mac that shares a workspace together.
   new type, `WorkspaceID`, wraps it so a call site cannot pass one where a jamf-cli profile is
   meant, or the reverse. `ProfileService.workspaceURL(for:)` becomes
   `WorkspacePaths.workspaceURL(for: WorkspaceID)`.
-- New workspaces: the folder name defaults to the MDM profile's name (`Example`, not
-  `Example-API`), so a one-product environment looks exactly as it does today. The user can
-  type another name ("Client A Prod"). There is no separate display-name key (D4).
+- The MDM slot names the workspace, permanently (D17): under a `profiles:` block,
+  `EnvironmentProfiles.refusal` refuses a block whose MDM slot is not the workspace ID, as it
+  does since P1. A new workspace's folder is the MDM profile's name (`Example`, not
+  `Example-API`), so a one-product environment looks exactly as it does today. An environment
+  with no MDM (7.5) is named by its first filled slot of `jamf_school`, `jamf_pro`, `protect`
+  in that order. There is no custom folder name and no separate display-name key (D4); a
+  friendly name comes with D4's later renaming feature. Because the MDM slot cannot differ
+  from the folder, it cannot drift and needs no pin (4.1).
 - `ReportEngine.profile` becomes `ReportEngine.workspace` for every folder it reads or writes.
   The per-family profiles come from `EnvironmentProfiles`, resolved once at the top of
   `collect`, `generate` and `backup`, after `SharedConfigPin.checkpoint`.
@@ -166,27 +187,37 @@ every Mac that shares a workspace together.
   label's middle part is `labelComponent(workspaceID)`), Run History logs and status files, the
   shared-config pin file (`shared-config-pin-<pathComponent>.json`), day markers, the alert
   ledger, Fleet Overview rows, the diagnostic bundle folder and `ExportNaming` file names.
-- `CollectRouter.run(profile:)` becomes `run(workspace:)`. The case-variant check moves from
-  `jamf_cli.profile` to every slot: a slot that names a case variant of another workspace's
-  profile is refused.
+- `CollectRouter.run(profile:)` becomes `run(workspace:)`. The case-variant check stays on the
+  workspace's own folder spelling (`ProfileService.caseVariantWorkspace`), which under D17 is
+  also the MDM slot. Add-on slots name logins that are never workspaces, so they need no
+  case-variant check.
 - Log lines name the product and its profile:
   `[info] collecting computers for Example (Jamf Pro)`. Run History keeps one log per run, per
   workspace.
 
 ### 4.1 Pins
 
-Every slot is a shared-config pin key (`profiles.jamf_pro` … `profiles.security_cloud`). This
-matters more than any folder setting: a slot names a credential in this Mac's keychain. A peer
-that changes `profiles.jamf_pro` to another tenant's profile would make this Mac collect that
-tenant into a team folder. The rule matches today's `protect.profile` pin: trust on first sight,
-and a later change from a peer or a hand edit is ignored until the operator confirms it in Config
-Doctor. The ignored slot reads as blank, and that product is skipped with
-`[skip] <product>: profiles.<slot> changed in the shared config.yaml and is not confirmed on this Mac`.
-A Data Sources save re-pins only the slots it changed (`changedProfileKeys`).
+A slot names a credential in this Mac's keychain, so a peer that points a slot at another
+tenant's profile would make this Mac collect that tenant into a team folder. Each slot is
+covered once, with the existing pin mechanism (D18):
 
-Migration of an existing pin: the pinned `protect.profile` value seeds `profiles.protect`, so a
-peer that writes a different `profiles.protect` before this Mac upgrades shows as drift and
-is not adopted at first sight. The other slots seed from the derived values in 3.3.
+- `jamf_pro` and `jamf_school` need no pin: under D17 they must equal the workspace ID, and
+  `EnvironmentProfiles.refusal` refuses any other value.
+- `protect` is pinned today. `SharedConfigPin.current` reads `profiles.protect` once the block
+  exists and `protect.profile` before it, under the one `protect.profile` key, so a peer cannot
+  add the block unseen. Nothing to migrate.
+- `platform` gains a pin key, `profiles.platform`, in P3, the phase that first sends `-p` from
+  it. `adoptingMissingKeys` pins it the first time this Mac sees it, and `unconfirmedKeys`
+  holds it unconfirmed at first sight when it differs from the MDM slot, as it does for
+  `output.timestamp_authority`. A legacy workspace's derived `platform` equals the workspace ID
+  (3.3), so it is never held.
+- `security_cloud` gets the same key and rule in P12.
+
+The rule is today's: a change from a peer or a hand edit is ignored until the operator confirms
+it in Config Doctor. A held or drifted slot reads as blank, and that product is skipped with
+`[skip] <product>: profiles.<slot> changed in the shared config.yaml and is not confirmed on this Mac`,
+as `protectAllowed` skips Protect today. A Data Sources save re-pins only the slots it changed
+(`changedProfileKeys`).
 
 ### 4.2 Discovery and the sidebar
 
@@ -196,10 +227,10 @@ is not adopted at first sight. The other slots seed from the derived values in 3
   method, host), with Add to this environment and New environment.
 - `droppingPairedProductProfiles` generalises: a profile named in any workspace's slots is
   never a workspace candidate, and `runnableProfiles` becomes `runnableWorkspaces`.
-- `ProfileService.localOnlyWorkspaces` skips a folder whose `jamf_cli.profile` names another
-  profile, treating it as a copy. With that key retired, the copy test becomes: a folder
-  whose MDM slot names a profile that another workspace's MDM slot also names is a copy (the
-  `environment.profile_shared` row).
+- `ProfileService.localOnlyWorkspaces` skips a folder whose `EnvironmentProfiles.namedOwner`
+  names another profile, treating it as a copy. Under a block `namedOwner` is the MDM slot, and
+  under D17 a copied folder's MDM slot names the folder it was copied from, so the same test
+  and the refusal both catch it. No second copy test is added.
 - `WorkspaceStore.activeProfile` becomes `activeWorkspace`. `activeCLIProfile` becomes
   `profile(for product:)`.
 
@@ -235,8 +266,8 @@ pure function. It replaces `twinOf` in `ExistingCLISetupFlow`:
    profile to an existing workspace is offered as "Add Example-API to Example" rather than as a
    new environment.
 
-UI: the adoption screen shows one card per proposed environment. Each card has an editable name,
-one row per slot with its profile, and a row menu: Move to environment…, Remove from environment.
+UI: the adoption screen shows one card per proposed environment. Each card shows its name (the
+MDM profile's, D17), one row per slot with its profile, and a row menu: Move to environment…, Remove from environment.
 Unassigned profiles are listed under the cards. Accept creates each folder, writes
 `profiles:`, confirms the written slots in the pin (`confirmWrittenConfig`) and records the
 learned Jamf Pro URL on the `Connection` member, as 2.10 does.
@@ -261,8 +292,8 @@ added.
      chosen: Jamf Protect, Security Cloud, Platform API, and the MDM only while both MDM slots
      are empty. Filled slots are shown greyed with their profile. Not offered on first launch.
    - **New environment**: pick what manages its devices: Jamf Pro, Jamf Pro through the
-     Platform API, Jamf School, or none (Protect only, section 7.5). Then name it (default: the
-     profile's name).
+     Platform API, Jamf School, or none (Protect only, section 7.5). It is named after that
+     profile (D17).
 2. **Use a profile jamf-cli already has, or connect a new one.** The sheet runs profile
    discovery (`config list`) when it opens, and again on **Re-check**. That picks up profiles made
    in Terminal since launch. It lists the profiles of the chosen product that no environment
@@ -330,37 +361,54 @@ An **Environment** card replaces the profile header at the top of Data Sources:
 
 ### 7.1 Order
 
-One `CollectRouter.run(workspace:)` per run, inside the one tick lock hold:
+One `CollectRouter.run(workspace:)` per run, inside the one tick lock hold. P3 keeps today's
+order (D19), so the golden test's command lines and router log lines do not move:
 
-1. `SharedConfigPin.checkpoint`, `EnvironmentProfiles.resolve`, the environment-level gate
-   (shared-workspace claim and freshness, the once-a-day full-collect guard). These are per
-   workspace today and stay per workspace.
-2. The MDM: the Jamf Pro matrix on `jamf_pro`, with the Platform-only kinds on `platform` in
-   the same loop (each matrix entry carries its family, and `collectCommandMatrix` takes a
-   profile per family instead of one profile). Or the School loop on `jamf_school`.
-3. Protect on `protect`.
-4. Security Cloud: Radar reads on `security_cloud`, then the gateway half on `platform` (once
-   built).
-5. The device scan (Jamf Pro only), SOFA and `patch-release-dates`.
-6. One environment finalize: today's summary (section 8), the `[partial]` summary line and the
-   honesty verdicts.
+1. `SharedConfigPin.checkpoint` and `EnvironmentProfiles.resolve`.
+2. The MDM inside `ReportEngine.collect`, which holds the environment-level gate (the
+   shared-workspace claim and freshness, the once-a-day full-collect guard) as it does today:
+   the Jamf Pro matrix, with Jamf Pro kinds on `jamf_pro` and Platform-only kinds on
+   `platform` in the same loop (each matrix entry carries its family, and
+   `collectCommandMatrix` takes a profile per family instead of one profile), then the
+   verdicts (7.2), the device scan (Jamf Pro only), SOFA, `patch-release-dates` and today's
+   summary. Or the School loop on `jamf_school`.
+3. Protect on `protect`, as `CollectRouter` runs it today: after a `.collected` MDM collect,
+   and after one that failed as a whole, whose error it then rethrows.
+4. Security Cloud: Radar reads on `security_cloud`, then the gateway half on `platform` (P12).
+
+P8 lifts the gate out of `collect` into the router, because an environment with no MDM (7.5)
+has no collect to hold it. From then the gate runs first and a stand-down or the day guard
+stops every product. P9 adds one environment finalize, when the summary gains Protect fields
+(section 8); until then Protect adds nothing to the summary, so there is nothing to finalize
+twice.
 
 `[plan]` lines name each product's profile: `[plan] environment Example — Jamf Pro: Example,
 Platform API: Example-API, Protect: Example-Protect — collecting N sources: …`.
 
 ### 7.2 Failure honesty
 
-- Each product is judged on its own: `isCollectDead`, the outage guard, the auth-dead verdict
-  (exit 3) and `FailureCause` per product. An MDM whose credentials were rejected stops the MDM
-  kinds and the device scan. Protect and Security Cloud still run, because they hold separate
-  credentials. The run is Partial.
-- A product that landed nothing logs `[partial] <product>: no source landed` with its causes.
-  `CollectHonestyWatcher` reads it like any `[partial]` line, and `retryCouldHelp` asks per
-  kind as today.
-- Today's rule, "Protect follows only a `.collected` Pro collect", becomes: add-on products
-  follow the environment gate, not the MDM's disposition. A stand-down (a peer holds the
-  claim) or the day guard stops every product. An MDM collect that ran and failed does not stop
-  Protect.
+- Verdicts are per profile, not per product (D20). The matrix's outcomes are grouped by the
+  profile each kind ran with, and `enforceCollectVerdicts` runs once per group: the auth-dead
+  verdict (exit 3, confirmed by `pro auth token --refresh` on that group's profile), the
+  outage guard (`isCollectDead`) and `deadRunCause`. A Platform profile and an OAuth profile
+  that reach one Jamf Pro are two credentials and get two verdicts; one profile in both slots
+  is one group, today's behaviour.
+- The device scan runs on `jamf_pro`, so it runs only when the `jamf_pro` group is neither
+  auth-dead nor dead (a dead group still scans when `deadRunAllowsDeviceScan` allows it, as
+  today). Without this, Platform kinds that landed would hide a dead OAuth credential: the run
+  would read as Partial and the scan would fan out against a server that refused or never
+  answered.
+- Today's summary is rebuilt only when a `jamf_pro` source landed. A run where only the
+  Platform kinds landed must not date cached Mac figures today (`freshSummaryIsBetter`).
+- A `jamf_pro` group that is auth-dead throws `authExpired` as today: the exit code, the
+  failure webhook and Run History are unchanged, and Protect still runs before the rethrow. A
+  dead `platform` group with a live `jamf_pro` group records its kinds failed, logs the
+  `[partial]` line below, and the run continues.
+- A product that landed nothing logs `[partial] <product>: no source landed` with its causes,
+  built with `ReportEngine.unlandedSourcesMarker` so `CollectHonestyWatcher` reads its kinds:
+  `retryCouldHelp` then asks per kind as today, and a permanent failure is not retried all day.
+- Protect's follow rule does not change in P3 (7.1). The day guard and a stand-down already
+  stop it, because `collect` does not return `.collected`.
 - Per-kind state (`state/<kind>.*`) is already per workspace, and kind names already carry the
   product (`protect-*`, `school-*`, `security-*`), so `DataFreshnessHealth` and
   `expectedKinds` work unchanged once `expectedKinds` reads the products present rather than
@@ -375,15 +423,15 @@ it.
 
 ### 7.4 Pausing a product
 
-`jamf_cli.collect_skip` accepts `protect` and `security_cloud` as whole-product entries, so a
-user can pause a product without losing its slot. `ReportEngine.skippableKinds` gains them. A
-paused product is left out of the freshness strip, as a skipped kind is today.
+Not built (D19). Nobody asked for a whole-product pause, and `collect_skip` keeps its kind
+list. To stop collecting a product, clear its slot; its snapshots stay until retention
+removes them.
 
 ### 7.5 Environments with no MDM (#207 L3)
 
 A Protect, or Protect plus Security Cloud, environment runs the gate and then Protect alone.
-The once-a-day guard and the shared claim are environment-level, so Protect gets them for
-free. Its daily summary has every Mac and mobile figure nil and the Protect figures set. The
+The once-a-day guard and the shared claim are environment-level, so Protect gets them once P8
+lifts the gate into the router (7.1). Its daily summary has every Mac and mobile figure nil and the Protect figures set. The
 Overview shows the Protect section first. This replaces L3's third `ProfileProductType`.
 
 ## 8. Screens and the daily summary follow the products present
@@ -529,8 +577,9 @@ confirms it once before it collects with the new slot.
 
 ## 12. MSPs
 
-- One workspace per client environment: "Client A Prod", "Client A Dev". Each has its own
-  jamf-cli profiles (and so its own keychain items), folder, webhook and retention.
+- One workspace per client environment, named after its MDM profile (`ClientA-Prod`,
+  `ClientA-Dev`, D17). Each has its own jamf-cli profiles (and so its own keychain items),
+  folder, webhook and retention.
 - Report groups are the client layer ("Client A" = its two environments) and the MSP layer
   ("All clients").
 - #207 L1 (an organisation folder holding per-tenant workspaces) is not needed. The workspace
@@ -546,13 +595,13 @@ golden command-line test from 3.3 runs in every phase from P1.
 |---|---|---|
 | P1 | `ProfilesConfig` decode, `EnvironmentProfiles.resolve` with legacy derivation. Replaces `ConnectedProducts` and the Protect, School and `jamf_cli.profile` reads in `CollectRouter` and `ProfileProductType.detect`. Documents `profiles:` in config.example.yaml (CLAUDE.md: a key is documented in the change that adds its reader) | One test per old shape in 3.3. Golden test: identical command lines for each shape |
 | P2 | `WorkspaceID`. `ReportEngine.workspace` for folders, per-family profiles for `-p`. `profileMismatch` removed. Schedules, report groups, pins and Run History renamed to workspace, same values | Folders from the workspace ID, `-p` from the slot. A schedule record with the old JSON key decodes. Golden test still green |
-| P3 | Collect across products: `collectCommandMatrix` per family, `[plan]` lines, per-product verdicts, add-on products follow the environment gate, finalize once, `collect_skip` for whole products | Stub jamf-cli through the `locateJamfCLI` seam (not named `jamf-cli`): MDM auth-dead and Protect still runs; stand-down stops all; Platform kinds skipped with no `platform`; host mismatch skips Platform kinds |
-| P4 | Data Sources Environment card, `ProfilesConfigWriter`, retired keys dropped on save, pin coverage and seeding, Doctor rows (`two_mdms`, `profile_shared`, `platform_host`, retired keys) | Writer keeps comments outside the block and backs up. Pin drift on a peer edit. Protect pin seeding. Each Doctor row. Needs visual verification at `PageScaffold.minSupportedWidth` |
+| P3 | Collect across products, in today's order (7.1, D19): `collectCommandMatrix` per family, `[plan]` lines naming each profile, per-profile verdicts (7.2, D20), the block-only Platform skip (3.2), `resolve`'s `auth:` parameter removed, the `[partial] <product>: no source landed` line, the `profiles.platform` pin key (4.1, D18), the host check from `ConnectionStore.jamfProURL ?? PlatformTwin.learnJamfProURL`. Every site that skips Platform kinds today follows the block rule in the same PR (`nonPlatformAuthMethod` callers, `CollectSourcesPlan`, `expectedKinds`, `collectCommandMatrix` callers) | Stub jamf-cli through the `locateJamfCLI` seam (not named `jamf-cli`). Golden test unchanged. `jamf_pro` auth-dead with Platform kinds landed: `authExpired`, no scan, no summary rebuild, Protect still runs. `platform` auth-dead with `jamf_pro` live: Partial, scan runs. One profile in both slots: today's verdicts. Platform kinds skipped with no `platform` under a block. Host mismatch skips Platform kinds. A `platform` slot that differs from the MDM slot is held at first sight and skips Platform kinds until confirmed. A permanent failure's `[partial]` line does not make `retryCouldHelp` true. The confirmation probe works on a gateway profile unchanged: in jamf-cli 1.35.0 `pro auth token --refresh` goes through the profile's own provider (`PlatformOAuth2Provider.Refresh`, a real exchange), is not refused by the exit-8 gateway check (it carries no API annotation), and a rejected exchange exits 1 on either provider, which the probe already reads as rejected. Read from source; no gateway tenant was available to run it |
+| P4 | Data Sources Environment card, `ProfilesConfigWriter` (writes the block, leaves the old keys, 3.4), Doctor rows (`two_mdms`, `profile_shared`, `platform_host`, `environment.old_keys`) | Writer keeps comments outside the block, backs up, and leaves `protect.*`, `school_cli.*` and `jamf_cli.profile` in place. A scoped save of the `protect` block on a file without `profiles:` keeps `protect.profile`. Pin drift on a peer edit of `platform`. Each Doctor row. Needs visual verification at `PageScaffold.minSupportedWidth` |
 | P5 | Discovery: slots hide profiles, sidebar lists workspaces only, "Profiles not in an environment" card | `droppingPairedProductProfiles` generalised. Active-workspace fallback when a profile moves into a slot |
 | P6 | `EnvironmentProposal`, the adoption screen and the one Add sheet (5.1) that replaces Settings › Add connection and the chip's School item, with Re-check | The four-profile example gives two environments. Connection siblings are never merged. Two platform profiles on one host are flagged. Protect is suggested by prefix and never preselected without the label. Existing workspaces are extended, not duplicated. Re-check lists a profile added after launch. Preselection per 5.1. Needs visual verification |
 | P7 | Merge: `WorkspaceMergePlan`, executor with journal, sheet | Fixture workspaces: overlapping summary days filled, same-name snapshots identical and different, schedules keep their labels, report groups de-duplicated, crash after N steps resumes, refused under the lock and under a peer claim, source moved and never deleted |
-| P8 | `EnvironmentProducts`, `TabVisibility.limited(to:)`, product-aware Overview, Config and report sections. Protect-only environment (L3). School per-kind state and summary (L6) | Tab sets per product mix. A Protect-only collect writes a summary with Mac figures nil. A School summary is written |
-| P9 | Daily summary product and composition fields, Trends and alert keys, `environment.protect_match` Doctor row | Nil when absent. Alert on an absent product never fires. Match-rate row thresholds |
+| P8 | `EnvironmentProducts`, `TabVisibility.limited(to:)`, product-aware Overview, Config and report sections. Protect-only environment (L3), with the environment gate lifted out of `collect` into the router (7.1). School per-kind state and summary (L6) | Tab sets per product mix. A Protect-only collect writes a summary with Mac figures nil. A stand-down or the day guard stops every product, with and without an MDM. A School summary is written |
+| P9 | Daily summary product and composition fields, Trends and alert keys, `environment.protect_match` Doctor row, one environment finalize (7.1) | Nil when absent. Alert on an absent product never fires. Match-rate row thresholds |
 | P10 | New collection: `computer-storage` reduced kind, mobile storage and battery readers, the App Installers kind | Fixtures taken from real jamf-cli output, never written by hand from documentation. The reducer drops every field outside the allow-list |
 | P11 | Replaced by the mobile spec's M6: Fleet Overview for the active environment, no selector. `FleetRollup` gains the new fields for report-group exports only. P8 and P9 lose their mobile parts to M2 to M4 (mobile spec, section 7) | See M6 |
 | P12 | Security Cloud: `security_cloud` slot setup, Radar collect, gateway half on `platform` | Blocked on a tenant (#283). Plugs into P3, P4 and P9 |
@@ -563,13 +612,14 @@ start after P1. P11 needs P9 and P10.
 
 ## 14. Decisions
 
-All 14 recommendations were accepted on 2026-10-19.
+All 14 recommendations were accepted on 2026-10-19. D3 and D14 were changed on 2026-11-03, after
+the spec review; the earlier text is in the history of this file.
 
 | # | Decision | Recommendation |
 |---|---|---|
 | D1 | One `profiles:` block, or a `profile` key in each product's block | One block: one reader, one writer, one pin set, one migration target. Product settings stay in their own blocks |
 | D2 | Which profile runs Jamf Pro commands when OAuth and Platform both exist | OAuth. Platform runs only Platform-only kinds, the Platform reads and the Security Cloud gateway half |
-| D3 | Write both old and new keys for one release, for older builds on a shared workspace | No. Write `profiles:` only and tell users to upgrade every Mac on a shared workspace together. The pin and the unknown-key row make a mismatch visible |
+| D3 | Write both old and new keys for one release, for older builds on a shared workspace | No: a new file gets `profiles:` only. A migrated file keeps its old keys (D14), so an older peer still reads it; upgrading every Mac together is advised, not required. The pin and the unknown-key row make a mismatch visible |
 | D4 | A display name separate from the folder name | No. The folder name is the environment's name. Renaming is a later, separate feature |
 | D5 | Merge target, and same-day summaries | The OAuth workspace is the target. Same-day summaries become `target.filling(from: source)`, with both originals archived |
 | D6 | What happens to the source folder after a merge | It moves to `<root>/_merged/<name>-<stamp>/` and is never deleted by the app |
@@ -580,7 +630,7 @@ All 14 recommendations were accepted on 2026-10-19.
 | D11 | #207 L1 organisation folder | Close it in favour of one workspace per client environment and report groups |
 | D12 | Unassigned jamf-cli profiles in the sidebar | No. Workspaces only. Unassigned profiles are listed in Data Sources and adoption |
 | D13 | Source of the Fleet view's figures | The daily summary, extended with the small aggregate maps in section 8. Snapshots are never read across environments |
-| D14 | Release that retires `jamf_cli.profile`, `protect.*` and `school_cli.*` | The release that ships P4 (planned 2.12). Until then those keys are read as in 3.3 |
+| D14 | Release that retires `jamf_cli.profile`, `protect.*` and `school_cli.*` | None in 2.x. A file without `profiles:` keeps running through 3.3; under the block the keys are inert and Doctor suggests deleting them. They never enter `ConfigSchema.retiredKeys` while any file shape reads them (3.4). Real retirement needs a migration of every legacy file, decided separately |
 
 Added after the Jamf School test, accepted on 2026-10-19:
 
@@ -588,3 +638,12 @@ Added after the Jamf School test, accepted on 2026-10-19:
 |---|---|---|
 | D15 | Add connection and add workspace as one flow | One Add sheet (5.1) from every entry point, first launch included. It asks add-on or new environment, with facts preselecting the answer |
 | D16 | When the Add sheet re-reads jamf-cli's profiles | When it opens and on Re-check. No background polling |
+
+Added after the spec review, accepted on 2026-11-03:
+
+| # | Decision | Recommendation |
+|---|---|---|
+| D17 | Lift the "MDM slot = workspace ID" refusal in P4 so a folder can have a custom name | No. Keep it permanently (4). The MDM slot then cannot drift, needs no pin, and the copy test, case-variant check and tenant guard keep working unchanged. An environment with no MDM is named by its first filled slot. Friendly names come with D4's renaming feature |
+| D18 | How the `platform` slot is protected from a peer's edit | One `profiles.platform` pin key in P3, through `adoptingMissingKeys`, held unconfirmed at first sight when it differs from the MDM slot (4.1). No seeding step and no P3-to-P4 dependency. `security_cloud` follows in P12 |
+| D19 | P3's scope | Today's order and gate: the gate lift moves to P8 (needed only by an environment with no MDM) and one finalize to P9 (Protect adds nothing to today's summary). The Platform-kind skip by `platform` applies only under a `profiles:` block; without it, today's auth-method rule, and `resolve`'s unused `auth:` parameter is removed. No whole-product `collect_skip`. An MDM auth-dead run keeps throwing `authExpired`, never downgraded to Partial |
+| D20 | Whether the Platform API is its own product for collect verdicts | The question is not needed: verdicts are per profile (credential), not per product (7.2). The device scan follows the `jamf_pro` group, and today's summary is rebuilt only when a `jamf_pro` source landed. One profile in both slots is one verdict, as today |
