@@ -9,6 +9,19 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Data Sources has an **Environment** card listing the products this workspace's environment holds
+  (Jamf Pro or Jamf School, Platform API, Jamf Protect) with their profiles, auth method, newest
+  data and whether a shared-config change waits for your Confirm. Check tests a profile's
+  connection, Remove disconnects Platform API or Jamf Protect and names the copy of config.yaml it
+  kept, and Add and Change open the usual Add sheet. (#305)
+- Config Doctor explains a `profiles:` block that cannot work: both Jamf Pro and Jamf School set,
+  old profile keys left beside it, a Platform API or Jamf Protect profile jamf-cli does not have,
+  one profile used by two workspaces, and a Platform API profile that reaches a different Jamf
+  Pro. (#305)
+- Jamf Protect can be connected and disconnected in a workspace that already has a `profiles:`
+  block; the change is written to `profiles.protect`. (#305)
+- The Platform API twin suggestion now says to keep the Jamf Pro (OAuth) workspace and add the
+  Platform profile to it. (#305)
 - The app now speaks **French, Spanish, German, Brazilian Portuguese, Italian and Japanese**, following your Mac's language, or the one you
   pick for Jamf Reports in System Settings › General › Language & Region. Language support is best effort: these are machine translations nobody fluent has reviewed, so please
   report wording that reads wrong. Reports, CSVs,
