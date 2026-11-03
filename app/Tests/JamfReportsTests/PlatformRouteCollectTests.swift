@@ -45,6 +45,7 @@ final class PlatformRouteCollectTests: XCTestCase {
                  if [ -f "$f" ]; then cat "$f"; else printf '[]'; fi; exit "$code"; }
         case "$*" in
           "config list"*) emit config ;;
+          "--version"*) emit version ;;
           "-p \(ws)-API "*) emit platform ;;
           *) emit pro ;;
         esac
@@ -124,5 +125,57 @@ final class PlatformRouteCollectTests: XCTestCase {
         XCTAssertTrue(lines.contains {
             $0 == "[skip] compliance-rules: requires a Platform API profile (auth-method is oauth2)"
         }, "\(lines)")
+    }
+
+    private let oneMac = #"[{"id":"1","general":{"managementId":"m1"}}]"#
+
+    /// The Jamf Pro credential is dead while the Platform kinds land: the run is auth-dead,
+    /// no device scan fans out, and today's summary is not written.
+    func testADeadJamfProProfileIsNotHiddenByPlatformKindsThatLanded() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        try answer("pro", #"{"error":"unauthorized"}"#, exit: 3)
+        try answer("platform", #"[{"id":"1","title":"CIS"}]"#)
+        let stub = try makeStub()
+        do {
+            try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: ws), profile: ws,
+                workspacePaths: WorkspacePaths.self, tiers: [.inventory, .scan], force: true,
+                authConfirmationProbe: { _, _ in .rejected },
+                locateJamfCLI: { stub }, onLine: { _ in })
+            XCTFail("expected authExpired")
+        } catch ReportEngineError.authExpired(let named, _) {
+            XCTAssertEqual(named, ws)
+        }
+        XCTAssertFalse(calls().contains { $0.contains("classic-computer-history") })
+        let summaries = try WorkspacePaths.summariesDir(for: ws)
+        XCTAssertNil(FileManager.newestJSONFile(in: summaries))
+    }
+
+    /// The Platform credential is dead while Jamf Pro lands: Partial, and the scan runs.
+    func testADeadPlatformProfileLeavesTheJamfProRunStanding() async throws {
+        try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
+        try answer("pro", oneMac)
+        try answer("platform", #"{"error":"unauthorized"}"#, exit: 3)
+        let stub = try makeStub()
+        let lines = Lines()
+        try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: ws), profile: ws,
+            workspacePaths: WorkspacePaths.self, tiers: [.inventory, .scan], force: true,
+            authConfirmationProbe: { _, _ in .rejected },
+            locateJamfCLI: { stub }, onLine: { lines.add($0.text) })
+        XCTAssertTrue(lines.all.contains { $0.contains(ReportEngine.unlandedSourcesMarker)
+            && $0.contains("compliance-") }, "\(lines.all)")
+        XCTAssertTrue(calls().contains { $0.contains("classic-computer-history") })
+    }
+
+    func testOneProfileInBothSlotsIsOneGroup() {
+        let outcomes = [ReportEngine.CollectOutcome(kind: "computers", exitCode: 0),
+                        ReportEngine.CollectOutcome(kind: "compliance-rules", exitCode: 3)]
+        let group = ReportEngine.jamfProGroup(
+            outcomes: outcomes, savedKinds: ["computers"], platformSeparate: false)
+        XCTAssertEqual(group.outcomes, outcomes)
+        let split = ReportEngine.jamfProGroup(
+            outcomes: outcomes, savedKinds: ["computers"], platformSeparate: true)
+        XCTAssertEqual(split.outcomes.map(\.kind), ["computers"])
     }
 }

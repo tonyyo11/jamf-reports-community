@@ -1861,6 +1861,17 @@ struct ReportEngine: Sendable {
         }
     }
 
+    /// The outcomes and landed kinds the dead verdicts judge (spec 7.2, D20): those that ran as
+    /// the Jamf Pro profile. Platform-only kinds on a profile of their own are another
+    /// credential: they never make the run dead, and never keep a dead Jamf Pro run alive.
+    static func jamfProGroup(
+        outcomes: [CollectOutcome], savedKinds: Set<String>, platformSeparate: Bool
+    ) -> (outcomes: [CollectOutcome], savedKinds: Set<String>) {
+        guard platformSeparate else { return (outcomes, savedKinds) }
+        return (outcomes.filter { !platformOnlyKinds.contains($0.kind) },
+                savedKinds.subtracting(platformOnlyKinds))
+    }
+
     /// What a dead run's failures say, for its message (spec §9.6).
     enum DeadRunCause: Equatable, Sendable {
         case outage
@@ -2165,8 +2176,10 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
         }
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
-        var (platformProfile, platformUnavailable) = Self.platformProfile(
+        let route = Self.platformProfile(
             config: loadedConfig, workspace: workspace, profile: profile)
+        let platformProfile = route.profile
+        var platformUnavailable = route.unavailable
         let commands = Self.collectCommandMatrix(
             profile: profile, platformProfile: platformProfile,
             staleDays: loadedConfig?.thresholds?.resolvedStaleDays ?? 30)
@@ -2234,7 +2247,6 @@ struct ReportEngine: Sendable {
         // Cadence "not due" skips only — NOT tier-filter skips, which say nothing
         // about server reachability. Feeds isCollectDead's veto: a run that skipped
         // fresh-cache kinds and failed only the chronic residue is not an outage.
-        let skippedNotDueCount = plan.filter { $0.skip?.isNotDue == true }.count
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
         for planned in plan {
@@ -2289,16 +2301,26 @@ struct ReportEngine: Sendable {
             if result.saved { savedKinds.insert(kind) }
         }
 
-        let deadAfterScan = try await Self.enforceCollectVerdicts(
+        let judged = Self.jamfProGroup(
             outcomes: outcomes, savedKinds: savedKinds,
-            skippedNotDueCount: skippedNotDueCount, profile: profile, bin: bin,
+            platformSeparate: platformProfile != profile)
+        // A "not due" skip proves the credential that ran it; Platform skips prove nothing
+        // about Jamf Pro when they ran as another profile.
+        let judgedNotDue = plan.filter {
+            $0.skip?.isNotDue == true
+                && (platformProfile == profile || !Self.platformOnlyKinds.contains($0.kind))
+        }.count
+        let deadAfterScan = try await Self.enforceCollectVerdicts(
+            outcomes: outcomes, savedKinds: savedKinds, judged: judged,
+            skippedNotDueCount: judgedNotDue, profile: profile, bin: bin,
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
 
-        // Judged before the scan phase adds its kinds. The scan works from the cached
-        // `computers` snapshot and lands an EMPTY ddm-device-status for a fleet with no
-        // DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
-        let matrixLandedNothing = !outcomes.isEmpty && savedKinds.isEmpty
+        // Judged before the scan phase adds its kinds, on the Jamf Pro group. The scan works
+        // from the cached `computers` snapshot and lands an EMPTY ddm-device-status for a fleet
+        // with no DDM-enabled Mac, so its kinds cannot show that this run's own sources landed;
+        // Platform kinds that landed must not date cached Mac figures today (spec 7.2).
+        let matrixLandedNothing = !judged.outcomes.isEmpty && judged.savedKinds.isEmpty
 
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
@@ -2335,10 +2357,13 @@ struct ReportEngine: Sendable {
     /// landed. Both dead verdicts abort BEFORE any summary is written, so a run that
     /// fetched nothing can never promote stale cache as fresh data. A dead run whose
     /// failures all show Jamf answered is returned instead of thrown, for the caller to
-    /// throw once the device scan has run (`deadRunAllowsDeviceScan`).
+    /// throw once the device scan has run (`deadRunAllowsDeviceScan`). The dead verdicts judge
+    /// `judged`, the outcomes that ran as the Jamf Pro profile (`jamfProGroup`, spec 7.2); the
+    /// `[partial]` line covers every outcome.
     private static func enforceCollectVerdicts(
         outcomes: [CollectOutcome],
         savedKinds: Set<String>,
+        judged: (outcomes: [CollectOutcome], savedKinds: Set<String>),
         skippedNotDueCount: Int,
         profile: String,
         bin: URL,
@@ -2358,7 +2383,7 @@ struct ReportEngine: Sendable {
         // defect this fixes): one endpoint's 401 is not proof credentials are dead.
         // evaluateAuthDead only calls the probe when isCollectAuthDead is true.
         if let decision = await Self.evaluateAuthDead(
-            outcomes: outcomes, savedKinds: savedKinds, profile: profile, bin: bin,
+            outcomes: judged.outcomes, savedKinds: judged.savedKinds, profile: profile, bin: bin,
             probe: authConfirmationProbe
         ) {
             switch decision {
@@ -2397,12 +2422,13 @@ struct ReportEngine: Sendable {
         // auth-dead: no degraded snapshot should be promoted as fresh data. See
         // isCollectDead's doc comment for the field defect this veto set fixes.
         if Self.isCollectDead(
-            outcomes, savedKinds: savedKinds, skippedNotDueCount: skippedNotDueCount
+            judged.outcomes, savedKinds: judged.savedKinds, skippedNotDueCount: skippedNotDueCount
         ) {
             let error = ReportEngineError.collectDead(
-                profile: profile, failedCount: outcomes.count, cause: Self.deadRunCause(outcomes)
+                profile: profile, failedCount: judged.outcomes.count,
+                cause: Self.deadRunCause(judged.outcomes)
             )
-            if Self.deadRunAllowsDeviceScan(outcomes) { return error }
+            if Self.deadRunAllowsDeviceScan(judged.outcomes) { return error }
             throw Self.reportDeadCollect(error, onLine: onLine)
         }
 
