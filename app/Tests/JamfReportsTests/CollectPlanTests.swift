@@ -372,6 +372,39 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: dir.appendingPathComponent("sofa").path))
     }
+
+    func testWithoutAPlatformProfileTheMatrixIsUnchanged() {
+        XCTAssertEqual(
+            ReportEngine.collectCommandMatrix(profile: "ws", staleDays: 30).map(\.args),
+            ReportEngine.collectCommandMatrix(
+                profile: "ws", platformProfile: "ws", staleDays: 30).map(\.args))
+    }
+
+    func testOnlyThePlatformKindsTakeThePlatformProfile() {
+        for (args, kind) in ReportEngine.collectCommandMatrix(
+            profile: "ws", platformProfile: "ws-API", staleDays: 30) {
+            let expected = ReportEngine.platformOnlyKinds.contains(kind) ? "ws-API" : "ws"
+            XCTAssertEqual(Array(args.prefix(2)), ["-p", expected], kind)
+        }
+    }
+
+    func testAnUnavailablePlatformSkipsOnlyThePlatformKinds() {
+        let reason = EnvironmentProfiles.noPlatformReason
+        var planInputs = inputs()
+        planInputs.platformUnavailable = reason
+        let plan = ReportEngine.planCollect(
+            commands: matrix, inputs: planInputs, lastRun: { _ in nil })
+        for item in plan {
+            if ReportEngine.platformOnlyKinds.contains(item.kind) {
+                XCTAssertEqual(item.skip, .platformUnavailable(reason), item.kind)
+            } else {
+                XCTAssertNotEqual(item.skip, .platformUnavailable(reason), item.kind)
+            }
+        }
+        let lines = ReportEngine.collectPlanLines(profile: "ws", plan: plan, deviceScan: .due)
+        XCTAssertTrue(
+            lines.contains { $0.contains("sources (\(reason))") }, "\(lines)")
+    }
 }
 
 private final class LineCollector: @unchecked Sendable {

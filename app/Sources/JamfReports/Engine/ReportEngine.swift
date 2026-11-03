@@ -2593,7 +2593,22 @@ struct ReportEngine: Sendable {
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
     /// `knownCollectKinds` — `CollectionTierLookupTests` enforces that in CI.
+    /// The Platform-only kinds take `platformProfile` for `-p` (every row's `-p` value is
+    /// `args[1]`), so one environment can collect Jamf Pro and Platform data through two logins.
     static func collectCommandMatrix(
+        profile: String, platformProfile: String? = nil, staleDays: Int
+    ) -> [(args: [String], kind: String)] {
+        let matrix = jamfProCommandMatrix(profile: profile, staleDays: staleDays)
+        guard let platformProfile, platformProfile != profile else { return matrix }
+        return matrix.map { command in
+            guard platformOnlyKinds.contains(command.kind) else { return command }
+            var args = command.args
+            args[1] = platformProfile
+            return (args, command.kind)
+        }
+    }
+
+    private static func jamfProCommandMatrix(
         profile: String, staleDays: Int
     ) -> [(args: [String], kind: String)] {
         let mobileSections = mobileInventorySections.flatMap { ["--section", $0] }
