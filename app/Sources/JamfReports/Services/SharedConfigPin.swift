@@ -202,20 +202,23 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
 
     /// The pin for a workspace seen for the first time. What is already in the shared file may
     /// have been written by a peer, so a folder outside the workspace, a `delete` retention,
-    /// Protect backups on synced storage turned on and a timestamp authority are pinned as
-    /// unconfirmed: every run uses the safe value for them until one Confirm. The webhook host
-    /// and the other keys are trust-on-first-use.
-    static func firstPin(current: SharedConfigPin, workspace: URL) -> SharedConfigPin {
+    /// Protect backups on synced storage turned on, a timestamp authority and a Platform profile
+    /// other than the workspace's own are pinned as unconfirmed: every run uses the safe value
+    /// for them until one Confirm. The webhook host and the other keys are trust-on-first-use.
+    static func firstPin(
+        current: SharedConfigPin, workspace: URL, profile: String
+    ) -> SharedConfigPin {
         var pin = current
         pin.pinnedKeys = Key.allCases.map(\.rawValue)
         pin.unconfirmed = unconfirmedKeys(
-            current: current, workspace: workspace, among: Set(Key.allCases)).map(\.rawValue)
+            current: current, workspace: workspace, profile: profile,
+            among: Set(Key.allCases)).map(\.rawValue)
         return pin
     }
 
     /// Of `keys`, those whose value in `current` must wait for a Confirm.
     private static func unconfirmedKeys(
-        current: SharedConfigPin, workspace: URL, among keys: Set<Key>
+        current: SharedConfigPin, workspace: URL, profile: String, among keys: Set<Key>
     ) -> [Key] {
         let root = workspace.resolvingSymlinksInPath().standardizedFileURL.path
         func outside(_ value: String) -> Bool {
@@ -239,8 +242,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         // An address this Mac would send to is never taken on first sight.
         if !current.timestampAuthorityHash.isEmpty { waiting.append(.timestampAuthority) }
         // D18: a Platform profile other than the workspace's own is held until confirmed.
-        let workspaceName = ProfileName.name(fromPathComponent: workspace.lastPathComponent)
-        if !current.platformProfile.isEmpty, current.platformProfile != workspaceName {
+        // Compared exactly: a case variant of the workspace's name is held, which fails closed.
+        if !current.platformProfile.isEmpty, current.platformProfile != profile {
             waiting.append(.platformProfile)
         }
         return waiting.filter(keys.contains)
@@ -249,7 +252,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// `pin` with a first-sight pin for each key it holds no value for, nil when it holds them
     /// all. The same unconfirmed rule applies to those keys as at a workspace's first sight.
     static func adoptingMissingKeys(
-        _ pin: SharedConfigPin, current: SharedConfigPin, workspace: URL
+        _ pin: SharedConfigPin, current: SharedConfigPin, workspace: URL, profile: String
     ) -> SharedConfigPin? {
         let missing = Set(Key.allCases.filter { !pin.pinnedKeys.contains($0.rawValue) })
         guard !missing.isEmpty else { return nil }
@@ -259,7 +262,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             upgraded.pinnedKeys.append(key.rawValue)
         }
         upgraded.unconfirmed += unconfirmedKeys(
-            current: current, workspace: workspace, among: missing).map(\.rawValue)
+            current: current, workspace: workspace, profile: profile, among: missing
+        ).map(\.rawValue)
         return upgraded
     }
 
@@ -427,7 +431,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         switch read(profile: profile, appSupport: appSupport) {
         case .absent:
             var notes: [String] = []
-            let first = firstPin(current: current, workspace: workspace)
+            let first = firstPin(current: current, workspace: workspace, profile: profile)
             do {
                 if persist { try save(first, profile: profile, appSupport: appSupport) }
             } catch {
@@ -447,7 +451,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case .pin(let stored):
             var notes: [String] = []
             var pinned = stored
-            let upgraded = adoptingMissingKeys(stored, current: current, workspace: workspace)
+            let upgraded = adoptingMissingKeys(
+                stored, current: current, workspace: workspace, profile: profile)
             if let upgraded { pinned = upgraded }
             let optedOut = repinningBackupOptOuts(&pinned, current: current)
             if upgraded != nil || optedOut {
@@ -553,10 +558,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         var pin: SharedConfigPin
         var unreadable = false
         switch read(profile: profile, appSupport: appSupport) {
-        case .absent: pin = firstPin(current: current, workspace: workspace)
+        case .absent: pin = firstPin(current: current, workspace: workspace, profile: profile)
         case .pin(let stored):
-            pin = adoptingMissingKeys(stored, current: current, workspace: workspace) ?? stored
-        case .unreadable: pin = firstPin(current: current, workspace: workspace); unreadable = true
+            pin = adoptingMissingKeys(
+                stored, current: current, workspace: workspace, profile: profile) ?? stored
+        case .unreadable:
+            pin = firstPin(current: current, workspace: workspace, profile: profile)
+            unreadable = true
         }
         var confirmed = 0
         for drift in drifts where drift.key.token(of: current) == drift.currentToken {
@@ -582,9 +590,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         else { return }
         var pin: SharedConfigPin
         switch read(profile: profile, appSupport: appSupport) {
-        case .absent: pin = firstPin(current: current, workspace: workspace)
+        case .absent: pin = firstPin(current: current, workspace: workspace, profile: profile)
         case .pin(let stored):
-            pin = adoptingMissingKeys(stored, current: current, workspace: workspace) ?? stored
+            pin = adoptingMissingKeys(
+                stored, current: current, workspace: workspace, profile: profile) ?? stored
         case .unreadable: return
         }
         for key in keys {

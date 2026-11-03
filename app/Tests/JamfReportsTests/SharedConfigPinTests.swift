@@ -121,6 +121,43 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, appSupport: appSupport))
     }
 
+    private func writeSlots(_ slots: String) throws {
+        let body = "shared_workspace:\n  enabled: true\nprofiles:\n  jamf_pro: \"\(profile)\"\n"
+            + slots
+        try body.write(to: workspace.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+    }
+
+    /// A slot spelled like a boolean is still the profile name the decoder hands to `-p`, in its
+    /// exact case, so the pin must see it (two readers of one key).
+    func testAQuotedBooleanPlatformSlotIsHeldAtFirstSight() throws {
+        try writeSlots("  platform: \"True\"\n")
+        XCTAssertEqual(check().drifts.map(\.key), [.platformProfile])
+        XCTAssertEqual(SharedConfigPin.current(workspace: workspace)?.platformProfile, "True")
+    }
+
+    func testAQuotedBooleanProtectSlotDriftsAfterAConfirmedValue() throws {
+        try writeSlots("  protect: \"Protect-Login\"\n")
+        try confirmAll()
+        try writeSlots("  protect: \"false\"\n")
+        XCTAssertEqual(SharedConfigPin.current(workspace: workspace)?.protectProfile, "false")
+        XCTAssertFalse(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+    }
+
+    /// A pin written before `profiles.platform` was a key adopts it with the same hold.
+    func testAnOlderPinAdoptsAForeignPlatformSlotAsUnconfirmed() throws {
+        try writeConfig()
+        _ = check()
+        var older = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
+        older.pinnedKeys.removeAll { $0 == SharedConfigPin.Key.platformProfile.rawValue }
+        try SharedConfigPin.save(older, profile: profile, appSupport: appSupport)
+        try writeBlock(platform: "\(profile)-API")
+        XCTAssertTrue(check().drifts.map(\.key).contains(.platformProfile))
+        let pin = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
+        XCTAssertTrue(pin.unconfirmed.contains(SharedConfigPin.Key.platformProfile.rawValue))
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, appSupport: appSupport))
+    }
+
     /// `writeConfig()` pins every key at first sight, so a block added later is drift, not adoption.
     func testChangingToAPlatformSlotIsDrift() throws {
         try writeConfig()
