@@ -278,7 +278,7 @@ and lists the longest silence first.
 
 ```yaml
 profiles:
-  jamf_pro: "Example"        # the Jamf Pro profile; must be this workspace's own until P2
+  jamf_pro: "Example"        # the Jamf Pro profile; always this workspace's own (D17)
   platform: "Example-API"    # runs the Platform-only kinds (P3)
   jamf_school: ""            # never with jamf_pro
   protect: "Example-Protect" # collected after the MDM collect, as protect.profile was

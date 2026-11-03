@@ -281,7 +281,7 @@ final class PlatformRouteCollectTests: XCTestCase {
     func testPlatformFailingWithJamfProNotDueWritesNoSummary() async throws {
         try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
         try seedJamfProNotDue()
-        try answer("platform", #"{"error":"boom"}"#, exit: 1)
+        try answer("platform", #"{"error":"boom"}"#, exit: 4)
         let lines = try await collectNotForced()
         // The reason line is the evidence the rule fired: without it the summary step runs.
         XCTAssertTrue(lines.contains { $0.contains(ReportEngine.noSourceLandedReason) },
@@ -306,7 +306,7 @@ final class PlatformRouteCollectTests: XCTestCase {
         try writeConfig("profiles:\n  jamf_pro: \(ws)\n  platform: \(ws)-API\n")
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: ws))
         for kind in ReportEngine.platformOnlyKinds { try store.recordRun(report: kind, at: Date()) }
-        try answer("pro", #"{"error":"boom"}"#, exit: 1)
+        try answer("pro", #"{"error":"boom"}"#, exit: 4)
         do {
             _ = try await collectNotForced()
             XCTFail("expected collectDead")

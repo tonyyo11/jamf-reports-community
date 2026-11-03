@@ -21804,7 +21804,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Mac, der diesen Arbeitsbereich teilt, hat config.yaml bearbeitet, oder die Datei wurde hier bearbeitet. Bis Sie dies bestätigen, verwenden alle Ansichten, Berichte und Läufe auf diesem Mac für jeden Schlüssel den sicheren Wert (Ordner „Generated Reports“ des Arbeitsbereichs, Archivieren statt Löschen, kein Webhook-Versand, keine Protect-Erfassung, keine Platform API-Erfassung, kein Logo, die Verlaufsdatei neben dem Bericht, kein Berichtszeitstempel)."
+            "value" : "Ein Mac, der diesen Arbeitsbereich teilt, hat config.yaml bearbeitet, oder die Datei wurde hier bearbeitet. Bis Sie dies bestätigen, verwenden alle Ansichten, Berichte und Läufe auf diesem Mac für jeden Schlüssel den sicheren Wert (Ordner „Generated Reports“ des Arbeitsbereichs, Archivieren statt Löschen, kein Webhook-Versand, keine Protect-Erfassung, keine Platform-API-Erfassung, kein Logo, die Verlaufsdatei neben dem Bericht, kein Berichtszeitstempel)."
           }
         },
         "es" : {
@@ -71896,7 +71896,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ordnen Sie in der Konfiguration Ihr Erweiterungsattribut für die Liste der Compliance-Fehler (compliance.failures_list_column) zu oder erfassen Sie Compliance-Benchmarks mit einem Jamf Platform API-Profil."
+            "value" : "Ordnen Sie in der Konfiguration Ihr Erweiterungsattribut für die Liste der Compliance-Fehler (compliance.failures_list_column) zu oder erfassen Sie Compliance-Benchmarks mit einem Jamf Platform-API-Profil."
           }
         },
         "es" : {
