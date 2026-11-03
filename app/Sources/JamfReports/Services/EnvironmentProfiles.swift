@@ -145,6 +145,21 @@ extension EnvironmentProfiles {
     static let heldPlatformReason =
         "profiles.platform changed in the shared config.yaml and is not confirmed on this Mac"
 
+    /// The auth method that judges the Platform kinds, and why they do not run, for a route:
+    /// the one answer `collect`'s screens (freshness strip, Data Sources) share. `resolve` is
+    /// asked only for a separate profile, so a slot naming the workspace costs no second probe.
+    static func platformInputs(
+        route: PlatformRoute, workspace: String, workspaceAuth: ProfileAuthMethod.Resolved?,
+        resolve: (String) -> ProfileAuthMethod.Resolved?
+    ) -> (auth: ProfileAuthMethod.Resolved?, unavailable: String?) {
+        switch route {
+        case .workspaceProfile: return (workspaceAuth, nil)
+        case .unavailable(let reason): return (workspaceAuth, reason)
+        case .profile(let named):
+            return (named == workspace ? workspaceAuth : resolve(named), nil)
+        }
+    }
+
     /// `platformPinAllows` is `SharedConfigPin.platformAllowed`; it matters only under a block.
     func platformRoute(platformPinAllows: Bool) -> PlatformRoute {
         guard source == .profilesBlock else { return .workspaceProfile }

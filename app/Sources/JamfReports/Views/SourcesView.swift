@@ -746,19 +746,14 @@ struct SourcesView: View {
                 let detected = ProfileProductType.detect(from: config, profile: profile)
                 let workspaceAuth = ProfileAuthMethod.resolve(profile: profile)
                 // The Platform kinds follow the route `collect` takes (no network probe here).
-                var platformProfile: String?
-                var platformUnavailable: String?
-                var auth = workspaceAuth
                 let route = WorkspaceID(profile).map {
                     ReportEngine.platformRoute(config: config, workspace: $0)
                 } ?? .workspaceProfile
-                switch route {
-                case .profile(let named) where named != profile:
-                    platformProfile = named
-                    auth = ProfileAuthMethod.resolve(profile: named)
-                case .unavailable(let reason): platformUnavailable = reason
-                default: break
-                }
+                let routed = CollectSourcesPlan.routedAuth(
+                    product: detected.type, route: route, workspace: profile,
+                    workspaceAuth: workspaceAuth,
+                    resolve: { ProfileAuthMethod.resolve(profile: $0) })
+                let auth = routed.auth
                 let protectProfile = EnvironmentProfiles.resolve(
                     config: config, workspace: profile).protect
                 let plan = CollectSourcesPlan.build(.init(
@@ -772,7 +767,7 @@ struct SourcesView: View {
                     authMethod: auth?.authMethod, tenantLevel: auth?.isTenantLevel == true,
                     hasTenantID: workspaceAuth?.hasTenantID == true,
                     collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
-                    platformProfile: platformProfile, platformUnavailable: platformUnavailable))
+                    platformUnavailable: routed.unavailable))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 return (plan, Self.newestSnapshots(
                     kinds: plan.sources.map(\.kind), profile: profile), school)

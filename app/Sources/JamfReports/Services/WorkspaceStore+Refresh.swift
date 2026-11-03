@@ -636,22 +636,17 @@ extension WorkspaceStore {
         let route = WorkspaceID(profile).map {
             ReportEngine.platformRoute(config: config, workspace: $0)
         } ?? .workspaceProfile
-        var platformAuth = auth
-        var platformUnavailable = false
-        switch route {
-        case .profile(let named) where named != profile:
-            platformAuth = ProfileAuthMethod.resolve(profile: named)
-        case .unavailable: platformUnavailable = true
-        default: break
-        }
+        let platform = EnvironmentProfiles.platformInputs(
+            route: route, workspace: profile, workspaceAuth: auth,
+            resolve: { ProfileAuthMethod.resolve(profile: $0) })
         return expectedKinds(
             skipExpensive: UserDefaults.standard.bool(forKey: "skipExpensiveCollections"),
-            authMethod: platformAuth?.authMethod,
-            tenantLevel: platformAuth?.isTenantLevel == true,
+            authMethod: platform.auth?.authMethod,
+            tenantLevel: platform.auth?.isTenantLevel == true,
             collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
             dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
             protectConnected: protectCollected,
-            platformUnavailable: platformUnavailable
+            platformUnavailable: platform.unavailable != nil
         )
     }
 

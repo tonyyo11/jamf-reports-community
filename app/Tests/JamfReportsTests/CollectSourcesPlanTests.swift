@@ -146,10 +146,39 @@ final class CollectSourcesPlanTests: XCTestCase {
         XCTAssertEqual(rules?.skipReason, EnvironmentProfiles.noPlatformReason)
     }
 
-    func testTheSourcesPlanShowsThePlatformProfileInTheCommand() {
-        var inputs = CollectSourcesPlan.Inputs(product: .jamfPro, profile: "ws")
-        inputs.platformProfile = "ws-API"
-        let rules = CollectSourcesPlan.build(inputs).sources.first { $0.kind == "compliance-rules" }
-        XCTAssertNil(rules?.skipReason)
+    private func resolved(_ method: String) -> ProfileAuthMethod.Resolved {
+        ProfileAuthMethod.Resolved(authMethod: method, isTenantLevel: false)
+    }
+
+    func testPlatformInputsForEachRoute() {
+        var asked: [String] = []
+        let own = resolved("oauth2")
+        let resolve: (String) -> ProfileAuthMethod.Resolved? = { asked.append($0); return self.resolved("platform") }
+        let none = EnvironmentProfiles.platformInputs(
+            route: .workspaceProfile, workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(none.auth?.authMethod, "oauth2")
+        XCTAssertNil(none.unavailable)
+        let other = EnvironmentProfiles.platformInputs(
+            route: .profile("ws-API"), workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(other.auth?.authMethod, "platform")
+        XCTAssertEqual(asked, ["ws-API"])
+        let same = EnvironmentProfiles.platformInputs(
+            route: .profile("ws"), workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(same.auth?.authMethod, "oauth2")
+        XCTAssertEqual(asked, ["ws-API"])
+        let gone = EnvironmentProfiles.platformInputs(
+            route: .unavailable("why"), workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(gone.auth?.authMethod, "oauth2")
+        XCTAssertEqual(gone.unavailable, "why")
+        XCTAssertEqual(asked, ["ws-API"])
+    }
+
+    func testASchoolWorkspaceIgnoresThePlatformSlot() {
+        let own = resolved("apikey")
+        let routed = CollectSourcesPlan.routedAuth(
+            product: .jamfSchool, route: .profile("ws-API"), workspace: "ws",
+            workspaceAuth: own, resolve: { _ in XCTFail("School never resolves the slot"); return nil })
+        XCTAssertEqual(routed.auth?.authMethod, "apikey")
+        XCTAssertNil(routed.unavailable)
     }
 }

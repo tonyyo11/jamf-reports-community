@@ -42,10 +42,20 @@ struct CollectSourcesPlan: Equatable, Sendable {
         /// The profile names a tenant, as a School profile needs for the Platform API.
         var hasTenantID = false
         var collectSkip: Set<String> = []
-        /// The profile the Platform-only kinds run as, when it is not the workspace's own.
-        var platformProfile: String?
         /// Why the Platform-only kinds do not run (no Platform profile), or nil.
         var platformUnavailable: String?
+    }
+
+    /// The auth method and Platform skip reason Data Sources judges by. Only Jamf Pro has a
+    /// `platform` slot; a School workspace keeps its own login's auth method.
+    static func routedAuth(
+        product: ProfileProductType, route: PlatformRoute, workspace: String,
+        workspaceAuth: ProfileAuthMethod.Resolved?,
+        resolve: (String) -> ProfileAuthMethod.Resolved?
+    ) -> (auth: ProfileAuthMethod.Resolved?, unavailable: String?) {
+        guard product == .jamfPro else { return (workspaceAuth, nil) }
+        return EnvironmentProfiles.platformInputs(
+            route: route, workspace: workspace, workspaceAuth: workspaceAuth, resolve: resolve)
     }
 
     let sources: [Source]
@@ -73,8 +83,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
 
     private static func matrix(_ inputs: Inputs) -> [Source] {
         let commands = ReportEngine.collectCommandMatrix(
-            profile: inputs.profile, platformProfile: inputs.platformProfile,
-            staleDays: inputs.staleDays)
+            profile: inputs.profile, staleDays: inputs.staleDays)
         let plan = ReportEngine.planCollect(
             commands: commands,
             inputs: ReportEngine.CollectPlanInputs(
