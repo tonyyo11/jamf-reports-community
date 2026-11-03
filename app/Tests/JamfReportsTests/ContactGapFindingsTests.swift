@@ -104,15 +104,14 @@ final class ContactGapFindingsTests: XCTestCase {
     func testAComputersRecordCarriesTheThreeDatesAndMarksItselfDated() throws {
         // Calendar days, as the reader counts them: 72 hours is 2 days just after clocks go back.
         let now = Date()
-        func stamp(_ days: Int) throws -> String {
-            ISO8601DateFormatter().string(from: try XCTUnwrap(
-                Calendar.current.date(byAdding: .day, value: -days, to: now)))
+        func stamp(_ days: Int) -> String {
+            ISO8601DateFormatter().string(from: now.calendarDays(ago: days))
         }
-        let checkIn = try stamp(3)
+        let checkIn = stamp(3)
         let record = DeviceInventoryService.recordFromComputer([
             "id": "7", "general": [
-                "name": "M", "lastCheckIn": checkIn, "reportDate": try stamp(9),
-                "lastContact": try stamp(1),
+                "name": "M", "lastCheckIn": checkIn, "reportDate": stamp(9),
+                "lastContact": stamp(1),
             ], "hardware": ["serialNumber": "S7"],
         ], source: "computers.json")
         XCTAssertNotNil(record.checkInDate)

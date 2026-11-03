@@ -664,7 +664,7 @@ final class CollectHonestyTests: XCTestCase {
         let stampFormatter = DateFormatter()
         stampFormatter.locale = Locale(identifier: "en_US_POSIX")
         stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let stamp = stampFormatter.string(from: Date().calendarDays(ago: 1))
         let payload: [[String: Any]] = [["section": "summary", "data": [
             "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
             "sip_enabled": 249, "firewall_enabled": 245,
@@ -699,7 +699,7 @@ final class CollectHonestyTests: XCTestCase {
         let stampFormatter = DateFormatter()
         stampFormatter.locale = Locale(identifier: "en_US_POSIX")
         stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let stamp = stampFormatter.string(from: Date().calendarDays(ago: 1))
         let payload: [[String: Any]] = [["section": "summary", "data": [
             "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
             "sip_enabled": 249, "firewall_enabled": 245,
