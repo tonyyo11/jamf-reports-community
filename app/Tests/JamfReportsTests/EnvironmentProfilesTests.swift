@@ -7,28 +7,45 @@ import XCTest
 final class EnvironmentProfilesTests: XCTestCase {
     private let ws = "ws"
 
-    private func resolve(
-        _ yaml: String, auth: ProfileAuthMethod.Resolved? = nil
-    ) throws -> EnvironmentProfiles {
-        EnvironmentProfiles.resolve(
-            config: try ConfigLoader.loadFromString(yaml), workspace: ws, auth: auth)
+    private func resolve(_ yaml: String) throws -> EnvironmentProfiles {
+        EnvironmentProfiles.resolve(config: try ConfigLoader.loadFromString(yaml), workspace: ws)
     }
 
     // MARK: - Old shapes
 
     func testProWorkspaceOverOAuthFillsJamfProWithTheWorkspace() throws {
-        let environment = try resolve("jamf_cli:\n  data_dir: data\n",
-                                      auth: .init(authMethod: "oauth2", isTenantLevel: false))
+        let environment = try resolve("jamf_cli:\n  data_dir: data\n")
         XCTAssertEqual(environment, EnvironmentProfiles(jamfPro: ws))
         XCTAssertEqual(EnvironmentProfiles.resolve(config: nil, workspace: ws),
                        EnvironmentProfiles(jamfPro: ws), "no config.yaml is the same shape")
     }
 
-    func testProWorkspaceOnAPlatformProfileFillsJamfProAndPlatform() throws {
-        let environment = try resolve("jamf_cli:\n  data_dir: data\n",
-                                      auth: .init(authMethod: "platform", isTenantLevel: false))
-        XCTAssertEqual(environment.jamfPro, ws)
-        XCTAssertEqual(environment.platform, ws)
+    /// D19: an old-shape file derives no `platform` slot, whatever the profile's auth method.
+    /// Its Platform kinds run on the workspace's own profile, as before (`.workspaceProfile`).
+    func testAnOldShapeDerivesNoPlatformSlot() throws {
+        let environment = try resolve("jamf_cli:\n  data_dir: data\n")
+        XCTAssertEqual(environment, EnvironmentProfiles(jamfPro: ws))
+        XCTAssertNil(environment.platform)
+        XCTAssertEqual(environment.platformRoute(platformPinAllows: true), .workspaceProfile)
+        XCTAssertEqual(environment.platformRoute(platformPinAllows: false), .workspaceProfile,
+                       "no slot, so nothing to hold")
+    }
+
+    func testABlockWithAPlatformSlotRoutesToIt() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
+        XCTAssertEqual(environment.platformRoute(platformPinAllows: true), .profile("ws-API"))
+    }
+
+    func testABlockWithoutAPlatformSlotLeavesThePlatformKindsOut() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n")
+        XCTAssertEqual(environment.platformRoute(platformPinAllows: true),
+                       .unavailable(EnvironmentProfiles.noPlatformReason))
+    }
+
+    func testAHeldPlatformSlotLeavesThePlatformKindsOut() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
+        XCTAssertEqual(environment.platformRoute(platformPinAllows: false),
+                       .unavailable(EnvironmentProfiles.heldPlatformReason))
     }
 
     func testProtectEnabledNamesItsLogin() throws {

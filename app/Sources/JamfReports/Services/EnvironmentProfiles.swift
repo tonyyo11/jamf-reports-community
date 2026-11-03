@@ -44,12 +44,9 @@ struct EnvironmentProfiles: Equatable, Sendable {
         [platform, protect, securityCloud, foreignSchool].compactMap { $0 }
     }
 
-    /// `workspace` is the profile whose config.yaml this is. `auth` is that profile's resolved
-    /// auth method, which only says whether an old-shape workspace also fills `platform`; nil
-    /// leaves it blank.
-    static func resolve(
-        config: ReportConfig?, workspace: String, auth: ProfileAuthMethod.Resolved? = nil
-    ) -> EnvironmentProfiles {
+    /// `workspace` is the profile whose config.yaml this is. An old-shape file derives no
+    /// `platform` slot (D19): see `platformRoute`.
+    static func resolve(config: ReportConfig?, workspace: String) -> EnvironmentProfiles {
         if let block = config?.profiles {
             var environment = EnvironmentProfiles(
                 jamfPro: named(block.jamfPro), platform: named(block.platform),
@@ -66,7 +63,6 @@ struct EnvironmentProfiles: Equatable, Sendable {
             environment.jamfSchool = recorded
         } else {
             environment.jamfPro = recorded
-            if auth?.method?.isPlatform == true { environment.platform = recorded }
             if school?.isForeign(toWorkspace: workspace) == true {
                 environment.foreignSchool = named(school?.profile)
             }
@@ -130,5 +126,30 @@ struct EnvironmentProfiles: Equatable, Sendable {
             return nil
         }
         return name
+    }
+}
+
+/// Who collects the Platform-only kinds (`ReportEngine.platformOnlyKinds`), spec 3.2 and D19.
+/// The one answer for `collect`, the Data Sources plan and the freshness strip.
+enum PlatformRoute: Equatable, Sendable {
+    /// No `profiles:` block: the workspace's own profile, skipped by its auth method as before.
+    case workspaceProfile
+    /// The `platform` slot's profile.
+    case profile(String)
+    /// The block leaves them out; the text is the `[skip]` and `[plan]` reason.
+    case unavailable(String)
+}
+
+extension EnvironmentProfiles {
+    static let noPlatformReason = "no Platform API profile in this environment"
+    static let heldPlatformReason =
+        "profiles.platform changed in the shared config.yaml and is not confirmed on this Mac"
+
+    /// `platformPinAllows` is `SharedConfigPin.platformAllowed`; it matters only under a block.
+    func platformRoute(platformPinAllows: Bool) -> PlatformRoute {
+        guard source == .profilesBlock else { return .workspaceProfile }
+        guard let platform else { return .unavailable(Self.noPlatformReason) }
+        guard platformPinAllows else { return .unavailable(Self.heldPlatformReason) }
+        return .profile(platform)
     }
 }
