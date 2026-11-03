@@ -42,6 +42,10 @@ struct CollectSourcesPlan: Equatable, Sendable {
         /// The profile names a tenant, as a School profile needs for the Platform API.
         var hasTenantID = false
         var collectSkip: Set<String> = []
+        /// The profile the Platform-only kinds run as, when it is not the workspace's own.
+        var platformProfile: String?
+        /// Why the Platform-only kinds do not run (no Platform profile), or nil.
+        var platformUnavailable: String?
     }
 
     let sources: [Source]
@@ -69,7 +73,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
 
     private static func matrix(_ inputs: Inputs) -> [Source] {
         let commands = ReportEngine.collectCommandMatrix(
-            profile: inputs.profile, staleDays: inputs.staleDays)
+            profile: inputs.profile, platformProfile: inputs.platformProfile,
+            staleDays: inputs.staleDays)
         let plan = ReportEngine.planCollect(
             commands: commands,
             inputs: ReportEngine.CollectPlanInputs(
@@ -78,7 +83,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 nonPlatformAuth: ReportEngine.nonPlatformAuthMethod(inputs.authMethod),
                 tenantLevel: inputs.tenantLevel, collectSkip: inputs.collectSkip,
                 dashboardSupported: JamfCLIInstaller.supportsDashboard(inputs.installedVersion),
-                installedVersion: inputs.installedVersion, now: Date()),
+                installedVersion: inputs.installedVersion, now: Date(),
+                platformUnavailable: inputs.platformUnavailable),
             lastRun: { _ in nil })
         return plan.map { planned in
             Source(

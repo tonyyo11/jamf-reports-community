@@ -138,4 +138,18 @@ final class CollectSourcesPlanTests: XCTestCase {
         XCTAssertEqual(SourcesView.sourceStatus(pro[1], cachedAt: nil), "not cached")
         XCTAssertTrue(SourcesView.sourceStatus(sources[0], cachedAt: nil).hasPrefix("skipped: "))
     }
+
+    func testTheSourcesPlanNamesTheMissingPlatformProfile() {
+        var inputs = CollectSourcesPlan.Inputs(product: .jamfPro, profile: "ws")
+        inputs.platformUnavailable = EnvironmentProfiles.noPlatformReason
+        let rules = CollectSourcesPlan.build(inputs).sources.first { $0.kind == "compliance-rules" }
+        XCTAssertEqual(rules?.skipReason, EnvironmentProfiles.noPlatformReason)
+    }
+
+    func testTheSourcesPlanShowsThePlatformProfileInTheCommand() {
+        var inputs = CollectSourcesPlan.Inputs(product: .jamfPro, profile: "ws")
+        inputs.platformProfile = "ws-API"
+        let rules = CollectSourcesPlan.build(inputs).sources.first { $0.kind == "compliance-rules" }
+        XCTAssertNil(rules?.skipReason)
+    }
 }

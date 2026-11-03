@@ -631,13 +631,27 @@ extension WorkspaceStore {
             return (skipped.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
                 + (protectCollected ? DataFreshnessHealth.protectKinds : [])
         }
+        // The Platform kinds follow the same route `collect` takes, so the strip never expects
+        // what collect will not run, nor judges them by the workspace login's auth method.
+        let route = WorkspaceID(profile).map {
+            ReportEngine.platformRoute(config: config, workspace: $0)
+        } ?? .workspaceProfile
+        var platformAuth = auth
+        var platformUnavailable = false
+        switch route {
+        case .profile(let named) where named != profile:
+            platformAuth = ProfileAuthMethod.resolve(profile: named)
+        case .unavailable: platformUnavailable = true
+        default: break
+        }
         return expectedKinds(
             skipExpensive: UserDefaults.standard.bool(forKey: "skipExpensiveCollections"),
-            authMethod: auth?.authMethod,
-            tenantLevel: auth?.isTenantLevel == true,
+            authMethod: platformAuth?.authMethod,
+            tenantLevel: platformAuth?.isTenantLevel == true,
             collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
             dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
-            protectConnected: protectCollected
+            protectConnected: protectCollected,
+            platformUnavailable: platformUnavailable
         )
     }
 

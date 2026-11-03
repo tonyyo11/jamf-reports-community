@@ -744,7 +744,21 @@ struct SourcesView: View {
                     try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
                 }
                 let detected = ProfileProductType.detect(from: config, profile: profile)
-                let auth = ProfileAuthMethod.resolve(profile: profile)
+                let workspaceAuth = ProfileAuthMethod.resolve(profile: profile)
+                // The Platform kinds follow the route `collect` takes (no network probe here).
+                var platformProfile: String?
+                var platformUnavailable: String?
+                var auth = workspaceAuth
+                let route = WorkspaceID(profile).map {
+                    ReportEngine.platformRoute(config: config, workspace: $0)
+                } ?? .workspaceProfile
+                switch route {
+                case .profile(let named) where named != profile:
+                    platformProfile = named
+                    auth = ProfileAuthMethod.resolve(profile: named)
+                case .unavailable(let reason): platformUnavailable = reason
+                default: break
+                }
                 let protectProfile = EnvironmentProfiles.resolve(
                     config: config, workspace: profile).protect
                 let plan = CollectSourcesPlan.build(.init(
@@ -756,10 +770,10 @@ struct SourcesView: View {
                     staleDays: config?.thresholds?.resolvedStaleDays ?? 30,
                     installedVersion: version, skipExpensive: skipExpensive,
                     authMethod: auth?.authMethod, tenantLevel: auth?.isTenantLevel == true,
-                    hasTenantID: auth?.hasTenantID == true,
-                    collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)))
-                let school = detected.type == .jamfSchool
-                    ? ProfileAuthMethod.resolve(profile: profile) : nil
+                    hasTenantID: workspaceAuth?.hasTenantID == true,
+                    collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+                    platformProfile: platformProfile, platformUnavailable: platformUnavailable))
+                let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 return (plan, Self.newestSnapshots(
                     kinds: plan.sources.map(\.kind), profile: profile), school)
             }.value
