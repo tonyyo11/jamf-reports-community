@@ -533,7 +533,7 @@ final class ReportEngineTests: XCTestCase {
         let snapFile = kindDir.appendingPathComponent("update-status_20260101T000000.json")
         try Data("[]".utf8).write(to: snapFile)
         // Set mtime 2 days back so it is definitely not today.
-        let twoDaysAgo = Date().addingTimeInterval(-2 * 86_400)
+        let twoDaysAgo = Date().calendarDays(ago: 2)
         try FileManager.default.setAttributes(
             [.modificationDate: twoDaysAgo], ofItemAtPath: snapFile.path)
 

@@ -568,7 +568,7 @@ final class HtmlReportTests: XCTestCase {
     func testDaysAgoFromISODate() {
         let report = makeReport()
         // Yesterday
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let yesterday = Date().calendarDays(ago: 1)
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
         let days = report.daysAgo(from: iso.string(from: yesterday))
@@ -585,9 +585,7 @@ final class HtmlReportTests: XCTestCase {
 
     func testDaysAgoReadsTheFormatsTheOtherReadersDo() {
         let report = makeReport()
-        // Calendar arithmetic: 86_400 s is not a day on a clock-change day.
-        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
-        let past = threeDaysAgo.addingTimeInterval(-3_600)
+        let past = Date().calendarDays(ago: 3)
         for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "MM/dd/yyyy HH:mm:ss"] {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
