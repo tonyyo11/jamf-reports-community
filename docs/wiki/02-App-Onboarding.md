@@ -110,9 +110,9 @@ profile has a workspace, for example after the workspace folder is emptied.
    setup (see [Adding more environments](#adding-more-environments-from-the-same-integration)).
    jamf-cli suggests keeping a Jamf Pro OAuth profile beside the gateway profile for the
    commands the gateway refuses (device actions among them). Jamf Reports does not run them and
-   collects one profile per fleet: when both reach the same Jamf Pro, setup keeps the Platform
-   API profile, notes the OAuth one as "same Jamf Pro as ...", and leaves it out unless you tick
-   it. The secret is passed to `jamf-cli` over a controlling TTY and cleared immediately; the
+   collects each fleet once: when both reach the same Jamf Pro, setup proposes one workspace,
+   named after the OAuth profile, with the Platform API profile as its Platform API profile
+   (shown on the environment's card, where **Remove** leaves it out). The secret is passed to `jamf-cli` over a controlling TTY and cleared immediately; the
    app never persists it. Setup has `jamf-cli` store the credentials in the macOS keychain, and
    tokens are cached on disk. An organization-level integration is not accepted: it reaches only Jamf
    Account, so create an environment-level one. For a Platform API connection, create the

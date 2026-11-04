@@ -9,6 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
+- The Add sheet adds a Platform API profile to the current environment, either one jamf-cli
+  already holds or a new one (Connect new), after checking that it reaches the same Jamf Pro. (#305)
+- Re-check on the Add sheet suggests where a new Platform API profile belongs when it reaches
+  the same Jamf Pro as an existing workspace. (#305)
 - Data Sources lists the jamf-cli profiles that no workspace uses, with a button to add them. (#305)
 - Data Sources has an **Environment** card listing the products this workspace's environment holds
   (Jamf Pro or Jamf School, Platform API, Jamf Protect) with their profiles, auth method, newest
@@ -58,6 +62,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- First launch proposes one workspace per environment, shown as one card each. A Platform API
+  profile that reaches the same Jamf Pro as an OAuth profile joins that workspace as its Platform
+  API connection instead of leaving the OAuth profile out; Remove on the card takes it off, and
+  each Jamf Protect login can be placed in an environment, starting from the one its name
+  suggests. (#305)
 - The workspace menu lists workspaces only; jamf-cli profiles without one are on Data Sources. When a profile becomes another workspace's Platform API, Protect or Security Cloud login, the app opens that workspace. (#305)
 - Scheduled runs for all workspaces and the catch-up collect run only workspaces. A jamf-cli profile without one no longer gets a workspace made for it by a run; add it from Data Sources or the Add sheet. (#305)
 - The Platform API twin suggestion now says to keep the Jamf Pro (OAuth) workspace and add the

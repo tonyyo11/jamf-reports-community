@@ -23,10 +23,10 @@ is [jamf-cli's own recommendation](https://github.com/Jamf-Concepts/jamf-cli/wik
 Jamf Cloud only, so an on-premises or GovCloud server keeps the direct connection. jamf-cli
 refuses a few dozen Jamf Pro and Classic commands on a gateway profile (device actions among
 them, exit 8); Jamf Reports runs none of them, but keep a direct profile for your own use of
-those commands. Jamf Reports collects one profile per fleet: when the direct profile reaches
-the same Jamf Pro as the gateway profile, setup keeps the gateway profile as the workspace
-and leaves the direct one out of collects and consolidated reports (tick it to collect it
-anyway; Config Doctor names a pair that already has two workspaces).
+those commands. Jamf Reports collects each fleet once: when the direct profile reaches the
+same Jamf Pro as the gateway profile, setup proposes one workspace for the pair, named after
+the direct profile, with the gateway profile as its Platform API profile, which collects the
+Platform reports (Config Doctor names a pair that already has two workspaces).
 Jamf Protect is a separate connection with its own credentials, added at onboarding's
 **Add products** step or later from **Data Sources**. Jamf School has its own workspace and
 credentials.

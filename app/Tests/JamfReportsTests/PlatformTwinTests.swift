@@ -127,57 +127,10 @@ final class PlatformTwinTests: XCTestCase {
 
     // MARK: - Adoption
 
-    func testAdoptionKeepsOnlyThePlatformProfileWhenBothReachTheSameJamfPro() async {
-        let flow = ExistingCLISetupFlow(profiles: [platform, direct])
-        XCTAssertEqual(flow.selected, ["gw", "direct"])
-        await flow.resolveTwins(learn: { _ in "https://acme.jamfcloud.com" })
-        XCTAssertEqual(flow.selected, ["gw"])
-        XCTAssertEqual(flow.twinOf, ["direct": "gw"])
-        XCTAssertEqual(flow.twinsLeftOut, ["direct"])
-        let note = flow.twinNote(for: "direct") ?? ""
-        XCTAssertTrue(note.contains("Same Jamf Pro as gw"), note)
-        XCTAssertTrue(note.contains("not collected"), note)
-        XCTAssertNil(flow.twinNote(for: "gw"))
-    }
-
-    func testAdoptionChangesNothingWhenTheInstancesDifferOrTheProbeFails() async {
-        let differ = ExistingCLISetupFlow(profiles: [platform, direct])
-        await differ.resolveTwins(learn: { _ in "https://another.jamfcloud.com" })
-        XCTAssertEqual(differ.selected, ["gw", "direct"])
-        XCTAssertTrue(differ.twinOf.isEmpty)
-
-        let failed = ExistingCLISetupFlow(profiles: [platform, direct])
-        await failed.resolveTwins(learn: { _ in nil })
-        XCTAssertEqual(failed.selected, ["gw", "direct"])
-        XCTAssertTrue(failed.twinsLeftOut.isEmpty)
-    }
-
-    func testAChoiceTheUserMadeIsNotOverridden() async {
-        let ticked = ExistingCLISetupFlow(profiles: [platform, direct])
-        ticked.setSelected("direct", true)
-        await ticked.resolveTwins(learn: { _ in "https://acme.jamfcloud.com" })
-        XCTAssertEqual(ticked.selected, ["gw", "direct"], "the user ticked it; it stays")
-        XCTAssertTrue(ticked.twinsLeftOut.isEmpty)
-        XCTAssertNotNil(ticked.twinNote(for: "direct"), "the note still names the twin")
-    }
-
-    func testAnUntickedTwinIsNotInitializedAndIsExcludedFromAllProfilesRuns() async {
-        let flow = ExistingCLISetupFlow(profiles: [platform, direct])
-        await flow.resolveTwins(learn: { _ in "https://acme.jamfcloud.com" })
-        var initialized: [String] = []
-        await flow.run(initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
-        XCTAssertEqual(initialized, ["gw"])
-        var base = AutomationPolicy()
-        base.excludedWorkspaces = ["kept"]
-        flow.enableAutomation = false
-        XCTAssertEqual(flow.configuredPolicy(basedOn: base).excludedWorkspaces, ["kept", "direct"])
-        XCTAssertFalse(flow.configuredPolicy(basedOn: base).isManaged)
-    }
-
     func testNoPlatformProfileMeansNoQuestionAsked() async {
         let asked = Counter()
         let flow = ExistingCLISetupFlow(profiles: [direct, profile("o2", auth: "oauth2")])
-        await flow.resolveTwins(learn: { _ in asked.bump(); return nil })
+        await flow.resolveProposal(learn: { _ in asked.bump(); return nil })
         XCTAssertEqual(asked.count, 0)
     }
 
@@ -189,7 +142,7 @@ final class PlatformTwinTests: XCTestCase {
         let flow = ExistingCLISetupFlow(profiles: [platform, direct])
         let learned = expectation(description: "resolved")
         Task {
-            await flow.resolveTwins(learn: { _ in "https://acme.jamfcloud.com" })
+            await flow.resolveProposal(learn: { _ in "https://acme.jamfcloud.com" })
             learned.fulfill()
         }
         wait(for: [learned], timeout: 10)
