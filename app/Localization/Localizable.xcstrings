@@ -25423,6 +25423,46 @@
         }
       }
     },
+    "Add or set up…" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter ou configurer…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir o configurar…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hinzufügen oder einrichten …"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adicionar ou configurar…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi o configura…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加または設定…"
+          }
+        }
+      }
+    },
     "Add products" : {
       "localizations" : {
         "de" : {
@@ -91643,6 +91683,46 @@
         }
       }
     },
+    "Profiles not in an environment" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profils hors d’un environnement"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfiles que no están en un entorno"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profile, die in keiner Umgebung sind"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfis fora de um ambiente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profili non presenti in un ambiente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "環境に属していないプロファイル"
+          }
+        }
+      }
+    },
     "Profiles to set up" : {
       "localizations" : {
         "de" : {
@@ -132798,6 +132878,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O jamf-cli falhou na verificação de assinatura, então o perfil %@ não foi removido. %@"
+          }
+        }
+      }
+    },
+    "jamf-cli has these profiles, but no workspace uses them, so nothing collects them." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli contient ces profils, mais aucun espace de travail ne les utilise, donc rien ne les collecte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli tiene estos perfiles, pero ningún espacio de trabajo los usa, así que nada los recopila."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli enthält diese Profile, aber kein Arbeitsbereich verwendet sie, daher erfasst sie nichts."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O jamf-cli tem estes perfis, mas nenhum espaço de trabalho os usa, então nada os coleta."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli ha questi profili, ma nessuno spazio di lavoro li usa, quindi nulla li raccoglie."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli にはこれらのプロファイルがありますが、どのワークスペースも使用していないため、何も収集されません。"
           }
         }
       }

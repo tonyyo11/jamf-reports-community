@@ -177,8 +177,9 @@ struct AutomationView: View {
             discoveredProfiles = []
             return
         }
+        let policy = self.policy
         let names = await Task.detached {
-            ProfileService.discoverLocal().map(\.name)
+            ProfileService.listableWorkspaceNames(ProfileService.discoverLocal(), policy: policy)
         }.value
         discoveredProfiles = names
     }

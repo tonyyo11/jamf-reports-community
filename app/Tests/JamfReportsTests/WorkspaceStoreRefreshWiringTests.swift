@@ -31,7 +31,18 @@ final class WorkspaceStoreRefreshWiringTests: XCTestCase {
         XCTAssertFalse(store.canRefresh(profileSlug: "escape "))
     }
 
-    func testTriggerRefreshEngagesCoordinatorForValidProfile() {
+    func testTriggerRefreshEngagesCoordinatorForValidProfile() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("refresh-wiring-\(UUID().uuidString)", isDirectory: true)
+        let dir = root.appendingPathComponent("prodprofile", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("jamf_cli:\n  profile: prodprofile\n".utf8)
+            .write(to: dir.appendingPathComponent("config.yaml"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
         // End-to-end: a non-demo trigger reaches the coordinator, which
         // registers the in-flight task synchronously (isRefreshing flips
         // true before the awaited collect runs).
@@ -41,6 +52,16 @@ final class WorkspaceStoreRefreshWiringTests: XCTestCase {
             store.coordinator.isRefreshing(profile: "prodprofile", tier: .refresh),
             "A valid non-demo trigger must start a Refresh-tier task"
         )
+    }
+
+    func testTriggerRefreshIsNoOpForAProfileWithNoWorkspace() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("refresh-wiring-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        let store = WorkspaceStore(demoMode: false)
+        store.triggerRefresh(for: "prodprofile")
+        XCTAssertFalse(store.coordinator.isRefreshing(profile: "prodprofile", tier: .refresh))
     }
 
     func testTriggerRefreshIsNoOpInDemoMode() {
