@@ -27,12 +27,15 @@ struct UnassignedProfilesCard: View {
                     SectionHeader(title: L("Profiles not in an environment"))
                     Spacer()
                 }
-                Text(L("jamf-cli has these profiles, but no workspace uses them, so nothing collects them."))
+                Text(L(
+                    "jamf-cli has these profiles, but no workspace uses them, so nothing collects them."))
                     .font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(rows) { row in rowView(row) }
                 WrappingRow {
-                    PNPButton(title: L("Add or set up…"), icon: "plus", style: .ghost, size: .sm) {
+                    PNPButton(
+                        title: L("Add or set up…"), icon: "plus", style: .ghost, size: .sm
+                    ) {
                         NotificationCenter.default.post(name: .showAddSheet, object: nil)
                     }
                 }
