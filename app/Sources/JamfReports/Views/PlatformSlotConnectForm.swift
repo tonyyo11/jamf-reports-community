@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The Platform API card's "Connect new" disclosure in the Add sheet (D25): registers a new
@@ -47,11 +48,18 @@ struct PlatformSlotConnectForm: View {
         } label: {
             Text("Connect new").font(.subheadline.weight(.semibold))
         }
-        .onChange(of: model.isRunning) { isRunning = model.isRunning }
         .onDisappear { model.clearSecret() }
     }
 
     private func connect() async {
+        // Ends the secret field's editing, so it hands its bytes over and empties itself; a
+        // click on Connect does not take focus, and the field kept showing dots after a refusal.
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        guard model.canConnect else { return }
+        // Set here, not mirrored from the model: a form that leaves the sheet mid-connect (New
+        // workspace) must still reset the sheet's flag, or the sheet can never close.
+        isRunning = true
+        defer { isRunning = false }
         await model.connect()
         if case .added(let text) = model.outcome { onAdded(text) }
     }

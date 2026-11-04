@@ -308,6 +308,54 @@ enum AddSheetPlan {
         L("\(suggestion.profile) reaches the same Jamf Pro as \(suggestion.workspace). Add it?")
     }
 
+    /// The pure half of `AddSheetDiscovery.load`: `listed` is jamf-cli's listing, `current` the
+    /// current workspace's slots, `workspaces` every workspace's slots, `learnedJamfProURLs` the
+    /// Jamf Pro URL learned for each Platform profile that has one.
+    static func discovery(
+        listed: [JamfCLIProfile], currentWorkspace: String?, current: EnvironmentProfiles?,
+        workspaces: [String: EnvironmentProfiles], unusable: [String: String],
+        learnedJamfProURLs learned: [String: String]
+    ) -> AddSheetDiscovery {
+        let ownIsPlatform = listed.first { $0.name == currentWorkspace }?.auth?.isPlatform == true
+        let currentPlatform = current?.platform ?? (ownIsPlatform ? currentWorkspace : nil)
+        let currentHasJamfPro = current?.jamfPro != nil
+        let paired = Set(workspaces.values.flatMap(\.connectedProfiles))
+        let proposal = EnvironmentProposal.propose(
+            profiles: listed, learnedJamfProURLs: learned, existingWorkspaces: workspaces,
+            unusable: unusable)
+        let currentKey = currentWorkspace.map(ProfileName.folderKey)
+        let isCurrent = { (name: String) in ProfileName.folderKey(name) == currentKey }
+        let forCurrent = Set(proposal.extensions.filter { isCurrent($0.workspace) }.map(\.profile))
+        let currentHost = PlatformTwin.host(
+            of: listed.first { $0.name == current?.jamfPro }?.url)
+        // A Platform profile whose Jamf Pro is known and is not this workspace's suggestion
+        // reaches another tenant's Jamf Pro (paired with an unassigned oauth2 profile, or one of
+        // two on a host): the host check fails open, so it is never this one's add row. A host
+        // that is this workspace's own still is; an unknown host is left to the host check.
+        let elsewhere = Set(listed.filter { profile in
+            guard profile.auth?.isPlatform == true, !forCurrent.contains(profile.name),
+                  let host = PlatformTwin.host(of: learned[profile.name]) else { return false }
+            return host != currentHost
+        }.map(\.name))
+        let rows = unassigned(
+            profiles: listed, workspaces: Array(workspaces.keys), paired: paired,
+            unusable: unusable, platformSlotOpen: currentHasJamfPro && currentPlatform == nil,
+            platformSuggestedElsewhere: elsewhere)
+        let free = Set(rows.filter { $0.use == .newWorkspace }.map(\.name))
+        let notes = twinNotes(
+            unassigned: listed.filter { free.contains($0.name) },
+            workspaces: listed.filter { workspaces[$0.name] != nil },
+            learn: { learned[$0] })
+        // The current workspace's own suggestion is an add row, not a second workspace.
+        let others = proposal.extensions.filter { !isCurrent($0.workspace) }
+        return AddSheetDiscovery(
+            unassigned: rows, currentProtect: current?.protect,
+            currentPlatform: currentPlatform, currentHasJamfPro: currentHasJamfPro,
+            suggestions: proposal.extensions,
+            twinNotes: notes.merging(suggestionNotes(others)) { first, _ in first },
+            allProfileNames: listed.map(\.name))
+    }
+
     /// The host check on jamf-cli; blocks, so callers run it off the main actor. With no
     /// jamf-cli the answer is unknown.
     static func liveHostVerdict(workspace: String, platform: String) -> PlatformHostCheck.Verdict {
@@ -337,6 +385,9 @@ struct AddSheetDiscovery: Sendable {
     var suggestions: [EnvironmentProposal.Extension] = []
     /// `AddSheetPlan.twinNotes` for the unassigned profiles.
     var twinNotes: [String: String] = [:]
+    /// Every profile jamf-cli lists, slots and Protect and Security Cloud logins included: the
+    /// names a new profile must not take.
+    var allProfileNames: [String] = []
 
     var platformSlotOpen: Bool { currentHasJamfPro && currentPlatform == nil }
 
@@ -352,65 +403,33 @@ struct AddSheetDiscovery: Sendable {
         let currentRead = currentWorkspace.map {
             EnvironmentProfiles.read(workspace: $0, under: root)
         }
-        let currentProtect = currentRead?.protect
         guard let listed = ProfileService.listJamfCLIProfiles(scheduleCounts: [:]) else {
-            return AddSheetDiscovery(unassigned: nil, currentProtect: currentProtect)
+            return AddSheetDiscovery(unassigned: nil, currentProtect: currentRead?.protect)
         }
-        let ownIsPlatform = listed.first { $0.name == currentWorkspace }?.auth?.isPlatform == true
-        let currentPlatform = currentRead?.platform ?? (ownIsPlatform ? currentWorkspace : nil)
-        let currentHasJamfPro = currentRead?.jamfPro != nil
         let names = listed.map(\.name)
         // A Protect or Security Cloud login's own folder (made by 2.9.0) is not a workspace.
-        let listedWorkspaces = listed.filter {
+        let workspaces = listed.filter {
             !$0.product.isNeverAWorkspace && ProfileService.hasWorkspace($0.name, under: root)
-        }
-        let workspaces = listedWorkspaces.map(\.name)
-            + ProfileService.localOnlyWorkspaces(under: root, cliNames: names)
-        var paired = Set<String>()
-        for workspace in workspaces {
-            paired.formUnion(
-                EnvironmentProfiles.read(workspace: workspace, under: root).connectedProfiles)
-        }
-        let unusable = ProfileService.unusableProfiles(in: names).mapValues(\.explanation)
+        }.map(\.name) + ProfileService.localOnlyWorkspaces(under: root, cliNames: names)
+        let slots = Dictionary(
+            workspaces.map { ($0, EnvironmentProfiles.read(workspace: $0, under: root)) },
+            uniquingKeysWith: { first, _ in first })
+        // A profile a workspace already names is placed: asking for its Jamf Pro is wasted.
+        let named = Set(slots.values.flatMap(\.connectedProfiles))
         let store = ConnectionStore()
-        var learned: [String: String?] = [:]
-        func learn(_ name: String) -> String? {
-            if let known = learned[name] { return known }
-            let url = store.jamfProURL(profile: name)
+        var learned: [String: String] = [:]
+        for profile in listed
+        where profile.auth?.isPlatform == true && !named.contains(profile.name) {
+            if let url = store.jamfProURL(profile: profile.name)
                 ?? (probeTwins && !Task.isCancelled
-                    ? PlatformTwin.learnJamfProURL(profile: name) : nil)
-            learned[name] = .some(url)
-            return url
+                    ? PlatformTwin.learnJamfProURL(profile: profile.name) : nil) {
+                learned[profile.name] = url
+            }
         }
-        var learnedURLs: [String: String] = [:]
-        for profile in listed where profile.auth?.isPlatform == true
-            && !workspaces.contains(profile.name) {
-            learnedURLs[profile.name] = learn(profile.name)
-        }
-        let proposal = EnvironmentProposal.propose(
-            profiles: listed, learnedJamfProURLs: learnedURLs,
-            existingWorkspaces: Dictionary(
-                workspaces.map { ($0, EnvironmentProfiles.read(workspace: $0, under: root)) },
-                uniquingKeysWith: { first, _ in first }),
-            unusable: unusable)
-        // A profile that reaches another workspace's Jamf Pro is that workspace's suggestion; the
-        // host check fails open, so it is never offered as this one's add row.
-        let currentKey = currentWorkspace.map(ProfileName.folderKey)
-        let elsewhere = Set(proposal.extensions
-            .filter { ProfileName.folderKey($0.workspace) != currentKey }.map(\.profile))
-        let unassigned = AddSheetPlan.unassigned(
-            profiles: listed, workspaces: workspaces, paired: paired, unusable: unusable,
-            platformSlotOpen: currentHasJamfPro && currentPlatform == nil,
-            platformSuggestedElsewhere: elsewhere)
-        let free = Set(unassigned.filter { $0.use == .newWorkspace }.map(\.name))
-        let twinNotes = AddSheetPlan.twinNotes(
-            unassigned: listed.filter { free.contains($0.name) }, workspaces: listedWorkspaces,
-            learn: learn)
-        return AddSheetDiscovery(
-            unassigned: unassigned, currentProtect: currentProtect,
-            currentPlatform: currentPlatform, currentHasJamfPro: currentHasJamfPro,
-            suggestions: proposal.extensions,
-            twinNotes: twinNotes.merging(
-                AddSheetPlan.suggestionNotes(proposal.extensions)) { first, _ in first })
+        return AddSheetPlan.discovery(
+            listed: listed, currentWorkspace: currentWorkspace, current: currentRead,
+            workspaces: slots,
+            unusable: ProfileService.unusableProfiles(in: names).mapValues(\.explanation),
+            learnedJamfProURLs: learned)
     }
 }

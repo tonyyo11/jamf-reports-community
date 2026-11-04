@@ -19,10 +19,10 @@ final class PlatformSlotConnectModel {
         var check: @Sendable (_ binary: URL, _ profile: String) async -> ConnectionCheck.Verdict
         var hostVerdict: @Sendable (_ workspace: String, _ platform: String, _ binary: URL) async
             -> PlatformHostCheck.Verdict
-        var writeSlot: (_ workspace: String, _ platform: String) throws -> Void
+        var writeSlot: @Sendable (_ workspace: String, _ platform: String) async throws -> Void
         var existingProfiles: () -> [String]
 
-        /// `existingProfiles` is the app's list of jamf-cli profiles.
+        /// `existingProfiles` is every name jamf-cli lists, so a new profile takes none of them.
         static func live(existingProfiles: @escaping () -> [String]) -> Dependencies {
             Dependencies(
                 jamfCLI: { ExecutableLocator.locate("jamf-cli") },
@@ -47,7 +47,10 @@ final class PlatformSlotConnectModel {
                     }.value
                 },
                 writeSlot: { workspace, platform in
-                    _ = try ProfilesConfigWriter.save(.platform, to: platform, workspace: workspace)
+                    // Seeding a block can run `config list`, so it runs off the main actor.
+                    _ = try await Task.detached {
+                        try ProfilesConfigWriter.save(.platform, to: platform, workspace: workspace)
+                    }.value
                 },
                 existingProfiles: existingProfiles)
         }
@@ -158,7 +161,7 @@ final class PlatformSlotConnectModel {
             return
         }
         do {
-            try deps.writeSlot(workspace, profile)
+            try await deps.writeSlot(workspace, profile)
         } catch {
             outcome = .failed(leftover(
                 L("Could not add \(profile): \(error.localizedDescription)"), profile))

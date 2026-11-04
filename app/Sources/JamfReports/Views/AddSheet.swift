@@ -62,8 +62,12 @@ struct AddSheet: View {
                 AddSheetPlan.liveHostVerdict(workspace: workspace, platform: platform)
             }.value
         }
-    var writePlatform: (_ profile: String, _ workspace: String) throws -> Void = {
-        _ = try ProfilesConfigWriter.save(.platform, to: $0, workspace: $1)
+    /// Seeding a `profiles:` block can run `config list`, so the default writes off the main actor.
+    var writePlatform: @Sendable (_ profile: String, _ workspace: String) async throws -> Void = {
+        profile, target in
+        _ = try await Task.detached {
+            try ProfilesConfigWriter.save(.platform, to: profile, workspace: target)
+        }.value
     }
 
     @Environment(WorkspaceStore.self) private var workspace
@@ -208,6 +212,8 @@ struct AddSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The add-to-current card holds a running Platform connect; leaving it must wait.
+        .disabled(isAdopting)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -314,7 +320,12 @@ struct AddSheet: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             PlatformSlotConnectForm(
                                 workspace: workspace.profile,
-                                existingProfiles: { workspace.profiles.map(\.name) },
+                                // jamf-cli's whole listing: the app's own list leaves out Protect
+                                // and Security Cloud logins and slot profiles.
+                                existingProfiles: {
+                                    (discovery?.allProfileNames ?? [])
+                                        + workspace.profiles.map(\.name)
+                                },
                                 disabled: workspace.demoMode,
                                 isRunning: $isConnectingPlatform,
                                 onAdded: { text in
@@ -565,9 +576,13 @@ struct AddSheet: View {
         let probed = await withTaskCancellationHandler { await probe.value } onCancel: {
             probe.cancel()
         }
-        guard !probe.isCancelled else { return }
-        discovery?.twinNotes = probed.twinNotes
-        discovery?.suggestions = probed.suggestions
+        guard !probe.isCancelled, probed.unassigned != nil else { return }
+        // A host learned only now can move a Platform profile off the add rows, so the rows and
+        // the opening choice follow the probe too.
+        discovery = probed
+        choice = AddSheetPlan.recheck(
+            found: probed, takesProtect: currentTakesProtect, choice: choice,
+            choiceTouched: choiceTouched, requested: requested, current: current)
     }
 
     /// Sets up a workspace for a profile jamf-cli already has: the setup the first launch runs
@@ -605,7 +620,7 @@ struct AddSheet: View {
             return
         }
         do {
-            try writePlatform(profile, target)
+            try await writePlatform(profile, target)
             message = AddSheetPlan.platformAddedMessage(profile: profile, workspace: target)
             workspace.credentialsChanged()
         } catch {

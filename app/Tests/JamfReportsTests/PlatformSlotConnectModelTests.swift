@@ -27,9 +27,9 @@ final class PlatformSlotConnectModelTests: XCTestCase {
             },
             check: { _, _ in spy.check },
             hostVerdict: { _, _, _ in spy.host },
-            writeSlot: {
+            writeSlot: { workspace, platform in
                 if let error = spy.writeError { throw error }
-                spy.written.append(($0, $1))
+                spy.written.append((workspace, platform))
             },
             existingProfiles: { spy.existing })
         let model = PlatformSlotConnectModel(workspace: "Example", dependencies: deps)

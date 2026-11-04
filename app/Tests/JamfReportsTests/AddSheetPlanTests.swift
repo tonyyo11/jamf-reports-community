@@ -585,4 +585,70 @@ final class AddSheetPlanTests: XCTestCase {
             AddSheetPlan.suggestionText(.init(workspace: "prod", slot: .platform, profile: "gw")),
             "gw reaches the same Jamf Pro as prod. Add it?")
     }
+
+    // MARK: - Discovery
+
+    private func plan(
+        _ listed: [JamfCLIProfile], learned: [String: String] = [:]
+    ) -> AddSheetDiscovery {
+        let current = EnvironmentProfiles(jamfPro: "Example")
+        return AddSheetPlan.discovery(
+            listed: listed, currentWorkspace: "Example", current: current,
+            workspaces: ["Example": current], unusable: [:], learnedJamfProURLs: learned)
+    }
+
+    private func use(
+        _ name: String, in found: AddSheetDiscovery
+    ) -> AddSheetPlan.UnassignedProfile.Use? {
+        found.unassigned?.first { $0.name == name }?.use
+    }
+
+    private var exampleOAuth: JamfCLIProfile {
+        login("Example", auth: "oauth2", url: "https://example.jamfcloud.com")
+    }
+
+    func testAPlatformProfilePairedWithAnUnassignedOAuthProfileIsNotAnAddRow() {
+        let found = plan(
+            [exampleOAuth, login("Other", auth: "oauth2", url: "https://other.jamfcloud.com"),
+             platform("Other-API", url: "us.api.jamfcloud.com")],
+            learned: ["Other-API": "https://other.jamfcloud.com"])
+        XCTAssertEqual(use("Other-API", in: found), .newWorkspace)
+    }
+
+    func testAPlatformProfileLearnedOnlyOnTheProbePassStopsBeingAnAddRow() {
+        let listed = [exampleOAuth, platform("Other-API", url: "us.api.jamfcloud.com")]
+        XCTAssertEqual(use("Other-API", in: plan(listed)), .addToCurrent(.platform),
+                       "an unknown host is left to the host check")
+        let probed = plan(listed, learned: ["Other-API": "https://other.jamfcloud.com"])
+        XCTAssertEqual(use("Other-API", in: probed), .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: probed, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil, current: "Example"), .newWorkspace)
+    }
+
+    func testTwoPlatformProfilesOnAnotherHostAreNeitherAnAddRow() {
+        let url = "https://other.jamfcloud.com"
+        let found = plan(
+            [exampleOAuth, platform("A-API", url: "us.api.jamfcloud.com"),
+             platform("B-API", url: "us.api.jamfcloud.com")],
+            learned: ["A-API": url, "B-API": url])
+        XCTAssertEqual(use("A-API", in: found), .newWorkspace)
+        XCTAssertEqual(use("B-API", in: found), .newWorkspace)
+    }
+
+    func testTheCurrentWorkspacesSuggestionIsAnAddRowWithNoSecondWorkspaceNote() {
+        let found = plan(
+            [exampleOAuth, platform("Example-API", url: "us.api.jamfcloud.com")],
+            learned: ["Example-API": "https://example.jamfcloud.com"])
+        XCTAssertEqual(use("Example-API", in: found), .addToCurrent(.platform))
+        XCTAssertEqual(found.suggestions.map(\.profile), ["Example-API"])
+        XCTAssertNil(found.twinNotes["Example-API"])
+    }
+
+    func testDiscoveryCarriesEveryListedName() {
+        let protectLogin = JamfCLIProfile(
+            name: "Example-Protect", url: "", schedules: 0, status: .idle, product: .protect)
+        XCTAssertEqual(
+            plan([exampleOAuth, protectLogin]).allProfileNames, ["Example", "Example-Protect"])
+    }
 }
