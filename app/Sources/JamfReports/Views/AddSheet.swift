@@ -80,6 +80,7 @@ struct AddSheet: View {
     @State private var errorText: String?
     @State private var showingProtectConnect = false
     @State private var isAddingPlatform = false
+    @State private var isConnectingPlatform = false
     @State private var twinProbe: Task<AddSheetDiscovery, Never>?
 
     private var currentTakesProtect: Bool {
@@ -88,7 +89,8 @@ struct AddSheet: View {
             initialized: workspace.initializedProfiles.map(\.name))
     }
 
-    private var isAdopting: Bool { adoptFlow?.isRunning == true }
+    /// An adoption or a Platform connect is running: the sheet must not close under it.
+    private var isAdopting: Bool { adoptFlow?.isRunning == true || isConnectingPlatform }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -314,6 +316,7 @@ struct AddSheet: View {
                                 workspace: workspace.profile,
                                 existingProfiles: { workspace.profiles.map(\.name) },
                                 disabled: workspace.demoMode,
+                                isRunning: $isConnectingPlatform,
                                 onAdded: { text in
                                     message = text
                                     errorText = nil
@@ -491,7 +494,7 @@ struct AddSheet: View {
     private func rowAction(_ row: AddSheetPlan.UnassignedProfile) -> some View {
         switch row.use {
         case .newWorkspace:
-            if row.name == adoptingName && isAdopting {
+            if row.name == adoptingName && adoptFlow?.isRunning == true {
                 ProgressView().controlSize(.small)
                     .accessibilityLabel("Setting up \(row.name)")
             } else {

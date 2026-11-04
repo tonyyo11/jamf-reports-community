@@ -11,6 +11,8 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         var check: ConnectionCheck.Verdict = .accepted(jamfProVersion: "11.9")
         var host: PlatformHostCheck.Verdict = .same
         var registerError: Error?
+        var writeError: Error?
+        var gate: (@Sendable () async -> Void)?
     }
 
     private struct Boom: LocalizedError { var errorDescription: String? { "boom" } }
@@ -20,11 +22,15 @@ final class PlatformSlotConnectModelTests: XCTestCase {
             jamfCLI: { URL(fileURLWithPath: "/bin/echo") },
             register: { _, profile, _, _, _, _, _ in
                 spy.registered.append(profile)
+                await spy.gate?()
                 if let error = spy.registerError { throw error }
             },
             check: { _, _ in spy.check },
             hostVerdict: { _, _, _ in spy.host },
-            writeSlot: { spy.written.append(($0, $1)) },
+            writeSlot: {
+                if let error = spy.writeError { throw error }
+                spy.written.append(($0, $1))
+            },
             existingProfiles: { spy.existing })
         let model = PlatformSlotConnectModel(workspace: "Example", dependencies: deps)
         model.scopeID = "env-123"
@@ -39,7 +45,9 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         await model.connect()
         XCTAssertEqual(spy.written.count, 1)
         XCTAssertEqual(spy.written.first?.1, "Example-API")
-        guard case .added = model.outcome else { return XCTFail("\(String(describing: model.outcome))") }
+        guard case .added = model.outcome else {
+            return XCTFail("\(String(describing: model.outcome))")
+        }
     }
 
     func testRejectedIDRefusesAndNamesRemoveProfile() async {
@@ -76,11 +84,13 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         let model = model(spy)
         await model.connect()
         XCTAssertTrue(spy.written.isEmpty)
-        XCTAssertEqual(model.outcome, .failed("boom"))
+        guard case .failed(let text) = model.outcome else { return XCTFail("not failed") }
+        XCTAssertTrue(text.hasPrefix("boom"))
         XCTAssertEqual(model.secretByteCount, 0)
     }
 
-    func testSecretIsWipedAfterConnect() async {
+    // A spy can't observe the zeroing itself; this proves the bytes left the model.
+    func testSecretIsMovedOutOfTheModelOnConnect() async {
         let model = model(Spy())
         XCTAssertGreaterThan(model.secretByteCount, 0)
         await model.connect()
@@ -97,5 +107,56 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         let model = model(Spy())
         model.scopeID = "--evil"
         XCTAssertFalse(model.canConnect)
+    }
+
+    func testNoJamfProRefusesAndWritesNothing() async {
+        let spy = Spy()
+        spy.check = .noJamfPro
+        let model = model(spy)
+        await model.connect()
+        XCTAssertTrue(spy.written.isEmpty)
+        guard case .refused(let text) = model.outcome else { return XCTFail("no refusal") }
+        XCTAssertTrue(text.contains("remove-profile"))
+    }
+
+    func testMissingPermissionAddsItsNote() async {
+        let spy = Spy()
+        spy.check = .missingPermission(names: ["jss-url:read"])
+        let model = model(spy)
+        await model.connect()
+        XCTAssertEqual(spy.written.count, 1)
+        guard case .added(let text) = model.outcome else { return XCTFail("not added") }
+        XCTAssertTrue(text.contains("jss-url:read"))
+    }
+
+    func testWriteFailureKeepsTheRemoveProfileLine() async {
+        let spy = Spy()
+        spy.writeError = Boom()
+        let model = model(spy)
+        await model.connect()
+        guard case .failed(let text) = model.outcome else { return XCTFail("not failed") }
+        XCTAssertTrue(text.contains("jamf-cli config remove-profile Example-API"))
+    }
+
+    func testRegisterFailureNamesRemoveProfile() async {
+        let spy = Spy()
+        spy.registerError = Boom()
+        let model = model(spy)
+        await model.connect()
+        guard case .failed(let text) = model.outcome else { return XCTFail("not failed") }
+        XCTAssertTrue(text.contains("remove-profile Example-API"))
+    }
+
+    func testSecondConnectWhileRunningRegistersOnce() async {
+        let spy = Spy()
+        let (stream, release) = AsyncStream<Void>.makeStream()
+        spy.gate = { for await _ in stream { break } }
+        let model = model(spy)
+        let first = Task { await model.connect() }
+        while !model.isRunning { await Task.yield() }
+        await model.connect()
+        release.yield()
+        await first.value
+        XCTAssertEqual(spy.registered.count, 1)
     }
 }

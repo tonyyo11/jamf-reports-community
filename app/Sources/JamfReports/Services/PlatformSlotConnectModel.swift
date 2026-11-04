@@ -124,7 +124,8 @@ final class PlatformSlotConnectModel {
             isRunning = false
         }
         guard let binary = deps.jamfCLI() else {
-            outcome = .failed(L("Could not find jamf-cli. Install it from the sidebar's setup step."))
+            outcome = .failed(
+                L("Could not find jamf-cli. Install it from the sidebar's setup step."))
             return
         }
         let profile = profileName
@@ -134,7 +135,8 @@ final class PlatformSlotConnectModel {
                 scopeID.trimmingCharacters(in: .whitespaces),
                 clientID.trimmingCharacters(in: .whitespaces), secret)
         } catch {
-            outcome = .failed(error.localizedDescription)
+            // jamf-cli may have saved the profile before failing (a PTY timeout, for one).
+            outcome = .failed(leftover(error.localizedDescription, profile))
             return
         }
         ProfileAuthMethod.invalidateCache()
@@ -158,14 +160,17 @@ final class PlatformSlotConnectModel {
         do {
             try deps.writeSlot(workspace, profile)
         } catch {
-            outcome = .failed(leftover(L("Could not add \(profile): \(error.localizedDescription)"), profile))
+            outcome = .failed(leftover(
+                L("Could not add \(profile): \(error.localizedDescription)"), profile))
             return
         }
-        outcome = .added(AddSheetPlan.platformAddedMessage(profile: profile, workspace: workspace) + note)
+        outcome = .added(
+            AddSheetPlan.platformAddedMessage(profile: profile, workspace: workspace) + note)
     }
 
     private func leftover(_ text: String, _ profile: String) -> String {
         let word = ProfileName.shellWord(profile)
-        return text + " " + L("The profile \(profile) is still in jamf-cli; remove it with jamf-cli config remove-profile \(word).")
+        return text + " "
+            + L("The profile \(profile) is still in jamf-cli; remove it with jamf-cli config remove-profile \(word).")
     }
 }

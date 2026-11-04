@@ -9,12 +9,16 @@ struct PlatformSlotConnectForm: View {
 
     @State private var model: PlatformSlotConnectModel
     @State private var expanded = false
+    /// Lifted so the sheet can refuse to close while a registration runs.
+    @Binding var isRunning: Bool
 
     init(
         workspace: String, existingProfiles: @escaping () -> [String], disabled: Bool,
+        isRunning: Binding<Bool>,
         onAdded: @escaping (String) -> Void
     ) {
         self.disabled = disabled
+        _isRunning = isRunning
         self.onAdded = onAdded
         _model = State(initialValue: PlatformSlotConnectModel(
             workspace: workspace,
@@ -31,6 +35,7 @@ struct PlatformSlotConnectForm: View {
                 if let outcome = model.outcome { outcomeText(outcome) }
                 HStack {
                     Button(model.isRunning ? L("Connecting…") : L("Connect")) {
+                        guard !disabled else { return }
                         Task { await connect() }
                     }
                     .disabled(disabled || !model.canConnect)
@@ -42,6 +47,7 @@ struct PlatformSlotConnectForm: View {
         } label: {
             Text("Connect new").font(.subheadline.weight(.semibold))
         }
+        .onChange(of: model.isRunning) { isRunning = model.isRunning }
         .onDisappear { model.clearSecret() }
     }
 
