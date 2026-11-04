@@ -48,6 +48,13 @@ final class EnvironmentProfilesTests: XCTestCase {
                        .unavailable(EnvironmentProfiles.heldPlatformReason))
     }
 
+    /// D18 holds only another profile: the writer's seed names the workspace's own, and a peer
+    /// whose pin predates the seed must keep collecting the Platform kinds.
+    func testAPlatformSlotNamingTheWorkspaceIsNotHeld() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws\n")
+        XCTAssertEqual(environment.platformRoute(platformPinAllows: false), .profile("ws"))
+    }
+
     func testAPlatformSlotWithAnUnusableNameLeavesThePlatformKindsOut() throws {
         let environment = EnvironmentProfiles(
             jamfPro: ws, platform: "ws\u{07}API", source: .profilesBlock)

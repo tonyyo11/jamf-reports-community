@@ -9,6 +9,17 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Data Sources has an **Environment** card listing the products this workspace's environment holds
+  (Jamf Pro or Jamf School, Platform API, Jamf Protect) with their profiles, auth method, newest
+  data and whether a shared-config change waits for your Confirm. Check tests a profile's
+  connection, Remove disconnects Platform API or Jamf Protect and names the copy of config.yaml it
+  kept, and Add and Change open the usual Add sheet. (#305)
+- Config Doctor explains a `profiles:` block that cannot work: both Jamf Pro and Jamf School set,
+  old profile keys left beside it, a Platform API or Jamf Protect profile jamf-cli does not have,
+  one profile used by two workspaces, and a Platform API profile that reaches a different Jamf
+  Pro. (#305)
+- Jamf Protect can be connected and disconnected in a workspace that already has a `profiles:`
+  block; the change is written to `profiles.protect`. (#305)
 - The app now speaks **French, Spanish, German, Brazilian Portuguese, Italian and Japanese**, following your Mac's language, or the one you
   pick for Jamf Reports in System Settings › General › Language & Region. Language support is best effort: these are machine translations nobody fluent has reviewed, so please
   report wording that reads wrong. Reports, CSVs,
@@ -46,6 +57,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Platform API twin suggestion now says to keep the Jamf Pro (OAuth) workspace and add the
+  Platform profile to it. (#305)
 - A workspace whose config.yaml has a `profiles:` block now collects the compliance benchmark, DDM and blueprint reports with the Platform API profile named in `profiles.platform`, and skips them when none is named. A Platform API profile that reaches a different Jamf Pro is skipped with a warning, and on a shared workspace a new one waits for a Confirm in Config Doctor.
 - In a workspace with a `profiles:` block and a separate Platform API profile, an expired Jamf Pro sign-in is now reported as such even when the Platform API reports still arrive, instead of the run finishing as Partial. (#305)
 - Small monospaced labels (the sidebar's sync time and workspace monogram, the Security Score
@@ -203,6 +216,8 @@ versions in this repository map to git tags.
 
 ### Security
 
+- Shared logs, copied logs and webhook failure cards now hide the names of the other workspaces
+  on this Mac. (#305)
 - A scheduled run behind the System Settings proxy no longer leaves the proxy's host name in
   copied or exported logs and diagnostic bundles when jamf-cli's errors name it.
 - A webhook that answers with a redirect to another host now fails, with the HTTP status in the
