@@ -56,10 +56,10 @@ struct AddSheet: View {
     var onStartOnboarding: (AddSheetPlan.NewProduct) -> Void
     /// The two effects of adding a Platform profile, so tests can stand in for jamf-cli and the
     /// config.yaml write. `hostVerdict` blocks on jamf-cli, so the default runs it detached.
-    var hostVerdict: @Sendable (_ jamfPro: String, _ platform: String) async
-        -> PlatformHostCheck.Verdict = { jamfPro, platform in
+    var hostVerdict: @Sendable (_ workspace: String, _ platform: String) async
+        -> PlatformHostCheck.Verdict = { workspace, platform in
             await Task.detached {
-                AddSheetPlan.liveHostVerdict(jamfPro: jamfPro, platform: platform)
+                AddSheetPlan.liveHostVerdict(workspace: workspace, platform: platform)
             }.value
         }
     var writePlatform: (_ profile: String, _ workspace: String) throws -> Void = {
@@ -585,10 +585,7 @@ struct AddSheet: View {
         errorText = nil
         isAddingPlatform = true
         defer { isAddingPlatform = false }
-        var verdict = PlatformHostCheck.Verdict.unknown
-        if let jamfPro = EnvironmentProfiles.read(workspace: target).jamfPro {
-            verdict = await hostVerdict(jamfPro, profile)
-        }
+        let verdict = await hostVerdict(target, profile)
         if let refusal = AddSheetPlan.platformHostRefusal(profile: profile, verdict: verdict) {
             errorText = refusal
             return

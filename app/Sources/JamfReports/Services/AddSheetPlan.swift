@@ -88,7 +88,8 @@ enum AddSheetPlan {
         workspaces: [String],
         paired: Set<String>,
         unusable: [String: String],
-        platformSlotOpen: Bool = false
+        platformSlotOpen: Bool = false,
+        platformSuggestedElsewhere: Set<String> = []
     ) -> [UnassignedProfile] {
         let used = Set((workspaces + Array(paired)).map(ProfileName.folderKey))
         return profiles
@@ -98,7 +99,8 @@ enum AddSheetPlan {
                     name: profile.name, product: profile.product, url: profile.url,
                     use: use(
                         of: profile, unusable: unusable[profile.name],
-                        platformSlotOpen: platformSlotOpen),
+                        platformSlotOpen: platformSlotOpen
+                            && !platformSuggestedElsewhere.contains(profile.name)),
                     authMethod: profile.authMethod, platformLevel: profile.platformLevel)
             }
     }
@@ -293,7 +295,10 @@ enum AddSheetPlan {
 
     /// The host check on jamf-cli; blocks, so callers run it off the main actor. With no
     /// jamf-cli the answer is unknown.
-    static func liveHostVerdict(jamfPro: String, platform: String) -> PlatformHostCheck.Verdict {
+    static func liveHostVerdict(workspace: String, platform: String) -> PlatformHostCheck.Verdict {
+        guard let jamfPro = EnvironmentProfiles.read(workspace: workspace).jamfPro else {
+            return .unknown
+        }
         guard let binary = ExecutableLocator.locate("jamf-cli") else { return .unknown }
         let urls = PlatformHostCheck.live(jamfPro, platform, binary)
         return PlatformHostCheck.verdict(
@@ -352,9 +357,6 @@ struct AddSheetDiscovery: Sendable {
                 EnvironmentProfiles.read(workspace: workspace, under: root).connectedProfiles)
         }
         let unusable = ProfileService.unusableProfiles(in: names).mapValues(\.explanation)
-        let unassigned = AddSheetPlan.unassigned(
-            profiles: listed, workspaces: workspaces, paired: paired, unusable: unusable,
-            platformSlotOpen: currentHasJamfPro && currentPlatform == nil)
         let store = ConnectionStore()
         var learned: [String: String?] = [:]
         func learn(_ name: String) -> String? {
@@ -365,10 +367,6 @@ struct AddSheetDiscovery: Sendable {
             learned[name] = .some(url)
             return url
         }
-        let free = Set(unassigned.filter { $0.use == .newWorkspace }.map(\.name))
-        let twinNotes = AddSheetPlan.twinNotes(
-            unassigned: listed.filter { free.contains($0.name) }, workspaces: listedWorkspaces,
-            learn: learn)
         var learnedURLs: [String: String] = [:]
         for profile in listed where profile.auth?.isPlatform == true
             && !workspaces.contains(profile.name) {
@@ -380,6 +378,19 @@ struct AddSheetDiscovery: Sendable {
                 workspaces.map { ($0, EnvironmentProfiles.read(workspace: $0, under: root)) },
                 uniquingKeysWith: { first, _ in first }),
             unusable: unusable)
+        // A profile that reaches another workspace's Jamf Pro is that workspace's suggestion; the
+        // host check fails open, so it is never offered as this one's add row.
+        let currentKey = currentWorkspace.map(ProfileName.folderKey)
+        let elsewhere = Set(proposal.extensions
+            .filter { ProfileName.folderKey($0.workspace) != currentKey }.map(\.profile))
+        let unassigned = AddSheetPlan.unassigned(
+            profiles: listed, workspaces: workspaces, paired: paired, unusable: unusable,
+            platformSlotOpen: currentHasJamfPro && currentPlatform == nil,
+            platformSuggestedElsewhere: elsewhere)
+        let free = Set(unassigned.filter { $0.use == .newWorkspace }.map(\.name))
+        let twinNotes = AddSheetPlan.twinNotes(
+            unassigned: listed.filter { free.contains($0.name) }, workspaces: listedWorkspaces,
+            learn: learn)
         return AddSheetDiscovery(
             unassigned: unassigned, currentProtect: currentProtect,
             currentPlatform: currentPlatform, currentHasJamfPro: currentHasJamfPro,

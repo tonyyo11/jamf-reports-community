@@ -530,6 +530,20 @@ final class AddSheetPlanTests: XCTestCase {
             .addToCurrent)
     }
 
+    func testAProfileSuggestedForAnotherWorkspaceIsNotAnAddRow() {
+        let gw = platform("gw", url: "us.api.jamfcloud.com")
+        let rows = AddSheetPlan.unassigned(
+            profiles: [gw], workspaces: [], paired: [], unusable: [:], platformSlotOpen: true,
+            platformSuggestedElsewhere: ["gw"])
+        XCTAssertEqual(rows.map(\.use), [.newWorkspace])
+        let found = AddSheetDiscovery(
+            unassigned: rows, currentProtect: nil, currentHasJamfPro: true)
+        XCTAssertEqual(names(listing(found, .addToCurrent)), [])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil, current: "Y"), .newWorkspace)
+    }
+
     func testRecheckListsAProfileAddedAfterLaunch() {
         var before = AddSheetDiscovery(
             unassigned: openUnassigned([]), currentProtect: nil, currentHasJamfPro: true)
@@ -547,7 +561,8 @@ final class AddSheetPlanTests: XCTestCase {
     func testAPlatformProfileReachingAnotherJamfProIsRefused() {
         XCTAssertEqual(
             AddSheetPlan.platformHostRefusal(
-                profile: "gw", verdict: .different(jamfPro: "a.example.com", platform: "b.example.com")),
+                profile: "gw",
+                verdict: .different(jamfPro: "a.example.com", platform: "b.example.com")),
             "gw reaches b.example.com, not this workspace's Jamf Pro (a.example.com). "
                 + "Nothing was changed.")
         XCTAssertNil(AddSheetPlan.platformHostRefusal(profile: "gw", verdict: .same))
