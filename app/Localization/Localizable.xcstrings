@@ -50943,6 +50943,46 @@
         }
       }
     },
+    "Each environment gets its own workspace under %@/ — config, cached snapshots, and generated reports stay per-tenant." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jede Umgebung erhält unter %@/ einen eigenen Arbeitsbereich — Konfiguration, zwischengespeicherte Snapshots und erstellte Berichte bleiben pro Mandant getrennt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada entorno tiene su propio espacio de trabajo en %@/: la configuración, las instantáneas en caché y los informes generados permanecen separados por tenant."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque environnement a son propre espace de travail sous %@/ — la configuration, les instantanés en cache et les rapports générés restent séparés par tenant."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ogni ambiente ha il proprio spazio di lavoro in %@/ — configurazione, snapshot in cache e report generati restano separati per tenant."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各環境には %@/ の下に専用のワークスペースが作成されます。構成、キャッシュされたスナップショット、生成されたレポートはテナントごとに分けて保持されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada ambiente tem seu próprio espaço de trabalho em %@/ — a configuração, os snapshots em cache e os relatórios gerados permanecem separados por tenant."
+          }
+        }
+      }
+    },
     "Each group's profiles roll up into one consolidated fleet report; profiles in no group get a per-profile report. Combine prod/dev/sandbox into one fleet, or make one group per customer." : {
       "localizations" : {
         "de" : {
@@ -50979,46 +51019,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Os perfis de cada grupo são consolidados em um único relatório de frota; os perfis sem grupo recebem um relatório por perfil. Combine produção/desenvolvimento/sandbox em uma frota ou crie um grupo por cliente."
-          }
-        }
-      }
-    },
-    "Each profile gets its own workspace under %@/ — config, cached snapshots, and generated reports stay per-tenant." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jedes Profil erhält unter %@/ einen eigenen Arbeitsbereich — Konfiguration, zwischengespeicherte Snapshots und erstellte Berichte bleiben pro Mandant getrennt."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cada perfil tiene su propio espacio de trabajo en %@/: la configuración, las instantáneas en caché y los informes generados permanecen separados por tenant."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chaque profil a son propre espace de travail sous %@/ — la configuration, les instantanés en cache et les rapports générés restent séparés par tenant."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ogni profilo ottiene un proprio spazio di lavoro in %@/: configurazione, snapshot in cache e report generati restano separati per tenant."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各プロファイルは%@/の下に専用のワークスペースを持ちます。設定、キャッシュ済みスナップショット、生成したレポートはテナントごとに分かれて保持されます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cada perfil recebe seu próprio espaço de trabalho em %@/ — configuração, snapshots em cache e relatórios gerados ficam separados por tenant."
           }
         }
       }
@@ -52105,6 +52105,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O nível a usar é Ambiente: ele alcança o Jamf Pro, os Blueprints, os Compliance Benchmarks e o DDM. Tenant é legado: apenas endpoints diretos do Jamf Pro, sem Compliance Benchmarks nem Blueprints."
+          }
+        }
+      }
+    },
+    "Environments to set up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einzurichtende Umgebungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entornos que configurar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Environnements à configurer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ambienti da configurare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定する環境"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ambientes a configurar"
           }
         }
       }
@@ -67001,6 +67041,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O Jamf Protect não está conectado"
+          }
+        }
+      }
+    },
+    "Jamf Protect logins" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect-Anmeldungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicios de sesión de Jamf Protect"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexions Jamf Protect"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessi Jamf Protect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect のログイン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logins do Jamf Protect"
           }
         }
       }
@@ -81945,6 +82025,46 @@
         }
       }
     },
+    "Not now" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt nicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahora no"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas maintenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non ora"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今はしない"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agora não"
+          }
+        }
+      }
+    },
     "Not now?" : {
       "localizations" : {
         "de" : {
@@ -82301,6 +82421,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não definido"
+          }
+        }
+      }
+    },
+    "Not set up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht eingerichtet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin configurar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non configurés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non configurati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未設定"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não configurados"
           }
         }
       }
@@ -91907,46 +92067,6 @@
         }
       }
     },
-    "Profiles to set up" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einzurichtende Profile"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Perfiles que configurar"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profils à configurer"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profili da configurare"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定するプロファイル"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Perfis a configurar"
-          }
-        }
-      }
-    },
     "Profiles with Failures" : {
       "localizations" : {
         "de" : {
@@ -95817,6 +95937,46 @@
         }
       }
     },
+    "Remove Platform API profile %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform-API-Profil %@ entfernen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar el perfil de Platform API %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer le profil Platform API %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovi il profilo Platform API %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform API プロファイル %@ を削除"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover o perfil de Platform API %@"
+          }
+        }
+      }
+    },
     "Remove from connection" : {
       "localizations" : {
         "de" : {
@@ -96505,6 +96665,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Demonstração %@ removida."
+          }
+        }
+      }
+    },
+    "Removed from its environment." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus seiner Umgebung entfernt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitado de su entorno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retiré de son environnement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimosso dal suo ambiente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "環境から削除されました。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removido do seu ambiente."
           }
         }
       }
@@ -111943,6 +112143,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sugere qual controle de segurança tratar primeiro, usando inteligência no dispositivo."
+          }
+        }
+      }
+    },
+    "Suggested by name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach Name vorgeschlagen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerido por el nombre"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggéré d’après le nom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggerito in base al nome"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前から推奨"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerido pelo nome"
           }
         }
       }
