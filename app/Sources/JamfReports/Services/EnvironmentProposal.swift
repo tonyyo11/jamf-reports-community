@@ -43,8 +43,11 @@ struct EnvironmentProposal: Equatable, Sendable {
     ) -> EnvironmentProposal {
         var result = EnvironmentProposal(
             environments: [], extensions: [], protectChoices: [], unassigned: [:])
+        // Sorted so two keys that share a folder key (case variants) resolve the same way each run.
         let existingKeys = Dictionary(
-            uniqueKeysWithValues: existingWorkspaces.map { (ProfileName.folderKey($0.key), $0) })
+            existingWorkspaces.sorted { $0.key < $1.key }
+                .map { (ProfileName.folderKey($0.key), $0) },
+            uniquingKeysWith: { first, _ in first })
         var usedKeys = Set(existingKeys.keys)
         for env in existingWorkspaces.values {
             usedKeys.formUnion(env.connectedProfiles.map(ProfileName.folderKey))
@@ -75,8 +78,9 @@ struct EnvironmentProposal: Equatable, Sendable {
         for (host, group) in byHost where !host.isEmpty {
             if group.count > 1 {
                 for profile in group {
-                    result.unassigned[profile.name] =
-                        L("Two Platform profiles reach the same Jamf Pro (\(host)). Add the one you want from the Add sheet.")
+                    result.unassigned[profile.name] = L(
+                        "Two Platform profiles reach the same Jamf Pro (\(host)). Add the one you want from the Add sheet."
+                    )
                     claimed.insert(profile.name)
                 }
                 continue

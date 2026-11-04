@@ -145,4 +145,61 @@ final class EnvironmentProposalTests: XCTestCase {
         XCTAssertTrue(result.protectChoices.isEmpty)
         XCTAssertTrue(result.unassigned.isEmpty)
     }
+
+    func testKeysSharingAFolderKeyDoNotTrap() {
+        let existing = [
+            "Example": EnvironmentProfiles(jamfPro: "Example"),
+            "example": EnvironmentProfiles(jamfPro: "example"),
+        ]
+        let result = EnvironmentProposal.propose(
+            profiles: [profile("Other", auth: "oauth2", url: "o.jamfcloud.com")],
+            learnedJamfProURLs: [:], existingWorkspaces: existing)
+        XCTAssertEqual(result.environments.map(\.workspace), ["Other"])
+    }
+
+    func testFirstOfTwoTwinsByNameWinsAndTheOtherStaysAnEnvironment() {
+        let profiles = [
+            profile("B-Twin", auth: "oauth2", url: "example.jamfcloud.com"),
+            profile("A-Twin", auth: "oauth2", url: "example.jamfcloud.com"),
+            gw("API"),
+        ]
+        let result = EnvironmentProposal.propose(
+            profiles: profiles, learnedJamfProURLs: ["API": "example.jamfcloud.com"],
+            existingWorkspaces: [:])
+        XCTAssertEqual(result.environments.map(\.workspace), ["A-Twin", "B-Twin"])
+        XCTAssertEqual(result.environments.map(\.platform), ["API", nil])
+    }
+
+    func testPlatformProfileWithoutALearnedURLIsStandalone() {
+        let result = EnvironmentProposal.propose(
+            profiles: [profile("Example", auth: "oauth2", url: "example.jamfcloud.com"),
+                       gw("API")],
+            learnedJamfProURLs: [:], existingWorkspaces: [:])
+        XCTAssertEqual(result.environments.map(\.workspace), ["API", "Example"])
+        XCTAssertEqual(result.environments.map(\.platform), [nil, nil])
+    }
+
+    func testProtectIsSuggestedOnlyToWorkspacesWithNoProtectSlot() {
+        let existing = [
+            "Alpha": EnvironmentProfiles(jamfPro: "Alpha"),
+            "Beta": EnvironmentProfiles(jamfPro: "Beta", protect: "Old-Protect"),
+        ]
+        let result = EnvironmentProposal.propose(
+            profiles: [profile("Alpha-Protect", auth: "oauth2", product: .protect),
+                       profile("Beta-Protect", auth: "oauth2", product: .protect)],
+            learnedJamfProURLs: [:], existingWorkspaces: existing)
+        let suggested = Dictionary(
+            uniqueKeysWithValues: result.protectChoices.map { ($0.profile, $0.suggested) })
+        XCTAssertEqual(suggested["Alpha-Protect"], "Alpha")
+        XCTAssertEqual(suggested["Beta-Protect"] ?? nil, nil)
+    }
+
+    func testUnusablePlatformProfileIsUnassignedAndNeverPaired() {
+        let result = EnvironmentProposal.propose(
+            profiles: Array(four().prefix(2)), learnedJamfProURLs: exampleURLs,
+            existingWorkspaces: [:], unusable: ["Example-API": "Bad name."])
+        XCTAssertEqual(result.unassigned["Example-API"], "Bad name.")
+        XCTAssertEqual(result.environments.map(\.workspace), ["Example"])
+        XCTAssertNil(result.environments.first?.platform)
+    }
 }
