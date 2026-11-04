@@ -40,7 +40,7 @@ struct ExistingCLISetupView: View {
         }
         .background(Theme.Colors.winBG)
         .sharedFolderConsent(pending: $pendingSharedRoot) { applyExistingRoot($0) }
-        .task { await flow.resolveTwins() }
+        .task { await flow.resolveProposal() }
     }
 
     // MARK: - Existing workspace
@@ -129,21 +129,16 @@ struct ExistingCLISetupView: View {
             VStack(alignment: .leading, spacing: 10) {
                 stepTitle(number: 1, title: L("Profiles to set up"))
                 ForEach(flow.profileNames, id: \.self) { name in
-                    Toggle(profileTitle(name), isOn: selectionBinding(name))
-                        .toggleStyle(.checkbox)
-                        .disabled(isLocked || flow.unusable[name] != nil
-                            || flow.refusals[name] != nil)
+                    if flow.proposal.environments.contains(where: { $0.workspace == name }) {
+                        Toggle(profileTitle(name), isOn: selectionBinding(name))
+                            .toggleStyle(.checkbox)
+                            .disabled(isLocked)
+                    }
                     if let reason = flow.unusable[name] {
                         profileNote(L("\(name) can't be used. \(reason.explanation)"))
                     }
                     if let reason = flow.refusals[name] {
                         profileNote(reason)
-                    }
-                    if let note = flow.twinNote(for: name) {
-                        Text(note)
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Text(
@@ -156,7 +151,7 @@ struct ExistingCLISetupView: View {
     }
 
     private func profileTitle(_ name: String) -> String {
-        flow.products[name] == .school ? L("\(name) (Jamf School)") : name
+        flow.proposal.environments.first { $0.workspace == name }?.isSchool == true ? L("\(name) (Jamf School)") : name
     }
 
     private func profileNote(_ text: String) -> some View {
@@ -384,13 +379,10 @@ struct ExistingCLISetupView: View {
         isFinishing = true
         Task {
             flow.recordLearnedURLs()
-            // A twin left unticked is excluded from all-profiles runs even without automation.
-            if flow.enableAutomation || !flow.twinsLeftOut.isEmpty {
+            if flow.enableAutomation {
                 UserDefaults.standard.set(
                     flow.configuredPolicy().serialize(), forKey: AutomationPolicy.storageKey
                 )
-            }
-            if flow.enableAutomation {
                 await workspace.applyAutomationPolicy()
                 workspace.warnIfTickerNeedsApproval()
             }

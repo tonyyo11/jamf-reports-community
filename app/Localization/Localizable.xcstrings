@@ -3760,16 +3760,16 @@
     },
     "%@ already has Platform API profile %@." : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ already has Platform API profile %2$@."
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ hat bereits das Platform-API-Profil %2$@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ already has Platform API profile %2$@."
           }
         },
         "es" : {
@@ -67051,6 +67051,52 @@
         }
       }
     },
+    "Jamf Protect profile %@ was not recorded: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Jamf-Protect-Profil %@ wurde nicht erfasst: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Jamf Protect profile %1$@ was not recorded: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de Jamf Protect %@ no se ha registrado: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil Jamf Protect %@ n’a pas été enregistré : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo Jamf Protect %@ non è stato registrato: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protectプロファイル%@は記録されませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil do Jamf Protect %@ não foi registrado: %@"
+          }
+        }
+      }
+    },
     "Jamf Protect was not backed up: %@." : {
       "localizations" : {
         "de" : {
@@ -90043,6 +90089,98 @@
         }
       }
     },
+    "Platform API profile %@ was not added: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Platform-API-Profil %@ wurde nicht hinzugefügt: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Platform API profile %1$@ was not added: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de la API de Platform %@ no se ha añadido: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil API Platform %@ n’a pas été ajouté : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo API Platform %@ non è stato aggiunto: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform APIプロファイル%@は追加されませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil da API Platform %@ não foi adicionado: %@"
+          }
+        }
+      }
+    },
+    "Platform API profile %@ was not recorded: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Platform-API-Profil %@ wurde nicht erfasst: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Platform API profile %1$@ was not recorded: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de la API de Platform %@ no se ha registrado: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil API Platform %@ n’a pas été enregistré : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo API Platform %@ non è stato registrato: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform APIプロファイル%@は記録されませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil da API Platform %@ não foi registrado: %@"
+          }
+        }
+      }
+    },
     "Platform API profile required" : {
       "localizations" : {
         "de" : {
@@ -101077,46 +101215,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mesmo Jamf Pro de %@, que tem um espaço de trabalho. Um segundo espaço de trabalho coleta a frota duas vezes, dividindo o histórico e contando a frota duas vezes nos totais. Configure-o somente se quiser coletá-lo mesmo assim."
-          }
-        }
-      }
-    },
-    "Same Jamf Pro as %@. Kept for commands the gateway refuses; not collected, so history and fleet totals count the fleet once. Tick it to collect it anyway." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dasselbe Jamf Pro wie %@. Wird für Befehle beibehalten, die das Gateway ablehnt; nicht erfasst, sodass Verlauf und Flottensummen die Flotte nur einmal zählen. Aktivieren Sie es, um es trotzdem zu erfassen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El mismo Jamf Pro que %@. Se mantiene para los comandos que rechaza la pasarela; no se recopila, por lo que el historial y los totales de la flota la cuentan una sola vez. Márquelo para recopilarlo de todos modos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Même Jamf Pro que %@. Conservé pour les commandes que la passerelle refuse ; non collecté, de sorte que l’historique et les totaux du parc ne comptent le parc qu’une fois. Cochez-le pour le collecter quand même."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stesso Jamf Pro di %@. Conservato per i comandi che il gateway rifiuta; non viene raccolto, quindi cronologia e totali contano il parco dispositivi una sola volta. Selezionarlo per raccoglierlo comunque."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@と同じJamf Proです。ゲートウェイが拒否するコマンド用に保持されています。収集されないため、履歴とフリート合計ではフリートが1回だけ数えられます。それでも収集する場合は、チェックを入れてください。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mesmo Jamf Pro de %@. Mantido para comandos que o gateway recusa; não é coletado, então o histórico e os totais da frota contam a frota uma vez. Marque para coletá-lo mesmo assim."
           }
         }
       }
