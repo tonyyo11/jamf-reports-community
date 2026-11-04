@@ -39793,6 +39793,46 @@
         }
       }
     },
+    "Connect new Platform API profile to %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Platform-API-Profil mit %@ verbinden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectar nuevo perfil de Platform API a %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecter un nouveau profil Platform API à %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collega un nuovo profilo Platform API a %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいPlatform APIプロファイルを%@に接続"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectar novo perfil da Platform API a %@"
+          }
+        }
+      }
+    },
     "Connect to Jamf" : {
       "localizations" : {
         "de" : {
@@ -116509,6 +116549,52 @@
         }
       }
     },
+    "The profile %@ is still in jamf-cli; remove it with jamf-cli config remove-profile %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Profil %1$@ ist noch in jamf-cli vorhanden; entfernen Sie es mit jamf-cli config remove-profile %2$@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The profile %1$@ is still in jamf-cli; remove it with jamf-cli config remove-profile %2$@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil %1$@ sigue en jamf-cli; elimínelo con jamf-cli config remove-profile %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil %1$@ est toujours dans jamf-cli ; supprimez-le avec jamf-cli config remove-profile %2$@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo %1$@ è ancora in jamf-cli; rimuovilo con jamf-cli config remove-profile %2$@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロファイル%1$@はjamf-cliに残っています。jamf-cli config remove-profile %2$@ で削除してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil %1$@ ainda está no jamf-cli; remova-o com jamf-cli config remove-profile %2$@."
+          }
+        }
+      }
+    },
     "The profile is saved even though validation failed. Fix the URL, client ID, or secret later from Data Sources, or continue now." : {
       "localizations" : {
         "de" : {
@@ -117763,6 +117849,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este é um novo espaço de trabalho em uma pasta que você escolheu"
+          }
+        }
+      }
+    },
+    "This is not a usable profile name." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dies ist kein verwendbarer Profilname."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este no es un nombre de perfil utilizable."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce nom de profil n’est pas utilisable."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo non è un nome di profilo utilizzabile."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロファイル名は使用できません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este não é um nome de perfil utilizável."
           }
         }
       }
@@ -133090,6 +133216,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Erros do jamf-cli"
+          }
+        }
+      }
+    },
+    "jamf-cli already has a profile with this name." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli hat bereits ein Profil mit diesem Namen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli ya tiene un perfil con este nombre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli a déjà un profil portant ce nom."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli ha già un profilo con questo nome."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この名前のプロファイルはjamf-cliに既にあります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O jamf-cli já tem um perfil com este nome."
           }
         }
       }

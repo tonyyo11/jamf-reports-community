@@ -291,7 +291,7 @@ struct AddSheet: View {
         }
     }
 
-    /// A Platform profile slot (spec 5.1). Connect new joins this card in a later task.
+    /// A Platform profile slot (spec 5.1). Connect new registers a profile in it.
     @ViewBuilder
     private var platformCard: some View {
         if discovery?.currentHasJamfPro == true {
@@ -310,6 +310,17 @@ struct AddSheet: View {
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.fg2)
                                 .fixedSize(horizontal: false, vertical: true)
+                            PlatformSlotConnectForm(
+                                workspace: workspace.profile,
+                                existingProfiles: { workspace.profiles.map(\.name) },
+                                disabled: workspace.demoMode,
+                                onAdded: { text in
+                                    message = text
+                                    errorText = nil
+                                    workspace.credentialsChanged()
+                                    Task { await recheck() }
+                                })
+                                .id(workspace.profile)
                         }
                     }
                     Spacer(minLength: 0)
