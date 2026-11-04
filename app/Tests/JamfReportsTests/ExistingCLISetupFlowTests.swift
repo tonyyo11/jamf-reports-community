@@ -691,6 +691,40 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         XCTAssertNotNil(flow.connectionNotes["Example"])
     }
 
+    // The app's own list has dropped every Protect and Security Cloud login, so adoption
+    // reads jamf-cli's whole listing before it proposes.
+    func testResolveReadsTheUnfilteredListingForProtectAndSecurityCloud() async {
+        let cloud = JamfCLIProfile(
+            name: "Example-Cloud", url: "", schedules: 0, status: .idle,
+            authMethod: "security", product: .securityCloud)
+        let listed = [example, protect("Example-Protect"), cloud]
+        let flow = ExistingCLISetupFlow(profiles: [example])
+        XCTAssertTrue(flow.proposal.protectChoices.isEmpty)
+        XCTAssertFalse(flow.proposalResolved)
+        await flow.resolveProposal(list: { listed }, learn: { _ in nil })
+        XCTAssertEqual(flow.proposal.protectChoices.map(\.profile), ["Example-Protect"])
+        XCTAssertEqual(flow.protectAssignment["Example-Protect"] ?? nil, "Example")
+        XCTAssertEqual(
+            flow.proposal.unassigned["Example-Cloud"], ExistingCLISetupFlow.securityCloudReason)
+        XCTAssertEqual(flow.selected, ["Example"])
+        XCTAssertTrue(flow.proposalResolved)
+    }
+
+    func testAnUnreadableListingKeepsTheProfilesItWasGiven() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, protect("Example-Protect")])
+        await flow.resolveProposal(list: { nil }, learn: { _ in nil })
+        XCTAssertEqual(flow.proposal.protectChoices.map(\.profile), ["Example-Protect"])
+        XCTAssertTrue(flow.proposalResolved)
+    }
+
+    func testOnlyTheFirstProtectLoginByNameIsSuggestedForAnEnvironment() {
+        let flow = ExistingCLISetupFlow(profiles: [
+            example, protect("Example-Protect-Old"), protect("Example-Protect"),
+        ])
+        XCTAssertEqual(flow.protectAssignment["Example-Protect"] ?? nil, "Example")
+        XCTAssertNil(flow.protectAssignment["Example-Protect-Old"] ?? nil)
+    }
+
     func testResolveKeepsAHandMadeSelection() async {
         let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
         XCTAssertEqual(flow.selected, ["Example", "Example-API"])

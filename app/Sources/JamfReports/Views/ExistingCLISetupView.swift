@@ -105,9 +105,10 @@ struct ExistingCLISetupView: View {
     // MARK: - Header
 
     private var headerSubtitle: String {
-        let count = flow.profileNames.count
-        let noun = count == 1 ? "profile" : "profiles"
-        return L("Found \(count) configured \(noun). Three steps and the app is live: create a reporting workspace for each profile, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point.")
+        let count = flow.proposal.environments.count
+        return count == 1
+            ? L("Found 1 environment to set up. Three steps and the app is live: create its reporting workspace, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point.")
+            : L("Found \(count) environments to set up. Three steps and the app is live: create a reporting workspace for each environment, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point.")
     }
 
     private var header: some View {
@@ -192,8 +193,7 @@ struct ExistingCLISetupView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Picker(choice.profile, selection: protectBinding(choice.profile)) {
                         Text("Not now").tag(String?.none)
-                        ForEach(flow.proposal.environments.map(\.workspace)
-                            .filter(flow.selected.contains), id: \.self) {
+                        ForEach(protectTargets(for: choice.profile), id: \.self) {
                             Text($0).tag(String?.some($0))
                         }
                     }
@@ -207,6 +207,15 @@ struct ExistingCLISetupView: View {
                 }
             }
         }
+    }
+
+    /// The ticked environments `login` can go to: one Protect login each, so an environment
+    /// another login holds is left out.
+    private func protectTargets(for login: String) -> [String] {
+        let held = Set(flow.proposal.protectChoices.map(\.profile)
+            .filter { $0 != login }.compactMap(assignedEnvironment))
+        return flow.proposal.environments.map(\.workspace)
+            .filter { flow.selected.contains($0) && !held.contains($0) }
     }
 
     @ViewBuilder
@@ -308,10 +317,16 @@ struct ExistingCLISetupView: View {
                         icon: flow.isRunning ? "hourglass" : "play.fill",
                         style: .gold, size: .lg
                     ) {
-                        guard !flow.isRunning, !flow.selected.isEmpty else { return }
+                        guard !flow.isRunning, !flow.selected.isEmpty, flow.proposalResolved
+                        else { return }
                         Task { await flow.run() }
                     }
-                    .disabled(flow.isRunning || flow.selected.isEmpty)
+                    .disabled(flow.isRunning || flow.selected.isEmpty || !flow.proposalResolved)
+                    if !flow.proposalResolved {
+                        Text("Checking which profiles reach the same Jamf Pro…")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
                     if flow.canRetry {
                         PNPButton(
                             title: L("Skip — set up later"), icon: "arrow.right",

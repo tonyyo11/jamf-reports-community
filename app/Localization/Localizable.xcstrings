@@ -34157,6 +34157,46 @@
         }
       }
     },
+    "Checking which profiles reach the same Jamf Pro…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wird geprüft, welche Profile dasselbe Jamf Pro erreichen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobando qué perfiles llegan al mismo Jamf Pro…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérification des profils qui atteignent le même Jamf Pro…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifica dei profili che raggiungono lo stesso Jamf Pro…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同じ Jamf Pro に接続するプロファイルを確認しています…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificando quais perfis acessam o mesmo Jamf Pro…"
+          }
+        }
+      }
+    },
     "Checks" : {
       "localizations" : {
         "de" : {
@@ -58375,48 +58415,82 @@
         }
       }
     },
-    "Found %lld configured %@. Three steps and the app is live: create a reporting workspace for each profile, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point." : {
+    "Found %lld environments to set up. Three steps and the app is live: create a reporting workspace for each environment, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld konfiguriert gefunden: %@. Drei Schritte, dann ist die App einsatzbereit: Erstellen Sie für jedes Profil einen Berichts-Arbeitsbereich, legen Sie fest, wie oft die Daten automatisch aktualisiert werden, und führen Sie eine erste Erfassung aus, damit Dashboards und Trendverlauf einen Ausgangspunkt haben."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Found %1$lld configured %2$@. Three steps and the app is live: create a reporting workspace for each profile, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point."
+            "value" : "%lld Umgebungen zum Einrichten gefunden. Drei Schritte, dann ist die App einsatzbereit: Erstellen Sie für jede Umgebung einen Berichts-Arbeitsbereich, legen Sie fest, wie oft die Daten automatisch aktualisiert werden, und führen Sie eine erste Erfassung aus, damit Dashboards und Trendverlauf einen Ausgangspunkt haben."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se han encontrado %lld %@ configurados. Con tres pasos la app queda lista: cree un espacio de trabajo de informes para cada perfil, elija con qué frecuencia se actualizan los datos automáticamente y ejecute una primera recopilación para que los paneles y el historial de tendencias tengan un punto de partida."
+            "value" : "Se han encontrado %lld entornos para configurar. Con tres pasos la app queda lista: cree un espacio de trabajo de informes para cada entorno, elija con qué frecuencia se actualizan los datos automáticamente y ejecute una primera recopilación para que los paneles y el historial de tendencias tengan un punto de partida."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configurés et trouvés : %lld %@. Trois étapes et l’app est prête : créez un espace de travail de reporting pour chaque profil, choisissez la fréquence d’actualisation automatique des données, puis lancez une première collecte pour que les tableaux de bord et l’historique des tendances aient un point de départ."
+            "value" : "%lld environnements à configurer ont été trouvés. Trois étapes et l’app est prête : créez un espace de travail de reporting pour chaque environnement, choisissez la fréquence d’actualisation automatique des données, puis lancez une première collecte pour que les tableaux de bord et l’historique des tendances aient un point de départ."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trovati %lld %@ configurati. Bastano tre passaggi: creare uno spazio di lavoro per ogni profilo, scegliere la frequenza di aggiornamento automatico dei dati ed eseguire una prima raccolta, così le dashboard e lo storico degli andamenti hanno un punto di partenza."
+            "value" : "Trovati %lld ambienti da configurare. Bastano tre passaggi: creare uno spazio di lavoro per ogni ambiente, scegliere la frequenza di aggiornamento automatico dei dati ed eseguire una prima raccolta, così le dashboard e lo storico degli andamenti hanno un punto di partenza."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定済みの%2$@が%1$lld件見つかりました。3つのステップでアプリを使い始められます: プロファイルごとにレポート用ワークスペースを作成し、データを自動更新する頻度を選び、最初の収集を実行してダッシュボードとトレンド履歴の起点を作ります。"
+            "value" : "設定する環境が%lld件見つかりました。3つのステップでアプリを使い始められます: 環境ごとにレポート用ワークスペースを作成し、データを自動更新する頻度を選び、最初の収集を実行してダッシュボードとトレンド履歴の起点を作ります。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Encontrados %lld %@ configurados. São três etapas para o app começar a funcionar: criar um espaço de trabalho para cada perfil, escolher com que frequência os dados são atualizados automaticamente e executar uma primeira coleta para que os painéis e o histórico de tendências tenham um ponto de partida."
+            "value" : "Encontrados %lld ambientes para configurar. São três etapas para o app começar a funcionar: criar um espaço de trabalho para cada ambiente, escolher com que frequência os dados são atualizados automaticamente e executar uma primeira coleta para que os painéis e o histórico de tendências tenham um ponto de partida."
+          }
+        }
+      }
+    },
+    "Found 1 environment to set up. Three steps and the app is live: create its reporting workspace, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Umgebung zum Einrichten gefunden. Drei Schritte, dann ist die App einsatzbereit: Erstellen Sie ihren Berichts-Arbeitsbereich, legen Sie fest, wie oft die Daten automatisch aktualisiert werden, und führen Sie eine erste Erfassung aus, damit Dashboards und Trendverlauf einen Ausgangspunkt haben."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha encontrado 1 entorno para configurar. Con tres pasos la app queda lista: cree su espacio de trabajo de informes, elija con qué frecuencia se actualizan los datos automáticamente y ejecute una primera recopilación para que los paneles y el historial de tendencias tengan un punto de partida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 environnement à configurer a été trouvé. Trois étapes et l’app est prête : créez son espace de travail de reporting, choisissez la fréquence d’actualisation automatique des données, puis lancez une première collecte pour que les tableaux de bord et l’historique des tendances aient un point de départ."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trovato 1 ambiente da configurare. Bastano tre passaggi: creare il suo spazio di lavoro, scegliere la frequenza di aggiornamento automatico dei dati ed eseguire una prima raccolta, così le dashboard e lo storico degli andamenti hanno un punto di partenza."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定する環境が1件見つかりました。3つのステップでアプリを使い始められます: その環境のレポート用ワークスペースを作成し、データを自動更新する頻度を選び、最初の収集を実行してダッシュボードとトレンド履歴の起点を作ります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encontrado 1 ambiente para configurar. São três etapas para o app começar a funcionar: criar o espaço de trabalho dele, escolher com que frequência os dados são atualizados automaticamente e executar uma primeira coleta para que os painéis e o histórico de tendências tenham um ponto de partida."
           }
         }
       }
