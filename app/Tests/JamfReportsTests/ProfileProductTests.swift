@@ -278,17 +278,23 @@ final class ProfileProductTests: XCTestCase {
                 [profile("prod", .pro)], excluding: [], hasWorkspace: { _ in true }).count, 1)
     }
 
-    func testTheActiveProfileMovesToTheWorkspaceNamingItsProtectLogin() {
+    func testTheActiveProfileMovesToTheWorkspaceNamingItsLogin() {
         let listed = [profile("first", .pro), profile("prod", .pro)]
-        let owner: (String) -> String? = { $0 == "prod" ? "prot" : nil }
+        let owner: (String) -> [String] = { $0 == "prod" ? ["plat", "prot", "sec"] : [] }
+        let none: (String) -> Bool = { _ in false }
+        for login in ["plat", "prot", "sec"] {
+            XCTAssertEqual(
+                WorkspaceStore.activeProfile(
+                    keeping: login, in: listed, hasWorkspace: none, connectedProfiles: owner),
+                "prod", "\(login) is another workspace's login")
+        }
         XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "prot", in: listed, protectProfile: owner),
-            "prod")
-        XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "gone", in: listed, protectProfile: owner),
+            WorkspaceStore.activeProfile(
+                keeping: "gone", in: listed, hasWorkspace: none, connectedProfiles: owner),
             "first", "an unknown name falls to the first usable profile")
         XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "first", in: listed, protectProfile: owner),
+            WorkspaceStore.activeProfile(
+                keeping: "first", in: listed, hasWorkspace: none, connectedProfiles: owner),
             "first")
     }
 

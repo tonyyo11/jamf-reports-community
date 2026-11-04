@@ -57,6 +57,7 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The workspace menu lists workspaces only; jamf-cli profiles without one are on Data Sources. When a profile becomes another workspace's Platform API, Protect or Security Cloud login, the app opens that workspace. (#305)
 - Scheduled runs for all workspaces and the catch-up collect run only workspaces. A jamf-cli profile without one no longer gets a workspace made for it by a run; add it from Data Sources or the Add sheet. (#305)
 - The Platform API twin suggestion now says to keep the Jamf Pro (OAuth) workspace and add the
   Platform profile to it. (#305)

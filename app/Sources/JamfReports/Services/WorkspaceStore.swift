@@ -266,9 +266,16 @@ final class WorkspaceStore {
         connections = demoMode ? [] : connectionStore.load()
     }
 
-    /// All profiles under their connections, for the sidebar menu.
+    /// Workspaces for the sidebar menu, plus the active profile when it has no folder (right
+    /// after onboarding), so the menu always holds the current entry. `profiles` stays whole.
+    var workspaceMenuProfiles: [JamfCLIProfile] {
+        let workspaces = Set(initializedProfiles.map(\.name))
+        return profiles.filter { workspaces.contains($0.name) || $0.name == profile }
+    }
+
+    /// The workspaces under their connections, for the sidebar menu.
     var connectionGrouping: ConnectionGrouping {
-        ProfileService.connectionGrouping(profiles: profiles, connections: activeConnections)
+        ProfileService.connectionGrouping(profiles: workspaceMenuProfiles, connections: activeConnections)
     }
 
     /// True when the active profile has a `config.yaml` on disk under
@@ -374,7 +381,7 @@ final class WorkspaceStore {
         let realProfiles = isDemo ? [] : discoverProfiles()
 
         self.demoMode = isDemo
-        let start = Self.initialProfile(in: realProfiles)
+        let start = Self.initialProfile(in: realProfiles, hasWorkspace: { ProfileService.hasWorkspace($0) })
         self.org = isDemo ? DemoData.org : Self.org(for: start)
         self.profile = isDemo ? DemoData.org.profile : (start?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
@@ -1203,24 +1210,33 @@ final class WorkspaceStore {
         return url
     }
 
-    /// The profile a launch or reload opens on: the first one the app can use,
-    /// else the first, so an `.error` profile is active only when nothing else is.
-    nonisolated static func initialProfile(in profiles: [JamfCLIProfile]) -> JamfCLIProfile? {
-        profiles.first { $0.status != .error } ?? profiles.first
+    /// The profile a launch or reload opens on: the first one the app can use that has a
+    /// workspace, else the first usable one, else the first, so an `.error` profile is active
+    /// only when nothing else is.
+    nonisolated static func initialProfile(
+        in profiles: [JamfCLIProfile], hasWorkspace: (String) -> Bool
+    ) -> JamfCLIProfile? {
+        profiles.first { $0.status != .error && hasWorkspace($0.name) }
+            ?? profiles.first { $0.status != .error } ?? profiles.first
     }
 
-    /// The profile a reload keeps active: the current one while it is still
-    /// listed and usable. When it is gone because it is a Protect login (discovery no longer
-    /// lists one), the workspace whose Protect slot names it; else `initialProfile(in:)`.
+    /// The profile a reload keeps active: the current one while it is still listed and usable.
+    /// When it is gone because another workspace holds it as a Platform API, Protect or Security
+    /// Cloud login (discovery no longer lists one), that workspace; else `initialProfile`.
     nonisolated static func activeProfile(
         keeping current: String, in profiles: [JamfCLIProfile],
-        protectProfile: (String) -> String? = { EnvironmentProfiles.read(workspace: $0).protect }
+        hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) },
+        connectedProfiles: (String) -> [String] = {
+            EnvironmentProfiles.read(workspace: $0).connectedProfiles
+        }
     ) -> String? {
         if profiles.contains(where: { $0.name == current && $0.status != .error }) {
             return current
         }
-        let owner = profiles.first { $0.status != .error && protectProfile($0.name) == current }
-        return (owner ?? initialProfile(in: profiles))?.name
+        let owner = profiles.first {
+            $0.status != .error && connectedProfiles($0.name).contains(current)
+        }
+        return (owner ?? initialProfile(in: profiles, hasWorkspace: hasWorkspace))?.name
     }
 
     private static func org(for profile: JamfCLIProfile?) -> Org {
