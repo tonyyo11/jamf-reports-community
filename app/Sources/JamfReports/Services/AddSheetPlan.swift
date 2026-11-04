@@ -144,9 +144,24 @@ enum AddSheetPlan {
             guard profile.auth?.isPlatform != true, let other = workspaces.first(where: {
                 PlatformTwin.twins(ofPlatformProfile: $0, among: [profile], learn: learn) != nil
             })?.name else { continue }
-            notes[profile.name] = L("Same Jamf Pro as \(other), which has a workspace. A second workspace collects the fleet twice, so history is split and fleet totals count it twice. Set it up only to collect it anyway.")
+            notes[profile.name] = sameJamfProNote(other)
         }
         return notes
+    }
+
+    private static func sameJamfProNote(_ other: String) -> String {
+        L("Same Jamf Pro as \(other), which has a workspace. A second workspace collects the fleet twice, so history is split and fleet totals count it twice. Set it up only to collect it anyway.")
+    }
+
+    /// The note for each Platform profile `EnvironmentProposal` suggests for a workspace, whichever
+    /// workspace that is: where it is not an add row (it is suggested for another one), New
+    /// workspace would otherwise offer a second workspace for a fleet that already has one.
+    static func suggestionNotes(
+        _ suggestions: [EnvironmentProposal.Extension]
+    ) -> [String: String] {
+        Dictionary(
+            suggestions.map { ($0.profile, sameJamfProNote($0.workspace)) },
+            uniquingKeysWith: { first, _ in first })
     }
 
     /// The add-on rows the workspace can take now: a Protect login while no Protect profile is
@@ -394,6 +409,8 @@ struct AddSheetDiscovery: Sendable {
         return AddSheetDiscovery(
             unassigned: unassigned, currentProtect: currentProtect,
             currentPlatform: currentPlatform, currentHasJamfPro: currentHasJamfPro,
-            suggestions: proposal.extensions, twinNotes: twinNotes)
+            suggestions: proposal.extensions,
+            twinNotes: twinNotes.merging(
+                AddSheetPlan.suggestionNotes(proposal.extensions)) { first, _ in first })
     }
 }

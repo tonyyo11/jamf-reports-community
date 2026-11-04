@@ -530,6 +530,13 @@ final class AddSheetPlanTests: XCTestCase {
             .addToCurrent)
     }
 
+    func testASuggestionNamesItsWorkspaceInTheProfilesNote() {
+        let notes = AddSheetPlan.suggestionNotes([
+            .init(workspace: "X", slot: .platform, profile: "gw")])
+        XCTAssertEqual(notes.keys.sorted(), ["gw"])
+        XCTAssertTrue(notes["gw"]?.hasPrefix("Same Jamf Pro as X, which has a workspace.") == true)
+    }
+
     func testAProfileSuggestedForAnotherWorkspaceIsNotAnAddRow() {
         let gw = platform("gw", url: "us.api.jamfcloud.com")
         let rows = AddSheetPlan.unassigned(
