@@ -90,7 +90,8 @@ final class PairedProductProfileTests: XCTestCase {
         try workspace("prod", config: "protect:\n  enabled: true\n  profile: protect\n")
         let listed = ProfileService.droppingPairedProductProfiles(
             [profile("prod"), profile("protect")], under: root)
-        XCTAssertEqual(names(ProfileService.runnableProfiles(listed, excluding: [])), ["prod"])
+        XCTAssertEqual(names(ProfileService.runnableWorkspaces(
+            listed, excluding: [], hasWorkspace: { _ in true })), ["prod"])
     }
 
     func testEnvironmentReadsEnabledBlocksWithAProfile() throws {

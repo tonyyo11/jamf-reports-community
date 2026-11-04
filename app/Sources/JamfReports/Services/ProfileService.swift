@@ -328,22 +328,19 @@ enum ProfileService {
         return Set(localOnlyWorkspaces(under: root, cliNames: listed))
     }
 
-    /// The profiles a multi-profile run collects: exclusions applied, and the
-    /// `.error` ones dropped. Discovery marks a profile the app can't use that way
-    /// (unsupported name, or a case variant sharing another's folder); it has no
-    /// workspace in which to run, and counting it failed every run of the schedule.
-    /// A Protect or Security Cloud login is never run. A Jamf School login or an
-    /// organization-level Platform integration is left out until it has a workspace of its
-    /// own (which is how it keeps running as before).
-    static func runnableProfiles(
+    /// The workspaces a multi-profile run collects (D24): exclusions applied, and only profiles
+    /// with a workspace folder. An `.error` profile (unsupported name, or a case variant sharing
+    /// another's folder) and a Protect or Security Cloud login are never run. A jamf-cli
+    /// profile with no workspace waits on Data Sources' "Profiles not in an environment" card;
+    /// before 2.12 a run created its folder.
+    static func runnableWorkspaces(
         _ profiles: [JamfCLIProfile],
         excluding excluded: Set<String>,
         hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) }
     ) -> [JamfCLIProfile] {
         applyingExclusions(profiles, excluding: excluded).filter { profile in
-            guard profile.status != .error, !profile.product.isNeverAWorkspace else { return false }
-            let needsWorkspace = profile.product == .school || profile.isOrganizationLevel
-            return !needsWorkspace || hasWorkspace(profile.name)
+            profile.status != .error && !profile.product.isNeverAWorkspace
+                && hasWorkspace(profile.name)
         }
     }
 

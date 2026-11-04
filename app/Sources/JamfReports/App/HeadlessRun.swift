@@ -796,7 +796,7 @@ func runSchedule(
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
     let discovered = ProfileService.discoverLocal()
-    let profiles = ProfileService.runnableProfiles(discovered, excluding: excluded)
+    let profiles = ProfileService.runnableWorkspaces(discovered, excluding: excluded)
     for p in discovered where p.status == .error && !excluded.contains(p.name) {
         let reason = p.unusableReason ?? "not usable"
         fputs("[info] skipping \(p.name): \(reason)\n", stderr)

@@ -259,16 +259,23 @@ final class ProfileProductTests: XCTestCase {
             ["a", "b", "c"])
     }
 
-    func testRunnableProfilesNeverRunAProtectLoginAndNeedAFolderForSchool() {
+    func testRunnableWorkspacesNeverRunAProtectLoginAndNeedAFolder() {
         let all = [
             profile("prod", .pro), profile("prot", .protect), profile("sec", .securityCloud),
             profile("sch", .school), profile("sch2", .school), profile("unk"),
         ]
-        let withFolder: (String) -> Bool = { ["prot", "sch2"].contains($0) }
+        let withFolder: (String) -> Bool = { ["prot", "sch2"].contains($0) }  // prot: still never run
         XCTAssertEqual(
-            ProfileService.runnableProfiles(
+            ProfileService.runnableWorkspaces(
                 all, excluding: [], hasWorkspace: withFolder).map(\.name),
-            ["prod", "sch2", "unk"])
+            ["sch2"])
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces(
+                [profile("prod", .pro)], excluding: [], hasWorkspace: { _ in false }).count, 0,
+            "a Jamf Pro profile with no folder is not run (D24)")
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces(
+                [profile("prod", .pro)], excluding: [], hasWorkspace: { _ in true }).count, 1)
     }
 
     func testTheActiveProfileMovesToTheWorkspaceNamingItsProtectLogin() {

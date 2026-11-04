@@ -203,7 +203,9 @@ final class ProfileSlugCaseTests: XCTestCase {
             JamfCLIProfile(name: "prod", url: "", schedules: 0, status: .idle),
         ]
         XCTAssertEqual(
-            ProfileService.runnableProfiles(profiles, excluding: ["prod"]).map(\.name), ["Acme"]
+            ProfileService.runnableWorkspaces(
+                profiles, excluding: ["prod"], hasWorkspace: { _ in true }).map(\.name),
+            ["Acme"]
         )
     }
 
