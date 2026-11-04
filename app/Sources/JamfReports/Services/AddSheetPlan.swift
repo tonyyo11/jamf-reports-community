@@ -42,10 +42,16 @@ enum AddSheetPlan {
         enum Use: Equatable, Sendable {
             /// A Jamf Pro, Platform API or Jamf School login: set up as a workspace of its own.
             case newWorkspace
-            /// A Jamf Protect login: added to the current Jamf Pro or Jamf School workspace.
-            case addToCurrent
+            /// A Jamf Protect login (`.protect`) added to the current Jamf Pro or Jamf School
+            /// workspace, or a Platform login (`.platform`) added to a Jamf Pro one.
+            case addToCurrent(ProfilesConfigWriter.Slot)
             /// Nothing the app can do with it today, and why.
             case unavailable(String)
+
+            var isAddOn: Bool {
+                if case .addToCurrent = self { return true }
+                return false
+            }
         }
 
         let name: String
@@ -81,7 +87,8 @@ enum AddSheetPlan {
         profiles: [JamfCLIProfile],
         workspaces: [String],
         paired: Set<String>,
-        unusable: [String: String]
+        unusable: [String: String],
+        platformSlotOpen: Bool = false
     ) -> [UnassignedProfile] {
         let used = Set((workspaces + Array(paired)).map(ProfileName.folderKey))
         return profiles
@@ -89,13 +96,15 @@ enum AddSheetPlan {
             .map { profile in
                 UnassignedProfile(
                     name: profile.name, product: profile.product, url: profile.url,
-                    use: use(of: profile, unusable: unusable[profile.name]),
+                    use: use(
+                        of: profile, unusable: unusable[profile.name],
+                        platformSlotOpen: platformSlotOpen),
                     authMethod: profile.authMethod, platformLevel: profile.platformLevel)
             }
     }
 
     private static func use(
-        of profile: JamfCLIProfile, unusable: String?
+        of profile: JamfCLIProfile, unusable: String?, platformSlotOpen: Bool
     ) -> UnassignedProfile.Use {
         if let unusable { return .unavailable(unusable) }
         if let reason = ExistingCLISetupFlow.scopeRefusal(for: profile) {
@@ -103,15 +112,18 @@ enum AddSheetPlan {
         }
         // A Protect login is added to the current workspace; the flow refuses it only as a
         // workspace of its own.
-        if profile.product == .protect { return .addToCurrent }
+        if profile.product == .protect { return .addToCurrent(.protect) }
         if let reason = ExistingCLISetupFlow.refusal(for: profile) { return .unavailable(reason) }
+        // D24: a Platform login becomes a slot of the current environment, not a workspace.
+        if platformSlotOpen, profile.auth?.isPlatform == true { return .addToCurrent(.platform) }
         return .newWorkspace
     }
 
-    /// The line under an unassigned profile that reaches the same Jamf Pro as a profile that
-    /// already has a workspace, keyed by the unassigned profile's name: an oauth2 profile beside
-    /// a platform workspace, or a platform profile beside an oauth2 one. Adoption's rule
-    /// (`PlatformTwin`); `learn` gives a platform profile's Jamf Pro URL, and nil finds nothing.
+    /// The line under an unassigned oauth2 profile that reaches the same Jamf Pro as a Platform
+    /// workspace, keyed by the unassigned profile's name (R3: under D17 the Platform workspace's
+    /// MDM slot cannot take it, so joining the two is P7's merge). A free Platform profile beside
+    /// an oauth2 workspace is a suggestion instead (`EnvironmentProposal`). `learn` gives a
+    /// platform profile's Jamf Pro URL, and nil finds nothing.
     static func twinNotes(
         unassigned: [JamfCLIProfile],
         workspaces: [JamfCLIProfile],
@@ -127,34 +139,48 @@ enum AddSheetPlan {
             return url
         }
         for profile in unassigned {
-            let other: String?
-            if profile.auth?.isPlatform == true {
-                other = PlatformTwin.twins(
-                    ofPlatformProfile: profile, among: workspaces, learn: learn)?.twins.first?.name
-            } else {
-                other = workspaces.first {
-                    PlatformTwin.twins(ofPlatformProfile: $0, among: [profile], learn: learn) != nil
-                }?.name
-            }
-            guard let other else { continue }
+            guard profile.auth?.isPlatform != true, let other = workspaces.first(where: {
+                PlatformTwin.twins(ofPlatformProfile: $0, among: [profile], learn: learn) != nil
+            })?.name else { continue }
             notes[profile.name] = L("Same Jamf Pro as \(other), which has a workspace. A second workspace collects the fleet twice, so history is split and fleet totals count it twice. Set it up only to collect it anyway.")
         }
         return notes
     }
 
+    /// The add-on rows the workspace can take now: a Protect login while no Protect profile is
+    /// named, a Platform login while the `platform` slot is open.
+    static func addOnRows(
+        _ rows: [UnassignedProfile], acceptsProtect: Bool, acceptsPlatform: Bool
+    ) -> [UnassignedProfile] {
+        rows.filter {
+            switch $0.use {
+            case .addToCurrent(.protect): acceptsProtect
+            case .addToCurrent(.platform): acceptsPlatform
+            default: false
+            }
+        }
+    }
+
     /// The choice the sheet opens on; the user can always change it. A product asked for by
     /// the caller, or an unassigned MDM login (the current workspace already has one), opens
-    /// New workspace; an unassigned Protect login opens Add to current while the current
-    /// workspace can take Jamf Protect.
+    /// New workspace; a suggestion for the current workspace, or an unassigned Protect or
+    /// Platform login it can take, opens Add to current (spec 5.1).
     static func preselection(
         unassigned: [UnassignedProfile],
         currentAcceptsProtect: Bool,
+        currentAcceptsPlatform: Bool = false,
+        suggestedForCurrent: Bool = false,
         requested: NewProduct?
     ) -> Choice {
-        guard requested == nil, currentAcceptsProtect else { return .newWorkspace }
+        guard requested == nil, currentAcceptsProtect || currentAcceptsPlatform else {
+            return .newWorkspace
+        }
+        if suggestedForCurrent && currentAcceptsPlatform { return .addToCurrent }
         if unassigned.contains(where: { $0.use == .newWorkspace }) { return .newWorkspace }
-        if unassigned.contains(where: { $0.use == .addToCurrent }) { return .addToCurrent }
-        return .newWorkspace
+        let addOns = addOnRows(
+            unassigned, acceptsProtect: currentAcceptsProtect,
+            acceptsPlatform: currentAcceptsPlatform)
+        return addOns.isEmpty ? .newWorkspace : .addToCurrent
     }
 
     /// The current workspace can take a Protect profile now: it takes Protect at all and
@@ -165,24 +191,36 @@ enum AddSheetPlan {
         takesProtect && discovery != nil && discovery?.currentProtect == nil
     }
 
-    /// The step the sheet shows: Add to current only while the workspace can take Protect,
+    /// The current workspace can take a Platform profile now: it has a `jamf_pro` slot (a School
+    /// workspace's Platform access lives in its School profile) and no `platform` slot.
+    static func currentAcceptsPlatform(
+        takesProtect: Bool, discovery: AddSheetDiscovery?
+    ) -> Bool {
+        takesProtect && discovery?.platformSlotOpen == true
+    }
+
+    /// The step the sheet shows: Add to current only while the workspace can take add-ons,
     /// else New workspace, whatever was chosen.
     static func step(choice: Choice, takesProtect: Bool) -> Choice {
         takesProtect ? choice : .newWorkspace
     }
 
-    /// The rows the chosen step lists. Add to current lists Protect logins only, and none once
-    /// the workspace names one; New workspace lists everything else, a refused profile
+    /// The rows the chosen step lists. Add to current lists the Protect and Platform logins the
+    /// workspace can still take; New workspace lists everything else, a refused profile
     /// (Security Cloud, organization level, unusable name) included with its reason.
     static func visibleRows(
         choice: Choice, takesProtect: Bool, discovery: AddSheetDiscovery?
     ) -> [UnassignedProfile] {
         let rows = discovery?.unassigned ?? []
         if step(choice: choice, takesProtect: takesProtect) == .addToCurrent {
-            return currentAcceptsProtect(takesProtect: takesProtect, discovery: discovery)
-                ? rows.filter { $0.use == .addToCurrent } : []
+            return addOnRows(
+                rows,
+                acceptsProtect: currentAcceptsProtect(
+                    takesProtect: takesProtect, discovery: discovery),
+                acceptsPlatform: currentAcceptsPlatform(
+                    takesProtect: takesProtect, discovery: discovery))
         }
-        return rows.filter { $0.use != .addToCurrent }
+        return rows.filter { !$0.use.isAddOn }
     }
 
     /// What the "Profiles jamf-cli already has" card shows.
@@ -205,6 +243,9 @@ enum AddSheetPlan {
         let rows = visibleRows(choice: choice, takesProtect: takesProtect, discovery: discovery)
         if !rows.isEmpty { return .rows(rows) }
         if step(choice: choice, takesProtect: takesProtect) == .addToCurrent {
+            if currentAcceptsPlatform(takesProtect: takesProtect, discovery: discovery) {
+                return .empty(L("No profile in jamf-cli is free to add. Connect new above."))
+            }
             return .empty(
                 currentAcceptsProtect(takesProtect: takesProtect, discovery: discovery)
                     ? L("No Jamf Protect profile in jamf-cli is free to add. Connect new above.")
@@ -218,14 +259,45 @@ enum AddSheetPlan {
     /// preselected again only while the user has not picked one.
     static func recheck(
         found: AddSheetDiscovery, takesProtect: Bool, choice: Choice, choiceTouched: Bool,
-        requested: NewProduct?
+        requested: NewProduct?, current: String? = nil
     ) -> Choice {
         guard !choiceTouched else { return choice }
         return preselection(
             unassigned: found.unassigned ?? [],
             currentAcceptsProtect: currentAcceptsProtect(
                 takesProtect: takesProtect, discovery: found),
+            currentAcceptsPlatform: currentAcceptsPlatform(
+                takesProtect: takesProtect, discovery: found),
+            suggestedForCurrent: current.map(found.hasSuggestion(for:)) ?? false,
             requested: requested)
+    }
+
+    // MARK: - Platform API add-on
+
+    /// Why a Platform profile is not written to a workspace, or nil. Unknown never blocks:
+    /// we could not ask (`PlatformHostCheck`).
+    static func platformHostRefusal(
+        profile: String, verdict: PlatformHostCheck.Verdict
+    ) -> String? {
+        guard case .different(let jamfPro, let platform) = verdict else { return nil }
+        return L("\(profile) reaches \(platform), not this workspace's Jamf Pro (\(jamfPro)). Nothing was changed.")
+    }
+
+    static func platformAddedMessage(profile: String, workspace: String) -> String {
+        L("Platform API profile \(profile) added to \(workspace). The next collect uses it for the Platform reports.")
+    }
+
+    static func suggestionText(_ suggestion: EnvironmentProposal.Extension) -> String {
+        L("\(suggestion.profile) reaches the same Jamf Pro as \(suggestion.workspace). Add it?")
+    }
+
+    /// The host check on jamf-cli; blocks, so callers run it off the main actor. With no
+    /// jamf-cli the answer is unknown.
+    static func liveHostVerdict(jamfPro: String, platform: String) -> PlatformHostCheck.Verdict {
+        guard let binary = ExecutableLocator.locate("jamf-cli") else { return .unknown }
+        let urls = PlatformHostCheck.live(jamfPro, platform, binary)
+        return PlatformHostCheck.verdict(
+            jamfProURL: urls.jamfPro, platformJamfProURL: urls.platform)
     }
 }
 
@@ -236,19 +308,37 @@ struct AddSheetDiscovery: Sendable {
     var unassigned: [AddSheetPlan.UnassignedProfile]?
     /// The Protect profile the current workspace's config.yaml names, if any.
     var currentProtect: String?
+    /// The current workspace's `platform` slot, or the workspace itself when its own profile is
+    /// a Platform one (it collects the Platform kinds itself).
+    var currentPlatform: String?
+    /// The current workspace has a `jamf_pro` slot. A School workspace has none.
+    var currentHasJamfPro = false
+    /// Platform profiles that reach the Jamf Pro of a workspace whose `platform` slot is empty.
+    var suggestions: [EnvironmentProposal.Extension] = []
     /// `AddSheetPlan.twinNotes` for the unassigned profiles.
     var twinNotes: [String: String] = [:]
+
+    var platformSlotOpen: Bool { currentHasJamfPro && currentPlatform == nil }
+
+    func hasSuggestion(for workspace: String) -> Bool {
+        let key = ProfileName.folderKey(workspace)
+        return suggestions.contains { ProfileName.folderKey($0.workspace) == key }
+    }
 
     /// `probeTwins` asks Jamf Pro for a Platform profile's server when no URL is stored; the
     /// sheet loads without it first, so a slow answer never holds the list.
     static func load(currentWorkspace: String?, probeTwins: Bool = false) -> AddSheetDiscovery {
         let root = ProfileService.workspacesRoot()
-        let currentProtect = currentWorkspace.flatMap {
-            EnvironmentProfiles.read(workspace: $0, under: root).protect
+        let currentRead = currentWorkspace.map {
+            EnvironmentProfiles.read(workspace: $0, under: root)
         }
+        let currentProtect = currentRead?.protect
         guard let listed = ProfileService.listJamfCLIProfiles(scheduleCounts: [:]) else {
             return AddSheetDiscovery(unassigned: nil, currentProtect: currentProtect)
         }
+        let ownIsPlatform = listed.first { $0.name == currentWorkspace }?.auth?.isPlatform == true
+        let currentPlatform = currentRead?.platform ?? (ownIsPlatform ? currentWorkspace : nil)
+        let currentHasJamfPro = currentRead?.jamfPro != nil
         let names = listed.map(\.name)
         // A Protect or Security Cloud login's own folder (made by 2.9.0) is not a workspace.
         let listedWorkspaces = listed.filter {
@@ -261,19 +351,38 @@ struct AddSheetDiscovery: Sendable {
             paired.formUnion(
                 EnvironmentProfiles.read(workspace: workspace, under: root).connectedProfiles)
         }
+        let unusable = ProfileService.unusableProfiles(in: names).mapValues(\.explanation)
         let unassigned = AddSheetPlan.unassigned(
-            profiles: listed, workspaces: workspaces, paired: paired,
-            unusable: ProfileService.unusableProfiles(in: names).mapValues(\.explanation))
+            profiles: listed, workspaces: workspaces, paired: paired, unusable: unusable,
+            platformSlotOpen: currentHasJamfPro && currentPlatform == nil)
         let store = ConnectionStore()
+        var learned: [String: String?] = [:]
+        func learn(_ name: String) -> String? {
+            if let known = learned[name] { return known }
+            let url = store.jamfProURL(profile: name)
+                ?? (probeTwins && !Task.isCancelled
+                    ? PlatformTwin.learnJamfProURL(profile: name) : nil)
+            learned[name] = .some(url)
+            return url
+        }
         let free = Set(unassigned.filter { $0.use == .newWorkspace }.map(\.name))
         let twinNotes = AddSheetPlan.twinNotes(
             unassigned: listed.filter { free.contains($0.name) }, workspaces: listedWorkspaces,
-            learn: {
-                store.jamfProURL(profile: $0)
-                    ?? (probeTwins && !Task.isCancelled
-                        ? PlatformTwin.learnJamfProURL(profile: $0) : nil)
-            })
+            learn: learn)
+        var learnedURLs: [String: String] = [:]
+        for profile in listed where profile.auth?.isPlatform == true
+            && !workspaces.contains(profile.name) {
+            learnedURLs[profile.name] = learn(profile.name)
+        }
+        let proposal = EnvironmentProposal.propose(
+            profiles: listed, learnedJamfProURLs: learnedURLs,
+            existingWorkspaces: Dictionary(
+                workspaces.map { ($0, EnvironmentProfiles.read(workspace: $0, under: root)) },
+                uniquingKeysWith: { first, _ in first }),
+            unusable: unusable)
         return AddSheetDiscovery(
-            unassigned: unassigned, currentProtect: currentProtect, twinNotes: twinNotes)
+            unassigned: unassigned, currentProtect: currentProtect,
+            currentPlatform: currentPlatform, currentHasJamfPro: currentHasJamfPro,
+            suggestions: proposal.extensions, twinNotes: twinNotes)
     }
 }

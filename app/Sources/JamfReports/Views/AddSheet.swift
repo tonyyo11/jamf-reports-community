@@ -54,6 +54,17 @@ struct AddSheet: View {
     var requested: AddSheetPlan.NewProduct?
     /// Starts the onboarding path for a new workspace; the sheet has closed by then.
     var onStartOnboarding: (AddSheetPlan.NewProduct) -> Void
+    /// The two effects of adding a Platform profile, so tests can stand in for jamf-cli and the
+    /// config.yaml write. `hostVerdict` blocks on jamf-cli, so the default runs it detached.
+    var hostVerdict: @Sendable (_ jamfPro: String, _ platform: String) async
+        -> PlatformHostCheck.Verdict = { jamfPro, platform in
+            await Task.detached {
+                AddSheetPlan.liveHostVerdict(jamfPro: jamfPro, platform: platform)
+            }.value
+        }
+    var writePlatform: (_ profile: String, _ workspace: String) throws -> Void = {
+        _ = try ProfilesConfigWriter.save(.platform, to: $0, workspace: $1)
+    }
 
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.dismiss) private var dismiss
@@ -68,6 +79,7 @@ struct AddSheet: View {
     @State private var message: String?
     @State private var errorText: String?
     @State private var showingProtectConnect = false
+    @State private var isAddingPlatform = false
     @State private var twinProbe: Task<AddSheetDiscovery, Never>?
 
     private var currentTakesProtect: Bool {
@@ -85,6 +97,7 @@ struct AddSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if currentTakesProtect { choiceRow }
+                    suggestionsSection
                     productsSection
                     existingProfilesSection
                 }
@@ -120,7 +133,7 @@ struct AddSheet: View {
             Text("Add")
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
-            Text("Set up a new workspace, add Jamf Protect to this one, or use a profile jamf-cli already has.")
+            Text("Set up a new workspace, add Jamf Protect or a Platform API profile to this one, or use a profile jamf-cli already has.")
                 .font(.callout)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -156,7 +169,7 @@ struct AddSheet: View {
             choiceCard(
                 .addToCurrent, icon: "plus.rectangle.on.rectangle",
                 title: L("Add to \(workspace.profile)"),
-                body: (workspace.isSchoolWorkspace ? L("Jamf Protect alerts and analytics beside this workspace's Jamf School data.") : L("Jamf Protect alerts and analytics beside this workspace's Jamf Pro data.")))
+                body: (workspace.isSchoolWorkspace ? L("Jamf Protect alerts and analytics beside this workspace's Jamf School data.") : L("Jamf Protect, or a Platform API profile, beside this workspace's Jamf Pro data.")))
         }
     }
 
@@ -211,6 +224,7 @@ struct AddSheet: View {
     private var productsSection: some View {
         if AddSheetPlan.step(choice: choice, takesProtect: currentTakesProtect) == .addToCurrent {
             protectCard
+            platformCard
         } else {
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 170), spacing: 12, alignment: .top)],
@@ -277,6 +291,59 @@ struct AddSheet: View {
         }
     }
 
+    /// A Platform profile slot (spec 5.1). Connect new joins this card in a later task.
+    @ViewBuilder
+    private var platformCard: some View {
+        if discovery?.currentHasJamfPro == true {
+            Card(padding: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    productIcon("person.badge.key.fill", size: 36)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Platform API").font(.headline).foregroundStyle(Theme.Colors.fg)
+                        if let have = discovery?.currentPlatform {
+                            Text("\(workspace.profile) already uses the Platform API profile \(have). Change it from Data Sources.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("Add a Platform profile jamf-cli already has. It must reach this workspace's Jamf Pro. The Platform reports are collected with this workspace.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.fg2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var suggestionsSection: some View {
+        if !workspace.demoMode, let suggestions = discovery?.suggestions, !suggestions.isEmpty {
+            Card(padding: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(suggestions) { suggestion in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(AddSheetPlan.suggestionText(suggestion))
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.fg2)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            PNPButton(title: L("Add"), icon: "plus", size: .sm) {
+                                Task {
+                                    await addPlatform(suggestion.profile, to: suggestion.workspace)
+                                }
+                            }
+                            .disabled(isAdopting || isChecking || isAddingPlatform)
+                            .accessibilityLabel("Add \(suggestion.profile) to \(suggestion.workspace)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Step 2: profiles jamf-cli already has
 
     private var listing: AddSheetPlan.Listing {
@@ -323,12 +390,33 @@ struct AddSheet: View {
             note(text)
         case .rows(let rows):
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(rows) { row in
-                    profileRow(row)
-                    if row.id != rows.last?.id {
-                        Divider().background(Theme.Hairline.standard)
-                    }
+                if AddSheetPlan.step(choice: choice, takesProtect: currentTakesProtect)
+                    == .addToCurrent {
+                    rowGroup(L("Jamf Protect"), rows.filter { $0.use == .addToCurrent(.protect) })
+                    rowGroup(L("Platform API"), rows.filter { $0.use == .addToCurrent(.platform) })
+                } else {
+                    rowList(rows)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rowGroup(_ title: String, _ rows: [AddSheetPlan.UnassignedProfile]) -> some View {
+        if !rows.isEmpty {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.Colors.fg)
+                .padding(.top, 6)
+            rowList(rows)
+        }
+    }
+
+    private func rowList(_ rows: [AddSheetPlan.UnassignedProfile]) -> some View {
+        ForEach(rows) { row in
+            profileRow(row)
+            if row.id != rows.last?.id {
+                Divider().background(Theme.Hairline.standard)
             }
         }
     }
@@ -402,11 +490,15 @@ struct AddSheet: View {
                 .disabled(isAdopting || isChecking)
                 .accessibilityLabel("Set up workspace for \(row.name)")
             }
-        case .addToCurrent:
+        case .addToCurrent(let slot):
             PNPButton(title: L("Add to \(workspace.profile)"), icon: "plus", size: .sm) {
-                addProtect(row)
+                if slot == .platform {
+                    Task { await addPlatform(row.name, to: workspace.profile) }
+                } else {
+                    addProtect(row)
+                }
             }
-            .disabled(isAdopting || isChecking)
+            .disabled(isAdopting || isChecking || isAddingPlatform)
             .accessibilityLabel("Add \(row.name) to \(workspace.profile)")
         case .unavailable:
             EmptyView()
@@ -450,7 +542,7 @@ struct AddSheet: View {
         discovery = found
         choice = AddSheetPlan.recheck(
             found: found, takesProtect: currentTakesProtect, choice: choice,
-            choiceTouched: choiceTouched, requested: requested)
+            choiceTouched: choiceTouched, requested: requested, current: current)
         twinProbe?.cancel()
         let probe = Task.detached {
             AddSheetDiscovery.load(currentWorkspace: current, probeTwins: true)
@@ -461,6 +553,7 @@ struct AddSheet: View {
         }
         guard !probe.isCancelled else { return }
         discovery?.twinNotes = probed.twinNotes
+        discovery?.suggestions = probed.suggestions
     }
 
     /// Sets up a workspace for a profile jamf-cli already has: the setup the first launch runs
@@ -481,6 +574,32 @@ struct AddSheet: View {
         (message, errorText) = AddSheetPlan.adoptionOutcome(
             name: row.name, status: flow.statuses[row.name],
             note: flow.connectionNotes[row.name])
+        await recheck()
+    }
+
+    /// Names a Platform profile jamf-cli already has in `target`'s `platform` slot, after the
+    /// host check: a profile that reaches another Jamf Pro would mix two servers' data.
+    private func addPlatform(_ profile: String, to target: String) async {
+        guard !workspace.demoMode, !isAddingPlatform else { return }
+        message = nil
+        errorText = nil
+        isAddingPlatform = true
+        defer { isAddingPlatform = false }
+        var verdict = PlatformHostCheck.Verdict.unknown
+        if let jamfPro = EnvironmentProfiles.read(workspace: target).jamfPro {
+            verdict = await hostVerdict(jamfPro, profile)
+        }
+        if let refusal = AddSheetPlan.platformHostRefusal(profile: profile, verdict: verdict) {
+            errorText = refusal
+            return
+        }
+        do {
+            try writePlatform(profile, target)
+            message = AddSheetPlan.platformAddedMessage(profile: profile, workspace: target)
+            workspace.credentialsChanged()
+        } catch {
+            errorText = L("Could not add \(profile): \(error.localizedDescription)")
+        }
         await recheck()
     }
 
