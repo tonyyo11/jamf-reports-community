@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Data Sources lists the jamf-cli profiles that no workspace uses, with a button to add them. (#305)
 - Data Sources has an **Environment** card listing the products this workspace's environment holds
   (Jamf Pro or Jamf School, Platform API, Jamf Protect) with their profiles, auth method, newest
   data and whether a shared-config change waits for your Confirm. Check tests a profile's
