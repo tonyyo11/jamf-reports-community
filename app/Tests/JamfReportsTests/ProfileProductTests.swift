@@ -264,7 +264,8 @@ final class ProfileProductTests: XCTestCase {
             profile("prod", .pro), profile("prot", .protect), profile("sec", .securityCloud),
             profile("sch", .school), profile("sch2", .school), profile("unk"),
         ]
-        let withFolder: (String) -> Bool = { ["prot", "sch2"].contains($0) }  // prot: still never run
+        // prot has a folder and is still never run.
+        let withFolder: (String) -> Bool = { ["prot", "sch2"].contains($0) }
         XCTAssertEqual(
             ProfileService.runnableWorkspaces(
                 all, excluding: [], hasWorkspace: withFolder).map(\.name),

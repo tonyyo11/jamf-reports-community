@@ -95,17 +95,20 @@ final class ProfileSlugCaseTests: XCTestCase {
         let unusable = JamfCLIProfile(name: "Old Tenant ", url: "", schedules: 0, status: .error)
         let usable = JamfCLIProfile(name: "Acme", url: "", schedules: 0, status: .idle)
         let none: (String) -> Bool = { _ in false }
-        XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable, usable], hasWorkspace: none)?.name,
-                       "Acme")
+        XCTAssertEqual(
+            WorkspaceStore.initialProfile(in: [unusable, usable], hasWorkspace: none)?.name, "Acme")
         XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable], hasWorkspace: none)?.name,
                        "Old Tenant ")
         XCTAssertNil(WorkspaceStore.initialProfile(in: [], hasWorkspace: none))
 
         let both = [unusable, usable]
-        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "Acme", in: both, hasWorkspace: none), "Acme")
-        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "Old Tenant ", in: both, hasWorkspace: none), "Acme",
+        func active(_ current: String) -> String? {
+            WorkspaceStore.activeProfile(keeping: current, in: both, hasWorkspace: none)
+        }
+        XCTAssertEqual(active("Acme"), "Acme")
+        XCTAssertEqual(active("Old Tenant "), "Acme",
                        "a reload moves off a profile that became unusable")
-        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "gone", in: both, hasWorkspace: none), "Acme")
+        XCTAssertEqual(active("gone"), "Acme")
         XCTAssertNil(WorkspaceStore.activeProfile(keeping: "Acme", in: [], hasWorkspace: none))
     }
 
