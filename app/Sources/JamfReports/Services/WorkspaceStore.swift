@@ -275,7 +275,8 @@ final class WorkspaceStore {
 
     /// The workspaces under their connections, for the sidebar menu.
     var connectionGrouping: ConnectionGrouping {
-        ProfileService.connectionGrouping(profiles: workspaceMenuProfiles, connections: activeConnections)
+        ProfileService.connectionGrouping(
+            profiles: workspaceMenuProfiles, connections: activeConnections)
     }
 
     /// True when the active profile has a `config.yaml` on disk under
@@ -381,7 +382,8 @@ final class WorkspaceStore {
         let realProfiles = isDemo ? [] : discoverProfiles()
 
         self.demoMode = isDemo
-        let start = Self.initialProfile(in: realProfiles, hasWorkspace: { ProfileService.hasWorkspace($0) })
+        let start = Self.initialProfile(
+            in: realProfiles, hasWorkspace: { ProfileService.hasWorkspace($0) })
         self.org = isDemo ? DemoData.org : Self.org(for: start)
         self.profile = isDemo ? DemoData.org.profile : (start?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
