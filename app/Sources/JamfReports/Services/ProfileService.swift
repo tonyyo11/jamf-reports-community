@@ -344,6 +344,17 @@ enum ProfileService {
         }
     }
 
+    /// Names Automation's exclusion checklist and report-group form offer (D24): those with a
+    /// workspace, plus any the policy already names, so a stale entry can still be removed.
+    static func listableWorkspaceNames(
+        _ profiles: [JamfCLIProfile],
+        policy: AutomationPolicy,
+        hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) }
+    ) -> [String] {
+        let named = Set(policy.excludedWorkspaces).union(policy.reportGroups.flatMap(\.workspaces))
+        return profiles.map(\.name).filter { hasWorkspace($0) || named.contains($0) }
+    }
+
     // MARK: - Command-line arguments
 
     /// The `--profile` value of `--scheduled-run`, given as `--profile <name>` or as

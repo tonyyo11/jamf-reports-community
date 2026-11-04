@@ -84,12 +84,19 @@ extension WorkspaceStore {
         !demoMode && ProfileService.isValid(profileSlug)
     }
 
+    /// `canRefresh` plus a workspace on disk: an automatic collect never creates the folder of a
+    /// profile that has none (D24). A person's own Refresh, Collect now and first collect use
+    /// `canRefresh` alone and may initialize one.
+    func canRefreshAutomatically(profileSlug: String) -> Bool {
+        canRefresh(profileSlug: profileSlug) && ProfileService.hasWorkspace(profileSlug)
+    }
+
     // MARK: Public trigger
 
     /// Fire a `.refresh`-tier refresh for `profile`, subject to coordinator
-    /// backoff/coalescing. No-ops when `canRefresh` is false.
+    /// backoff/coalescing. No-ops when `canRefreshAutomatically` is false.
     func triggerRefresh(for profileSlug: String) {
-        guard canRefresh(profileSlug: profileSlug) else { return }
+        guard canRefreshAutomatically(profileSlug: profileSlug) else { return }
         coordinator.refreshIfStale(profile: profileSlug, tier: .refresh)
     }
 
@@ -100,7 +107,7 @@ extension WorkspaceStore {
     /// doesn't spawn a refresh per intermediate selection. No-ops when
     /// `canRefresh` is false.
     func observeProfileSwitchRefresh(for profileSlug: String) {
-        guard canRefresh(profileSlug: profileSlug) else { return }
+        guard canRefreshAutomatically(profileSlug: profileSlug) else { return }
         coordinator.observeProfileSwitch(profileSlug)
     }
 
@@ -520,7 +527,7 @@ extension WorkspaceStore {
         }
     ) async {
         guard !autoAuditRefreshInFlight else { return }
-        guard canRefresh(profileSlug: profile) else { return }
+        guard canRefreshAutomatically(profileSlug: profile) else { return }
         // `pro audit` is Jamf Pro's; a School workspace has none to refresh (2.10).
         guard !isSchoolWorkspace else { return }
         autoAuditRefreshInFlight = true

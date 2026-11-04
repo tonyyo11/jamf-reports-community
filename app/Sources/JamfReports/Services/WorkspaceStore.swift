@@ -296,11 +296,7 @@ final class WorkspaceStore {
     var initializedProfiles: [JamfCLIProfile] {
         if demoMode { return profiles }
         return profiles.filter { profile in
-            guard profile.status != .error,
-                  let url = ProfileService.workspaceURL(for: profile.name) else { return false }
-            return FileManager.default.fileExists(
-                atPath: url.appendingPathComponent("config.yaml").path
-            )
+            profile.status != .error && ProfileService.hasWorkspace(profile.name)
         }
     }
 

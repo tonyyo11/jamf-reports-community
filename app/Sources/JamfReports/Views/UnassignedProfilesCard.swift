@@ -10,6 +10,13 @@ enum UnassignedProfilesCardText {
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }
+
+    /// Why the profile cannot be a workspace. App text, so it is shown whole, not cut by
+    /// `ConfigSchema.displayText`.
+    static func reason(for row: AddSheetPlan.UnassignedProfile) -> String? {
+        if case .unavailable(let reason) = row.use { return reason }
+        return nil
+    }
 }
 
 /// Data Sources' list of jamf-cli profiles no workspace uses (spec 6, P5). It adopts nothing:
@@ -51,8 +58,8 @@ struct UnassignedProfilesCard: View {
             Text(UnassignedProfilesCardText.subtitle(for: row)).font(.caption)
                 .foregroundStyle(Theme.Text.secondary)
                 .lineLimit(1).truncationMode(.middle)
-            if case .unavailable(let reason) = row.use {
-                Text(ConfigSchema.displayText(reason)).font(.caption)
+            if let reason = UnassignedProfilesCardText.reason(for: row) {
+                Text(reason).font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
             }

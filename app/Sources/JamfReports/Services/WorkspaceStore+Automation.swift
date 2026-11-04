@@ -604,7 +604,7 @@ extension WorkspaceStore {
         let issues = AutomationHealthModel.shared.freshnessIssues
         guard !issues.isEmpty else { return false }
         let profile = self.profile
-        guard ProfileService.isValid(profile),
+        guard ProfileService.isValid(profile), ProfileService.hasWorkspace(profile),
               let workspace = ProfileService.workspaceURL(for: profile) else { return false }
         // Stand down WITHOUT claiming the hour, so the next pass retries once
         // the running collect is done rather than an hour later.

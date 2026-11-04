@@ -9,8 +9,9 @@ import SwiftUI
 // launching the GUI. This replaces the former jamf-cli-only ProgramArguments
 // that only collected data and never ran generate.
 //
-// When --all-profiles is also present, discover all local profiles via
-// ProfileService.discoverLocal() and run the cycle for each in sequence.
+// When --all-profiles is also present, discover the local profiles via
+// ProfileService.discoverLocal() and run the cycle for each one that has a workspace folder
+// (ProfileService.runnableWorkspaces), in sequence.
 
 /// Emit one consolidated fleet CSV per configured `report_group` after an
 /// all-profiles reports run. No-op when no groups are configured. Best-effort:
@@ -805,8 +806,14 @@ func runSchedule(
             "skipping \(p.name, privacy: .private): \(reason, privacy: .private)"
         )
     }
+    let runnable = Set(profiles.map(\.name))
+    for p in discovered where p.status != .error && !p.product.isNeverAWorkspace
+        && !excluded.contains(p.name) && !runnable.contains(p.name) {
+        fputs("[info] skipping \(p.name): no workspace (add it from Data Sources)\n", stderr)
+        AppLogger.schedule.notice("skipping \(p.name, privacy: .private): no workspace")
+    }
     guard !profiles.isEmpty else {
-        fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
+        fputs("[error] \(label ?? "all-profiles"): no workspaces found\n", stderr)
         return ScheduleRunOutcome(exitCode: 1, incomplete: false, considered: [])
     }
     if !excluded.isEmpty {

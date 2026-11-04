@@ -64,13 +64,13 @@ struct JamfReportsApp: App {
                 .keyboardShortcut("]", modifiers: .command)
             }
 
-            // Cmd-1..9 switch to the corresponding workspace profile by index.
-            // Profile order matches the workspace chip menu. Out-of-range indices
-            // are no-ops. Guard skips a redundant switch to the active profile.
+            // Cmd-1..9 switch to the corresponding workspace by index.
+            // Order matches the workspace chip menu (`workspaceMenuProfiles`). Out-of-range
+            // indices are no-ops. Guard skips a redundant switch to the active profile.
             CommandGroup(after: .sidebar) {
                 ForEach(1...9, id: \.self) { n in
                     Button("Switch to Profile \(n)") {
-                        if let p = profileAt(index: n - 1, in: workspace.profiles),
+                        if let p = profileAt(index: n - 1, in: workspace.workspaceMenuProfiles),
                            p.name != workspace.profile {
                             workspace.setProfile(p.name)
                         }
