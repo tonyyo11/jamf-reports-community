@@ -58,7 +58,6 @@ versions in this repository map to git tags.
 ### Changed
 
 - Scheduled runs for all workspaces and the catch-up collect run only workspaces. A jamf-cli profile without one no longer gets a workspace made for it by a run; add it from Data Sources or the Add sheet. (#305)
-
 - The Platform API twin suggestion now says to keep the Jamf Pro (OAuth) workspace and add the
   Platform profile to it. (#305)
 - A workspace whose config.yaml has a `profiles:` block now collects the compliance benchmark, DDM and blueprint reports with the Platform API profile named in `profiles.platform`, and skips them when none is named. A Platform API profile that reaches a different Jamf Pro is skipped with a warning, and on a shared workspace a new one waits for a Confirm in Config Doctor.
