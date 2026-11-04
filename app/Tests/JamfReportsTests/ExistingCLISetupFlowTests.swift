@@ -537,7 +537,9 @@ final class ExistingCLISetupFlowTests: XCTestCase {
             authMethod: "oauth2", product: .protect)
     }
 
-    private var example: JamfCLIProfile { pro("Example", auth: "oauth2", url: "example.jamfcloud.com") }
+    private var example: JamfCLIProfile {
+        pro("Example", auth: "oauth2", url: "example.jamfcloud.com")
+    }
     private var exampleAPI: JamfCLIProfile {
         pro("Example-API", auth: "platform", url: "us.api.jamfcloud.com")
     }
@@ -600,6 +602,47 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         flow.protectAssignment["Example-Protect"] = .some(nil)
         calls = await runSpied(flow)
         XCTAssertTrue(calls.protect.isEmpty, "left out writes nothing")
+    }
+
+    func testProtectSlotWriteFailureLeavesTheWorkspaceDone() async {
+        struct Boom: LocalizedError { var errorDescription: String? { "boom" } }
+        let flow = ExistingCLISetupFlow(profiles: [example, protect("Example-Protect")])
+        await flow.run(
+            connectionRunner: nil,
+            initialize: { _ in 0 },
+            writePlatform: { _, _ in },
+            writeProtect: { _, _ in throw Boom() },
+            collect: { _, _ in 0 })
+        XCTAssertEqual(flow.statuses["Example"], .done)
+        XCTAssertTrue(flow.connectionNotes["Example"]?.contains("boom") == true)
+    }
+
+    /// The live writers, in run order, on a fresh minimal workspace.
+    func testTheRealWritersRecordBothSlotsInOrder() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("JRC-P6-\(UUID().uuidString)", isDirectory: true)
+        let support = root.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: "Example"))
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let config = workspace.appendingPathComponent("config.yaml")
+        try ScaffoldService.writeMinimalConfig(to: config, profile: "Example")
+
+        _ = try ProfilesConfigWriter.save(
+            .platform, to: "Example-API", workspace: "Example", appSupport: support,
+            workspaceAuth: { _ in nil })
+        _ = try OnboardingFlow.writeProtectConfig(
+            profileSlug: "Example", protectProfileName: "Example-Protect", appSupport: support)
+
+        let profiles = try XCTUnwrap(ConfigLoader.load(from: config).profiles)
+        XCTAssertEqual(profiles.jamfPro, "Example")
+        XCTAssertEqual(profiles.platform, "Example-API")
+        XCTAssertEqual(profiles.protect, "Example-Protect")
     }
 
     func testProtectLoginIsNeverAWorkspace() async {

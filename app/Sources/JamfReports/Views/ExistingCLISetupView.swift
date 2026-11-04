@@ -151,7 +151,8 @@ struct ExistingCLISetupView: View {
     }
 
     private func profileTitle(_ name: String) -> String {
-        flow.proposal.environments.first { $0.workspace == name }?.isSchool == true ? L("\(name) (Jamf School)") : name
+        let isSchool = flow.proposal.environments.first { $0.workspace == name }?.isSchool == true
+        return isSchool ? L("\(name) (Jamf School)") : name
     }
 
     private func profileNote(_ text: String) -> some View {

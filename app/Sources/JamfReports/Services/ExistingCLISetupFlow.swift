@@ -100,9 +100,6 @@ final class ExistingCLISetupFlow {
 
     private let profiles: [JamfCLIProfile]
 
-    /// Each profile's product, for the rows that are not Jamf Pro.
-    let products: [String: JamfCLIProduct]
-
     /// Profiles that are never a workspace here, with the reason the screen shows. A Protect or
     /// Security Cloud login holds no Jamf Pro data (Protect is added from the Jamf Pro workspace
     /// that uses it), and an organization-level Platform integration reaches only Jamf Account.
@@ -162,8 +159,6 @@ final class ExistingCLISetupFlow {
         self.profiles = profiles
         let profileNames = profiles.map(\.name)
         self.profileNames = profileNames
-        self.products = Dictionary(
-            profiles.map { ($0.name, $0.product) }, uniquingKeysWith: { first, _ in first })
         var refusals: [String: String] = [:]
         for profile in profiles {
             if let reason = Self.refusal(for: profile) { refusals[profile.name] = reason }
@@ -239,9 +234,9 @@ final class ExistingCLISetupFlow {
     /// this run creates.
     private static func suggestedAssignments(_ proposal: EnvironmentProposal) -> [String: String?] {
         let workspaces = Set(proposal.environments.map(\.workspace))
-        return Dictionary(uniqueKeysWithValues: proposal.protectChoices.map { choice in
+        return Dictionary(proposal.protectChoices.map { choice in
             (choice.profile, choice.suggested.flatMap { workspaces.contains($0) ? $0 : nil })
-        })
+        }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Ticks or unticks a workspace as the user did, so `resolveProposal` keeps the choice.
