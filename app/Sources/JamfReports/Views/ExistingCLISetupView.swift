@@ -154,7 +154,7 @@ struct ExistingCLISetupView: View {
                     PNPButton(title: L("Remove"), size: .sm) {
                         flow.removePlatform(from: env.workspace)
                     }
-                    .disabled(isLocked)
+                    .disabled(isLocked || !flow.selected.contains(env.workspace))
                     .accessibilityLabel(L("Remove Platform API profile \(platform)"))
                 }
             }
@@ -176,7 +176,13 @@ struct ExistingCLISetupView: View {
 
     private func protectLogins(in workspace: String) -> [String] {
         flow.proposal.protectChoices.map(\.profile)
-            .filter { (flow.protectAssignment[$0] ?? nil) == workspace }
+            .filter { assignedEnvironment($0) == workspace }
+    }
+
+    /// An assignment to an unticked environment reads as "Not now"; the flow keeps it so
+    /// ticking the environment again restores it.
+    private func assignedEnvironment(_ login: String) -> String? {
+        (flow.protectAssignment[login] ?? nil).flatMap { flow.selected.contains($0) ? $0 : nil }
     }
 
     private var protectPickers: some View {
@@ -192,7 +198,7 @@ struct ExistingCLISetupView: View {
                         }
                     }
                     .disabled(isLocked)
-                    if (flow.protectAssignment[choice.profile] ?? nil) == choice.suggested,
+                    if assignedEnvironment(choice.profile) == choice.suggested,
                        choice.suggested != nil, !touchedProtect.contains(choice.profile) {
                         Text("Suggested by name")
                             .font(.footnote)
@@ -220,7 +226,7 @@ struct ExistingCLISetupView: View {
 
     private func protectBinding(_ login: String) -> Binding<String?> {
         Binding(
-            get: { flow.protectAssignment[login] ?? nil },
+            get: { assignedEnvironment(login) },
             set: {
                 touchedProtect.insert(login)
                 flow.protectAssignment[login] = .some($0)

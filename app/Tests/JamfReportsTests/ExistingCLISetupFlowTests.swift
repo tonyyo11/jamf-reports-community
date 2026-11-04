@@ -588,6 +588,16 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         XCTAssertTrue(calls.platform.isEmpty)
     }
 
+    func testProtectAssignedToAnUntickedEnvironmentIsNotWritten() async {
+        let other = pro("Other", auth: "oauth2", url: "other.jamfcloud.com")
+        let flow = ExistingCLISetupFlow(profiles: [example, other, protect("Example-Protect")])
+        flow.setSelected("Example", false)
+        let calls = await runSpied(flow)
+        XCTAssertEqual(calls.initialized, ["Other"])
+        XCTAssertTrue(calls.protect.isEmpty)
+        XCTAssertEqual(flow.protectAssignment["Example-Protect"] ?? nil, "Example")
+    }
+
     func testProtectWrittenOnlyToItsAssignedWorkspace() async {
         let other = pro("Other", auth: "oauth2", url: "other.jamfcloud.com")
         let flow = ExistingCLISetupFlow(profiles: [example, other, protect("Example-Protect")])
