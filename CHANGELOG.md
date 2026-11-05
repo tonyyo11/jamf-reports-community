@@ -14,6 +14,11 @@ versions in this repository map to git tags.
 - Re-check on the Add sheet suggests where a new Platform API profile belongs when it reaches
   the same Jamf Pro as an existing workspace. (#305)
 - Data Sources lists the jamf-cli profiles that no workspace uses, with a button to add them. (#305)
+- The Environment card can merge a Platform API workspace into this one, after checking that
+  both reach the same Jamf Pro. The sheet lists what is copied, what stays as it is and which
+  folders are read but not moved; the source folder moves to a `_merged` folder and is never
+  deleted. A merge that stops, because the app quit or a step failed, shows a Resume button.
+  Config Doctor's note about two workspaces for one Jamf Pro now points to this button. (#305)
 - Data Sources has an **Environment** card listing the products this workspace's environment holds
   (Jamf Pro or Jamf School, Platform API, Jamf Protect) with their profiles, auth method, newest
   data and whether a shared-config change waits for your Confirm. Check tests a profile's

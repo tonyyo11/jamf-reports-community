@@ -210,6 +210,15 @@ Overview, Devices and Trends screens and a workbook of its own; see
   Data source: no tier (user preferences).
 - **Data Sources** — the inputs surface: cached `jamf-cli` data, **Adopt EAs**, and
   snapshot status.
+  **Merging two workspaces:** when a Platform API workspace and a Jamf Pro workspace reach the
+  same Jamf Pro server, open the Jamf Pro one and choose **Merge another workspace into this
+  one** on the Environment card. The sheet lists what will be copied, what stays as it is and
+  any folders read from outside the workspace, then merges. History from both is kept: a file
+  only one side has is copied, an identical one is skipped, and when both have a file with the
+  same name but different contents the target's stays and the source's goes to an archive. The
+  source's profile becomes the target's Platform API profile, and the source folder moves to
+  `_merged/<name>-<date>/workspace`, with nothing deleted. If the app quits or a step fails, a
+  Resume button on the card continues from where it stopped.
   Data source: no tier (local workspace cache status).
 - **Backups** — snapshot and compare Jamf Pro configuration backups. **Diff Selected**
   compares two backups: the **Summary** view collapses objects taking the same change into

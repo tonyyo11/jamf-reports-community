@@ -179,3 +179,32 @@ struct ReportGroup: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+
+extension AutomationPolicy {
+    /// `from` replaced by `to` in every report group, de-duplicated; exclusions merge through
+    /// `mergingExclusion`.
+    func replacingWorkspace(_ from: String, with to: String) -> AutomationPolicy {
+        var policy = self
+        policy.excludedWorkspaces = excludedWorkspaces.mergingExclusion(from, into: to)
+        policy.reportGroups = reportGroups.map {
+            ReportGroup(name: $0.name, workspaces: $0.workspaces.replacingWorkspace(from, with: to))
+        }
+        return policy
+    }
+}
+
+extension Array where Element == String {
+    /// Each `from` becomes `to`, keeping the first of any repeat.
+    func replacingWorkspace(_ from: String, with to: String) -> [String] {
+        var seen = Set<String>()
+        return map { $0 == from ? to : $0 }.filter { seen.insert($0).inserted }
+    }
+
+    /// An exclusion list after `from` merges into `to`: `from` goes, and `to` stays excluded
+    /// only when both were. Earlier hints told users to exclude either twin, so excluding the
+    /// merged workspace on one side's word would stop a fleet that was still collecting.
+    func mergingExclusion(_ from: String, into to: String) -> [String] {
+        let keepTarget = contains(from) && contains(to)
+        return filter { $0 != from && ($0 != to || keepTarget) }
+    }
+}

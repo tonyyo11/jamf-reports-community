@@ -282,6 +282,7 @@ final class GenerateSheetState {
         case .generateInProgress: return L("Waiting for: a report to finish")
         case .toolUpdateInProgress: return L("Waiting for: the jamf-cli update to finish")
         case .tickLockHeld: return L("Waiting for: a scheduled run to finish")
+        case .mergeInProgress: return L("Waiting for: a workspace merge to finish")
         default: return L("Waiting for: a refresh to finish")
         }
     }
