@@ -69155,52 +69155,6 @@
         }
       }
     },
-    "Keep '%@' as the workspace: it runs the Jamf Pro commands. Add '%@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %@` and `platform: %@`), then exclude '%@' under Automation > Excluded profiles. Nothing is changed for you." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "„%1$@“ als Arbeitsbereich beibehalten: Dort laufen die Jamf-Pro-Befehle. „%2$@“ in dessen config.yaml als profiles.platform hinzufügen (`profiles:` mit `jamf_pro: %3$@` und `platform: %4$@`) und „%5$@“ anschließend unter Automatisierung > Ausgeschlossene Profile ausschließen. Es wird nichts für Sie geändert."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Keep '%1$@' as the workspace: it runs the Jamf Pro commands. Add '%2$@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %3$@` and `platform: %4$@`), then exclude '%5$@' under Automation > Excluded profiles. Nothing is changed for you."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conserve '%1$@' como espacio de trabajo: ejecuta los comandos de Jamf Pro. Añada '%2$@' como profiles.platform en el config.yaml de ese espacio de trabajo (`profiles:` con `jamf_pro: %3$@` y `platform: %4$@`) y luego excluya '%5$@' en Automatización > Perfiles excluidos. No se cambia nada automáticamente."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conservez « %1$@ » comme espace de travail : il exécute les commandes Jamf Pro. Ajoutez « %2$@ » comme profiles.platform dans son config.yaml (`profiles:` avec `jamf_pro: %3$@` et `platform: %4$@`), puis excluez « %5$@ » sous Automatisation > Profils exclus. Rien n’est modifié à votre place."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mantenere '%1$@' come spazio di lavoro: esegue i comandi di Jamf Pro. Aggiungere '%2$@' come profiles.platform nel suo config.yaml (`profiles:` con `jamf_pro: %3$@` e `platform: %4$@`), quindi escludere '%5$@' in Automazione > Profili esclusi. Nessuna modifica viene applicata automaticamente."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%1$@”をワークスペースとして残してください。Jamf Proのコマンドはこのワークスペースで実行されます。そのconfig.yamlに“%2$@”をprofiles.platformとして追加し（`profiles:`に`jamf_pro: %3$@`と`platform: %4$@`）、“自動化”›“除外プロファイル”で“%5$@”を除外してください。自動での変更はありません。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mantenha '%1$@' como espaço de trabalho: ele executa os comandos do Jamf Pro. Adicione '%2$@' a ele como profiles.platform no config.yaml (`profiles:` com `jamf_pro: %3$@` e `platform: %4$@`) e depois exclua '%5$@' em Automação > Perfis excluídos. Nada é alterado por você."
-          }
-        }
-      }
-    },
     "Keep data fresh automatically" : {
       "localizations" : {
         "de" : {
@@ -73929,6 +73883,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mesclar"
+          }
+        }
+      }
+    },
+    "Merge '%@' into '%@' from Data Sources › Environment › Merge another workspace into this one. '%@' keeps running the Jamf Pro commands and '%@' becomes its Platform API profile. Nothing is changed until you merge." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%1$@“ unter Datenquellen › Umgebung › Einen anderen Arbeitsbereich in diesen zusammenführen in „%2$@“ zusammenführen. „%3$@“ führt weiterhin die Jamf-Pro-Befehle aus und „%4$@“ wird sein Platform-API-Profil. Bis zum Zusammenführen wird nichts geändert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Merge '%1$@' into '%2$@' from Data Sources › Environment › Merge another workspace into this one. '%3$@' keeps running the Jamf Pro commands and '%4$@' becomes its Platform API profile. Nothing is changed until you merge."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusione '%1$@' en '%2$@' desde Fuentes de datos › Entorno › Fusionar otro espacio de trabajo en este. '%3$@' sigue ejecutando los comandos de Jamf Pro y '%4$@' pasa a ser su perfil de Platform API. No se cambia nada hasta que fusione."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionnez « %1$@ » dans « %2$@ » depuis Sources de données › Environnement › Fusionner un autre espace de travail dans celui-ci. « %3$@ » continue d'exécuter les commandes Jamf Pro et « %4$@ » devient son profil Platform API. Rien n'est modifié tant que vous ne fusionnez pas."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisci '%1$@' in '%2$@' da Origini dati › Ambiente › Unisci un altro spazio di lavoro in questo. '%3$@' continua a eseguire i comandi di Jamf Pro e '%4$@' diventa il suo profilo Platform API. Non viene modificato nulla finché non esegui l'unione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データソース › 環境 › 別のワークスペースをこのワークスペースにマージ から、“%1$@”を“%2$@”にマージしてください。“%3$@”は引き続きJamf Proのコマンドを実行し、“%4$@”はそのPlatform APIプロファイルになります。マージするまで何も変更されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mescle '%1$@' em '%2$@' em Fontes de dados › Ambiente › Mesclar outro espaço de trabalho neste. '%3$@' continua executando os comandos do Jamf Pro e '%4$@' passa a ser seu perfil de Platform API. Nada é alterado até você mesclar."
           }
         }
       }

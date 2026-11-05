@@ -168,7 +168,7 @@ extension ConfigDoctorService {
             severity: .suggest,
             title: L("Two workspaces collect the same Jamf Pro"),
             detail: L("'\(platform)' (Platform API) and '\(twin)' (oauth2) reach the same Jamf Pro server, and both have a workspace. Jamf Reports collects one profile per fleet, so history is split across two folders and a consolidated report counts the fleet twice."),
-            hint: L("Keep '\(twin)' as the workspace: it runs the Jamf Pro commands. Add '\(platform)' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: \(twin)` and `platform: \(platform)`), then exclude '\(platform)' under Automation > Excluded profiles. Nothing is changed for you.")
+            hint: L("Merge '\(platform)' into '\(twin)' from Data Sources › Environment › Merge another workspace into this one. '\(twin)' keeps running the Jamf Pro commands and '\(platform)' becomes its Platform API profile. Nothing is changed until you merge.")
         )]
     }
 
