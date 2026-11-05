@@ -236,10 +236,16 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
 
     func testClaimsHeldForTheRunAndReleased() async throws {
         let claims = Calls()
-        try await WorkspaceMergeExecutor.run(try journal(), deps: deps(claims: claims))
-        XCTAssertEqual(Set(claims.all), ["acquire \(src)", "acquire \(tgt)",
-                                         "release \(src)", "release \(tgt)"])
+        try write("{}", src, "automation/\(SharedWorkspace.claimFilename)")
+        let full = try journal()
+        try await WorkspaceMergeExecutor.run(full, deps: deps(claims: claims))
         XCTAssertEqual(claims.all.prefix(2), ["acquire \(src)", "acquire \(tgt)"])
+        // Renewed before every step; the moved source is not released at its old name.
+        let steps = full.plan.steps.count
+        XCTAssertEqual(claims.all.filter { $0 == "acquire \(tgt)" }.count, steps + 1)
+        XCTAssertEqual(claims.all.filter { $0.hasPrefix("release") }, ["release \(tgt)"])
+        XCTAssertFalse(fm.fileExists(atPath: merged(full).appendingPathComponent(
+            "workspace/automation/\(SharedWorkspace.claimFilename)").path))
 
         try fm.removeItem(at: root)
         try setUpWithError()
@@ -465,4 +471,38 @@ extension WorkspaceMergeExecutorTests {
         XCTAssertFalse(fm.fileExists(atPath: leftover.path))
         XCTAssertEqual(read(url(tgt, "backups/scheduled-1/manifest.json")), "1")
     }
+}
+
+// MARK: - Fix round 2
+
+extension WorkspaceMergeExecutorTests {
+    func testRenewalBlockedMidRunStopsBeforeThatStep() async throws {
+        let j = try journal()
+        let calls = Counter()
+        let peer = SharedWorkspace.Claim(
+            host: .init(id: "peer", name: "Peer Mac"), operation: "collect",
+            startedAt: Date(), expiresAt: Date().addingTimeInterval(600), pid: 1,
+            appVersion: "x")
+        // 2 initial claims, then 2 renewals per step: the 9th call is step 3's first renewal.
+        let blockAt = 9
+        do {
+            try await WorkspaceMergeExecutor.run(j, deps: deps(claim: { _ in
+                calls.next() >= blockAt ? .blocked(peer) : .acquire
+            }))
+            XCTFail("a peer taking the claim must stop the run")
+        } catch {
+            XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,
+                           .peerClaim(workspace: src, host: "Peer Mac"))
+        }
+        let pending = try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertEqual(pending.done, 3)
+        XCTAssertEqual(calls.value, blockAt)
+    }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.withLock { count } }
+    func next() -> Int { lock.withLock { count += 1; return count } }
 }

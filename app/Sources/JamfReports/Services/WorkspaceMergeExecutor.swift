@@ -122,9 +122,7 @@ enum WorkspaceMergeExecutor {
         // create one at its old name.
         for workspace in [plan.source, plan.target]
         where ProfileService.workspaceURL(for: workspace).map(exists) ?? false {
-            if case .blocked(let claim) = deps.acquireClaim(workspace) {
-                throw RunError.peerClaim(workspace: workspace, host: claim.host.display)
-            }
+            try claim(workspace, deps: deps)
             held.append(workspace)
         }
         let journalURL: URL
@@ -140,11 +138,17 @@ enum WorkspaceMergeExecutor {
         var ran = 0
         while journal.done < total {
             let index = journal.done
+            // The claim has no heartbeat: renewing it before each step pushes its expiry, so a
+            // merge longer than `claimTTL` is never taken over by a peer mid-run.
+            for workspace in held { try claim(workspace, deps: deps) }
+            let step = plan.steps[index]
             do {
-                try await perform(plan.steps[index], plan: plan, deps: deps)
+                try await perform(step, plan: plan, deps: deps)
             } catch {
                 throw RunError.step(index: index, reason: error.localizedDescription)
             }
+            // The source's folder is gone; nothing is claimed or released at its old name.
+            if step.action == .tail(.moveSource) { held.removeAll { $0 == plan.source } }
             journal.done += 1
             if journal.done == total {
                 // The record of what was done goes beside the archive; the pending one goes.
@@ -164,6 +168,12 @@ enum WorkspaceMergeExecutor {
             if let stopAfter, ran >= stopAfter, journal.done < total { throw CancellationError() }
         }
         AppLogger.event(.collect, .notice, "workspace merge finished: \(total) steps")
+    }
+
+    private static func claim(_ workspace: String, deps: Dependencies) throws {
+        if case .blocked(let claim) = deps.acquireClaim(workspace) {
+            throw RunError.peerClaim(workspace: workspace, host: claim.host.display)
+        }
     }
 
     // MARK: - Steps
@@ -246,9 +256,16 @@ enum WorkspaceMergeExecutor {
                 throw StepError("the merged folder already holds a workspace")
             }
             try prepareParent(of: destination)
-            // The claim stays at the source's name, not in the merged folder.
-            deps.releaseClaim(plan.source)
+            // Moved while still claimed; this Mac's claim then leaves the merged folder.
             try FileManager.default.moveItem(at: sourceWS, to: destination)
+            let claimFile = destination.appendingPathComponent(
+                "automation/\(SharedWorkspace.claimFilename)")
+            if isRegular(claimFile) {
+                do { try FileManager.default.removeItem(at: claimFile) } catch {
+                    AppLogger.event(.collect, .error,
+                                    "merge claim not removed: \(error.localizedDescription)")
+                }
+            }
         }
     }
 

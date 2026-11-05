@@ -42,7 +42,8 @@ enum AtomicInstall {
         guard error == ENOTSUP || error == EINVAL else {
             throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO)
         }
-        // shortcut: the check and the rename are two calls on such a volume; callers hold a lock.
+        // shortcut: the check and the rename are two calls on such a volume (SMB, NFS shares).
+        // The tick lock is local to this Mac; only the advisory shared claim covers peers there.
         guard !isEntry(final) else { throw POSIXError(.EEXIST) }
         guard rename(staged.path, final.path) == 0 else { throw posixError() }
     }
