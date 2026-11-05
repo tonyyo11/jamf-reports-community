@@ -179,3 +179,23 @@ struct ReportGroup: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+
+extension AutomationPolicy {
+    /// `from` replaced by `to` in `excludedWorkspaces` and every report group, de-duplicated.
+    func replacingWorkspace(_ from: String, with to: String) -> AutomationPolicy {
+        var policy = self
+        policy.excludedWorkspaces = excludedWorkspaces.replacingWorkspace(from, with: to)
+        policy.reportGroups = reportGroups.map {
+            ReportGroup(name: $0.name, workspaces: $0.workspaces.replacingWorkspace(from, with: to))
+        }
+        return policy
+    }
+}
+
+extension Array where Element == String {
+    /// Each `from` becomes `to`, keeping the first of any repeat.
+    func replacingWorkspace(_ from: String, with to: String) -> [String] {
+        var seen = Set<String>()
+        return map { $0 == from ? to : $0 }.filter { seen.insert($0).inserted }
+    }
+}

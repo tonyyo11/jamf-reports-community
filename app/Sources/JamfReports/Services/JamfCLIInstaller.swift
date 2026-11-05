@@ -413,6 +413,9 @@ final class JamfCLIInstaller {
         case .generateInProgress:
             return "jamf-cli was not updated: a report is being generated. "
                 + L("Update it again when the report finishes.")
+        case .mergeInProgress:
+            return "jamf-cli was not updated: a workspace merge is running. "
+                + L("Update it again when the merge finishes.")
         default:
             return "jamf-cli was not updated: a refresh is running. "
                 + L("Update it again when the refresh finishes.")

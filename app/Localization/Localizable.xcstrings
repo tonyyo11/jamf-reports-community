@@ -7276,6 +7276,52 @@
         }
       }
     },
+    "%@ is working in %@ — try the merge again when it finishes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ arbeitet in %2$@ — versuchen Sie die Zusammenführung erneut, wenn der Vorgang abgeschlossen ist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ is working in %2$@ — try the merge again when it finishes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ está trabajando en %2$@ — vuelva a intentar la fusión cuando termine."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ travaille dans %2$@ — relancez la fusion à la fin."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ sta lavorando in %2$@ — riprovare l’unione al termine."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ が %2$@ で作業中です — 完了後にもう一度統合をお試しください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ está trabalhando em %2$@ — tente a mesclagem novamente quando terminar."
+          }
+        }
+      }
+    },
     "%@ last landed %lldd ago (expected every %@)" : {
       "localizations" : {
         "de" : {
@@ -23357,6 +23403,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Um espaço de trabalho é um local próprio de cada instância do Jamf, que contém configuração, snapshots, relatórios gerados e logs de automação."
+          }
+        }
+      }
+    },
+    "A workspace merge is running — try again when it finishes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arbeitsbereiche werden gerade zusammengeführt — versuchen Sie es erneut, wenn der Vorgang abgeschlossen ist"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se está fusionando un espacio de trabajo — inténtelo de nuevo cuando termine"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion d’espaces de travail est en cours — réessayez à la fin"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È in corso l’unione di spazi di lavoro — riprovare al termine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークスペースを統合中です — 完了後にもう一度お試しください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem de espaços de trabalho está em andamento — tente novamente quando ela terminar"
           }
         }
       }
@@ -73043,6 +73129,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Membros"
+          }
+        }
+      }
+    },
+    "Merge step %lld did not finish: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schritt %1$lld der Zusammenführung wurde nicht abgeschlossen: %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Merge step %1$lld did not finish: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El paso %1$lld de la fusión no terminó: %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’étape %1$lld de la fusion n’a pas abouti : %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il passaggio %1$lld dell’unione non è terminato: %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "統合のステップ %1$lld が完了しませんでした: %2$@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A etapa %1$lld da mesclagem não terminou: %2$@"
           }
         }
       }
@@ -123151,6 +123283,46 @@
         }
       }
     },
+    "Update it again when the merge finishes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisieren Sie es erneut, wenn die Zusammenführung abgeschlossen ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelva a actualizarlo cuando termine la fusión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relancez la mise à jour à la fin de la fusion."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiornarlo di nuovo al termine dell’unione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "統合の完了後にもう一度更新してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atualize novamente quando a mesclagem terminar."
+          }
+        }
+      }
+    },
     "Update it again when the refresh finishes." : {
       "localizations" : {
         "de" : {
@@ -125791,6 +125963,46 @@
         }
       }
     },
+    "Waiting for: a workspace merge to finish" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warten auf: Abschluss der Zusammenführung von Arbeitsbereichen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En espera: que termine la fusión de espacios de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente : fin de la fusion d’espaces de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa: il termine dell’unione di spazi di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待機中: ワークスペースの統合の完了"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aguardando: o término da mesclagem de espaços de trabalho"
+          }
+        }
+      }
+    },
     "Waiting for: the jamf-cli update to finish" : {
       "localizations" : {
         "de" : {
@@ -128193,6 +128405,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Local do espaço de trabalho atualizado. Os perfis que já estão em outro lugar não são movidos; copie-os para cá se quiser. As execuções agendadas usam a nova pasta a partir da próxima execução."
+          }
+        }
+      }
+    },
+    "Workspace merge" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführung von Arbeitsbereichen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusión de espacios de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusion d’espaces de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unione di spazi di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークスペースの統合"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesclagem de espaços de trabalho"
           }
         }
       }

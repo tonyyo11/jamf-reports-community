@@ -56,12 +56,15 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// A report is being generated in this app, so the collect (or second report) did not
     /// start: it would replace snapshots under the report. Nothing is queued.
     case generateInProgress
+    /// A workspace merge is running in this app, so nothing that reads or writes a workspace
+    /// starts. Nothing is queued.
+    case mergeInProgress
 
     /// True for the ways a collect or report is turned away before it starts. A refusal is
     /// not a failure: it is shown as information and leaves no Run History record.
     var isCollectRefusal: Bool {
         self == .tickLockHeld || self == .collectInProgress || self == .toolUpdateInProgress
-            || self == .generateInProgress
+            || self == .generateInProgress || self == .mergeInProgress
     }
 
     /// `isCollectRefusal` for an error of unknown type.
@@ -113,6 +116,8 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             return "jamf-cli is being updated — try again when it finishes"
         case .generateInProgress:
             return L("A report is being generated — try again when it finishes")
+        case .mergeInProgress:
+            return L("A workspace merge is running — try again when it finishes")
         }
     }
 }

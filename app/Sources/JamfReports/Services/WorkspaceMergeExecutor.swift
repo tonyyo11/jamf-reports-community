@@ -1,0 +1,385 @@
+import Foundation
+
+/// A merge in progress: the whole plan and how many of its steps have finished. Saved after
+/// every step, so a merge stopped by a crash or a quit resumes where it was and never decides
+/// anything again (R11).
+struct WorkspaceMergeJournal: Codable, Equatable, Sendable {
+    var plan: WorkspaceMergePlan
+    /// Steps finished, counted from the start of `plan.steps`.
+    var done: Int
+
+    /// `<target>/automation/.merge-journal.json`, through `WorkspacePaths.confinedFolder`.
+    static func url(target: String) -> URL? {
+        guard let workspace = ProfileService.workspaceURL(for: target),
+              let folder = try? WorkspacePaths.confinedFolder(["automation"], under: workspace)
+        else { return nil }
+        return folder.appendingPathComponent(".merge-journal.json")
+    }
+
+    /// The pending journal for `target`, nil when none (or unreadable: logged).
+    static func pending(target: String) -> WorkspaceMergeJournal? {
+        guard let url = url(target: target),
+              FileManager.default.fileExists(atPath: url.path) || FileManager.isLink(url)
+        else { return nil }
+        do {
+            let data = try BoundedFile.read(
+                url, limit: BoundedFile.documentLimit, followSymlinks: false)
+            return try JSONDecoder().decode(WorkspaceMergeJournal.self, from: data)
+        } catch {
+            AppLogger.event(.collect, .error,
+                            "merge journal could not be read: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    fileprivate func save(to url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try AtomicInstall.write(try encoder.encode(self), to: url, mode: 0o600)
+    }
+}
+
+/// Applies a `WorkspaceMergePlan` to disk under the tick lock. Every step can run twice: a copy
+/// never overwrites other bytes, an archive copy is made once, and the tail checks what is
+/// already done. Nothing the user can see is deleted; replaced files go to the archive first.
+enum WorkspaceMergeExecutor {
+    struct Dependencies: Sendable {
+        var hold: @Sendable (_ body: @Sendable () async throws -> Void) async throws -> Void
+        /// The live peer claim on a workspace, nil when none blocks.
+        var blockingClaim: @Sendable (_ workspace: String) -> SharedWorkspace.Claim?
+        var writePlatformSlot: @Sendable (_ profile: String, _ workspace: String) throws -> Void
+        var copyBenchmarks: @Sendable (_ source: String, _ target: String) throws -> Void
+        var retargetSchedules: @Sendable (_ from: String, _ to: String) throws -> Void
+        var rewritePolicy: @Sendable (_ from: String, _ to: String) async -> Void
+        var appSupport: URL
+
+        /// `holdingTickLock(purpose: .merge)`, the shared-workspace claim, the real writers.
+        /// `rewritePolicy` is supplied by the caller (the GUI owns the policy).
+        static func live(rewritePolicy: @escaping @Sendable (String, String) async -> Void)
+            -> Dependencies {
+            Dependencies(
+                hold: { body in try await CLIBridge.holdingTickLock(purpose: .merge, body) },
+                blockingClaim: { workspace in
+                    let decision = SharedWorkspace.decide(
+                        existing: SharedWorkspace.readClaim(profile: workspace),
+                        me: SharedWorkspace.currentHost, now: Date())
+                    if case .blocked(let claim) = decision { return claim }
+                    return nil
+                },
+                writePlatformSlot: { profile, workspace in
+                    try ProfilesConfigWriter.save(.platform, to: profile, workspace: workspace)
+                },
+                copyBenchmarks: { try WorkspaceMergeExecutor.copyBenchmarks($0, $1) },
+                retargetSchedules: { try ScheduleStore().retarget(from: $0, to: $1) },
+                rewritePolicy: rewritePolicy,
+                appSupport: AppSupport.directory())
+        }
+    }
+
+    enum RunError: Error, LocalizedError, Equatable {
+        case peerClaim(workspace: String, host: String)
+        case step(index: Int, reason: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .peerClaim(let workspace, let host):
+                L("\(ConfigSchema.displayText(host)) is working in \(workspace) — try the merge again when it finishes.")
+            case .step(let index, let reason):
+                L("Merge step \(index + 1) did not finish: \(reason)")
+            }
+        }
+    }
+
+    /// Runs `journal.plan` from `journal.done`, saving the journal after each step. Test seam:
+    /// `stopAfter` throws `CancellationError` once that many steps have run in this call.
+    static func run(
+        _ journal: WorkspaceMergeJournal, deps: Dependencies, stopAfter: Int? = nil,
+        progress: @Sendable (_ done: Int, _ total: Int) -> Void = { _, _ in }
+    ) async throws {
+        try await deps.hold {
+            try await runHeld(journal, deps: deps, stopAfter: stopAfter, progress: progress)
+        }
+    }
+
+    private static func runHeld(
+        _ start: WorkspaceMergeJournal, deps: Dependencies, stopAfter: Int?,
+        progress: @Sendable (Int, Int) -> Void
+    ) async throws {
+        let plan = start.plan
+        for workspace in [plan.source, plan.target] {
+            if let claim = deps.blockingClaim(workspace) {
+                throw RunError.peerClaim(workspace: workspace, host: claim.host.display)
+            }
+        }
+        guard let journalURL = WorkspaceMergeJournal.url(target: plan.target) else {
+            throw RunError.step(
+                index: start.done, reason: "the target's automation folder was refused")
+        }
+        var journal = start
+        try journal.save(to: journalURL)
+        let total = plan.steps.count
+        AppLogger.event(
+            .collect, .notice,
+            "workspace merge started: \(total - journal.done) of \(total) steps to run")
+        var ran = 0
+        while journal.done < total {
+            let index = journal.done
+            do {
+                try await perform(plan.steps[index], plan: plan, deps: deps)
+            } catch {
+                throw RunError.step(index: index, reason: error.localizedDescription)
+            }
+            journal.done += 1
+            if journal.done == total {
+                // The record of what was done goes beside the archive; the pending one goes.
+                let record = URL(fileURLWithPath: plan.mergedFolder, isDirectory: true)
+                    .appendingPathComponent("merge-journal.json")
+                try journal.save(to: record)
+                try? FileManager.default.removeItem(at: journalURL)
+            } else {
+                try journal.save(to: journalURL)
+            }
+            progress(journal.done, total)
+            ran += 1
+            if let stopAfter, ran >= stopAfter, journal.done < total { throw CancellationError() }
+        }
+        AppLogger.event(.collect, .notice, "workspace merge finished: \(total) steps")
+    }
+
+    // MARK: - Steps
+
+    private static func perform(
+        _ step: WorkspaceMergePlan.Step, plan: WorkspaceMergePlan, deps: Dependencies
+    ) async throws {
+        let source = URL(fileURLWithPath: step.source)
+        let target = URL(fileURLWithPath: step.target)
+        let archive = step.archive.map { URL(fileURLWithPath: $0) }
+        switch step.action {
+        case .copy:
+            try place(source, at: target)
+        case .skipIdentical:
+            break
+        case .archiveSource:
+            try place(source, at: try required(archive))
+        case .fillSummary(let sourceArchive):
+            try fillSummary(source: source, target: target, targetArchive: try required(archive),
+                            sourceArchive: URL(fileURLWithPath: sourceArchive))
+        case .replaceState:
+            // A target file the source's would replace goes to the archive first; one that
+            // already holds the source's bytes was installed by an earlier run.
+            if exists(target), !sameBytes(target, source) {
+                let archive = try required(archive)
+                if !exists(archive) { try place(target, at: archive) }
+            }
+            try install(source, over: target)
+        case .archiveTarget:
+            guard exists(target) else { break }
+            let archive = try required(archive)
+            guard !exists(archive) else {
+                throw StepError("the archive already holds \(target.lastPathComponent)")
+            }
+            try prepareParent(of: archive)
+            try FileManager.default.moveItem(at: target, to: archive)
+        case .copyFolder:
+            try copyFolder(source, to: target)
+        case .tail(let tail):
+            try await perform(tail, plan: plan, deps: deps)
+        }
+    }
+
+    private static func perform(
+        _ tail: WorkspaceMergePlan.Tail, plan: WorkspaceMergePlan, deps: Dependencies
+    ) async throws {
+        let merged = URL(fileURLWithPath: plan.mergedFolder, isDirectory: true)
+        let sourceWS = try workspace(plan.source)
+        switch tail {
+        case .archiveSourceConfig:
+            let config = sourceWS.appendingPathComponent("config.yaml")
+            let copy = merged.appendingPathComponent("archive/config/config.yaml")
+            // Resumed after the move: the config travelled with the folder and was archived.
+            if exists(config) { try place(config, at: copy) }
+        case .writePlatformSlot:
+            if platformSlot(of: plan.target) != plan.source {
+                try deps.writePlatformSlot(plan.source, plan.target)
+            }
+        case .copyBenchmarks:
+            try deps.copyBenchmarks(plan.source, plan.target)
+        case .retargetSchedules:
+            try deps.retargetSchedules(plan.source, plan.target)
+        case .rewritePolicy:
+            await deps.rewritePolicy(plan.source, plan.target)
+        case .removeSourcePin:
+            // App state, not workspace data: the one file a merge removes outright.
+            if let pin = SharedConfigPin.storeURL(
+                workspace: plan.source, appSupport: deps.appSupport), exists(pin) {
+                try FileManager.default.removeItem(at: pin)
+            }
+        case .moveSource:
+            let destination = merged.appendingPathComponent("workspace", isDirectory: true)
+            if exists(destination), !exists(sourceWS) { return }
+            guard !exists(destination) else {
+                throw StepError("the merged folder already holds a workspace")
+            }
+            try prepareParent(of: destination)
+            try FileManager.default.moveItem(at: sourceWS, to: destination)
+        }
+    }
+
+    private static func fillSummary(
+        source: URL, target: URL, targetArchive: URL, sourceArchive: URL
+    ) throws {
+        if !exists(targetArchive) { try place(target, at: targetArchive) }
+        if !exists(sourceArchive) { try place(source, at: sourceArchive) }
+        // From the two originals, so a second run writes the same file.
+        func summary(_ url: URL) throws -> DailySummary {
+            try SummaryJSONParser.decode(BoundedFile.read(
+                url, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false))
+        }
+        let filled = try summary(targetArchive).filling(from: summary(sourceArchive))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]  // as `writeSummaryFile`
+        try requireNoLinkedAncestor(target)
+        try AtomicInstall.write(try encoder.encode(filled), to: target)
+    }
+
+    // MARK: - Config tail
+
+    /// The target's `profiles.platform`, nil when it has none or the file does not read.
+    private static func platformSlot(of workspace: String) -> String? {
+        guard let url = ProfileService.workspaceURL(for: workspace)?
+            .appendingPathComponent("config.yaml"),
+            let text = try? ConfigLoader.readText(at: url),
+            let root = try? ConfigLoader.rawMapping(fromYAML: text),
+            let slots = root["profiles"] as? [String: Any] else { return nil }
+        return (slots["platform"] as? String)?.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// `platform.compliance_benchmarks` from the source, when the target lists none.
+    static func copyBenchmarks(_ source: String, _ target: String) throws {
+        func benchmarks(_ name: String) throws -> YAMLCodec.YAMLValue? {
+            let url = try workspace(name).appendingPathComponent("config.yaml")
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            let document = try YAMLCodec.decode(ConfigLoader.readText(at: url))
+            guard case .mapping(let root) = document.root else { return nil }
+            let value = root.value(for: "platform")?.mapping?.value(for: "compliance_benchmarks")
+            return value?.sequence?.isEmpty == false ? value : nil
+        }
+        guard let list = try benchmarks(source), try benchmarks(target) == nil else { return }
+        _ = try ConfigService.saveBlock(key: "platform", profile: target) { root in
+            var block = root.value(for: "platform")?.mapping ?? .init(entries: [])
+            block.set("compliance_benchmarks", value: list)
+            root.set("platform", value: .mapping(block))
+        }
+    }
+
+    // MARK: - Files
+
+    private struct StepError: Error, LocalizedError {
+        let errorDescription: String?
+        init(_ text: String) { errorDescription = text }
+    }
+
+    private static func workspace(_ name: String) throws -> URL {
+        guard let url = ProfileService.workspaceURL(for: name) else {
+            throw StepError("\(name) is not a workspace name")
+        }
+        return url
+    }
+
+    private static func required(_ archive: URL?) throws -> URL {
+        guard let archive else { throw StepError("the plan names no archive for this step") }
+        return archive
+    }
+
+    private static func exists(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path) || FileManager.isLink(url)
+    }
+
+    private static func isRegular(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
+    private static func requireRegular(_ url: URL) throws {
+        guard isRegular(url) else {
+            throw StepError("\(url.lastPathComponent) is not a regular file")
+        }
+    }
+
+    /// Both are regular files with the same SHA-256.
+    private static func sameBytes(_ a: URL, _ b: URL) -> Bool {
+        guard isRegular(a), isRegular(b), let hash = BoundedFile.sha256Hex(a) else { return false }
+        return hash == BoundedFile.sha256Hex(b)
+    }
+
+    /// Copies `source` to `destination` when nothing is there; the same bytes there is done.
+    /// Anything else at `destination` is never overwritten.
+    private static func place(_ source: URL, at destination: URL) throws {
+        try requireRegular(source)
+        if exists(destination) {
+            guard sameBytes(destination, source) else {
+                throw StepError("\(destination.lastPathComponent) already holds other content")
+            }
+            return
+        }
+        try install(source, over: destination)
+    }
+
+    /// A copy of `source` staged beside `destination`, then installed: a link at the name is
+    /// replaced, never written through.
+    private static func install(_ source: URL, over destination: URL) throws {
+        try requireRegular(source)
+        if exists(destination) { try requireRegular(destination) }
+        try prepareParent(of: destination)
+        let staged = AtomicInstall.stagedURL(for: destination)
+        do {
+            try FileManager.default.copyItem(at: source, to: staged)
+            try AtomicInstall.install(staged, at: destination)
+        } catch {
+            AtomicInstall.discard(staged)
+            throw error
+        }
+    }
+
+    private static func copyFolder(_ source: URL, to destination: URL) throws {
+        guard !exists(destination) else { return }
+        guard !FileManager.isLink(source) else {
+            throw StepError("\(source.lastPathComponent) is a link")
+        }
+        try prepareParent(of: destination)
+        let staged = AtomicInstall.stagedURL(for: destination, isDirectory: true)
+        do {
+            try FileManager.default.copyItem(at: source, to: staged)
+            try AtomicInstall.install(staged, at: destination)
+        } catch {
+            AtomicInstall.discard(staged)
+            throw error
+        }
+    }
+
+    private static func prepareParent(of url: URL) throws {
+        try requireNoLinkedAncestor(url)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    }
+
+    /// Refuses a link on the way to `url`, checked up to the workspaces root or the home folder
+    /// (both may be links themselves: a synced root, `/var` in tests), so no write goes through
+    /// a folder a peer swapped for a link after the plan was made.
+    private static func requireNoLinkedAncestor(_ url: URL) throws {
+        let workspaces = ProfileService.workspacesRoot()
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let stops = Set([workspaces, home].flatMap {
+            [$0.standardizedFileURL.path, $0.resolvingSymlinksInPath().standardizedFileURL.path]
+        } + ["/"])
+        var current = url.deletingLastPathComponent().standardizedFileURL
+        while !stops.contains(current.path) {
+            if FileManager.isLink(current) {
+                throw StepError("\(current.lastPathComponent) is a link")
+            }
+            current = current.deletingLastPathComponent()
+        }
+    }
+}
