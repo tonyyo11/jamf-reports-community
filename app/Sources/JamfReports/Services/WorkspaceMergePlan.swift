@@ -138,7 +138,7 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
             outsideSourceFolder: builder.outside)
     }
 
-    private static var stampFormatter: DateFormatter {
+    static var stampFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"

@@ -23287,6 +23287,86 @@
         }
       }
     },
+    "A merge into this workspace did not finish and its record can't be read." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zusammenführung in diesen Arbeitsbereich wurde nicht abgeschlossen, und ihr Protokoll kann nicht gelesen werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fusión en este espacio de trabajo no terminó y su registro no se puede leer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion dans cet espace de travail ne s’est pas terminée et son historique est illisible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’unione in questo spazio di lavoro non è stata completata e il suo registro non è leggibile."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースへのマージが完了しておらず、その記録を読み取れません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem neste espaço de trabalho não foi concluída e o registro dela não pode ser lido."
+          }
+        }
+      }
+    },
+    "A merge into this workspace did not finish and its record can't be read. Choose Start over on the Environment card before merging again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zusammenführung in diesen Arbeitsbereich wurde nicht abgeschlossen, und ihr Protokoll kann nicht gelesen werden. Wählen Sie auf der Karte „Umgebung“ „Neu beginnen“, bevor Sie erneut zusammenführen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fusión en este espacio de trabajo no terminó y su registro no se puede leer. Elija Empezar de nuevo en la tarjeta Entorno antes de volver a fusionar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion dans cet espace de travail ne s’est pas terminée et son historique est illisible. Choisissez Recommencer sur la carte Environnement avant de fusionner à nouveau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’unione in questo spazio di lavoro non è stata completata e il suo registro non è leggibile. Scegli Ricomincia nella scheda Ambiente prima di unire di nuovo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースへのマージが完了しておらず、その記録を読み取れません。もう一度マージする前に、「環境」カードで「最初からやり直す」を選択してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem neste espaço de trabalho não foi concluída e o registro dela não pode ser lido. Escolha Recomeçar no cartão Ambiente antes de mesclar novamente."
+          }
+        }
+      }
+    },
     "A merge into this workspace did not finish." : {
       "localizations" : {
         "de" : {
@@ -117791,6 +117871,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O chaveiro de login está bloqueado"
+          }
+        }
+      }
+    },
+    "The merge did not start: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Zusammenführung wurde nicht gestartet: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusión no se inició: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusion n’a pas démarré : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’unione non è stata avviata: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージを開始できませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mesclagem não foi iniciada: %@"
           }
         }
       }

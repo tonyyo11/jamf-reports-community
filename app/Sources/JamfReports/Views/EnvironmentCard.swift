@@ -14,7 +14,7 @@ struct EnvironmentCard: View {
     @State private var checking: Set<String> = []
     @State private var actionError: String?
     @State private var backupNote: String?
-    @State private var pendingMerge: WorkspaceMergeJournal?
+    @State private var pendingMerge: WorkspaceMergeJournal.Pending = .none
     @State private var mergeSession: MergeSession?
     @State private var confirmStartOver = false
 
@@ -164,9 +164,10 @@ struct EnvironmentCard: View {
 
     @ViewBuilder
     private var mergeSection: some View {
-        if pendingMerge != nil {
-            MergeResumeBanner(onResume: { startMerge(resumes: true) },
-                              onStartOver: { confirmStartOver = true })
+        if pendingMerge != .none {
+            MergeResumeBanner(
+                readable: !pendingMerge.isUnreadable, onResume: { startMerge(resumes: true) },
+                onStartOver: { confirmStartOver = true })
         } else if !mergeCandidates.isEmpty {
             WrappingRow {
                 PNPButton(title: L("Merge another workspace into this one"),
@@ -179,8 +180,8 @@ struct EnvironmentCard: View {
 
     private func reloadPendingMerge() async {
         let target = state.workspace
-        let journal = demo ? nil : await Task.detached {
-            WorkspaceMergeJournal.pending(target: target)
+        let journal = demo ? .none : await Task.detached {
+            WorkspaceMergeJournal.state(target: target)
         }.value
         guard target == state.workspace else { return }
         pendingMerge = journal
@@ -205,8 +206,8 @@ struct EnvironmentCard: View {
         actionError = nil
         Task {
             do {
-                try await Task.detached { try WorkspaceMergeJournal.startOver(target: target) }
-                    .value
+                try await WorkspaceMergeExecutor.startOver(
+                    target: target, deps: .live(rewritePolicy: { _, _ in }))
             } catch {
                 guard target == state.workspace else { return }
                 actionError = error.localizedDescription
@@ -217,7 +218,7 @@ struct EnvironmentCard: View {
 
     /// Discovery, the sidebar and the active profile (P5's owner switch) read the new layout.
     private func mergeFinished(_ folder: String) {
-        pendingMerge = nil
+        pendingMerge = .none
         workspace.toast = Toast(
             message: L("Merge finished. The source folder is in \(ConfigSchema.fullDisplayText(folder).text)."),
             style: .success)
@@ -296,6 +297,8 @@ struct EnvironmentCard: View {
 
 /// Shown on the Environment card while a merge's journal is pending.
 struct MergeResumeBanner: View {
+    /// False when the journal cannot be read: only Start over is offered.
+    var readable = true
     var onResume: () -> Void
     var onStartOver: () -> Void
 
@@ -303,8 +306,13 @@ struct MergeResumeBanner: View {
         VStack(alignment: .leading, spacing: 6) {
             InlineBanner(
                 icon: "exclamationmark.triangle.fill", tone: .warn,
-                action: .init(label: L("Resume"), icon: "play.fill", handler: onResume)
-            ) { Text(L("A merge into this workspace did not finish.")) }
+                action: readable
+                    ? .init(label: L("Resume"), icon: "play.fill", handler: onResume) : nil
+            ) {
+                Text(readable
+                     ? L("A merge into this workspace did not finish.")
+                     : L("A merge into this workspace did not finish and its record can't be read."))
+            }
             WrappingRow {
                 PNPButton(title: L("Start over…"), icon: "arrow.counterclockwise",
                           style: .ghost, size: .sm, action: onStartOver)
@@ -348,7 +356,12 @@ private let previewState = EnvironmentCardState(
     ])
 
 #Preview("Merge resume banner") {
-    Card(padding: 18) { MergeResumeBanner(onResume: {}, onStartOver: {}) }
+    Card(padding: 18) {
+        VStack(spacing: 12) {
+            MergeResumeBanner(onResume: {}, onStartOver: {})
+            MergeResumeBanner(readable: false, onResume: {}, onStartOver: {})
+        }
+    }
         .padding(16)
         .frame(width: PageScaffold<EmptyView>.minSupportedWidth)
         .preferredColorScheme(.dark)

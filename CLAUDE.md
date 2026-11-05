@@ -405,30 +405,36 @@ files (claim, `hosts/`, day markers, the alert ledger) stay with the source.
 `WorkspaceMergeExecutor` runs inside `CLIBridge.holdingTickLock(purpose: .merge)`
 (`CLIBridgeError.mergeInProgress` for a second one) and also takes the shared-workspace claim on
 both workspaces (operation `merge`, renewed before every step), refusing before any write when
-another Mac holds either. The plan is journaled whole (`WorkspaceMergeJournal`,
-`<target>/automation/.merge-journal.json`, written after every step), steps run in order and never
-re-plan: a quit or a failed step leaves the journal and the Environment card shows a Resume banner,
-and a resume re-reads the journal from disk, refusing (a step error) rather than overwriting a
-target state file or summary that changed after the crash. Copies use
+another Mac holds either. The plan is journaled whole in two files (`WorkspaceMergeJournal`):
+`<target>/automation/.merge-plan.json`, written once when a merge starts, compact and read up to
+`BoundedFile.snapshotLimit` (a large workspace plans thousands of steps), and `.merge-journal.json`,
+the step count, the plan file's SHA-256 and the merged folder, saved after every step. A file that
+cannot be read, or two that do not match, read as unreadable: the card offers only Start over and a
+new merge is refused (`RunError.unreadableJournal`), never overwriting it. Steps run in order and
+never re-plan: a quit or a failed step leaves the journal and the Environment card shows a Resume
+banner, and a resume re-reads the journal from disk, refusing (a step error) rather than overwriting
+a target state file or summary that changed after the crash. Copies use
 `AtomicInstall.installExclusive` and never replace a file; a state replace and a summary fill do
 replace, after archiving the target's file. A copy whose destination the target gained after
 planning (a scheduled collect before Merge, or between a crash and Resume) falls back to the rule
 above: the source's file goes to the archive, and a day's summary is filled; a state replace
 archives a target file that appeared. A fresh merge is refused while another merge's journal is
-pending (`RunError.pendingMerge`, shown as refused, like a held lock or a peer's claim, with no
-Resume); the banner offers Resume and Start over, which moves the pending journal into its merged
-folder as `merge-journal.json`, and a finished journal left behind is retired the same way. The
-target's `platform` slot is set to the source's profile through
-`ProfilesConfigWriter.save(.platform, ...)`; schedules are retargeted keeping their labels, the
-policy's report groups name the target, an exclusion of either workspace is dropped unless both were
-excluded (the target then stays excluded), `platform.compliance_benchmarks` is copied when the
-target has none, and the source's pin file is removed. Then the source folder moves to
-`<root>/_merged/<source>-<yyyyMMdd-HHmmss>/workspace/`, with everything the merge replaced or took
-out of the target under `.../archive/<area>/<relative path>`; nothing is deleted, except the
-source's per-Mac pin file. The journal is kept as `<merged>/merge-journal.json`. Discovery ignores
-`_merged` (no top-level `config.yaml`, and a leading `_` is no canonical profile folder name). A
-finished merge shows a toast with the merged folder. Config Doctor's `platform.twin` hint points to
-this button.
+pending (`RunError.pendingMerge`), and a refusal before the journal is written
+(`RunError.notStarted`) shows as refused, like a held lock or a peer's claim, with no Resume. The
+banner offers Resume and Start over, which runs under the merge hold and the target's claim and
+moves both files into the merged folder the journal names (a folder under `_merged` only; otherwise
+`_merged/<target>-unfinished-<stamp>`) as `merge-plan.json` and `merge-journal.json`; a finished
+journal left behind is retired the same way. The target's `platform` slot is set to the source's
+profile through `ProfilesConfigWriter.save(.platform, ...)`; schedules are retargeted keeping their
+labels, the policy's report groups name the target, an exclusion of either workspace is dropped
+unless both were excluded (the target then stays excluded), `platform.compliance_benchmarks` is
+copied when the target has none, and the source's pin file is removed. Then the source folder moves
+to `<root>/_merged/<source>-<yyyyMMdd-HHmmss>/workspace/`, with everything the merge replaced or
+took out of the target under `.../archive/<area>/<relative path>`; nothing is deleted, except the
+source's per-Mac pin file. The journal is kept as `<merged>/merge-plan.json` and
+`<merged>/merge-journal.json`. Discovery ignores `_merged` (no top-level `config.yaml`, and a
+leading `_` is no canonical profile folder name). A finished merge shows a toast with the merged
+folder. Config Doctor's `platform.twin` hint points to this button.
 
 ### output config
 

@@ -110,6 +110,8 @@ final class WorkspaceMergeModelTests: XCTestCase {
             CLIBridgeError.tickLockHeld,
             WorkspaceMergeExecutor.RunError.peerClaim(workspace: "Acme", host: "mac"),
             WorkspaceMergeExecutor.RunError.pendingMerge(source: "Old"),
+            WorkspaceMergeExecutor.RunError.unreadableJournal,
+            WorkspaceMergeExecutor.RunError.notStarted(reason: "refused"),
         ]
         for error in errors {
             let spy = Spy()
