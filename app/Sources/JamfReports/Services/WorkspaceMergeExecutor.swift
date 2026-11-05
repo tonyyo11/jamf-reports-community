@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A merge in progress: the whole plan and how many of its steps have finished. Saved after
@@ -9,11 +10,15 @@ struct WorkspaceMergeJournal: Codable, Equatable, Sendable {
     var done: Int
 
     /// `<target>/automation/.merge-journal.json`, through `WorkspacePaths.confinedFolder`.
-    static func url(target: String) -> URL? {
-        guard let workspace = ProfileService.workspaceURL(for: target),
-              let folder = try? WorkspacePaths.confinedFolder(["automation"], under: workspace)
-        else { return nil }
-        return folder.appendingPathComponent(".merge-journal.json")
+    static func url(target: String) -> URL? { try? location(target: target) }
+
+    /// `url(target:)`, throwing why the folder was refused.
+    static func location(target: String) throws -> URL {
+        guard let workspace = ProfileService.workspaceURL(for: target) else {
+            throw WorkspacePaths.PathError.invalidProfile(target)
+        }
+        return try WorkspacePaths.confinedFolder(["automation"], under: workspace)
+            .appendingPathComponent(".merge-journal.json")
     }
 
     /// The pending journal for `target`, nil when none (or unreadable: logged).
@@ -47,8 +52,10 @@ struct WorkspaceMergeJournal: Codable, Equatable, Sendable {
 enum WorkspaceMergeExecutor {
     struct Dependencies: Sendable {
         var hold: @Sendable (_ body: @Sendable () async throws -> Void) async throws -> Void
-        /// The live peer claim on a workspace, nil when none blocks.
-        var blockingClaim: @Sendable (_ workspace: String) -> SharedWorkspace.Claim?
+        /// Takes the shared-workspace claim for the merge; `.blocked` names the peer.
+        var acquireClaim: @Sendable (_ workspace: String) -> SharedWorkspace.ClaimDecision
+        /// Drops this Mac's claim; never another host's.
+        var releaseClaim: @Sendable (_ workspace: String) -> Void
         var writePlatformSlot: @Sendable (_ profile: String, _ workspace: String) throws -> Void
         var copyBenchmarks: @Sendable (_ source: String, _ target: String) throws -> Void
         var retargetSchedules: @Sendable (_ from: String, _ to: String) throws -> Void
@@ -61,13 +68,10 @@ enum WorkspaceMergeExecutor {
             -> Dependencies {
             Dependencies(
                 hold: { body in try await CLIBridge.holdingTickLock(purpose: .merge, body) },
-                blockingClaim: { workspace in
-                    let decision = SharedWorkspace.decide(
-                        existing: SharedWorkspace.readClaim(profile: workspace),
-                        me: SharedWorkspace.currentHost, now: Date())
-                    if case .blocked(let claim) = decision { return claim }
-                    return nil
+                acquireClaim: {
+                    SharedWorkspace.acquire(profile: $0, operation: "merge", ttl: claimTTL)
                 },
+                releaseClaim: { SharedWorkspace.release(profile: $0) },
                 writePlatformSlot: { profile, workspace in
                     try ProfilesConfigWriter.save(.platform, to: profile, workspace: workspace)
                 },
@@ -77,6 +81,10 @@ enum WorkspaceMergeExecutor {
                 appSupport: AppSupport.directory())
         }
     }
+
+    /// Long enough for a large merge; a crashed one stops blocking peers after this, and this
+    /// Mac's own resume takes its claim back at once.
+    static let claimTTL: TimeInterval = 2 * 3600
 
     enum RunError: Error, LocalizedError, Equatable {
         case peerClaim(workspace: String, host: String)
@@ -108,14 +116,20 @@ enum WorkspaceMergeExecutor {
         progress: @Sendable (Int, Int) -> Void
     ) async throws {
         let plan = start.plan
-        for workspace in [plan.source, plan.target] {
-            if let claim = deps.blockingClaim(workspace) {
+        var held: [String] = []
+        defer { held.forEach(deps.releaseClaim) }
+        // A source already moved (a resumed merge) has no folder to claim; claiming it would
+        // create one at its old name.
+        for workspace in [plan.source, plan.target]
+        where ProfileService.workspaceURL(for: workspace).map(exists) ?? false {
+            if case .blocked(let claim) = deps.acquireClaim(workspace) {
                 throw RunError.peerClaim(workspace: workspace, host: claim.host.display)
             }
+            held.append(workspace)
         }
-        guard let journalURL = WorkspaceMergeJournal.url(target: plan.target) else {
-            throw RunError.step(
-                index: start.done, reason: "the target's automation folder was refused")
+        let journalURL: URL
+        do { journalURL = try WorkspaceMergeJournal.location(target: plan.target) } catch {
+            throw RunError.step(index: start.done, reason: error.localizedDescription)
         }
         var journal = start
         try journal.save(to: journalURL)
@@ -137,7 +151,11 @@ enum WorkspaceMergeExecutor {
                 let record = URL(fileURLWithPath: plan.mergedFolder, isDirectory: true)
                     .appendingPathComponent("merge-journal.json")
                 try journal.save(to: record)
-                try? FileManager.default.removeItem(at: journalURL)
+                do { try FileManager.default.removeItem(at: journalURL) } catch {
+                    // The record is saved; a pending journal left behind resumes to a no-op.
+                    AppLogger.event(.collect, .error,
+                                    "merge journal not removed: \(error.localizedDescription)")
+                }
             } else {
                 try journal.save(to: journalURL)
             }
@@ -171,7 +189,12 @@ enum WorkspaceMergeExecutor {
             // already holds the source's bytes was installed by an earlier run.
             if exists(target), !sameBytes(target, source) {
                 let archive = try required(archive)
-                if !exists(archive) { try place(target, at: archive) }
+                if !exists(archive) {
+                    try place(target, at: archive)
+                } else if !sameBytes(target, archive) {
+                    // Changed since the archive copy (after a crash): never replace it unseen.
+                    throw StepError("\(target.lastPathComponent) changed since the merge began")
+                }
             }
             try install(source, over: target)
         case .archiveTarget:
@@ -223,6 +246,8 @@ enum WorkspaceMergeExecutor {
                 throw StepError("the merged folder already holds a workspace")
             }
             try prepareParent(of: destination)
+            // The claim stays at the source's name, not in the merged folder.
+            deps.releaseClaim(plan.source)
             try FileManager.default.moveItem(at: sourceWS, to: destination)
         }
     }
@@ -240,8 +265,15 @@ enum WorkspaceMergeExecutor {
         let filled = try summary(targetArchive).filling(from: summary(sourceArchive))
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]  // as `writeSummaryFile`
+        let data = try encoder.encode(filled)
+        // The target is the original (first run) or this output (a rerun); anything else
+        // changed after a crash and is not replaced unseen.
+        let current = BoundedFile.sha256Hex(target)
+        guard isRegular(target), current == BoundedFile.sha256Hex(targetArchive)
+                || current == SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined()
+        else { throw StepError("\(target.lastPathComponent) changed since the merge began") }
         try requireNoLinkedAncestor(target)
-        try AtomicInstall.write(try encoder.encode(filled), to: target)
+        try AtomicInstall.write(data, to: target)
     }
 
     // MARK: - Config tail
@@ -324,7 +356,15 @@ enum WorkspaceMergeExecutor {
             }
             return
         }
-        try install(source, over: destination)
+        try prepareParent(of: destination)
+        let staged = AtomicInstall.stagedURL(for: destination)
+        do {
+            try FileManager.default.copyItem(at: source, to: staged)
+            try AtomicInstall.installExclusive(staged, at: destination)
+        } catch {
+            AtomicInstall.discard(staged)
+            throw error
+        }
     }
 
     /// A copy of `source` staged beside `destination`, then installed: a link at the name is
@@ -349,13 +389,31 @@ enum WorkspaceMergeExecutor {
             throw StepError("\(source.lastPathComponent) is a link")
         }
         try prepareParent(of: destination)
+        removeStagedCopies(of: destination)
         let staged = AtomicInstall.stagedURL(for: destination, isDirectory: true)
         do {
             try FileManager.default.copyItem(at: source, to: staged)
-            try AtomicInstall.install(staged, at: destination)
+            try AtomicInstall.installExclusive(staged, at: destination)
         } catch {
             AtomicInstall.discard(staged)
             throw error
+        }
+    }
+
+    /// Hidden `.<name>.tmp-*` folders a crashed copy of this backup left (real folders only,
+    /// never a link): our own staged copies, which would otherwise stay forever.
+    private static func removeStagedCopies(of destination: URL) {
+        let parent = destination.deletingLastPathComponent()
+        let prefix = ".\(destination.lastPathComponent).tmp-"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+        for name in names where name.hasPrefix(prefix) {
+            let url = parent.appendingPathComponent(name)
+            var info = stat()
+            guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { continue }
+            do { try FileManager.default.removeItem(at: url) } catch {
+                AppLogger.event(.collect, .error,
+                                "merge staging not removed: \(error.localizedDescription)")
+            }
         }
     }
 

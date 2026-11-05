@@ -33,6 +33,20 @@ enum AtomicInstall {
         throw POSIXError(POSIXErrorCode(rawValue: lastError) ?? .EIO)
     }
 
+    /// Puts `staged` at `final` only when nothing is there: `renamex_np` with `RENAME_EXCL`. An
+    /// entry at `final` (a link included) throws `EEXIST` and is left as it is; `staged` is the
+    /// caller's to discard. On a volume without the flag, a rename after an `lstat` check.
+    static func installExclusive(_ staged: URL, at final: URL) throws {
+        if renamex_np(staged.path, final.path, UInt32(RENAME_EXCL)) == 0 { return }
+        let error = errno
+        guard error == ENOTSUP || error == EINVAL else {
+            throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO)
+        }
+        // shortcut: the check and the rename are two calls on such a volume; callers hold a lock.
+        guard !isEntry(final) else { throw POSIXError(.EEXIST) }
+        guard rename(staged.path, final.path) == 0 else { throw posixError() }
+    }
+
     /// Folders `write` has already swept in this process: a crash leftover is from an earlier
     /// run, so one sweep per folder is enough and a busy writer does not list it every time.
     private static let sweptFolders = OSAllocatedUnfairLock(initialState: Set<String>())

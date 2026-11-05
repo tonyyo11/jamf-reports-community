@@ -63,10 +63,17 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         _ calls: Calls = Calls(),
         hold: @escaping @Sendable (_ body: @Sendable () async throws -> Void) async throws
             -> Void = { try await $0() },
-        claim: @escaping @Sendable (String) -> SharedWorkspace.Claim? = { _ in nil }
+        claims: Calls = Calls(),
+        claim: @escaping @Sendable (String) -> SharedWorkspace.ClaimDecision = { _ in .acquire }
     ) -> WorkspaceMergeExecutor.Dependencies {
         WorkspaceMergeExecutor.Dependencies(
-            hold: hold, blockingClaim: claim,
+            hold: hold,
+            acquireClaim: { ws in
+                let decision = claim(ws)
+                if decision == .acquire { claims.add("acquire \(ws)") }
+                return decision
+            },
+            releaseClaim: { claims.add("release \($0)") },
             writePlatformSlot: { calls.add("slot \($0)->\($1)") },
             copyBenchmarks: { calls.add("bench \($0)->\($1)") },
             retargetSchedules: { calls.add("schedules \($0)->\($1)") },
@@ -212,9 +219,10 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
             startedAt: Date(), expiresAt: Date().addingTimeInterval(600), pid: 1,
             appVersion: "x")
         let target = tgt
+        let claims = Calls()
         do {
-            try await WorkspaceMergeExecutor.run(
-                try journal(), deps: deps(claim: { $0 == target ? peer : nil }))
+            try await WorkspaceMergeExecutor.run(try journal(), deps: deps(
+                claims: claims, claim: { $0 == target ? .blocked(peer) : .acquire }))
             XCTFail("a peer claim must refuse")
         } catch {
             XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,
@@ -222,6 +230,28 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         }
         XCTAssertEqual(try tree(), before)
         XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        // The source's claim, taken before the target refused, is given back.
+        XCTAssertEqual(claims.all, ["acquire \(src)", "release \(src)"])
+    }
+
+    func testClaimsHeldForTheRunAndReleased() async throws {
+        let claims = Calls()
+        try await WorkspaceMergeExecutor.run(try journal(), deps: deps(claims: claims))
+        XCTAssertEqual(Set(claims.all), ["acquire \(src)", "acquire \(tgt)",
+                                         "release \(src)", "release \(tgt)"])
+        XCTAssertEqual(claims.all.prefix(2), ["acquire \(src)", "acquire \(tgt)"])
+
+        try fm.removeItem(at: root)
+        try setUpWithError()
+        let thrown = Calls()
+        let j = try journal()
+        try write("planted", tgt, snap + "c_2026-01-01_000000.json")
+        do {
+            try await WorkspaceMergeExecutor.run(j, deps: deps(claims: thrown))
+            XCTFail("the planted file must stop the run")
+        } catch WorkspaceMergeExecutor.RunError.step {}
+        XCTAssertEqual(Set(thrown.all), ["acquire \(src)", "acquire \(tgt)",
+                                         "release \(src)", "release \(tgt)"])
     }
 
     func testDifferentBytesAtACopyDestinationIsAStepError() async throws {
@@ -316,5 +346,123 @@ extension WorkspaceMergeExecutorTests {
         try WorkspaceMergeExecutor.copyBenchmarks(src, tgt)
         XCTAssertEqual(read(url(tgt, "config.yaml")),
                        "platform:\n  compliance_benchmarks:\n    - \"Mine\"\n")
+    }
+}
+
+// MARK: - Fix round 1
+
+extension WorkspaceMergeExecutorTests {
+    private func stopped(_ j: WorkspaceMergeJournal, after count: Int) async throws {
+        do {
+            try await WorkspaceMergeExecutor.run(j, deps: deps(), stopAfter: count)
+            XCTFail("stopAfter must stop the run")
+        } catch is CancellationError {}
+    }
+
+    private func index(of match: (WorkspaceMergePlan.Action) -> Bool,
+                       in j: WorkspaceMergeJournal) throws -> Int {
+        try XCTUnwrap(j.plan.steps.firstIndex { match($0.action) })
+    }
+
+    func testResumeRefusesAStateFileChangedAfterTheCrash() async throws {
+        let j = try journal()
+        let state = try index(of: { $0 == .replaceState }, in: j)
+        // Archive copy made, then the crash before the install: simulate by running up to the
+        // step, archiving by hand as the step would.
+        try await stopped(j, after: state)
+        let step = j.plan.steps[state]
+        let archive = URL(fileURLWithPath: try XCTUnwrap(step.archive))
+        try fm.createDirectory(at: archive.deletingLastPathComponent(),
+                               withIntermediateDirectories: true)
+        try fm.copyItem(at: URL(fileURLWithPath: step.target), to: archive)
+        try "changed".write(toFile: step.target, atomically: true, encoding: .utf8)
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+            return XCTFail("no pending journal")
+        }
+        do {
+            try await WorkspaceMergeExecutor.run(pending, deps: deps())
+            XCTFail("a changed target must stop the resume")
+        } catch WorkspaceMergeExecutor.RunError.step(let at, _) {
+            XCTAssertEqual(at, state)
+        }
+        XCTAssertEqual(read(URL(fileURLWithPath: step.target)), "changed")
+    }
+
+    func testResumeRefusesASummaryChangedAfterTheCrash() async throws {
+        let j = try journal()
+        let fill = try index(of: {
+            if case .fillSummary = $0 { return true }
+            return false
+        }, in: j)
+        try await stopped(j, after: fill + 1)
+        try write(#"{"date":"2026-01-02","totalDevices":99,"source":"jamf-cli"}"#, tgt, day)
+        var again = j
+        again.done = fill
+        do {
+            try await WorkspaceMergeExecutor.run(again, deps: deps())
+            XCTFail("a changed summary must stop the resume")
+        } catch WorkspaceMergeExecutor.RunError.step(let at, _) {
+            XCTAssertEqual(at, fill)
+        }
+        XCTAssertEqual(try SummaryJSONParser.parse(url(tgt, day)).totalDevices, 99)
+    }
+
+    func testExclusiveInstallLeavesAnExistingEntry() throws {
+        let staged = root.appendingPathComponent(".x.tmp")
+        let final = root.appendingPathComponent("x")
+        try "new".write(to: staged, atomically: true, encoding: .utf8)
+        try "old".write(to: final, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try AtomicInstall.installExclusive(staged, at: final)) {
+            XCTAssertEqual(($0 as? POSIXError)?.code, .EEXIST)
+        }
+        XCTAssertEqual(read(final), "old")
+        XCTAssertEqual(read(staged), "new")
+        try fm.removeItem(at: final)
+        try AtomicInstall.installExclusive(staged, at: final)
+        XCTAssertEqual(read(final), "new")
+    }
+
+    func testCrashBeforeTheLastStepResumes() async throws {
+        let plain = try journal()
+        try await WorkspaceMergeExecutor.run(plain, deps: deps())
+        let expected = try tree()
+
+        try fm.removeItem(at: root)
+        try setUpWithError()
+        let j = try journal()
+        try await stopped(j, after: j.plan.steps.count - 1)
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+            return XCTFail("no pending journal")
+        }
+        try await WorkspaceMergeExecutor.run(pending, deps: deps())
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertTrue(fm.fileExists(
+            atPath: merged(j).appendingPathComponent("merge-journal.json").path))
+        XCTAssertEqual(try tree(), expected)
+    }
+
+    func testResumeAtMoveSourceAfterTheFolderMoved() async throws {
+        let j = try journal()
+        try await stopped(j, after: j.plan.steps.count - 1)
+        let moved = merged(j).appendingPathComponent("workspace")
+        try fm.moveItem(at: root.appendingPathComponent(src), to: moved)
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+            return XCTFail("no pending journal")
+        }
+        let claims = Calls()
+        try await WorkspaceMergeExecutor.run(pending, deps: deps(claims: claims))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent(src).path))
+        XCTAssertTrue(fm.fileExists(atPath: moved.appendingPathComponent("config.yaml").path))
+        XCTAssertFalse(claims.all.contains("acquire \(src)"), "no claim at the moved name")
+    }
+
+    func testBackupCopyRemovesAStaleStagedCopy() async throws {
+        let backups = url(tgt, "backups")
+        let leftover = backups.appendingPathComponent(".scheduled-1.tmp-\(UUID().uuidString)")
+        try fm.createDirectory(at: leftover, withIntermediateDirectories: true)
+        try await WorkspaceMergeExecutor.run(try journal(), deps: deps())
+        XCTAssertFalse(fm.fileExists(atPath: leftover.path))
+        XCTAssertEqual(read(url(tgt, "backups/scheduled-1/manifest.json")), "1")
     }
 }
