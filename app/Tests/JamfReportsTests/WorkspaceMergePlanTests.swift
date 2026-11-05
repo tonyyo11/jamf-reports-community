@@ -22,7 +22,8 @@ final class WorkspaceMergePlanTests: XCTestCase {
 
     private func write(_ text: String, _ ws: String, _ rel: String) throws {
         let url = root.appendingPathComponent(ws).appendingPathComponent(rel)
-        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
@@ -76,7 +77,9 @@ final class WorkspaceMergePlanTests: XCTestCase {
         try write("1 x", tgt, st + "policies.fail")
         let s = steps(try plan(), .state)
         XCTAssertEqual(s.filter { $0.action == .replaceState }.count, 1)
-        XCTAssertTrue(s.contains { $0.action == .archiveTarget && $0.target.hasSuffix("overview.fail") })
+        XCTAssertTrue(s.contains {
+            $0.action == .archiveTarget && $0.target.hasSuffix("overview.fail")
+        })
         XCTAssertFalse(s.contains { $0.target.contains("policies") })
     }
 
@@ -89,6 +92,8 @@ final class WorkspaceMergePlanTests: XCTestCase {
         let p = try plan()
         let paths = steps(p, .runHistory).map(\.source)
         XCTAssertEqual(paths.count, 2)
+        let archives = steps(p, .runHistory).compactMap(\.archive)
+        XCTAssertTrue(archives.isEmpty)  // both absent from the target: plain copies
         XCTAssertFalse(paths.contains { $0.contains("claim") || $0.contains("hosts") })
         XCTAssertEqual(steps(p, .backups).map(\.action), [.copyFolder])
     }
@@ -101,7 +106,9 @@ final class WorkspaceMergePlanTests: XCTestCase {
         XCTAssertEqual(p.differingConfigKeys, ["a", "b"])
         let tail = p.steps.suffix(7).map(\.action)
         XCTAssertEqual(tail, WorkspaceMergePlan.Tail.allCases.map { .tail($0) })
-        XCTAssertFalse(p.steps.dropLast(7).contains { if case .tail = $0.action { true } else { false } })
+        XCTAssertFalse(p.steps.dropLast(7).contains {
+            if case .tail = $0.action { true } else { false }
+        })
     }
 
     func testOutsideFolderAndLinkRefused() throws {
@@ -143,5 +150,75 @@ final class WorkspaceMergePlanTests: XCTestCase {
         let p = try plan()
         let back = try JSONDecoder().decode(WorkspaceMergePlan.self, from: JSONEncoder().encode(p))
         XCTAssertEqual(back, p)
+    }
+
+    private func assertUnreadable(_ area: String, line: UInt = #line) {
+        XCTAssertThrowsError(try plan(), line: line) {
+            guard case WorkspaceMergePlan.PlanError.unreadable(let got, _) = $0 else {
+                return XCTFail("\($0)", line: line)
+            }
+            XCTAssertEqual(got, area, line: line)
+        }
+    }
+
+    func testRunHistoryArchivesKeepSubfolder() throws {
+        try write("a", src, "automation/logs/a.log")
+        try write("b", tgt, "automation/logs/a.log")
+        try write("a", src, "automation/x_status.json")
+        try write("b", tgt, "automation/x_status.json")
+        let archives = steps(try plan(), .runHistory).compactMap(\.archive)
+        XCTAssertEqual(archives.count, 2)
+        XCTAssertTrue(archives.contains { $0.hasSuffix("archive/runHistory/logs/a.log") })
+        XCTAssertTrue(archives.contains { $0.hasSuffix("archive/runHistory/status/x_status.json") })
+    }
+
+    func testReportsRule7() throws {
+        let r = "Generated Reports/"
+        try write("1", src, r + "new.xlsx")
+        try write("2", src, r + "same.xlsx")
+        try write("2", tgt, r + "same.xlsx")
+        try write("3", src, r + "diff.xlsx")
+        try write("4", tgt, r + "diff.xlsx")
+        let counts = try XCTUnwrap(try plan().counts()[.reports])
+        XCTAssertEqual(counts["copy"], 1)
+        XCTAssertEqual(counts["skipIdentical"], 1)
+        XCTAssertEqual(counts["archiveSource"], 1)
+    }
+
+    func testRefusedReportsFolderIsUnreadable() throws {
+        let elsewhere = root.appendingPathComponent("elsewhere")
+        try fm.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        for ws in [src, tgt] {
+            let link = root.appendingPathComponent("\(ws)/Generated Reports")
+            try fm.createSymbolicLink(at: link, withDestinationURL: elsewhere)
+            assertUnreadable("reports")
+            try fm.removeItem(at: link)
+        }
+    }
+
+    func testNonFileOrLinkedTargetIsRefused() throws {
+        let name = "jamf-cli-data/computers/c_2026-01-01_000000.json"
+        try write("a", src, name)
+        try fm.createDirectory(
+            at: root.appendingPathComponent("\(tgt)/\(name)"), withIntermediateDirectories: true)
+        assertUnreadable("snapshots")
+        try fm.removeItem(at: root.appendingPathComponent("\(tgt)/jamf-cli-data/computers"))
+
+        let elsewhere = root.appendingPathComponent("elsewhere")
+        try fm.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        let kind = root.appendingPathComponent("\(tgt)/jamf-cli-data/computers")
+        try fm.createSymbolicLink(at: kind, withDestinationURL: elsewhere)
+        assertUnreadable("computers")
+    }
+
+    func testUnreadableConfigIsRefused() throws {
+        try fm.removeItem(at: root.appendingPathComponent("\(src)/config.yaml"))
+        assertUnreadable("config")
+    }
+
+    func testStateKindOnlyTheTargetHasMakesNoSteps() throws {
+        try write("2026-01-01T00:00:00Z", tgt, "jamf-cli-data/state/overview.last")
+        try write("1 x", tgt, "jamf-cli-data/state/overview.fail")
+        XCTAssertTrue(steps(try plan(), .state).isEmpty)
     }
 }

@@ -95,6 +95,8 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     }
 
     /// Lists both workspaces and decides each file. Hashes only names both sides hold.
+    /// `root` is for tests: it must equal the workspaces root `WorkspacePaths` follows, since
+    /// the subfolders come from there.
     static func make(
         source: String, target: String, now: Date = Date(),
         root: URL = ProfileService.workspacesRoot()
@@ -124,7 +126,7 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
         return WorkspaceMergePlan(
             source: source, target: target, stamp: stamp, mergedFolder: merged.path,
             steps: builder.steps + tail,
-            differingConfigKeys: builder.differingKeys(source: sourceWS, target: targetWS),
+            differingConfigKeys: try builder.differingKeys(source: sourceWS, target: targetWS),
             outsideSourceFolder: builder.outside)
     }
 
@@ -208,10 +210,11 @@ private final class Builder {
             guard let srcLast, tgtLast.map({ srcLast > $0 }) ?? true else { continue }
             let sourceNames = srcFiles.filter { Self.kindPrefix($0) == kind }
             for name in sourceNames {
-                let exists = tgtFiles.contains(name)
+                let exists = try Self.requireTargetClear(tgtDir, name, area: .state)
                 steps.append(step(.state, .replaceState, srcDir, tgtDir, name, archived: exists))
             }
-            for name in tgtFiles where Self.kindPrefix(name) == kind && !sourceNames.contains(name) {
+            for name in tgtFiles
+            where Self.kindPrefix(name) == kind && !sourceNames.contains(name) {
                 steps.append(step(.state, .archiveTarget, srcDir, tgtDir, name, archived: true))
             }
         }
@@ -220,18 +223,22 @@ private final class Builder {
     private func addSummaries() throws {
         let srcDir = try WorkspacePaths.summariesDir(for: source)
         let tgtDir = try WorkspacePaths.summariesDir(for: target)
-        let tgtNames = Set(try Self.children(of: tgtDir, directories: false))
+        _ = try Self.children(of: tgtDir, directories: false)  // refuses a linked folder
         var others: [String] = []
         for name in try Self.children(of: srcDir, directories: false) {
-            if CloudStorage.isCanonicalSummaryFilename(name), tgtNames.contains(name) {
+            let isCanonical = CloudStorage.isCanonicalSummaryFilename(name)
+            let inTarget = isCanonical
+                ? try Self.requireTargetClear(tgtDir, name, area: .summaries) : false
+            if isCanonical, inTarget {
                 let base = archive.appendingPathComponent("summaries")
                 steps.append(.init(
                     area: .summaries,
-                    action: .fillSummary(sourceArchive: base.appendingPathComponent("source/\(name)").path),
+                    action: .fillSummary(
+                        sourceArchive: base.appendingPathComponent("source/\(name)").path),
                     source: srcDir.appendingPathComponent(name).path,
                     target: tgtDir.appendingPathComponent(name).path,
                     archive: base.appendingPathComponent("target/\(name)").path))
-            } else if CloudStorage.isCanonicalSummaryFilename(name) {
+            } else if isCanonical {
                 steps.append(step(.summaries, .copy, srcDir, tgtDir, name))
             } else {
                 others.append(name)
@@ -256,12 +263,14 @@ private final class Builder {
     private func addRunHistory() throws {
         let srcLogs = try WorkspacePaths.runHistoryDir(for: source)
         let tgtLogs = try WorkspacePaths.runHistoryDir(for: target)
-        try addRule7(.runHistory, srcLogs, tgtLogs, try Self.recursive(srcLogs))
+        try addRule7(.runHistory, srcLogs, tgtLogs, try Self.recursive(srcLogs),
+                     archiveArea: "runHistory/logs")
         // Only the per-schedule status files; coordination files stay with the source (R6).
         let srcAuto = srcLogs.deletingLastPathComponent()
         let statuses = try Self.children(of: srcAuto, directories: false)
             .filter { $0.hasSuffix("_status.json") }
-        try addRule7(.runHistory, srcAuto, tgtLogs.deletingLastPathComponent(), statuses)
+        try addRule7(.runHistory, srcAuto, tgtLogs.deletingLastPathComponent(), statuses,
+                     archiveArea: "runHistory/status")
     }
 
     private func addBackups(_ srcWS: URL, _ tgtWS: URL) throws {
@@ -276,8 +285,14 @@ private final class Builder {
     }
 
     private func addReports() throws {
-        guard let srcDir = WorkspacePaths.readableReportsDir(for: source),
-              let tgtDir = WorkspacePaths.readableReportsDir(for: target) else { return }
+        guard let srcDir = WorkspacePaths.readableReportsDir(for: source) else {
+            throw WorkspaceMergePlan.PlanError.unreadable(
+                area: "reports", reason: "the source's reports folder was refused")
+        }
+        guard let tgtDir = WorkspacePaths.readableReportsDir(for: target) else {
+            throw WorkspaceMergePlan.PlanError.unreadable(
+                area: "reports", reason: "the target's reports folder was refused")
+        }
         try addRule7(.reports, srcDir, tgtDir, try Self.recursive(srcDir))
     }
 
@@ -285,38 +300,52 @@ private final class Builder {
         let inside = workspace.resolvingSymlinksInPath().standardizedFileURL.path + "/"
         var folders = [try WorkspacePaths.dataDir(for: source),
                        try WorkspacePaths.historicalDir(for: source)]
-        if let reports = WorkspacePaths.readableReportsDir(for: source) { folders.append(reports) }
+        if let reports = WorkspacePaths.readableReportsDir(for: source) {
+            folders.append(reports)
+        }
         for folder in folders {
             let path = folder.resolvingSymlinksInPath().standardizedFileURL.path
             if !(path + "/").hasPrefix(inside), !outside.contains(path) { outside.append(path) }
         }
     }
 
-    func differingKeys(source sourceWS: URL, target targetWS: URL) -> [String] {
-        func mapping(_ ws: URL) -> [String: Any] {
-            guard let text = try? ConfigLoader.readText(at: ws.appendingPathComponent("config.yaml")),
-                  let map = try? ConfigLoader.rawMapping(fromYAML: text) else { return [:] }
-            return map
+    func differingKeys(source sourceWS: URL, target targetWS: URL) throws -> [String] {
+        func mapping(_ ws: URL) throws -> [String: Any] {
+            let file = ws.appendingPathComponent("config.yaml")
+            do {
+                return try ConfigLoader.rawMapping(fromYAML: ConfigLoader.readText(at: file))
+            } catch {
+                throw WorkspaceMergePlan.PlanError.unreadable(
+                    area: "config", reason: "\(ws.lastPathComponent)/config.yaml: "
+                        + error.localizedDescription)
+            }
         }
         func canonical(_ value: Any?) -> Data? {
-            value.flatMap { try? JSONSerialization.data(withJSONObject: [$0], options: .sortedKeys) }
+            value.flatMap {
+                try? JSONSerialization.data(withJSONObject: [$0], options: .sortedKeys)
+            }
         }
-        let src = mapping(sourceWS), tgt = mapping(targetWS)
+        let src = try mapping(sourceWS), tgt = try mapping(targetWS)
         return Set(src.keys).union(tgt.keys)
-            .filter { $0 != "profiles" && $0 != "jamf_cli" && canonical(src[$0]) != canonical(tgt[$0]) }
+            .filter {
+                $0 != "profiles" && $0 != "jamf_cli" && canonical(src[$0]) != canonical(tgt[$0])
+            }
             .sorted()
     }
 
     // MARK: Rules
 
-    /// R7 for each relative path the source holds.
+    /// R7 for each relative path the source holds. `archiveArea` overrides the archive
+    /// subfolder (default: the area name), so Run History's logs and status files stay apart.
     private func addRule7(
-        _ area: Area, _ srcRoot: URL, _ tgtRoot: URL, _ rels: [String]
+        _ area: Area, _ srcRoot: URL, _ tgtRoot: URL, _ rels: [String],
+        archiveArea: String? = nil
     ) throws {
         for rel in rels {
             let src = srcRoot.appendingPathComponent(rel)
             let tgt = tgtRoot.appendingPathComponent(rel)
-            guard Self.isRegular(tgt) else {
+            let exists = try Self.requireTargetClear(tgtRoot, rel, area: area)
+            guard exists else {
                 steps.append(step(area, .copy, srcRoot, tgtRoot, rel))
                 continue
             }
@@ -325,21 +354,40 @@ private final class Builder {
                     area: area.rawValue, reason: "could not hash \(rel)")
             }
             steps.append(step(area, a == b ? .skipIdentical : .archiveSource,
-                              srcRoot, tgtRoot, rel, archived: a != b))
+                              srcRoot, tgtRoot, rel, archived: a != b, archiveArea: archiveArea))
         }
+    }
+
+    /// Refuses a link anywhere on the target path and a non-file at its end; true when a
+    /// regular file is there. A copy must never write through a link.
+    private static func requireTargetClear(_ root: URL, _ rel: String, area: Area) throws -> Bool {
+        var current = root
+        try requireNotLink(current)
+        let parts = rel.split(separator: "/").map(String.init)
+        for (index, part) in parts.enumerated() {
+            current.appendPathComponent(part)
+            try requireNotLink(current)
+            if index == parts.count - 1, FileManager.default.fileExists(atPath: current.path),
+               !isRegular(current) {
+                throw WorkspaceMergePlan.PlanError.unreadable(
+                    area: area.rawValue, reason: "\(rel) in the target is not a regular file")
+            }
+        }
+        return isRegular(current)
     }
 
     /// `archived` puts the archive path under `<merged>/archive/<area>/<rel>` (R13). The
     /// `.archiveSource` and `.archiveTarget` actions name the file they archive there.
     private func step(
         _ area: Area, _ action: WorkspaceMergePlan.Action, _ srcRoot: URL, _ tgtRoot: URL,
-        _ rel: String, archived: Bool = false
+        _ rel: String, archived: Bool = false, archiveArea: String? = nil
     ) -> WorkspaceMergePlan.Step {
         .init(area: area, action: action,
               source: srcRoot.appendingPathComponent(rel).path,
               target: tgtRoot.appendingPathComponent(rel).path,
               archive: archived
-                ? archive.appendingPathComponent(area.rawValue).appendingPathComponent(rel).path
+                ? archive.appendingPathComponent(archiveArea ?? area.rawValue)
+                    .appendingPathComponent(rel).path
                 : nil)
     }
 
