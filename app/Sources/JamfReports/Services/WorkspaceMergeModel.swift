@@ -44,6 +44,8 @@ final class WorkspaceMergeModel {
             -> WorkspaceMergePlan
         var run: @Sendable (WorkspaceMergeJournal,
             @escaping @Sendable (Int, Int) -> Void) async throws -> Void
+        /// The journal on disk now; a resume never trusts one read earlier.
+        var pending: @Sendable (_ target: String) -> WorkspaceMergeJournal?
 
         /// `rewritePolicy` is the GUI's: it owns the stored `AutomationPolicy`.
         static func live(
@@ -69,18 +71,17 @@ final class WorkspaceMergeModel {
                 run: { journal, progress in
                     try await WorkspaceMergeExecutor.run(
                         journal, deps: .live(rewritePolicy: rewritePolicy), progress: progress)
-                })
+                },
+                pending: { WorkspaceMergeJournal.pending(target: $0) })
         }
     }
 
     var phase: Phase = .choose
     let target: String
-    private let pending: WorkspaceMergeJournal?
     private let deps: Dependencies
 
-    init(target: String, pending: WorkspaceMergeJournal?, deps: Dependencies) {
+    init(target: String, deps: Dependencies) {
         self.target = target
-        self.pending = pending
         self.deps = deps
     }
 
@@ -98,10 +99,10 @@ final class WorkspaceMergeModel {
         case .same:
             break
         case .different(let jamfPro, let platform):
-            phase = .refused(L("\(source) reaches \(platform), not this workspace's Jamf Pro (\(jamfPro)). Nothing was changed."))
+            phase = .refused(L("\(ConfigSchema.displayText(source)) reaches \(ConfigSchema.displayText(platform)), not this workspace's Jamf Pro (\(ConfigSchema.displayText(jamfPro))). Nothing was changed."))
             return
         case .unknown:
-            phase = .refused(L("Could not confirm that \(source) reaches the same Jamf Pro as \(target). Nothing was changed. You can still add \(source) as this workspace's Platform API profile from the Add sheet."))
+            phase = .refused(L("Could not confirm that \(ConfigSchema.displayText(source)) reaches the same Jamf Pro as \(ConfigSchema.displayText(target)). Nothing was changed. You can still add \(ConfigSchema.displayText(source)) as this workspace's Platform API profile from the Add sheet."))
             return
         }
         do {
@@ -117,8 +118,12 @@ final class WorkspaceMergeModel {
     }
 
     func resume() async {
-        guard let pending else { return }
-        await run(pending)
+        let target = target, read = deps.pending
+        guard let journal = await Task.detached(operation: { read(target) }).value else {
+            phase = .failed(L("There is no unfinished merge to resume."))
+            return
+        }
+        await run(journal)
     }
 
     private func run(_ journal: WorkspaceMergeJournal) async {

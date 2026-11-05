@@ -7,15 +7,18 @@ struct WorkspaceMergeSheet: View {
     /// Runs the interrupted merge as soon as the sheet opens (the card's Resume).
     var resumes = false
     /// Called once the merge finished, so the store and the card reload.
-    var onFinished: () -> Void
+    var onFinished: (String) -> Void
+    /// Called when a merge stops part way, so the card shows its Resume banner.
+    var onFailed: () -> Void = {}
     @State private var model: WorkspaceMergeModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorSchemeContrast) private var contrast
 
     init(
         model: WorkspaceMergeModel, candidates: [String], resumes: Bool = false,
-        onFinished: @escaping () -> Void
+        onFinished: @escaping (String) -> Void, onFailed: @escaping () -> Void = {}
     ) {
+        self.onFailed = onFailed
         _model = State(initialValue: model)
         self.candidates = candidates
         self.resumes = resumes
@@ -47,7 +50,8 @@ struct WorkspaceMergeSheet: View {
         .interactiveDismissDisabled(model.isBusy)
         .task { if resumes { await model.resume() } }
         .onChange(of: model.phase) { _, phase in
-            if case .finished = phase { onFinished() }
+            if case .finished(let folder) = phase { onFinished(folder) }
+            if case .failed = phase { onFailed() }
         }
     }
 
@@ -200,10 +204,10 @@ struct WorkspaceMergeSheet: View {
 
 #if DEBUG
 @MainActor private func previewModel(_ phase: WorkspaceMergeModel.Phase) -> WorkspaceMergeModel {
-    let model = WorkspaceMergeModel(target: "Acme", pending: nil, deps: .init(
+    let model = WorkspaceMergeModel(target: "Acme", deps: .init(
         hostVerdict: { _, _ in .same },
         makePlan: { _, _ in throw CancellationError() },
-        run: { _, _ in }))
+        run: { _, _ in }, pending: { _ in nil }))
     model.phase = phase
     return model
 }
@@ -225,7 +229,7 @@ private let previewPlan = WorkspaceMergePlan(
 
 #Preview("Merge sheet, ready") {
     WorkspaceMergeSheet(
-        model: previewModel(.ready(previewPlan)), candidates: ["Acme-Platform"], onFinished: {})
+        model: previewModel(.ready(previewPlan)), candidates: ["Acme-Platform"], onFinished: { _ in })
         .frame(width: PageScaffold<EmptyView>.minSupportedWidth, height: 560)
         .preferredColorScheme(.dark)
 }
@@ -234,7 +238,7 @@ private let previewPlan = WorkspaceMergePlan(
     WorkspaceMergeSheet(
         model: previewModel(.refused(
             "Acme-Platform reaches other.example.com, not this workspace's Jamf Pro (acme.example.com). Nothing was changed.")),
-        candidates: ["Acme-Platform", "Beta-Platform"], onFinished: {})
+        candidates: ["Acme-Platform", "Beta-Platform"], onFinished: { _ in })
         .frame(width: PageScaffold<EmptyView>.minSupportedWidth, height: 440)
         .preferredColorScheme(.dark)
 }

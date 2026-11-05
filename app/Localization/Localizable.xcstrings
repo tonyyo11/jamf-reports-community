@@ -73973,6 +73973,46 @@
         }
       }
     },
+    "Merge finished. The source folder is in %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführung abgeschlossen. Der Quellordner liegt in %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusión terminada. La carpeta de origen está en %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusion terminée. Le dossier source se trouve dans %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unione completata. La cartella di origine si trova in %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージが完了しました。ソースフォルダは%@にあります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesclagem concluída. A pasta de origem está em %@."
+          }
+        }
+      }
+    },
     "Merge step %lld did not finish: %@" : {
       "localizations" : {
         "de" : {
@@ -118409,6 +118449,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O local do espaço de trabalho é definido pelo perfil de configuração da sua organização e não pode ser alterado aqui."
+          }
+        }
+      }
+    },
+    "There is no unfinished merge to resume." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es gibt keine unvollständige Zusammenführung, die fortgesetzt werden könnte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ninguna fusión sin terminar que reanudar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune fusion inachevée à reprendre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non c’è alcuna unione incompleta da riprendere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再開できる未完了のマージはありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não há nenhuma mesclagem inacabada para retomar."
           }
         }
       }

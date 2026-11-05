@@ -42,6 +42,7 @@ final class WorkspaceMergeModelTests: XCTestCase {
         var planned = 0
         var ran: [WorkspaceMergeJournal] = []
         var runError: Error?
+        var onDisk: WorkspaceMergeJournal?
     }
 
     private let plan = WorkspaceMergePlan(
@@ -51,18 +52,17 @@ final class WorkspaceMergeModelTests: XCTestCase {
             .init(area: .config, action: .tail(.moveSource), source: "a", target: "b", archive: nil),
         ], differingConfigKeys: [], outsideSourceFolder: [])
 
-    private func model(
-        _ spy: Spy, pending: WorkspaceMergeJournal? = nil
-    ) -> WorkspaceMergeModel {
+    private func model(_ spy: Spy) -> WorkspaceMergeModel {
         let plan = plan
-        return WorkspaceMergeModel(target: "Acme", pending: pending, deps: .init(
+        return WorkspaceMergeModel(target: "Acme", deps: .init(
             hostVerdict: { _, _ in spy.verdict },
             makePlan: { _, _ in spy.planned += 1; return plan },
             run: { journal, progress in
                 spy.ran.append(journal)
                 progress(1, 2)
                 if let error = spy.runError { throw error }
-            }))
+            },
+            pending: { _ in spy.onDisk }))
     }
 
     func testDifferentAndUnknownRefuseWithoutPlanning() async {
@@ -103,12 +103,21 @@ final class WorkspaceMergeModelTests: XCTestCase {
             ConfigSchema.fullDisplayText(CLIBridgeError.tickLockHeld.localizedDescription).text))
     }
 
-    func testResumeRunsThePendingJournalUnchanged() async {
+    func testResumeRunsTheJournalOnDiskNow() async {
         let spy = Spy()
-        let journal = WorkspaceMergeJournal(plan: plan, done: 1)
-        let model = model(spy, pending: journal)
+        let fresh = WorkspaceMergeJournal(plan: plan, done: 3)
+        spy.onDisk = fresh
+        let model = model(spy)
         await model.resume()
-        XCTAssertEqual(spy.ran, [journal])
+        XCTAssertEqual(spy.ran, [fresh])
         XCTAssertEqual(model.phase, .finished(mergedFolder: plan.mergedFolder))
+    }
+
+    func testResumeWithNoJournalFails() async {
+        let spy = Spy()
+        let model = model(spy)
+        await model.resume()
+        XCTAssertTrue(spy.ran.isEmpty)
+        guard case .failed = model.phase else { return XCTFail("not failed") }
     }
 }

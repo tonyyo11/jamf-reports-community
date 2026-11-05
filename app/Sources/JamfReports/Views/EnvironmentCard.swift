@@ -42,18 +42,11 @@ struct EnvironmentCard: View {
                 }
             }
         }
-        .task(id: state.workspace) {
-            let target = state.workspace
-            let journal = demo ? nil : await Task.detached {
-                WorkspaceMergeJournal.pending(target: target)
-            }.value
-            guard target == state.workspace else { return }
-            pendingMerge = journal
-        }
-        .sheet(item: $mergeSession) { session in
+        .task(id: state.workspace) { await reloadPendingMerge() }
+        .sheet(item: $mergeSession, onDismiss: { Task { await reloadPendingMerge() } }) { session in
             WorkspaceMergeSheet(
                 model: session.model, candidates: mergeCandidates, resumes: session.resumes,
-                onFinished: mergeFinished)
+                onFinished: mergeFinished, onFailed: { Task { await reloadPendingMerge() } })
         }
         .confirmationDialog(
             pendingRemoval.map { $0.slot == .protect
@@ -178,6 +171,15 @@ struct EnvironmentCard: View {
         }
     }
 
+    private func reloadPendingMerge() async {
+        let target = state.workspace
+        let journal = demo ? nil : await Task.detached {
+            WorkspaceMergeJournal.pending(target: target)
+        }.value
+        guard target == state.workspace else { return }
+        pendingMerge = journal
+    }
+
     private func startMerge(resumes: Bool) {
         let store = workspace
         let deps = WorkspaceMergeModel.Dependencies.live { from, to in
@@ -188,14 +190,16 @@ struct EnvironmentCard: View {
             await store.applyAutomationPolicy()
         }
         mergeSession = MergeSession(
-            model: WorkspaceMergeModel(
-                target: state.workspace, pending: resumes ? pendingMerge : nil, deps: deps),
+            model: WorkspaceMergeModel(target: state.workspace, deps: deps),
             resumes: resumes)
     }
 
     /// Discovery, the sidebar and the active profile (P5's owner switch) read the new layout.
-    private func mergeFinished() {
+    private func mergeFinished(_ folder: String) {
         pendingMerge = nil
+        workspace.toast = Toast(
+            message: L("Merge finished. The source folder is in \(ConfigSchema.fullDisplayText(folder).text)."),
+            style: .success)
         workspace.credentialsChanged()
         onChanged()
     }
