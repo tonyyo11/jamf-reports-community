@@ -251,7 +251,12 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         try setUpWithError()
         let thrown = Calls()
         let j = try journal()
-        try write("planted", tgt, snap + "c_2026-01-01_000000.json")
+        // Other bytes at an archive path the plan named: the archive copy refuses.
+        let archived = merged(j).appendingPathComponent(
+            "archive/snapshots/computers/c_2026-01-04_000000.json")
+        try fm.createDirectory(at: archived.deletingLastPathComponent(),
+                               withIntermediateDirectories: true)
+        try "planted".write(to: archived, atomically: true, encoding: .utf8)
         do {
             try await WorkspaceMergeExecutor.run(j, deps: deps(claims: thrown))
             XCTFail("the planted file must stop the run")
@@ -260,14 +265,14 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
                                          "release \(src)", "release \(tgt)"])
     }
 
-    func testDifferentBytesAtACopyDestinationIsAStepError() async throws {
+    /// The target gained the file after planning: R7 keeps it and archives the source's.
+    func testCopyDestinationTheTargetGainedFallsBackToTheArchive() async throws {
         let j = try journal()
         try write("planted", tgt, snap + "c_2026-01-01_000000.json")
-        do {
-            try await WorkspaceMergeExecutor.run(j, deps: deps())
-            XCTFail("a copy must never overwrite")
-        } catch WorkspaceMergeExecutor.RunError.step {}
+        try await WorkspaceMergeExecutor.run(j, deps: deps())
         XCTAssertEqual(read(url(tgt, snap + "c_2026-01-01_000000.json")), "planted")
+        XCTAssertEqual(read(merged(j).appendingPathComponent(
+            "archive/snapshots/computers/c_2026-01-01_000000.json")), "a")
     }
 
     func testSourcePinRemovedTargetPinKept() async throws {
@@ -304,8 +309,35 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         policy.reportGroups = [ReportGroup(name: "fleet", workspaces: [tgt, src, "Other"]),
                                ReportGroup(name: "two", workspaces: [src])]
         let next = policy.replacingWorkspace(src, with: tgt)
-        XCTAssertEqual(next.excludedWorkspaces, [tgt, "Other"])
+        XCTAssertEqual(next.excludedWorkspaces, ["Other", tgt])
         XCTAssertEqual(next.reportGroups.map(\.workspaces), [[tgt, "Other"], [tgt]])
+    }
+
+    /// The target stays excluded only when both twins were (earlier hints named either one).
+    private var exclusionCases: [(before: [String], after: [String])] {
+        [([tgt, "Other"], ["Other"]), ([src, "Other"], ["Other"]),
+         ([src, tgt, "Other"], [tgt, "Other"]), (["Other"], ["Other"])]
+    }
+
+    func testPolicyExclusionsAfterMerge() {
+        for (before, after) in exclusionCases {
+            var policy = AutomationPolicy()
+            policy.excludedWorkspaces = before
+            XCTAssertEqual(policy.replacingWorkspace(src, with: tgt).excludedWorkspaces, after,
+                           "\(before)")
+        }
+    }
+
+    func testScheduleExclusionsAfterMerge() throws {
+        let store = ScheduleStore(url: root.appendingPathComponent("schedules.json"))
+        for (before, after) in exclusionCases {
+            var record = try JSONDecoder().decode(ScheduleRecord.self, from: Data(
+                #"{"label":"l.all","profile":"","allProfiles":true}"#.utf8))
+            record.excludedWorkspaces = before
+            try store.save([record])
+            try store.retarget(from: src, to: tgt)
+            XCTAssertEqual(store.load().first?.excludedWorkspaces, after, "\(before)")
+        }
     }
 
     @MainActor
@@ -505,4 +537,92 @@ private final class Counter: @unchecked Sendable {
     private var count = 0
     var value: Int { lock.withLock { count } }
     func next() -> Int { lock.withLock { count += 1; return count } }
+}
+
+// MARK: - Final review
+
+extension WorkspaceMergeExecutorTests {
+    func testSummaryTheTargetGainedIsFilled() async throws {
+        let name = "snapshots/summaries/summary_2026-01-05.json"
+        try write(#"{"date":"2026-01-05","totalDevices":5,"source":"jamf-cli","sipPct":90}"#,
+                  src, name)
+        let j = try journal()
+        try write(#"{"date":"2026-01-05","totalDevices":7,"source":"jamf-cli"}"#, tgt, name)
+        try await WorkspaceMergeExecutor.run(j, deps: deps())
+        let filled = try SummaryJSONParser.parse(url(tgt, name))
+        XCTAssertEqual(filled.totalDevices, 7)
+        XCTAssertEqual(filled.sipPct, 90)
+        for side in ["target", "source"] {
+            XCTAssertNotNil(read(merged(j).appendingPathComponent(
+                "archive/summaries/\(side)/summary_2026-01-05.json")), side)
+        }
+    }
+
+    func testReplaceStateArchivesATargetFileThatAppeared() async throws {
+        try write("3", src, "jamf-cli-data/state/overview.timeouts")
+        let j = try journal()
+        try write("9", tgt, "jamf-cli-data/state/overview.timeouts")
+        try await WorkspaceMergeExecutor.run(j, deps: deps())
+        XCTAssertEqual(read(url(tgt, "jamf-cli-data/state/overview.timeouts")), "3")
+        XCTAssertEqual(read(merged(j).appendingPathComponent(
+            "archive/state/overview.timeouts")), "9")
+    }
+
+    func testSourceFolderSwappedForALinkStopsTheStep() async throws {
+        let j = try journal()
+        let kind = url(src, "jamf-cli-data/computers")
+        let elsewhere = root.appendingPathComponent("elsewhere", isDirectory: true)
+        try fm.moveItem(at: kind, to: elsewhere)
+        try fm.createSymbolicLink(at: kind, withDestinationURL: elsewhere)
+        do {
+            try await WorkspaceMergeExecutor.run(j, deps: deps())
+            XCTFail("a linked source folder must stop the run")
+        } catch WorkspaceMergeExecutor.RunError.step {}
+        XCTAssertFalse(fm.fileExists(atPath: url(tgt, snap + "c_2026-01-01_000000.json").path))
+        XCTAssertFalse(fm.fileExists(atPath: merged(j).appendingPathComponent("archive").path))
+    }
+
+    private func laterJournal() throws -> WorkspaceMergeJournal {
+        WorkspaceMergeJournal(plan: try WorkspaceMergePlan.make(
+            source: src, target: tgt, now: Date().addingTimeInterval(3600), root: root), done: 0)
+    }
+
+    func testAFreshMergeDoesNotOverwriteAPendingJournal() async throws {
+        let first = try journal()
+        try await stopped(first, after: 1)
+        do {
+            try await WorkspaceMergeExecutor.run(try laterJournal(), deps: deps())
+            XCTFail("a pending journal must refuse a fresh merge")
+        } catch {
+            XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,
+                           .pendingMerge(source: src))
+        }
+        XCTAssertEqual(WorkspaceMergeJournal.pending(target: tgt), WorkspaceMergeJournal(
+            plan: first.plan, done: 1))
+    }
+
+    func testStartOverKeepsTheRecordAndAllowsANewMerge() async throws {
+        let first = try journal()
+        try await stopped(first, after: 1)
+        try WorkspaceMergeJournal.startOver(target: tgt)
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        let record = try Data(contentsOf: merged(first).appendingPathComponent(
+            "merge-journal.json"))
+        XCTAssertEqual(try JSONDecoder().decode(WorkspaceMergeJournal.self, from: record).done, 1)
+        let next = try laterJournal()
+        try await WorkspaceMergeExecutor.run(next, deps: deps())
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+    }
+
+    func testAFinishedPendingJournalIsRetired() throws {
+        var finished = try journal()
+        finished.done = finished.plan.steps.count
+        let pendingURL = try WorkspaceMergeJournal.location(target: tgt)
+        try fm.createDirectory(at: pendingURL.deletingLastPathComponent(),
+                               withIntermediateDirectories: true)
+        try JSONEncoder().encode(finished).write(to: pendingURL)
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertFalse(fm.fileExists(atPath: pendingURL.path))
+        XCTAssertTrue(fm.fileExists(atPath: finished.recordURL.path))
+    }
 }

@@ -16,6 +16,7 @@ struct EnvironmentCard: View {
     @State private var backupNote: String?
     @State private var pendingMerge: WorkspaceMergeJournal?
     @State private var mergeSession: MergeSession?
+    @State private var confirmStartOver = false
 
     private struct MergeSession: Identifiable {
         let id = UUID()
@@ -59,6 +60,11 @@ struct EnvironmentCard: View {
             Button(L("Remove"), role: .destructive) { remove(row) }
         } message: { row in
             Text(L("The jamf-cli profile \(ConfigSchema.displayText(row.profile ?? "")) and its snapshots stay."))
+        }
+        .confirmationDialog(L("Start the merge over?"), isPresented: $confirmStartOver) {
+            Button(L("Start over"), role: .destructive) { startOver() }
+        } message: {
+            Text(L("The unfinished merge's record moves into its merged folder. Files it already copied stay where they are."))
         }
     }
 
@@ -159,9 +165,9 @@ struct EnvironmentCard: View {
     @ViewBuilder
     private var mergeSection: some View {
         if pendingMerge != nil {
-            MergeResumeBanner { startMerge(resumes: true) }
-        }
-        if !mergeCandidates.isEmpty {
+            MergeResumeBanner(onResume: { startMerge(resumes: true) },
+                              onStartOver: { confirmStartOver = true })
+        } else if !mergeCandidates.isEmpty {
             WrappingRow {
                 PNPButton(title: L("Merge another workspace into this one"),
                           icon: "arrow.triangle.merge", style: .ghost, size: .sm) {
@@ -192,6 +198,21 @@ struct EnvironmentCard: View {
         mergeSession = MergeSession(
             model: WorkspaceMergeModel(target: state.workspace, deps: deps),
             resumes: resumes)
+    }
+
+    private func startOver() {
+        let target = state.workspace
+        actionError = nil
+        Task {
+            do {
+                try await Task.detached { try WorkspaceMergeJournal.startOver(target: target) }
+                    .value
+            } catch {
+                guard target == state.workspace else { return }
+                actionError = error.localizedDescription
+            }
+            await reloadPendingMerge()
+        }
     }
 
     /// Discovery, the sidebar and the active profile (P5's owner switch) read the new layout.
@@ -276,12 +297,19 @@ struct EnvironmentCard: View {
 /// Shown on the Environment card while a merge's journal is pending.
 struct MergeResumeBanner: View {
     var onResume: () -> Void
+    var onStartOver: () -> Void
 
     var body: some View {
-        InlineBanner(
-            icon: "exclamationmark.triangle.fill", tone: .warn,
-            action: .init(label: L("Resume"), icon: "play.fill", handler: onResume)
-        ) { Text(L("A merge into this workspace did not finish.")) }
+        VStack(alignment: .leading, spacing: 6) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn,
+                action: .init(label: L("Resume"), icon: "play.fill", handler: onResume)
+            ) { Text(L("A merge into this workspace did not finish.")) }
+            WrappingRow {
+                PNPButton(title: L("Start over…"), icon: "arrow.counterclockwise",
+                          style: .ghost, size: .sm, action: onStartOver)
+            }
+        }
     }
 }
 
@@ -320,7 +348,7 @@ private let previewState = EnvironmentCardState(
     ])
 
 #Preview("Merge resume banner") {
-    Card(padding: 18) { MergeResumeBanner {} }
+    Card(padding: 18) { MergeResumeBanner(onResume: {}, onStartOver: {}) }
         .padding(16)
         .frame(width: PageScaffold<EmptyView>.minSupportedWidth)
         .preferredColorScheme(.dark)

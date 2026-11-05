@@ -95,12 +95,31 @@ final class WorkspaceMergeModelTests: XCTestCase {
         XCTAssertEqual(done.phase, .finished(mergedFolder: plan.mergedFolder))
         XCTAssertEqual(spy.ran.first?.done, 0)
 
-        spy.runError = CLIBridgeError.tickLockHeld
+        let stepError = WorkspaceMergeExecutor.RunError.step(index: 2, reason: "disk full")
+        spy.runError = stepError
         let failed = model(spy)
         await failed.choose(source: "Acme-P")
         await failed.merge()
         XCTAssertEqual(failed.phase, .failed(
-            ConfigSchema.fullDisplayText(CLIBridgeError.tickLockHeld.localizedDescription).text))
+            ConfigSchema.fullDisplayText(stepError.localizedDescription).text))
+    }
+
+    /// Refused before a write: there is no journal, so the sheet does not offer Resume.
+    func testRefusalsBeforeAnyWriteAreRefused() async {
+        let errors: [Error] = [
+            CLIBridgeError.tickLockHeld,
+            WorkspaceMergeExecutor.RunError.peerClaim(workspace: "Acme", host: "mac"),
+            WorkspaceMergeExecutor.RunError.pendingMerge(source: "Old"),
+        ]
+        for error in errors {
+            let spy = Spy()
+            spy.runError = error
+            let model = model(spy)
+            await model.choose(source: "Acme-P")
+            await model.merge()
+            XCTAssertEqual(model.phase, .refused(
+                ConfigSchema.fullDisplayText(error.localizedDescription).text), "\(error)")
+        }
     }
 
     func testResumeRunsTheJournalOnDiskNow() async {

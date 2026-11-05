@@ -15,7 +15,8 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     }
 
     enum Action: Codable, Equatable, Sendable {
-        /// The target lacks the name.
+        /// The target lacks the name. `archive` is where the source's file goes instead when the
+        /// target gains the name before the step runs (R7).
         case copy
         /// Same name, same SHA-256. Listed so the sheet can count it; the executor does nothing.
         case skipIdentical
@@ -24,8 +25,8 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
         /// Both have the day: `target.filling(from: source)` is written to `target`, after both
         /// originals are copied into the archive (`archive` for the target's, `sourceArchive`).
         case fillSummary(sourceArchive: String)
-        /// State: the source side is newer. The target's file (if any) goes to `archive`, then
-        /// the source's file replaces it.
+        /// State: the source side is newer. The target's file (if any, also one that appears
+        /// after planning) goes to `archive`, then the source's file replaces it.
         case replaceState
         /// State: the source side is newer and lacks this target file. It moves to `archive`.
         case archiveTarget
@@ -69,6 +70,13 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     var differingConfigKeys: [String]
     /// Source folders read from outside the source workspace (R10).
     var outsideSourceFolder: [String]
+
+    /// Where a summary's two originals are archived before a fill (`side`: "target" or
+    /// "source"), so a fill the executor falls back to uses the plan's paths.
+    static func summaryArchive(mergedFolder: String, side: String, name: String) -> URL {
+        URL(fileURLWithPath: mergedFolder, isDirectory: true)
+            .appendingPathComponent("archive/summaries/\(side)/\(name)")
+    }
 
     /// How many steps of each action each area has, for the sheet. Tail steps are left out.
     func counts() -> [Area: [String: Int]] {
@@ -118,7 +126,7 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
         let sourceWS = WorkspacePaths.workspaceURL(for: sourceID, under: root)
         let targetWS = WorkspacePaths.workspaceURL(for: targetID, under: root)
         let builder = Builder(
-            source: source, target: target, archive: merged.appendingPathComponent("archive"))
+            source: source, target: target, merged: merged.path)
         try builder.addAll(sourceWorkspace: sourceWS, targetWorkspace: targetWS)
         let tail = Tail.allCases.map {
             Step(area: .config, action: .tail($0), source: "", target: "")
@@ -143,16 +151,18 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
 private final class Builder {
     let source: String
     let target: String
+    let merged: String
     let archive: URL
     var steps: [WorkspaceMergePlan.Step] = []
     var outside: [String] = []
 
     typealias Area = WorkspaceMergePlan.Area
 
-    init(source: String, target: String, archive: URL) {
+    init(source: String, target: String, merged: String) {
         self.source = source
         self.target = target
-        self.archive = archive
+        self.merged = merged
+        archive = URL(fileURLWithPath: merged, isDirectory: true).appendingPathComponent("archive")
     }
 
     func addAll(sourceWorkspace: URL, targetWorkspace: URL) throws {
@@ -210,8 +220,10 @@ private final class Builder {
             guard let srcLast, tgtLast.map({ srcLast > $0 }) ?? true else { continue }
             let sourceNames = srcFiles.filter { Self.kindPrefix($0) == kind }
             for name in sourceNames {
-                let exists = try Self.requireTargetClear(tgtDir, name, area: .state)
-                steps.append(step(.state, .replaceState, srcDir, tgtDir, name, archived: exists))
+                _ = try Self.requireTargetClear(tgtDir, name, area: .state)
+                // Archive path named even when the target lacks the file: a collect may write
+                // it before the step runs.
+                steps.append(step(.state, .replaceState, srcDir, tgtDir, name, archived: true))
             }
             for name in tgtFiles
             where Self.kindPrefix(name) == kind && !sourceNames.contains(name) {
@@ -230,14 +242,16 @@ private final class Builder {
             let inTarget = isCanonical
                 ? try Self.requireTargetClear(tgtDir, name, area: .summaries) : false
             if isCanonical, inTarget {
-                let base = archive.appendingPathComponent("summaries")
+                func archived(_ side: String) -> String {
+                    WorkspaceMergePlan.summaryArchive(mergedFolder: merged, side: side, name: name)
+                        .path
+                }
                 steps.append(.init(
                     area: .summaries,
-                    action: .fillSummary(
-                        sourceArchive: base.appendingPathComponent("source/\(name)").path),
+                    action: .fillSummary(sourceArchive: archived("source")),
                     source: srcDir.appendingPathComponent(name).path,
                     target: tgtDir.appendingPathComponent(name).path,
-                    archive: base.appendingPathComponent("target/\(name)").path))
+                    archive: archived("target")))
             } else if isCanonical {
                 steps.append(step(.summaries, .copy, srcDir, tgtDir, name))
             } else {
@@ -263,7 +277,7 @@ private final class Builder {
     private func addRunHistory() throws {
         let srcLogs = try WorkspacePaths.runHistoryDir(for: source)
         let tgtLogs = try WorkspacePaths.runHistoryDir(for: target)
-        try addRule7(.runHistory, srcLogs, tgtLogs, try Self.recursive(srcLogs),
+        try addRule7(.runHistory, srcLogs, tgtLogs, try Self.logsKept(srcLogs, tgtLogs),
                      archiveArea: "runHistory/logs")
         // Only the per-schedule status files; coordination files stay with the source (R6).
         let srcAuto = srcLogs.deletingLastPathComponent()
@@ -346,7 +360,8 @@ private final class Builder {
             let tgt = tgtRoot.appendingPathComponent(rel)
             let exists = try Self.requireTargetClear(tgtRoot, rel, area: area)
             guard exists else {
-                steps.append(step(area, .copy, srcRoot, tgtRoot, rel))
+                steps.append(step(area, .copy, srcRoot, tgtRoot, rel, archived: true,
+                                  archiveArea: archiveArea))
                 continue
             }
             guard let a = BoundedFile.sha256Hex(src), let b = BoundedFile.sha256Hex(tgt) else {
@@ -377,7 +392,8 @@ private final class Builder {
     }
 
     /// `archived` puts the archive path under `<merged>/archive/<area>/<rel>` (R13). The
-    /// `.archiveSource` and `.archiveTarget` actions name the file they archive there.
+    /// `.archiveSource` and `.archiveTarget` actions name the file they archive there; `.copy`
+    /// and `.replaceState` use it only when the target gained the file after planning.
     private func step(
         _ area: Area, _ action: WorkspaceMergePlan.Action, _ srcRoot: URL, _ tgtRoot: URL,
         _ rel: String, archived: Bool = false, archiveArea: String? = nil
@@ -392,6 +408,31 @@ private final class Builder {
     }
 
     // MARK: Listing
+
+    /// The source's log files that are among the newest `ScheduledRunRecorder.maxRunLogs` of
+    /// both folders together, by mtime as the recorder prunes. Copying older ones would make the
+    /// target's next run prune its own logs; they stay in the moved source folder.
+    private static func logsKept(_ srcLogs: URL, _ tgtLogs: URL) throws -> [String] {
+        func dated(_ dir: URL, _ rels: [String], source: Bool) -> [(Date, String?)] {
+            rels.map { rel in
+                let file = dir.appendingPathComponent(rel)
+                let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate) ?? .distantPast
+                return (date, source ? rel : nil)
+            }
+        }
+        let recorderLogs = { (rels: [String]) in
+            rels.filter { !$0.contains("/") && ScheduledRunRecorder.isRecorderLogName($0) }
+        }
+        let srcAll = try recursive(srcLogs)
+        let pruned = dated(srcLogs, recorderLogs(srcAll), source: true)
+            + dated(tgtLogs, recorderLogs(try recursive(tgtLogs)), source: false)
+        let kept = Set(pruned.sorted { $0.0 > $1.0 }.prefix(ScheduledRunRecorder.maxRunLogs)
+            .compactMap(\.1))
+        // Files the recorder never prunes (other names, subfolders) are copied as before.
+        let prunable = Set(recorderLogs(srcAll))
+        return srcAll.filter { !prunable.contains($0) || kept.contains($0) }
+    }
 
     private static func kindPrefix(_ name: String) -> String { String(name.prefix { $0 != "." }) }
 

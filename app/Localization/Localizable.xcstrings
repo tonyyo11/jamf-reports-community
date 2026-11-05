@@ -23327,6 +23327,46 @@
         }
       }
     },
+    "A merge of %@ into this workspace did not finish. Resume it or start over before merging another workspace." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Zusammenführung von %@ in diesen Arbeitsbereich wurde nicht abgeschlossen. Setzen Sie sie fort oder beginnen Sie neu, bevor Sie einen anderen Arbeitsbereich zusammenführen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusión de %@ en este espacio de trabajo no terminó. Reanúdela o empiece de nuevo antes de fusionar otro espacio de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusion de %@ dans cet espace de travail ne s’est pas terminée. Reprenez-la ou recommencez avant de fusionner un autre espace de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’unione di %@ in questo spazio di lavoro non è stata completata. Riprendila o ricomincia prima di unire un altro spazio di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ のこのワークスペースへのマージが完了していません。別のワークスペースをマージする前に、再開するか最初からやり直してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mesclagem de %@ neste espaço de trabalho não foi concluída. Retome-a ou recomece antes de mesclar outro espaço de trabalho."
+          }
+        }
+      }
+    },
     "A name that differs from %@ only by letter case would share its folder. Pick another label." : {
       "localizations" : {
         "de" : {
@@ -112885,6 +112925,86 @@
         }
       }
     },
+    "Start over…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neu beginnen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar de nuevo…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommencer…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricomincia…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最初からやり直す…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recomeçar…"
+          }
+        }
+      }
+    },
+    "Start the merge over?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführung neu beginnen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Empezar la fusión de nuevo?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommencer la fusion ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricominciare l’unione?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージを最初からやり直しますか？"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recomeçar a mesclagem?"
+          }
+        }
+      }
+    },
     "Starting" : {
       "localizations" : {
         "de" : {
@@ -118237,6 +118357,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "As duas consultas --scan-failures por dispositivo (falhas de patch + atualização) que podem travar o Jamf Pro on-prem — execute semanalmente, nunca diariamente."
+          }
+        }
+      }
+    },
+    "The unfinished merge's record moves into its merged folder. Files it already copied stay where they are." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Protokoll der unvollständigen Zusammenführung wird in ihren zusammengeführten Ordner verschoben. Bereits kopierte Dateien bleiben, wo sie sind."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El registro de la fusión sin terminar se mueve a su carpeta fusionada. Los archivos que ya copió se quedan donde están."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’historique de la fusion inachevée est déplacé dans son dossier fusionné. Les fichiers déjà copiés restent où ils sont."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il registro dell’unione non completata viene spostato nella sua cartella unita. I file già copiati restano dove sono."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了のマージの記録は、マージ先フォルダに移動されます。すでにコピーされたファイルはそのまま残ります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O registro da mesclagem inacabada é movido para a pasta mesclada. Os arquivos que ela já copiou ficam onde estão."
           }
         }
       }

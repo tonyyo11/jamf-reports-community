@@ -92,8 +92,8 @@ final class WorkspaceMergePlanTests: XCTestCase {
         let p = try plan()
         let paths = steps(p, .runHistory).map(\.source)
         XCTAssertEqual(paths.count, 2)
-        let archives = steps(p, .runHistory).compactMap(\.archive)
-        XCTAssertTrue(archives.isEmpty)  // both absent from the target: plain copies
+        // Both absent from the target: plain copies (the archive is only a fallback).
+        XCTAssertEqual(steps(p, .runHistory).map(\.action), [.copy, .copy])
         XCTAssertFalse(paths.contains { $0.contains("claim") || $0.contains("hosts") })
         XCTAssertEqual(steps(p, .backups).map(\.action), [.copyFolder])
     }
@@ -166,7 +166,8 @@ final class WorkspaceMergePlanTests: XCTestCase {
         try write("b", tgt, "automation/logs/a.log")
         try write("a", src, "automation/x_status.json")
         try write("b", tgt, "automation/x_status.json")
-        let archives = steps(try plan(), .runHistory).compactMap(\.archive)
+        let archives = steps(try plan(), .runHistory).filter { $0.action == .archiveSource }
+            .compactMap(\.archive)
         XCTAssertEqual(archives.count, 2)
         XCTAssertTrue(archives.contains { $0.hasSuffix("archive/runHistory/logs/a.log") })
         XCTAssertTrue(archives.contains { $0.hasSuffix("archive/runHistory/status/x_status.json") })
@@ -220,5 +221,27 @@ final class WorkspaceMergePlanTests: XCTestCase {
         try write("2026-01-01T00:00:00Z", tgt, "jamf-cli-data/state/overview.last")
         try write("1 x", tgt, "jamf-cli-data/state/overview.fail")
         XCTAssertTrue(steps(try plan(), .state).isEmpty)
+    }
+
+    /// Copying more logs than the recorder keeps would make the target's next run prune its own.
+    func testRunHistoryCopiesOnlyLogsAmongTheNewestKept() throws {
+        let keep = ScheduledRunRecorder.maxRunLogs
+        let now = Date()
+        func log(_ ws: String, _ name: String, age: TimeInterval) throws {
+            try write("l", ws, "automation/logs/\(name)")
+            try fm.setAttributes(
+                [.modificationDate: now.addingTimeInterval(-age)],
+                ofItemAtPath: root.appendingPathComponent("\(ws)/automation/logs/\(name)").path)
+        }
+        for i in 0..<(keep - 1) {
+            try log(tgt, String(format: "t.20260101-%06d.log", i), age: Double(11 + i))
+        }
+        try log(src, "s.20260201-000000.log", age: 10)
+        try log(src, "s.20260202-000000.log", age: 100)
+        try log(src, "s.20250101-000000.log", age: 10_000)
+        try log(src, "notes.txt", age: 10_000)
+        let copied = steps(try plan(), .runHistory).map { URL(fileURLWithPath: $0.source)
+            .lastPathComponent }
+        XCTAssertEqual(Set(copied), ["s.20260201-000000.log", "notes.txt"])
     }
 }

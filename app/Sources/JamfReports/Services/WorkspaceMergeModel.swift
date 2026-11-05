@@ -135,7 +135,18 @@ final class WorkspaceMergeModel {
             }
             phase = .finished(mergedFolder: journal.plan.mergedFolder)
         } catch {
-            phase = .failed(ConfigSchema.fullDisplayText(error.localizedDescription).text)
+            let text = ConfigSchema.fullDisplayText(error.localizedDescription).text
+            phase = Self.refusedBeforeWriting(error) ? .refused(text) : .failed(text)
+        }
+    }
+
+    /// Refused before any step ran: there is no journal to resume, so the sheet must not
+    /// offer Resume.
+    static func refusedBeforeWriting(_ error: Error) -> Bool {
+        if let bridge = error as? CLIBridgeError { return bridge.isCollectRefusal }
+        switch error as? WorkspaceMergeExecutor.RunError {
+        case .peerClaim, .pendingMerge: return true
+        default: return false
         }
     }
 

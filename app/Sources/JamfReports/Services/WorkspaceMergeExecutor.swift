@@ -21,7 +21,8 @@ struct WorkspaceMergeJournal: Codable, Equatable, Sendable {
             .appendingPathComponent(".merge-journal.json")
     }
 
-    /// The pending journal for `target`, nil when none (or unreadable: logged).
+    /// The pending journal for `target`, nil when none (or unreadable: logged). A finished one
+    /// left behind (its removal failed) is moved to its record and reads as none.
     static func pending(target: String) -> WorkspaceMergeJournal? {
         guard let url = url(target: target),
               FileManager.default.fileExists(atPath: url.path) || FileManager.isLink(url)
@@ -29,12 +30,43 @@ struct WorkspaceMergeJournal: Codable, Equatable, Sendable {
         do {
             let data = try BoundedFile.read(
                 url, limit: BoundedFile.documentLimit, followSymlinks: false)
-            return try JSONDecoder().decode(WorkspaceMergeJournal.self, from: data)
+            let journal = try JSONDecoder().decode(WorkspaceMergeJournal.self, from: data)
+            guard journal.isFinished else { return journal }
+            try journal.retire(pendingAt: url)
+            return nil
         } catch {
             AppLogger.event(.collect, .error,
                             "merge journal could not be read: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    var isFinished: Bool { done >= plan.steps.count }
+
+    /// `<merged>/merge-journal.json`, the record of a finished or abandoned merge.
+    var recordURL: URL {
+        URL(fileURLWithPath: plan.mergedFolder, isDirectory: true)
+            .appendingPathComponent("merge-journal.json")
+    }
+
+    /// Saves the record of a finished merge and removes the pending journal.
+    fileprivate func retire(pendingAt url: URL) throws {
+        try save(to: recordURL)
+        try FileManager.default.removeItem(at: url)
+    }
+
+    /// Start over: the unfinished journal of `target` moves into its own merged folder as
+    /// `merge-journal.json`, the record of how far it got; nothing is deleted. Then a new merge
+    /// can be planned. Throws when the record path is taken or the move fails.
+    static func startOver(target: String) throws {
+        let url = try location(target: target)
+        let data = try BoundedFile.read(
+            url, limit: BoundedFile.documentLimit, followSymlinks: false)
+        let record = try JSONDecoder().decode(WorkspaceMergeJournal.self, from: data).recordURL
+        try FileManager.default.createDirectory(
+            at: record.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // moveItem refuses a taken name, so an earlier record is never replaced.
+        try FileManager.default.moveItem(at: url, to: record)
     }
 
     fileprivate func save(to url: URL) throws {
@@ -88,12 +120,16 @@ enum WorkspaceMergeExecutor {
 
     enum RunError: Error, LocalizedError, Equatable {
         case peerClaim(workspace: String, host: String)
+        /// Another merge's journal is pending for the target: resume it or start over first.
+        case pendingMerge(source: String)
         case step(index: Int, reason: String)
 
         var errorDescription: String? {
             switch self {
             case .peerClaim(let workspace, let host):
                 L("\(ConfigSchema.displayText(host)) is working in \(workspace) — try the merge again when it finishes.")
+            case .pendingMerge(let source):
+                L("A merge of \(ConfigSchema.displayText(source)) into this workspace did not finish. Resume it or start over before merging another workspace.")
             case .step(let index, let reason):
                 L("Merge step \(index + 1) did not finish: \(reason)")
             }
@@ -129,6 +165,12 @@ enum WorkspaceMergeExecutor {
         do { journalURL = try WorkspaceMergeJournal.location(target: plan.target) } catch {
             throw RunError.step(index: start.done, reason: error.localizedDescription)
         }
+        // Never overwrite another merge's pending journal; `pending` retires a finished one.
+        if let other = WorkspaceMergeJournal.pending(target: plan.target), other.plan != plan {
+            throw RunError.pendingMerge(source: other.plan.source)
+        }
+        // A finished journal handed in again (read before `pending` retired it): nothing to do.
+        if start.isFinished { return }
         var journal = start
         try journal.save(to: journalURL)
         let total = plan.steps.count
@@ -152,11 +194,9 @@ enum WorkspaceMergeExecutor {
             journal.done += 1
             if journal.done == total {
                 // The record of what was done goes beside the archive; the pending one goes.
-                let record = URL(fileURLWithPath: plan.mergedFolder, isDirectory: true)
-                    .appendingPathComponent("merge-journal.json")
-                try journal.save(to: record)
+                try journal.save(to: journal.recordURL)
                 do { try FileManager.default.removeItem(at: journalURL) } catch {
-                    // The record is saved; a pending journal left behind resumes to a no-op.
+                    // The record is saved; `pending` retires a journal left behind.
                     AppLogger.event(.collect, .error,
                                     "merge journal not removed: \(error.localizedDescription)")
                 }
@@ -186,7 +226,11 @@ enum WorkspaceMergeExecutor {
         let archive = step.archive.map { URL(fileURLWithPath: $0) }
         switch step.action {
         case .copy:
-            try place(source, at: target)
+            if exists(target), !sameBytes(target, source) {
+                try copyFallback(step, source: source, target: target, plan: plan)
+            } else {
+                try place(source, at: target)
+            }
         case .skipIdentical:
             break
         case .archiveSource:
@@ -213,6 +257,8 @@ enum WorkspaceMergeExecutor {
             guard !exists(archive) else {
                 throw StepError("the archive already holds \(target.lastPathComponent)")
             }
+            try requireNoLinkedAncestor(target)
+            try requireRegular(target)
             try prepareParent(of: archive)
             try FileManager.default.moveItem(at: target, to: archive)
         case .copyFolder:
@@ -256,6 +302,7 @@ enum WorkspaceMergeExecutor {
                 throw StepError("the merged folder already holds a workspace")
             }
             try prepareParent(of: destination)
+            try requireNoLinkedAncestor(sourceWS)
             // Moved while still claimed; this Mac's claim then leaves the merged folder.
             try FileManager.default.moveItem(at: sourceWS, to: destination)
             let claimFile = destination.appendingPathComponent(
@@ -266,6 +313,25 @@ enum WorkspaceMergeExecutor {
                                     "merge claim not removed: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    /// The target gained `target` after planning (a scheduled collect before Merge, or between
+    /// a crash and Resume): R7 keeps the target's file and archives the source's, and a daily
+    /// summary is filled as if both had held it when the plan was made.
+    private static func copyFallback(
+        _ step: WorkspaceMergePlan.Step, source: URL, target: URL, plan: WorkspaceMergePlan
+    ) throws {
+        let name = target.lastPathComponent
+        if step.area == .summaries, CloudStorage.isCanonicalSummaryFilename(name) {
+            func archived(_ side: String) -> URL {
+                WorkspaceMergePlan.summaryArchive(
+                    mergedFolder: plan.mergedFolder, side: side, name: name)
+            }
+            try fillSummary(source: source, target: target, targetArchive: archived("target"),
+                            sourceArchive: archived("source"))
+        } else {
+            try place(source, at: try required(step.archive.map { URL(fileURLWithPath: $0) }))
         }
     }
 
@@ -366,6 +432,7 @@ enum WorkspaceMergeExecutor {
     /// Copies `source` to `destination` when nothing is there; the same bytes there is done.
     /// Anything else at `destination` is never overwritten.
     private static func place(_ source: URL, at destination: URL) throws {
+        try requireNoLinkedAncestor(source)
         try requireRegular(source)
         if exists(destination) {
             guard sameBytes(destination, source) else {
@@ -387,6 +454,7 @@ enum WorkspaceMergeExecutor {
     /// A copy of `source` staged beside `destination`, then installed: a link at the name is
     /// replaced, never written through.
     private static func install(_ source: URL, over destination: URL) throws {
+        try requireNoLinkedAncestor(source)
         try requireRegular(source)
         if exists(destination) { try requireRegular(destination) }
         try prepareParent(of: destination)
@@ -405,6 +473,7 @@ enum WorkspaceMergeExecutor {
         guard !FileManager.isLink(source) else {
             throw StepError("\(source.lastPathComponent) is a link")
         }
+        try requireNoLinkedAncestor(source)
         try prepareParent(of: destination)
         removeStagedCopies(of: destination)
         let staged = AtomicInstall.stagedURL(for: destination, isDirectory: true)
