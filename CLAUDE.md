@@ -390,14 +390,18 @@ and refuses (unreadable) when either reports folder is refused, a target path ha
 non-file, or a config.yaml cannot be read. One rule for every copy area (snapshots, chart history,
 SOFA, reports, `automation/logs` and `*_status.json`; backups copy whole folders the target lacks):
 the target lacks the name, so copy; same name and same SHA-256, so skip; same name with other bytes,
-so keep the target's and copy the source's into the archive. Snapshots are never renamed (a suffix
-would fail `CloudStorage.snapshotTimestamp`). A day's summary both sides hold is the target's filled
-from the source's (`DailySummary.filling(from:)`, both originals archived). State has its own rule:
-the side with the newer `<kind>.last` supplies every `<kind>.*` file and the other side's files of
-that kind go to the archive. The source's other `profiles` slots and settings are not carried over;
-the sheet lists the top-level config keys that differ, and the source folders it reads from outside
-its own folder (an absolute `data_dir`, `output_dir` or `historical_csv_dir`) are copied from, not
-moved. Coordination files (claim, `hosts/`, day markers, the alert ledger) stay with the source.
+so keep the target's and copy the source's into the archive. Of the source's run logs, only those
+among the newest `ScheduledRunRecorder.maxRunLogs` of both folders together (by mtime) are copied,
+since the recorder would prune the rest at the target's next run; the others stay in the moved
+source folder. Snapshots are never renamed (a suffix would fail `CloudStorage.snapshotTimestamp`). A
+day's summary both sides hold is the target's filled from the source's
+(`DailySummary.filling(from:)`, both originals archived). State has its own rule: the side with the
+newer `<kind>.last` supplies every `<kind>.*` file; when the source is newer the target's files of
+that kind go to the archive, and when the target is newer the source's stay in the moved source
+folder. The source's other `profiles` slots and settings are not carried over; the sheet lists the
+top-level config keys that differ, and the source folders it reads from outside its own folder (an
+absolute `data_dir`, `output_dir` or `historical_csv_dir`) are copied from, not moved. Coordination
+files (claim, `hosts/`, day markers, the alert ledger) stay with the source.
 `WorkspaceMergeExecutor` runs inside `CLIBridge.holdingTickLock(purpose: .merge)`
 (`CLIBridgeError.mergeInProgress` for a second one) and also takes the shared-workspace claim on
 both workspaces (operation `merge`, renewed before every step), refusing before any write when
@@ -406,8 +410,19 @@ another Mac holds either. The plan is journaled whole (`WorkspaceMergeJournal`,
 re-plan: a quit or a failed step leaves the journal and the Environment card shows a Resume banner,
 and a resume re-reads the journal from disk, refusing (a step error) rather than overwriting a
 target state file or summary that changed after the crash. Copies use
-`AtomicInstall.installExclusive` and never replace a file. The source's `platform` slot write goes
-through `ProfilesConfigWriter.save(.platform, ...)`, then the source folder moves to
+`AtomicInstall.installExclusive` and never replace a file; a state replace and a summary fill do
+replace, after archiving the target's file. A copy whose destination the target gained after
+planning (a scheduled collect before Merge, or between a crash and Resume) falls back to the rule
+above: the source's file goes to the archive, and a day's summary is filled; a state replace
+archives a target file that appeared. A fresh merge is refused while another merge's journal is
+pending (`RunError.pendingMerge`, shown as refused, like a held lock or a peer's claim, with no
+Resume); the banner offers Resume and Start over, which moves the pending journal into its merged
+folder as `merge-journal.json`, and a finished journal left behind is retired the same way. The
+target's `platform` slot is set to the source's profile through
+`ProfilesConfigWriter.save(.platform, ...)`; schedules are retargeted keeping their labels, the
+policy's report groups name the target, an exclusion of either workspace is dropped unless both were
+excluded (the target then stays excluded), `platform.compliance_benchmarks` is copied when the
+target has none, and the source's pin file is removed. Then the source folder moves to
 `<root>/_merged/<source>-<yyyyMMdd-HHmmss>/workspace/`, with everything the merge replaced or took
 out of the target under `.../archive/<area>/<relative path>`; nothing is deleted, except the
 source's per-Mac pin file. The journal is kept as `<merged>/merge-journal.json`. Discovery ignores
