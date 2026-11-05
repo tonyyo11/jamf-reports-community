@@ -480,6 +480,24 @@ extension WorkspaceMergeExecutorTests {
         XCTAssertEqual(try tree(), expected)
     }
 
+    func testResumeWhoseJournalWasMovedAsideIsRefused() async throws {
+        let j = try journal()
+        try await stopped(j, after: 2)
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+            return XCTFail("no pending journal")
+        }
+        for name in [".merge-journal.json", ".merge-plan.json"] {
+            let file = url(tgt, "automation/\(name)")
+            if fm.fileExists(atPath: file.path) { try fm.removeItem(at: file) }
+        }
+        do {
+            try await WorkspaceMergeExecutor.run(pending, deps: deps())
+            XCTFail("a resume with no journal on disk must not start")
+        } catch WorkspaceMergeExecutor.RunError.notStarted {
+        }
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+    }
+
     func testResumeAtMoveSourceAfterTheFolderMoved() async throws {
         let j = try journal()
         try await stopped(j, after: j.plan.steps.count - 1)

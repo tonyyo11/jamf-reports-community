@@ -217,7 +217,11 @@ enum WorkspaceMergeExecutor {
             } catch { throw RunError.notStarted(reason: error.localizedDescription) }
             return JournalFiles(progress: progressURL, plan: planURL, planData: data)
         case .none:
-            break
+            // A resume whose journal was moved aside (Start over elsewhere) must not restart
+            // as a fresh merge and later replace the record Start over kept.
+            guard start.done == 0 else {
+                throw RunError.notStarted(reason: "the unfinished merge's journal is gone")
+            }
         }
         let data: Data
         do {
