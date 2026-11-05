@@ -378,37 +378,42 @@ all or when Jamf Pro sources were attempted and none landed (`matrixLandedNothin
 `DiagnosticBundleService.serverHosts` also seeds the host forms of every `ConnectionStore` member's
 `jamfProURL`.
 
-**Workspace merge (unreleased, environment model P7).** The Environment card's "Merge another workspace
-into this one" (Data Sources, the only entry point; no CLI or headless path) folds a Platform API workspace
-into the Jamf Pro workspace for the same server. `WorkspaceMergeCandidates` offers only that twin shape
-(the target's own profile is not a Platform one, the source's is) and the merge needs
-`PlatformHostCheck.verdict` to be `.same`: an unknown answer refuses, unlike the slot write, which fails
-open, because a merge copies one fleet's history into another's folder and cannot be undone cleanly. A
-target whose `platform` slot names another profile is refused. `WorkspaceMergePlan.build` lists both
-workspaces and decides every file before anything is written, and refuses (unreadable) when either reports
-folder is refused, a target path has a link or a non-file, or a config.yaml cannot be read. One rule for
-every copy area (snapshots, chart history, SOFA, reports, `automation/logs` and `*_status.json`; backups copy whole folders the target lacks):
-the target lacks the name, so copy; same name and same SHA-256, so skip; same name with other bytes, so keep
-the target's and copy the source's into the archive. Snapshots are never renamed (a suffix would fail
-`CloudStorage.snapshotTimestamp`). A day's summary both sides hold is the target's filled from the source's (`DailySummary.filling(from:)`, both originals archived). State has its own rule: the side with the newer
-`<kind>.last` supplies every `<kind>.*` file and the other side's files of that kind go to the archive. The
-source's other `profiles` slots and settings are not carried over; the sheet lists the top-level config keys
-that differ, and the source folders it reads from outside its own folder (an absolute `data_dir`,
-`output_dir` or `historical_csv_dir`) are copied from, not moved. Coordination files (claim, `hosts/`, day
-markers, the alert ledger) stay with the source. `WorkspaceMergeExecutor` runs inside
-`CLIBridge.holdingTickLock(purpose: .merge)` (`CLIBridgeError.mergeInProgress` for a second one) and also takes the
-shared-workspace claim on both workspaces (operation `merge`, renewed before every step), refusing before any
-write when another Mac holds either. The plan is journaled whole (`WorkspaceMergeJournal`, per Mac in
-Application Support), steps run in order and never re-plan: a quit or a failed step leaves the journal and
-the Environment card shows a Resume banner, and a resume re-reads the journal from disk, refusing (a step
-error) rather than overwriting a target state file or summary that changed after the crash. Copies use
-`AtomicInstall.installExclusive` and never replace a file. The source's `platform` slot write goes through
-`ProfilesConfigWriter.save(.platform, ...)`, then the source folder moves to
-`<root>/_merged/<source>-<yyyyMMdd-HHmmss>/workspace/`, with everything the merge replaced or took out of
-the target under `.../archive/<area>/<relative path>`; nothing is deleted, except the source's per-Mac pin
-file. The journal is kept as `<merged>/merge-journal.json`. Discovery ignores `_merged` (no top-level
-`config.yaml`, and a leading `_` is no canonical profile folder name). A finished merge shows a toast with the
-merged folder. Config Doctor's `platform.twin` hint points to this button.
+**Workspace merge (unreleased, environment model P7).** The Environment card's "Merge another
+workspace into this one" (Data Sources, the only entry point; no CLI or headless path) folds a
+Platform API workspace into the Jamf Pro workspace for the same server. `WorkspaceMergeCandidates`
+offers only that twin shape (the target's own profile is not a Platform one, the source's is) and
+the merge needs `PlatformHostCheck.verdict` to be `.same`: an unknown answer refuses, unlike the
+slot write, which fails open, because a merge copies one fleet's history into another's folder and
+cannot be undone cleanly. A target whose `platform` slot names another profile is refused.
+`WorkspaceMergePlan.make` lists both workspaces and decides every file before anything is written,
+and refuses (unreadable) when either reports folder is refused, a target path has a link or a
+non-file, or a config.yaml cannot be read. One rule for every copy area (snapshots, chart history,
+SOFA, reports, `automation/logs` and `*_status.json`; backups copy whole folders the target lacks):
+the target lacks the name, so copy; same name and same SHA-256, so skip; same name with other bytes,
+so keep the target's and copy the source's into the archive. Snapshots are never renamed (a suffix
+would fail `CloudStorage.snapshotTimestamp`). A day's summary both sides hold is the target's filled
+from the source's (`DailySummary.filling(from:)`, both originals archived). State has its own rule:
+the side with the newer `<kind>.last` supplies every `<kind>.*` file and the other side's files of
+that kind go to the archive. The source's other `profiles` slots and settings are not carried over;
+the sheet lists the top-level config keys that differ, and the source folders it reads from outside
+its own folder (an absolute `data_dir`, `output_dir` or `historical_csv_dir`) are copied from, not
+moved. Coordination files (claim, `hosts/`, day markers, the alert ledger) stay with the source.
+`WorkspaceMergeExecutor` runs inside `CLIBridge.holdingTickLock(purpose: .merge)`
+(`CLIBridgeError.mergeInProgress` for a second one) and also takes the shared-workspace claim on
+both workspaces (operation `merge`, renewed before every step), refusing before any write when
+another Mac holds either. The plan is journaled whole (`WorkspaceMergeJournal`,
+`<target>/automation/.merge-journal.json`, written after every step), steps run in order and never
+re-plan: a quit or a failed step leaves the journal and the Environment card shows a Resume banner,
+and a resume re-reads the journal from disk, refusing (a step error) rather than overwriting a
+target state file or summary that changed after the crash. Copies use
+`AtomicInstall.installExclusive` and never replace a file. The source's `platform` slot write goes
+through `ProfilesConfigWriter.save(.platform, ...)`, then the source folder moves to
+`<root>/_merged/<source>-<yyyyMMdd-HHmmss>/workspace/`, with everything the merge replaced or took
+out of the target under `.../archive/<area>/<relative path>`; nothing is deleted, except the
+source's per-Mac pin file. The journal is kept as `<merged>/merge-journal.json`. Discovery ignores
+`_merged` (no top-level `config.yaml`, and a leading `_` is no canonical profile folder name). A
+finished merge shows a toast with the merged folder. Config Doctor's `platform.twin` hint points to
+this button.
 
 ### output config
 
