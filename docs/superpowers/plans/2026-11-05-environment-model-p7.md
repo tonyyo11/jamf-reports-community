@@ -42,6 +42,7 @@
 - **R11:** the journal holds the whole plan. Resume never recomputes the plan. When the merge finishes, the journal moves into the merged folder as `merge-journal.json`, the record of what was done.
 - **R12:** no CLI subcommand and no headless entry point.
 - **R13:** the archive copies use the area and the file's path relative to the area's root, so two areas never collide.
+- **R14 (final review):** corrects spec §11's "Report groups, `excludedProfiles`" row for exclusions. 2.11's shipped `platform.twin` hint told users to exclude the OAuth workspace (the merge target), and P4's hint the Platform one (the source), so mapping the source's exclusion onto the target would stop or keep automation wrongly. After a merge the target is excluded only if both were excluded before. Report groups and schedule `workspace` keep the replace-and-dedupe rule.
 
 ---
 
