@@ -238,7 +238,7 @@ enum CollectRouter {
         case .stop(let disposition):
             await followWithProtect(disposition)
             return
-        case .proceed(let holdsClaim):
+        case .proceed(let holdsClaim, let coordinating):
             defer { if holdsClaim { SharedWorkspace.release(profile: profile) } }
             try await runProducts(
                 detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
@@ -247,11 +247,7 @@ enum CollectRouter {
                 followWithProtect: followWithProtect, onLine: onLine)
             // Stamp this machine's activity so other Macs sharing the folder see the collect
             // without parsing summaries. One file per host, so runs never write the same path.
-            if let url = ProfileService.workspaceURL(for: profile),
-               SharedWorkspace.isEffectivelyShared(
-                   workspace: url, config: config?.sharedWorkspace ?? SharedWorkspaceConfig()) {
-                SharedWorkspace.recordActivity(profile: profile)
-            }
+            if coordinating { SharedWorkspace.recordActivity(profile: profile) }
         }
     }
 

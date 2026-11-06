@@ -2027,13 +2027,13 @@ struct ReportEngine: Sendable {
 
     /// What the collect gate decided for an environment.
     enum EnvironmentGate: Equatable, Sendable {
-        case proceed(holdsClaim: Bool)
+        case proceed(holdsClaim: Bool, coordinating: Bool)
         case stop(CollectDisposition)
     }
 
     /// The once-per-day guard, then `coordinationGate`: `CollectRouter` asks before any product
     /// runs, so a stop covers Jamf Pro, Jamf School and Jamf Protect alike. The caller releases
-    /// the claim when `holdsClaim` is true.
+    /// the claim when `holdsClaim` is true and stamps activity when `coordinating` is.
     static func environmentGate(
         workspace: WorkspaceID, workspacePaths: WorkspacePaths.Type, tiers: Set<CollectionTier>,
         force: Bool, now: Date,
@@ -2093,7 +2093,7 @@ struct ReportEngine: Sendable {
                 AppLogger.collect.warning("\(note, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .warn, text: note))
             }
-            return .proceed(holdsClaim: state.holdsClaim)
+            return .proceed(holdsClaim: state.holdsClaim, coordinating: state.coordinating)
         }
     }
 

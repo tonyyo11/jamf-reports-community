@@ -486,7 +486,7 @@ final class CollectRouterTests: XCTestCase {
             proThrowing: ReportEngineError.jamfCLINotFound,
             gate: { workspace, _, _, _, _, _ in
                 _ = SharedWorkspace.acquire(profile: workspace.name, operation: "collect", ttl: 900)
-                return .proceed(holdsClaim: true)
+                return .proceed(holdsClaim: true, coordinating: true)
             })
 
         XCTAssertNotNil(thrown)
@@ -502,9 +502,32 @@ final class CollectRouterTests: XCTestCase {
         let seen = RouterValueBox<Bool?>(nil)
         _ = try await runProtectEnabledProfile(force: true, gate: { _, _, _, force, _, _ in
             seen.set(force)
-            return .proceed(holdsClaim: false)
+            return .proceed(holdsClaim: false, coordinating: false)
         })
         XCTAssertEqual(seen.value, true)
+    }
+
+    /// The real gate with today's summary on disk and no force: the day guard stops Jamf Pro
+    /// and Protect.
+    func test_router_realGateDayGuard_stopsProAndProtect() async throws {
+        let (spy, lines, thrown) = try await runProtectEnabledProfile(
+            gate: { workspace, paths, tiers, force, now, onLine in
+                let dir = try? paths.summariesDir(for: workspace.name)
+                let today = SummaryJSONParser.dateFormatter.string(from: now)
+                let body = "{\"date\":\"\(today)\",\"totalDevices\":1,\"source\":\"t\"}"
+                try? dir.map { try FileManager.default.createDirectory(
+                    at: $0, withIntermediateDirectories: true) }
+                try? dir.map { try body.write(
+                    to: $0.appendingPathComponent("summary_\(today).json"),
+                    atomically: true, encoding: .utf8) }
+                return CollectRouter.realGate(workspace, paths, tiers, force, now, onLine)
+            })
+
+        XCTAssertNil(thrown)
+        XCTAssertEqual(spy.proCallCount, 0)
+        XCTAssertEqual(spy.protectCallCount, 0)
+        XCTAssertTrue(lines.contains { $0.contains("already collected today") }, "got: \(lines)")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[skip] protect:") }, "got: \(lines)")
     }
 
     // MARK: - Protect after a failed Pro collect
@@ -665,14 +688,13 @@ final class CollectRouterTests: XCTestCase {
     /// `WorkspacePaths.dataDir(for:)` resolves and a skipped Protect can only come
     /// from the Pro collect's disposition.
     private func runProtectEnabledProfile(
-        proReturning disposition: ReportEngine.CollectDisposition = .collected,
         proThrowing proError: Error? = nil,
         protectThrowing protectError: Error? = nil,
         protectProfile: String = "my-protect",
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = { _ in nil },
         school: Bool = false,
         force: Bool = false,
-        gate: @escaping CollectRouter.Gate = { _, _, _, _, _, _ in .proceed(holdsClaim: false) }
+        gate: @escaping CollectRouter.Gate = { _, _, _, _, _, _ in .proceed(holdsClaim: false, coordinating: false) }
     ) async throws -> (spy: RouterSpy, lines: [String], thrown: Error?) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("CollectRouterTests-\(UUID().uuidString)", isDirectory: true)
@@ -696,7 +718,7 @@ final class CollectRouterTests: XCTestCase {
         """)
         // A School run throws through the School spy; `proThrowing` names the run's error.
         let spy = RouterSpy(
-            proDisposition: disposition, proError: school ? nil : proError,
+            proError: school ? nil : proError,
             schoolError: school ? proError : nil, protectError: protectError)
         let lines = RouterLineCollector()
 

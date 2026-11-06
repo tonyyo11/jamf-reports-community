@@ -60,7 +60,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void = { _ in }
     ) throws {
         try XCTAssertEqual(gate(tiers: tiers, force: force, onLine: onLine),
-                       .proceed(holdsClaim: false))
+                       .proceed(holdsClaim: false, coordinating: false))
     }
 
     // MARK: - Helpers

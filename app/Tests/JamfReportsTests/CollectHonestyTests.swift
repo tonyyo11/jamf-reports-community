@@ -234,8 +234,8 @@ final class CollectHonestyTests: XCTestCase {
     }
 
     /// End to end: a peer that collected minutes ago makes this Mac stand down,
-    /// and the run says so on the stream. The gate runs before any jamf-cli work — a peer already working is
-    /// a reason to defer whether or not this Mac could have collected.
+    /// and the run says so on the stream. The gate runs before any jamf-cli work, so a peer already
+    /// working is a reason to defer whether or not this Mac could have collected.
     func testCollectStandsDownForARecentPeerAndSaysSo() async throws {
         try writeConfig("shared_workspace:\n  enabled: true\n")
         try writePeerCollect(at: Date())
