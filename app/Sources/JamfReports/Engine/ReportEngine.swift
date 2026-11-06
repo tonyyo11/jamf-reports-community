@@ -2025,6 +2025,78 @@ struct ReportEngine: Sendable {
         case stoodDown
     }
 
+    /// What the collect gate decided for an environment.
+    enum EnvironmentGate: Equatable, Sendable {
+        case proceed(holdsClaim: Bool)
+        case stop(CollectDisposition)
+    }
+
+    /// The once-per-day guard, then `coordinationGate`: `CollectRouter` asks before any product
+    /// runs, so a stop covers Jamf Pro, Jamf School and Jamf Protect alike. The caller releases
+    /// the claim when `holdsClaim` is true.
+    static func environmentGate(
+        workspace: WorkspaceID, workspacePaths: WorkspacePaths.Type, tiers: Set<CollectionTier>,
+        force: Bool, now: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> EnvironmentGate {
+        // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
+        // summary for today already exists, unless the caller passes force: true.
+        // Placed before the jamf-cli binary check so it short-circuits without
+        // requiring jamf-cli to be installed (testable without the binary).
+        // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
+        // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
+        // never gated by a prior scheduled collect.
+        //
+        // Only a FULL collect (all tiers) is gated here. A tier-scoped collect (e.g.
+        // the weekly managed-scan run, tiers [.scan]) must fall through to the
+        // per-kind cadence check below, or its tier — skipped by the daily freshness
+        // run that already wrote today's summary — would never be collected. The
+        // per-kind cadence check already prevents redundant work, so dropping the
+        // coarse day-guard for tier subsets is safe.
+        let isFullCollect = tiers == Set(CollectionTier.allCases)
+        // The tick's same-day retry skips the guard: today's summary is what the failed run wrote,
+        // and the per-kind cadence below still fetches only what has not landed.
+        if !force, !isSameDayRetry, isFullCollect,
+           let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
+            let today = SummaryJSONParser.dateFormatter.string(from: now)
+            let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+            if let data = try? BoundedFile.read(
+                   summaryFile, limit: SummaryJSONParser.maxSummaryFileBytes,
+                   followSymlinks: false),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
+                let msg = "[info] already collected today — skipping (use Refresh to force)"
+                AppLogger.collect.info("\(msg, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .info, text: msg))
+                return .stop(.alreadyCollected)
+            }
+        }
+
+        // Shared-workspace coordination, placed beside the once-per-day guard
+        // and BEFORE the jamf-cli check. "Should I collect" belongs ahead of
+        // "can I collect": a teammate's Mac already collecting is a reason to
+        // stand down that has nothing to do with whether this Mac has jamf-cli
+        // installed. Keeping the whole decision here also makes it reachable
+        // without the binary, which is the only way it can be tested.
+        let coordination = Self.coordinationGate(profile: workspace.name, force: force)
+        switch coordination {
+        case .standDown(let reason):
+            // Marked `[partial]`, not `[info]`: this run collected nothing, so
+            // Run History must not show it as a clean success next to a run
+            // that actually fetched the fleet.
+            let line = Self.standDownLine(reason: reason)
+            AppLogger.collect.info("\(line, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .warn, text: line))
+            return .stop(.stoodDown)
+        case .proceed(let state, let notes):
+            for note in notes {
+                AppLogger.collect.warning("\(note, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .warn, text: note))
+            }
+            return .proceed(holdsClaim: state.holdsClaim)
+        }
+    }
+
     /// True inside the tick's same-day retry of a run that failed or came back incomplete.
     @TaskLocal static var isSameDayRetry = false
 
@@ -2138,65 +2210,6 @@ struct ReportEngine: Sendable {
         SnapshotRetentionService.sweepIfDue(profile: workspace.name, onLine: onLine)
         rewriteLostModeTextOnce(
             profile: workspace.name, workspacePaths: workspacePaths, onLine: onLine)
-
-        // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
-        // summary for today already exists, unless the caller passes force: true.
-        // Placed before the jamf-cli binary check so it short-circuits without
-        // requiring jamf-cli to be installed (testable without the binary).
-        // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
-        // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
-        // never gated by a prior scheduled collect.
-        //
-        // Only a FULL collect (all tiers) is gated here. A tier-scoped collect (e.g.
-        // the weekly managed-scan run, tiers [.scan]) must fall through to the
-        // per-kind cadence check below, or its tier — skipped by the daily freshness
-        // run that already wrote today's summary — would never be collected. The
-        // per-kind cadence check already prevents redundant work, so dropping the
-        // coarse day-guard for tier subsets is safe.
-        let isFullCollect = tiers == Set(CollectionTier.allCases)
-        // The tick's same-day retry skips the guard: today's summary is what the failed run wrote,
-        // and the per-kind cadence below still fetches only what has not landed.
-        if !force, !isSameDayRetry, isFullCollect,
-           let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
-            let today = SummaryJSONParser.dateFormatter.string(from: collectDay)
-            let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
-            if let data = try? BoundedFile.read(
-                   summaryFile, limit: SummaryJSONParser.maxSummaryFileBytes,
-                   followSymlinks: false),
-               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-                let msg = "[info] already collected today — skipping (use Refresh to force)"
-                AppLogger.collect.info("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .info, text: msg))
-                return .alreadyCollected
-            }
-        }
-
-        // Shared-workspace coordination, placed beside the once-per-day guard
-        // and BEFORE the jamf-cli check. "Should I collect" belongs ahead of
-        // "can I collect": a teammate's Mac already collecting is a reason to
-        // stand down that has nothing to do with whether this Mac has jamf-cli
-        // installed. Keeping the whole decision here also makes it reachable
-        // without the binary, which is the only way it can be tested.
-        let coordination = Self.coordinationGate(profile: workspace.name, force: force)
-        var holdsClaim = false
-        switch coordination {
-        case .standDown(let reason):
-            // Marked `[partial]`, not `[info]`: this run collected nothing, so
-            // Run History must not show it as a clean success next to a run
-            // that actually fetched the fleet.
-            let line = Self.standDownLine(reason: reason)
-            AppLogger.collect.info("\(line, privacy: .private)")
-            onLine(.init(timestamp: Date(), level: .warn, text: line))
-            return .stoodDown
-        case .proceed(let state, let notes):
-            holdsClaim = state.holdsClaim
-            for note in notes {
-                AppLogger.collect.warning("\(note, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: note))
-            }
-        }
-        defer { if holdsClaim { SharedWorkspace.release(profile: workspace.name) } }
 
         // Test seam. Production callers omit it and get the real locator; a test
         // passes a stub so the whole collect body below is reachable without a
@@ -2406,12 +2419,6 @@ struct ReportEngine: Sendable {
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
         )
 
-        // Stamp this machine's activity so other Macs sharing the folder can
-        // see the collect happened without parsing summaries. One file per
-        // host, so concurrent runs never write the same path.
-        if case .proceed(let state, _) = coordination, state.coordinating {
-            SharedWorkspace.recordActivity(profile: workspace.name)
-        }
         return .collected
     }
 

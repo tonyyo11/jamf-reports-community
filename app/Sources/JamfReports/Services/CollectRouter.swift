@@ -108,6 +108,22 @@ enum CollectRouter {
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> Void
 
+    /// Type of the gate closure, matching `ReportEngine.environmentGate`'s shape.
+    typealias Gate = @Sendable (
+        _ workspace: WorkspaceID,
+        _ workspacePaths: WorkspacePaths.Type,
+        _ tiers: Set<CollectionTier>,
+        _ force: Bool,
+        _ now: Date,
+        _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> ReportEngine.EnvironmentGate
+
+    static let realGate: Gate = { workspace, paths, tiers, force, now, onLine in
+        ReportEngine.environmentGate(
+            workspace: workspace, workspacePaths: paths, tiers: tiers, force: force, now: now,
+            onLine: onLine)
+    }
+
     /// Route a collect run for `workspace` to the correct engine function(s). Each product's
     /// `-p` comes from `EnvironmentProfiles`, resolved once here before the pin checkpoint; the
     /// product check probes the same Jamf Pro slot the collect launches with.
@@ -128,6 +144,8 @@ enum CollectRouter {
     ///   - resolved: The Jamf Pro slot's resolved auth method and product
     ///     (`ProfileAuthMethod.resolve`).
     ///     Nil means "could not ask" and runs the collect.
+    ///   - gate: The once-per-day guard and shared-workspace claim, asked once before any product
+    ///     runs; a stop skips Jamf Pro or Jamf School and passes its disposition to Protect.
     ///   - onLine: Progress log callback.
     ///
     /// A collect started outside a recording run keeps its attention items in the app record.
@@ -146,6 +164,7 @@ enum CollectRouter {
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
             ProfileAuthMethod.resolve(profile: $0)
         },
+        gate: @escaping Gate = realGate,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         try await AttentionLog.recording(profile: workspace.name) {
@@ -154,7 +173,7 @@ enum CollectRouter {
                 config: config, workspacePaths: workspacePaths,
                 proCollect: proCollect ?? defaultProCollect(now: now, engine: proEngine),
                 schoolCollect: schoolCollect, protectCollect: protectCollect,
-                resolved: resolved, onLine: onLine)
+                resolved: resolved, gate: gate, now: now, onLine: onLine)
         }
     }
 
@@ -169,6 +188,8 @@ enum CollectRouter {
         schoolCollect: SchoolCollect,
         protectCollect: ProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
+        gate: Gate,
+        now: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         // First, before anything touches the workspace: jamf-cli never checks a profile against
@@ -212,6 +233,42 @@ enum CollectRouter {
                 workspacePaths: workspacePaths, protectCollect: protectCollect,
                 resolved: resolved, onLine: onLine)
         }
+        // Before any product: a stop covers Jamf Pro, Jamf School and Protect alike.
+        switch gate(workspace, workspacePaths, tiers, force, now, onLine) {
+        case .stop(let disposition):
+            await followWithProtect(disposition)
+            return
+        case .proceed(let holdsClaim):
+            defer { if holdsClaim { SharedWorkspace.release(profile: profile) } }
+            try await runProducts(
+                detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
+                skipExpensive: skipExpensive, force: force, workspacePaths: workspacePaths,
+                proCollect: proCollect, schoolCollect: schoolCollect,
+                followWithProtect: followWithProtect, onLine: onLine)
+            // Stamp this machine's activity so other Macs sharing the folder see the collect
+            // without parsing summaries. One file per host, so runs never write the same path.
+            if let url = ProfileService.workspaceURL(for: profile),
+               SharedWorkspace.isEffectivelyShared(
+                   workspace: url, config: config?.sharedWorkspace ?? SharedWorkspaceConfig()) {
+                SharedWorkspace.recordActivity(profile: profile)
+            }
+        }
+    }
+
+    private static func runProducts(
+        detected: DetectedProduct,
+        workspace: WorkspaceID,
+        mdm: String,
+        tiers: Set<CollectionTier>,
+        skipExpensive: Bool,
+        force: Bool,
+        workspacePaths: WorkspacePaths.Type,
+        proCollect: ProCollect,
+        schoolCollect: SchoolCollect,
+        followWithProtect: (ReportEngine.CollectDisposition) async -> Void,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async throws {
+        let profile = workspace.name
         switch detected.type {
         case .jamfSchool:
             onLine(.init(timestamp: Date(), level: .info,

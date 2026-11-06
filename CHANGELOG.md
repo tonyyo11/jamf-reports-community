@@ -67,6 +67,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A Jamf School workspace now collects once a day unless the collect is forced (Refresh or a
+  full schedule), as Jamf Pro does, and a Mac that stands down for another Mac in a shared
+  workspace no longer collects Jamf Protect either (#305).
 - First launch proposes one workspace per environment, shown as one card each. A Platform API
   profile that reaches the same Jamf Pro as an OAuth profile joins that workspace as its Platform
   API connection instead of leaving the OAuth profile out; Remove on the card takes it off, and

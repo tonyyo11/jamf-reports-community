@@ -46,21 +46,21 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    /// A collect the guard lets through reaches the jamf-cli check and stops there.
+    private func gate(
+        tiers: Set<CollectionTier> = Set(CollectionTier.allCases), force: Bool,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void = { _ in }
+    ) throws -> ReportEngine.EnvironmentGate {
+        try ReportEngine.environmentGate(
+            workspace: WorkspaceID(validating: testProfile), workspacePaths: WorkspacePaths.self,
+            tiers: tiers, force: force, now: .testNoon, onLine: onLine)
+    }
+
     private func assertTheGuardLetItThrough(
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases), force: Bool,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void = { _ in }
-    ) async {
-        do {
-            try await ReportEngine.collect(
-                workspace: WorkspaceID(validating: testProfile),
-                profile: testProfile, workspacePaths: WorkspacePaths.self, tiers: tiers,
-                force: force, locateJamfCLI: { nil }, now: .testNoon, onLine: onLine)
-            XCTFail("with no jamf-cli a collect past the guard throws jamfCLINotFound")
-        } catch ReportEngineError.jamfCLINotFound {
-        } catch {
-            XCTFail("expected jamfCLINotFound, got \(error)")
-        }
+    ) throws {
+        try XCTAssertEqual(gate(tiers: tiers, force: force, onLine: onLine),
+                       .proceed(holdsClaim: false))
     }
 
     // MARK: - Helpers
@@ -88,41 +88,28 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         try writeTodaySummary()
 
         let collector = LogLineTextCollector()
-        // collect(force: false) should return without reaching the jamf-cli
-        // binary check. If it did reach the binary check and jamf-cli is absent,
-        // it would throw ReportEngineError.jamfCLINotFound. Catching that error
-        // would be a test failure. The test passes when no error is thrown.
-        let disposition = try await ReportEngine.collect(
-            workspace: WorkspaceID(validating: testProfile),
-            profile: testProfile,
-            workspacePaths: WorkspacePaths.self,
-            force: false,
-            locateJamfCLI: { nil },
-            now: .testNoon
-        ) { line in
-            collector.append(line.text)
-        }
+        let outcome = try gate(force: false) { collector.append($0.text) }
 
         XCTAssertTrue(
             collector.texts.contains { $0.contains("already collected today") },
             "Expected skip log line; got: \(collector.texts)"
         )
-        XCTAssertEqual(disposition, .alreadyCollected,
+        XCTAssertEqual(outcome, .stop(.alreadyCollected),
                        "CollectRouter must be able to tell the guard's skip from a collect")
     }
 
     /// When `force` is true, `collect` must proceed past the once-per-day guard.
     func testProceedsWhenForceIsTrue() async throws {
         try writeTodaySummary()
-        await assertTheGuardLetItThrough(force: true)
+        try assertTheGuardLetItThrough(force: true)
     }
 
     /// The tick's same-day retry of a partial run must not be answered "already collected":
     /// the summary on disk is the failed run's own.
     func testSameDayRetryProceedsPastTheGuard() async throws {
         try writeTodaySummary()
-        await ReportEngine.$isSameDayRetry.withValue(true) {
-            await assertTheGuardLetItThrough(force: false)
+        try ReportEngine.$isSameDayRetry.withValue(true) {
+            try assertTheGuardLetItThrough(force: false)
         }
     }
 
@@ -134,20 +121,20 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: [
             "date": today, "totalDevices": 100, "source": "test"]).write(to: real)
         try FileManager.default.createSymbolicLink(at: file, withDestinationURL: real)
-        await assertTheGuardLetItThrough(force: false)
+        try assertTheGuardLetItThrough(force: false)
 
         try FileManager.default.removeItem(at: file)
         var big = Data("{\"date\":\"\(today)\",\"totalDevices\":1,\"source\":\"t\",\"pad\":\"".utf8)
         big.append(Data(repeating: 0x61, count: SummaryJSONParser.maxSummaryFileBytes))
         big.append(Data("\"}".utf8))
         try big.write(to: file)
-        await assertTheGuardLetItThrough(force: false)
+        try assertTheGuardLetItThrough(force: false)
     }
 
     /// When no today's summary exists, `collect(force: false)` must proceed
     /// past the guard (same behavior as `force: true` for a fresh workspace).
     func testProceedsWhenNoTodaySummaryExists() async throws {
-        await assertTheGuardLetItThrough(force: false)
+        try assertTheGuardLetItThrough(force: false)
     }
 
     /// Regression: a tier-scoped collect (e.g. the weekly `managed-scan` run with
@@ -161,7 +148,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         try writeTodaySummary()
 
         let collector = LogLineTextCollector()
-        await assertTheGuardLetItThrough(tiers: [.scan], force: false) { line in
+        try assertTheGuardLetItThrough(tiers: [.scan], force: false) { line in
             collector.append(line.text)
         }
 
