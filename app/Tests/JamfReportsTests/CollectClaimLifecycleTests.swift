@@ -1,7 +1,7 @@
 import XCTest
 @testable import JamfReports
 
-/// The part of `ReportEngine.collect` that no test could reach before: what
+/// The part of a collect that no test could reach before: what
 /// happens to the workspace claim once the collect body actually runs.
 ///
 /// Reachable now because `collect` takes a `locateJamfCLI` seam. The stub is
@@ -57,6 +57,21 @@ final class CollectClaimLifecycleTests: XCTestCase {
         return url
     }
 
+    /// The run goes through the router, which now takes and releases the claim.
+    private func routedCollect(locate: @escaping @Sendable () -> URL?) async throws {
+        let config = try ConfigLoader.loadFromString("shared_workspace:\n  enabled: true\n")
+        try await CollectRouter.run(
+            workspace: WorkspaceID(validating: profile), force: true, config: config,
+            workspacePaths: WorkspacePaths.self,
+            proEngine: { workspace, profile, paths, tiers, skip, force, now, onLine in
+                try await ReportEngine.collect(
+                    workspace: workspace, profile: profile, workspacePaths: paths, tiers: tiers,
+                    skipExpensive: skip, force: force, locateJamfCLI: locate, now: now,
+                    onLine: onLine)
+            },
+            resolved: { _ in nil }, onLine: { _ in })
+    }
+
     private func claimFile() -> URL {
         ProfileService.workspaceURL(for: profile)!
             .appendingPathComponent("automation/.workspace-claim.json")
@@ -69,14 +84,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
         let stub = try makeStub(exitCode: 1, stdout: "")
 
         do {
-            try await ReportEngine.collect(
-                workspace: WorkspaceID(validating: profile),
-                profile: profile,
-                workspacePaths: WorkspacePaths.self,
-                force: true,
-                locateJamfCLI: { stub },
-                onLine: { _ in }
-            )
+            try await routedCollect(locate: { stub })
             XCTFail("a stub that fails every call should end the collect")
         } catch {
             // Expected — every live call failed.
@@ -93,14 +101,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
     func testSuccessfulCollectReleasesClaimAndRecordsActivity() async throws {
         let stub = try makeStub(exitCode: 0, stdout: "[]")
 
-        try await ReportEngine.collect(
-            workspace: WorkspaceID(validating: profile),
-            profile: profile,
-            workspacePaths: WorkspacePaths.self,
-            force: true,
-            locateJamfCLI: { stub },
-            onLine: { _ in }
-        )
+        try await routedCollect(locate: { stub })
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: claimFile().path),
@@ -116,14 +117,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
     /// claim behind — the gate takes one before the binary check now.
     func testMissingBinaryLeavesNoClaim() async {
         do {
-            try await ReportEngine.collect(
-                workspace: WorkspaceID(validating: profile),
-                profile: profile,
-                workspacePaths: WorkspacePaths.self,
-                force: true,
-                locateJamfCLI: { nil },
-                onLine: { _ in }
-            )
+            try await routedCollect(locate: { nil })
             XCTFail("expected jamfCLINotFound")
         } catch ReportEngineError.jamfCLINotFound {
             // Expected.
