@@ -19,6 +19,17 @@ versions in this repository map to git tags.
   already holds or a new one (Connect new), after checking that it reaches the same Jamf Pro. (#305)
 - Re-check on the Add sheet suggests where a new Platform API profile belongs when it reaches
   the same Jamf Pro as an existing workspace. (#305)
+- The Add sheet offers an unassigned Jamf Protect login as its own environment (Jamf Protect
+  only), never preselected. (#305)
+- The Overview of a Jamf Protect-only environment shows the Protect screen. Tabs follow the
+  environment's products: Jamf Protect only with Protect, Compliance Benchmarks and the Config
+  Platform tab only with a Platform API profile, Trends and Mobile Devices only where there are
+  data for them. (#305)
+- The once-a-day collect guard and the shared-workspace claim now stop every product of an
+  environment together, Jamf School included. (#305)
+- HTML reports list the environment's products and their profiles under the title, and the
+  success and daily heartbeat webhook cards in full detail name the products (never the profile
+  names). (#305)
 - Data Sources lists the jamf-cli profiles that no workspace uses, with a button to add them. (#305)
 - The Environment card can merge a Platform API workspace into this one, after checking that
   both reach the same Jamf Pro. The sheet lists what is copied, what stays as it is and which

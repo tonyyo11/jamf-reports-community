@@ -439,6 +439,18 @@ source's per-Mac pin file. The journal is kept as `<merged>/merge-plan.json` and
 leading `_` is no canonical profile folder name). A finished merge shows a toast with the merged
 folder. Config Doctor's `platform.twin` hint points to this button.
 
+**Products and the Protect-only environment (2.12, environment model P8).** `EnvironmentProducts`
+(`Models/EnvironmentProducts.swift`) is the set of products an environment holds, from
+`EnvironmentProfiles` (a set slot is a product; the old keys add Platform only for a Platform-auth
+workspace profile), with the device composition. `WorkspaceStore.environmentProducts` feeds the tab
+rules (`TabVisibility.limited(to:)`). A workspace with `profiles: {protect: <name>}` and no MDM slot
+is Protect-only (`EnvironmentProfiles.isProtectOnly`): it collects Protect alone and writes a summary
+with `totalDevices` 0 and every other figure nil, and Jamf Pro commands refuse it
+(`proCommandRefusal`). `CollectRouter` runs the once-a-day guard and the shared claim
+(`ReportEngine.environmentGate`) before any product. `Product.displayName` is English only: HTML
+reports add a "Products: Jamf Pro (Example), ..." header line with profile names, and success and
+heartbeat webhook cards add a `Products` fact (product names, never profile names) in `full` detail.
+
 ### output config
 
 `output.allow_absolute_paths` (default `false`) gates any output path outside the

@@ -5,6 +5,17 @@ import Foundation
 struct EnvironmentProducts: Equatable, Sendable {
     enum Product: String, CaseIterable, Sendable {
         case jamfPro, jamfSchool, platform, protect, securityCloud
+
+        /// English, for reports and webhook cards (never localized).
+        var displayName: String {
+            switch self {
+            case .jamfPro: return "Jamf Pro"
+            case .jamfSchool: return "Jamf School"
+            case .platform: return "Platform API"
+            case .protect: return "Jamf Protect"
+            case .securityCloud: return "Security Cloud"
+            }
+        }
     }
 
     var products: Set<Product>
@@ -38,4 +49,32 @@ struct EnvironmentProducts: Equatable, Sendable {
     var isProtectOnly: Bool { has(.protect) && !has(.jamfPro) && !has(.jamfSchool) }
 
     func has(_ product: Product) -> Bool { products.contains(product) }
+
+    /// Product names in display order, no profile names: safe for a webhook card.
+    var orderedNames: [String] {
+        Product.allCases.filter(has).map(\.displayName)
+    }
+
+    /// "Jamf Pro (Example), Jamf Protect (Example-Protect)" in display order; a name goes through
+    /// `ConfigSchema.displayText`. Nil when the environment holds no product.
+    static func headerLine(_ environment: EnvironmentProfiles) -> String? {
+        let slots: [(Product, String?)] = [
+            (.jamfPro, environment.jamfPro), (.jamfSchool, environment.jamfSchool),
+            (.platform, environment.platform), (.protect, environment.protect),
+            (.securityCloud, environment.securityCloud),
+        ]
+        let parts = slots.compactMap { product, name in
+            name.map { "\(product.displayName) (\(ConfigSchema.displayText($0)))" }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    /// The webhook `Products` value for a workspace, from its config.yaml; nil with no products.
+    static func webhookValue(workspace: String) -> String? {
+        let names = from(
+            EnvironmentProfiles.read(workspace: workspace), composition: .unknown,
+            legacyPlatformAuth: false
+        ).orderedNames
+        return names.isEmpty ? nil : names.joined(separator: ", ")
+    }
 }
