@@ -79,6 +79,26 @@ final class TrendStoreProtectMetricsTests: XCTestCase {
         })
     }
 
+    func testASchoolWorkspaceOffersThemOnlyWithProtect() throws {
+        let workspace = tempRoot.appendingPathComponent("campus", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let config = workspace.appendingPathComponent("config.yaml")
+        try Data("school_cli:\n  enabled: true\n".utf8).write(to: config)
+        let store = WorkspaceStore(demoMode: false)
+        store.profile = "campus"
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(store.isSchoolWorkspace)
+        XCTAssertTrue(Set(store.availableMetrics).isDisjoint(with: TrendSeries.Metric.protectMetrics))
+        XCTAssertTrue(TrendSeries.Metric.protectMetrics.allSatisfy { !store.isOffered($0) })
+        try Data("school_cli:\n  enabled: true\nprotect:\n  enabled: true\n  profile: p\n".utf8)
+            .write(to: config)
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(store.isSchoolWorkspace)
+        XCTAssertTrue(TrendSeries.Metric.protectMetrics.allSatisfy {
+            store.availableMetrics.contains($0) && store.isOffered($0)
+        })
+    }
+
     func testAlertKeysFireOnAValueAndNeverWhenTheFieldIsAbsent() {
         let current = day(computers: 40, matched: 30, open: 9, counts: ["high": 4])
         let cases: [(String, String, Double)] = [

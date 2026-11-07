@@ -191,9 +191,10 @@ final class WorkspaceStore {
     /// Every metric the Trends picker can show for this workspace; a Jamf School workspace has
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
-        isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
-            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
-                + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : []) + agentMetrics
+        (isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
+            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
+            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
+            + (isSchoolWorkspace ? [] : agentMetrics)
     }
 
     /// The demo history carries no Protect series, so only a live environment with Protect.
