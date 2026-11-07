@@ -63,6 +63,8 @@ struct ProtectProCorrelation: Sendable {
 
     var inventory = Inventory.jamfPro
     var protectCount = 0
+    /// How many inventory records the match ran against.
+    var inventorySize = 0
     var matched = 0
     var ambiguous = 0
     var noIdentifier = 0
@@ -88,6 +90,7 @@ struct ProtectProCorrelation: Sendable {
             case .noIdentifier: result.noIdentifier += 1
             }
         }
+        result.inventorySize = pro.count
         result.proWithoutProtect = pro.enumerated()
             .filter { !claimed.contains($0.offset) }.map(\.element)
         return result

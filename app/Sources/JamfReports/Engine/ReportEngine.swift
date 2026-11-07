@@ -1742,6 +1742,12 @@ struct ReportEngine: Sendable {
     /// `platformOnlyKinds`; nil for a platform profile and — deliberately —
     /// for an unknown method. Unknown fails toward collecting: never skip a
     /// kind because we could not ask.
+    static func platformSlotApplies(
+        separateProfile: Bool, profileAuthIsPlatform: Bool, source: EnvironmentProfiles.Source
+    ) -> Bool {
+        separateProfile || (profileAuthIsPlatform && source == .legacyKeys)
+    }
+
     static func nonPlatformAuthMethod(_ authMethod: String?) -> String? {
         guard let method = JamfCLIAuthMethod(raw: authMethod), !method.isPlatform else {
             return nil
@@ -2437,8 +2443,17 @@ struct ReportEngine: Sendable {
             authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
-        landedSources?.record(.jamfPro, savedKinds.subtracting(platformOnlyKinds))
-        landedSources?.record(.platform, savedKinds.intersection(platformOnlyKinds))
+        // P9-R1: Platform-only kinds count under `platform` for a separate profiles.platform, or
+        // (no profiles: block) a Jamf Pro profile that logs in with the Platform API.
+        let platformSlot = platformSlotApplies(
+            separateProfile: platformSeparate,
+            profileAuthIsPlatform: profileAuth?.method?.isPlatform == true,
+            source: EnvironmentProfiles.resolve(
+                config: loadedConfig, workspace: workspace.name).source)
+        let platformLanded = savedKinds.intersection(platformOnlyKinds)
+        landedSources?.record(
+            .jamfPro, platformSlot ? savedKinds.subtracting(platformLanded) : savedKinds)
+        landedSources?.record(.platform, platformSlot ? platformLanded : [])
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(

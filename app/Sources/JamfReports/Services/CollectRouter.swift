@@ -252,7 +252,14 @@ enum CollectRouter {
             func finalize() {
                 finalizeEnvironment(
                     environment: environment, workspace: workspace, workspacePaths: workspacePaths,
-                    landed: landed.all, day: now, onLine: onLine)
+                    landed: landed.all, day: now, announcesWrite: !landed.mdmSummaryUnwritten,
+                    onLine: onLine)
+            }
+            let watched: @Sendable (CLIBridge.LogLine) -> Void = { line in
+                if line.text.hasPrefix(ReportEngine.summaryNotWrittenMarker) {
+                    landed.mdmSummaryUnwritten = true
+                }
+                onLine(line)
             }
             if environment.isProtectOnly {
                 landed.record(.protect, try await collectProtectOnly(
@@ -274,12 +281,12 @@ enum CollectRouter {
                         detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
                         skipExpensive: skipExpensive, force: force, workspacePaths: workspacePaths,
                         proCollect: proCollect, schoolCollect: schoolCollect,
-                        followWithProtect: followWithProtect, onLine: onLine)
+                        followWithProtect: followWithProtect, onLine: watched)
                 }
-            } catch {
-                // Protect may have landed after the MDM failed; the error stays the result.
+            } catch let verdict as ReportEngineError where verdict.isCollectVerdict {
+                // Protect may have landed after the MDM failed; the verdict stays the result.
                 finalize()
-                throw error
+                throw verdict
             }
             finalize()
             // Stamp this machine's activity so other Macs sharing the folder see the collect
@@ -379,6 +386,7 @@ enum CollectRouter {
         workspacePaths: WorkspacePaths.Type,
         landed: [EnvironmentProducts.Product: Set<String>],
         day: Date,
+        announcesWrite: Bool = true,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) {
         guard let dataDir = try? workspacePaths.dataDir(for: workspace.name),
@@ -389,7 +397,8 @@ enum CollectRouter {
         }
         ReportEngine.finalizeEnvironmentSummary(
             summariesDir: summariesDir, dataDir: dataDir, environment: environment,
-            workspace: workspace, landed: landed, day: day, onLine: onLine)
+            workspace: workspace, landed: landed, day: day, announcesWrite: announcesWrite,
+            onLine: onLine)
     }
 
     /// The Protect half of a Jamf Pro or Jamf School run. Never throws: a Protect failure is a

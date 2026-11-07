@@ -12,6 +12,13 @@ final class LandedSources: Sendable {
     }
 
     var all: [EnvironmentProducts.Product: Set<String>] { kinds.withLock { $0 } }
+
+    private let unwritten = Mutex(false)
+    /// The MDM step logged `summaryNotWrittenMarker` this run.
+    var mdmSummaryUnwritten: Bool {
+        get { unwritten.withLock { $0 } }
+        set { unwritten.withLock { $0 = newValue } }
+    }
 }
 
 extension ReportEngine {
@@ -19,20 +26,29 @@ extension ReportEngine {
     @TaskLocal static var landedSources: LandedSources?
 
     /// The Protect figures a daily summary records (P9-R2) from the newest snapshots, never from
-    /// device names; nil when neither a `protect-computers` nor a `protect-alerts` snapshot exists.
-    static func protectSummaryFigures(dataDir: URL, workspace: WorkspaceID) -> ProtectSummaryFigures? {
-        func exists(_ kind: String) -> Bool {
+    /// device names; nil when neither a readable `protect-computers` nor `protect-alerts`
+    /// snapshot exists. The match goes through `ProtectProCorrelation.load`, the Protect screen's
+    /// own calculator, against Jamf School devices only when `school` is set.
+    static func protectSummaryFigures(
+        dataDir: URL, workspace: WorkspaceID, school: Bool = false
+    ) -> ProtectSummaryFigures? {
+        func readable(_ kind: String) -> Bool {
             FileManager.newestJSONFile(in: dataDir.appendingPathComponent(kind)) != nil
         }
-        let hasComputers = exists("protect-computers"), hasAlerts = exists("protect-alerts")
-        guard hasComputers || hasAlerts else { return nil }
         let snapshot = ProtectDashboardService.load(dataDir: dataDir)
+        let hasComputers = readable("protect-computers")
+            && !snapshot.unreadableKinds.contains("protect-computers")
+        let hasAlerts = readable("protect-alerts")
+            && !snapshot.unreadableKinds.contains("protect-alerts")
+        guard hasComputers || hasAlerts else { return nil }
         var figures = ProtectSummaryFigures()
         if hasComputers {
             figures.computerCount = snapshot.computers.count
-            figures.matchedPct = matchedPct(snapshot.computers, dataDir: dataDir, workspace: workspace)
+            figures.matchedPct = matchedPct(
+                snapshot.computers, workspace: workspace, school: school)
         }
         if hasAlerts {
+            // A missing status counts as open: only Resolved and AutoResolved are closed.
             let open = snapshot.alerts.filter {
                 !["resolved", "autoresolved"].contains(($0.status ?? "").lowercased())
             }
@@ -46,17 +62,11 @@ extension ReportEngine {
     }
 
     private static func matchedPct(
-        _ computers: [ProtectComputerRow], dataDir: URL, workspace: WorkspaceID
+        _ computers: [ProtectComputerRow], workspace: WorkspaceID, school: Bool
     ) -> Double? {
-        let correlation: ProtectProCorrelation
-        let school = SchoolFleetService.load(dataDir: dataDir)
-        if school.devicesDate != nil {
-            correlation = .build(protect: computers, school: school.devices)
-        } else if let records = DeviceInventoryService.cachedComputerRecords(profile: workspace.name) {
-            correlation = .build(protect: computers, pro: records)
-        } else {
-            return nil
-        }
+        guard let correlation = ProtectProCorrelation.load(
+            protect: computers, profile: workspace.name, demoMode: false, school: school),
+              correlation.inventorySize > 0 else { return nil }
         let denominator = correlation.protectCount - correlation.noIdentifier
         guard denominator > 0 else { return nil }
         return (Double(correlation.matched) / Double(denominator) * 1000).rounded() / 10
@@ -69,7 +79,8 @@ extension ReportEngine {
     static func finalizeEnvironmentSummary(
         summariesDir: URL, dataDir: URL, environment: EnvironmentProfiles,
         workspace: WorkspaceID, landed: [EnvironmentProducts.Product: Set<String>],
-        day: Date = Date(), onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+        day: Date = Date(), announcesWrite: Bool = true,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) -> SummaryEmitOutcome {
         let date = SummaryJSONParser.dateFormatter.string(from: day)
         let file = summariesDir.appendingPathComponent("summary_\(date).json")
@@ -95,19 +106,25 @@ extension ReportEngine {
         } else {
             return .nothingToSummarize
         }
-        if !protectKinds.isEmpty {
+        if environment.isProtectOnly, !protectKinds.isEmpty {
             summary.collectionSources = mergedSources(
                 existing: summary.collectionSources,
                 fresh: Dictionary(uniqueKeysWithValues: protectKinds.map { ($0, "live") }))
         }
         let slots = landed.filter { !$0.value.isEmpty }.map(\.key.slotName)
         let figures = protectKinds.isEmpty
-            ? nil : protectSummaryFigures(dataDir: dataDir, workspace: workspace)
+            ? nil : protectSummaryFigures(
+                dataDir: dataDir, workspace: workspace, school: environment.isSchool)
         guard !slots.isEmpty || figures != nil else { return .keptExisting }
         summary = summary.withEnvironment(products: slots.isEmpty ? nil : slots, protect: figures)
-        guard writeSummaryFile(summary, to: file, onLine: onLine) else { return .writeFailed }
+        // After a run whose MDM summary was not written, `writeSummaryFile`'s "will reflect this
+        // run" line would contradict the [partial] line already logged: drop its [ok] line.
+        let write: @Sendable (CLIBridge.LogLine) -> Void = {
+            if announcesWrite || $0.level != .ok { onLine($0) }
+        }
+        guard writeSummaryFile(summary, to: file, onLine: write) else { return .writeFailed }
         onLine(.init(timestamp: Date(), level: .info, text:
-            "[info] \(file.lastPathComponent) records products: "
+            "[info] \(file.lastPathComponent) added environment fields: products "
                 + (summary.products ?? []).joined(separator: ", ")))
         return .wrote
     }
