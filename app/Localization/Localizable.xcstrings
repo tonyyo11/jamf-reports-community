@@ -68103,6 +68103,46 @@
         }
       }
     },
+    "Jamf Protect computers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf-Protect-Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordenadores de Jamf Protect"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordinateurs Jamf Protect"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer Jamf Protect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protectのコンピュータ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computadores do Jamf Protect"
+          }
+        }
+      }
+    },
     "Jamf Protect data" : {
       "localizations" : {
         "de" : {
@@ -68379,6 +68419,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Logins do Jamf Protect"
+          }
+        }
+      }
+    },
+    "Jamf Protect match with inventory" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf-Protect-Abgleich mit dem Inventar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coincidencia de Jamf Protect con el inventario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correspondance Jamf Protect avec l’inventaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Corrispondenza di Jamf Protect con l’inventario"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protectとインベントリの一致"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correspondência do Jamf Protect com o inventário"
+          }
+        }
+      }
+    },
+    "Jamf Protect open alerts" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offene Jamf-Protect-Warnungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertas abiertas de Jamf Protect"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertes Jamf Protect ouvertes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvisi aperti di Jamf Protect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protectの未解決アラート"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertas abertos do Jamf Protect"
           }
         }
       }
@@ -76221,6 +76341,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quase um valor por dispositivo — parece um identificador, então incluí-lo coloca dados por dispositivo na pasta de trabalho."
+          }
+        }
+      }
+    },
+    "Needs Jamf Protect collected for this environment." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert die Erfassung von Jamf Protect für diese Umgebung."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere que se recopile Jamf Protect para este entorno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite la collecte de Jamf Protect pour cet environnement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richiede la raccolta di Jamf Protect per questo ambiente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境でJamf Protectを収集する必要があります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requer a coleta do Jamf Protect para este ambiente."
           }
         }
       }
@@ -86891,6 +87051,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abra a Auditoria de integridade para ver o contexto do achado e orientações de correção."
+          }
+        }
+      }
+    },
+    "Open Jamf Protect to inspect current records." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen Sie Jamf Protect, um aktuelle Datensätze zu prüfen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Jamf Protect para inspeccionar los registros actuales."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez Jamf Protect pour inspecter les enregistrements actuels."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Jamf Protect per esaminare i record attuali."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在のレコードを確認するには、Jamf Protectを開いてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra o Jamf Protect para inspecionar os registros atuais."
           }
         }
       }

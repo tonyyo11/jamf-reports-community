@@ -192,8 +192,12 @@ final class WorkspaceStore {
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
         isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
-            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics + agentMetrics
+            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
+                + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : []) + agentMetrics
     }
+
+    /// The demo history carries no Protect series, so only a live environment with Protect.
+    var protectMetricsOffered: Bool { !demoMode && environmentProducts.has(.protect) }
 
     /// Whether the Overview shows `metric` as a score card: an agent metric needs its agent
     /// configured (and not counted as EDR), a control card needs its control counted by the
@@ -202,6 +206,7 @@ final class WorkspaceStore {
     func isOffered(_ metric: TrendSeries.Metric) -> Bool {
         // The demo history has no mobile series, as Trends offers none in demo mode.
         if metric.isMobile, demoMode { return false }
+        if metric.isProtect, !protectMetricsOffered { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
             return false
         }

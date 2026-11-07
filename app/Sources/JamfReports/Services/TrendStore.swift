@@ -363,6 +363,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .mobileDataProtection: return summary.mobile?.dataProtection?.pct
         case .mobileStale: return summary.mobile?.stale.map(Double.init)
         case .mobileJailbroken: return summary.mobile?.jailbroken.map(Double.init)
+        case .protectComputers: return summary.protectComputerCount.map(Double.init)
+        case .protectMatched: return summary.protectMatchedPct
+        case .protectOpenAlerts: return summary.protectOpenAlerts.map(Double.init)
         }
     }
 
@@ -370,7 +373,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// mobile metric needs a day that carries it, a Mac metric a day with Macs. With no history
     /// loaded yet every Mac metric stays offered, so a load in flight keeps the selection.
     func offers(_ metric: TrendSeries.Metric) -> Bool {
-        if metric.isMobile { return allSummaries.contains { value(for: metric, in: $0) != nil } }
+        if metric.isMobile || metric.isProtect { return allSummaries.contains { value(for: metric, in: $0) != nil } }
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }
     }
 

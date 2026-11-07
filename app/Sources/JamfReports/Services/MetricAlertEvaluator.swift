@@ -30,6 +30,11 @@ enum AlertMetric: String, CaseIterable, Sendable {
     case mobileDataProtectionPct = "mobile_data_protection_pct"
     case mobileStaleCount = "mobile_stale_count"
     case mobileJailbrokenCount = "mobile_jailbroken_count"
+    // Jamf Protect (`DailySummary.protect*`); absent without a Protect collect.
+    case protectComputerCount = "protect_computer_count"
+    case protectMatchedPct = "protect_matched_pct"
+    case protectOpenAlertCount = "protect_open_alert_count"
+    case protectHighAlertCount = "protect_high_alert_count"
 
     /// Short human label for the alert card (never a percentage sign — the
     /// message string carries units).
@@ -57,6 +62,10 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .mobileDataProtectionPct: return "Mobile data protection"
         case .mobileStaleCount: return "Stale mobile devices"
         case .mobileJailbrokenCount: return "Jailbroken mobile devices"
+        case .protectComputerCount: return "Jamf Protect computers"
+        case .protectMatchedPct: return "Jamf Protect match with inventory"
+        case .protectOpenAlertCount: return "Jamf Protect open alerts"
+        case .protectHighAlertCount: return "Jamf Protect high alerts"
         }
     }
 
@@ -64,7 +73,8 @@ enum AlertMetric: String, CaseIterable, Sendable {
     var isPercentage: Bool {
         switch self {
         case .staleCount, .actionItemsP0, .totalDevices, .mobileStaleCount,
-             .mobileJailbrokenCount: return false
+             .mobileJailbrokenCount, .protectComputerCount, .protectOpenAlertCount,
+             .protectHighAlertCount: return false
         default: return true
         }
     }
@@ -98,6 +108,13 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .mobileDataProtectionPct: return summary.mobile?.dataProtection?.pct
         case .mobileStaleCount: return summary.mobile?.stale.map(Double.init)
         case .mobileJailbrokenCount: return summary.mobile?.jailbroken.map(Double.init)
+        case .protectComputerCount: return summary.protectComputerCount.map(Double.init)
+        case .protectMatchedPct: return summary.protectMatchedPct
+        case .protectOpenAlertCount: return summary.protectOpenAlerts.map(Double.init)
+        // The alerts snapshot existed but held no open high alert: a real 0.
+        case .protectHighAlertCount:
+            return (summary.protectAlertCounts?["high"]
+                ?? (summary.protectOpenAlerts != nil ? 0 : nil)).map(Double.init)
         }
     }
 }
