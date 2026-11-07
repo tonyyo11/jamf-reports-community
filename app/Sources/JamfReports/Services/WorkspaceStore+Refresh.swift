@@ -529,15 +529,18 @@ extension WorkspaceStore {
         guard !autoAuditRefreshInFlight else { return }
         guard canRefreshAutomatically(profileSlug: profile) else { return }
         // `pro audit` is Jamf Pro's; a School workspace has none to refresh (2.10).
-        guard !isSchoolWorkspace,
-              !EnvironmentProfiles.read(workspace: profile).isProtectOnly else { return }
+        guard !isSchoolWorkspace else { return }
         autoAuditRefreshInFlight = true
         defer { autoAuditRefreshInFlight = false }
 
         let activeProfile = profile
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
+        // Reads config.yaml, so off the main actor; a Protect-only workspace has no `pro audit`.
         let auditIsStale = await Task.detached(priority: .utility) {
-            Self.newestSnapshotAge(profile: activeProfile, kind: "audit")
+            guard !EnvironmentProfiles.read(workspace: activeProfile).isProtectOnly else {
+                return false
+            }
+            return Self.newestSnapshotAge(profile: activeProfile, kind: "audit")
                 .map { $0 >= threshold } ?? true
         }.value
         guard auditIsStale, profile == activeProfile else { return }

@@ -324,9 +324,6 @@ private func scheduledRunSingleBody(
     // spelling's folder get nothing written into them.
     let productRefusal: () -> String? = {
         guard mode != .jamfCLIOnly, configError == nil || mode == .backup else { return nil }
-        if mode == .backup {
-            return CollectRouter.backupRefusal(profile: profile, config: routingConfig)
-        }
         return CollectRouter.proRunRefusal(
             profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig)
     }
@@ -436,9 +433,15 @@ private func scheduledRunSingleBody(
         // A schedule that has nothing to do for a profile is not a failed
         // schedule — log why and return success.
         let backupDetected = ProfileProductType.detect(from: routingConfig, profile: profile)
-        guard backupDetected.type == .jamfPro else {
+        let protectOnly = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
+            .isProtectOnly
+        guard backupDetected.type == .jamfPro, !protectOnly else {
+            let reason = protectOnly
+                ? "'\(profile)' holds only a Jamf Protect profile; there is no Jamf Pro in this "
+                    + "environment"
+                : CollectRouter.schoolBackupReason(profile: profile)
             let message = "[skip] scheduled backup skipped for '\(profile)': "
-                + "\(CollectRouter.schoolBackupReason(profile: profile)). Nothing to back up — "
+                + "\(reason). Nothing to back up — "
                 + "not a failure. Exclude this profile from the backup schedule to stop "
                 + "scheduling it."
             print(message)

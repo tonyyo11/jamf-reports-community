@@ -146,19 +146,48 @@ final class ProtectOnlyCollectTests: XCTestCase {
             + "Device lookup needs Jamf Pro.")
     }
 
-    func testAScheduledBackupOfAProtectOnlyWorkspaceIsRefusedBeforeAnyWrite() async throws {
-        let root = try makeRoot()
-        let schedule = Schedule(
-            name: "b", profile: ws, schedule: "Mon 07:00", cadence: "custom", mode: .backup,
+    private func backupSchedule(_ profile: String) -> Schedule {
+        Schedule(
+            name: "b", profile: profile, schedule: "Mon 07:00", cadence: "custom", mode: .backup,
             next: "—", last: "—", lastStatus: .ok, artifacts: [], enabled: true,
-            launchAgentLabel: "com.github.tonyyo11.jamf-reports-community.\(ws).b",
+            launchAgentLabel: "com.github.tonyyo11.jamf-reports-community.\(profile).b",
             multiTarget: nil, tiers: nil, excludedProfiles: nil)
-        let outcome = await runSchedule(schedule, verbose: false)
+    }
+
+    /// A run record exists, is not marked refused, and no failure was recorded.
+    private func assertPlainExitZeroRecord(in folder: URL) throws {
+        let dir = folder.appendingPathComponent("automation")
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasSuffix("_status.json") }
+        XCTAssertFalse(files.isEmpty, "no run record")
+        for file in files {
+            let text = try String(contentsOf: dir.appendingPathComponent(file), encoding: .utf8)
+            XCTAssertFalse(text.contains("refused"), text)
+            XCTAssertTrue(text.contains("\"exit_code\":0") && text.contains("\"success\":true"), text)
+        }
+    }
+
+    /// R13: a scheduled backup with nothing to back up is the #213 quiet skip, not a refusal.
+    func testAScheduledBackupOfAProtectOnlyWorkspaceIsAQuietSkip() async throws {
+        let root = try makeRoot()
+        let outcome = await runSchedule(backupSchedule(ws), verbose: false)
         XCTAssertEqual(outcome.exitCode, 0)
         XCTAssertTrue(outcome.endsRetries)
-        let names = try FileManager.default.contentsOfDirectory(
-            atPath: root.appendingPathComponent(ws).path)
-        XCTAssertFalse(names.contains("backups"), "\(names)")
+        let folder = root.appendingPathComponent(ws)
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .contains("backups"))
+        try assertPlainExitZeroRecord(in: folder)
+    }
+
+    func testAScheduledSchoolBackupIsStillAQuietSkip() async throws {
+        let root = try makeRoot()
+        try "school_cli:\n  enabled: true\n  profile: \(ws)\n".write(
+            to: root.appendingPathComponent(ws).appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        let outcome = await runSchedule(backupSchedule(ws), verbose: false)
+        XCTAssertEqual(outcome.exitCode, 0)
+        XCTAssertTrue(outcome.endsRetries)
+        try assertPlainExitZeroRecord(in: root.appendingPathComponent(ws))
     }
 
     /// Same store, same empty snapshots: a Jamf Pro workspace runs the sweep, a Protect-only
