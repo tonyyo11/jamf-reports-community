@@ -161,13 +161,49 @@ final class ProtectOnlyCollectTests: XCTestCase {
         XCTAssertFalse(names.contains("backups"), "\(names)")
     }
 
+    /// Same store, same empty snapshots: a Jamf Pro workspace runs the sweep, a Protect-only
+    /// one does not, so the Protect-only check alone is what stops it.
     @MainActor
-    func testTheLaunchAuditSweepSkipsAProtectOnlyWorkspace() async throws {
-        _ = try makeRoot()
-        let store = WorkspaceStore(demoMode: false)
-        store.profile = ws
-        let called = Box()
-        await store.autoRefreshAuditIfStale(audit: { _ in called.add("audit"); return 0 })
-        XCTAssertTrue(called.all.isEmpty)
+    func testTheLaunchAuditSweepSkipsAProtectOnlyWorkspaceAndOnlyThat() async throws {
+        let root = try makeRoot()
+        let pro = root.appendingPathComponent("prows", isDirectory: true)
+        try FileManager.default.createDirectory(at: pro, withIntermediateDirectories: true)
+        try "profiles:\n  jamf_pro: prows\n".write(
+            to: pro.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        for (name, expectsAudit) in [("prows", true), (ws, false)] {
+            let store = WorkspaceStore(demoMode: false)
+            store.profile = name
+            XCTAssertTrue(store.canRefreshAutomatically(profileSlug: name), name)
+            let called = Box()
+            await store.autoRefreshAuditIfStale(audit: { _ in called.add("audit"); return 0 })
+            XCTAssertEqual(called.all.isEmpty, !expectsAudit, name)
+        }
+    }
+
+    func testAnUnconfirmedProfilesProtectPinFailsTheRunWithoutCollecting() async throws {
+        let root = try makeRoot()
+        let name = "pinned\(Int.random(in: 1000...9999))"
+        let folder = root.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("config.yaml")
+        func write(_ protect: String) throws {
+            try "shared_workspace:\n  enabled: true\nprofiles:\n  protect: \(protect)\n"
+                .write(to: file, atomically: true, encoding: .utf8)
+        }
+        try write("someone-elses")
+        _ = SharedConfigPin.check(profile: name)
+        try write(name)
+        let calls = Box()
+        do {
+            try await CollectRouter.run(
+                workspace: WorkspaceID(validating: name), config: try ConfigLoader.load(from: file),
+                now: .testNoon,
+                protectCollect: { profile, _, _ in calls.add(profile); return ["protect-alerts"] },
+                resolved: { _ in nil }, onLine: { _ in })
+            XCTFail("expected protectNotConfirmed")
+        } catch let error as ReportEngineError {
+            guard case .protectNotConfirmed = error else { return XCTFail("got \(error)") }
+        }
+        XCTAssertTrue(calls.all.isEmpty)
     }
 }
