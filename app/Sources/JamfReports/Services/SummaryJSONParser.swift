@@ -67,7 +67,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // score counts as EDR).
              securityAgentCoverage,
              // The mobile devices' own figures, apart from the Mac fields (mobile spec 4.2).
-             mobile
+             mobile,
+             // Environment model P9: products that landed, Protect figures, aggregate maps.
+             products, protectComputerCount, protectMatchedPct, protectOpenAlerts,
+             protectAlertCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
+             lastSeenBuckets
     }
 
     var id: String { date }
@@ -156,6 +160,18 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Every device that is not a Mac (`MobileSummary`). Nil when the environment has no mobile
     /// devices or on a summary written before 2.11; `TrendStore` backfills recent days.
     private(set) var mobile: MobileSummary?
+    /// Slot names whose collect landed a source that day, sorted (P9-R1). Nil before P9.
+    private(set) var products: [String]?
+    /// Jamf Protect figures (P9-R2); nil when Protect is absent or nothing measured them.
+    private(set) var protectComputerCount: Int?
+    private(set) var protectMatchedPct: Double?
+    private(set) var protectOpenAlerts: Int?
+    private(set) var protectAlertCounts: [String: Int]?
+    /// Aggregate maps (P9-R3); a key with no devices is left out, no devices means nil.
+    private(set) var osMajorCounts: [String: Int]?
+    private(set) var modelFamilyCounts: [String: Int]?
+    private(set) var mobileFormFactorCounts: [String: Int]?
+    private(set) var lastSeenBuckets: LastSeenBuckets?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
@@ -213,6 +229,21 @@ struct DailySummary: Codable, Identifiable, Sendable {
         return merged.isEmpty ? nil : merged
     }
 
+    /// This summary with `products` unioned in (nil leaves it) and the four Protect fields
+    /// replaced by `protect` (nil leaves them).
+    func withEnvironment(products added: [String]?, protect: ProtectSummaryFigures?)
+        -> DailySummary {
+        var resolved = self
+        if let added { resolved.products = Array(Set(products ?? []).union(added)).sorted() }
+        if let protect {
+            resolved.protectComputerCount = protect.computerCount
+            resolved.protectMatchedPct = protect.matchedPct
+            resolved.protectOpenAlerts = protect.openAlerts
+            resolved.protectAlertCounts = protect.alertCounts
+        }
+        return resolved
+    }
+
     func filling(from older: DailySummary) -> DailySummary {
         let olderIsReal = older.complianceIsProxy == false && complianceIsProxy != false
         let olderComplianceWins = older.compliancePct != nil
@@ -254,7 +285,17 @@ struct DailySummary: Codable, Identifiable, Sendable {
             patchPctBasis: patchFromOlder ? older.patchPctBasis : patchPctBasis,
             securityScoreBasis: scoreFromOlder ? older.securityScoreBasis : securityScoreBasis,
             securityAgentCoverage: mergedAgentCoverage(older.securityAgentCoverage),
-            mobile: mobile.map { $0.filling(from: older.mobile) } ?? older.mobile
+            mobile: mobile.map { $0.filling(from: older.mobile) } ?? older.mobile,
+            products: products.map { Array(Set($0).union(older.products ?? [])).sorted() }
+                ?? older.products,
+            protectComputerCount: protectComputerCount ?? older.protectComputerCount,
+            protectMatchedPct: protectMatchedPct ?? older.protectMatchedPct,
+            protectOpenAlerts: protectOpenAlerts ?? older.protectOpenAlerts,
+            protectAlertCounts: protectAlertCounts ?? older.protectAlertCounts,
+            osMajorCounts: osMajorCounts ?? older.osMajorCounts,
+            modelFamilyCounts: modelFamilyCounts ?? older.modelFamilyCounts,
+            mobileFormFactorCounts: mobileFormFactorCounts ?? older.mobileFormFactorCounts,
+            lastSeenBuckets: lastSeenBuckets ?? older.lastSeenBuckets
         )
     }
 
@@ -291,7 +332,16 @@ struct DailySummary: Codable, Identifiable, Sendable {
         patchPctBasis: String? = nil,
         securityScoreBasis: String? = nil,
         securityAgentCoverage: [String: Double]? = nil,
-        mobile: MobileSummary? = nil
+        mobile: MobileSummary? = nil,
+        products: [String]? = nil,
+        protectComputerCount: Int? = nil,
+        protectMatchedPct: Double? = nil,
+        protectOpenAlerts: Int? = nil,
+        protectAlertCounts: [String: Int]? = nil,
+        osMajorCounts: [String: Int]? = nil,
+        modelFamilyCounts: [String: Int]? = nil,
+        mobileFormFactorCounts: [String: Int]? = nil,
+        lastSeenBuckets: LastSeenBuckets? = nil
     ) {
         self.date = date
         parsedDate = Self.day(date)
@@ -327,6 +377,15 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.securityScoreBasis = securityScoreBasis
         self.securityAgentCoverage = securityAgentCoverage
         self.mobile = mobile
+        self.products = products
+        self.protectComputerCount = protectComputerCount
+        self.protectMatchedPct = protectMatchedPct
+        self.protectOpenAlerts = protectOpenAlerts
+        self.protectAlertCounts = protectAlertCounts
+        self.osMajorCounts = osMajorCounts
+        self.modelFamilyCounts = modelFamilyCounts
+        self.mobileFormFactorCounts = mobileFormFactorCounts
+        self.lastSeenBuckets = lastSeenBuckets
     }
 
     init(from decoder: Decoder) throws {
@@ -370,6 +429,21 @@ struct DailySummary: Codable, Identifiable, Sendable {
         securityAgentCoverage = try container.decodeIfPresent(
             [String: Double].self, forKey: .securityAgentCoverage)
         mobile = try container.decodeIfPresent(MobileSummary.self, forKey: .mobile)
+        products = try container.decodeIfPresent([String].self, forKey: .products)
+        protectComputerCount = try container.decodeIfPresent(
+            Int.self, forKey: .protectComputerCount)
+        protectMatchedPct = try container.decodeIfPresent(
+            Double.self, forKey: .protectMatchedPct)
+        protectOpenAlerts = try container.decodeIfPresent(Int.self, forKey: .protectOpenAlerts)
+        protectAlertCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .protectAlertCounts)
+        osMajorCounts = try container.decodeIfPresent([String: Int].self, forKey: .osMajorCounts)
+        modelFamilyCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .modelFamilyCounts)
+        mobileFormFactorCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .mobileFormFactorCounts)
+        lastSeenBuckets = try container.decodeIfPresent(
+            LastSeenBuckets.self, forKey: .lastSeenBuckets)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -407,6 +481,15 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(securityScoreBasis, forKey: .securityScoreBasis)
         try container.encodeIfPresent(securityAgentCoverage, forKey: .securityAgentCoverage)
         try container.encodeIfPresent(mobile, forKey: .mobile)
+        try container.encodeIfPresent(products, forKey: .products)
+        try container.encodeIfPresent(protectComputerCount, forKey: .protectComputerCount)
+        try container.encodeIfPresent(protectMatchedPct, forKey: .protectMatchedPct)
+        try container.encodeIfPresent(protectOpenAlerts, forKey: .protectOpenAlerts)
+        try container.encodeIfPresent(protectAlertCounts, forKey: .protectAlertCounts)
+        try container.encodeIfPresent(osMajorCounts, forKey: .osMajorCounts)
+        try container.encodeIfPresent(modelFamilyCounts, forKey: .modelFamilyCounts)
+        try container.encodeIfPresent(mobileFormFactorCounts, forKey: .mobileFormFactorCounts)
+        try container.encodeIfPresent(lastSeenBuckets, forKey: .lastSeenBuckets)
     }
 }
 
@@ -420,16 +503,36 @@ extension DailySummary {
             firewallPct, gatekeeperPct, secureBootPct, bootstrapPct, xprotectPct, cvePct,
             mscpScorePct, securityScore,
         ].compactMap { $0 } + Array((securityAgentCoverage ?? [:]).values)
+            + [protectMatchedPct].compactMap { $0 }
         let bands = (mscpBands ?? [:]).values.flatMap {
             [$0.pass, $0.low, $0.medLow, $0.medium, $0.high, $0.noData]
         }
         let counts = [totalDevices] + bands + [
             staleCount, actionItemsP0, actionItemsP1, actionItemsP2, noBaselineActive,
             mobileDeviceCount,
-        ].compactMap { $0 } + (mobile?.counts ?? [])
+        ].compactMap { $0 } + (mobile?.counts ?? []) + environmentCounts
         return percents.allSatisfy { $0.isFinite && abs($0) <= Double(limit) }
             && counts.allSatisfy { (-limit...limit).contains($0) }
             && mobile?.sharesAreConsistent != false
+            && environmentFieldsAreConsistent
+    }
+
+    /// Every P9 count, for the shared range check.
+    private var environmentCounts: [Int] {
+        let maps = [protectAlertCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts]
+            .compactMap { $0 }.flatMap { $0.values }
+        return [protectComputerCount, protectOpenAlerts].compactMap { $0 } + maps
+            + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
+    }
+
+    /// Counts are not negative, the matched share is 0-100, and no severity has more open
+    /// alerts than the total.
+    private var environmentFieldsAreConsistent: Bool {
+        if environmentCounts.contains(where: { $0 < 0 }) { return false }
+        if let protectMatchedPct, !(0...100).contains(protectMatchedPct) { return false }
+        if let protectOpenAlerts, let protectAlertCounts,
+           protectAlertCounts.values.contains(where: { $0 > protectOpenAlerts }) { return false }
+        return true
     }
 }
 

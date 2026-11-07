@@ -553,6 +553,7 @@ struct ReportEngine: Sendable {
         // replaced by nil.
         if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
         if existing.mobile == nil, fresh.mobile != nil { return true }
+        if freshMeasuresNewEnvironmentField(existing: existing, fresh: fresh) { return true }
         // The same for the EDR figure: the first collect after an upgrade past the build that
         // began recording it must not leave that day's summary, and the Overview's EDR score
         // card reading it, empty. Upgrade only; a recorded figure is never replaced by nil.
@@ -560,6 +561,21 @@ struct ReportEngine: Sendable {
         // A later run landed a source: its numbers are newer, whatever the morning's said.
         if fresh.collectionSources?.values.contains("live") == true { return true }
         return false
+    }
+
+    /// P9 fields: true when `fresh` measures one `existing` lacks (upgrade only).
+    private static func freshMeasuresNewEnvironmentField(
+        existing: DailySummary, fresh: DailySummary
+    ) -> Bool {
+        (existing.protectComputerCount == nil && fresh.protectComputerCount != nil)
+            || (existing.protectMatchedPct == nil && fresh.protectMatchedPct != nil)
+            || (existing.protectOpenAlerts == nil && fresh.protectOpenAlerts != nil)
+            || (existing.protectAlertCounts == nil && fresh.protectAlertCounts != nil)
+            || (existing.osMajorCounts == nil && fresh.osMajorCounts != nil)
+            || (existing.modelFamilyCounts == nil && fresh.modelFamilyCounts != nil)
+            || (existing.mobileFormFactorCounts == nil && fresh.mobileFormFactorCounts != nil)
+            || (existing.lastSeenBuckets == nil && fresh.lastSeenBuckets != nil)
+            || !Set(fresh.products ?? []).isSubset(of: existing.products ?? [])
     }
 
     /// A rebuilt same-day point keeps "live" for a source an earlier run landed and this run
