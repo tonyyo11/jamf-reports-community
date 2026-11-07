@@ -244,6 +244,16 @@ enum AddSheetPlan {
         return rows.filter { !$0.use.isAddOn }
     }
 
+    /// A Protect login can also become an environment of its own (P8). Never the default: the
+    /// preselection and the add rows are unchanged, so the user picks it.
+    static func ownEnvironmentRows(_ discovery: AddSheetDiscovery?) -> [UnassignedProfile] {
+        (discovery?.unassigned ?? []).filter(offersOwnEnvironment)
+    }
+
+    static func offersOwnEnvironment(_ row: UnassignedProfile) -> Bool {
+        row.use == .addToCurrent(.protect)
+    }
+
     /// What the "Profiles jamf-cli already has" card shows.
     enum Listing: Equatable, Sendable {
         case demo

@@ -651,4 +651,51 @@ final class AddSheetPlanTests: XCTestCase {
         XCTAssertEqual(
             plan([exampleOAuth, protectLogin]).allProfileNames, ["Example", "Example-Protect"])
     }
+
+    // MARK: - Protect-only environment (P8)
+
+    func testAnUnassignedProtectLoginMayBeItsOwnEnvironmentButIsNeverPreselected() {
+        let rows = unassigned([profile("Acme-Protect", .protect), profile("lab")])
+        let protect = rows.first { $0.name == "Acme-Protect" }
+        XCTAssertEqual(protect.map(AddSheetPlan.offersOwnEnvironment), true)
+        XCTAssertEqual(rows.first { $0.name == "lab" }.map(AddSheetPlan.offersOwnEnvironment), false)
+        // Only the Protect row, nothing to join: still the New workspace step, never a choice made.
+        XCTAssertEqual(
+            AddSheetPlan.preselection(
+                unassigned: protect.map { [$0] } ?? [], currentAcceptsProtect: false,
+                requested: nil),
+            .newWorkspace)
+        XCTAssertEqual(
+            AddSheetPlan.preselection(
+                unassigned: protect.map { [$0] } ?? [], currentAcceptsProtect: true,
+                requested: nil),
+            .addToCurrent)
+    }
+
+    func testALoginAWorkspaceAlreadyNamesIsNotOffered() {
+        let rows = unassigned([profile("Acme-Protect", .protect)], paired: ["Acme-Protect"])
+        XCTAssertTrue(rows.isEmpty)
+    }
+
+    @MainActor func testCreatingAProtectOnlyEnvironmentWritesTheBlockAndRefusesAnExistingConfig() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-protect-only-\(UUID().uuidString)")
+        let support = root.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        try OnboardingFlow.createProtectOnlyEnvironment(login: "Acme-Protect", appSupport: support)
+        let config = root.appendingPathComponent("Acme-Protect/config.yaml")
+        let env = EnvironmentProfiles.read(configURL: config, workspace: "Acme-Protect")
+        XCTAssertTrue(env.isProtectOnly)
+        XCTAssertEqual(env.protect, "Acme-Protect")
+        XCTAssertNil(env.jamfPro)
+
+        XCTAssertThrowsError(
+            try OnboardingFlow.createProtectOnlyEnvironment(
+                login: "Acme-Protect", appSupport: support))
+    }
 }

@@ -3804,6 +3804,46 @@
         }
       }
     },
+    "%@ already has a config.yaml, so it was not made a Jamf Protect environment. Nothing was changed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat bereits eine config.yaml und wurde daher nicht zu einer Jamf-Protect-Umgebung gemacht. Es wurde nichts geändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya tiene un config.yaml, por lo que no se convirtió en un entorno de Jamf Protect. No se cambió nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a déjà un config.yaml ; il n’a donc pas été transformé en environnement Jamf Protect. Rien n’a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ha già un config.yaml, quindi non è stato trasformato in un ambiente Jamf Protect. Non è stato modificato nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@にはすでに config.yaml があるため、Jamf Protect の環境にはしませんでした。変更はありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ já tem um config.yaml, então não foi transformado em ambiente do Jamf Protect. Nada foi alterado."
+          }
+        }
+      }
+    },
     "%@ already uses the Jamf Protect profile %@. Change it from Data Sources." : {
       "localizations" : {
         "de" : {
@@ -7272,6 +7312,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ está executando %@ neste espaço de trabalho compartilhado %@. As execuções agendadas aqui aguardam; Atualizar continua funcionando."
+          }
+        }
+      }
+    },
+    "%@ is set up as a Jamf Protect environment. Switch to it from the workspace menu." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist als Jamf-Protect-Umgebung eingerichtet. Wechseln Sie über das Arbeitsbereichsmenü dorthin."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ está configurado como entorno de Jamf Protect. Cambie a él desde el menú de espacios de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est configuré comme environnement Jamf Protect. Passez-y depuis le menu des espaces de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ è configurato come ambiente Jamf Protect. Passarvi dal menu degli spazi di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を Jamf Protect の環境として設定しました。ワークスペースメニューから切り替えてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ está configurado como ambiente do Jamf Protect. Alterne para ele no menu de espaços de trabalho."
           }
         }
       }
@@ -66731,6 +66811,46 @@
         }
       }
     },
+    "Its own environment (Jamf Protect only)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eigene Umgebung (nur Jamf Protect)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Su propio entorno (solo Jamf Protect)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Son propre environnement (Jamf Protect uniquement)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ambiente a sé (solo Jamf Protect)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "独立した環境(Jamf Protect のみ)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seu próprio ambiente (somente Jamf Protect)"
+          }
+        }
+      }
+    },
     "JAMF SCHOOL" : {
       "localizations" : {
         "de" : {
@@ -73157,6 +73277,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Versões principais encontradas na frota"
+          }
+        }
+      }
+    },
+    "Make %@ an environment of its own" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ zu einer eigenen Umgebung machen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convertir %@ en un entorno propio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faire de %@ un environnement à part entière"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendi %@ un ambiente a sé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を独立した環境にする"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transformar %@ em um ambiente próprio"
           }
         }
       }
@@ -119169,6 +119329,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este ID está listado mais de uma vez."
+          }
+        }
+      }
+    },
+    "This Jamf Protect login is an environment of its own." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Jamf-Protect-Login ist eine eigene Umgebung."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este inicio de sesión de Jamf Protect es un entorno propio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce profil Jamf Protect est un environnement à part entière."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo accesso Jamf Protect è un ambiente a sé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Jamf Protect のログインは独立した環境です。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este login do Jamf Protect é um ambiente próprio."
           }
         }
       }

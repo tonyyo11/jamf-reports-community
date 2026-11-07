@@ -102,6 +102,7 @@ final class OnboardingFlow {
         case invalidScopeID
         case missingJamfCLI
         case missingWorkspace
+        case workspaceHasConfig(String)
         case processFailed(String)
 
         var errorDescription: String? {
@@ -120,6 +121,8 @@ final class OnboardingFlow {
                 L("Could not find jamf-cli on PATH.")
             case .missingWorkspace:
                 L("Create the workspace before running this step.")
+            case .workspaceHasConfig(let name):
+                L("\(name) already has a config.yaml, so it was not made a Jamf Protect environment. Nothing was changed.")
             case .processFailed(let message):
                 message
             }

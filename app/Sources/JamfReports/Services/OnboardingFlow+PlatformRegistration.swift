@@ -67,6 +67,25 @@ extension OnboardingFlow {
         SharedConfigPin.confirmWrittenConfig(at: config, profile: profile)
         return true
     }
+
+    /// A Protect-only environment (P8): the workspace folder named after the login, the minimal
+    /// config.yaml and `profiles: {protect: <login>}` with no MDM slot, all confirmed on this
+    /// Mac. A config.yaml already there is never overwritten.
+    static func createProtectOnlyEnvironment(
+        login: String, appSupport: URL = AppSupport.directory()
+    ) throws {
+        guard try createJamfCLIOnlyWorkspace(for: login) else {
+            throw FlowError.workspaceHasConfig(login)
+        }
+        _ = try ConfigService.saveBlock(key: "profiles", profile: login) {
+            var block = YAMLCodec.YAMLMapping(entries: [])
+            block.set(
+                ProfilesConfigWriter.Slot.protect.rawValue, value: .scalar(.string(login)))
+            $0.set("profiles", value: .mapping(block))
+        }
+        SharedConfigPin.confirmWritten(
+            login, key: .protectProfile, profile: login, appSupport: appSupport)
+    }
 }
 
 extension Data {
