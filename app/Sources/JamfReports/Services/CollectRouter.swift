@@ -225,7 +225,7 @@ enum CollectRouter {
         // refused above.
         guard environment.mdm != nil || environment.isProtectOnly else {
             throw CLIBridgeError.wrongProduct(
-                L("'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile"))
+                "'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile")
         }
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
@@ -258,7 +258,8 @@ enum CollectRouter {
             }
             guard let mdm = environment.mdm else {
                 throw CLIBridgeError.wrongProduct(
-                    L("'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile"))
+                    "'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School "
+                        + "profile")
             }
             try await runProducts(
                 detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,

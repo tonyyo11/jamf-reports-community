@@ -19393,46 +19393,6 @@
         }
       }
     },
-    "'%@' names no Jamf Pro or Jamf School profile" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "‚%@‘ verweist auf kein Jamf Pro- oder Jamf School-Profil"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@” no designa ningún perfil de Jamf Pro ni de Jamf School"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "« %@ » ne désigne aucun profil Jamf Pro ni Jamf School"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "'%@' non corrisponde ad alcun profilo Jamf Pro o Jamf School"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "'%@' はJamf ProまたはJamf Schoolのプロファイルに該当しません"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "'%@' não indica nenhum perfil do Jamf Pro ou do Jamf School"
-          }
-        }
-      }
-    },
     "'%@' names no environment ID or tenant ID, so its credential reaches only Jamf Account. No Jamf Pro report can be collected with it, and collecting stops at once." : {
       "localizations" : {
         "de" : {
@@ -104445,46 +104405,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Agendamento em execução"
-          }
-        }
-      }
-    },
-    "Scheduled %@ run" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geplanter %@-Lauf"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ejecución programada de %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exécution planifiée %@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esecuzione pianificata di %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールされた%@の実行"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Execução agendada de %@"
           }
         }
       }

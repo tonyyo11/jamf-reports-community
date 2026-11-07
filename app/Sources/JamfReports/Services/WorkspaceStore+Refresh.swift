@@ -637,7 +637,8 @@ extension WorkspaceStore {
         } ?? false
         // A Protect-only environment collects Protect alone (P8).
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
-        if environment.isProtectOnly {
+        // Unconfirmed (a peer's edit), it is judged as before, so failing kinds stay visible.
+        if environment.isProtectOnly && protectPinAllows(profile) {
             return protectCollected ? DataFreshnessHealth.protectKinds : []
         }
         // A Jamf School workspace runs `schoolCollect`, which lands none of the Jamf Pro kinds,

@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class EnvironmentProductsReportTests: XCTestCase {
-    private var root = URL(fileURLWithPath: "/")
+    nonisolated(unsafe) private var root = URL(fileURLWithPath: "/")
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
