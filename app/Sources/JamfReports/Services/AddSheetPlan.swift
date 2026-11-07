@@ -409,7 +409,8 @@ struct AddSheetDiscovery: Sendable {
         let names = listed.map(\.name)
         // A Protect or Security Cloud login's own folder (made by 2.9.0) is not a workspace.
         let workspaces = listed.filter {
-            !$0.product.isNeverAWorkspace && ProfileService.hasWorkspace($0.name, under: root)
+            !ProfileService.neverAWorkspace($0, under: root)
+                && ProfileService.hasWorkspace($0.name, under: root)
         }.map(\.name) + ProfileService.localOnlyWorkspaces(under: root, cliNames: names)
         let slots = Dictionary(
             workspaces.map { ($0, EnvironmentProfiles.read(workspace: $0, under: root)) },

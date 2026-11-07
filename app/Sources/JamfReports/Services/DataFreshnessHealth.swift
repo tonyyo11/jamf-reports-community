@@ -79,9 +79,15 @@ enum DataFreshnessHealth {
     /// refresh tier here: `CollectRouter` runs Protect after a Pro refresh collect.
     static let protectKinds: [String] = ReportEngine.protectCommandMatrix(profile: "").map(\.kind)
 
+    /// The Jamf School kinds `schoolCollect` records, less `school-blueprints` (it needs Platform
+    /// fields, so a School profile without them is not failing). `planSchoolCollect` runs them
+    /// at the refresh cadence.
+    static let schoolKinds: [String] = ReportEngine.schoolCommandMatrix(profile: "").map(\.kind)
+        .filter { $0 != ReportEngine.schoolBlueprintsKind }
+
     /// The tier whose cadence judges `kind` and whose collect remediates it.
     static func tier(forKind kind: String) -> CollectionTier? {
-        CollectionTier.tier(forReport: kind) ?? (protectKinds.contains(kind) ? .refresh : nil)
+        CollectionTier.tier(forReport: kind) ?? ((protectKinds + schoolKinds).contains(kind) ? .refresh : nil)
     }
 
     /// Evaluate one pass. `now` is injected for deterministic tests.

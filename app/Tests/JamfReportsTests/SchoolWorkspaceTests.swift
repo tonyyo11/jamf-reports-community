@@ -104,12 +104,14 @@ final class SchoolWorkspaceTests: XCTestCase {
             .write(to: workspace.appendingPathComponent("config.yaml"))
         XCTAssertEqual(
             WorkspaceStore.expectedKinds(profile: "campus", jamfCLIVersion: "1.33.0", auth: nil),
-            ["sofa"])
+            DataFreshnessHealth.schoolKinds + ["sofa"])
+        XCTAssertFalse(DataFreshnessHealth.schoolKinds.contains("school-blueprints"))
+        XCTAssertEqual(DataFreshnessHealth.tier(forKind: "school-devices"), .refresh)
         try Data("school_cli:\n  enabled: true\n  profile: \"campus\"\njamf_cli:\n  collect_skip: [sofa]\n"
             .utf8).write(to: workspace.appendingPathComponent("config.yaml"))
         XCTAssertEqual(
             WorkspaceStore.expectedKinds(profile: "campus", jamfCLIVersion: "1.33.0", auth: nil),
-            [])
+            DataFreshnessHealth.schoolKinds)
 
         let pro = tempRoot.appendingPathComponent("prod", isDirectory: true)
         try FileManager.default.createDirectory(at: pro, withIntermediateDirectories: true)
@@ -139,9 +141,10 @@ final class SchoolWorkspaceTests: XCTestCase {
                                                product: product) },
                 protectPinAllows: { _ in pinAllows })
         }
-        XCTAssertEqual(expected(.protect), ["sofa"] + DataFreshnessHealth.protectKinds)
-        XCTAssertEqual(expected(.school), ["sofa"], "a protect.profile of another product is skipped")
-        XCTAssertEqual(expected(.protect, pinAllows: false), ["sofa"])
+        let school = DataFreshnessHealth.schoolKinds + ["sofa"]
+        XCTAssertEqual(expected(.protect), school + DataFreshnessHealth.protectKinds)
+        XCTAssertEqual(expected(.school), school, "a protect.profile of another product is skipped")
+        XCTAssertEqual(expected(.protect, pinAllows: false), school)
     }
 
     // MARK: - Generate

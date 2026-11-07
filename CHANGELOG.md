@@ -9,6 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
+- A Jamf Protect-only environment is listed and run as a workspace, its Data Sources list shows
+  only the Protect sources, and the health strip expects only the Protect data. (#305)
+- The health strip now watches a Jamf School workspace's own data (devices, users, classes and
+  the rest), not only SOFA and Protect. (#305)
 - An environment with only a Jamf Protect profile collects Protect and records a daily summary;
   backups, audits and device lookups still need Jamf Pro and say so. (#305)
 - The Add sheet adds a Platform API profile to the current environment, either one jamf-cli

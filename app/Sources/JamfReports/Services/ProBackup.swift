@@ -137,6 +137,7 @@ enum ProBackup {
     ) -> SyncedStorageChoice? {
         let detected = ProfileProductType.detect(from: config, profile: profile)
         guard detected.type == .jamfPro,
+              !EnvironmentProfiles.resolve(config: config, workspace: profile).isProtectOnly,
               let workspace = ProfileService.workspaceURL(for: profile),
               let place = BackupMaintenance.sharedStorageDescription(
                 workspace.appendingPathComponent("backups", isDirectory: true),

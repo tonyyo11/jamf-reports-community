@@ -30,6 +30,40 @@ final class PairedProductProfileTests: XCTestCase {
 
     private func names(_ profiles: [JamfCLIProfile]) -> [String] { profiles.map(\.name) }
 
+    func testAProtectOnlyEnvironmentIsAWorkspaceAndANamedLoginStillIsNot() throws {
+        try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
+        try workspace("prod", config: "profiles:\n  jamf_pro: prod\n  protect: other\n")
+        var only = profile("pro-only")
+        only.product = .protect
+        var other = profile("other")
+        other.product = .protect
+        XCTAssertTrue(ProfileService.isProtectOnlyWorkspace("pro-only", root: root))
+        XCTAssertFalse(ProfileService.isProtectOnlyWorkspace("prod", root: root))
+        XCTAssertEqual(
+            names(ProfileService.droppingPairedProductProfiles(
+                [profile("prod"), only, other], under: root)),
+            ["prod", "pro-only"])
+    }
+
+    func testAProtectOnlyEnvironmentExpectsTheProtectKindsAlone() throws {
+        try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        XCTAssertEqual(
+            WorkspaceStore.expectedKinds(
+                profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
+                protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
+                                              product: .protect) },
+                protectPinAllows: { _ in true }),
+            DataFreshnessHealth.protectKinds)
+    }
+
+    func testTheSourcesPlanOfAProtectOnlyEnvironmentIsTheProtectListAlone() {
+        let plan = CollectSourcesPlan.build(.init(
+            product: .jamfPro, profile: "p", protectProfile: "p", protectOnly: true))
+        XCTAssertEqual(plan.sources.map(\.kind), DataFreshnessHealth.protectKinds)
+    }
+
     func testProfileNamedOnlyAsProtectConnectionIsNotListed() throws {
         try workspace("prod", config: "protect:\n  enabled: true\n  profile: protect\n")
         let listed = ProfileService.droppingPairedProductProfiles(

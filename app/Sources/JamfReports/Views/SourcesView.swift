@@ -774,6 +774,8 @@ struct SourcesView: View {
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
+                    protectOnly: EnvironmentProfiles.resolve(
+                        config: config, workspace: profile).isProtectOnly,
                     protectRefusal: protectProfile.flatMap { name in
                         ProfileAuthMethod.resolve(profile: name)?.protectRefusal(profile: name)
                     },

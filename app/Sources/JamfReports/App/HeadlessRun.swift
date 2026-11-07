@@ -813,7 +813,7 @@ func runSchedule(
         )
     }
     let runnable = Set(profiles.map(\.name))
-    for p in discovered where p.status != .error && !p.product.isNeverAWorkspace
+    for p in discovered where p.status != .error && !ProfileService.neverAWorkspace(p)
         && !excluded.contains(p.name) && !runnable.contains(p.name) {
         fputs("[info] skipping \(p.name): no workspace (add it from Data Sources)\n", stderr)
         AppLogger.schedule.notice("skipping \(p.name, privacy: .private): no workspace")
