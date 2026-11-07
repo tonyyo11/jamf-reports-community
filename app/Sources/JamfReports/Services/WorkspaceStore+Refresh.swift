@@ -537,7 +537,9 @@ extension WorkspaceStore {
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
         // Reads config.yaml, so off the main actor; a Protect-only workspace has no `pro audit`.
         let auditIsStale = await Task.detached(priority: .utility) {
-            guard !EnvironmentProfiles.read(workspace: activeProfile).isProtectOnly else {
+            guard !EnvironmentProfiles.read(workspace: activeProfile)
+                .isConfirmedProtectOnly(workspace: activeProfile)
+            else {
                 return false
             }
             return Self.newestSnapshotAge(profile: activeProfile, kind: "audit")

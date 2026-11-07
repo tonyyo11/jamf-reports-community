@@ -433,8 +433,15 @@ private func scheduledRunSingleBody(
         // A schedule that has nothing to do for a profile is not a failed
         // schedule — log why and return success.
         let backupDetected = ProfileProductType.detect(from: routingConfig, profile: profile)
-        let protectOnly = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
-            .isProtectOnly
+        let environment = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
+        let protectOnly = environment.isConfirmedProtectOnly(workspace: profile)
+        if environment.isProtectOnly, !protectOnly {
+            let warning = "[warn] profiles.protect for '\(profile)' was changed in the shared "
+                + "config.yaml and is not confirmed on this Mac (Config Doctor); the backup is "
+                + "refused until it is"
+            print(warning)
+            recorder?.record(warning)
+        }
         guard backupDetected.type == .jamfPro, !protectOnly else {
             let reason = protectOnly
                 ? "'\(profile)' holds only a Jamf Protect profile; there is no Jamf Pro in this "
@@ -551,7 +558,10 @@ private func scheduledRunSingleBody(
             // reached disk. Claiming it otherwise is the specific lie this
             // release is closing: the operator reads "Trends updated" as proof
             // the fleet was polled today.
-            let trendsSuffix = detected.type == .jamfPro && honesty.producedFreshSnapshot
+            let protectOnly = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
+                .isProtectOnly
+            let trendsSuffix = detected.type == .jamfPro && !protectOnly
+                && honesty.producedFreshSnapshot
                 ? " — Trends updated" : ""
             let message = honesty.stoodDown
                 ? "[ok] scheduled snapshot for '\(profile)' stood down — another machine "

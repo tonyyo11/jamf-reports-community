@@ -109,6 +109,14 @@ struct EnvironmentProfiles: Equatable, Sendable {
     /// A `profiles:` block with a `protect` slot and neither MDM slot.
     var isProtectOnly: Bool { source == .profilesBlock && mdm == nil && protect != nil }
 
+    /// Protect-only, and this Mac has confirmed the `profiles.protect` change: the one test for
+    /// treating a workspace as having no Jamf Pro where a peer's unconfirmed edit must not count.
+    func isConfirmedProtectOnly(
+        workspace: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        isProtectOnly && SharedConfigPin.protectAllowed(profile: workspace, appSupport: appSupport)
+    }
+
     /// `refusal`, plus a refusal of a Protect-only environment for a command that needs Jamf Pro.
     func proCommandRefusal(workspace: String, operation: String) -> String? {
         if let refusal = refusal(workspace: workspace) { return refusal }
