@@ -645,7 +645,7 @@ extension WorkspaceStore {
         // too (#207), less `school-blueprints`, which needs Platform fields.
         if ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool {
             let skipped = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
-            return DataFreshnessHealth.schoolKinds.filter { !skipped.contains($0) }
+            return DataFreshnessHealth.schoolKinds
                 + (skipped.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
                 + (protectCollected ? DataFreshnessHealth.protectKinds : [])
         }

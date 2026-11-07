@@ -114,7 +114,11 @@ enum AddSheetPlan {
         }
         // A Protect login is added to the current workspace; the flow refuses it only as a
         // workspace of its own.
-        if profile.product == .protect { return .addToCurrent(.protect) }
+        if profile.product == .protect {
+            return ProfileService.isProtectOnlyWorkspace(profile.name)
+                ? .unavailable(L("This Jamf Protect login is an environment of its own."))
+                : .addToCurrent(.protect)
+        }
         if let reason = ExistingCLISetupFlow.refusal(for: profile) { return .unavailable(reason) }
         // D24: a Platform login becomes a slot of the current environment, not a workspace.
         if platformSlotOpen, profile.auth?.isPlatform == true { return .addToCurrent(.platform) }

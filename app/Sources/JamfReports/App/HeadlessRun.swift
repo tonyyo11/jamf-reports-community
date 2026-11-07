@@ -583,6 +583,14 @@ private func scheduledRunSingleBody(
         }
 
         let config = try routingConfig ?? ConfigLoader.load(from: configURL)
+        if EnvironmentProfiles.resolve(config: config, workspace: profile).isProtectOnly {
+            let message = "[skip] scheduled report skipped for '\(profile)': "
+                + ReportEngine.protectOnlyNoReportReason
+            print(message)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 0)
+            return 0
+        }
         let dataDir = try WorkspacePaths.dataDir(for: profile)
 
         // Shared workspaces: don't render the same report twice. Placed here

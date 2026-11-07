@@ -351,10 +351,11 @@ enum ProfileService {
     static func runnableWorkspaces(
         _ profiles: [JamfCLIProfile],
         excluding excluded: Set<String>,
+        under root: URL = workspacesRoot(),
         hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) }
     ) -> [JamfCLIProfile] {
         applyingExclusions(profiles, excluding: excluded).filter { profile in
-            profile.status != .error && !neverAWorkspace(profile, under: workspacesRoot())
+            profile.status != .error && !neverAWorkspace(profile, under: root)
                 && hasWorkspace(profile.name)
         }
     }
