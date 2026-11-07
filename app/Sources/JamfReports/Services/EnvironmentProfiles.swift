@@ -91,16 +91,30 @@ struct EnvironmentProfiles: Equatable, Sendable {
                 + "environment has one MDM, so nothing runs. Keep one and add the other as a "
                 + "workspace of its own."
         }
-        guard let mdm else {
-            return "config.yaml's profiles block names neither profiles.jamf_pro nor "
-                + "profiles.jamf_school, so nothing runs for '\(shown(workspace))'."
+        guard let first = mdm ?? protect else {
+            return "config.yaml's profiles block names neither profiles.jamf_pro, "
+                + "profiles.jamf_school nor profiles.protect, so nothing runs for "
+                + "'\(shown(workspace))'."
         }
-        guard mdm == workspace else {
-            let key = jamfPro != nil ? "profiles.jamf_pro" : "profiles.jamf_school"
-            return "\(key) names '\(shown(mdm))' but this workspace is '\(shown(workspace))', "
-                + "so nothing runs. Set \(key) to '\(shown(workspace))'."
+        guard first == workspace else {
+            let key = jamfPro != nil ? "profiles.jamf_pro"
+                : jamfSchool != nil ? "profiles.jamf_school" : "profiles.protect"
+            return "\(key) names '\(shown(first))' but this workspace is "
+                + "'\(shown(workspace))', so nothing runs. Set \(key) to "
+                + "'\(shown(workspace))'."
         }
         return nil
+    }
+
+    /// A `profiles:` block with a `protect` slot and neither MDM slot.
+    var isProtectOnly: Bool { source == .profilesBlock && mdm == nil && protect != nil }
+
+    /// `refusal`, plus a refusal of a Protect-only environment for a command that needs Jamf Pro.
+    func proCommandRefusal(workspace: String, operation: String) -> String? {
+        if let refusal = refusal(workspace: workspace) { return refusal }
+        guard isProtectOnly else { return nil }
+        return "'\(ConfigSchema.displayText(workspace))' holds only a Jamf Protect profile; "
+            + "\(operation) needs Jamf Pro."
     }
 
     /// A config.yaml that is missing or does not decode reads as the old shape with no keys:

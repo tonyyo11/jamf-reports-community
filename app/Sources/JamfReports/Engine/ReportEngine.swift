@@ -1072,6 +1072,49 @@ struct ReportEngine: Sendable {
             mobile: mobile)
     }
 
+    /// The day's summary for a Protect-only environment: no Macs and no mobile devices, so
+    /// `totalDevices` is 0 and every other figure is nil (unmeasured, never 0%).
+    static func protectOnlySummary(
+        date: String, collectionSources: [String: String], collectedByHost: String?
+    ) -> DailySummary {
+        DailySummary(
+            date: date, totalDevices: 0, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", collectionSources: collectionSources,
+            mobileDeviceCount: nil, collectedByHost: collectedByHost)
+    }
+
+    /// Writes today's `protectOnlySummary`. A same-day summary that counted Macs or mobile
+    /// devices is kept; one that is itself Protect-only is replaced.
+    @discardableResult
+    static func writeProtectOnlySummary(
+        summariesDir: URL, dataDir: URL, landedKinds: [String], day: Date = Date(),
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> SummaryEmitOutcome {
+        let date = SummaryJSONParser.dateFormatter.string(from: day)
+        let file = summariesDir.appendingPathComponent("summary_\(date).json")
+        if let data = try? BoundedFile.read(
+               file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
+           let existing = try? JSONDecoder().decode(DailySummary.self, from: data),
+           existing.totalDevices > 0 || existing.mobile != nil {
+            return .keptExisting
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: summariesDir, withIntermediateDirectories: true)
+        } catch {
+            let msg = "\(summaryNotWrittenMarker) the summaries directory could not be created"
+            AppLogger.collect.warning("\(msg, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            return .directoryUnavailable
+        }
+        let sources = Dictionary(uniqueKeysWithValues: landedKinds.map { ($0, "live") })
+        let summary = protectOnlySummary(
+            date: date, collectionSources: sources,
+            collectedByHost: collectingHostLabel(dataDir: dataDir))
+        return writeSummaryFile(summary, to: file, onLine: onLine) ? .wrote : .writeFailed
+    }
+
     /// The score's sources from what the summary writer already read, plus the `computers`
     /// snapshot and the SOFA feed, which the summary's Secure Boot, bootstrap token and
     /// XProtect figures need whatever the score lists.
@@ -3915,12 +3958,14 @@ struct ReportEngine: Sendable {
     ///   - profile: jamf-cli protect profile slug.
     ///   - dataDir: Directory under which snapshots are written.
     ///   - onLine: Progress callback for log lines.
+    /// - Returns: How many of the Protect sources landed.
+    @discardableResult
     static func protectCollect(
         profile: String,
         dataDir: URL,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws {
+    ) async throws -> Int {
         guard let bin = locateJamfCLI() else {
             throw ReportEngineError.jamfCLINotFound
         }
@@ -3993,6 +4038,7 @@ struct ReportEngine: Sendable {
             }
         }
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
+        return commands.count - unlanded.count
     }
 
     // MARK: - Public API: schoolGenerate

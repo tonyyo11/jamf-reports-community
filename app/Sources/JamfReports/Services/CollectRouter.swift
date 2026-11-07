@@ -106,7 +106,7 @@ enum CollectRouter {
         _ profile: String,
         _ dataDir: URL,
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws -> Void
+    ) async throws -> Int
 
     /// Type of the gate closure, matching `ReportEngine.environmentGate`'s shape.
     typealias Gate = @Sendable (
@@ -199,7 +199,8 @@ enum CollectRouter {
         let profile = workspace.name
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         let detected = ProfileProductType.detect(from: config, profile: profile)
-        if detected.type == .jamfPro, let refusal = await CLIBridge.refusesProCommand(
+        if detected.type == .jamfPro, !environment.isProtectOnly,
+           let refusal = await CLIBridge.refusesProCommand(
             profile: profile, operation: "Collect", onLine: onLine, environment: environment,
             resolved: resolved
         ) {
@@ -220,7 +221,7 @@ enum CollectRouter {
         }
         // An old-shape file derives the MDM from the workspace, and a block without one is
         // refused above.
-        guard let mdm = environment.mdm else {
+        guard let mdm = environment.mdm ?? (environment.isProtectOnly ? "" : nil) else {
             throw CLIBridgeError.wrongProduct(
                 L("'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile"))
         }
@@ -240,6 +241,13 @@ enum CollectRouter {
             return
         case .proceed(let holdsClaim, let coordinating):
             defer { if holdsClaim { SharedWorkspace.release(profile: profile) } }
+            if environment.isProtectOnly {
+                try await collectProtectOnly(
+                    environment: environment, workspace: workspace, workspacePaths: workspacePaths,
+                    protectCollect: protectCollect, resolved: resolved, now: now, onLine: onLine)
+                if coordinating { SharedWorkspace.recordActivity(profile: profile) }
+                return
+            }
             try await runProducts(
                 detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
                 skipExpensive: skipExpensive, force: force, workspacePaths: workspacePaths,
@@ -294,6 +302,54 @@ enum CollectRouter {
         }
     }
 
+    /// A Protect-only environment: Protect is the whole run, so a refusal, a throw or no landed
+    /// source fails it (unlike the follow after an MDM), and a landed one writes today's summary.
+    private static func collectProtectOnly(
+        environment: EnvironmentProfiles,
+        workspace: WorkspaceID,
+        workspacePaths: WorkspacePaths.Type,
+        protectCollect: ProtectCollect,
+        resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
+        now: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async throws {
+        let profile = workspace.name
+        let protectProfile = environment.protect ?? ""
+        guard SharedConfigPin.protectAllowed(profile: profile) else {
+            let reason = "\(environment.protectKey) changed in the shared config.yaml and is not "
+                + "confirmed on this Mac"
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
+            throw CLIBridgeError.wrongProduct(reason)
+        }
+        if let refusal = await ProfileAuthMethod.protectRefusal(
+            profile: protectProfile, resolved: resolved) {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
+            throw CLIBridgeError.wrongProduct(refusal)
+        }
+        let dataDir = try workspacePaths.dataDir(for: profile)
+        onLine(.init(timestamp: Date(), level: .info, text: "[info] routing \(profile) → "
+            + "Jamf Protect collect (no Jamf Pro or Jamf School in this environment)"))
+        let start = Date().addingTimeInterval(-1)
+        let landed = try await protectCollect(protectProfile, dataDir, onLine)
+        guard landed > 0 else {
+            throw ReportEngineError.collectDead(
+                profile: profile, failedCount: ReportEngine.protectCommandMatrix(profile: "").count)
+        }
+        let store = WorkspacePaths.confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
+            .map(StateFileStore.init(directory:))
+        let kinds = DataFreshnessHealth.protectKinds.filter {
+            (store?.lastRun(report: $0)).map { $0 >= start } ?? false
+        }
+        guard let summariesDir = try? workspacePaths.summariesDir(for: profile) else {
+            onLine(.init(timestamp: Date(), level: .warn, text:
+                "\(ReportEngine.summaryNotWrittenMarker) the summaries directory is unavailable"))
+            return
+        }
+        ReportEngine.writeProtectOnlySummary(
+            summariesDir: summariesDir, dataDir: dataDir, landedKinds: kinds, day: now,
+            onLine: onLine)
+    }
+
     /// The Protect half of a Jamf Pro or Jamf School run. Never throws: a Protect failure is a
     /// `[partial]` line and the Pro or School run's result stands.
     private static func collectProtect(
@@ -342,7 +398,7 @@ enum CollectRouter {
         onLine(.init(timestamp: Date(), level: .info,
                      text: "[info] running protect collect for \(profile)"))
         do {
-            try await protectCollect(protectProfile, dataDir, onLine)
+            _ = try await protectCollect(protectProfile, dataDir, onLine)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "\(ReportEngine.protectCollectFailedMarker)\(error.localizedDescription)"))
@@ -371,7 +427,9 @@ enum CollectRouter {
     /// config.yaml, so it holds without a readable jamf-cli) or any `proRunRefusal`.
     static func backupRefusal(profile: String, config: ReportConfig?) -> String? {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
-        if let refusal = environment.refusal(workspace: profile) { return refusal }
+        if let refusal = environment.proCommandRefusal(workspace: profile, operation: L("Backup")) {
+            return refusal
+        }
         if environment.isSchool {
             return schoolBackupReason(profile: profile)
         }
@@ -434,7 +492,7 @@ try await ReportEngine.schoolCollect(
     /// Default production closure wrapping `ReportEngine.protectCollect`.
     static let defaultProtectCollect: ProtectCollect = { profile, dataDir, onLine in
         try await Localization.english {
-try await ReportEngine.protectCollect(
+return try await ReportEngine.protectCollect(
             profile: profile,
             dataDir: dataDir,
             onLine: onLine

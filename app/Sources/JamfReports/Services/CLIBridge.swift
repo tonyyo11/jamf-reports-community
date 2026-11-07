@@ -1046,7 +1046,8 @@ try await ReportEngine.schoolGenerateReport(
     ) async -> String? {
         let refusal = await Task.detached { () -> String? in
             let environment = known ?? EnvironmentProfiles.read(workspace: profile)
-            if let refusal = environment.refusal(workspace: profile) { return refusal }
+            if let refusal = environment.proCommandRefusal(
+                workspace: profile, operation: operation) { return refusal }
             let jamfPro = environment.jamfPro ?? profile
             return resolved(jamfPro)?.proRefusal(profile: jamfPro, operation: operation)
         }.value
@@ -2383,7 +2384,8 @@ try await ReportEngine.inventoryCSV(
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
         }
-        if let refusal = environment.refusal(workspace: workspace) {
+        if let refusal = environment.proCommandRefusal(
+            workspace: workspace, operation: L("Backup")) {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
             throw CLIBridgeError.wrongProduct(refusal)
         }

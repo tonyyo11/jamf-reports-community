@@ -9,6 +9,8 @@ versions in this repository map to git tags.
 
 ### Added
 
+- An environment with only a Jamf Protect profile collects Protect and records a daily summary;
+  backups, audits and device lookups still need Jamf Pro and say so. (#305)
 - The Add sheet adds a Platform API profile to the current environment, either one jamf-cli
   already holds or a new one (Connect new), after checking that it reaches the same Jamf Pro. (#305)
 - Re-check on the Add sheet suggests where a new Platform API profile belongs when it reaches
