@@ -140,6 +140,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Snapshot retention now also runs for Jamf School and Jamf Protect-only workspaces. (#305)
 - In French, a jamf-cli update whose brew, tar or unzip step ran past its time limit could crash
   the app while it wrote the message.
 - HTML and period reports, Fleet Drift and other dates the app writes or reads back no longer follow

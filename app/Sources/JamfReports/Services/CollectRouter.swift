@@ -50,8 +50,8 @@ extension ProfileProductType {
 /// and the function returns normally — the Pro run already succeeded and is the primary
 /// deliverable. Do not rethrow.
 ///
-/// A Jamf School collect is followed by Protect under the same rules (it has no stand-down
-/// or once-a-day guard, so it always counts as `.collected`).
+/// A Jamf School collect is followed by Protect under the same rules: the gate stands it down
+/// or ends it for the day like a Jamf Pro one, and a stop skips the follow.
 ///
 /// Protect runs only when the Pro collect returned `.collected`. A Pro collect that
 /// stood down for a peer on a shared workspace, or found today's full collect already
@@ -59,9 +59,8 @@ extension ProfileProductType {
 /// it anyway would collect beside the peer that holds the claim, or fetch Protect
 /// again on a day the Pro collect itself skipped.
 ///
-/// School collect does not emit a `summary.json` trend snapshot today. That is a
-/// noted gap, not a regression: School profiles had no collect at all before this
-/// router was introduced.
+/// A School collect writes its own daily summary (`ReportEngine.writeSchoolSummary`), and a
+/// Protect-only environment writes one from its landed kinds.
 enum CollectRouter {
 
     /// Type of the pro-collect closure, matching `ReportEngine.collect`'s signature: the
@@ -165,6 +164,7 @@ enum CollectRouter {
             ProfileAuthMethod.resolve(profile: $0)
         },
         gate: @escaping Gate = realGate,
+        locateJamfCLI: @escaping @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         try await AttentionLog.recording(profile: workspace.name) {
@@ -173,7 +173,8 @@ enum CollectRouter {
                 config: config, workspacePaths: workspacePaths,
                 proCollect: proCollect ?? defaultProCollect(now: now, engine: proEngine),
                 schoolCollect: schoolCollect, protectCollect: protectCollect,
-                resolved: resolved, gate: gate, now: now, onLine: onLine)
+                resolved: resolved, gate: gate, locateJamfCLI: locateJamfCLI, now: now,
+                onLine: onLine)
         }
     }
 
@@ -189,6 +190,7 @@ enum CollectRouter {
         protectCollect: ProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         gate: Gate,
+        locateJamfCLI: @escaping @Sendable () -> URL?,
         now: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
@@ -237,14 +239,20 @@ enum CollectRouter {
         // Before any product: a stop covers Jamf Pro, Jamf School and Protect alike.
         switch gate(workspace, workspacePaths, tiers, force, now, onLine) {
         case .stop(let disposition):
-            await followWithProtect(disposition)
+            // The gate logged why; a Protect-only environment has nothing else to follow.
+            if !environment.isProtectOnly { await followWithProtect(disposition) }
             return
         case .proceed(let holdsClaim, let coordinating):
             defer { if holdsClaim { SharedWorkspace.release(profile: profile) } }
+            // Snapshot retention (v2.2.0): config-driven, OFF by default, once per calendar day
+            // by its own marker. Here, past the gate, so every product's run sweeps once;
+            // best-effort, never fails the collect.
+            SnapshotRetentionService.sweepIfDue(profile: profile, onLine: onLine)
             if environment.isProtectOnly {
                 try await collectProtectOnly(
                     environment: environment, workspace: workspace, workspacePaths: workspacePaths,
-                    protectCollect: protectCollect, resolved: resolved, now: now, onLine: onLine)
+                    protectCollect: protectCollect, resolved: resolved,
+                    locateJamfCLI: locateJamfCLI, now: now, onLine: onLine)
                 if coordinating { SharedWorkspace.recordActivity(profile: profile) }
                 return
             }
@@ -314,6 +322,7 @@ enum CollectRouter {
         workspacePaths: WorkspacePaths.Type,
         protectCollect: ProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
+        locateJamfCLI: @Sendable () -> URL?,
         now: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
@@ -329,6 +338,12 @@ enum CollectRouter {
             profile: protectProfile, resolved: resolved) {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
             throw CLIBridgeError.wrongProduct(refusal)
+        }
+        // The floor and a login jamf-cli does not list, as a Jamf Pro collect checks them. No
+        // binary is left to the Protect collect to report.
+        if let bin = locateJamfCLI() {
+            _ = try await ReportEngine.collectPreflight(
+                profile: protectProfile, binary: bin, onLine: onLine)
         }
         let dataDir = try workspacePaths.dataDir(for: profile)
         onLine(.init(timestamp: Date(), level: .info, text: "[info] routing \(profile) → "
@@ -367,9 +382,10 @@ enum CollectRouter {
             return
         }
         guard disposition == .collected else {
+            let product = environment.isSchool ? "Jamf School" : "Jamf Pro"
             let reason = disposition == .stoodDown
-                ? "the Jamf Pro collect stood down for another Mac"
-                : "Jamf Pro already collected today"
+                ? "the \(product) collect stood down for another Mac"
+                : "\(product) already collected today"
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[skip] protect: \(reason) — Protect not collected"))
             return
@@ -425,13 +441,13 @@ enum CollectRouter {
     /// config.yaml, so it holds without a readable jamf-cli) or any `proRunRefusal`.
     static func backupRefusal(profile: String, config: ReportConfig?) -> String? {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
-        if let refusal = environment.proCommandRefusal(workspace: profile, operation: L("Backup")) {
+        if let refusal = environment.proCommandRefusal(workspace: profile, operation: "Backup") {
             return refusal
         }
         if environment.isSchool {
             return schoolBackupReason(profile: profile)
         }
-        return proRunRefusal(profile: profile, operation: L("Backup"), config: config)
+        return proRunRefusal(profile: profile, operation: "Backup", config: config)
     }
 
     /// The refusals `scheduledRunSingleBody` applies to a per-profile schedule: a case variant
@@ -442,7 +458,7 @@ enum CollectRouter {
         if let refusal = ProfileService.caseVariantRefusal(of: schedule.profile) { return refusal }
         guard schedule.mode != .jamfCLIOnly else { return nil }
         return proRunRefusal(
-            profile: schedule.profile, operation: L("Scheduled \(schedule.mode.rawValue) run"),
+            profile: schedule.profile, operation: "Scheduled \(schedule.mode.rawValue) run",
             config: collectRoutingConfig(profile: schedule.profile))
     }
 

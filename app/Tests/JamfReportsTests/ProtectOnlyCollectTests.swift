@@ -235,4 +235,90 @@ final class ProtectOnlyCollectTests: XCTestCase {
         }
         XCTAssertTrue(calls.all.isEmpty)
     }
+
+    // MARK: - Retention sweep runs in the router
+
+    private func retentionConfigText(_ extra: String) -> String {
+        extra + "retention:\n  enabled: true\n  mode: archive\n  snapshot_keep_days: 365\n"
+    }
+
+    private func marker(_ root: URL) -> URL {
+        root.appendingPathComponent(ws).appendingPathComponent(".retention-last")
+    }
+
+    private func routeWith(
+        _ text: String, root: URL, gate: @escaping CollectRouter.Gate = CollectRouter.realGate
+    ) async throws {
+        let file = root.appendingPathComponent(ws).appendingPathComponent("config.yaml")
+        try text.write(to: file, atomically: true, encoding: .utf8)
+        try await CollectRouter.run(
+            workspace: WorkspaceID(validating: ws), config: try ConfigLoader.load(from: file),
+            now: .testNoon,
+            schoolCollect: { _, _, _, _, _, _ in },
+            protectCollect: { _, _, _ in ["protect-alerts"] },
+            resolved: { _ in nil }, gate: gate, onLine: { _ in })
+    }
+
+    func testAProtectOnlyRunSweepsRetention() async throws {
+        let root = try makeRoot()
+        try await routeWith(retentionConfigText("profiles:\n  protect: \(ws)\n"), root: root)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker(root).path))
+    }
+
+    func testASchoolRunSweepsRetention() async throws {
+        let root = try makeRoot()
+        try await routeWith(
+            retentionConfigText("school_cli:\n  enabled: true\n  profile: \(ws)\n"), root: root)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker(root).path))
+    }
+
+    func testAGateStopSweepsNothing() async throws {
+        let root = try makeRoot()
+        try await routeWith(
+            retentionConfigText("profiles:\n  protect: \(ws)\n"), root: root,
+            gate: { _, _, _, _, _, _ in .stop(.alreadyCollected) })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker(root).path))
+    }
+
+    func testAGateStopOfAProtectOnlyRunLogsNoJamfProSkip() async throws {
+        _ = try makeRoot()
+        let lines = Box()
+        try await run(calls: Box(), lines: lines, gate: { _, _, _, _, _, _ in .stop(.alreadyCollected) })
+        XCTAssertFalse(lines.all.contains { $0.contains("Jamf Pro") }, "\(lines.all)")
+    }
+
+    // MARK: - Unconfirmed Protect-only on a pinned workspace
+
+    /// A shared workspace whose pin holds one `profiles.protect` and whose file now says the
+    /// workspace's own name: a peer's edit, not yet confirmed on this Mac.
+    private func unconfirmedProtectOnly(_ root: URL) throws -> String {
+        let name = "unconf\(Int.random(in: 1000...9999))"
+        let folder = root.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("config.yaml")
+        try "shared_workspace:\n  enabled: true\nprofiles:\n  jamf_pro: \(name)\n"
+            .write(to: file, atomically: true, encoding: .utf8)
+        _ = SharedConfigPin.check(profile: name)
+        try "shared_workspace:\n  enabled: true\nprofiles:\n  protect: \(name)\n"
+            .write(to: file, atomically: true, encoding: .utf8)
+        return name
+    }
+
+    func testAnUnconfirmedProtectOnlyBlockDoesNotCountAsProtectOnly() throws {
+        let root = try makeRoot()
+        let name = try unconfirmedProtectOnly(root)
+        let environment = EnvironmentProfiles.read(workspace: name)
+        XCTAssertTrue(environment.isProtectOnly)
+        XCTAssertFalse(environment.isConfirmedProtectOnly(workspace: name))
+        XCTAssertFalse(ProfileAuthMethod.skipsProAuthProbe(profile: name))
+        try SharedConfigPin.confirm(profile: name, keys: [.protectProfile])
+        XCTAssertTrue(environment.isConfirmedProtectOnly(workspace: name))
+    }
+
+    func testAnUnconfirmedProtectOnlyBlockIsNotAQuietScheduledBackupSkip() async throws {
+        let root = try makeRoot()
+        let name = try unconfirmedProtectOnly(root)
+        let outcome = await runSchedule(backupSchedule(name), verbose: false)
+        XCTAssertNotEqual(outcome.exitCode, 0, "the refusal must reach the operator")
+    }
 }

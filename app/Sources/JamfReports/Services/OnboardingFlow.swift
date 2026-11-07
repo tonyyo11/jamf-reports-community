@@ -463,7 +463,7 @@ final class OnboardingFlow {
 
     /// The folders of `profile`'s workspace, private to this user and kept out of Spotlight.
     /// Add environments creates its workspaces through this too.
-    static func createWorkspaceFolders(for profile: String) throws {
+    nonisolated static func createWorkspaceFolders(for profile: String) throws {
         guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile

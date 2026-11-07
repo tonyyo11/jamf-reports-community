@@ -2249,11 +2249,6 @@ struct ReportEngine: Sendable {
         // the same one, or a collect that crosses midnight leaves the next day looking done.
         let collectDay = now
 
-        // Snapshot retention (v2.2.0): config-driven, OFF by default, once per
-        // calendar day. Placed before the early-return guard so it runs on any
-        // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
-        // own marker keeps it idempotent. Best-effort — never fails the collect.
-        SnapshotRetentionService.sweepIfDue(profile: workspace.name, onLine: onLine)
         rewriteLostModeTextOnce(
             profile: workspace.name, workspacePaths: workspacePaths, onLine: onLine)
 
@@ -2290,19 +2285,9 @@ struct ReportEngine: Sendable {
         let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
 
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
-        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
-        // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
-        if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: JamfCLIInstaller.floorLine(installed: detectedVersion, profile: profile)))
-            throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
-        }
+        let (detectedVersion, profileAuth) = try await collectPreflight(
+            profile: profile, binary: bin, onLine: onLine)
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
-        // Resolved once per run, not per kind — it spawns `config list`.
-        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
-        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
-            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
-        }
         let platformRun = Self.resolvePlatformRun(
             config: loadedConfig, workspace: workspace, profile: profile,
             profileAuth: profileAuth, bin: bin, platformHosts: platformHosts, onLine: onLine)
@@ -2563,6 +2548,27 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
         return nil
+    }
+
+    /// The checks before any jamf-cli source runs, shared by the Jamf Pro collect and a
+    /// Protect-only one: a binary below the floor, and a login `config list` does not name.
+    /// Returns the version and the resolved auth method the run keys on.
+    static func collectPreflight(
+        profile: String, binary bin: URL, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) async throws -> (version: String?, auth: ProfileAuthMethod.Resolved?) {
+        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
+        // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
+        if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: JamfCLIInstaller.floorLine(installed: detectedVersion, profile: profile)))
+            throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
+        }
+        // Resolved once per run, not per kind — it spawns `config list`.
+        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
+            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
+        }
+        return (detectedVersion, profileAuth)
     }
 
     /// Logs a dead collect's `[error]` line and returns the error for the caller to throw.

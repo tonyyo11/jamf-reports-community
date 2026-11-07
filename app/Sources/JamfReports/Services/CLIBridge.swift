@@ -2385,7 +2385,7 @@ try await ReportEngine.inventoryCSV(
             throw conflict
         }
         if let refusal = environment.proCommandRefusal(
-            workspace: workspace, operation: L("Backup")) {
+            workspace: workspace, operation: "Backup") {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
             throw CLIBridgeError.wrongProduct(refusal)
         }

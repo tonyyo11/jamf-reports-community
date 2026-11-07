@@ -72,7 +72,7 @@ extension OnboardingFlow {
     /// config.yaml (minimal settings plus `profiles: {protect: <login>}`, no MDM slot), created
     /// in one exclusive write and confirmed on this Mac. A config.yaml already there is never
     /// overwritten.
-    static func createProtectOnlyEnvironment(
+    nonisolated static func createProtectOnlyEnvironment(
         login: String, appSupport: URL = AppSupport.directory()
     ) throws {
         try createWorkspaceFolders(for: login)

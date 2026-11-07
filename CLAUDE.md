@@ -944,10 +944,10 @@ candidates (2.9), so a `data_dir` aimed at another folder moves or deletes nothi
 The age and newest-N rules go by the date in the snapshot's name (`CloudStorage.snapshotTimestamp`,
 `CloudStorage.summaryDate`), clamped to now, never by mtime, which a sync provider restamps on
 download; a name with no valid date falls back to mtime.
-Swift: `SnapshotRetentionService.sweepIfDue` runs at the top of
-`ReportEngine.collect` (once/day via a `.retention-last` marker at the workspace
-root, OUTSIDE the swept tree) — covering every collect path including headless
-scheduled runs; the old RefreshCoordinator delete-at-90d sweep was removed.
+Swift: `SnapshotRetentionService.sweepIfDue` runs in `CollectRouter`, once per run that
+passes the environment gate and before any product collects (once/day via a `.retention-last`
+marker at the workspace root, OUTSIDE the swept tree), so Jamf Pro, Jamf School and
+Protect-only workspaces all sweep, on every collect path including headless scheduled runs; the old RefreshCoordinator delete-at-90d sweep was removed.
 **Behavior change:** existing app users move from auto-pruned-at-90d to keep-everything.
 Per-device raw-history *rendering* (reading dated raw snapshots, not just
 summaries) is a planned follow-up; retention makes the raw durable for it.

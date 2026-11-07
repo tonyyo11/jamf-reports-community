@@ -650,7 +650,10 @@ struct AddSheet: View {
         message = nil
         errorText = nil
         do {
-            try OnboardingFlow.createProtectOnlyEnvironment(login: row.name)
+            let login = row.name
+            try await Task.detached {
+                try OnboardingFlow.createProtectOnlyEnvironment(login: login)
+            }.value
             message = L("\(row.name) is set up as a Jamf Protect environment. Switch to it from the workspace menu.")
             workspace.credentialsChanged()
         } catch {
