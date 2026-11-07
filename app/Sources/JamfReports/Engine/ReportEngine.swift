@@ -838,6 +838,9 @@ struct ReportEngine: Sendable {
             guard let count = mobileDeviceCount, count > 0 else { return nil }
             return Self.mobileOnlySummary(
                 date: date, mobileDeviceCount: count, mobile: mobile,
+                maps: SummaryDeviceMaps.jamfPro(
+                    computersData: nil, mobileData: cachedData(kind: "mobile-devices-list"),
+                    rule: config.staleRule, now: Date()),
                 collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil,
                 collectedByHost: Self.collectingHostLabel(dataDir: dataDir))
         }
@@ -1020,6 +1023,12 @@ struct ReportEngine: Sendable {
             complianceIsProxy = nil
         }
 
+        // Same rule as `staleCount`; the dates come from the `computers` snapshot read above.
+        let maps = SummaryDeviceMaps.jamfPro(
+            computersData: cachedData(kind: "computers"),
+            mobileData: cachedData(kind: "mobile-devices-list"),
+            rule: staleRule, now: Date())
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
@@ -1053,7 +1062,11 @@ struct ReportEngine: Sendable {
             patchPctBasis: DailySummary.deviceWeightedPatchBasis,
             securityScoreBasis: score.basis,
             securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct,
-            mobile: mobile
+            mobile: mobile,
+            osMajorCounts: maps.osMajor,
+            modelFamilyCounts: maps.modelFamily,
+            mobileFormFactorCounts: maps.formFactor,
+            lastSeenBuckets: maps.lastSeen
         )
     }
 
@@ -1078,6 +1091,7 @@ struct ReportEngine: Sendable {
     /// 0 and every Mac figure is nil, which every reader treats as unmeasured (never 0%).
     static func mobileOnlySummary(
         date: String, mobileDeviceCount: Int, mobile: MobileSummary? = nil,
+        maps: SummaryDeviceMaps.Fields = .init(),
         collectionSources: [String: String]?, collectedByHost: String?
     ) -> DailySummary {
         DailySummary(
@@ -1085,7 +1099,8 @@ struct ReportEngine: Sendable {
             staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
             source: "jamf-cli", collectionSources: collectionSources,
             mobileDeviceCount: mobileDeviceCount, collectedByHost: collectedByHost,
-            mobile: mobile)
+            mobile: mobile, osMajorCounts: maps.osMajor,
+            mobileFormFactorCounts: maps.formFactor, lastSeenBuckets: maps.lastSeen)
     }
 
     /// The day's summary for a Protect-only environment: no Macs and no mobile devices, so

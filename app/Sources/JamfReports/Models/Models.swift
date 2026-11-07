@@ -497,6 +497,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var serial: String
     var osVersion: String
     var model: String
+    /// `hardware.model` ("MacBook Air (M2, 2022)"); empty when the source carries none.
+    var marketingModel = ""
     var user: String
     var email: String
     var department: String

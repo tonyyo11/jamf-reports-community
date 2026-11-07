@@ -25,6 +25,7 @@ extension ReportEngine {
             macOSRows: sofaRows.filter { $0.platform == SOFAFeedService.platformLabels["macos"] },
             osCounts: Dictionary(macVersions.map { ($0, 1) }, uniquingKeysWith: +),
             totalDevices: macs)
+        let maps = SummaryDeviceMaps.schoolFields(snapshot.devices, now: now)
         return DailySummary(
             date: date, totalDevices: macs, fileVaultPct: nil, compliancePct: nil,
             staleCount: macs > 0 ? staleMacs : nil,
@@ -36,7 +37,8 @@ extension ReportEngine {
             mobile: MobileSummary.build(
                 mobileDevices.map { MobileSummary.device($0) },
                 latestByMajor: SOFAFeedService.iOSLatestByMajor(sofaRows),
-                staleDays: staleDays, now: now))
+                staleDays: staleDays, now: now),
+            osMajorCounts: maps.osMajor, lastSeenBuckets: maps.lastSeen)
     }
 
     /// Writes `summary_<day>.json` for a School collect that landed `school-devices`, replacing

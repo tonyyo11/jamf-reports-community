@@ -451,6 +451,7 @@ extension DeviceInventoryService {
         record.serial = serial
         record.osVersion = first(flat, ["operatingSystem.version", "operatingSystemVersion", "general.osVersion"])
         record.model = first(flat, ["hardware.modelIdentifier", "hardware.model", "modelIdentifier", "general.model"])
+        record.marketingModel = first(flat, ["hardware.model"])
         record.user = first(flat, ["userAndLocation.username", "location.username", "username"])
         record.email = first(flat, ["userAndLocation.email", "userAndLocation.emailAddress", "location.emailAddress"])
         // Tenants that keep the address in "Username" and leave "Email" blank
