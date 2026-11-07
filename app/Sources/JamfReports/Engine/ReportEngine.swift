@@ -2729,10 +2729,6 @@ struct ReportEngine: Sendable {
         return args
     }
 
-    /// Why a Protect-only environment writes no workbook or HTML report (P8).
-    static let protectOnlyNoReportReason =
-        "holds only a Jamf Protect profile, so there is no Jamf Pro report to write"
-
     /// The School kind that reads the Platform API (`planSchoolCollect` gates it).
     static let schoolBlueprintsKind = "school-blueprints"
 

@@ -230,7 +230,7 @@ final class RefreshCoordinator {
 
     /// The kind whose age says `tier` is stale. A School collect never writes `overview`, so that
     /// probe would call a School workspace stale after every collect.
-    nonisolated private static func probeKind(
+    nonisolated static func probeKind(
         for tier: CollectionTier, profile: String
     ) -> String? {
         guard let probe = tier.stalenessProbeKind else { return nil }

@@ -30,9 +30,6 @@ struct Generate: AsyncParsableCommand {
         if let output { CLIRun.requireSafeOutput(output) }
         let resolved = try CLIRun.resolveTemplate(template)
         let (config, dataDir) = try CLIRun.loadProfile(profile)
-        if EnvironmentProfiles.resolve(config: config, workspace: profile).isProtectOnly {
-            CLIRun.fail("'\(profile)' " + ReportEngine.protectOnlyNoReportReason)
-        }
         let sheetFailures = try await CLIRun.exclusively(profile: profile) {
             try await write(config: config, dataDir: dataDir, template: resolved)
         }
@@ -186,9 +183,6 @@ struct Html: AsyncParsableCommand {
     @Option(help: "Output .html path (default: the workspace's Generated Reports dir).") var output: String?
 
     static func refusal(config: ReportConfig, profile: String) -> String? {
-        if EnvironmentProfiles.resolve(config: config, workspace: profile).isProtectOnly {
-            return "'\(profile)' " + ReportEngine.protectOnlyNoReportReason
-        }
         guard ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
         else { return nil }
         return "'\(profile)' is a Jamf School workspace, which has no HTML report; "

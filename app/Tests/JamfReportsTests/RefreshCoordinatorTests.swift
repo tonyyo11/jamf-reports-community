@@ -136,6 +136,25 @@ final class RefreshCoordinatorTests: XCTestCase {
         XCTAssertEqual(CollectionTier.tier(forReport: probe), .refresh)
     }
 
+    func testAProtectOnlyEnvironmentProbesProtectOverviewAndProStillProbesOverview() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("probe-\(UUID().uuidString)", isDirectory: true)
+        for (name, yaml) in [("po", "profiles:\n  protect: po\n"),
+                             ("prod", "jamf_cli:\n  profile: prod\n")] {
+            let dir = root.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data(yaml.utf8).write(to: dir.appendingPathComponent("config.yaml"))
+        }
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        XCTAssertEqual(RefreshCoordinator.probeKind(for: .refresh, profile: "po"),
+                       "protect-overview")
+        XCTAssertEqual(RefreshCoordinator.probeKind(for: .refresh, profile: "prod"), "overview")
+    }
+
     // MARK: - Coordinator entry points (PR-24 — now wired)
     //
     // PR-24 connects observeProfileSwitch (profile switch) and
