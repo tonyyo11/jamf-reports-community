@@ -185,7 +185,7 @@ final class CollectRouterTests: XCTestCase {
             workspacePaths: WorkspacePaths.self,
             now: .testNoon,
             proEngine: { _, _, _, _, _, _, now, _ in seen.add(now); return .collected },
-            protectCollect: { _, _, _ in 5 },
+            protectCollect: { _, _, _ in ["protect-alerts"] },
             onLine: { _ in }
         )
 
@@ -437,7 +437,7 @@ final class CollectRouterTests: XCTestCase {
                 return .collected
             },
             schoolCollect: { _, _, _, _, _, _ in },
-            protectCollect: { _, _, _ in 5 },
+            protectCollect: { _, _, _ in ["protect-alerts"] },
             onLine: { _ in }
         )
 
@@ -820,7 +820,7 @@ private struct RouterSpy {
         return { _, _, _ in
             counter.increment()
             if let error { throw error }
-            return 5
+            return ["protect-alerts"]
         }
     }
 }
@@ -850,7 +850,7 @@ final class ScheduledCollectForceTests: XCTestCase {
             force: mode.forcesCollect(for: ProfileProductType.detect(from: config, profile: "testschool").type),
             config: config,
             schoolCollect: { _, _, _, _, force, _ in seen.set(force) },
-            protectCollect: { _, _, _ in 5 },
+            protectCollect: { _, _, _ in ["protect-alerts"] },
             onLine: { _ in })
         XCTAssertEqual(seen.value, true)
     }

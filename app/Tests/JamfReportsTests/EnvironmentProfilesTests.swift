@@ -198,7 +198,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                 workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
                 proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
                 schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
-                protectCollect: { _, _, _ in calls.add("protect"); return 5 },
+                protectCollect: { _, _, _ in calls.add("protect"); return ["protect-alerts"] },
                 resolved: { _ in nil }, onLine: { calls.add($0.text) })
             XCTFail("two MDMs must not collect")
         } catch CLIBridgeError.wrongProduct(let refusal) {
@@ -228,7 +228,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                 calls.add("pro \(profile)"); return .collected
             },
             schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
-            protectCollect: { profile, _, _ in calls.add("protect \(profile)"); return 5 },
+            protectCollect: { profile, _, _ in calls.add("protect \(profile)"); return ["protect-alerts"] },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["pro ws", "protect ws-protect"])
     }
@@ -253,7 +253,7 @@ final class EnvironmentProfilesTests: XCTestCase {
             workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
             proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
             schoolCollect: { _, profile, _, _, _, _ in calls.add("school \(profile)") },
-            protectCollect: { _, _, _ in calls.add("protect"); return 5 },
+            protectCollect: { _, _, _ in calls.add("protect"); return ["protect-alerts"] },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["school ws"])
     }

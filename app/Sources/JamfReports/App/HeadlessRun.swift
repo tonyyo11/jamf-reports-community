@@ -324,6 +324,9 @@ private func scheduledRunSingleBody(
     // spelling's folder get nothing written into them.
     let productRefusal: () -> String? = {
         guard mode != .jamfCLIOnly, configError == nil || mode == .backup else { return nil }
+        if mode == .backup {
+            return CollectRouter.backupRefusal(profile: profile, config: routingConfig)
+        }
         return CollectRouter.proRunRefusal(
             profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig)
     }

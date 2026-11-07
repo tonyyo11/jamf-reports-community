@@ -141,6 +141,8 @@ enum ProfileAuthMethod {
     static func skipsProAuthProbe(
         profile: String, configFile: URL? = ProfileService.defaultConfigFileURL
     ) -> Bool {
+        // A Protect-only environment has no Jamf Pro; its login may derive as Jamf Pro.
+        if EnvironmentProfiles.read(workspace: profile).isProtectOnly { return true }
         guard let resolved = resolve(profile: profile, configFile: configFile) else {
             let entry = ProfileService.readConfigFile(at: configFile)?.first { $0.name == profile }
             return JamfCLIAuthMethod(raw: entry?.authMethod) == .apiKey

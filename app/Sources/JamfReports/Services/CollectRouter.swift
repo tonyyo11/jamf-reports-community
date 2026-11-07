@@ -106,7 +106,7 @@ enum CollectRouter {
         _ profile: String,
         _ dataDir: URL,
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws -> Int
+    ) async throws -> [String]
 
     /// Type of the gate closure, matching `ReportEngine.environmentGate`'s shape.
     typealias Gate = @Sendable (
@@ -221,7 +221,7 @@ enum CollectRouter {
         }
         // An old-shape file derives the MDM from the workspace, and a block without one is
         // refused above.
-        guard let mdm = environment.mdm ?? (environment.isProtectOnly ? "" : nil) else {
+        guard environment.mdm != nil || environment.isProtectOnly else {
             throw CLIBridgeError.wrongProduct(
                 L("'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile"))
         }
@@ -247,6 +247,10 @@ enum CollectRouter {
                     protectCollect: protectCollect, resolved: resolved, now: now, onLine: onLine)
                 if coordinating { SharedWorkspace.recordActivity(profile: profile) }
                 return
+            }
+            guard let mdm = environment.mdm else {
+                throw CLIBridgeError.wrongProduct(
+                    L("'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile"))
             }
             try await runProducts(
                 detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
@@ -316,10 +320,10 @@ enum CollectRouter {
         let profile = workspace.name
         let protectProfile = environment.protect ?? ""
         guard SharedConfigPin.protectAllowed(profile: profile) else {
-            let reason = "\(environment.protectKey) changed in the shared config.yaml and is not "
-                + "confirmed on this Mac"
+            let reason = "\(environment.protectKey) was changed in the shared config.yaml and is "
+                + "awaiting confirmation on this Mac (Config Doctor)"
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
-            throw CLIBridgeError.wrongProduct(reason)
+            throw ReportEngineError.protectNotConfirmed(reason)
         }
         if let refusal = await ProfileAuthMethod.protectRefusal(
             profile: protectProfile, resolved: resolved) {
@@ -329,16 +333,10 @@ enum CollectRouter {
         let dataDir = try workspacePaths.dataDir(for: profile)
         onLine(.init(timestamp: Date(), level: .info, text: "[info] routing \(profile) → "
             + "Jamf Protect collect (no Jamf Pro or Jamf School in this environment)"))
-        let start = Date().addingTimeInterval(-1)
-        let landed = try await protectCollect(protectProfile, dataDir, onLine)
-        guard landed > 0 else {
+        let kinds = try await protectCollect(protectProfile, dataDir, onLine)
+        guard !kinds.isEmpty else {
             throw ReportEngineError.collectDead(
                 profile: profile, failedCount: ReportEngine.protectCommandMatrix(profile: "").count)
-        }
-        let store = WorkspacePaths.confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
-            .map(StateFileStore.init(directory:))
-        let kinds = DataFreshnessHealth.protectKinds.filter {
-            (store?.lastRun(report: $0)).map { $0 >= start } ?? false
         }
         guard let summariesDir = try? workspacePaths.summariesDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .warn, text:

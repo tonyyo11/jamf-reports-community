@@ -1096,7 +1096,10 @@ struct ReportEngine: Sendable {
         if let data = try? BoundedFile.read(
                file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
            let existing = try? JSONDecoder().decode(DailySummary.self, from: data),
-           existing.totalDevices > 0 || existing.mobile != nil {
+           existing.totalDevices > 0 || existing.mobile != nil
+            || (existing.mobileDeviceCount ?? 0) > 0 {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] \(file.lastPathComponent) already exists — kept"))
             return .keptExisting
         }
         do {
@@ -3958,14 +3961,14 @@ struct ReportEngine: Sendable {
     ///   - profile: jamf-cli protect profile slug.
     ///   - dataDir: Directory under which snapshots are written.
     ///   - onLine: Progress callback for log lines.
-    /// - Returns: How many of the Protect sources landed.
+    /// - Returns: The kinds of the Protect sources that landed.
     @discardableResult
     static func protectCollect(
         profile: String,
         dataDir: URL,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws -> Int {
+    ) async throws -> [String] {
         guard let bin = locateJamfCLI() else {
             throw ReportEngineError.jamfCLINotFound
         }
@@ -4038,7 +4041,7 @@ struct ReportEngine: Sendable {
             }
         }
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
-        return commands.count - unlanded.count
+        return commands.map(\.kind).filter { !unlanded.contains($0) }
     }
 
     // MARK: - Public API: schoolGenerate
@@ -4866,6 +4869,8 @@ enum ReportEngineError: Error, LocalizedError {
     /// Partial failures (≥1 success) do NOT reach this — they warm the cache
     /// and the run continues normally.
     case collectDead(profile: String, failedCount: Int, cause: ReportEngine.DeadRunCause = .outage)
+    /// A Protect-only run whose `profiles.protect` is a shared value not yet confirmed here.
+    case protectNotConfirmed(String)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -4907,6 +4912,8 @@ enum ReportEngineError: Error, LocalizedError {
                 "returned 401 (expired or revoked credentials) and none succeeded. " +
                 "Re-authenticate with: jamf-cli -p \(ProfileName.shellWord(p)) pro auth token. " +
                 "No snapshot was written."
+        case .protectNotConfirmed(let reason):
+            return reason
         case .collectDead(let p, let n, let cause):
             switch cause {
             case .outage:

@@ -529,7 +529,8 @@ extension WorkspaceStore {
         guard !autoAuditRefreshInFlight else { return }
         guard canRefreshAutomatically(profileSlug: profile) else { return }
         // `pro audit` is Jamf Pro's; a School workspace has none to refresh (2.10).
-        guard !isSchoolWorkspace else { return }
+        guard !isSchoolWorkspace,
+              !EnvironmentProfiles.read(workspace: profile).isProtectOnly else { return }
         autoAuditRefreshInFlight = true
         defer { autoAuditRefreshInFlight = false }
 

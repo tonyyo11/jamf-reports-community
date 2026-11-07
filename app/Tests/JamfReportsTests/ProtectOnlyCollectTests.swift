@@ -24,6 +24,9 @@ final class ProtectOnlyCollectTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent(ws, isDirectory: true),
             withIntermediateDirectories: true)
+        try "profiles:\n  protect: \(ws)\n".write(
+            to: root.appendingPathComponent(ws).appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         addTeardownBlock {
             unsetenv("JRC_TEST_WORKSPACES_ROOT")
@@ -43,11 +46,7 @@ final class ProtectOnlyCollectTests: XCTestCase {
             protectCollect: { profile, dataDir, _ in
                 calls.add("protect \(profile)")
                 if throwing { throw Boom() }
-                if landed > 0 {
-                    StateFileStore(directory: dataDir.appendingPathComponent("state"))
-                        .record(.landed, report: "protect-alerts", at: Date())
-                }
-                return landed
+                return landed > 0 ? ["protect-alerts"] : []
             },
             resolved: { _ in nil }, gate: gate, onLine: { lines?.add($0.text) })
     }
@@ -133,5 +132,42 @@ final class ProtectOnlyCollectTests: XCTestCase {
             for: ws, environment: EnvironmentProfiles.resolve(config: config, workspace: ws),
             onLine: { _ in }))
         XCTAssertNil(CollectRouter.proRunRefusal(profile: ws, operation: "Collect", config: config))
+    }
+
+    func testNoProAuthProbeForAProtectOnlyWorkspace() throws {
+        _ = try makeRoot()
+        XCTAssertTrue(ProfileAuthMethod.skipsProAuthProbe(profile: ws))
+    }
+
+    func testCLIDeviceLookupRefusesAProtectOnlyWorkspace() async throws {
+        _ = try makeRoot()
+        let refusal = await Device.refusal(profile: ws)
+        XCTAssertEqual(refusal, "'\(ws)' holds only a Jamf Protect profile; "
+            + "Device lookup needs Jamf Pro.")
+    }
+
+    func testAScheduledBackupOfAProtectOnlyWorkspaceIsRefusedBeforeAnyWrite() async throws {
+        let root = try makeRoot()
+        let schedule = Schedule(
+            name: "b", profile: ws, schedule: "Mon 07:00", cadence: "custom", mode: .backup,
+            next: "—", last: "—", lastStatus: .ok, artifacts: [], enabled: true,
+            launchAgentLabel: "com.github.tonyyo11.jamf-reports-community.\(ws).b",
+            multiTarget: nil, tiers: nil, excludedProfiles: nil)
+        let outcome = await runSchedule(schedule, verbose: false)
+        XCTAssertEqual(outcome.exitCode, 0)
+        XCTAssertTrue(outcome.endsRetries)
+        let names = try FileManager.default.contentsOfDirectory(
+            atPath: root.appendingPathComponent(ws).path)
+        XCTAssertFalse(names.contains("backups"), "\(names)")
+    }
+
+    @MainActor
+    func testTheLaunchAuditSweepSkipsAProtectOnlyWorkspace() async throws {
+        _ = try makeRoot()
+        let store = WorkspaceStore(demoMode: false)
+        store.profile = ws
+        let called = Box()
+        await store.autoRefreshAuditIfStale(audit: { _ in called.add("audit"); return 0 })
+        XCTAssertTrue(called.all.isEmpty)
     }
 }
