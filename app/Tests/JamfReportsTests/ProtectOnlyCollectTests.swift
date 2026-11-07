@@ -111,10 +111,16 @@ final class ProtectOnlyCollectTests: XCTestCase {
             date: day, totalDevices: 5, fileVaultPct: nil, compliancePct: nil, staleCount: nil,
             osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil, source: "jamf-cli")
         XCTAssertTrue(ReportEngine.writeSummaryFile(counted, to: file, onLine: nil))
-        let outcome = ReportEngine.writeProtectOnlySummary(
-            summariesDir: dir, dataDir: dir, landedKinds: ["protect-alerts"], day: .testNoon,
-            onLine: { _ in })
-        XCTAssertEqual(outcome, .keptExisting)
+        let environment = EnvironmentProfiles.resolve(config: try config, workspace: ws)
+        let outcome = ReportEngine.finalizeEnvironmentSummary(
+            summariesDir: dir, dataDir: dir, environment: environment,
+            workspace: try WorkspaceID(validating: ws), landed: [.protect: ["protect-alerts"]],
+            day: .testNoon, onLine: { _ in })
+        XCTAssertEqual(outcome, .wrote)
+        let data = try Data(contentsOf: file)
+        let kept = try SummaryJSONParser.decode(data)
+        XCTAssertEqual(kept.totalDevices, 5)
+        XCTAssertEqual(kept.products, ["protect"])
     }
 
     func testProCommandsRefuseAProtectOnlyEnvironment() async throws {

@@ -230,11 +230,12 @@ enum CollectRouter {
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
         SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
+        let landed = LandedSources()
         func followWithProtect(_ disposition: ReportEngine.CollectDisposition) async {
-            await collectProtect(
+            landed.record(.protect, await collectProtect(
                 environment: environment, profile: profile, disposition: disposition,
                 workspacePaths: workspacePaths, protectCollect: protectCollect,
-                resolved: resolved, onLine: onLine)
+                resolved: resolved, onLine: onLine))
         }
         // Before any product: a stop covers Jamf Pro, Jamf School and Protect alike.
         switch gate(workspace, workspacePaths, tiers, force, now, onLine) {
@@ -248,11 +249,17 @@ enum CollectRouter {
             // by its own marker. Here, past the gate, so every product's run sweeps once;
             // best-effort, never fails the collect.
             SnapshotRetentionService.sweepIfDue(profile: profile, onLine: onLine)
+            func finalize() {
+                finalizeEnvironment(
+                    environment: environment, workspace: workspace, workspacePaths: workspacePaths,
+                    landed: landed.all, day: now, onLine: onLine)
+            }
             if environment.isProtectOnly {
-                try await collectProtectOnly(
+                landed.record(.protect, try await collectProtectOnly(
                     environment: environment, workspace: workspace, workspacePaths: workspacePaths,
                     protectCollect: protectCollect, resolved: resolved,
-                    locateJamfCLI: locateJamfCLI, now: now, onLine: onLine)
+                    locateJamfCLI: locateJamfCLI, onLine: onLine))
+                finalize()
                 if coordinating { SharedWorkspace.recordActivity(profile: profile) }
                 return
             }
@@ -261,11 +268,20 @@ enum CollectRouter {
                     "'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School "
                         + "profile")
             }
-            try await runProducts(
-                detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
-                skipExpensive: skipExpensive, force: force, workspacePaths: workspacePaths,
-                proCollect: proCollect, schoolCollect: schoolCollect,
-                followWithProtect: followWithProtect, onLine: onLine)
+            do {
+                try await ReportEngine.$landedSources.withValue(landed) {
+                    try await runProducts(
+                        detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
+                        skipExpensive: skipExpensive, force: force, workspacePaths: workspacePaths,
+                        proCollect: proCollect, schoolCollect: schoolCollect,
+                        followWithProtect: followWithProtect, onLine: onLine)
+                }
+            } catch {
+                // Protect may have landed after the MDM failed; the error stays the result.
+                finalize()
+                throw error
+            }
+            finalize()
             // Stamp this machine's activity so other Macs sharing the folder see the collect
             // without parsing summaries. One file per host, so runs never write the same path.
             if coordinating { SharedWorkspace.recordActivity(profile: profile) }
@@ -324,9 +340,8 @@ enum CollectRouter {
         protectCollect: ProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         locateJamfCLI: @Sendable () -> URL?,
-        now: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws {
+    ) async throws -> [String] {
         let profile = workspace.name
         let protectProfile = environment.protect ?? ""
         guard SharedConfigPin.protectAllowed(profile: profile) else {
@@ -354,14 +369,27 @@ enum CollectRouter {
             throw ReportEngineError.collectDead(
                 profile: profile, failedCount: ReportEngine.protectCommandMatrix(profile: "").count)
         }
-        guard let summariesDir = try? workspacePaths.summariesDir(for: profile) else {
+        return kinds
+    }
+
+    /// One finalize per run past the gate; see `ReportEngine.finalizeEnvironmentSummary`.
+    private static func finalizeEnvironment(
+        environment: EnvironmentProfiles,
+        workspace: WorkspaceID,
+        workspacePaths: WorkspacePaths.Type,
+        landed: [EnvironmentProducts.Product: Set<String>],
+        day: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) {
+        guard let dataDir = try? workspacePaths.dataDir(for: workspace.name),
+              let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) else {
             onLine(.init(timestamp: Date(), level: .warn, text:
                 "\(ReportEngine.summaryNotWrittenMarker) the summaries directory is unavailable"))
             return
         }
-        ReportEngine.writeProtectOnlySummary(
-            summariesDir: summariesDir, dataDir: dataDir, landedKinds: kinds, day: now,
-            onLine: onLine)
+        ReportEngine.finalizeEnvironmentSummary(
+            summariesDir: summariesDir, dataDir: dataDir, environment: environment,
+            workspace: workspace, landed: landed, day: day, onLine: onLine)
     }
 
     /// The Protect half of a Jamf Pro or Jamf School run. Never throws: a Protect failure is a
@@ -374,13 +402,13 @@ enum CollectRouter {
         protectCollect: ProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async {
-        guard environment.runsProtect else { return }
+    ) async -> [String] {
+        guard environment.runsProtect else { return [] }
         guard SharedConfigPin.protectAllowed(profile: profile) else {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[skip] protect: \(environment.protectKey) changed in the shared "
                             + "config.yaml and is not confirmed on this Mac — Protect not collected"))
-            return
+            return []
         }
         guard disposition == .collected else {
             let product = environment.isSchool ? "Jamf School" : "Jamf Pro"
@@ -389,7 +417,7 @@ enum CollectRouter {
                 : "\(product) already collected today"
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[skip] protect: \(reason) — Protect not collected"))
-            return
+            return []
         }
         // Protect augments Pro: a failure does not fail the run, but reads as Partial.
         // A blank name is not a connection; a login of another product would send Protect
@@ -403,20 +431,21 @@ enum CollectRouter {
         if let notCollected {
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] Jamf Protect not collected: \(notCollected)"))
-            return
+            return []
         }
         guard let dataDir = try? workspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] protect: could not resolve dataDir for \(profile) — skipping"))
-            return
+            return []
         }
         onLine(.init(timestamp: Date(), level: .info,
                      text: "[info] running protect collect for \(profile)"))
         do {
-            _ = try await protectCollect(protectProfile, dataDir, onLine)
+            return try await protectCollect(protectProfile, dataDir, onLine)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "\(ReportEngine.protectCollectFailedMarker)\(error.localizedDescription)"))
+            return []
         }
     }
 

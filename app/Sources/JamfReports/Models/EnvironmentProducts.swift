@@ -6,6 +6,17 @@ struct EnvironmentProducts: Equatable, Sendable {
     enum Product: String, CaseIterable, Sendable {
         case jamfPro, jamfSchool, platform, protect, securityCloud
 
+        /// The snake_case slot name the daily summary's `products` list uses.
+        var slotName: String {
+            switch self {
+            case .jamfPro: return "jamf_pro"
+            case .jamfSchool: return "jamf_school"
+            case .platform: return "platform"
+            case .protect: return "protect"
+            case .securityCloud: return "security_cloud"
+            }
+        }
+
         /// English, for reports and webhook cards (never localized).
         var displayName: String {
             switch self {

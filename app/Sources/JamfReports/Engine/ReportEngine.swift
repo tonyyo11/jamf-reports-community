@@ -1115,40 +1115,6 @@ struct ReportEngine: Sendable {
             mobileDeviceCount: nil, collectedByHost: collectedByHost)
     }
 
-    /// Writes today's `protectOnlySummary`. A same-day summary that counted Macs or mobile
-    /// devices is kept; one that is itself Protect-only is replaced.
-    @discardableResult
-    static func writeProtectOnlySummary(
-        summariesDir: URL, dataDir: URL, landedKinds: [String], day: Date = Date(),
-        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) -> SummaryEmitOutcome {
-        let date = SummaryJSONParser.dateFormatter.string(from: day)
-        let file = summariesDir.appendingPathComponent("summary_\(date).json")
-        if let data = try? BoundedFile.read(
-               file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
-           let existing = try? JSONDecoder().decode(DailySummary.self, from: data),
-           existing.totalDevices > 0 || existing.mobile != nil
-            || (existing.mobileDeviceCount ?? 0) > 0 {
-            onLine(.init(timestamp: Date(), level: .info,
-                         text: "[info] \(file.lastPathComponent) already exists — kept"))
-            return .keptExisting
-        }
-        do {
-            try FileManager.default.createDirectory(
-                at: summariesDir, withIntermediateDirectories: true)
-        } catch {
-            let msg = "\(summaryNotWrittenMarker) the summaries directory could not be created"
-            AppLogger.collect.warning("\(msg, privacy: .private)")
-            onLine(.init(timestamp: Date(), level: .warn, text: msg))
-            return .directoryUnavailable
-        }
-        let sources = Dictionary(uniqueKeysWithValues: landedKinds.map { ($0, "live") })
-        let summary = protectOnlySummary(
-            date: date, collectionSources: sources,
-            collectedByHost: collectingHostLabel(dataDir: dataDir))
-        return writeSummaryFile(summary, to: file, onLine: onLine) ? .wrote : .writeFailed
-    }
-
     /// The score's sources from what the summary writer already read, plus the `computers`
     /// snapshot and the SOFA feed, which the summary's Secure Boot, bootstrap token and
     /// XProtect figures need whatever the score lists.
@@ -2471,6 +2437,8 @@ struct ReportEngine: Sendable {
             authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
+        landedSources?.record(.jamfPro, savedKinds.subtracting(platformOnlyKinds))
+        landedSources?.record(.platform, savedKinds.intersection(platformOnlyKinds))
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
@@ -3916,6 +3884,7 @@ struct ReportEngine: Sendable {
         _ = await fetchSOFAIfPlanned(
             afterMatrix: afterMatrix, profile: profile, dataDir: dataDir,
             refreshSOFA: refreshSOFA, stateStore: stateStore, onLine: onLine)
+        landedSources?.record(.jamfSchool, schoolSaved)
         writeSchoolSummaryAfterCollect(
             profile: workspace.name, dataDir: dataDir, workspacePaths: workspacePaths,
             landedKinds: schoolSaved, day: now, onLine: onLine)
