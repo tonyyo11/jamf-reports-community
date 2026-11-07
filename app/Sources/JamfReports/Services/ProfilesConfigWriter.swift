@@ -52,6 +52,11 @@ enum ProfilesConfigWriter {
         root.set("profiles", value: .mapping(block))
     }
 
+    /// The `profiles:` block of a Protect-only environment: the one slot, no MDM slot.
+    static func protectOnlyBlock(login: String) -> String {
+        "\nprofiles:\n  \(Slot.protect.rawValue): \"\(ScaffoldService.yamlEscape(login))\"\n"
+    }
+
     /// The block a file without one starts from: the slots the old keys give today.
     private static func seeded(from derived: EnvironmentProfiles) -> YAMLCodec.YAMLMapping {
         var block = YAMLCodec.YAMLMapping(entries: [])

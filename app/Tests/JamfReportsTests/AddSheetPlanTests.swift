@@ -658,7 +658,8 @@ final class AddSheetPlanTests: XCTestCase {
         let rows = unassigned([profile("Acme-Protect", .protect), profile("lab")])
         let protect = rows.first { $0.name == "Acme-Protect" }
         XCTAssertEqual(protect.map(AddSheetPlan.offersOwnEnvironment), true)
-        XCTAssertEqual(rows.first { $0.name == "lab" }.map(AddSheetPlan.offersOwnEnvironment), false)
+        let lab = rows.first { $0.name == "lab" }
+        XCTAssertEqual(lab.map(AddSheetPlan.offersOwnEnvironment), false)
         // Only the Protect row, nothing to join: still the New workspace step, never a choice made.
         XCTAssertEqual(
             AddSheetPlan.preselection(
@@ -677,7 +678,8 @@ final class AddSheetPlanTests: XCTestCase {
         XCTAssertTrue(rows.isEmpty)
     }
 
-    @MainActor func testCreatingAProtectOnlyEnvironmentWritesTheBlockAndRefusesAnExistingConfig() throws {
+    @MainActor
+    func testCreatingAProtectOnlyEnvironmentWritesTheBlockAndKeepsAnExistingConfig() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-protect-only-\(UUID().uuidString)")
         let support = root.appendingPathComponent("support", isDirectory: true)
@@ -694,8 +696,11 @@ final class AddSheetPlanTests: XCTestCase {
         XCTAssertEqual(env.protect, "Acme-Protect")
         XCTAssertNil(env.jamfPro)
 
+        let before = try Data(contentsOf: config)
         XCTAssertThrowsError(
             try OnboardingFlow.createProtectOnlyEnvironment(
-                login: "Acme-Protect", appSupport: support))
+                login: "Acme-Protect", appSupport: support)
+        ) { XCTAssertTrue("\($0)".contains("workspaceHasConfig")) }
+        XCTAssertEqual(try Data(contentsOf: config), before)
     }
 }

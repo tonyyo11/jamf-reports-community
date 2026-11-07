@@ -32,6 +32,16 @@ enum ScaffoldService {
         try write(minimalConfigYAML(profile: profile, eas: []), to: url)
     }
 
+    /// The minimal config.yaml plus a Protect-only `profiles:` block, created exclusively: an
+    /// existing file is never replaced and a failed create leaves no half-written config.
+    static func createProtectOnlyConfig(at url: URL, profile: String) throws {
+        let yaml = minimalConfigYAML(profile: profile, eas: [])
+            + ProfilesConfigWriter.protectOnlyBlock(login: profile)
+        try Data(yaml.utf8).write(to: url, options: .withoutOverwriting)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: url.path)
+    }
+
     private static func write(_ yaml: String, to url: URL) throws {
         try yaml.write(to: url, atomically: true, encoding: .utf8)
         // 0600: config.yaml may embed column names that reflect org EA naming.
@@ -113,7 +123,7 @@ enum ScaffoldService {
         return fields
     }
 
-    private static func minimalConfigYAML(profile: String, eas: [ProposedEA]) -> String {
+    static func minimalConfigYAML(profile: String, eas: [ProposedEA]) -> String {
         var lines: [String] = [
             "# config.yaml — minimal workspace config",
             "",

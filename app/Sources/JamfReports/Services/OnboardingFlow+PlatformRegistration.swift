@@ -68,21 +68,24 @@ extension OnboardingFlow {
         return true
     }
 
-    /// A Protect-only environment (P8): the workspace folder named after the login, the minimal
-    /// config.yaml and `profiles: {protect: <login>}` with no MDM slot, all confirmed on this
-    /// Mac. A config.yaml already there is never overwritten.
+    /// A Protect-only environment (P8): the workspace folder named after the login and one
+    /// config.yaml (minimal settings plus `profiles: {protect: <login>}`, no MDM slot), created
+    /// in one exclusive write and confirmed on this Mac. A config.yaml already there is never
+    /// overwritten.
     static func createProtectOnlyEnvironment(
         login: String, appSupport: URL = AppSupport.directory()
     ) throws {
-        guard try createJamfCLIOnlyWorkspace(for: login) else {
+        try createWorkspaceFolders(for: login)
+        guard let workspace = ProfileService.workspaceURL(for: login) else {
+            throw FlowError.invalidProfile
+        }
+        let config = workspace.appendingPathComponent("config.yaml")
+        do {
+            try ScaffoldService.createProtectOnlyConfig(at: config, profile: login)
+        } catch CocoaError.fileWriteFileExists {
             throw FlowError.workspaceHasConfig(login)
         }
-        _ = try ConfigService.saveBlock(key: "profiles", profile: login) {
-            var block = YAMLCodec.YAMLMapping(entries: [])
-            block.set(
-                ProfilesConfigWriter.Slot.protect.rawValue, value: .scalar(.string(login)))
-            $0.set("profiles", value: .mapping(block))
-        }
+        SharedConfigPin.confirmWrittenConfig(at: config, profile: login, appSupport: appSupport)
         SharedConfigPin.confirmWritten(
             login, key: .protectProfile, profile: login, appSupport: appSupport)
     }
