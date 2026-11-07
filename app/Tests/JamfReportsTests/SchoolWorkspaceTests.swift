@@ -22,6 +22,12 @@ final class SchoolWorkspaceTests: XCTestCase {
         if let tempRoot { try? FileManager.default.removeItem(at: tempRoot) }
     }
 
+    nonisolated static func env(
+        _ products: EnvironmentProducts.Product..., composition: EnvironmentComposition = .unknown
+    ) -> EnvironmentProducts {
+        EnvironmentProducts(products: Set(products), composition: composition)
+    }
+
     private func profile(_ name: String, product: JamfCLIProduct) -> JamfCLIProfile {
         JamfCLIProfile(name: name, url: "", schedules: 0, status: .ok, product: product)
     }
@@ -29,7 +35,7 @@ final class SchoolWorkspaceTests: XCTestCase {
     // MARK: - Sidebar
 
     func testASchoolWorkspaceKeepsOnlyTheTabsItCanFill() {
-        let school = TabVisibility().limited(toSchool: true)
+        let school = TabVisibility().limited(to: Self.env(.jamfSchool))
         XCTAssertTrue(school.isVisible(.overview))
         XCTAssertTrue(school.isVisible(.sources))
         XCTAssertTrue(school.isVisible(.reports))
@@ -39,7 +45,7 @@ final class SchoolWorkspaceTests: XCTestCase {
         XCTAssertFalse(school.isVisible(.backups), "pro backup is Jamf Pro's")
         XCTAssertFalse(school.isVisible(.protectDashboard))
 
-        let pro = TabVisibility().limited(toSchool: false)
+        let pro = TabVisibility().limited(to: Self.env(.jamfPro, .platform, .protect, composition: .mixed))
         let proTabs = Tab.allCases.filter { $0 != .schoolDevices }
         XCTAssertTrue(proTabs.allSatisfy { pro.isVisible($0) })
         XCTAssertFalse(pro.isVisible(.schoolDevices))
@@ -48,14 +54,14 @@ final class SchoolWorkspaceTests: XCTestCase {
     /// Protect works with Jamf School (2.11): its tab shows on a School workspace only while
     /// Protect is connected, and a Jamf Pro workspace is unchanged.
     func testASchoolWorkspaceShowsProtectOnlyWhenConnected() {
-        let connected = TabVisibility().limited(toSchool: true, protectConnected: true)
+        let connected = TabVisibility().limited(to: Self.env(.jamfSchool, .protect))
         XCTAssertTrue(connected.isVisible(.protectDashboard))
         XCTAssertFalse(connected.isVisible(.patch))
-        XCTAssertFalse(TabVisibility().limited(toSchool: true).isVisible(.protectDashboard))
+        XCTAssertFalse(TabVisibility().limited(to: Self.env(.jamfSchool)).isVisible(.protectDashboard))
         XCTAssertFalse(TabVisibility.parse("protectDashboard")
-            .limited(toSchool: true, protectConnected: true)
+            .limited(to: Self.env(.jamfSchool, .protect))
             .isVisible(.protectDashboard), "the user's hidden choice still applies")
-        XCTAssertFalse(TabVisibility().limited(toSchool: false, protectConnected: true)
+        XCTAssertFalse(TabVisibility().limited(to: Self.env(.jamfPro, .protect))
             .isVisible(.schoolDevices))
     }
 
@@ -67,21 +73,21 @@ final class SchoolWorkspaceTests: XCTestCase {
         let store = WorkspaceStore(demoMode: false)
         store.profiles = [profile("campus", product: .school)]
         store.profile = "campus"
-        store.refreshProtectConnection()
+        store.refreshEnvironmentProducts()
         XCTAssertFalse(store.tabVisibility(hiddenRaw: "").isVisible(.protectDashboard))
         try Data("school_cli:\n  enabled: true\nprotect:\n  enabled: true\n  profile: p\n".utf8)
             .write(to: config)
-        store.refreshProtectConnection()
-        XCTAssertTrue(store.protectConnected)
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(store.environmentProducts.has(.protect))
         XCTAssertTrue(store.tabVisibility(hiddenRaw: "").isVisible(.protectDashboard))
     }
 
     func testTheProductFilterIsNeverStoredAsTheUsersChoice() {
         var visibility = TabVisibility.parse("patch")
         let raw = visibility.serialize()
-        visibility = visibility.limited(toSchool: true)
+        visibility = visibility.limited(to: Self.env(.jamfSchool))
         XCTAssertEqual(visibility.serialize(), raw)
-        XCTAssertFalse(TabVisibility.parse(raw).limited(toSchool: false).isVisible(.patch))
+        XCTAssertFalse(TabVisibility.parse(raw).limited(to: Self.env(.jamfPro, .platform, .protect, composition: .mixed)).isVisible(.patch))
     }
 
     func testTheStoreKnowsTheActiveWorkspaceIsSchool() {

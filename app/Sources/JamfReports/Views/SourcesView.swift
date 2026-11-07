@@ -728,7 +728,7 @@ struct SourcesView: View {
     private func reloadEnvironment() {
         environment = workspace.demoMode
             ? .none : EnvironmentProfiles.read(workspace: workspace.profile)
-        workspace.refreshProtectConnection()
+        workspace.refreshEnvironmentProducts()
         guard let named = environment.protect else {
             cliProfileNames = nil
             return
