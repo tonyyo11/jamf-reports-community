@@ -441,7 +441,7 @@ struct ConfigView: View {
     // MARK: Tab routing
 
     private var offeredTabs: [ConfigTab] {
-        ConfigTab.offered(workspace.tabProducts)
+        ConfigTab.offered(workspace.environmentProducts)
     }
 
     /// The selected tab, or the first offered one when the workspace does not offer it.

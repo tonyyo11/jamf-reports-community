@@ -184,9 +184,6 @@ struct ContentView: View {
         }
         // Switching to a Jamf School workspace removes the Jamf Pro tabs, and disconnecting
         // Protect there removes the Protect tab; do not leave the detail pane on one.
-        .onChange(of: workspace.isSchoolWorkspace) { _, _ in
-            if !workspace.tabVisibility(hiddenRaw: hiddenTabsRaw).isVisible(tab) { tab = .overview }
-        }
         .onChange(of: workspace.environmentProducts) { _, _ in
             if !workspace.tabVisibility(hiddenRaw: hiddenTabsRaw).isVisible(tab) { tab = .overview }
         }

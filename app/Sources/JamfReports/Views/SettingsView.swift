@@ -1241,7 +1241,7 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(
                     SettingsView.toggleableGroups(
-                        environment: workspace.tabProducts),
+                        environment: workspace.environmentProducts),
                     id: \.label
                 ) { group in
                     visibilityGroupRow(label: group.label, tabs: group.tabs)

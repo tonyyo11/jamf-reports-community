@@ -317,7 +317,6 @@ final class WorkspaceStore {
     /// The products the active workspace's config.yaml names, read with the config and when
     /// Data Sources connects or disconnects one (`refreshEnvironmentProducts`).
     private var environmentProfiles = EnvironmentProfiles.none
-    private var legacyPlatformAuth = false
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -1152,38 +1151,32 @@ final class WorkspaceStore {
     /// The active workspace is a Jamf School one: its profile logs in to Jamf School
     /// (`school setup`, discovered as `JamfCLIProduct.school`), which is also the profile
     /// `ProfileProductType.detect` routes to School collect.
-    var isSchoolWorkspace: Bool {
-        environmentProducts.isSchool || activeCLIProfile?.product == .school
-    }
+    var isSchoolWorkspace: Bool { environmentProducts.isSchool }
 
     /// The sidebar's visibility for the active workspace: the user's hidden tabs, and the tabs
     /// its product cannot fill.
     func tabVisibility(hiddenRaw: String) -> TabVisibility {
-        TabVisibility.parse(hiddenRaw).limited(to: tabProducts)
+        TabVisibility.parse(hiddenRaw).limited(to: environmentProducts)
     }
 
-    /// `environmentProducts`, with a School profile whose config.yaml cannot be read still School.
-    var tabProducts: EnvironmentProducts {
-        var environment = environmentProducts
-        if isSchoolWorkspace && !environment.isSchool {
-            environment.products.remove(.jamfPro)
-            environment.products.insert(.jamfSchool)
-        }
-        return environment
-    }
-
-    /// The products and device types of the active environment; `.demo` in demo mode.
+    /// The products and device types of the active environment; `.demo` in demo mode. A School
+    /// profile whose config.yaml cannot be read is still School, and the Platform API login of a
+    /// workspace without `profiles:` is read live from discovery, which fills `auth` late.
     var environmentProducts: EnvironmentProducts {
         if demoMode { return .demo }
-        return .from(
+        var products = EnvironmentProducts.from(
             environmentProfiles, composition: environmentComposition,
-            legacyPlatformAuth: legacyPlatformAuth)
+            legacyPlatformAuth: activeCLIProfile?.auth?.isPlatform == true)
+        if activeCLIProfile?.product == .school && !products.isSchool {
+            products.products.remove(.jamfPro)
+            products.products.insert(.jamfSchool)
+        }
+        return products
     }
 
     /// Re-reads which products the active workspace names (`EnvironmentProfiles`).
     func refreshEnvironmentProducts() {
         environmentProfiles = demoMode ? .none : EnvironmentProfiles.read(workspace: profile)
-        legacyPlatformAuth = activeCLIProfile?.auth?.isPlatform == true
     }
 
     /// After credentials are saved: a profile's auth method or scope level may have changed, so

@@ -22,6 +22,8 @@ final class SchoolWorkspaceTests: XCTestCase {
         if let tempRoot { try? FileManager.default.removeItem(at: tempRoot) }
     }
 
+    nonisolated static let fullPro = env(.jamfPro, .platform, .protect, composition: .mixed)
+
     nonisolated static func env(
         _ products: EnvironmentProducts.Product..., composition: EnvironmentComposition = .unknown
     ) -> EnvironmentProducts {
@@ -45,7 +47,7 @@ final class SchoolWorkspaceTests: XCTestCase {
         XCTAssertFalse(school.isVisible(.backups), "pro backup is Jamf Pro's")
         XCTAssertFalse(school.isVisible(.protectDashboard))
 
-        let pro = TabVisibility().limited(to: Self.env(.jamfPro, .platform, .protect, composition: .mixed))
+        let pro = TabVisibility().limited(to: Self.fullPro)
         let proTabs = Tab.allCases.filter { $0 != .schoolDevices }
         XCTAssertTrue(proTabs.allSatisfy { pro.isVisible($0) })
         XCTAssertFalse(pro.isVisible(.schoolDevices))
@@ -57,7 +59,8 @@ final class SchoolWorkspaceTests: XCTestCase {
         let connected = TabVisibility().limited(to: Self.env(.jamfSchool, .protect))
         XCTAssertTrue(connected.isVisible(.protectDashboard))
         XCTAssertFalse(connected.isVisible(.patch))
-        XCTAssertFalse(TabVisibility().limited(to: Self.env(.jamfSchool)).isVisible(.protectDashboard))
+        XCTAssertFalse(
+            TabVisibility().limited(to: Self.env(.jamfSchool)).isVisible(.protectDashboard))
         XCTAssertFalse(TabVisibility.parse("protectDashboard")
             .limited(to: Self.env(.jamfSchool, .protect))
             .isVisible(.protectDashboard), "the user's hidden choice still applies")
@@ -87,7 +90,35 @@ final class SchoolWorkspaceTests: XCTestCase {
         let raw = visibility.serialize()
         visibility = visibility.limited(to: Self.env(.jamfSchool))
         XCTAssertEqual(visibility.serialize(), raw)
-        XCTAssertFalse(TabVisibility.parse(raw).limited(to: Self.env(.jamfPro, .platform, .protect, composition: .mixed)).isVisible(.patch))
+        XCTAssertFalse(TabVisibility.parse(raw).limited(to: Self.fullPro).isVisible(.patch))
+    }
+
+    func testASchoolProfileWithAnUnreadableConfigStillGetsTheSchoolTabs() throws {
+        let workspace = tempRoot.appendingPathComponent("campus", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try Data("jamf_cli: [unclosed\n".utf8)
+            .write(to: workspace.appendingPathComponent("config.yaml"))
+        let store = WorkspaceStore(demoMode: false)
+        store.profiles = [profile("campus", product: .school)]
+        store.profile = "campus"
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(store.environmentProducts.isSchool)
+        let visibility = store.tabVisibility(hiddenRaw: "")
+        XCTAssertTrue(visibility.isVisible(.schoolDevices))
+        XCTAssertFalse(visibility.isVisible(.patch))
+    }
+
+    func testALegacyPlatformProfileWhoseAuthArrivesLateGetsComplianceBenchmarks() {
+        let store = WorkspaceStore(demoMode: false)
+        var late = profile("prod", product: .pro)
+        store.profiles = [late]
+        store.profile = "prod"
+        store.refreshEnvironmentProducts()
+        XCTAssertFalse(store.tabVisibility(hiddenRaw: "").isVisible(.complianceBenchmarks))
+        late.authMethod = "platform"
+        store.profiles = [late]
+        XCTAssertTrue(store.environmentProducts.has(.platform))
+        XCTAssertTrue(store.tabVisibility(hiddenRaw: "").isVisible(.complianceBenchmarks))
     }
 
     func testTheStoreKnowsTheActiveWorkspaceIsSchool() {
