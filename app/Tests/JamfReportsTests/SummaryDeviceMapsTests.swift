@@ -100,7 +100,7 @@ final class SummaryDeviceMapsTests: XCTestCase {
     func testMobileFromFixture() throws {
         let result = SummaryDeviceMaps.mobile(try mobileItems(), now: now)
         XCTAssertEqual(result.formFactor, ["iPhone": 3, "iPad": 3])
-        XCTAssertEqual(result.osMajor, ["iOS 7": 2, "iOS 8": 4])
+        XCTAssertEqual(result.osMajor, ["iOS 7": 2, "iOS 8": 1, "iPadOS 8": 3])
         XCTAssertEqual(result.lastSeen?.sevenDaysOrMore, 6)
         XCTAssertNil(result.lastSeen?.never)
         XCTAssertNil(result.lastSeen?.underOneDay)

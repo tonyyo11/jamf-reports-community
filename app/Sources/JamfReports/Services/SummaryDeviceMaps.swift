@@ -151,20 +151,21 @@ enum SummaryDeviceMaps {
         return result.values.isEmpty ? nil : result
     }
 
-    /// The device's own OS type when it names one, else the form factor's.
+    /// The form factor's platform; the device's own OS type only for a device the form factor
+    /// cannot place (Jamf reports iPads with `deviceType` "iOS", so it cannot come first).
     private static func mobilePlatform(
         deviceType: String?, form: MobileFleetService.FormFactor
     ) -> String {
-        switch (deviceType ?? "").lowercased() {
-        case "ios": return "iOS"
-        case "ipados": return "iPadOS"
-        case "tvos": return "tvOS"
-        default:
-            switch form {
-            case .iPad: return "iPadOS"
-            case .iPhone: return "iOS"
-            case .appleTV: return "tvOS"
-            case .other: return ""
+        switch form {
+        case .iPad: return "iPadOS"
+        case .iPhone: return "iOS"
+        case .appleTV: return "tvOS"
+        case .other:
+            switch (deviceType ?? "").lowercased() {
+            case "ios": return "iOS"
+            case "ipados": return "iPadOS"
+            case "tvos": return "tvOS"
+            default: return ""
             }
         }
     }
