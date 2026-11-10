@@ -466,7 +466,7 @@ absent, never 0:
 | Field | From |
 |---|---|
 | `products` (list: `jamf_pro`, `jamf_school`, `platform`, `protect`, `security_cloud`) | the slots that collected that day |
-| `protectComputerCount`, `protectMatchedPct`, `protectAlertCounts` (by severity) | Protect snapshots, `DeviceCorrelation` |
+| `protectComputerCount`, `protectMatched` (`{met, of}` over identified Protect computers), `protectAlertCounts` (by severity) | Protect snapshots, `DeviceCorrelation` |
 | `securityRiskCounts` (by category), `securityCoveredPct` | Security Cloud, once collected |
 | The `mobile` object (replaces `mobileEncryptedPct`, `mobilePasscodePct`, `mobileSupervisedPct`; see the mobile spec, section 4.2) | `mobile-devices-list` |
 | `lastSeenBuckets` (computers and mobile: under 1 day, under 7 days, 7 days or more) | the stale-basis dates, mobile last inventory |
