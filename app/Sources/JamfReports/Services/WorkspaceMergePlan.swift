@@ -73,6 +73,13 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     /// Exclusion lists that held both workspaces when planned, which keep the target excluded
     /// (`mergingExclusion`): the policy's and, by label, each schedule's. Decided here so a
     /// step run twice leaves the same lists.
+    /// Product logins the source names that the target lacks; the merge drops them (R5).
+    var droppedConnections: [Connection] = []
+    struct Connection: Codable, Equatable, Sendable {
+        /// Product name as the sheet shows it.
+        var product: String
+        var profile: String
+    }
     var keepTargetExcludedInPolicy = false
     var keepTargetExcludedInSchedules: [String] = []
 
@@ -183,9 +190,27 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
             steps: builder.steps + tail,
             differingConfigKeys: try builder.differingKeys(source: sourceWS, target: targetWS),
             outsideSourceFolder: builder.outside,
+            droppedConnections: Self.droppedConnections(source: source, target: target, root: root),
             keepTargetExcludedInPolicy: policy.excludedWorkspaces.excludesBoth(source, target),
             keepTargetExcludedInSchedules: schedules
                 .filter { $0.excludedWorkspaces.excludesBoth(source, target) }.map(\.label))
+    }
+
+    /// The source's Protect, Security Cloud and School logins whose slot the target leaves blank;
+    /// `platform` is what the merge moves and `jamf_pro` is the workspace itself.
+    private static func droppedConnections(
+        source: String, target: String, root: URL
+    ) -> [Connection] {
+        let from = EnvironmentProfiles.read(workspace: source, under: root)
+        let to = EnvironmentProfiles.read(workspace: target, under: root)
+        let slots: [(String, String?, String?)] = [
+            ("Jamf Protect", from.protect, to.protect),
+            ("Security Cloud", from.securityCloud, to.securityCloud),
+            ("Jamf School", from.jamfSchool ?? from.foreignSchool, to.jamfSchool ?? to.foreignSchool),
+        ]
+        return slots.compactMap { product, name, existing in
+            name.flatMap { existing == nil ? Connection(product: product, profile: $0) : nil }
+        }
     }
 
     static var stampFormatter: DateFormatter {

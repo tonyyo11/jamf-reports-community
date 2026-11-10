@@ -112,6 +112,15 @@ final class WorkspaceMergePlanTests: XCTestCase {
         XCTAssertEqual(steps(p, .backups).map(\.action), [.copyFolder])
     }
 
+    func testSourceProductLoginsTheTargetLacksAreListed() throws {
+        try write("profiles:\n  platform: \"Cloud\"\n  protect: \"Cloud-Protect\"\n  security_cloud: \"SC\"\n",
+                  src, "config.yaml")
+        try write("profiles:\n  jamf_pro: \"OnPrem\"\n  platform: \"Cloud\"\n  security_cloud: \"SC2\"\n",
+                  tgt, "config.yaml")
+        XCTAssertEqual(try plan().droppedConnections,
+                       [.init(product: "Jamf Protect", profile: "Cloud-Protect")])
+    }
+
     func testTailComesLastAndConfigKeys() throws {
         try write("a: 1\nprofiles:\n  x: y\n", src, "config.yaml")
         try write("a: 2\nb: 1\nprofiles:\n  x: z\n", tgt, "config.yaml")
