@@ -294,11 +294,33 @@ struct DailySummary: Codable, Identifiable, Sendable {
             protectMatched: protectMatched ?? older.protectMatched,
             protectOpenAlerts: protectOpenAlerts ?? older.protectOpenAlerts,
             protectAlertCounts: protectAlertCounts ?? older.protectAlertCounts,
-            osMajorCounts: osMajorCounts ?? older.osMajorCounts,
+            osMajorCounts: mergedOSMajor(older.osMajorCounts),
             modelFamilyCounts: modelFamilyCounts ?? older.modelFamilyCounts,
             mobileFormFactorCounts: mobileFormFactorCounts ?? older.mobileFormFactorCounts,
-            lastSeenBuckets: lastSeenBuckets ?? older.lastSeenBuckets
+            lastSeenBuckets: mergedLastSeen(older.lastSeenBuckets)
         )
+    }
+
+    /// Per platform group: a group this run measured replaces the older one, a group it did not
+    /// measure keeps the older keys (Mac keys start "macOS"; every other key is mobile).
+    private func mergedOSMajor(_ older: [String: Int]?) -> [String: Int]? {
+        guard let current = osMajorCounts else { return older }
+        func isMac(_ key: String) -> Bool { key.hasPrefix("macOS") }
+        var merged = current
+        let hasMac = current.keys.contains(where: isMac)
+        let hasMobile = current.keys.contains { !isMac($0) }
+        for (key, count) in older ?? [:] where isMac(key) ? !hasMac : !hasMobile {
+            merged[key] = count
+        }
+        return merged
+    }
+
+    /// The computers and mobile halves each fall back to the older summary's half.
+    private func mergedLastSeen(_ older: LastSeenBuckets?) -> LastSeenBuckets? {
+        guard let current = lastSeenBuckets else { return older }
+        return LastSeenBuckets(
+            computers: current.computers ?? older?.computers,
+            mobile: current.mobile ?? older?.mobile)
     }
 
     init(

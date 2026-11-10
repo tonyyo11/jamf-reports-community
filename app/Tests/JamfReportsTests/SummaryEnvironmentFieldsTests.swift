@@ -102,4 +102,22 @@ final class SummaryEnvironmentFieldsTests: XCTestCase {
         XCTAssertFalse(ReportEngine.freshSummaryIsBetter(
             existing: base(open: 1), fresh: base()))
     }
+
+    func testComputersOnlyRunKeepsMobileHalvesAndMobileOnlyRunKeepsMacKeys() {
+        let counts = { (n: Int) in LastSeenBuckets.Counts(underOneDay: n) }
+        let older = base(
+            os: ["macOS 26": 4, "iOS 18": 3],
+            buckets: LastSeenBuckets(computers: counts(4), mobile: counts(3)))
+        let macsOnly = base(
+            os: ["macOS 26": 5], buckets: LastSeenBuckets(computers: counts(5), mobile: nil))
+            .filling(from: older)
+        XCTAssertEqual(macsOnly.osMajorCounts, ["macOS 26": 5, "iOS 18": 3])
+        XCTAssertEqual(macsOnly.lastSeenBuckets?.mobile, counts(3))
+        XCTAssertEqual(macsOnly.lastSeenBuckets?.computers, counts(5))
+        let mobileOnly = base(
+            os: ["iPadOS 18": 2], buckets: LastSeenBuckets(computers: nil, mobile: counts(2)))
+            .filling(from: older)
+        XCTAssertEqual(mobileOnly.osMajorCounts, ["macOS 26": 4, "iPadOS 18": 2])
+        XCTAssertEqual(mobileOnly.lastSeenBuckets?.computers, counts(4))
+    }
 }

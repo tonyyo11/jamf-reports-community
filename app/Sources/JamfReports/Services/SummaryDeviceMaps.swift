@@ -18,19 +18,24 @@ enum SummaryDeviceMaps {
         "MacBook Air", "MacBook Pro", "MacBook", "Mac mini", "iMac", "Mac Pro", "Mac Studio",
     ].sorted { $0.count > $1.count }
 
-    /// The marketing model's family by prefix, longest first; an identifier such as `Mac14,13`
-    /// or no name is `Other`.
-    static func modelFamily(_ marketingName: String?) -> String {
+    /// The marketing model's family by prefix, longest first; a model that matches none (an
+    /// identifier such as `Mac14,13`) is `Other`, and no model text at all is nil, not "Other".
+    static func modelFamily(_ marketingName: String?) -> String? {
         let name = marketingName?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard !name.isEmpty else { return nil }
         return families.first { name.range(of: $0, options: [.anchored, .caseInsensitive]) != nil }
             ?? "Other"
     }
 
     /// `"macOS 26"` from a platform word and a version; nil when the version has no major.
     static func osMajorKey(platform: String, version: String?) -> String? {
-        let digits = (version ?? "").drop { !$0.isNumber }.prefix { $0.isNumber }
-        guard !platform.isEmpty, !digits.isEmpty else { return nil }
-        return "\(platform) \(Int(digits) ?? 0)"
+        let isDigit: (Character) -> Bool = { $0.isASCII && $0.isWholeNumber }
+        let text = (version ?? "").drop { !isDigit($0) }
+        let skipped = (version ?? "").prefix(upTo: text.startIndex)
+        let digits = text.prefix(while: isDigit)
+        // A non-ASCII digit before the first ASCII one is not a version this reads.
+        guard !platform.isEmpty, !skipped.contains(where: \.isNumber), let major = Int(digits) else { return nil }
+        return "\(platform) \(major)"
     }
 
     static func computers(
@@ -102,9 +107,7 @@ enum SummaryDeviceMaps {
             fields.modelFamily = nilIfEmpty(result.modelFamily)
             seen.computers = result.lastSeen
         }
-        if let rows = mobileData.flatMap({
-            try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: $0)
-        }), !rows.isEmpty {
+        if let rows = mobileData.map(mobileRows), !rows.isEmpty {
             let result = mobile(rows, now: now)
             os.merge(result.osMajor, uniquingKeysWith: +)
             fields.formFactor = nilIfEmpty(result.formFactor)
@@ -126,6 +129,18 @@ enum SummaryDeviceMaps {
     }
 
     // MARK: - Helpers
+
+    /// Row by row, so one malformed device does not drop the list; a bad row is skipped.
+    private static func mobileRows(_ data: Data) -> [MobileDeviceInventoryItem] {
+        guard let objects = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else {
+            return []
+        }
+        return objects.compactMap { object in
+            guard JSONSerialization.isValidJSONObject(object),
+                  let row = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+            return try? JSONDecoder().decode(MobileDeviceInventoryItem.self, from: row)
+        }
+    }
 
     private static func nilIfEmpty(_ map: [String: Int]) -> [String: Int]? {
         map.isEmpty ? nil : map

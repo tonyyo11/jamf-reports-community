@@ -33,10 +33,11 @@ final class SummaryDeviceMapsTests: XCTestCase {
             ("MacBook Pro (14-inch, 2023)", "MacBook Pro"),
             ("MacBook (Retina)", "MacBook"), ("Mac mini (M2, 2023)", "Mac mini"),
             ("iMac Pro (2017)", "iMac"), ("Mac Pro (2019)", "Mac Pro"),
-            ("Mac Studio (2022)", "Mac Studio"), ("Mac14,13", "Other"), ("", "Other"),
+            ("Mac Studio (2022)", "Mac Studio"), ("Mac14,13", "Other"),
         ]
         for (name, family) in cases { XCTAssertEqual(SummaryDeviceMaps.modelFamily(name), family) }
-        XCTAssertEqual(SummaryDeviceMaps.modelFamily(nil), "Other")
+        XCTAssertNil(SummaryDeviceMaps.modelFamily(nil))
+        XCTAssertNil(SummaryDeviceMaps.modelFamily("  "))
     }
 
     func testOSMajorKey() {
@@ -58,11 +59,34 @@ final class SummaryDeviceMapsTests: XCTestCase {
         XCTAssertNotNil(result.lastSeen)
     }
 
-    func testIdentifierOnlyModelIsOther() throws {
+    func testNoModelTextIsLeftOutAndAnIdentifierIsOther() throws {
         var record = try XCTUnwrap(fixtureRecords().first)
         record.marketingModel = ""
-        let result = SummaryDeviceMaps.computers([record], rule: StaleRule(days: 30), now: now)
-        XCTAssertEqual(result.modelFamily, ["Other": 1])
+        var identifier = record
+        identifier.marketingModel = "Mac14,13"
+        let rule = StaleRule(days: 30)
+        XCTAssertTrue(SummaryDeviceMaps.computers([record], rule: rule, now: now)
+            .modelFamily.isEmpty, "all-empty tallies nothing")
+        XCTAssertEqual(SummaryDeviceMaps.computers([record, identifier], rule: rule, now: now)
+            .modelFamily, ["Other": 1])
+        let fields = SummaryDeviceMaps.jamfPro(
+            computersData: nil, mobileData: nil, rule: rule, now: now)
+        XCTAssertNil(fields.modelFamily)
+    }
+
+    func testOSMajorKeyTakesAsciiDigitsOnly() {
+        XCTAssertEqual(SummaryDeviceMaps.osMajorKey(platform: "macOS", version: "26.1"), "macOS 26")
+        XCTAssertNil(SummaryDeviceMaps.osMajorKey(platform: "macOS", version: "٢٦.1"))
+        XCTAssertNil(SummaryDeviceMaps.osMajorKey(
+            platform: "macOS", version: "99999999999999999999.1"))
+    }
+
+    func testOneMalformedMobileRowDoesNotLoseTheRest() throws {
+        let json = #"[{"deviceType":"iOS","general":{"osVersion":"18.1"}},"junk",{"deviceType":7},"#
+            + #"{"deviceType":"iOS","general":{"osVersion":"18.2"}}]"#
+        let fields = SummaryDeviceMaps.jamfPro(
+            computersData: nil, mobileData: Data(json.utf8), rule: StaleRule(days: 30), now: now)
+        XCTAssertEqual(fields.osMajor, ["iOS 18": 2])
     }
 
     func testComputerBucketEdgesAndNever() throws {
