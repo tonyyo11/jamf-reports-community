@@ -323,7 +323,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
               "excludedProfiles":["\(src)","\(tgt)","Other"]}]
             """
         try store.save(JSONDecoder().decode([ScheduleRecord].self, from: Data(json.utf8)))
-        try store.retarget(from: src, to: tgt, keepTargetIn: [])
+        try store.retarget(from: src, to: tgt, keepTargetIn: ["l.all"])
         let records = store.load()
         let one = try XCTUnwrap(records.first { $0.label == "l.one" })
         XCTAssertEqual(one.workspace, tgt)
