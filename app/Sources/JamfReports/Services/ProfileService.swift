@@ -281,18 +281,25 @@ enum ProfileService {
     }
 
     /// True when `name` has a workspace folder whose config.yaml is Protect-only for that name
-    /// (P8): a `profiles:` block with `protect` naming it and neither MDM slot.
-    static func isProtectOnlyWorkspace(_ name: String, root: URL? = nil) -> Bool {
+    /// (P8): a `profiles:` block with `protect` naming it and neither MDM slot, and this Mac has
+    /// confirmed that name (a folder a peer planted is not a workspace until then).
+    static func isProtectOnlyWorkspace(
+        _ name: String, root: URL? = nil, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
         let root = root ?? workspacesRoot()
         guard hasWorkspace(name, under: root) else { return false }
         let environment = EnvironmentProfiles.read(workspace: name, under: root)
-        return environment.isProtectOnly && environment.protect == name
+        return environment.protect == name
+            && environment.isConfirmedProtectOnly(workspace: name, appSupport: appSupport)
     }
 
     /// A Protect or Security Cloud login is never a workspace, except a Protect login that is
     /// the Protect-only environment of its own folder.
-    static func neverAWorkspace(_ profile: JamfCLIProfile, under root: URL? = nil) -> Bool {
-        profile.product.isNeverAWorkspace && !isProtectOnlyWorkspace(profile.name, root: root)
+    static func neverAWorkspace(
+        _ profile: JamfCLIProfile, under root: URL? = nil, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        profile.product.isNeverAWorkspace
+            && !isProtectOnlyWorkspace(profile.name, root: root, appSupport: appSupport)
     }
 
     /// True when `name` has a workspace folder under `root` holding a `config.yaml`.

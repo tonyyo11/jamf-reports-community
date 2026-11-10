@@ -238,7 +238,8 @@ final class RefreshCoordinator {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
         // A Protect-only environment lands no Jamf Pro kind, so `overview` would stay stale.
-        if EnvironmentProfiles.resolve(config: config, workspace: profile).isProtectOnly {
+        if EnvironmentProfiles.resolve(config: config, workspace: profile)
+            .isConfirmedProtectOnly(workspace: profile) {
             return "protect-overview"
         }
         return ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool

@@ -75,13 +75,13 @@ struct SourcesView: View {
             HStack(alignment: .top, spacing: 14) {
                 cliCard
                 // Jamf School has no Extension Attributes to adopt.
-                if !isSchoolWorkspace { eaCard }
+                if workspace.environmentProducts.has(.jamfPro) { eaCard }
             }
             doctorCard
             if isSchoolWorkspace { schoolPlatformCard }
             ConnectionCard()
             // The matrix lists `pro` commands, which a School workspace never runs.
-            if !isSchoolWorkspace { capabilityCard }
+            if workspace.environmentProducts.has(.jamfPro) { capabilityCard }
             familiesCard
             additionalProductsCard
         }
@@ -775,7 +775,7 @@ struct SourcesView: View {
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
                     protectOnly: EnvironmentProfiles.resolve(
-                        config: config, workspace: profile).isProtectOnly,
+                        config: config, workspace: profile).isConfirmedProtectOnly(workspace: profile),
                     protectRefusal: protectProfile.flatMap { name in
                         ProfileAuthMethod.resolve(profile: name)?.protectRefusal(profile: name)
                     },

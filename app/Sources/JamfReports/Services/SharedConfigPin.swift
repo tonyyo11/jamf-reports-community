@@ -246,6 +246,11 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         if !current.platformProfile.isEmpty, current.platformProfile != profile {
             waiting.append(.platformProfile)
         }
+        // A Protect login naming the workspace itself is a Protect-only environment, which a peer
+        // can plant as a folder; it runs only after this Mac confirms it.
+        if !current.protectProfile.isEmpty, current.protectProfile == profile {
+            waiting.append(.protectProfile)
+        }
         return waiting.filter(keys.contains)
     }
 

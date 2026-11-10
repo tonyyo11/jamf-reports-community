@@ -169,7 +169,9 @@ enum ProtectBackup {
     ) -> Plan {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: workspaceProfile)
         // A Protect-only environment has no Jamf Pro backup to carry one (P8).
-        guard !environment.isSchool, !environment.isProtectOnly, environment.runsProtect else { return .notConnected }
+        // Unconfirmed, it falls through to the pin check below and skips with that reason.
+        let protectOnly = environment.isProtectOnly && pinAllows(environment.protect ?? "")
+        guard !environment.isSchool, !protectOnly, environment.runsProtect else { return .notConnected }
         let key = environment.protectKey
         guard pinAllows(environment.protect ?? "") else {
             return .skip(reason: "\(key) changed in the shared config.yaml and is not confirmed on this Mac (Config Doctor)")
@@ -205,7 +207,8 @@ enum ProtectBackup {
     ) -> SyncedStorageChoice? {
         let detected = ProfileProductType.detect(from: config, profile: profile)
         guard detected.type == .jamfPro, detected.runsProtect,
-              !EnvironmentProfiles.resolve(config: config, workspace: profile).isProtectOnly,
+              !EnvironmentProfiles.resolve(config: config, workspace: profile)
+                .isConfirmedProtectOnly(workspace: profile, appSupport: appSupport),
               let workspace = ProfileService.workspaceURL(for: profile),
               let place = BackupMaintenance.sharedStorageDescription(
                 workspace.appendingPathComponent("backups", isDirectory: true),

@@ -640,9 +640,13 @@ extension WorkspaceStore {
         // A Protect-only environment collects Protect alone (P8).
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         // Unconfirmed (a peer's edit), it is judged as before, so failing kinds stay visible.
-        if environment.isProtectOnly && protectPinAllows(profile, protectProfile ?? "") {
-            return protectCollected ? DataFreshnessHealth.protectKinds : []
+        if environment.isProtectOnly {
+            // Unconfirmed, this Mac still shows the workspace as it was and expects nothing.
+            return protectPinAllows(profile, protectProfile ?? "") && protectCollected
+                ? DataFreshnessHealth.protectKinds : []
         }
+        // config.yaml unreadable and the login known to be School or Protect: no Jamf Pro kinds.
+        if config == nil, let product = auth?.product, !product.canBeProWorkspace { return [] }
         // A Jamf School workspace runs `schoolCollect`, which lands none of the Jamf Pro kinds,
         // so judging it by them only raised alarms (2.10). Protect follows a School collect as
         // it follows a Pro one (2.11), so its kinds still count, and so does `sofa`, which a

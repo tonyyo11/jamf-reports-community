@@ -248,7 +248,7 @@ struct AutomationView: View {
                     : "A daily collect (everything except the two heavy per-device scans) so Trends and reports stay current.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                 Divider().background(Theme.Colors.hairline)
-                if !workspace.isSchoolWorkspace {
+                if workspace.environmentProducts.has(.jamfPro) {
                     Toggle("Weekly deep scan", isOn: binding(\.scanEnabled))
                         .toggleStyle(.switch)
                     if policy.scanEnabled {

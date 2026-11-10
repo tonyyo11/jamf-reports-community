@@ -59,12 +59,23 @@ final class GenerateSheetState {
         }
     }
 
+    /// A Protect-only environment (no Jamf Pro): the Jamf Pro templates and `pro audit` have no
+    /// data there, so only the Custom template (which can pick the Protect sheets) is offered.
+    nonisolated static let customTemplateID = "custom"
+    var noJamfPro = false {
+        didSet {
+            guard noJamfPro else { return }
+            selectedTemplateID = Self.customTemplateID
+        }
+    }
+
     var offeredTypes: [GenerateOutputType] {
         schoolWorkspace ? [.xlsx, .csvFolder] : Array(GenerateOutputType.allCases)
     }
 
     var offeredTemplates: [any ReportTemplate] {
-        schoolWorkspace ? [SchoolTemplate()] : TemplateResolver.allTemplates
+        schoolWorkspace ? [SchoolTemplate()]
+            : noJamfPro ? TemplateResolver.allTemplates.filter { $0.identifier == Self.customTemplateID } : TemplateResolver.allTemplates
     }
 
     /// Custom sheet selection for the "custom" template, persisted across app launches
@@ -143,7 +154,7 @@ final class GenerateSheetState {
         return Request(
             types: selectedTypes, template: resolvedTemplate, collectFirst: collectFresh,
             // `pro audit` is a Jamf Pro command; the School workbook reads no audit.
-            runsAudit: includeAudit && !school, outputDir: customOutputDir,
+            runsAudit: includeAudit && !school && !noJamfPro, outputDir: customOutputDir,
             schoolMode: school, asksForNarrative: !school)
     }
 
@@ -356,13 +367,15 @@ struct GenerateSheet: View {
     /// first frame; nil (demo mode) leaves it on.
     init(
         profile: String, bridge: CLIBridge, freshness: SnapshotFreshness.Decision?,
-        schoolWorkspace: Bool = false, onGenerated: @escaping @MainActor () -> Void
+        schoolWorkspace: Bool = false, noJamfPro: Bool = false,
+        onGenerated: @escaping @MainActor () -> Void
     ) {
         self.profile = profile
         self.bridge = bridge
         self.onGenerated = onGenerated
         let state = GenerateSheetState()
         state.schoolWorkspace = schoolWorkspace
+        state.noJamfPro = noJamfPro
         if let freshness { state.applySnapshotFreshness(freshness) }
         _state = State(initialValue: state)
     }
@@ -402,7 +415,7 @@ struct GenerateSheet: View {
             templateSection
             collectToggle
             // `pro audit` has no Jamf School counterpart; `request()` never runs it there.
-            if !state.schoolMode { auditToggle }
+            if !state.schoolMode, !state.noJamfPro { auditToggle }
             outputFolderRow
             profileRow
             if state.collectFresh, let auth = workspace.authStatus, !auth.isValid {

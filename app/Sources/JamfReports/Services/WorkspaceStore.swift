@@ -191,10 +191,11 @@ final class WorkspaceStore {
     /// Every metric the Trends picker can show for this workspace; a Jamf School workspace has
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
-        (isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
+        (environmentProducts.isProtectOnly ? []
+            : isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
             : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
             + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
-            + (isSchoolWorkspace ? [] : agentMetrics)
+            + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
     }
 
     /// The demo history carries no Protect series, so only a live environment with Protect.
@@ -323,6 +324,8 @@ final class WorkspaceStore {
     /// The products the active workspace's config.yaml names, read with the config and when
     /// Data Sources connects or disconnects one (`refreshEnvironmentProducts`).
     private var environmentProfiles = EnvironmentProfiles.none
+    /// config.yaml is missing or does not decode, so `environmentProfiles` is a guess.
+    private var environmentConfigUnreadable = false
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -1177,12 +1180,30 @@ final class WorkspaceStore {
             products.products.remove(.jamfPro)
             products.products.insert(.jamfSchool)
         }
+        // The Protect-only twin: a Protect login owns this folder, so there is no Jamf Pro.
+        if activeCLIProfile?.product == .protect, environmentConfigUnreadable {
+            products.products = [.protect]
+        }
         return products
     }
 
     /// Re-reads which products the active workspace names (`EnvironmentProfiles`).
     func refreshEnvironmentProducts() {
-        environmentProfiles = demoMode ? .none : EnvironmentProfiles.read(workspace: profile)
+        guard !demoMode else {
+            environmentProfiles = .none
+            environmentConfigUnreadable = false
+            return
+        }
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        var environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        // A peer's Protect-only edit this Mac has not confirmed leaves the workspace as it was.
+        if environment.isProtectOnly, !environment.isConfirmedProtectOnly(workspace: profile) {
+            environment.jamfPro = profile
+        }
+        environmentProfiles = environment
+        environmentConfigUnreadable = config == nil
     }
 
     /// After credentials are saved: a profile's auth method or scope level may have changed, so
@@ -1501,7 +1522,7 @@ struct TabVisibility: Sendable, Equatable {
             keep = environment.has(.protect)
                 ? Tab.schoolTabs.union([.protectDashboard]) : Tab.schoolTabs
         } else if environment.isProtectOnly {
-            keep = [.overview, .protectDashboard, .reports, .schedules, .runs, .config,
+            keep = [.overview, .protectDashboard, .trends, .reports, .schedules, .runs, .config,
                     .sources, .settings, .onboarding]
         } else {
             var out: Set<Tab> = [.schoolDevices]

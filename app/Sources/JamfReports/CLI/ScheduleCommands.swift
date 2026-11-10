@@ -71,7 +71,7 @@ struct Schedules: AsyncParsableCommand {
                 // A School workspace collects and generates, but has nothing for `pro backup`.
                 let refusal = runMode == .backup
                     ? CollectRouter.backupRefusal(profile: profile, config: config)
-                    : CollectRouter.proRunRefusal(
+                    : CollectRouter.runRefusal(
                         profile: profile, operation: "A \(runMode.rawValue) schedule",
                         config: config)
                 if let refusal { throw Invalid(description: refusal) }

@@ -324,7 +324,7 @@ private func scheduledRunSingleBody(
     // spelling's folder get nothing written into them.
     let productRefusal: () -> String? = {
         guard mode != .jamfCLIOnly, configError == nil || mode == .backup else { return nil }
-        return CollectRouter.proRunRefusal(
+        return CollectRouter.runRefusal(
             profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig)
     }
     if let refusal = caseVariant ?? productRefusal() {
@@ -559,7 +559,7 @@ private func scheduledRunSingleBody(
             // release is closing: the operator reads "Trends updated" as proof
             // the fleet was polled today.
             let protectOnly = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
-                .isProtectOnly
+                .isConfirmedProtectOnly(workspace: profile)
             let trendsSuffix = detected.type == .jamfPro && !protectOnly
                 && honesty.producedFreshSnapshot
                 ? " — Trends updated" : ""

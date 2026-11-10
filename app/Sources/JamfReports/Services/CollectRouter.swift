@@ -356,8 +356,7 @@ enum CollectRouter {
         let profile = workspace.name
         let protectProfile = environment.protect ?? ""
         guard SharedConfigPin.protectAllowed(profile: profile, name: protectProfile) else {
-            let reason = "\(environment.protectKey) was changed in the shared config.yaml and is "
-                + "awaiting confirmation on this Mac (Config Doctor)"
+            let reason = protectNotConfirmedReason(environment)
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
             throw ReportEngineError.protectNotConfirmed(reason)
         }
@@ -464,16 +463,33 @@ enum CollectRouter {
         }
     }
 
-    /// Why a Jamf Pro run on `profile` must not start, or nil. For entry points that name a
+    /// Why a collect run on `profile` must not start, or nil. For entry points that name a
     /// profile themselves (a schedule, the CLI) and must refuse before they create anything in
     /// its workspace. A `profiles:` block that cannot run (`EnvironmentProfiles.refusal`) refuses
-    /// any product; a Jamf School workspace is otherwise not a Pro run. `run` applies the same
-    /// rules. Can spawn `jamf-cli config list`.
-    static func proRunRefusal(profile: String, operation: String, config: ReportConfig?) -> String? {
+    /// any product; a Jamf School workspace is otherwise not a Pro run; a Protect-only
+    /// environment is refused for an unconfirmed `profiles.protect` or a login of another
+    /// product, the two refusals `collectProtectOnly` would throw after the run record opened.
+    /// `run` applies the same rules. Can spawn `jamf-cli config list`.
+    static func runRefusal(
+        profile: String, operation: String, config: ReportConfig?,
+        appSupport: URL = AppSupport.directory(),
+        resolved: @Sendable (String) -> ProfileAuthMethod.Resolved? = { ProfileAuthMethod.resolve(profile: $0) }
+    ) -> String? {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         if let refusal = environment.refusal(workspace: profile) { return refusal }
+        if environment.isProtectOnly {
+            let name = environment.protect ?? ""
+            guard SharedConfigPin.protectAllowed(profile: profile, name: name, appSupport: appSupport)
+            else { return protectNotConfirmedReason(environment) }
+            return resolved(name)?.protectRefusal(profile: name)
+        }
         guard !environment.isSchool, let jamfPro = environment.jamfPro else { return nil }
         return ProfileAuthMethod.refusal(profile: jamfPro, operation: operation)
+    }
+
+    static func protectNotConfirmedReason(_ environment: EnvironmentProfiles) -> String {
+        "\(environment.protectKey) was changed in the shared config.yaml and is awaiting "
+            + "confirmation on this Mac (Config Doctor)"
     }
 
     /// Why `pro backup` has nothing to do for a Jamf School workspace; the scheduled skip, the
@@ -483,26 +499,26 @@ enum CollectRouter {
     }
 
     /// Why a backup of `profile` must not run, or nil: a Jamf School workspace (decided from
-    /// config.yaml, so it holds without a readable jamf-cli) or any `proRunRefusal`.
+    /// config.yaml, so it holds without a readable jamf-cli) or any `runRefusal`.
     static func backupRefusal(profile: String, config: ReportConfig?) -> String? {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        // The School sentence is backup's own, so it comes before `proCommandRefusal`'s.
+        if let refusal = environment.refusal(workspace: profile) { return refusal }
+        if environment.isSchool { return schoolBackupReason(profile: profile) }
         if let refusal = environment.proCommandRefusal(workspace: profile, operation: "Backup") {
             return refusal
         }
-        if environment.isSchool {
-            return schoolBackupReason(profile: profile)
-        }
-        return proRunRefusal(profile: profile, operation: "Backup", config: config)
+        return runRefusal(profile: profile, operation: "Backup", config: config)
     }
 
     /// The refusals `scheduledRunSingleBody` applies to a per-profile schedule: a case variant
-    /// whose folder is another spelling's, in every mode, then `proRunRefusal` for a schedule
+    /// whose folder is another spelling's, in every mode, then `runRefusal` for a schedule
     /// that sends commands. A multi schedule is never refused here.
     static func scheduleRunRefusal(_ schedule: Schedule) -> String? {
         guard !schedule.isMulti else { return nil }
         if let refusal = ProfileService.caseVariantRefusal(of: schedule.profile) { return refusal }
         guard schedule.mode != .jamfCLIOnly else { return nil }
-        return proRunRefusal(
+        return runRefusal(
             profile: schedule.profile, operation: "Scheduled \(schedule.mode.rawValue) run",
             config: collectRoutingConfig(profile: schedule.profile))
     }

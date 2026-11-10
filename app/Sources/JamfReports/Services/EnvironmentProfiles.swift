@@ -121,6 +121,11 @@ struct EnvironmentProfiles: Equatable, Sendable {
     /// `refusal`, plus a refusal of a Protect-only environment for a command that needs Jamf Pro.
     func proCommandRefusal(workspace: String, operation: String) -> String? {
         if let refusal = refusal(workspace: workspace) { return refusal }
+        // From config.yaml, so it holds when jamf-cli cannot be asked which product a login is.
+        if isSchool {
+            return "\(operation) is a Jamf Pro command; "
+                + "'\(ConfigSchema.displayText(workspace))' is a Jamf School workspace"
+        }
         guard isProtectOnly else { return nil }
         return "'\(ConfigSchema.displayText(workspace))' holds only a Jamf Protect profile; "
             + "\(operation) needs Jamf Pro."

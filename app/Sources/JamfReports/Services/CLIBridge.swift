@@ -1961,7 +1961,8 @@ try await ReportEngine.inventoryCSV(
         // the file while the check asks jamf-cli cannot change the `-p` the backup runs as.
         let environment = await Task.detached { EnvironmentProfiles.read(workspace: profile) }
             .value
-        if let refusal = await Self.refusesProCommand(
+        // A School environment is refused with backup's own sentence in `backupProfile`.
+        if !environment.isSchool, let refusal = await Self.refusesProCommand(
             profile: profile, operation: "Backup", onLine: onLine, environment: environment,
             resolved: resolved
         ) {
@@ -2384,8 +2385,10 @@ try await ReportEngine.inventoryCSV(
                          text: "[error] \(conflict.localizedDescription)"))
             throw conflict
         }
-        if let refusal = environment.proCommandRefusal(
-            workspace: workspace, operation: "Backup") {
+        // A School environment gets the later guard's backup-specific sentence.
+        if let refusal = environment.refusal(workspace: workspace)
+            ?? (environment.isSchool ? nil : environment.proCommandRefusal(
+                workspace: workspace, operation: "Backup")) {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
             throw CLIBridgeError.wrongProduct(refusal)
         }

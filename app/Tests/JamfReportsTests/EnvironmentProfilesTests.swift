@@ -185,7 +185,7 @@ final class EnvironmentProfilesTests: XCTestCase {
         let refusal = try XCTUnwrap(EnvironmentProfiles.resolve(config: config, workspace: ws)
             .refusal(workspace: ws))
         XCTAssertEqual(
-            CollectRouter.proRunRefusal(profile: ws, operation: "Collect", config: config), refusal)
+            CollectRouter.runRefusal(profile: ws, operation: "Collect", config: config), refusal)
         XCTAssertEqual(CollectRouter.backupRefusal(profile: ws, config: config), refusal)
     }
 

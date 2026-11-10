@@ -58,7 +58,7 @@ final class PairedProductProfileTests: XCTestCase {
             DataFreshnessHealth.protectKinds)
     }
 
-    func testAnUnconfirmedProtectOnlyEditIsJudgedAsBefore() throws {
+    func testAnUnconfirmedProtectOnlyEditExpectsNothing() throws {
         try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
@@ -67,8 +67,7 @@ final class PairedProductProfileTests: XCTestCase {
             protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                           product: .protect) },
             protectPinAllows: { _, _ in false })
-        XCTAssertNotEqual(kinds, DataFreshnessHealth.protectKinds)
-        XCTAssertFalse(kinds.isEmpty)
+        XCTAssertEqual(kinds, [])
     }
 
     func testTheSourcesPlanOfAProtectOnlyEnvironmentIsTheProtectListAlone() {

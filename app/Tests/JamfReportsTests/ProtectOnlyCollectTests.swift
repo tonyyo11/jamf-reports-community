@@ -137,7 +137,7 @@ final class ProtectOnlyCollectTests: XCTestCase {
         XCTAssertThrowsError(try CLIBridge.backupProfile(
             for: ws, environment: EnvironmentProfiles.resolve(config: config, workspace: ws),
             onLine: { _ in }))
-        XCTAssertNil(CollectRouter.proRunRefusal(profile: ws, operation: "Collect", config: config))
+        XCTAssertNil(CollectRouter.runRefusal(profile: ws, operation: "Collect", config: config))
     }
 
     func testNoProAuthProbeForAProtectOnlyWorkspace() throws {
@@ -321,10 +321,154 @@ final class ProtectOnlyCollectTests: XCTestCase {
         XCTAssertTrue(environment.isConfirmedProtectOnly(workspace: name))
     }
 
-    func testAnUnconfirmedProtectOnlyBlockIsNotAQuietScheduledBackupSkip() async throws {
+    /// A refused run (not a quiet skip): the health reader holds the reason and it never retries.
+    func testAnUnconfirmedProtectOnlyBlockIsARefusedScheduledBackup() async throws {
         let root = try makeRoot()
         let name = try unconfirmedProtectOnly(root)
         let outcome = await runSchedule(backupSchedule(name), verbose: false)
-        XCTAssertNotEqual(outcome.exitCode, 0, "the refusal must reach the operator")
+        XCTAssertTrue(outcome.endsRetries)
+        let input = try XCTUnwrap(LaunchAgentService.healthInputs(
+            schedules: [backupSchedule(name)], statusProfile: name).first)
+        XCTAssertTrue(try XCTUnwrap(input.refusal).contains("awaiting confirmation"))
+    }
+
+    // MARK: - Product gates (S1, S3, S5, S7, S8)
+
+    private func snapshotSchedule(_ profile: String) -> Schedule {
+        var schedule = backupSchedule(profile)
+        schedule.mode = .snapshotOnly
+        return schedule
+    }
+
+    private func configAt(_ root: URL, _ name: String) throws -> ReportConfig {
+        try ConfigLoader.load(from: root.appendingPathComponent(name).appendingPathComponent("config.yaml"))
+    }
+
+    /// S1: the router would throw after the run record opened and write no `.fail`, so the tick
+    /// retried every hour; the pre-check takes the refused path instead.
+    func testAnUnconfirmedProtectOnlyEditIsTheRefusedRunConvention() async throws {
+        let root = try makeRoot()
+        let name = try unconfirmedProtectOnly(root)
+        let config = try configAt(root, name)
+        let reason = try XCTUnwrap(CollectRouter.runRefusal(
+            profile: name, operation: "Collect", config: config))
+        XCTAssertTrue(reason.contains("awaiting confirmation"), reason)
+        XCTAssertNotNil(CollectRouter.scheduleRunRefusal(snapshotSchedule(name)))
+        let outcome = await runSchedule(snapshotSchedule(name), verbose: false)
+        XCTAssertEqual(outcome.exitCode, 0)
+        XCTAssertTrue(outcome.endsRetries, "no retry is due")
+        let input = try XCTUnwrap(LaunchAgentService.healthInputs(
+            schedules: [snapshotSchedule(name)], statusProfile: name).first)
+        XCTAssertEqual(input.refusal, reason, "failing with the reason, not overdue")
+        XCTAssertTrue(WorkspaceStore.refusedBeforeAutomaticCollect(profile: name, config: config))
+        try SharedConfigPin.confirm(profile: name, keys: [.protectProfile])
+        XCTAssertNil(CollectRouter.runRefusal(
+            profile: name, operation: "Collect", config: config, resolved: { _ in nil }))
+    }
+
+    func testAConfirmedProtectOnlyLoginOfAnotherProductIsRefusedBeforeTheRun() throws {
+        let root = try makeRoot()
+        let config = try configAt(root, ws)
+        let school = ProfileAuthMethod.Resolved(
+            authMethod: "apikey", isTenantLevel: false, product: .school)
+        XCTAssertNotNil(CollectRouter.runRefusal(
+            profile: ws, operation: "Collect", config: config, resolved: { _ in school }))
+        let protect = ProfileAuthMethod.Resolved(
+            authMethod: "oauth2", isTenantLevel: false, product: .protect)
+        XCTAssertNil(CollectRouter.runRefusal(
+            profile: ws, operation: "Collect", config: config, resolved: { _ in protect }))
+    }
+
+    /// S3: a peer plants `<root>/<Name>/config.yaml` naming itself as the Protect login.
+    func testAPlantedProtectOnlyFolderWaitsForAConfirmAndTheAddSheetPathDoesNot() throws {
+        let root = try makeRoot()
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".stfolder"), withIntermediateDirectories: true)
+        let support = root.appendingPathComponent(".support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let planted = "planted"
+        let folder = root.appendingPathComponent(planted, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "profiles:\n  protect: \(planted)\n".write(
+            to: folder.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(
+            SharedConfigPin.check(profile: planted, appSupport: support).drifts.map(\.key),
+            [.protectProfile])
+        XCTAssertFalse(ProfileService.isProtectOnlyWorkspace(planted, root: root, appSupport: support))
+        var login = JamfCLIProfile(name: planted, url: "", schedules: 0, status: .idle)
+        login.product = .protect
+        XCTAssertTrue(ProfileService.neverAWorkspace(login, under: root, appSupport: support))
+        try SharedConfigPin.confirm(profile: planted, keys: [.protectProfile], appSupport: support)
+        XCTAssertTrue(ProfileService.isProtectOnlyWorkspace(planted, root: root, appSupport: support))
+
+        try OnboardingFlow.createProtectOnlyEnvironment(login: "created", appSupport: support)
+        XCTAssertTrue(ProfileService.isProtectOnlyWorkspace("created", root: root, appSupport: support))
+        var created = JamfCLIProfile(name: "created", url: "", schedules: 0, status: .idle)
+        created.product = .protect
+        XCTAssertFalse(ProfileService.neverAWorkspace(created, under: root, appSupport: support))
+    }
+
+    /// S5: the refusal comes from config.yaml, not from a `config list` probe.
+    func testSchoolRefusesProCommandsFromConfigAloneAndBackupKeepsItsOwnSentence() async throws {
+        for text in ["profiles:\n  jamf_school: \(ws)\n", "school_cli:\n  enabled: true\n  profile: \(ws)\n"] {
+            let config = try ConfigLoader.loadFromString(text)
+            let environment = EnvironmentProfiles.resolve(config: config, workspace: ws)
+            let refusal = await CLIBridge.refusesProCommand(
+                profile: ws, operation: "Audit", onLine: nil, environment: environment,
+                resolved: { _ in nil })
+            XCTAssertEqual(refusal, "Audit is a Jamf Pro command; '\(ws)' is a Jamf School workspace")
+            XCTAssertEqual(
+                CollectRouter.backupRefusal(profile: ws, config: config),
+                CollectRouter.schoolBackupReason(profile: ws))
+        }
+    }
+
+    /// S2: an unconfirmed Protect-only edit leaves this Mac showing the workspace as it was.
+    @MainActor
+    func testAnUnconfirmedProtectOnlyEditKeepsTheJamfProTabsAndConfirmedOneDropsThem() throws {
+        let root = try makeRoot()
+        let name = try unconfirmedProtectOnly(root)
+        let store = WorkspaceStore(demoMode: false)
+        store.profile = name
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(store.environmentProducts.has(.jamfPro))
+        XCTAssertFalse(store.environmentProducts.isProtectOnly)
+        try SharedConfigPin.confirm(profile: name, keys: [.protectProfile])
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(store.environmentProducts.isProtectOnly)
+        XCTAssertEqual(store.availableMetrics, TrendSeries.Metric.protectMetrics)
+        XCTAssertEqual(RefreshCoordinator.probeKind(for: .refresh, profile: name), "protect-overview")
+    }
+
+    /// S7: config.yaml unreadable and the login is Protect, so there is no Jamf Pro to show.
+    @MainActor
+    func testAnUnreadableConfigWithAProtectLoginIsProtectOnly() throws {
+        let root = try makeRoot()
+        let name = "noconfig"
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(name), withIntermediateDirectories: true)
+        let store = WorkspaceStore(demoMode: false)
+        var login = JamfCLIProfile(name: name, url: "", schedules: 0, status: .idle)
+        login.product = .protect
+        store.profiles = [login]
+        store.profile = name
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(store.environmentProducts.isProtectOnly)
+        let resolved = ProfileAuthMethod.Resolved(
+            authMethod: "oauth2", isTenantLevel: false, product: .protect)
+        XCTAssertEqual(
+            WorkspaceStore.expectedKinds(profile: name, jamfCLIVersion: "1.35.0", auth: resolved,
+                                         protectPinAllows: { _, _ in true }), [])
+    }
+
+    /// S8
+    @MainActor
+    func testGenerateOffersNoJamfProTemplateOrAuditToAProtectOnlyEnvironment() {
+        let state = GenerateSheetState()
+        state.includeAudit = true
+        state.noJamfPro = true
+        XCTAssertEqual(state.offeredTemplates.map(\.identifier), ["custom"])
+        XCTAssertEqual(state.selectedTemplateID, "custom")
+        XCTAssertFalse(state.request().runsAudit)
     }
 }
