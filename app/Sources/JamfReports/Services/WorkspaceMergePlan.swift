@@ -331,8 +331,23 @@ private final class Builder {
         let srcDir = try WorkspacePaths.confinedFolder(["backups"], under: srcWS)
         let tgtDir = try WorkspacePaths.confinedFolder(["backups"], under: tgtWS)
         let have = Set(try Self.children(of: tgtDir, directories: true))
-        for name in try Self.children(of: srcDir, directories: true)
-        where !name.hasPrefix(".") && !have.contains(name) {
+        let copying = try Self.children(of: srcDir, directories: true)
+            .filter { !$0.hasPrefix(".") && !have.contains($0) }
+        // Scheduled backups past the newest `defaultKeepCount` of both folders together would
+        // make the target's next prune delete its own; they stay in the moved source folder.
+        // A name with no parseable stamp is never pruned by order, so it is copied.
+        var pool: [(key: (Date, Int), name: String?)] = []
+        var dropped = Set<String>()
+        for (dir, names, fromSource) in [(tgtDir, Array(have), false), (srcDir, copying, true)] {
+            for name in names where BackupMaintenance.isScheduledBackup(dir.appendingPathComponent(name)) {
+                guard let stamp = CloudStorage.backupDirectoryTimestamp(name: name) else { continue }
+                pool.append(((stamp.date, stamp.sequence), fromSource ? name : nil))
+                if fromSource { dropped.insert(name) }
+            }
+        }
+        dropped.subtract(pool.sorted { $0.key > $1.key }.prefix(BackupMaintenance.defaultKeepCount)
+            .compactMap(\.name))
+        for name in copying where !dropped.contains(name) {
             try Self.requireNotLink(srcDir.appendingPathComponent(name))
             steps.append(step(.backups, .copyFolder, srcDir, tgtDir, name))
         }

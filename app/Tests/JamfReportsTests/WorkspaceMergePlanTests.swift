@@ -52,6 +52,20 @@ final class WorkspaceMergePlanTests: XCTestCase {
         XCTAssertTrue(archived.archive?.hasPrefix(p.mergedFolder) == true)
     }
 
+    func testBackupsPastTheKeepCountStayWithTheSource() throws {
+        func backup(_ ws: String, _ name: String, label: String) throws {
+            try write(#"{"label":"\#(label)"}"#, ws, "backups/\(name)/manifest.json")
+        }
+        for day in 10..<20 { try backup(tgt, "202602\(day)T000000", label: "scheduled-x") }
+        for day in 10..<20 { try backup(src, "202601\(day)T000000", label: "scheduled-x") }
+        try backup(src, "20260105T000000", label: "manual-keep")
+        let copied = steps(try plan(), .backups).map { URL(fileURLWithPath: $0.source).lastPathComponent }
+        XCTAssertEqual(copied, ["20260105T000000"])
+        // Fewer than the keep count in total: every one is copied.
+        for day in 12..<20 { try fm.removeItem(at: root.appendingPathComponent("\(tgt)/backups/202602\(day)T000000")) }
+        XCTAssertEqual(steps(try plan(), .backups).count, 1 + 8)
+    }
+
     func testSummaries() throws {
         try write("{}", src, "snapshots/summaries/summary_2026-01-01.json")
         try write("{}", src, "snapshots/summaries/summary_2026-01-02.json")
