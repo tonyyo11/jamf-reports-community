@@ -388,6 +388,7 @@ struct ExistingCLISetupView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
         } label: {
             Text("Collection detail")
@@ -435,6 +436,14 @@ struct ExistingCLISetupView: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Button("Skip — set up later from the dashboard") { skip() }
+                .buttonStyle(.link)
+                .font(.footnote)
+                .disabled(flow.isRunning || isFinishing)
+            Text(verbatim: "·")
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+            // Records no outcome, so leaving demo mode brings this screen back.
+            Button(L("Use demo data")) { workspace.setDemoMode(true) }
                 .buttonStyle(.link)
                 .font(.footnote)
                 .disabled(flow.isRunning || isFinishing)
