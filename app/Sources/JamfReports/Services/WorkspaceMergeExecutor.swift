@@ -13,13 +13,15 @@ enum WorkspaceMergeExecutor {
         var releaseClaim: @Sendable (_ workspace: String) -> Void
         var writePlatformSlot: @Sendable (_ profile: String, _ workspace: String) throws -> Void
         var copyBenchmarks: @Sendable (_ source: String, _ target: String) throws -> Void
-        var retargetSchedules: @Sendable (_ from: String, _ to: String) throws -> Void
-        var rewritePolicy: @Sendable (_ from: String, _ to: String) async -> Void
+        var retargetSchedules: @Sendable (_ from: String, _ to: String, _ keepTargetIn: Set<String>)
+            throws -> Void
+        var rewritePolicy: @Sendable (_ from: String, _ to: String, _ keepTargetExcluded: Bool)
+            async -> Void
         var appSupport: URL
 
         /// `holdingTickLock(purpose: .merge)`, the shared-workspace claim, the real writers.
         /// `rewritePolicy` is supplied by the caller (the GUI owns the policy).
-        static func live(rewritePolicy: @escaping @Sendable (String, String) async -> Void)
+        static func live(rewritePolicy: @escaping @Sendable (String, String, Bool) async -> Void)
             -> Dependencies {
             Dependencies(
                 hold: { body in try await CLIBridge.holdingTickLock(purpose: .merge, body) },
@@ -31,7 +33,7 @@ enum WorkspaceMergeExecutor {
                     try ProfilesConfigWriter.save(.platform, to: profile, workspace: workspace)
                 },
                 copyBenchmarks: { try WorkspaceMergeExecutor.copyBenchmarks($0, $1) },
-                retargetSchedules: { try ScheduleStore().retarget(from: $0, to: $1) },
+                retargetSchedules: { try ScheduleStore().retarget(from: $0, to: $1, keepTargetIn: $2) },
                 rewritePolicy: rewritePolicy,
                 appSupport: AppSupport.directory())
         }
@@ -348,9 +350,11 @@ enum WorkspaceMergeExecutor {
         case .copyBenchmarks:
             try deps.copyBenchmarks(plan.source, plan.target)
         case .retargetSchedules:
-            try deps.retargetSchedules(plan.source, plan.target)
+            try deps.retargetSchedules(
+                plan.source, plan.target, Set(plan.keepTargetExcludedInSchedules))
         case .rewritePolicy:
-            await deps.rewritePolicy(plan.source, plan.target)
+            await deps.rewritePolicy(
+                plan.source, plan.target, plan.keepTargetExcludedInPolicy)
         case .removeSourcePin:
             // App state, not workspace data: the one file a merge removes outright.
             if let pin = SharedConfigPin.storeURL(

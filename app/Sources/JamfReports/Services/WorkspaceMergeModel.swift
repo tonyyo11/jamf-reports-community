@@ -49,7 +49,7 @@ final class WorkspaceMergeModel {
 
         /// `rewritePolicy` is the GUI's: it owns the stored `AutomationPolicy`.
         static func live(
-            rewritePolicy: @escaping @Sendable (String, String) async -> Void
+            rewritePolicy: @escaping @Sendable (String, String, Bool) async -> Void
         ) -> Dependencies {
             Dependencies(
                 hostVerdict: { target, source in

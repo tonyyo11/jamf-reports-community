@@ -70,6 +70,11 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     var differingConfigKeys: [String]
     /// Source folders read from outside the source workspace (R10).
     var outsideSourceFolder: [String]
+    /// Exclusion lists that held both workspaces when planned, which keep the target excluded
+    /// (`mergingExclusion`): the policy's and, by label, each schedule's. Decided here so a
+    /// step run twice leaves the same lists.
+    var keepTargetExcludedInPolicy = false
+    var keepTargetExcludedInSchedules: [String] = []
 
     /// Where a summary's two originals are archived before a fill (`side`: "target" or
     /// "source"), so a fill the executor falls back to uses the plan's paths.
@@ -147,7 +152,9 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     /// the subfolders come from there.
     static func make(
         source: String, target: String, now: Date = Date(),
-        root: URL = ProfileService.workspacesRoot()
+        root: URL = ProfileService.workspacesRoot(),
+        schedules: [ScheduleRecord] = ScheduleStore().load(),
+        policy: AutomationPolicy = .current()
     ) throws -> WorkspaceMergePlan {
         guard let sourceID = WorkspaceID(source) else { throw PlanError.noWorkspace(source) }
         guard let targetID = WorkspaceID(target) else { throw PlanError.noWorkspace(target) }
@@ -175,7 +182,10 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
             source: source, target: target, stamp: stamp, mergedFolder: merged.path,
             steps: builder.steps + tail,
             differingConfigKeys: try builder.differingKeys(source: sourceWS, target: targetWS),
-            outsideSourceFolder: builder.outside)
+            outsideSourceFolder: builder.outside,
+            keepTargetExcludedInPolicy: policy.excludedWorkspaces.excludesBoth(source, target),
+            keepTargetExcludedInSchedules: schedules
+                .filter { $0.excludedWorkspaces.excludesBoth(source, target) }.map(\.label))
     }
 
     static var stampFormatter: DateFormatter {

@@ -190,9 +190,10 @@ struct EnvironmentCard: View {
 
     private func startMerge(resumes: Bool) {
         let store = workspace
-        let deps = WorkspaceMergeModel.Dependencies.live { from, to in
+        let deps = WorkspaceMergeModel.Dependencies.live { from, to, keepTarget in
             await MainActor.run {
-                let policy = AutomationPolicy.current().replacingWorkspace(from, with: to)
+                let policy = AutomationPolicy.current().replacingWorkspace(
+                    from, with: to, keepTargetExcluded: keepTarget)
                 UserDefaults.standard.set(policy.serialize(), forKey: AutomationPolicy.storageKey)
             }
             await store.applyAutomationPolicy()
@@ -208,7 +209,7 @@ struct EnvironmentCard: View {
         Task {
             do {
                 try await WorkspaceMergeExecutor.startOver(
-                    target: target, deps: .live(rewritePolicy: { _, _ in }))
+                    target: target, deps: .live(rewritePolicy: { _, _, _ in }))
             } catch {
                 guard target == state.workspace else { return }
                 actionError = error.localizedDescription

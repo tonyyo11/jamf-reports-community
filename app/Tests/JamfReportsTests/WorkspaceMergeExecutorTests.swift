@@ -76,8 +76,8 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
             releaseClaim: { claims.add("release \($0)") },
             writePlatformSlot: { calls.add("slot \($0)->\($1)") },
             copyBenchmarks: { calls.add("bench \($0)->\($1)") },
-            retargetSchedules: { calls.add("schedules \($0)->\($1)") },
-            rewritePolicy: { calls.add("policy \($0)->\($1)") },
+            retargetSchedules: { from, to, _ in calls.add("schedules \(from)->\(to)") },
+            rewritePolicy: { from, to, _ in calls.add("policy \(from)->\(to)") },
             appSupport: root.appendingPathComponent(".app-support", isDirectory: true))
     }
 
@@ -203,6 +203,30 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         XCTAssertEqual(after, before)
     }
 
+    /// With both twins excluded the first run keeps the target; a rerun after a crash must too.
+    func testExclusionStepRunTwiceKeepsTheTarget() async throws {
+        let store = ScheduleStore(url: root.appendingPathComponent("schedules.json"))
+        var record = try JSONDecoder().decode(ScheduleRecord.self, from: Data(
+            #"{"label":"l.all","profile":"","allProfiles":true}"#.utf8))
+        record.excludedWorkspaces = [src, tgt]
+        try store.save([record])
+        let plan = try WorkspaceMergePlan.make(
+            source: src, target: tgt, root: root, schedules: store.load(), policy: AutomationPolicy())
+        XCTAssertEqual(plan.keepTargetExcludedInSchedules, ["l.all"])
+        var d = deps()
+        d.retargetSchedules = { try store.retarget(from: $0, to: $1, keepTargetIn: $2) }
+        let index = try XCTUnwrap(plan.steps.firstIndex { $0.action == .tail(.retargetSchedules) })
+        let j = WorkspaceMergeJournal(plan: plan, done: 0)
+        do { try await WorkspaceMergeExecutor.run(j, deps: d, stopAfter: index + 1) }
+        catch is CancellationError {}
+        XCTAssertEqual(store.load().first?.excludedWorkspaces, [tgt])
+        var again = j
+        again.done = index
+        do { try await WorkspaceMergeExecutor.run(again, deps: d, stopAfter: 1) }
+        catch is CancellationError {}
+        XCTAssertEqual(store.load().first?.excludedWorkspaces, [tgt])
+    }
+
     func testRefusedHoldWritesNothing() async throws {
         let before = try tree()
         do {
@@ -299,7 +323,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
               "excludedProfiles":["\(src)","\(tgt)","Other"]}]
             """
         try store.save(JSONDecoder().decode([ScheduleRecord].self, from: Data(json.utf8)))
-        try store.retarget(from: src, to: tgt)
+        try store.retarget(from: src, to: tgt, keepTargetIn: [])
         let records = store.load()
         let one = try XCTUnwrap(records.first { $0.label == "l.one" })
         XCTAssertEqual(one.workspace, tgt)
@@ -312,7 +336,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         policy.excludedWorkspaces = [src, "Other", tgt]
         policy.reportGroups = [ReportGroup(name: "fleet", workspaces: [tgt, src, "Other"]),
                                ReportGroup(name: "two", workspaces: [src])]
-        let next = policy.replacingWorkspace(src, with: tgt)
+        let next = policy.replacingWorkspace(src, with: tgt, keepTargetExcluded: true)
         XCTAssertEqual(next.excludedWorkspaces, ["Other", tgt])
         XCTAssertEqual(next.reportGroups.map(\.workspaces), [[tgt, "Other"], [tgt]])
     }
@@ -327,8 +351,9 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         for (before, after) in exclusionCases {
             var policy = AutomationPolicy()
             policy.excludedWorkspaces = before
-            XCTAssertEqual(policy.replacingWorkspace(src, with: tgt).excludedWorkspaces, after,
-                           "\(before)")
+            XCTAssertEqual(policy.replacingWorkspace(
+                src, with: tgt, keepTargetExcluded: before.excludesBoth(src, tgt))
+                .excludedWorkspaces, after, "\(before)")
         }
     }
 
@@ -339,7 +364,9 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
                 #"{"label":"l.all","profile":"","allProfiles":true}"#.utf8))
             record.excludedWorkspaces = before
             try store.save([record])
-            try store.retarget(from: src, to: tgt)
+            try store.retarget(
+                from: src, to: tgt,
+                keepTargetIn: before.excludesBoth(src, tgt) ? ["l.all"] : [])
             XCTAssertEqual(store.load().first?.excludedWorkspaces, after, "\(before)")
         }
     }
