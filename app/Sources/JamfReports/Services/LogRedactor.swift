@@ -263,9 +263,12 @@ enum LogRedactor {
         environment: EnvironmentProfiles? = nil
     ) -> [String] {
         let environment = environment ?? EnvironmentProfiles.read(workspace: profile)
-        let logins = environment.connectedProfiles
-            .filter { $0.count >= 4 && !commonLogWords.contains($0.lowercased()) }
-        return ([profile, environment.mdm].compactMap { $0 } + logins)
+        // The MDM slot is the workspace's own name wherever anything runs, so it adds no seed;
+        // `isValid` caps a login's length.
+        let logins = environment.connectedProfiles.filter {
+            $0.count >= 4 && !commonLogWords.contains($0.lowercased()) && ProfileService.isValid($0)
+        }
+        return ([profile] + logins)
             .flatMap { name in
                 [name, ProfileName.pathComponent(name), ProfileName.labelComponent(name)]
             }

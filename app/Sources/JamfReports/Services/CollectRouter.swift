@@ -227,6 +227,14 @@ enum CollectRouter {
             throw CLIBridgeError.wrongProduct(
                 "'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School profile")
         }
+        // Before the claim, retention and the run's first write: a peer's planted or edited
+        // Protect-only block gets nothing from this Mac until it is confirmed.
+        if environment.isProtectOnly, !SharedConfigPin.protectAllowed(
+            profile: profile, name: environment.protect ?? "") {
+            let reason = protectNotConfirmedReason(environment)
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
+            throw ReportEngineError.protectNotConfirmed(reason)
+        }
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
         SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
@@ -475,6 +483,8 @@ enum CollectRouter {
         appSupport: URL = AppSupport.directory(),
         resolved: @Sendable (String) -> ProfileAuthMethod.Resolved? = { ProfileAuthMethod.resolve(profile: $0) }
     ) -> String? {
+        // First: a merged-away or connected login has no folder, and nothing may create one.
+        if let refusal = ProfileService.connectedProfileRefusal(of: profile) { return refusal }
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         if let refusal = environment.refusal(workspace: profile) { return refusal }
         if environment.isProtectOnly {
@@ -516,7 +526,8 @@ enum CollectRouter {
     /// that sends commands. A multi schedule is never refused here.
     static func scheduleRunRefusal(_ schedule: Schedule) -> String? {
         guard !schedule.isMulti else { return nil }
-        if let refusal = ProfileService.caseVariantRefusal(of: schedule.profile) { return refusal }
+        if let refusal = ProfileService.caseVariantRefusal(of: schedule.profile)
+            ?? ProfileService.connectedProfileRefusal(of: schedule.profile) { return refusal }
         guard schedule.mode != .jamfCLIOnly else { return nil }
         return runRefusal(
             profile: schedule.profile, operation: "Scheduled \(schedule.mode.rawValue) run",

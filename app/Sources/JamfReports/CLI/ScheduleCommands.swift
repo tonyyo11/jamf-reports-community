@@ -65,6 +65,9 @@ struct Schedules: AsyncParsableCommand {
                 throw Invalid(description: "unknown mode '\(mode)'")
             }
             _ = try LaunchAgentWriter.calendarIntervals(for: cadence)
+            if !allProfiles, let refusal = ProfileService.connectedProfileRefusal(of: profile) {
+                throw Invalid(description: refusal)
+            }
             // A schedule for a base profile of another product would only ever be skipped.
             if !allProfiles, runMode != .jamfCLIOnly {
                 let config = collectRoutingConfig(profile: profile)

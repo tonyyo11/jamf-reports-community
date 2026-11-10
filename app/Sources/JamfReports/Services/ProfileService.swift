@@ -268,7 +268,9 @@ enum ProfileService {
     ) -> [JamfCLIProfile] {
         let paired = Set(pairedProfileOwners(among: profiles.map(\.name), under: root).keys)
         return profiles.filter { profile in
-            if neverAWorkspace(profile, under: root) { return false }
+            // Listed even while unconfirmed, or a second Mac on the shared root could never
+            // open it to confirm it (Config Doctor); `runnableWorkspaces` still needs the Confirm.
+            if neverAWorkspace(profile, under: root, confirmedOnly: false) { return false }
             guard paired.contains(profile.name) else { return true }
             return active.contains(profile.name) || hasWorkspace(profile.name, under: root)
         }
@@ -308,22 +310,26 @@ enum ProfileService {
     /// (P8): a `profiles:` block with `protect` naming it and neither MDM slot, and this Mac has
     /// confirmed that name (a folder a peer planted is not a workspace until then).
     static func isProtectOnlyWorkspace(
-        _ name: String, root: URL? = nil, appSupport: URL = AppSupport.directory()
+        _ name: String, root: URL? = nil, appSupport: URL = AppSupport.directory(),
+        confirmedOnly: Bool = true
     ) -> Bool {
         let root = root ?? workspacesRoot()
         guard hasWorkspace(name, under: root) else { return false }
         let environment = EnvironmentProfiles.read(workspace: name, under: root)
-        return environment.protect == name
-            && environment.isConfirmedProtectOnly(workspace: name, appSupport: appSupport)
+        guard environment.protect == name, environment.isProtectOnly else { return false }
+        return !confirmedOnly
+            || environment.isConfirmedProtectOnly(workspace: name, appSupport: appSupport)
     }
 
     /// A Protect or Security Cloud login is never a workspace, except a Protect login that is
     /// the Protect-only environment of its own folder.
     static func neverAWorkspace(
-        _ profile: JamfCLIProfile, under root: URL? = nil, appSupport: URL = AppSupport.directory()
+        _ profile: JamfCLIProfile, under root: URL? = nil, appSupport: URL = AppSupport.directory(),
+        confirmedOnly: Bool = true
     ) -> Bool {
         profile.product.isNeverAWorkspace
-            && !isProtectOnlyWorkspace(profile.name, root: root, appSupport: appSupport)
+            && !isProtectOnlyWorkspace(
+                profile.name, root: root, appSupport: appSupport, confirmedOnly: confirmedOnly)
     }
 
     /// True when `name` has a workspace folder under `root` holding a `config.yaml`.

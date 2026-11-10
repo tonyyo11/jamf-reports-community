@@ -188,9 +188,6 @@ final class DiagnosticRedactor {
                 self.placeholder("host", g[0] ?? "")
             }
         }
-        // After the hosts: a profile named after a label of its server (`jamf`, for
-        // `jamf.agency.gov`) would otherwise break the host match and leave the domain.
-        out = redactWorkspaceNames(in: out)
         // `ip` has no keep-flag, like the key-based rule and the seeded literals.
         out = replaceMatches(ipv4RE, in: out) { g in self.placeholder("ip", g[0] ?? "") }
         for re in [phoneE164RE, phoneNANPRE] {
@@ -213,6 +210,9 @@ final class DiagnosticRedactor {
                 out = replaceMatches(re, in: out) { g in self.placeholder(category, g[0] ?? "") }
             }
         }
+        // Last: a workspace or login name (some come from a peer-writable config.yaml) must not
+        // split a host, an address or a seeded device or user name before its own rule ran.
+        out = redactWorkspaceNames(in: out)
         return out
     }
 

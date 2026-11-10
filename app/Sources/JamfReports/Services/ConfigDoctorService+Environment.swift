@@ -151,6 +151,9 @@ extension ConfigDoctorService {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         guard environment.protect != nil, environment.mdm != nil,
               let day = SummaryJSONParser.newestSummaryDay(profile: profile),
+              // A workspace that stopped collecting must not keep warning on an old figure.
+              let date = SummaryJSONParser.dateFormatter.date(from: day),
+              Date().timeIntervalSince(date) < 8 * 86_400,
               let dir = try? WorkspacePaths.summariesDir(for: profile),
               let summary = try? SummaryJSONParser.parse(
                 dir.appendingPathComponent("summary_\(day).json"))
