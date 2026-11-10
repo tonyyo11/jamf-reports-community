@@ -116,6 +116,25 @@ extension ConfigDoctorService {
         )]
     }
 
+    /// `.warn` when under half of the identified Protect computers match this environment's
+    /// inventory, read from the newest daily summary's pair (`of < 5` is too few to judge).
+    /// Counts are compared, never a rounded percentage. No row otherwise, not even a pass.
+    static func protectMatchRows(
+        environment: EnvironmentProfiles, matched: MobileSummary.Share?
+    ) -> [DoctorRow] {
+        guard let protect = environment.protect, let mdm = environment.mdm,
+              let matched, matched.of >= 5, matched.met * 2 < matched.of else { return [] }
+        let name = ConfigSchema.displayText(protect)
+        let product = environment.isSchool ? "Jamf School" : "Jamf Pro"
+        return [DoctorRow(
+            id: "environment.protect_match",
+            severity: .warn,
+            title: L("Few Jamf Protect computers match this environment"),
+            detail: L("\(matched.met) of \(matched.of) identified Jamf Protect computers match this environment's inventory ('\(name)' against \(product))."),
+            hint: L("The Protect profile may belong to another environment, Protect may be installed on Macs this \(product) does not manage, or the two products may report different hardware identifiers.")
+        )]
+    }
+
     // MARK: - Live wrappers
 
     /// Every wrapper reads the environment first and does no IO for a workspace without a
@@ -125,6 +144,18 @@ extension ConfigDoctorService {
     ) -> EnvironmentProfiles? {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         return environment.source == .profilesBlock ? environment : nil
+    }
+
+    /// Reads the newest daily summary only; no snapshot decode and no probe.
+    static func protectMatchRows(profile: String, config: ReportConfig) -> [DoctorRow] {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        guard environment.protect != nil, environment.mdm != nil,
+              let day = SummaryJSONParser.newestSummaryDay(profile: profile),
+              let dir = try? WorkspacePaths.summariesDir(for: profile),
+              let summary = try? SummaryJSONParser.parse(
+                dir.appendingPathComponent("summary_\(day).json"))
+        else { return [] }
+        return protectMatchRows(environment: environment, matched: summary.protectMatched)
     }
 
     static func twoMDMRows(profile: String, config: ReportConfig) -> [DoctorRow] {

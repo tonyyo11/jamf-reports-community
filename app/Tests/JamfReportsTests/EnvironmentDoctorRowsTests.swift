@@ -163,4 +163,34 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         XCTAssertTrue(out.contains("[partial] test failed"), out)
         XCTAssertFalse(out.contains("Fabri"), out)
     }
+
+    // MARK: - environment.protect_match
+
+    private func matchRows(_ yaml: String, _ met: Int?, of: Int = 0) throws -> [DoctorRow] {
+        let (e, _) = try env(yaml)
+        return ConfigDoctorService.protectMatchRows(
+            environment: e, matched: met.map { MobileSummary.Share(met: $0, of: of) })
+    }
+
+    func testProtectMatchRowMatrix() throws {
+        let pro = "profiles:\n  jamf_pro: ws\n  protect: ws-P\n"
+        XCTAssertTrue(try matchRows("profiles:\n  jamf_pro: ws\n", 0, of: 10).isEmpty, "no Protect")
+        XCTAssertTrue(try matchRows(pro, nil).isEmpty, "pair absent")
+        XCTAssertTrue(try matchRows(pro, 0, of: 4).isEmpty, "too few")
+        XCTAssertEqual(try matchRows(pro, 2, of: 5).map(\.id), ["environment.protect_match"])
+        XCTAssertEqual(try matchRows(pro, 2, of: 5).map(\.severity), [.warn])
+        XCTAssertTrue(try matchRows(pro, 5, of: 10).isEmpty, "exactly half")
+        XCTAssertEqual(try matchRows(pro, 999, of: 2000).count, 1, "49.95% is not 50%")
+        XCTAssertTrue(try matchRows("profiles:\n  protect: ws-P\n", 0, of: 10).isEmpty,
+                      "Protect-only")
+    }
+
+    func testProtectMatchRowNamesCountsProfileAndProductWithoutIdentifiers() throws {
+        let row = try XCTUnwrap(matchRows(
+            "profiles:\n  jamf_school: ws\n  protect: ws-P\n", 1, of: 8).first)
+        XCTAssertTrue(row.detail.contains("1 of 8"))
+        XCTAssertTrue(row.detail.contains("ws-P"))
+        XCTAssertTrue(row.detail.contains("Jamf School"))
+        XCTAssertTrue(row.hint?.contains("another environment") ?? false)
+    }
 }
