@@ -17,9 +17,20 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         /// A file is there but cannot be read, or the two files do not belong together. It is
         /// never overwritten: a new merge is refused until Start over moves it aside.
         case unreadable(String)
+        /// A plan and journal this Mac did not start (a peer's, or edited since). Never run or
+        /// retired here; only Start over, which moves the two files aside.
+        case foreign(String)
 
         var isUnreadable: Bool {
             if case .unreadable = self { return true }
+            return false
+        }
+        var isForeign: Bool {
+            if case .foreign = self { return true }
+            return false
+        }
+        var canResume: Bool {
+            if case .pending = self { return true }
             return false
         }
     }
@@ -30,6 +41,13 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         var planSHA256: String
         /// Where Start over puts the files when the plan itself cannot be read.
         var mergedFolder: String
+    }
+
+    /// This Mac's note that it started a merge: the plan's SHA-256, kept in Application Support
+    /// because the plan and journal sit in a folder a peer can write.
+    struct Started: Codable, Equatable, Sendable {
+        var planSHA256: String
+        var target: String
     }
 
     /// A plan's steps hold absolute paths; 64 MB covers hundreds of thousands of them.
@@ -61,15 +79,52 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         return try WorkspacePaths.confinedFolder(["automation"], under: workspace)
     }
 
+    /// `<appSupport>/merge-started-<target>.json`, per Mac and never in the workspace.
+    static func startedLocation(target: String, appSupport: URL) -> URL {
+        appSupport.appendingPathComponent(
+            "merge-started-\(ProfileName.pathComponent(target)).json")
+    }
+
+    static func markStarted(planSHA256: String, target: String, appSupport: URL) throws {
+        try FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        try AtomicInstall.write(
+            JSONEncoder().encode(Started(planSHA256: planSHA256, target: target)),
+            to: startedLocation(target: target, appSupport: appSupport), mode: 0o600)
+    }
+
+    /// The plan hash this Mac recorded for `target`, nil when it started none.
+    static func started(target: String, appSupport: URL) -> Started? {
+        guard let data = try? BoundedFile.read(
+            startedLocation(target: target, appSupport: appSupport),
+            limit: BoundedFile.documentLimit, followSymlinks: false),
+              let note = try? JSONDecoder().decode(Started.self, from: data),
+              note.target == target else { return nil }
+        return note
+    }
+
+    static func clearStarted(target: String, appSupport: URL) {
+        let url = startedLocation(target: target, appSupport: appSupport)
+        guard FileManager.default.fileExists(atPath: url.path) || FileManager.isLink(url) else {
+            return
+        }
+        do { try FileManager.default.removeItem(at: url) } catch {
+            AppLogger.event(.collect, .error,
+                            "merge start note not removed: \(error.localizedDescription)")
+        }
+    }
+
     /// The pending journal for `target`, nil when there is none or it cannot be read.
-    static func pending(target: String) -> WorkspaceMergeJournal? {
-        if case .pending(let journal) = state(target: target) { return journal }
+    static func pending(target: String, appSupport: URL = AppSupport.directory())
+        -> WorkspaceMergeJournal? {
+        if case .pending(let journal) = state(target: target, appSupport: appSupport) {
+            return journal
+        }
         return nil
     }
 
     /// Reads both files. A finished journal left behind (its removal failed) is moved to its
     /// record and reads as none; anything that does not read cleanly is `.unreadable`.
-    static func state(target: String) -> Pending {
+    static func state(target: String, appSupport: URL = AppSupport.directory()) -> Pending {
         do {
             let progressURL = try location(target: target)
             let planURL = try planLocation(target: target)
@@ -83,17 +138,29 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
             guard progress.planSHA256 == sha256Hex(planData) else {
                 return unreadable("the merge journal does not match its plan")
             }
+            // Both files are peer-writable and agree by construction, so only this Mac's own
+            // record of the plan's hash says the merge is one it started.
+            guard started(target: target, appSupport: appSupport)?.planSHA256
+                    == progress.planSHA256 else {
+                return foreign("started on another Mac, or its files changed")
+            }
             let plan = try JSONDecoder().decode(WorkspaceMergePlan.self, from: planData)
             guard (0...plan.steps.count).contains(progress.done) else {
                 return unreadable("the merge journal counts \(progress.done) steps")
             }
             let journal = WorkspaceMergeJournal(plan: plan, done: progress.done)
             guard journal.isFinished else { return .pending(journal) }
-            try journal.retire(progressAt: progressURL, planAt: planURL, planData: planData)
+            try journal.retire(progressAt: progressURL, planAt: planURL, planData: planData,
+                               appSupport: appSupport)
             return .none
         } catch {
             return unreadable(error.localizedDescription)
         }
+    }
+
+    private static func foreign(_ reason: String) -> Pending {
+        AppLogger.event(.collect, .error, "merge journal is not this Mac's: \(reason)")
+        return .foreign(reason)
     }
 
     private static func unreadable(_ reason: String) -> Pending {
@@ -131,12 +198,15 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
     }
 
     /// Both record files go beside the archive, then the pending ones go.
-    func retire(progressAt progressURL: URL, planAt planURL: URL, planData: Data) throws {
+    func retire(progressAt progressURL: URL, planAt planURL: URL, planData: Data,
+                appSupport: URL) throws {
+        try plan.requireConfined()
         let hash = try Self.write(planData: planData, to: recordPlanURL)
         try Self.write(Progress(done: done, planSHA256: hash, mergedFolder: plan.mergedFolder),
                        to: recordURL)
         try FileManager.default.removeItem(at: progressURL)
         try FileManager.default.removeItem(at: planURL)
+        Self.clearStarted(target: plan.target, appSupport: appSupport)
     }
 
     static func sha256Hex(_ data: Data) -> String { SnapshotManifest.sha256Hex(data) }

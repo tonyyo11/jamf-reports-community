@@ -78,6 +78,46 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
             .appendingPathComponent("archive/summaries/\(side)/\(name)")
     }
 
+    /// A path the plan names lies outside the workspaces folder.
+    struct ConfinementError: Error, LocalizedError, Equatable {
+        let what: String
+        var errorDescription: String? {
+            L("The merge plan names a path outside the workspaces folder (\(what)); nothing was changed.")
+        }
+    }
+
+    /// `path` as a URL when it is absolute, has no `..` and lies strictly below `base` (a
+    /// component-wise check: `Jamf-Reports-evil` is not below `Jamf-Reports`), else nil.
+    static func confined(_ path: String, under base: URL) -> URL? {
+        guard path.hasPrefix("/"), !path.split(separator: "/").contains("..") else { return nil }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        let bases = [base.standardizedFileURL.path, base.resolvingSymlinksInPath().path]
+        return bases.contains { url.path.hasPrefix($0 + "/") } ? url : nil
+    }
+
+    /// Every path the plan names, the one check before a step runs, a journal is retired or
+    /// Start over moves files. No step names Application Support: per-Mac state steps (pin,
+    /// schedules, policy) go through the executor's dependencies, never a plan path.
+    func requireConfined(root: URL = ProfileService.workspacesRoot()) throws {
+        guard Self.confined(mergedFolder, under: root.appendingPathComponent("_merged")) != nil
+        else { throw ConfinementError(what: "merged folder") }
+        for name in [source, target] {
+            guard let folder = ProfileService.workspaceURL(for: name),
+                  Self.confined(folder.path, under: root) != nil
+            else { throw ConfinementError(what: "workspace folder") }
+        }
+        for (index, step) in steps.enumerated() {
+            var paths = [step.source, step.target, step.archive ?? ""]
+            if case .fillSummary(let sourceArchive) = step.action { paths.append(sourceArchive) }
+            for path in paths where !path.isEmpty {
+                guard Self.confined(path, under: root) != nil else {
+                    throw ConfinementError(
+                        what: "step \(index + 1), \(URL(fileURLWithPath: path).lastPathComponent)")
+                }
+            }
+        }
+    }
+
     /// How many steps of each action each area has, for the sheet. Tail steps are left out.
     func counts() -> [Area: [String: Int]] {
         var result: [Area: [String: Int]] = [:]

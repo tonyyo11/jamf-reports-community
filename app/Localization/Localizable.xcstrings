@@ -23447,6 +23447,86 @@
         }
       }
     },
+    "A merge into this workspace was started on another Mac, or its files changed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zusammenführung in diesen Arbeitsbereich wurde auf einem anderen Mac gestartet, oder ihre Dateien wurden geändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fusión en este espacio de trabajo se inició en otro Mac, o sus archivos cambiaron."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion dans cet espace de travail a été lancée sur un autre Mac, ou ses fichiers ont changé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’unione in questo spazio di lavoro è stata avviata su un altro Mac, oppure i suoi file sono cambiati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースへのマージは別の Mac で開始されたか、ファイルが変更されています。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem neste espaço de trabalho foi iniciada em outro Mac, ou seus arquivos mudaram."
+          }
+        }
+      }
+    },
+    "A merge into this workspace was started on another Mac, or its files changed. Choose Start over on the Environment card before merging again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zusammenführung in diesen Arbeitsbereich wurde auf einem anderen Mac gestartet, oder ihre Dateien wurden geändert. Wählen Sie auf der Umgebungskarte „Neu beginnen“, bevor Sie erneut zusammenführen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fusión en este espacio de trabajo se inició en otro Mac, o sus archivos cambiaron. Elija Empezar de nuevo en la tarjeta Entorno antes de volver a fusionar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion dans cet espace de travail a été lancée sur un autre Mac, ou ses fichiers ont changé. Choisissez Recommencer sur la carte Environnement avant de fusionner à nouveau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’unione in questo spazio di lavoro è stata avviata su un altro Mac, oppure i suoi file sono cambiati. Scegli Ricomincia nella scheda Ambiente prima di unire di nuovo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースへのマージは別の Mac で開始されたか、ファイルが変更されています。再度マージする前に、環境カードで「最初からやり直す」を選択してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem neste espaço de trabalho foi iniciada em outro Mac, ou seus arquivos mudaram. Escolha Recomeçar no cartão Ambiente antes de mesclar novamente."
+          }
+        }
+      }
+    },
     "A merge of %@ into this workspace did not finish. Resume it or start over before merging another workspace." : {
       "localizations" : {
         "de" : {
@@ -118231,6 +118311,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A mesclagem foi concluída."
+          }
+        }
+      }
+    },
+    "The merge plan names a path outside the workspaces folder (%@); nothing was changed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Zusammenführungsplan nennt einen Pfad außerhalb des Arbeitsbereichsordners (%@); es wurde nichts geändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El plan de fusión indica una ruta fuera de la carpeta de espacios de trabajo (%@); no se cambió nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le plan de fusion désigne un chemin hors du dossier des espaces de travail (%@) ; rien n’a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il piano di unione indica un percorso fuori dalla cartella degli spazi di lavoro (%@); non è stato modificato nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージ計画がワークスペースフォルダの外のパス (%@) を指しています。何も変更されていません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O plano de mesclagem indica um caminho fora da pasta de espaços de trabalho (%@); nada foi alterado."
           }
         }
       }

@@ -145,7 +145,8 @@ final class WorkspaceMergeModel {
     static func refusedBeforeWriting(_ error: Error) -> Bool {
         if let bridge = error as? CLIBridgeError { return bridge.isCollectRefusal }
         switch error as? WorkspaceMergeExecutor.RunError {
-        case .peerClaim, .pendingMerge, .unreadableJournal, .notStarted: return true
+        case .peerClaim, .pendingMerge, .unreadableJournal, .foreignJournal, .notStarted:
+            return true
         default: return false
         }
     }
