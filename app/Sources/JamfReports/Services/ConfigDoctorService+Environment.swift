@@ -181,7 +181,9 @@ extension ConfigDoctorService {
     ) -> [DoctorRow] {
         guard includeProbes, let environment = blockEnvironment(profile, config),
               let platform = environment.platform, let jamfPro = environment.jamfPro,
-              platform != jamfPro,
+              platform != profile,
+              // The probe sends a request as `platform`: never for a name this Mac has not confirmed.
+              SharedConfigPin.platformAllowed(profile: profile, name: platform),
               let bin = ExecutableLocator.locate("jamf-cli") else { return [] }
         return platformHostRows(
             profile: profile, environment: environment,
