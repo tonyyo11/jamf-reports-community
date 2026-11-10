@@ -160,3 +160,34 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         XCTAssertEqual(spy.registered.count, 1)
     }
 }
+
+/// The check Connect new and the listing's Add share.
+@MainActor
+final class PlatformSlotGateTests: XCTestCase {
+    private func run(
+        _ check: ConnectionCheck.Verdict, host: PlatformHostCheck.Verdict = .unknown
+    ) async -> PlatformSlotGate.Result {
+        await PlatformSlotGate.evaluate(
+            profile: "Example-API", tenantLevel: false, check: { check }, hostVerdict: { host })
+    }
+
+    func testRejectedIDAndNoJamfProRefuse() async {
+        for verdict in [ConnectionCheck.Verdict.rejectedID(.unknownEnvironment), .noJamfPro] {
+            let result = await run(verdict)
+            guard case .refused = result else { return XCTFail("\(verdict)") }
+        }
+    }
+
+    func testUndecidedGoesAheadWithANote() async {
+        let result = await run(.undecided(exitCode: nil))
+        guard case .proceed(let note) = result else { return XCTFail("refused") }
+        XCTAssertFalse(note.isEmpty)
+    }
+
+    func testDifferentHostRefusesAfterAnAcceptedCheck() async {
+        let result = await run(
+            .accepted(jamfProVersion: nil), host: .different(jamfPro: "a.example", platform: "b.example"))
+        guard case .refused(let text) = result else { return XCTFail("proceeded") }
+        XCTAssertTrue(text.contains("b.example"))
+    }
+}

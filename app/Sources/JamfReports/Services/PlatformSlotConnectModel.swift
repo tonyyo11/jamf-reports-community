@@ -144,21 +144,17 @@ final class PlatformSlotConnectModel {
         }
         ProfileAuthMethod.invalidateCache()
         PlatformTwin.invalidateCache()
-        let verdict = await deps.check(binary, profile)
-        var note = ""
-        switch verdict {
-        case .rejectedID, .noJamfPro:
-            outcome = .refused(leftover(verdict.message(tenantLevel: scope == .tenant), profile))
+        let gate = await PlatformSlotGate.evaluate(
+            profile: profile, tenantLevel: scope == .tenant,
+            check: { [deps] in await deps.check(binary, profile) },
+            hostVerdict: { [deps, workspace] in await deps.hostVerdict(workspace, profile, binary) })
+        let note: String
+        switch gate {
+        case .refused(let text):
+            outcome = .refused(leftover(text, profile))
             return
-        case .missingPermission, .undecided:
-            note = " " + verdict.message(tenantLevel: scope == .tenant)
-        case .accepted:
-            break
-        }
-        let hosts = await deps.hostVerdict(workspace, profile, binary)
-        if let refusal = AddSheetPlan.platformHostRefusal(profile: profile, verdict: hosts) {
-            outcome = .refused(leftover(refusal, profile))
-            return
+        case .proceed(let added):
+            note = added
         }
         do {
             try await deps.writeSlot(workspace, profile)
@@ -175,5 +171,38 @@ final class PlatformSlotConnectModel {
         let word = ProfileName.shellWord(profile)
         return text + " "
             + L("The profile \(profile) is still in jamf-cli; remove it with jamf-cli config remove-profile \(word).")
+    }
+}
+
+/// The one check before a Platform profile is named in a workspace's `profiles.platform` slot,
+/// shared by Connect new and the listing's Add: a rejected ID or a non-Jamf-Pro environment
+/// refuses, then the host check; an undecided answer goes ahead with a note.
+@MainActor
+enum PlatformSlotGate {
+    enum Result: Equatable {
+        case refused(String)
+        case proceed(note: String)
+    }
+
+    static func evaluate(
+        profile: String, tenantLevel: Bool,
+        check: () async -> ConnectionCheck.Verdict,
+        hostVerdict: () async -> PlatformHostCheck.Verdict
+    ) async -> Result {
+        let verdict = await check()
+        var note = ""
+        switch verdict {
+        case .rejectedID, .noJamfPro:
+            return .refused(verdict.message(tenantLevel: tenantLevel))
+        case .missingPermission, .undecided:
+            note = " " + verdict.message(tenantLevel: tenantLevel)
+        case .accepted:
+            break
+        }
+        let hosts = await hostVerdict()
+        if let refusal = AddSheetPlan.platformHostRefusal(profile: profile, verdict: hosts) {
+            return .refused(refusal)
+        }
+        return .proceed(note: note)
     }
 }

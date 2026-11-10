@@ -62,6 +62,15 @@ struct AddSheet: View {
                 AddSheetPlan.liveHostVerdict(workspace: workspace, platform: platform)
             }.value
         }
+    /// The ID check Connect new runs, so a profile it refused cannot be added from the listing.
+    /// No jamf-cli to ask reads as undecided, as everywhere else.
+    var connectionCheck: @Sendable (_ profile: String) async -> ConnectionCheck.Verdict = { profile in
+        guard let binary = ExecutableLocator.locate("jamf-cli") else {
+            return .undecided(exitCode: nil)
+        }
+        return await ConnectionCheck.run(
+            profile: profile, runner: ConnectionCheck.runner(binary: binary))
+    }
     /// Seeding a `profiles:` block can run `config list`, so the default writes off the main actor.
     var writePlatform: @Sendable (_ profile: String, _ workspace: String) async throws -> Void = {
         profile, target in
@@ -629,14 +638,17 @@ struct AddSheet: View {
         errorText = nil
         isAddingPlatform = true
         defer { isAddingPlatform = false }
-        let verdict = await hostVerdict(target, profile)
-        if let refusal = AddSheetPlan.platformHostRefusal(profile: profile, verdict: verdict) {
-            errorText = refusal
+        let gate = await PlatformSlotGate.evaluate(
+            profile: profile, tenantLevel: false,
+            check: { await connectionCheck(profile) },
+            hostVerdict: { await hostVerdict(target, profile) })
+        guard case .proceed(let note) = gate else {
+            if case .refused(let text) = gate { errorText = text }
             return
         }
         do {
             try await writePlatform(profile, target)
-            message = AddSheetPlan.platformAddedMessage(profile: profile, workspace: target)
+            message = AddSheetPlan.platformAddedMessage(profile: profile, workspace: target) + note
             workspace.credentialsChanged()
         } catch {
             errorText = L("Could not add \(profile): \(error.localizedDescription)")
