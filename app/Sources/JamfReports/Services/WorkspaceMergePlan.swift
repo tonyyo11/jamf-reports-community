@@ -11,7 +11,8 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     /// The fixed steps after the files, in this order.
     enum Tail: String, Codable, CaseIterable, Sendable {
         case archiveSourceConfig, writePlatformSlot, copyBenchmarks
-        case retargetSchedules, rewritePolicy, removeSourcePin, moveSource
+        // The pin goes last: if the move fails the source is still live and keeps its pin.
+        case retargetSchedules, rewritePolicy, moveSource, removeSourcePin
     }
 
     enum Action: Codable, Equatable, Sendable {

@@ -121,6 +121,11 @@ final class WorkspaceMergePlanTests: XCTestCase {
                        [.init(product: "Jamf Protect", profile: "Cloud-Protect")])
     }
 
+    func testSourcePinIsRemovedOnlyAfterTheMove() throws {
+        XCTAssertEqual(try plan().steps.suffix(2).map(\.action),
+                       [.tail(.moveSource), .tail(.removeSourcePin)])
+    }
+
     func testTailComesLastAndConfigKeys() throws {
         try write("a: 1\nprofiles:\n  x: y\n", src, "config.yaml")
         try write("a: 2\nb: 1\nprofiles:\n  x: z\n", tgt, "config.yaml")

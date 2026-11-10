@@ -530,7 +530,7 @@ extension WorkspaceMergeExecutorTests {
 
     func testResumeAtMoveSourceAfterTheFolderMoved() async throws {
         let j = try journal()
-        try await stopped(j, after: j.plan.steps.count - 1)
+        try await stopped(j, after: j.plan.steps.count - 2)
         let moved = merged(j).appendingPathComponent("workspace")
         try fm.moveItem(at: root.appendingPathComponent(src), to: moved)
         guard let pending = WorkspaceMergeJournal.pending(target: tgt, appSupport: support) else {
