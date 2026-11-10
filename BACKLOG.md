@@ -12,6 +12,7 @@ nothing is tracked in two places.
 - [Epic: Jamf Security Cloud and cross-product device correlation (2.11)](https://github.com/tonyyo11/jamf-reports-community/issues/283)
 - [Epic: 2.11 — Platform API, Protect in backups, Platform connections, and carried-over findings](https://github.com/tonyyo11/jamf-reports-community/issues/284)
 - [Epic: 2.12 — AI Governance, environment model, mobile devices first-class, and deferred 2.11 audit findings](https://github.com/tonyyo11/jamf-reports-community/issues/305)
+- [Epic: Jamf Pro 11.32–11.34 API — action logs, Apple Vision Pro, and inventory fields not read yet](https://github.com/tonyyo11/jamf-reports-community/issues/390)
 
 Closed epics are not listed here — see the
 [closed issues](https://github.com/tonyyo11/jamf-reports-community/issues?q=is%3Aissue+is%3Aclosed+label%3Aenhancement)
