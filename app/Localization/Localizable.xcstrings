@@ -8084,6 +8084,52 @@
         }
       }
     },
+    "%@ profile '%@' is not carried over; add it to %@ after the merge." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das %1$@-Profil „%2$@“ wird nicht übernommen; fügen Sie es nach dem Zusammenführen zu %3$@ hinzu."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ profile '%2$@' is not carried over; add it to %3$@ after the merge."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de %1$@ «%2$@» no se traslada; añádalo a %3$@ después de la fusión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil %1$@ « %2$@ » n’est pas repris ; ajoutez-le à %3$@ après la fusion."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo %1$@ «%2$@» non viene riportato; aggiungerlo a %3$@ dopo l’unione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@プロファイル「%2$@」は引き継がれません。統合後に%3$@へ追加してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil %1$@ “%2$@” não é transferido; adicione-o a %3$@ após a mesclagem."
+          }
+        }
+      }
+    },
     "%@ reaches %@, not this workspace's Jamf Pro (%@). Nothing was changed." : {
       "localizations" : {
         "de" : {
@@ -15836,6 +15882,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld de %2$lld computadores do Protect correspondem a um computador do %3$@."
+          }
+        }
+      }
+    },
+    "%lld of %lld identified Jamf Protect computers match this environment's inventory ('%@' against %@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld identifizierten Jamf-Protect-Computern stimmen mit dem Inventar dieser Umgebung überein („%3$@“ gegenüber %4$@)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld identified Jamf Protect computers match this environment's inventory ('%3$@' against %4$@)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de los %2$lld ordenadores de Jamf Protect identificados coinciden con el inventario de este entorno («%3$@» frente a %4$@)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld des %2$lld ordinateurs Jamf Protect identifiés correspondent à l’inventaire de cet environnement (« %3$@ » comparé à %4$@)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld di %2$lld computer Jamf Protect identificati corrispondono all’inventario di questo ambiente («%3$@» rispetto a %4$@)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "識別されたJamf Protectコンピュータ%2$lld台のうち%1$lld台が、この環境のインベントリと一致しています(「%3$@」と%4$@の比較)。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld computadores do Jamf Protect identificados correspondem ao inventário deste ambiente (“%3$@” em relação a %4$@)."
           }
         }
       }
@@ -57159,6 +57251,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buscar agora os dados ao vivo do jamf-cli para este perfil."
+          }
+        }
+      }
+    },
+    "Few Jamf Protect computers match this environment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur wenige Jamf-Protect-Computer stimmen mit dieser Umgebung überein"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pocos ordenadores de Jamf Protect coinciden con este entorno"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peu d’ordinateurs Jamf Protect correspondent à cet environnement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pochi computer Jamf Protect corrispondono a questo ambiente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境と一致するJamf Protectコンピュータが少数です"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poucos computadores do Jamf Protect correspondem a este ambiente"
           }
         }
       }
@@ -116783,6 +116915,46 @@
         }
       }
     },
+    "The Protect profile may belong to another environment, Protect may be installed on Macs this %@ does not manage, or the two products may report different hardware identifiers." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Möglicherweise gehört das Protect-Profil zu einer anderen Umgebung, Protect ist auf Macs installiert, die dieser %@ nicht verwaltet, oder die beiden Produkte melden unterschiedliche Hardware-Kennungen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puede que el perfil de Protect pertenezca a otro entorno, que Protect esté instalado en Mac que este %@ no gestiona, o que los dos productos informen de identificadores de hardware distintos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil Protect appartient peut-être à un autre environnement, Protect est peut-être installé sur des Mac que ce %@ ne gère pas, ou les deux produits signalent peut-être des identifiants matériels différents."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo Protect potrebbe appartenere a un altro ambiente, Protect potrebbe essere installato su Mac che questo %@ non gestisce, oppure i due prodotti potrebbero riportare identificatori hardware diversi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protectプロファイルが別の環境のものである、この%@が管理していないMacにProtectがインストールされている、または2つの製品が異なるハードウェア識別子を報告している可能性があります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil do Protect pode pertencer a outro ambiente, o Protect pode estar instalado em Macs que este %@ não gerencia, ou os dois produtos podem informar identificadores de hardware diferentes."
+          }
+        }
+      }
+    },
     "The Security Score is the weighted share of Macs that pass each factor, on Security Posture, the Overview, Trends, alerts and reports. Weights need not add up to 100: a factor with no data drops out and the rest are rescaled. The list is saved to this workspace's config.yaml (security_policy.score_factors)." : {
       "localizations" : {
         "de" : {
@@ -117663,48 +117835,48 @@
         }
       }
     },
-    "The jamf-cli profile %@ stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile %@." : {
+    "The jamf-cli profile %@ stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile -- %@." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das jamf-cli-Profil %@ bleibt registriert. Fügen Sie dasselbe Label erneut hinzu, um es mit neuen Anmeldedaten zu registrieren, oder entfernen Sie es mit jamf-cli config remove-profile %@."
+            "value" : "Das jamf-cli-Profil %1$@ bleibt registriert. Fügen Sie dasselbe Label erneut hinzu, um es mit neuen Anmeldedaten zu registrieren, oder entfernen Sie es mit jamf-cli config remove-profile -- %2$@."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "The jamf-cli profile %1$@ stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile %2$@."
+            "value" : "The jamf-cli profile %1$@ stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile -- %2$@."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El perfil de jamf-cli %@ sigue registrado. Añada de nuevo la misma etiqueta para registrarlo con credenciales nuevas, o elimínelo con jamf-cli config remove-profile %@."
+            "value" : "El perfil de jamf-cli %1$@ sigue registrado. Añada de nuevo la misma etiqueta para registrarlo con credenciales nuevas, o elimínelo con jamf-cli config remove-profile -- %2$@."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le profil jamf-cli %@ reste enregistré. Ajoutez à nouveau la même étiquette pour l’enregistrer avec de nouveaux identifiants, ou supprimez-le avec jamf-cli config remove-profile %@."
+            "value" : "Le profil jamf-cli %1$@ reste enregistré. Ajoutez à nouveau la même étiquette pour l’enregistrer avec de nouveaux identifiants, ou supprimez-le avec jamf-cli config remove-profile -- %2$@."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il profilo jamf-cli %@ resta registrato. Aggiungere di nuovo la stessa etichetta per registrarlo con nuove credenziali, oppure rimuoverlo con jamf-cli config remove-profile %@."
+            "value" : "Il profilo jamf-cli %1$@ resta registrato. Aggiungere di nuovo la stessa etichetta per registrarlo con nuove credenziali, oppure rimuoverlo con jamf-cli config remove-profile -- %2$@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "jamf-cliプロファイル%@は登録されたままです。同じラベルをもう一度追加して新しい資格情報で登録するか、jamf-cli config remove-profile %@で削除してください。"
+            "value" : "jamf-cliプロファイル%1$@は登録されたままです。同じラベルをもう一度追加して新しい資格情報で登録するか、jamf-cli config remove-profile -- %2$@ で削除してください。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O perfil %@ do jamf-cli continua registrado. Adicione o mesmo rótulo novamente para registrá-lo com novas credenciais ou remova-o com jamf-cli config remove-profile %@."
+            "value" : "O perfil %1$@ do jamf-cli continua registrado. Adicione o mesmo rótulo novamente para registrá-lo com novas credenciais ou remova-o com jamf-cli config remove-profile -- %2$@."
           }
         }
       }
@@ -118555,48 +118727,48 @@
         }
       }
     },
-    "The profile %@ is still in jamf-cli; remove it with jamf-cli config remove-profile %@." : {
+    "The profile %@ is still in jamf-cli; remove it with jamf-cli config remove-profile -- %@." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das Profil %1$@ ist noch in jamf-cli vorhanden; entfernen Sie es mit jamf-cli config remove-profile %2$@."
+            "value" : "Das Profil %1$@ ist noch in jamf-cli vorhanden; entfernen Sie es mit jamf-cli config remove-profile -- %2$@."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "The profile %1$@ is still in jamf-cli; remove it with jamf-cli config remove-profile %2$@."
+            "value" : "The profile %1$@ is still in jamf-cli; remove it with jamf-cli config remove-profile -- %2$@."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El perfil %1$@ sigue en jamf-cli; elimínelo con jamf-cli config remove-profile %2$@."
+            "value" : "El perfil %1$@ sigue en jamf-cli; elimínelo con jamf-cli config remove-profile -- %2$@."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le profil %1$@ est toujours dans jamf-cli ; supprimez-le avec jamf-cli config remove-profile %2$@."
+            "value" : "Le profil %1$@ est toujours dans jamf-cli ; supprimez-le avec jamf-cli config remove-profile -- %2$@."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il profilo %1$@ è ancora in jamf-cli; rimuovilo con jamf-cli config remove-profile %2$@."
+            "value" : "Il profilo %1$@ è ancora in jamf-cli; rimuoverlo con jamf-cli config remove-profile -- %2$@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プロファイル%1$@はjamf-cliに残っています。jamf-cli config remove-profile %2$@ で削除してください。"
+            "value" : "プロファイル%1$@はjamf-cliに残っています。jamf-cli config remove-profile -- %2$@ で削除してください。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O perfil %1$@ ainda está no jamf-cli; remova-o com jamf-cli config remove-profile %2$@."
+            "value" : "O perfil %1$@ ainda está no jamf-cli; remova-o com jamf-cli config remove-profile -- %2$@."
           }
         }
       }
