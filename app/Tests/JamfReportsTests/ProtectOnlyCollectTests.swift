@@ -332,6 +332,43 @@ final class ProtectOnlyCollectTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(input.refusal).contains("awaiting confirmation"))
     }
 
+    /// The refusal comes before the pin checkpoint, the claim and retention: the gate is never
+    /// asked and no Protect collect runs.
+    func testAnUnconfirmedProtectOnlyBlockIsRefusedBeforeTheGate() async throws {
+        let root = try makeRoot()
+        let name = try unconfirmedProtectOnly(root)
+        let asked = Box(), calls = Box()
+        do {
+            try await CollectRouter.run(
+                workspace: WorkspaceID(validating: name), config: try configAt(root, name),
+                now: .testNoon,
+                protectCollect: { profile, _, _ in calls.add(profile); return ["protect-alerts"] },
+                resolved: { _ in nil },
+                gate: { _, _, _, _, _, _ in asked.add("gate"); return .stop(.alreadyCollected) },
+                onLine: { _ in })
+            XCTFail("expected protectNotConfirmed")
+        } catch let error as ReportEngineError {
+            guard case .protectNotConfirmed = error else { return XCTFail("got \(error)") }
+        }
+        XCTAssertTrue(asked.all.isEmpty, "the gate was asked")
+        XCTAssertTrue(calls.all.isEmpty)
+    }
+
+    /// A second Mac must be able to list the folder to confirm it; runs still need the Confirm.
+    func testAnUnconfirmedProtectOnlyLoginIsListedButNotRunnableUntilConfirmed() throws {
+        let root = try makeRoot()
+        let name = try unconfirmedProtectOnly(root)
+        var login = JamfCLIProfile(name: name, url: "", schedules: 0, status: .idle)
+        login.product = .protect
+        XCTAssertEqual(
+            ProfileService.droppingPairedProductProfiles([login], under: root).map(\.name), [name])
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces([login], excluding: [], under: root).map(\.name), [])
+        try SharedConfigPin.confirm(profile: name, keys: [.protectProfile])
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces([login], excluding: [], under: root).map(\.name), [name])
+    }
+
     // MARK: - Product gates (S1, S3, S5, S7, S8)
 
     private func snapshotSchedule(_ profile: String) -> Schedule {

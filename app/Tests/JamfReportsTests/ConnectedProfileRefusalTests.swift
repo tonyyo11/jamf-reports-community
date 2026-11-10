@@ -49,4 +49,32 @@ final class ConnectedProfileRefusalTests: XCTestCase {
         XCTAssertEqual(code, 0)
         XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("Cloud").path))
     }
+
+    private func cloudSchedule(_ mode: Schedule.RunMode) -> Schedule {
+        Schedule(
+            name: "t", profile: "Cloud", schedule: "manual", cadence: "custom",
+            mode: mode, next: "—", last: "—", lastStatus: .ok, artifacts: [],
+            enabled: true, launchAgentLabel: "t.cloud", multiTarget: nil, tiers: nil,
+            excludedProfiles: nil)
+    }
+
+    /// The seams every entry point shares: refused before any folder exists, so nothing made one.
+    func testRunBackupAndScheduleRefusalsNameTheEnvironmentOfAFolderlessLogin() throws {
+        try workspace("OnPrem", "profiles:\n  jamf_pro: \"OnPrem\"\n  platform: \"Cloud\"\n")
+        let support = root.appendingPathComponent(".support", isDirectory: true)
+        let run = try XCTUnwrap(CollectRouter.runRefusal(
+            profile: "Cloud", operation: "Collect", config: nil, appSupport: support,
+            resolved: { _ in nil }))
+        XCTAssertTrue(run.contains("environment 'OnPrem'"), run)
+        XCTAssertEqual(CollectRouter.backupRefusal(profile: "Cloud", config: nil), run)
+        for mode in [Schedule.RunMode.snapshotOnly, .jamfCLIOnly] {
+            let reason = try XCTUnwrap(CollectRouter.scheduleRunRefusal(cloudSchedule(mode)), "\(mode)")
+            XCTAssertTrue(reason.contains("environment 'OnPrem'"), reason)
+        }
+        try workspace("Cloud", "jamf_cli:\n  profile: \"Cloud\"\n")
+        XCTAssertNil(CollectRouter.runRefusal(
+            profile: "Cloud", operation: "Collect", config: nil, appSupport: support,
+            resolved: { _ in nil }))
+        XCTAssertNil(CollectRouter.scheduleRunRefusal(cloudSchedule(.jamfCLIOnly)))
+    }
 }

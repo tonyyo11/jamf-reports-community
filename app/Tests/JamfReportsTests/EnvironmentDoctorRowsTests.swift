@@ -193,4 +193,40 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         XCTAssertTrue(row.detail.contains("Jamf School"))
         XCTAssertTrue(row.hint?.contains("another environment") ?? false)
     }
+
+    /// The live wrapper reads the newest summary; one older than a week is not a current figure.
+    func testProtectMatchRowIsSilentOnAStaleSummary() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("match-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("ws"), withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? FileManager.default.removeItem(at: root) }
+        let config = try ConfigLoader.loadFromString(
+            "profiles:\n  jamf_pro: ws\n  protect: ws-P\n")
+        let dir = try WorkspacePaths.summariesDir(for: "ws")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func write(daysAgo: Int) throws {
+            for file in try FileManager.default.contentsOfDirectory(atPath: dir.path) {
+                try FileManager.default.removeItem(at: dir.appendingPathComponent(file))
+            }
+            let day = SummaryJSONParser.dateFormatter.string(
+                from: Date().addingTimeInterval(Double(-daysAgo) * 86_400))
+            let summary = DailySummary(
+                date: day, totalDevices: 10, fileVaultPct: nil, compliancePct: nil,
+                staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+                source: "jamf-cli"
+            ).withEnvironment(
+                products: nil,
+                protect: .init(computers: .init(count: 5, matched: .init(met: 2, of: 5))))
+            XCTAssertTrue(ReportEngine.writeSummaryFile(
+                summary, to: dir.appendingPathComponent("summary_\(day).json"), onLine: nil))
+        }
+        try write(daysAgo: 0)
+        XCTAssertEqual(
+            ConfigDoctorService.protectMatchRows(profile: "ws", config: config).map(\.id),
+            ["environment.protect_match"])
+        try write(daysAgo: 30)
+        XCTAssertTrue(ConfigDoctorService.protectMatchRows(profile: "ws", config: config).isEmpty)
+    }
 }

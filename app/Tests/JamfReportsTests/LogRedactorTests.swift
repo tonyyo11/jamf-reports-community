@@ -375,4 +375,15 @@ final class LogRedactorTests: XCTestCase {
             of: "Example", environment: EnvironmentProfiles(jamfPro: "Example", platform: "Example-API"))
         XCTAssertTrue(named.contains("Example-API"))
     }
+
+    func testTheMDMSlotAddsNoSeedAndALongLoginIsDropped() {
+        let long = String(repeating: "a", count: 130)
+        let forms = LogRedactor.profileNameForms(
+            of: "Example",
+            environment: EnvironmentProfiles(
+                jamfPro: "OtherMDM", platform: "Example-API", protect: long))
+        XCTAssertFalse(forms.contains("OtherMDM"), "\(forms)")
+        XCTAssertFalse(forms.contains(long), "\(forms)")
+        XCTAssertTrue(forms.contains("Example") && forms.contains("Example-API"), "\(forms)")
+    }
 }
