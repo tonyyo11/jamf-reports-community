@@ -366,4 +366,13 @@ final class LogRedactorTests: XCTestCase {
             "client_secret: super-secret-value-1234", profile: nil)
         XCTAssertFalse(shared.contains("super-secret-value-1234"))
     }
+
+    func testAConnectedLoginNamedLikeALogWordMasksNothing() {
+        let forms = LogRedactor.profileNameForms(
+            of: "Example", environment: EnvironmentProfiles(jamfPro: "Example", platform: "partial"))
+        XCTAssertFalse(forms.contains("partial"), "\(forms)")
+        let named = LogRedactor.profileNameForms(
+            of: "Example", environment: EnvironmentProfiles(jamfPro: "Example", platform: "Example-API"))
+        XCTAssertTrue(named.contains("Example-API"))
+    }
 }
