@@ -290,7 +290,14 @@ enum WorkspaceMergeExecutor {
         let archive = step.archive.map { URL(fileURLWithPath: $0) }
         switch step.action {
         case .copy:
-            if exists(target), !sameBytes(target, source) {
+            let isStatus = step.area == .runHistory && target.lastPathComponent.hasSuffix("_status.json")
+            if isStatus, let stripped = try? strippedStatus(source) {
+                if exists(target), !isRegular(target) || BoundedFile.sha256Hex(target) != Self.sha256(stripped) {
+                    try copyFallback(step, source: source, target: target, plan: plan)
+                } else if !exists(target) {
+                    try place(stripped, at: target, mode: 0o600)
+                }
+            } else if exists(target), !sameBytes(target, source) {
                 try copyFallback(step, source: source, target: target, plan: plan)
             } else {
                 try place(source, at: target)
@@ -510,6 +517,38 @@ enum WorkspaceMergeExecutor {
         let staged = AtomicInstall.stagedURL(for: destination)
         do {
             try FileManager.default.copyItem(at: source, to: staged)
+            try AtomicInstall.installExclusive(staged, at: destination)
+        } catch {
+            AtomicInstall.discard(staged)
+            throw error
+        }
+    }
+
+    /// The source's status file without the open attention items: `AttentionLog` reads the
+    /// newest file's set, so a copied one would replace the target's.
+    private static func strippedStatus(_ source: URL) throws -> Data {
+        try requireNoLinkedAncestor(source)
+        try requireRegular(source)
+        let data = try BoundedFile.read(source, limit: BoundedFile.documentLimit, followSymlinks: false)
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw StepError("\(source.lastPathComponent) is not a status record")
+        }
+        object["attention"] = nil
+        object["attention_at"] = nil
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// `data` written to `destination` when nothing is there, like `place`.
+    private static func place(_ data: Data, at destination: URL, mode: Int) throws {
+        try prepareParent(of: destination)
+        let staged = AtomicInstall.stagedURL(for: destination)
+        do {
+            try data.write(to: staged, options: .withoutOverwriting)
+            try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: staged.path)
             try AtomicInstall.installExclusive(staged, at: destination)
         } catch {
             AtomicInstall.discard(staged)

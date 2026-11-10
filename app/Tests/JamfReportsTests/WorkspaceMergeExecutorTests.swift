@@ -227,6 +227,18 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         XCTAssertEqual(store.load().first?.excludedWorkspaces, [tgt])
     }
 
+    func testCopiedStatusFileCarriesNoAttentionItems() async throws {
+        try write(#"{"exit_code":0,"attention":[{"code":"x"}],"attention_at":"2026-01-01T00:00:00Z"}"#,
+                  src, "automation/l.one_status.json")
+        let j = try journal()
+        try await WorkspaceMergeExecutor.run(j, deps: deps())
+        let copied = try XCTUnwrap(read(url(tgt, "automation/l.one_status.json")))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(copied.utf8)) as? [String: Any])
+        XCTAssertEqual(object["exit_code"] as? Int, 0)
+        XCTAssertNil(object["attention"])
+        XCTAssertNil(object["attention_at"])
+    }
+
     func testRefusedHoldWritesNothing() async throws {
         let before = try tree()
         do {
