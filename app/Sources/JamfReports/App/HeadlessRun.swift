@@ -327,7 +327,8 @@ private func scheduledRunSingleBody(
         return CollectRouter.runRefusal(
             profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig)
     }
-    if let refusal = caseVariant ?? productRefusal() {
+    if let refusal = caseVariant ?? ProfileService.connectedProfileRefusal(of: profile)
+        ?? productRefusal() {
         let message = "[skip] scheduled \(mode.rawValue) run skipped for '\(profile)': "
             + "\(refusal). Not a failure. Exclude this profile from the schedule to stop "
             + "scheduling it."

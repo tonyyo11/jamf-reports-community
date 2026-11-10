@@ -123,7 +123,8 @@ struct Collect: AsyncParsableCommand {
             + "within 12 hours).")) var force = false
 
     static func refusal(profile: String, config: ReportConfig?) -> String? {
-        CollectRouter.runRefusal(profile: profile, operation: "Collect", config: config)
+        ProfileService.connectedProfileRefusal(of: profile)
+            ?? CollectRouter.runRefusal(profile: profile, operation: "Collect", config: config)
     }
 
     func run() async throws {

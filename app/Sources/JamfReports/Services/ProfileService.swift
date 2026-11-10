@@ -266,18 +266,42 @@ enum ProfileService {
         under root: URL = workspacesRoot(),
         keeping active: Set<String> = []
     ) -> [JamfCLIProfile] {
-        var paired = Set<String>()
-        for profile in profiles where hasWorkspace(profile.name, under: root) {
-            let environment = EnvironmentProfiles.read(workspace: profile.name, under: root)
-            for name in environment.connectedProfiles where name != profile.name {
-                paired.insert(name)
-            }
-        }
+        let paired = Set(pairedProfileOwners(among: profiles.map(\.name), under: root).keys)
         return profiles.filter { profile in
             if neverAWorkspace(profile, under: root) { return false }
             guard paired.contains(profile.name) else { return true }
             return active.contains(profile.name) || hasWorkspace(profile.name, under: root)
         }
+    }
+
+    /// Each login another workspace's environment names besides its own MDM, with the first
+    /// workspace of `workspaces` that names it.
+    static func pairedProfileOwners(
+        among workspaces: [String], under root: URL
+    ) -> [String: String] {
+        var owners: [String: String] = [:]
+        for workspace in workspaces where hasWorkspace(workspace, under: root) {
+            let environment = EnvironmentProfiles.read(workspace: workspace, under: root)
+            for name in environment.connectedProfiles where name != workspace {
+                owners[name] = owners[name] ?? workspace
+            }
+        }
+        return owners
+    }
+
+    /// Why a run for `profile` must not start: it has no workspace of its own and another
+    /// workspace's environment names it (a merged-away Platform API profile, a Protect login).
+    /// Without this a stale schedule or `collect -p` would recreate its folder.
+    static func connectedProfileRefusal(
+        of profile: String, under root: URL = workspacesRoot()
+    ) -> String? {
+        guard !hasWorkspace(profile, under: root) else { return nil }
+        let workspaces = localOnlyWorkspaces(under: root, cliNames: [])
+        guard let owner = pairedProfileOwners(among: workspaces, under: root)[profile] else {
+            return nil
+        }
+        return "'\(ConfigSchema.displayText(profile))' belongs to environment "
+            + "'\(ConfigSchema.displayText(owner))'"
     }
 
     /// True when `name` has a workspace folder whose config.yaml is Protect-only for that name
