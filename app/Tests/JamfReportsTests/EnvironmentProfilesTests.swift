@@ -26,25 +26,25 @@ final class EnvironmentProfilesTests: XCTestCase {
         let environment = try resolve("jamf_cli:\n  data_dir: data\n")
         XCTAssertEqual(environment, EnvironmentProfiles(jamfPro: ws))
         XCTAssertNil(environment.platform)
-        XCTAssertEqual(environment.platformRoute(platformPinAllows: true), .workspaceProfile)
-        XCTAssertEqual(environment.platformRoute(platformPinAllows: false), .workspaceProfile,
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true), .workspaceProfile)
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: false), .workspaceProfile,
                        "no slot, so nothing to hold")
     }
 
     func testABlockWithAPlatformSlotRoutesToIt() throws {
         let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
-        XCTAssertEqual(environment.platformRoute(platformPinAllows: true), .profile("ws-API"))
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true), .profile("ws-API"))
     }
 
     func testABlockWithoutAPlatformSlotLeavesThePlatformKindsOut() throws {
         let environment = try resolve("profiles:\n  jamf_pro: ws\n")
-        XCTAssertEqual(environment.platformRoute(platformPinAllows: true),
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true),
                        .unavailable(EnvironmentProfiles.noPlatformReason))
     }
 
     func testAHeldPlatformSlotLeavesThePlatformKindsOut() throws {
         let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
-        XCTAssertEqual(environment.platformRoute(platformPinAllows: false),
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: false),
                        .unavailable(EnvironmentProfiles.heldPlatformReason))
     }
 
@@ -52,13 +52,13 @@ final class EnvironmentProfilesTests: XCTestCase {
     /// whose pin predates the seed must keep collecting the Platform kinds.
     func testAPlatformSlotNamingTheWorkspaceIsNotHeld() throws {
         let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws\n")
-        XCTAssertEqual(environment.platformRoute(platformPinAllows: false), .profile("ws"))
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: false), .profile("ws"))
     }
 
     func testAPlatformSlotWithAnUnusableNameLeavesThePlatformKindsOut() throws {
         let environment = EnvironmentProfiles(
             jamfPro: ws, platform: "ws\u{07}API", source: .profilesBlock)
-        XCTAssertEqual(environment.platformRoute(platformPinAllows: true),
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true),
                        .unavailable(EnvironmentProfiles.invalidPlatformReason))
     }
 
@@ -262,7 +262,7 @@ final class EnvironmentProfilesTests: XCTestCase {
         func plan(_ yaml: String) throws -> ProtectBackup.Plan {
             ProtectBackup.plan(
                 config: try ConfigLoader.loadFromString(yaml), workspaceProfile: ws,
-                pinAllows: { true }, sharedStorage: { nil })
+                pinAllows: { _ in true }, sharedStorage: { nil })
         }
         XCTAssertEqual(try plan("profiles:\n  jamf_pro: ws\n  protect: ws-protect\n"),
                        .run(profile: "ws-protect"))
@@ -273,7 +273,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                        .notConnected, "a School workspace has no backup")
         let drifted = ProtectBackup.plan(
             config: try ConfigLoader.loadFromString("profiles:\n  jamf_pro: ws\n  protect: p\n"),
-            workspaceProfile: ws, pinAllows: { false }, sharedStorage: { nil })
+            workspaceProfile: ws, pinAllows: { _ in false }, sharedStorage: { nil })
         XCTAssertEqual(drifted, .skip(reason: "profiles.protect changed in the shared config.yaml "
             + "and is not confirmed on this Mac (Config Doctor)"))
     }

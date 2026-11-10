@@ -176,7 +176,7 @@ final class SchoolWorkspaceTests: XCTestCase {
                 profile: "campus", jamfCLIVersion: "1.33.0", auth: nil,
                 protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                                product: product) },
-                protectPinAllows: { _ in pinAllows })
+                protectPinAllows: { _, _ in pinAllows })
         }
         let school = DataFreshnessHealth.schoolKinds + ["sofa"]
         XCTAssertEqual(expected(.protect), school + DataFreshnessHealth.protectKinds)

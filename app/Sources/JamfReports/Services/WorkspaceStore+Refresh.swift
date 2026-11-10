@@ -626,19 +626,21 @@ extension WorkspaceStore {
     nonisolated static func expectedKinds(
         profile: String, jamfCLIVersion: String?, auth: ProfileAuthMethod.Resolved?,
         protectResolved: (String) -> ProfileAuthMethod.Resolved? = { ProfileAuthMethod.resolve(profile: $0) },
-        protectPinAllows: (String) -> Bool = { SharedConfigPin.protectAllowed(profile: $0) }
+        protectPinAllows: (_ profile: String, _ name: String) -> Bool = {
+            SharedConfigPin.protectAllowed(profile: $0, name: $1)
+        }
     ) -> [String] {
         let config = ProfileService.workspaceURL(for: profile).flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
         let protectProfile = EnvironmentProfiles.resolve(config: config, workspace: profile).protect
         let protectCollected = protectProfile.map {
-            protectPinAllows(profile) && protectResolved($0)?.protectRefusal(profile: $0) == nil
+            protectPinAllows(profile, $0) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false
         // A Protect-only environment collects Protect alone (P8).
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         // Unconfirmed (a peer's edit), it is judged as before, so failing kinds stay visible.
-        if environment.isProtectOnly && protectPinAllows(profile) {
+        if environment.isProtectOnly && protectPinAllows(profile, protectProfile ?? "") {
             return protectCollected ? DataFreshnessHealth.protectKinds : []
         }
         // A Jamf School workspace runs `schoolCollect`, which lands none of the Jamf Pro kinds,

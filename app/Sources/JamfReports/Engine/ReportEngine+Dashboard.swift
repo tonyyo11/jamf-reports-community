@@ -32,8 +32,12 @@ extension ReportEngine {
     /// The Protect login the dashboard may include: the environment's (`EnvironmentProfiles`),
     /// unless the shared-config pin holds it back.
     static func dashboardProtectProfile(config: ReportConfig?, workspace: WorkspaceID) -> String? {
-        guard SharedConfigPin.protectAllowed(profile: workspace.name) else { return nil }
-        return EnvironmentProfiles.resolve(config: config, workspace: workspace.name).protect
+        let protect = EnvironmentProfiles.resolve(config: config, workspace: workspace.name).protect
+        guard let protect,
+              SharedConfigPin.protectAllowed(profile: workspace.name, name: protect) else {
+            return nil
+        }
+        return protect
     }
 
     /// `protect` unless its profile is known to be another product's login, which jamf-cli

@@ -2149,13 +2149,27 @@ struct ReportEngine: Sendable {
     /// True inside the tick's same-day retry of a run that failed or came back incomplete.
     @TaskLocal static var isSameDayRetry = false
 
+    /// The environment the router resolved and applied `EnvironmentProfiles.refusal` to, so
+    /// `collect` routes the Platform kinds from it and not from a second read of config.yaml.
+    @TaskLocal static var routedEnvironment: EnvironmentProfiles?
+
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
-        let environment = EnvironmentProfiles.resolve(config: config, workspace: workspace.name)
-        // The pin is a full check; it matters only once a block names the slot.
-        return environment.platformRoute(
+        platformRoute(
+            environment: EnvironmentProfiles.resolve(config: config, workspace: workspace.name),
+            workspace: workspace)
+    }
+
+    /// The pin is a full check on the name this run would use; it matters only once a block
+    /// names the slot.
+    static func platformRoute(
+        environment: EnvironmentProfiles, workspace: WorkspaceID
+    ) -> PlatformRoute {
+        environment.platformRoute(
+            workspace: workspace.name,
             platformPinAllows: environment.source != .profilesBlock
-                || SharedConfigPin.platformAllowed(profile: workspace.name))
+                || SharedConfigPin.platformAllowed(
+                    profile: workspace.name, name: environment.platform ?? ""))
     }
 
     /// Where the Platform kinds run and what skips them, resolved once per run.
@@ -2172,7 +2186,7 @@ struct ReportEngine: Sendable {
     /// still means "the Platform kinds ran on another profile". An organization-level one
     /// skips them too, but `profile` stays the named one, which its verdicts then judge.
     private static func resolvePlatformRun(
-        config: ReportConfig?, workspace: WorkspaceID, profile: String,
+        environment: EnvironmentProfiles, workspace: WorkspaceID, profile: String,
         profileAuth: ProfileAuthMethod.Resolved?, bin: URL,
         platformHosts: PlatformHostCheck.Lookup,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
@@ -2183,7 +2197,7 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .warn, text: text))
         }
         var platformAuth: ProfileAuthMethod.Resolved?
-        switch platformRoute(config: config, workspace: workspace) {
+        switch platformRoute(environment: environment, workspace: workspace) {
         case .workspaceProfile: break
         case .unavailable(let reason): run.unavailable = reason
         case .profile(let named) where named == profile: break
@@ -2292,7 +2306,9 @@ struct ReportEngine: Sendable {
             profile: profile, binary: bin, onLine: onLine)
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
         let platformRun = Self.resolvePlatformRun(
-            config: loadedConfig, workspace: workspace, profile: profile,
+            environment: routedEnvironment
+                ?? EnvironmentProfiles.resolve(config: loadedConfig, workspace: workspace.name),
+            workspace: workspace, profile: profile,
             profileAuth: profileAuth, bin: bin, platformHosts: platformHosts, onLine: onLine)
         let platformProfile = platformRun.profile
         let platformUnavailable = platformRun.unavailable

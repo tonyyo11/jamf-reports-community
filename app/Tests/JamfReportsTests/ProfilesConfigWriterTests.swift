@@ -123,7 +123,7 @@ final class ProfilesConfigWriterTests: XCTestCase {
         try write("shared_workspace:\n  enabled: true\n")
         SharedConfigPin.checkpoint(profile: ws, appSupport: support, onLine: nil)
         try save(.platform, "\(ws)-API")
-        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: ws, appSupport: support))
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: ws, name: "\(ws)-API", appSupport: support))
     }
 
     /// The property the writer relies on: a token that differs from the file confirms nothing,
@@ -135,7 +135,7 @@ final class ProfilesConfigWriterTests: XCTestCase {
         try write("profiles:\n  jamf_pro: \(ws)\n  platform: other-tenant\n")
         SharedConfigPin.confirmWritten(
             "\(ws)-API", key: .platformProfile, profile: ws, appSupport: support)
-        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: ws, appSupport: support))
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: ws, name: "\(ws)-API", appSupport: support))
     }
 
     func testAnUnusableSlotNameIsRefused() throws {
@@ -164,13 +164,13 @@ final class ProfilesConfigWriterTests: XCTestCase {
         let text = "protect:\n  enabled: true\n  profile: \"\(ws)-Protect\"\n"
         try write(text)
         let before = try environment()
-        XCTAssertEqual(before.platformRoute(platformPinAllows: true), .workspaceProfile)
+        XCTAssertEqual(before.platformRoute(workspace: ws, platformPinAllows: true), .workspaceProfile)
         try save(.protect, nil, auth: resolved("platform"))
         let after = try environment()
         XCTAssertEqual(after.platform, ws)
         XCTAssertNil(after.protect)
         XCTAssertNil(after.refusal(workspace: ws))
-        let route = after.platformRoute(platformPinAllows: true)
+        let route = after.platformRoute(workspace: ws, platformPinAllows: true)
         XCTAssertEqual(route, .profile(ws))
         let auth = resolved("platform")
         let inputs = EnvironmentProfiles.platformInputs(
@@ -184,7 +184,7 @@ final class ProfilesConfigWriterTests: XCTestCase {
         try save(.protect, nil, auth: resolved("oauth2"))
         let after = try environment()
         XCTAssertNil(after.platform)
-        XCTAssertEqual(after.platformRoute(platformPinAllows: true),
+        XCTAssertEqual(after.platformRoute(workspace: ws, platformPinAllows: true),
                        .unavailable(EnvironmentProfiles.noPlatformReason))
         XCTAssertNil(after.refusal(workspace: ws))
     }
@@ -217,14 +217,14 @@ final class ProfilesConfigWriterTests: XCTestCase {
         try write("shared_workspace:\n  enabled: true\n" + protectOff)
         SharedConfigPin.checkpoint(profile: ws, appSupport: support, onLine: nil)
         try save(.platform, "\(ws)-API", auth: resolved("oauth2"))
-        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: ws, appSupport: support))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: ws, name: "", appSupport: support))
     }
 
     func testTheSeededPlatformSlotIsNotDriftOnASharedWorkspace() throws {
         try write("shared_workspace:\n  enabled: true\n" + protectOff)
         SharedConfigPin.checkpoint(profile: ws, appSupport: support, onLine: nil)
         try save(.protect, nil, auth: resolved("platform"))
-        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: ws, appSupport: support))
-        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: ws, appSupport: support))
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: ws, name: ws, appSupport: support))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: ws, name: "", appSupport: support))
     }
 }

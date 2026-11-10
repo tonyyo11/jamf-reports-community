@@ -277,12 +277,15 @@ enum CollectRouter {
                         + "profile")
             }
             do {
-                try await ReportEngine.$landedSources.withValue(landed) {
-                    try await runProducts(
-                        detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
-                        skipExpensive: skipExpensive, force: force, workspacePaths: workspacePaths,
-                        proCollect: proCollect, schoolCollect: schoolCollect,
-                        followWithProtect: followWithProtect, onLine: watched)
+                try await ReportEngine.$routedEnvironment.withValue(environment) {
+                    try await ReportEngine.$landedSources.withValue(landed) {
+                        try await runProducts(
+                            detected: detected, workspace: workspace, mdm: mdm, tiers: tiers,
+                            skipExpensive: skipExpensive, force: force,
+                            workspacePaths: workspacePaths, proCollect: proCollect,
+                            schoolCollect: schoolCollect, followWithProtect: followWithProtect,
+                            onLine: watched)
+                    }
                 }
             } catch let verdict as ReportEngineError where verdict.isCollectVerdict {
                 // Protect may have landed after the MDM failed; the verdict stays the result.
@@ -352,7 +355,7 @@ enum CollectRouter {
     ) async throws -> [String] {
         let profile = workspace.name
         let protectProfile = environment.protect ?? ""
-        guard SharedConfigPin.protectAllowed(profile: profile) else {
+        guard SharedConfigPin.protectAllowed(profile: profile, name: protectProfile) else {
             let reason = "\(environment.protectKey) was changed in the shared config.yaml and is "
                 + "awaiting confirmation on this Mac (Config Doctor)"
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
@@ -415,7 +418,8 @@ enum CollectRouter {
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> [String] {
         guard environment.runsProtect else { return [] }
-        guard SharedConfigPin.protectAllowed(profile: profile) else {
+        guard SharedConfigPin.protectAllowed(
+            profile: profile, name: environment.protect ?? "") else {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[skip] protect: \(environment.protectKey) changed in the shared "
                             + "config.yaml and is not confirmed on this Mac — Protect not collected"))

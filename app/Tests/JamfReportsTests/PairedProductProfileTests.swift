@@ -54,7 +54,7 @@ final class PairedProductProfileTests: XCTestCase {
                 profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
                 protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                               product: .protect) },
-                protectPinAllows: { _ in true }),
+                protectPinAllows: { _, _ in true }),
             DataFreshnessHealth.protectKinds)
     }
 
@@ -66,7 +66,7 @@ final class PairedProductProfileTests: XCTestCase {
             profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
             protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                           product: .protect) },
-            protectPinAllows: { _ in false })
+            protectPinAllows: { _, _ in false })
         XCTAssertNotEqual(kinds, DataFreshnessHealth.protectKinds)
         XCTAssertFalse(kinds.isEmpty)
     }

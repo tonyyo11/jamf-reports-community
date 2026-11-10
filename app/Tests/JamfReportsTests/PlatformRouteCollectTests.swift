@@ -343,4 +343,36 @@ final class PlatformRouteCollectTests: XCTestCase {
         XCTAssertFalse(lines.contains { $0.hasPrefix("[plan] Platform API kinds run as") },
                        "\(lines)")
     }
+
+    /// A peer set another tenant's `profiles.platform`, this run loaded it, and the file was
+    /// reverted to the confirmed name: the stale name is held, the confirmed one still runs.
+    func testARoutedPlatformNameThatIsNotThePinnedOneIsHeld() async throws {
+        let shared = "shared_workspace:\n  enabled: true\nprofiles:\n  jamf_pro: \(ws)\n"
+        try writeConfig(shared + "  platform: \(ws)-API\n")
+        SharedConfigPin.checkpoint(profile: ws, onLine: nil)
+        try SharedConfigPin.confirm(profile: ws, keys: [.platformProfile])
+        let stale = EnvironmentProfiles(
+            jamfPro: ws, platform: "\(ws)-other", source: .profilesBlock)
+        let lines = try await ReportEngine.$routedEnvironment.withValue(stale) {
+            try await collect()
+        }
+        XCTAssertFalse(calls().contains { $0.hasPrefix("-p \(ws)-other ") }, "\(calls())")
+        XCTAssertFalse(calls().contains { $0.hasPrefix("-p \(ws)-API ") }, "\(calls())")
+        XCTAssertTrue(lines.contains { $0.contains(EnvironmentProfiles.heldPlatformReason) },
+                      "\(lines)")
+        let current = EnvironmentProfiles(
+            jamfPro: ws, platform: "\(ws)-API", source: .profilesBlock)
+        try await ReportEngine.$routedEnvironment.withValue(current) { try await collect() }
+        XCTAssertTrue(calls().contains { $0.hasPrefix("-p \(ws)-API ") }, "\(calls())")
+    }
+
+    /// D18 compares with the workspace, not the Jamf Pro slot the same file can set.
+    func testPlatformEqualToAForeignJamfProSlotIsStillHeld() throws {
+        let environment = EnvironmentProfiles(
+            jamfPro: "x", platform: "x", source: .profilesBlock)
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: false),
+                       .unavailable(EnvironmentProfiles.heldPlatformReason))
+        let own = EnvironmentProfiles(jamfPro: ws, platform: ws, source: .profilesBlock)
+        XCTAssertEqual(own.platformRoute(workspace: ws, platformPinAllows: false), .profile(ws))
+    }
 }
