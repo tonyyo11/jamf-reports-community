@@ -251,14 +251,20 @@ struct CoreDashboard: Sendable {
         // Summary block
         if let s = summaryData {
             let total = s.totalDevices ?? 0
+            let fleet = securityFleet(items: items)
+            // Through the fleet counts: "—" where no Mac reported the control.
+            func onLabel(_ control: SecurityControl, _ reported: Int?) -> String {
+                guard let fleet else { return percentLabel(reported, total: total) }
+                return fleet.onCount(control, reported: reported)
+                    .map { percentLabel($0, total: total) } ?? "—"
+            }
             var fields: [(String, String)] = [
                 ("Total Computers", "\(total)"),
-                ("FileVault Encrypted", percentLabel(s.fileVaultEncrypted, total: total)),
-                ("Gatekeeper Enabled", percentLabel(s.gatekeeperEnabled, total: total)),
-                ("SIP Enabled", percentLabel(s.sipEnabled, total: total)),
-                ("Firewall Enabled", percentLabel(s.firewallEnabled, total: total)),
+                ("FileVault Encrypted", onLabel(.fileVault, s.fileVaultEncrypted)),
+                ("Gatekeeper Enabled", onLabel(.gatekeeper, s.gatekeeperEnabled)),
+                ("SIP Enabled", onLabel(.sip, s.sipEnabled)),
+                ("Firewall Enabled", onLabel(.firewall, s.firewallEnabled)),
             ]
-            let fleet = securityFleet(items: items)
             if let n = fleet?.fileVaultOffHardwareEncrypted, n > 0 {
                 fields.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: 2)
             }
@@ -2500,6 +2506,12 @@ struct CoreDashboard: Sendable {
             guard let general = item["general"] as? [String: Any] else { return nil }
             let name = general["name"] as? String ?? ""
             let serial = (item["hardware"] as? [String: Any])?["serialNumber"] as? String ?? ""
+            // Its security fields are Jamf's placeholders, not readings: a row with no values.
+            if NeverInventoried.isNeverInventoried(computer: item) {
+                return DeviceSecurityRow(name: name, serial: serial, fileVault: "", sip: "",
+                                         firewall: "", gatekeeper: "", bootstrapToken: "",
+                                         hardwareEncrypted: nil)
+            }
 
             let diskEncryption = item["diskEncryption"] as? [String: Any]
             let fileVaultEnabled = diskEncryption?["fileVault2Enabled"] as? Bool
@@ -2842,8 +2854,9 @@ struct CoreDashboard: Sendable {
             guard case .summary(let s) = item else { continue }
             let total = s.data.totalDevices ?? 0
             m.totalDevices = total
-            applySecurityControlPcts(to: &m, data: s.data, total: total)
-            if let fleet = securityFleet(items: items) {
+            let fleet = securityFleet(items: items)
+            applySecurityControlPcts(to: &m, data: s.data, total: total, fleet: fleet)
+            if let fleet {
                 applySecurityScoreAndActions(to: &m, fleet: fleet)
             }
             break
@@ -2864,12 +2877,17 @@ struct CoreDashboard: Sendable {
     private func applySecurityControlPcts(
         to m: inout ExecutiveSummaryMetrics,
         data: SecuritySummaryData,
-        total: Int
+        total: Int,
+        fleet: SecurityFleetCounts?
     ) {
         guard total > 0 else { return }
-        m.fileVaultPct = data.fileVaultEncrypted.map { Double($0) / Double(total) * 100 }
-        m.sipPct = data.sipEnabled.map { Double($0) / Double(total) * 100 }
-        m.firewallPct = data.firewallEnabled.map { Double($0) / Double(total) * 100 }
+        func share(_ control: SecurityControl, _ reported: Int?) -> Double? {
+            (fleet.map { $0.onCount(control, reported: reported) } ?? reported)
+                .map { Double($0) / Double(total) * 100 }
+        }
+        m.fileVaultPct = share(.fileVault, data.fileVaultEncrypted)
+        m.sipPct = share(.sip, data.sipEnabled)
+        m.firewallPct = share(.firewall, data.firewallEnabled)
     }
 
     /// One row per scored factor under the Security Score: its share of Macs and its points.
@@ -3247,6 +3265,13 @@ struct CoreDashboard: Sendable {
         let fleet = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
             .flatMap { securityFleet(items: $0) }
 
+        // Through the fleet counts: "—" where no Mac reported the control.
+        func onLabel(_ control: SecurityControl, _ reported: Int?) -> String {
+            guard let fleet else { return percentLabel(reported, total: totalDevices) }
+            return fleet.onCount(control, reported: reported)
+                .map { percentLabel($0, total: totalDevices) } ?? "\u{2014}"
+        }
+
         // Device compliance snapshot
         let deviceCompItems = (try? loadDeviceComplianceRows()) ?? []
         let staleCount = deviceCompItems.filter(isStaleDevice).count
@@ -3266,16 +3291,16 @@ struct CoreDashboard: Sendable {
              deviceTotal > 0 ? String(format: "%.0f%%", compliancePct) : "\u{2014}",
              deviceTotal > 0 ? compliancePct : nil, nil),
             ("FileVault Encrypted",
-             percentLabel(asInt(secSummary["filevault_encrypted"]), total: totalDevices),
+             onLabel(.fileVault, asInt(secSummary["filevault_encrypted"])),
              nil, .fileVault),
             ("SIP Enabled",
-             percentLabel(asInt(secSummary["sip_enabled"]), total: totalDevices),
+             onLabel(.sip, asInt(secSummary["sip_enabled"])),
              nil, .sip),
             ("Firewall Enabled",
-             percentLabel(asInt(secSummary["firewall_enabled"]), total: totalDevices),
+             onLabel(.firewall, asInt(secSummary["firewall_enabled"])),
              nil, .firewall),
             ("Gatekeeper Enabled",
-             percentLabel(asInt(secSummary["gatekeeper_enabled"]), total: totalDevices),
+             onLabel(.gatekeeper, asInt(secSummary["gatekeeper_enabled"])),
              nil, .gatekeeper),
             ("Patch Compliance (devices on latest)",
              patchPct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",

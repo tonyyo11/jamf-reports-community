@@ -88,6 +88,23 @@ struct SecurityFleetCounts: Sendable, Equatable {
         return SecurityScoreMeasure(passing: counts.on + counts.warning, evaluated: counted)
     }
 
+    /// The summary's percentage for `control`: the on share of every Mac, as before, with the
+    /// on count capped as `build` caps it; nil when no Mac reported the control. `reported` is
+    /// the percentage jamf-cli's own figures give, kept when the cap changed nothing.
+    func summaryPct(_ control: SecurityControl, reported: Double?, reportedOn: Int?) -> Double? {
+        guard controls[control] != nil else { return reported }
+        guard let on = onCount(control, reported: reportedOn) else { return nil }
+        guard on != reportedOn, totalDevices > 0 else { return reported }
+        return Double(on) / Double(totalDevices) * 100
+    }
+
+    /// The count of Macs with `control` on, for every screen and sheet that shows jamf-cli's
+    /// summary counts: `reported` capped as `build` caps it, nil when no Mac reported it.
+    func onCount(_ control: SecurityControl, reported: Int?) -> Int? {
+        guard let counts = controls[control], totalDevices > 0 else { return reported }
+        return counts.notReported < totalDevices ? counts.on : nil
+    }
+
     /// FileVault-off Macs in no bucket and not unreported: the ones the hardware rule dropped
     /// at `ignore`.
     private var fileVaultNotCountedByHardware: Int {
@@ -110,7 +127,13 @@ struct SecurityFleetCounts: Sendable, Equatable {
         hardware: [String: Bool], policy: SecurityControlPolicy
     ) -> SecurityFleetCounts {
         var controls: [SecurityControl: Control] = [:]
-        for (control, on) in onCounts {
+        // The one case rows override the summary: jamf-cli counts a Mac that never sent
+        // inventory as Gatekeeper on. Neither such a Mac nor one whose row reads off can be on.
+        let neverInventoried = devices.filter(\.isNeverInventoried).count
+        for (control, reportedOn) in onCounts {
+            let readOff = devices.filter { $0.reading(of: control, policy: policy) == false }.count
+            let on = neverInventoried == 0
+                ? reportedOn : min(reportedOn, max(totalDevices - neverInventoried - readOff, 0))
             let level = policy.level(for: control)
             let notOn = max(totalDevices - on, 0)
             let notReported = unreported(control, among: devices, notOn: notOn, policy: policy)
@@ -124,7 +147,7 @@ struct SecurityFleetCounts: Sendable, Equatable {
            let fileVault = controls[.fileVault] {
             let applies = devices.filter {
                 policy.hardwareRuleApplies(
-                    fileVaultReading: policy.reading($0.fileVault, for: .fileVault),
+                    fileVaultReading: $0.reading(of: .fileVault, policy: policy),
                     hardwareEncrypted: HardwareEncryption.lookup(
                         serial: $0.serial, name: $0.name, in: hardware))
             }.count
@@ -183,10 +206,15 @@ private extension SecurityFleetCounts.Control {
 }
 
 extension SecurityDevice {
+    /// The row is a Mac with no inventory yet (`NeverInventoried`).
+    var isNeverInventoried: Bool { NeverInventoried.isNeverInventoried(osVersion: osVersion) }
+
     /// A device row's value for `control` as on, off or not reported. The report's firewall is
-    /// a boolean, so it reads as measured whenever the row carries it.
+    /// a boolean, so it reads as measured whenever the row carries it, except on a Mac that has
+    /// never sent inventory, which reports nothing.
     func reading(of control: SecurityControl, policy: SecurityControlPolicy) -> Bool? {
-        switch control {
+        guard !isNeverInventoried else { return nil }
+        return switch control {
         case .fileVault: policy.reading(fileVault, for: control)
         case .sip: policy.reading(sip, for: control)
         case .firewall: firewall

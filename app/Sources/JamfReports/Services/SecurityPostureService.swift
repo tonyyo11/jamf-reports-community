@@ -166,16 +166,18 @@ struct SecurityPostureService: Sendable {
             }
         }
         let total = summary?.totalDevices ?? 0
+        let fleet = SecurityFleetCounts.build(items: items, hardware: hardware, policy: policy)
+            ?? .empty
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
         var sourceDates: [String: Date] = [:]
         if let mtime { sourceDates["security"] = mtime }
         return Snapshot(
             totalDevices: total,
-            fileVaultEncrypted: summary?.fileVaultEncrypted,
-            sipEnabled: summary?.sipEnabled,
-            firewallEnabled: summary?.firewallEnabled,
-            gatekeeperEnabled: summary?.gatekeeperEnabled,
+            fileVaultEncrypted: fleet.onCount(.fileVault, reported: summary?.fileVaultEncrypted),
+            sipEnabled: fleet.onCount(.sip, reported: summary?.sipEnabled),
+            firewallEnabled: fleet.onCount(.firewall, reported: summary?.firewallEnabled),
+            gatekeeperEnabled: fleet.onCount(.gatekeeper, reported: summary?.gatekeeperEnabled),
             osVersions: OSVersionName.merged(osVersions.map {
                 .init(version: $0.osVersion, count: $0.count, pct: $0.pct)
             }).map { Snapshot.OSVersion(osVersion: $0.version, count: $0.count, pct: $0.pct) }
@@ -183,8 +185,7 @@ struct SecurityPostureService: Sendable {
             sourceFile: url,
             snapshotDate: mtime,
             sourceDates: sourceDates,
-            fleetCounts: SecurityFleetCounts.build(
-                items: items, hardware: hardware, policy: policy) ?? .empty,
+            fleetCounts: fleet,
             policy: policy
         )
     }

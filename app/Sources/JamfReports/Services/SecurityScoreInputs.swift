@@ -154,6 +154,8 @@ enum SecurityScoreInputs {
         case .checkedIn:
             let rule = config?.staleRule ?? StaleRule(days: 30)
             return judged(sources.complianceRows) { row in
+                // jamf-cli flags such a Mac not stale; it has never checked in.
+                if row.isNeverInventoried { return nil }
                 let inputs = row.staleInputs(rule, computers: sources.computerDates)
                 if rule.age(of: inputs, now: now) == nil && row.stale == nil { return nil }
                 return !rule.isStale(inputs, now: now)

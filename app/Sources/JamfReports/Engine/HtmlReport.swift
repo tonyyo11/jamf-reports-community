@@ -138,23 +138,23 @@ struct HtmlReport: Sendable {
 
     func buildSummaryTiles(
         total: Int,
-        fileVaultPct: Double,
-        sipPct: Double,
-        firewallPct: Double,
-        gatekeeperPct: Double,
+        fileVaultPct: Double?,
+        sipPct: Double?,
+        firewallPct: Double?,
+        gatekeeperPct: Double?,
         fleet: SecurityFleetCounts?
     ) -> String {
         let tiles: [(String, String, Double?, SecurityControl?)] = [
             ("Computers", "\(total)", nil, nil),
-            ("FileVault", String(format: "%.1f%%", fileVaultPct), fileVaultPct, .fileVault),
-            ("SIP", String(format: "%.1f%%", sipPct), sipPct, .sip),
-            ("Firewall", String(format: "%.1f%%", firewallPct), firewallPct, .firewall),
-            ("Gatekeeper", String(format: "%.1f%%", gatekeeperPct), gatekeeperPct, .gatekeeper),
+            ("FileVault", fileVaultPct.map { String(format: "%.1f%%", $0) } ?? "—", fileVaultPct, .fileVault),
+            ("SIP", sipPct.map { String(format: "%.1f%%", $0) } ?? "—", sipPct, .sip),
+            ("Firewall", firewallPct.map { String(format: "%.1f%%", $0) } ?? "—", firewallPct, .firewall),
+            ("Gatekeeper", gatekeeperPct.map { String(format: "%.1f%%", $0) } ?? "—", gatekeeperPct, .gatekeeper),
         ]
         let tileHTML = tiles.map { label, value, pct, control -> String in
             let ignored = control.map { config.resolvedSecurityPolicy.level(for: $0) == .ignore }
                 ?? false
-            let statusClass = ignored ? ""
+            let statusClass = ignored || pct == nil ? ""
                 : control.map { securityTileClass($0, pct: pct ?? 0, fleet: fleet) } ?? ""
             let label = ignored ? label + " (not counted)" : label
             let hardwareMacs = control == .fileVault ? fleet?.fileVaultOffHardwareEncrypted ?? 0 : 0
@@ -205,12 +205,18 @@ struct HtmlReport: Sendable {
         let secSummary = inputs.security.first { $0["section"] as? String == "summary" }
         let secData = secSummary?["data"] as? [String: Any] ?? [:]
         let total = inputs.totalDevices
+        // Through the fleet counts, so a control no Mac reported shows no share.
+        func share(_ control: SecurityControl, _ key: String) -> Double? {
+            let reported = asInt(secData[key])
+            return (inputs.fleet.map { $0.onCount(control, reported: reported) } ?? reported)
+                .map { computePct($0, total: total) }
+        }
         let tiles = buildSummaryTiles(
             total: total,
-            fileVaultPct: computePct(asInt(secData["filevault_encrypted"]), total: total),
-            sipPct: computePct(asInt(secData["sip_enabled"]), total: total),
-            firewallPct: computePct(asInt(secData["firewall_enabled"]), total: total),
-            gatekeeperPct: computePct(asInt(secData["gatekeeper_enabled"]), total: total),
+            fileVaultPct: share(.fileVault, "filevault_encrypted"),
+            sipPct: share(.sip, "sip_enabled"),
+            firewallPct: share(.firewall, "firewall_enabled"),
+            gatekeeperPct: share(.gatekeeper, "gatekeeper_enabled"),
             fleet: inputs.fleet)
         // Without fleet counts the sentence could only say it has none to word.
         let note = inputs.fleet.map { $0.totalDevices > 0 } == true

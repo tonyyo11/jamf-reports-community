@@ -978,16 +978,23 @@ struct ReportEngine: Sendable {
         // all optional — when a tenant lacks any of these signals the field
         // is left nil so consumers (TrendStore, SecurityPostureView) can
         // distinguish "no data" from a zero.
-        let sipPct = pct(of: sipCount, total: totalDevices)
-        let firewallPct = pct(of: firewallCount, total: totalDevices)
-        let gatekeeperPct = pct(of: gatekeeperCount, total: totalDevices)
-
         // P0 = FileVault, SIP or Firewall failures, P1 = Gatekeeper failures, and the score,
         // all as the Security Posture screen counts them. `totalDevices` here may come from
         // inventory-summary when the security summary carries none.
         let fleet = SecurityFleetCounts.build(
             totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
             hardware: hardware, policy: securityPolicy)
+        // Nil when no Mac reported the control (a fleet of Macs with no inventory yet).
+        let sipPct = fleet.summaryPct(
+            .sip, reported: pct(of: sipCount, total: totalDevices), reportedOn: sipCount)
+        let firewallPct = fleet.summaryPct(
+            .firewall, reported: pct(of: firewallCount, total: totalDevices),
+            reportedOn: firewallCount)
+        let gatekeeperPct = fleet.summaryPct(
+            .gatekeeper, reported: pct(of: gatekeeperCount, total: totalDevices),
+            reportedOn: gatekeeperCount)
+        fileVaultPct = fleet.summaryPct(
+            .fileVault, reported: fileVaultPct, reportedOn: securityOnCounts[.fileVault])
         // The workspace's score factors, through the one function the Security Posture screen
         // and the workbook use, so a fleet has one score everywhere. A factor without data
         // drops out of the denominator.

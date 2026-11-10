@@ -482,6 +482,14 @@ extension DeviceInventoryService {
         // snapshots that carry it. bootstrapTokenAllowed says escrow is allowed, not done.
         record.bootstrapToken = first(
             flat, ["security.bootstrapTokenEscrowedStatus", "security.bootstrapTokenEscrowed"])
+        // Jamf fills these with false and blanks before the first inventory; none is a reading.
+        if NeverInventoried.isNeverInventoried(computer: item) {
+            record.fileVault = ""
+            record.sip = ""
+            record.firewall = ""
+            record.gatekeeper = ""
+            record.bootstrapToken = ""
+        }
         record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
         return record
     }
