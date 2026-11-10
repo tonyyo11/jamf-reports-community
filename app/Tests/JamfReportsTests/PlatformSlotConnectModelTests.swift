@@ -57,7 +57,7 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         await model.connect()
         XCTAssertTrue(spy.written.isEmpty)
         guard case .refused(let text) = model.outcome else { return XCTFail("no refusal") }
-        XCTAssertTrue(text.contains("jamf-cli config remove-profile Example-API"))
+        XCTAssertTrue(text.contains("jamf-cli config remove-profile -- Example-API"))
     }
 
     func testDifferentHostRefuses() async {
@@ -135,7 +135,7 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         let model = model(spy)
         await model.connect()
         guard case .failed(let text) = model.outcome else { return XCTFail("not failed") }
-        XCTAssertTrue(text.contains("jamf-cli config remove-profile Example-API"))
+        XCTAssertTrue(text.contains("jamf-cli config remove-profile -- Example-API"))
     }
 
     func testRegisterFailureNamesRemoveProfile() async {
@@ -144,7 +144,7 @@ final class PlatformSlotConnectModelTests: XCTestCase {
         let model = model(spy)
         await model.connect()
         guard case .failed(let text) = model.outcome else { return XCTFail("not failed") }
-        XCTAssertTrue(text.contains("remove-profile Example-API"))
+        XCTAssertTrue(text.contains("remove-profile -- Example-API"))
     }
 
     func testSecondConnectWhileRunningRegistersOnce() async {

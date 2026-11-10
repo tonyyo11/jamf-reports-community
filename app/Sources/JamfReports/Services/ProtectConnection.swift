@@ -33,7 +33,7 @@ enum ProtectConnection {
         let base = "Jamf Protect is disconnected from this workspace."
         guard !profileMissing else { return base }
         return base + " The jamf-cli profile \(profile) is still in jamf-cli; "
-            + "jamf-cli config remove-profile \(ProfileName.shellWord(profile)) removes it."
+            + "jamf-cli config remove-profile -- \(ProfileName.shellWord(profile)) removes it."
     }
 
     /// Sets `protect.enabled: false` and removes `protect.profile` through the scoped block

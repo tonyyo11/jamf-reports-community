@@ -170,7 +170,7 @@ final class PlatformSlotConnectModel {
     private func leftover(_ text: String, _ profile: String) -> String {
         let word = ProfileName.shellWord(profile)
         return text + " "
-            + L("The profile \(profile) is still in jamf-cli; remove it with jamf-cli config remove-profile \(word).")
+            + L("The profile \(profile) is still in jamf-cli; remove it with jamf-cli config remove-profile -- \(word).")
     }
 }
 
