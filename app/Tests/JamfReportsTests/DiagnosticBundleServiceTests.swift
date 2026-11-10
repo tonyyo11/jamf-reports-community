@@ -438,6 +438,22 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertEqual(DiagnosticBundleService.scopeIDs(profile: "Absent", configURL: config), [])
     }
 
+    func testScopeIDsIncludeTheWorkspacesConnectedLogins() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let config = dir.appendingPathComponent("config.yaml")
+        try Self.jamfCLIConfig.write(to: config, atomically: true, encoding: .utf8)
+        let ids = DiagnosticBundleService.scopeIDs(
+            profile: "Plain", configURL: config,
+            connections: ConnectionStore(url: dir.appendingPathComponent("connections.json")),
+            connectedProfiles: ["Acme"])
+        XCTAssertEqual(ids, [Self.environmentID])
+        let shared = LogRedactor.redactedForSharing(
+            "[error] Environment '\(Self.environmentID)' not found", profile: "Plain",
+            scopeIDs: { _ in ids }, serverHosts: { _ in [] }, localWorkspaces: { [] })
+        XCTAssertFalse(shared.contains(Self.environmentID), shared)
+    }
+
     func testScopeIDsAreEmptyWhenJamfCLIHasNoConfigFile() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -620,20 +620,26 @@ enum DiagnosticBundleService {
     /// does. No file, or a profile without those keys (an instance profile), gives no IDs.
     ///
     /// The IDs of the profile's sibling environments (`ConnectionStore`, same credential) are
-    /// added: they identify the same organisation. connections.json itself is never bundled.
+    /// added: they identify the same organisation. So are those of every login its workspace
+    /// names (the Platform slot's environment ID is echoed in errors); the workspace's
+    /// config.yaml is peer-writable, so it only ever adds IDs to redact. connections.json itself
+    /// is never bundled.
     static func scopeIDs(
         profile: String,
         configURL: URL = ProfileService.jamfCLIConfigFileURL(),
-        connections: ConnectionStore = ConnectionStore()
+        connections: ConnectionStore = ConnectionStore(),
+        connectedProfiles: [String]? = nil
     ) -> [String] {
-        let siblings = connections.scopeIDs(sharingConnectionWith: profile)
+        let names = [profile] + (connectedProfiles
+            ?? EnvironmentProfiles.read(workspace: profile).connectedProfiles)
+        let siblings = names.flatMap { connections.scopeIDs(sharingConnectionWith: $0) }
         guard FileManager.default.fileExists(atPath: configURL.path) else { return siblings }
         guard let text = ProfileService.readConfigFileText(at: configURL) else {
             AppLogger.collect.warning(
                 "DiagnosticBundle: could not read the jamf-cli config; scope IDs not redacted")
             return siblings
         }
-        return scopeIDs(profile: profile, inConfig: text) + siblings
+        return names.flatMap { scopeIDs(profile: $0, inConfig: text) } + siblings
     }
 
     /// Every server in the user's own jamf-cli config file, as `host:port` and `host` (just
