@@ -199,7 +199,8 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         do {
             try await WorkspaceMergeExecutor.run(again, deps: deps(), stopAfter: 1)
         } catch is CancellationError {}
-        XCTAssertEqual(try tree(), before)
+        let after = try tree()
+        XCTAssertEqual(after, before)
     }
 
     func testRefusedHoldWritesNothing() async throws {
@@ -646,7 +647,8 @@ extension WorkspaceMergeExecutorTests {
             to: WorkspaceMergeJournal.location(target: tgt))
         if own {
             try WorkspaceMergeJournal.markStarted(
-                planSHA256: hash, target: tgt, appSupport: support)
+                planSHA256: hash, target: tgt, mergedFolder: j.plan.mergedFolder, done: j.done,
+                appSupport: support)
         }
     }
 
@@ -788,26 +790,106 @@ extension WorkspaceMergeExecutorTests {
 
     func testRetireRefusesAMergedFolderOutsideTheRoot() throws {
         var j = try journal()
+        j.done = j.plan.steps.count
+        j.plan.mergedFolder = root.deletingLastPathComponent().path + "/jrc-retire-\(UUID().uuidString)"
+        let data = try WorkspaceMergeJournal.encodedPlan(j.plan)
+        XCTAssertThrowsError(try j.retire(
+            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+        XCTAssertFalse(fm.fileExists(atPath: j.mergedFolder.path))
         j.plan.mergedFolder = root.path + "/../elsewhere"
-        XCTAssertThrowsError(try j.plan.requireConfined())
-        j.plan.mergedFolder = root.path + "/workspace-not-merged"
-        XCTAssertThrowsError(try j.plan.requireConfined())
+        XCTAssertThrowsError(try j.retire(
+            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+    }
+
+    func testRetireRefusesALinkedMergedRootAndWritesNothingOutside() throws {
+        var j = try journal()
+        j.done = j.plan.steps.count
+        let outside = fm.temporaryDirectory.appendingPathComponent("jrc-out-\(UUID().uuidString)")
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: outside) }
+        try fm.createSymbolicLink(at: root.appendingPathComponent("_merged"),
+                                  withDestinationURL: outside)
+        let data = try WorkspaceMergeJournal.encodedPlan(j.plan)
+        XCTAssertThrowsError(try j.retire(
+            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: outside.path), [])
     }
 
     func testStartOverOfAForeignPlanMovesOnlyTheJournalFiles() async throws {
         var j = try journal()
-        j.plan.mergedFolder = root.deletingLastPathComponent().path + "/jrc-forged-\(UUID().uuidString)"
+        // A folder the old direct-child-of-_merged check would have accepted.
+        let other = root.appendingPathComponent("_merged/Other-20250101-000000")
+        try fm.createDirectory(at: other, withIntermediateDirectories: true)
+        j.plan.mergedFolder = other.path
         try writePending(j, own: false)
-        let forged = URL(fileURLWithPath: j.plan.mergedFolder)
         let before = try tree()
         try await WorkspaceMergeExecutor.startOver(target: tgt, deps: deps())
         XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt, appSupport: support), .none)
-        XCTAssertFalse(fm.fileExists(atPath: forged.path))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: other.path), [])
         XCTAssertEqual(try tree(), before)
-        let kept = try fm.contentsOfDirectory(
-            at: root.appendingPathComponent("_merged"), includingPropertiesForKeys: nil)
-        XCTAssertEqual(kept.count, 1)
-        XCTAssertTrue(kept[0].lastPathComponent.contains("-unfinished-"))
+        let kept = try fm.contentsOfDirectory(atPath: root.appendingPathComponent("_merged").path)
+        XCTAssertEqual(kept.filter { $0.contains("-unfinished-") }.count, 1)
+    }
+
+    func testStartOverUsesTheRecordedFolderNotTheJournals() async throws {
+        let j = try journal()
+        try await stopped(j, after: 1)
+        let progressURL = try WorkspaceMergeJournal.location(target: tgt)
+        var progress = try WorkspaceMergeJournal.readProgress(progressURL)
+        let other = root.appendingPathComponent("_merged/Other-20250101-000000")
+        try fm.createDirectory(at: other, withIntermediateDirectories: true)
+        progress.mergedFolder = other.path
+        try WorkspaceMergeJournal.write(progress, to: progressURL)
+        try await WorkspaceMergeExecutor.startOver(target: tgt, deps: deps())
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: other.path), [])
+        XCTAssertTrue(fm.fileExists(
+            atPath: merged(j).appendingPathComponent("merge-journal.json").path))
+    }
+
+    func testAPeerRaisedJournalCountStartsAtTheRecordsCount() async throws {
+        let plain = try journal()
+        try await WorkspaceMergeExecutor.run(plain, deps: deps())
+        let expected = try tree()
+        try fm.removeItem(at: root)
+        try setUpWithError()
+        try await stopped(try journal(), after: 1)
+        let progressURL = try WorkspaceMergeJournal.location(target: tgt)
+        var progress = try WorkspaceMergeJournal.readProgress(progressURL)
+        progress.done = try journal().plan.steps.count - 1
+        try WorkspaceMergeJournal.write(progress, to: progressURL)
+        let pending = try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
+        XCTAssertEqual(pending.done, 1)
+        // Handed in with the peer's count, the run still starts at the record's.
+        var raised = pending
+        raised.done = progress.done
+        try await WorkspaceMergeExecutor.run(raised, deps: deps())
+        XCTAssertEqual(try tree(), expected)
+    }
+
+    func testAJournalCountingEveryStepWithALowerRecordIsNotRetired() throws {
+        let j = try journal()
+        try writePending(j)
+        let progressURL = try WorkspaceMergeJournal.location(target: tgt)
+        var progress = try WorkspaceMergeJournal.readProgress(progressURL)
+        progress.done = j.plan.steps.count
+        try WorkspaceMergeJournal.write(progress, to: progressURL)
+        guard case .pending(let read) = WorkspaceMergeJournal.state(
+            target: tgt, appSupport: support) else { return XCTFail("must stay pending") }
+        XCTAssertEqual(read.done, 0)
+        XCTAssertTrue(fm.fileExists(atPath: progressURL.path))
+        XCTAssertFalse(fm.fileExists(atPath: j.recordURL.path))
+    }
+
+    func testTheStartNoteIsClearedWhenTheStartFails() async throws {
+        let automation = url(tgt, "automation")
+        try fm.createDirectory(at: automation, withIntermediateDirectories: true)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: automation.path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: automation.path) }
+        do {
+            try await WorkspaceMergeExecutor.run(try journal(), deps: deps())
+            XCTFail("an unwritable automation folder must refuse")
+        } catch WorkspaceMergeExecutor.RunError.notStarted {}
+        XCTAssertNil(started())
     }
 
     func testTheStartNoteIsRecordedAndRemovedAfterRetire() async throws {

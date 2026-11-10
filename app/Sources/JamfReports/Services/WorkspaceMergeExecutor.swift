@@ -103,6 +103,7 @@ enum WorkspaceMergeExecutor {
         if start.isFinished { return }
         let files = try startFiles(start, deps: deps)
         var journal = start
+        journal.done = files.done
         let total = plan.steps.count
         AppLogger.event(
             .collect, .notice,
@@ -122,12 +123,16 @@ enum WorkspaceMergeExecutor {
             // The source's folder is gone; nothing is claimed or released at its old name.
             if step.action == .tail(.moveSource) { held.removeAll { $0 == plan.source } }
             journal.done += 1
+            // Before the journal file, so this Mac's count can lag a crash but never lead it.
+            try WorkspaceMergeJournal.markStarted(
+                planSHA256: files.planSHA256, target: plan.target, mergedFolder: plan.mergedFolder,
+                done: journal.done, appSupport: deps.appSupport)
             if journal.done == total {
                 do {
                     try journal.retire(progressAt: files.progress, planAt: files.plan,
                                        planData: files.planData, appSupport: deps.appSupport)
                 } catch {
-                    // `state` retires a finished journal left behind on its next read.
+                    // The next Resume reruns the last step, then retires.
                     AppLogger.event(.collect, .error,
                                     "merge journal not retired: \(error.localizedDescription)")
                 }
@@ -164,8 +169,7 @@ enum WorkspaceMergeExecutor {
         let moves = [(progressURL, WorkspaceMergeJournal.recordName),
                      (planURL, WorkspaceMergeJournal.recordPlanName)].filter { exists($0.0) }
         guard !moves.isEmpty else { return }
-        let folder = try startOverFolder(
-            target: target, progress: progressURL, appSupport: appSupport, now: now)
+        let folder = try startOverFolder(target: target, appSupport: appSupport, now: now)
         for (file, name) in moves {
             let destination = folder.appendingPathComponent(name)
             try prepareParent(of: destination)
@@ -174,19 +178,19 @@ enum WorkspaceMergeExecutor {
         }
     }
 
-    /// The merged folder the journal names, when this Mac started that merge and it is one
-    /// under `<root>/_merged`; the files are peer-writable, so otherwise this Mac derives one.
+    /// The merged folder this Mac recorded for the merge, when it is one under `<root>/_merged`
+    /// with no record files yet; the journal's own copy is peer-writable and never read.
     private static func startOverFolder(
-        target: String, progress: URL, appSupport: URL, now: Date
+        target: String, appSupport: URL, now: Date
     ) throws -> URL {
         let mergedRoot = ProfileService.workspacesRoot()
             .appendingPathComponent("_merged", isDirectory: true)
-        if let read = try? WorkspaceMergeJournal.readProgress(progress),
-           WorkspaceMergeJournal.started(target: target, appSupport: appSupport)?.planSHA256
-            == read.planSHA256,
-           let url = WorkspaceMergePlan.confined(read.mergedFolder, under: mergedRoot),
+        if let note = WorkspaceMergeJournal.started(target: target, appSupport: appSupport),
+           let url = WorkspaceMergePlan.confined(note.mergedFolder, under: mergedRoot),
            url.deletingLastPathComponent().path == mergedRoot.standardizedFileURL.path,
-           !url.lastPathComponent.hasPrefix(".") {
+           !url.lastPathComponent.hasPrefix("."),
+           ![WorkspaceMergeJournal.recordName, WorkspaceMergeJournal.recordPlanName].contains(
+            where: { exists(url.appendingPathComponent($0)) }) {
             return url
         }
         guard let id = WorkspaceID(target) else { throw StepError("\(target) is not a workspace") }
@@ -199,6 +203,8 @@ enum WorkspaceMergeExecutor {
         let progress: URL
         let plan: URL
         let planData: Data
+        /// Steps to skip: the journal's count capped by this Mac's record.
+        var done = 0
         var planSHA256: String { WorkspaceMergeJournal.sha256Hex(planData) }
     }
 
@@ -216,20 +222,19 @@ enum WorkspaceMergeExecutor {
             throw RunError.notStarted(reason: error.localizedDescription)
         }
         // Never overwrite another merge's journal, nor one that cannot be read.
-        switch WorkspaceMergeJournal.state(target: plan.target, appSupport: deps.appSupport) {
+        let (state, readPlan) = WorkspaceMergeJournal.read(
+            target: plan.target, appSupport: deps.appSupport)
+        switch state {
         case .unreadable:
             throw RunError.unreadableJournal
         case .foreign:
             throw RunError.foreignJournal
         case .pending(let other) where other.plan != plan:
             throw RunError.pendingMerge(source: other.plan.source)
-        case .pending:
-            let data: Data
-            do {
-                data = try BoundedFile.read(
-                    planURL, limit: WorkspaceMergeJournal.planLimit, followSymlinks: false)
-            } catch { throw RunError.notStarted(reason: error.localizedDescription) }
-            return JournalFiles(progress: progressURL, plan: planURL, planData: data)
+        case .pending(let other):
+            guard let readPlan else { throw RunError.unreadableJournal }
+            return JournalFiles(progress: progressURL, plan: planURL, planData: readPlan,
+                                done: min(start.done, other.done))
         case .none:
             // A resume whose journal was moved aside (Start over elsewhere) must not restart
             // as a fresh merge and later replace the record Start over kept.
@@ -243,9 +248,12 @@ enum WorkspaceMergeExecutor {
             // Noted first: a plan file with no note would read as a peer's.
             try WorkspaceMergeJournal.markStarted(
                 planSHA256: WorkspaceMergeJournal.sha256Hex(data), target: plan.target,
-                appSupport: deps.appSupport)
+                mergedFolder: plan.mergedFolder, done: 0, appSupport: deps.appSupport)
             try WorkspaceMergeJournal.write(planData: data, to: planURL)
-        } catch { throw RunError.notStarted(reason: error.localizedDescription) }
+        } catch {
+            WorkspaceMergeJournal.clearStarted(target: plan.target, appSupport: deps.appSupport)
+            throw RunError.notStarted(reason: error.localizedDescription)
+        }
         let files = JournalFiles(progress: progressURL, plan: planURL, planData: data)
         do {
             try WorkspaceMergeJournal.write(
@@ -253,6 +261,7 @@ enum WorkspaceMergeExecutor {
                       mergedFolder: plan.mergedFolder),
                 to: progressURL)
         } catch {
+            WorkspaceMergeJournal.clearStarted(target: plan.target, appSupport: deps.appSupport)
             // The plan file alone would read as unreadable; it is this run's own, just written.
             do { try FileManager.default.removeItem(at: planURL) } catch {
                 AppLogger.event(.collect, .error,
@@ -565,7 +574,7 @@ enum WorkspaceMergeExecutor {
     /// Refuses a link on the way to `url`, checked up to the workspaces root or the home folder
     /// (both may be links themselves: a synced root, `/var` in tests), so no write goes through
     /// a folder a peer swapped for a link after the plan was made.
-    private static func requireNoLinkedAncestor(_ url: URL) throws {
+    static func requireNoLinkedAncestor(_ url: URL) throws {
         let workspaces = ProfileService.workspacesRoot()
         let home = FileManager.default.homeDirectoryForCurrentUser
         let stops = Set([workspaces, home].flatMap {
