@@ -112,7 +112,7 @@ final class NeverInventoriedTests: XCTestCase {
             device, policy: SecurityControlPolicy(), hardwareEncrypted: nil))
     }
 
-    func testComplianceRowWithNoCheckInIsLeftOutOfCheckedIn() throws {
+    func testComplianceRowWithNoCheckInIsStale() throws {
         let rows: [[String: Any]] = [
             ["days_since_contact": "N/A", "last_contact": "", "managed": true, "os_version": "",
              "stale": false],
@@ -122,6 +122,10 @@ final class NeverInventoriedTests: XCTestCase {
         let decoded = try JSONDecoder().decode(
             [DeviceComplianceRow].self, from: JSONSerialization.data(withJSONObject: rows))
         XCTAssertEqual(decoded.map(\.isNeverInventoried), [true, false])
+        let rule = StaleRule(days: 30)
+        XCTAssertEqual(decoded[0].staleAge(rule, computers: nil), .never)
+        XCTAssertTrue(decoded[0].isStale(rule, computers: nil), "jamf-cli's stale: false is overruled")
+        XCTAssertFalse(decoded[1].isStale(rule, computers: nil))
     }
 
     func testComputerRecordWithNoInventoryHasNoControlValues() {
@@ -188,7 +192,8 @@ final class NeverInventoriedTests: XCTestCase {
         XCTAssertNil(summary.firewallPct)
         XCTAssertNil(summary.gatekeeperPct)
         XCTAssertNil(summary.compliancePct)
-        XCTAssertNil(summary.securityScore)
         XCTAssertNil(summary.stabilityIndex)
+        XCTAssertEqual(summary.staleCount, 2, "never checked in counts as stale")
+        XCTAssertEqual(summary.securityScore, 0, "only checked in is scored, and neither did")
     }
 }

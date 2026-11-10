@@ -452,6 +452,9 @@ struct DeviceComplianceRow: Decodable, Sendable {
         _ rule: StaleRule, computers: ComputerDateIndex?
     ) -> StaleInputs {
         var inputs = StaleInputs(checkInDays: resolvedDaysSinceContact, flag: stale == true)
+        // A Mac that never checked in has no date to age: it reads as never, as on Computers,
+        // not as jamf-cli's "not stale".
+        inputs.carriesDates = isNeverInventoried
         guard rule.needsComputers, let match = computers?.match(jamfID: jamfID, serial: serial)
         else { return inputs }
         inputs.checkIn = match.checkIn
