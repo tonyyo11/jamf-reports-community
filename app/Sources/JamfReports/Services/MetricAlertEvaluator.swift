@@ -109,7 +109,7 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .mobileStaleCount: return summary.mobile?.stale.map(Double.init)
         case .mobileJailbrokenCount: return summary.mobile?.jailbroken.map(Double.init)
         case .protectComputerCount: return summary.protectComputerCount.map(Double.init)
-        case .protectMatchedPct: return summary.protectMatchedPct
+        case .protectMatchedPct: return summary.protectMatched?.pctOneDecimal
         case .protectOpenAlertCount: return summary.protectOpenAlerts.map(Double.init)
         // The alerts snapshot existed but held no open high alert: a real 0.
         case .protectHighAlertCount:

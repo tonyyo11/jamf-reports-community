@@ -5,7 +5,7 @@ import XCTest
 final class SummaryEnvironmentFieldsTests: XCTestCase {
 
     private func base(
-        products: [String]? = nil, matched: Double? = nil, open: Int? = nil,
+        products: [String]? = nil, matched: MobileSummary.Share? = nil, open: Int? = nil,
         alerts: [String: Int]? = nil, os: [String: Int]? = nil, count: Int? = nil,
         buckets: LastSeenBuckets? = nil
     ) -> DailySummary {
@@ -13,7 +13,7 @@ final class SummaryEnvironmentFieldsTests: XCTestCase {
             date: "2026-11-07", totalDevices: 10, fileVaultPct: 90, compliancePct: nil,
             staleCount: 1, osCurrentPct: 80, crowdstrikePct: nil, patchPct: nil,
             source: "jamf-cli", products: products, protectComputerCount: count,
-            protectMatchedPct: matched, protectOpenAlerts: open, protectAlertCounts: alerts,
+            protectMatched: matched, protectOpenAlerts: open, protectAlertCounts: alerts,
             osMajorCounts: os, lastSeenBuckets: buckets)
     }
 
@@ -41,11 +41,11 @@ final class SummaryEnvironmentFieldsTests: XCTestCase {
             computers: .init(underOneDay: 4, underSevenDays: 3, sevenDaysOrMore: 2, never: 1),
             mobile: .init(underOneDay: 2))
         let summary = base(
-            products: ["jamf_pro", "protect"], matched: 87.5, open: 3,
+            products: ["jamf_pro", "protect"], matched: .init(met: 7, of: 8), open: 3,
             alerts: ["high": 1, "low": 2], os: ["macOS 26": 9], count: 8, buckets: buckets)
         let decoded = try SummaryJSONParser.decode(try encode(summary))
         XCTAssertEqual(decoded.products, ["jamf_pro", "protect"])
-        XCTAssertEqual(decoded.protectMatchedPct, 87.5)
+        XCTAssertEqual(decoded.protectMatched, .init(met: 7, of: 8))
         XCTAssertEqual(decoded.protectAlertCounts, ["high": 1, "low": 2])
         XCTAssertEqual(decoded.osMajorCounts, ["macOS 26": 9])
         XCTAssertEqual(decoded.lastSeenBuckets, buckets)
@@ -53,36 +53,46 @@ final class SummaryEnvironmentFieldsTests: XCTestCase {
     }
 
     func testFillingCarriesOlderValuesAndUnionsProducts() {
-        let older = base(products: ["jamf_pro"], matched: 70, open: 2, os: ["macOS 26": 5])
+        let older = base(products: ["jamf_pro"], matched: .init(met: 7, of: 10), open: 2, os: ["macOS 26": 5])
         let fresh = base(products: ["protect", "jamf_pro"], open: 4)
         let merged = fresh.filling(from: older)
         XCTAssertEqual(merged.products, ["jamf_pro", "protect"])
-        XCTAssertEqual(merged.protectMatchedPct, 70)
+        XCTAssertEqual(merged.protectMatched, .init(met: 7, of: 10))
         XCTAssertEqual(merged.protectOpenAlerts, 4)
         XCTAssertEqual(merged.osMajorCounts, ["macOS 26": 5])
     }
 
     func testRangeCheckRejectsBadValues() {
-        XCTAssertTrue(base(matched: 100, open: 2, alerts: ["high": 2]).numbersAreInRange)
+        XCTAssertTrue(base(matched: .init(met: 5, of: 5), open: 2, alerts: ["high": 2]).numbersAreInRange)
         XCTAssertFalse(base(count: -1).numbersAreInRange)
-        XCTAssertFalse(base(matched: 100.5).numbersAreInRange)
+        XCTAssertFalse(base(matched: .init(met: 6, of: 5)).numbersAreInRange)
+        XCTAssertFalse(base(matched: .init(met: -1, of: 5)).numbersAreInRange)
         XCTAssertFalse(base(os: ["macOS 26": -3]).numbersAreInRange)
         XCTAssertFalse(base(open: 1, alerts: ["high": 2]).numbersAreInRange)
         XCTAssertFalse(base(count: SummaryJSONParser.maxSummaryNumber + 1).numbersAreInRange)
     }
 
-    func testWithEnvironmentSetsOnlyWhatItIsGiven() {
-        let start = base(products: ["jamf_pro"], matched: 70, open: 2, count: 5)
+    func testWithEnvironmentSetsOnlyTheGroupsThisRunMeasured() {
+        let start = base(
+            products: ["jamf_pro"], matched: .init(met: 7, of: 10), open: 2,
+            alerts: ["high": 2], count: 5)
         let untouched = start.withEnvironment(products: nil, protect: nil)
         XCTAssertEqual(untouched.products, ["jamf_pro"])
-        XCTAssertEqual(untouched.protectMatchedPct, 70)
-        let changed = start.withEnvironment(
+        XCTAssertEqual(untouched.protectMatched, .init(met: 7, of: 10))
+        let computersOnly = start.withEnvironment(
             products: ["protect"],
-            protect: ProtectSummaryFigures(computerCount: 9, openAlerts: 0))
-        XCTAssertEqual(changed.products, ["jamf_pro", "protect"])
-        XCTAssertEqual(changed.protectComputerCount, 9)
-        XCTAssertNil(changed.protectMatchedPct)
-        XCTAssertEqual(changed.protectOpenAlerts, 0)
+            protect: .init(computers: .init(count: 9, matched: nil)))
+        XCTAssertEqual(computersOnly.products, ["jamf_pro", "protect"])
+        XCTAssertEqual(computersOnly.protectComputerCount, 9)
+        XCTAssertNil(computersOnly.protectMatched)
+        XCTAssertEqual(computersOnly.protectOpenAlerts, 2)
+        XCTAssertEqual(computersOnly.protectAlertCounts, ["high": 2])
+        let alertsOnly = start.withEnvironment(
+            products: nil, protect: .init(alerts: .init(open: 0, counts: nil)))
+        XCTAssertEqual(alertsOnly.protectOpenAlerts, 0)
+        XCTAssertNil(alertsOnly.protectAlertCounts)
+        XCTAssertEqual(alertsOnly.protectComputerCount, 5)
+        XCTAssertEqual(alertsOnly.protectMatched, .init(met: 7, of: 10))
     }
 
     func testNewlyMeasuredFieldIsAnUpgrade() {

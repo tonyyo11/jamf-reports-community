@@ -68,11 +68,17 @@ final class EnvironmentFinalizeTests: XCTestCase {
     }
 
     private static func landProtect(
-        _ dataDir: URL, inventory: Inventory, alerts: String? = nil
+        _ dataDir: URL, inventory: Inventory, alerts: String? = nil,
+        kinds: Set<String> = ["protect-computers", "protect-alerts"]
     ) throws -> [String] {
-        try save(fixture("protect-computers", "computers_happy.json"), "protect-computers", dataDir)
-        let alertText = try alerts ?? fixture("protect-alerts", "alerts_happy.json")
-        try save(alertText, "protect-alerts", dataDir)
+        if kinds.contains("protect-computers") {
+            try save(fixture("protect-computers", "computers_happy.json"),
+                     "protect-computers", dataDir)
+        }
+        if kinds.contains("protect-alerts") {
+            try save(try alerts ?? fixture("protect-alerts", "alerts_happy.json"),
+                     "protect-alerts", dataDir)
+        }
         let serials = [
             #"{"general":{"id":"1","name":"A"},"hardware":{"serialNumber":"SYNTH0000001"}}"#,
             #"{"general":{"id":"2","name":"B"},"hardware":{"serialNumber":"SYNTH0000002"}}"#,
@@ -90,9 +96,14 @@ final class EnvironmentFinalizeTests: XCTestCase {
                     $0.offset + 1,
                     ["udid": $0.element, "serialNumber": "SYNTH000000\($0.offset + 1)"])
             }
-            try SchoolRows.write(rows, kind: "school-devices", into: dataDir)
+            // Stamped now: an older snapshot is past max_cache_age_hours and gives no match.
+            let stamp = DateFormatter()
+            stamp.dateFormat = "yyyyMMdd'T'HHmmss"
+            stamp.locale = Locale(identifier: "en_US_POSIX")
+            try SchoolRows.write(
+                rows, kind: "school-devices", into: dataDir, stamp: stamp.string(from: Date()))
         }
-        return ["protect-computers", "protect-alerts"]
+        return kinds.sorted()
     }
 
     private let open: CollectRouter.Gate = { _, _, _, _, _, _ in
@@ -105,6 +116,7 @@ final class EnvironmentFinalizeTests: XCTestCase {
         var protect = true
         var inventory = Inventory.computers
         var alerts: String?
+        var landedKinds: Set<String> = ["protect-computers", "protect-alerts"]
         var gate: CollectRouter.Gate?
         var logsUnwrittenMarker = false
         var protectCalls = Counter()
@@ -133,7 +145,9 @@ final class EnvironmentFinalizeTests: XCTestCase {
             protectCollect: { _, dataDir, _ in
                 o.protectCalls.bump()
                 return o.protect
-                    ? try Self.landProtect(dataDir, inventory: o.inventory, alerts: o.alerts) : []
+                    ? try Self.landProtect(
+                        dataDir, inventory: o.inventory, alerts: o.alerts, kinds: o.landedKinds)
+                    : []
             },
             resolved: { _ in nil }, gate: o.gate ?? open, onLine: { o.lines.add($0.text) })
     }
@@ -146,7 +160,7 @@ final class EnvironmentFinalizeTests: XCTestCase {
         XCTAssertEqual(s.protectComputerCount, 3)
         XCTAssertEqual(s.protectOpenAlerts, 2)
         XCTAssertEqual(s.protectAlertCounts, ["high": 1, "medium": 1])
-        XCTAssertEqual(try XCTUnwrap(s.protectMatchedPct), 66.7, accuracy: 0.01)
+        XCTAssertEqual(s.protectMatched, .init(met: 2, of: 3))
         XCTAssertNil(s.collectionSources?["protect-alerts"])
     }
 
@@ -205,7 +219,7 @@ final class EnvironmentFinalizeTests: XCTestCase {
         XCTAssertNil(s.mobile)
         XCTAssertEqual(s.products, ["protect"])
         XCTAssertEqual(s.protectComputerCount, 3)
-        XCTAssertNil(s.protectMatchedPct)
+        XCTAssertNil(s.protectMatched)
         XCTAssertEqual(s.collectionSources?["protect-alerts"], "live")
     }
 
@@ -237,7 +251,7 @@ final class EnvironmentFinalizeTests: XCTestCase {
         try await run(schoolFile, o)
         let s = try summary()
         XCTAssertEqual(s.products, ["jamf_school", "protect"])
-        XCTAssertEqual(try XCTUnwrap(s.protectMatchedPct), 66.7, accuracy: 0.01)
+        XCTAssertEqual(s.protectMatched, .init(met: 2, of: 3))
     }
 
     func testAnEmptyInventoryGivesNoMatchedShare() async throws {
@@ -247,7 +261,77 @@ final class EnvironmentFinalizeTests: XCTestCase {
         try await run(proFile, o)
         let s = try summary()
         XCTAssertEqual(s.protectComputerCount, 3)
-        XCTAssertNil(s.protectMatchedPct)
+        XCTAssertNil(s.protectMatched)
+    }
+
+    private func dataDir() throws -> URL { try WorkspacePaths.dataDir(for: ws) }
+
+    func testOnlyComputersLandedIgnoresAnOlderAlertsSnapshot() async throws {
+        try makeRoot()
+        try Self.save(Self.fixture("protect-alerts", "alerts_happy.json"), "protect-alerts",
+                      try dataDir())
+        var o = Options()
+        o.landedKinds = ["protect-computers"]
+        try await run(proFile, o)
+        let s = try summary()
+        XCTAssertEqual(s.protectComputerCount, 3)
+        XCTAssertNil(s.protectOpenAlerts)
+        XCTAssertNil(s.protectAlertCounts)
+    }
+
+    func testALaterRunKeepsTheMorningsAlertsAndReplacesComputers() async throws {
+        try makeRoot()
+        var morning = Options()
+        morning.inventory = .empty
+        try await run(proFile, morning)
+        XCTAssertNil(try summary().protectMatched)
+        var afternoon = Options()
+        afternoon.writesMDMSummary = false
+        afternoon.landedKinds = ["protect-computers"]
+        try await run(proFile, afternoon)
+        let s = try summary()
+        XCTAssertEqual(s.protectMatched, .init(met: 2, of: 3))
+        XCTAssertEqual(s.protectOpenAlerts, 2)
+        XCTAssertEqual(s.protectAlertCounts, ["high": 1, "medium": 1])
+    }
+
+    func testARunThatLandsNoProtectKeepsEveryFigure() async throws {
+        try makeRoot()
+        try await run(proFile)
+        let before = try summary()
+        var o = Options()
+        o.writesMDMSummary = false
+        o.landedKinds = []
+        try await run(proFile, o)
+        let s = try summary()
+        XCTAssertEqual(s.protectComputerCount, before.protectComputerCount)
+        XCTAssertEqual(s.protectMatched, before.protectMatched)
+        XCTAssertEqual(s.protectOpenAlerts, before.protectOpenAlerts)
+        XCTAssertEqual(s.protectAlertCounts, before.protectAlertCounts)
+    }
+
+    func testProtectOnlyWithALeftoverComputersSnapshotHasNoMatch() async throws {
+        try makeRoot()
+        try Self.save("[]", "computers", try dataDir())
+        var o = Options()
+        o.writesMDMSummary = false
+        o.inventory = .computers
+        try await run("profiles:\n  protect: \(ws)\n", o)
+        XCTAssertEqual(try summary().protectComputerCount, 3)
+        XCTAssertNil(try summary().protectMatched)
+    }
+
+    func testAnExpiredInventorySnapshotGivesNoMatch() async throws {
+        try makeRoot()
+        let dir = try dataDir().appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(#"[{"general":{"id":"1","name":"A"},"hardware":{"serialNumber":"SYNTH0000001"}}]"#.utf8)
+            .write(to: dir.appendingPathComponent("computers_20200101T000000.json"))
+        var o = Options()
+        o.inventory = .none
+        try await run(proFile, o)
+        XCTAssertEqual(try summary().protectComputerCount, 3)
+        XCTAssertNil(try summary().protectMatched)
     }
 
     func testAnUnreadableAlertsSnapshotLeavesTheAlertFiguresNil() async throws {

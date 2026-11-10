@@ -22,13 +22,13 @@ final class TrendStoreProtectMetricsTests: XCTestCase {
     }
 
     private func day(
-        computers: Int? = nil, matched: Double? = nil, open: Int? = nil,
+        computers: Int? = nil, matched: MobileSummary.Share? = nil, open: Int? = nil,
         counts: [String: Int]? = nil
     ) -> DailySummary {
         DailySummary(
             date: "2026-11-07", totalDevices: 10, fileVaultPct: 90, compliancePct: nil,
             staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
-            source: "jamf-cli", protectComputerCount: computers, protectMatchedPct: matched,
+            source: "jamf-cli", protectComputerCount: computers, protectMatched: matched,
             protectOpenAlerts: open, protectAlertCounts: counts)
     }
 
@@ -100,7 +100,7 @@ final class TrendStoreProtectMetricsTests: XCTestCase {
     }
 
     func testAlertKeysFireOnAValueAndNeverWhenTheFieldIsAbsent() {
-        let current = day(computers: 40, matched: 30, open: 9, counts: ["high": 4])
+        let current = day(computers: 40, matched: .init(met: 30, of: 100), open: 9, counts: ["high": 4])
         let cases: [(String, String, Double)] = [
             ("protect_computer_count", "above", 39),
             ("protect_matched_pct", "below", 50),
@@ -115,6 +115,16 @@ final class TrendStoreProtectMetricsTests: XCTestCase {
             XCTAssertTrue(MetricAlertEvaluator.evaluate(
                 rules: [rule], current: day(), prior: nil).isEmpty, key)
         }
+    }
+
+    func testMatchedPercentComesFromThePairAndIsNilWithoutOne() {
+        // 999 of 2000 is 49.95: one decimal, rounded half up, in Trends and alerts alike.
+        let d = day(matched: .init(met: 999, of: 2000))
+        XCTAssertEqual(AlertMetric.protectMatchedPct.value(in: d), 50.0)
+        XCTAssertEqual(TrendStore(summaries: [d]).points(metric: .protectMatched).map(\.value), [50.0])
+        XCTAssertNil(AlertMetric.protectMatchedPct.value(in: day(matched: .init(met: 0, of: 0))))
+        let rule = AlertRule(metric: "protect_matched_pct", when: "below", threshold: 99, lookbackDays: nil)
+        XCTAssertTrue(MetricAlertEvaluator.evaluate(rules: [rule], current: day(), prior: nil).isEmpty)
     }
 
     func testHighAlertCountReadsZeroFromASnapshotWithNoOpenHighAlert() {

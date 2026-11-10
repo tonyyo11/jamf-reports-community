@@ -151,4 +151,18 @@ final class DeviceCorrelationTests: XCTestCase {
             protect: rows, profile: "campus", demoMode: false, school: true))
         XCTAssertEqual([match.matched, match.proWithoutProtect.count], [1, 0])
     }
+
+    func testMatchedShareCountsOnlyIdentifiedComputersAndNeedsAnInventory() {
+        var c = ProtectProCorrelation(protectCount: 5)
+        c.noIdentifier = 1
+        c.matched = 2
+        c.inventorySize = 4
+        XCTAssertEqual(c.identified, 4)
+        XCTAssertEqual(c.matchedShare, .init(met: 2, of: 4))
+        c.inventorySize = 0
+        XCTAssertNil(c.matchedShare)
+        c.inventorySize = 4
+        c.noIdentifier = 5
+        XCTAssertNil(c.matchedShare)
+    }
 }

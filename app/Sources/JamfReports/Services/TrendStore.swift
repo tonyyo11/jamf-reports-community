@@ -364,7 +364,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .mobileStale: return summary.mobile?.stale.map(Double.init)
         case .mobileJailbroken: return summary.mobile?.jailbroken.map(Double.init)
         case .protectComputers: return summary.protectComputerCount.map(Double.init)
-        case .protectMatched: return summary.protectMatchedPct
+        case .protectMatched: return summary.protectMatched?.pctOneDecimal
         case .protectOpenAlerts: return summary.protectOpenAlerts.map(Double.init)
         }
     }

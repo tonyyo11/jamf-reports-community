@@ -71,6 +71,14 @@ struct ProtectProCorrelation: Sendable {
     var notInPro: [ProtectComputerRow] = []
     var proWithoutProtect: [DeviceInventoryRecord] = []
 
+    /// Protect computers that carry a UUID or serial: the denominator of the match.
+    var identified: Int { protectCount - noIdentifier }
+
+    /// matched of identified; nil with no inventory or no identified Protect computer.
+    var matchedShare: MobileSummary.Share? {
+        inventorySize > 0 && identified > 0 ? .init(met: matched, of: identified) : nil
+    }
+
     static func build(
         protect: [ProtectComputerRow], pro: [DeviceInventoryRecord]
     ) -> ProtectProCorrelation {

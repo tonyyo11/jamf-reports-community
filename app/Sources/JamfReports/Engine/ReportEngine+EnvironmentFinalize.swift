@@ -26,50 +26,57 @@ extension ReportEngine {
     @TaskLocal static var landedSources: LandedSources?
 
     /// The Protect figures a daily summary records (P9-R2) from the newest snapshots, never from
-    /// device names; nil when neither a readable `protect-computers` nor `protect-alerts`
-    /// snapshot exists. The match goes through `ProtectProCorrelation.load`, the Protect screen's
-    /// own calculator, against Jamf School devices only when `school` is set.
+    /// device names. Each group is read only when `landed` says this run landed its kind, so an
+    /// older snapshot never stands in for a failed fetch; nil when neither group qualifies. The
+    /// match goes through `ProtectProCorrelation.load`, the Protect screen's own calculator,
+    /// against Jamf School devices only when `school` is set; it is left out of a Protect-only
+    /// environment (`hasInventory` false) and against an inventory snapshot past
+    /// `max_cache_age_hours`, the summary builder's own rule.
     static func protectSummaryFigures(
-        dataDir: URL, workspace: WorkspaceID, school: Bool = false
+        dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
+        hasInventory: Bool = true, maxCacheAgeHours: Int = 168
     ) -> ProtectSummaryFigures? {
         func readable(_ kind: String) -> Bool {
-            FileManager.newestJSONFile(in: dataDir.appendingPathComponent(kind)) != nil
+            landed.contains(kind)
+                && FileManager.newestJSONFile(in: dataDir.appendingPathComponent(kind)) != nil
         }
         let snapshot = ProtectDashboardService.load(dataDir: dataDir)
-        let hasComputers = readable("protect-computers")
-            && !snapshot.unreadableKinds.contains("protect-computers")
-        let hasAlerts = readable("protect-alerts")
-            && !snapshot.unreadableKinds.contains("protect-alerts")
-        guard hasComputers || hasAlerts else { return nil }
         var figures = ProtectSummaryFigures()
-        if hasComputers {
-            figures.computerCount = snapshot.computers.count
-            figures.matchedPct = matchedPct(
-                snapshot.computers, workspace: workspace, school: school)
+        if readable("protect-computers"), !snapshot.unreadableKinds.contains("protect-computers") {
+            let matched = hasInventory && inventoryIsFresh(
+                dataDir: dataDir, school: school, maxCacheAgeHours: maxCacheAgeHours)
+                ? ProtectProCorrelation.load(
+                    protect: snapshot.computers, profile: workspace.name, demoMode: false,
+                    school: school)?.matchedShare
+                : nil
+            figures.computers = .init(count: snapshot.computers.count, matched: matched)
         }
-        if hasAlerts {
+        if readable("protect-alerts"), !snapshot.unreadableKinds.contains("protect-alerts") {
             // A missing status counts as open: only Resolved and AutoResolved are closed.
             let open = snapshot.alerts.filter {
                 !["resolved", "autoresolved"].contains(($0.status ?? "").lowercased())
             }
-            figures.openAlerts = open.count
             let bySeverity = Dictionary(
                 grouping: open.compactMap { $0.severity?.lowercased() }, by: { $0 }
             ).mapValues(\.count)
-            figures.alertCounts = bySeverity.isEmpty ? nil : bySeverity
+            figures.alerts = .init(open: open.count, counts: bySeverity.isEmpty ? nil : bySeverity)
         }
-        return figures
+        return figures.computers == nil && figures.alerts == nil ? nil : figures
     }
 
-    private static func matchedPct(
-        _ computers: [ProtectComputerRow], workspace: WorkspaceID, school: Bool
-    ) -> Double? {
-        guard let correlation = ProtectProCorrelation.load(
-            protect: computers, profile: workspace.name, demoMode: false, school: school),
-              correlation.inventorySize > 0 else { return nil }
-        let denominator = correlation.protectCount - correlation.noIdentifier
-        guard denominator > 0 else { return nil }
-        return (Double(correlation.matched) / Double(denominator) * 1000).rounded() / 10
+    /// False only when the newest inventory snapshot exists and is past the age limit; an absent
+    /// or unreadable one is left to `ProtectProCorrelation.load`, which returns nil for it.
+    private static func inventoryIsFresh(
+        dataDir: URL, school: Bool, maxCacheAgeHours: Int
+    ) -> Bool {
+        do {
+            _ = try loadLatestSnapshotData(
+                kind: school ? "school-devices" : "computers", dataDir: dataDir,
+                maxCacheAgeHours: maxCacheAgeHours)
+        } catch is SnapshotCacheExpired {
+            return false
+        } catch {}
+        return true
     }
 
     /// Adds `products` and the Protect figures to today's summary (P9-R1, R2, R4). Creates a
@@ -79,7 +86,7 @@ extension ReportEngine {
     static func finalizeEnvironmentSummary(
         summariesDir: URL, dataDir: URL, environment: EnvironmentProfiles,
         workspace: WorkspaceID, landed: [EnvironmentProducts.Product: Set<String>],
-        day: Date = Date(), announcesWrite: Bool = true,
+        day: Date = Date(), announcesWrite: Bool = true, maxCacheAgeHours: Int = 168,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) -> SummaryEmitOutcome {
         let date = SummaryJSONParser.dateFormatter.string(from: day)
@@ -114,7 +121,9 @@ extension ReportEngine {
         let slots = landed.filter { !$0.value.isEmpty }.map(\.key.slotName)
         let figures = protectKinds.isEmpty
             ? nil : protectSummaryFigures(
-                dataDir: dataDir, workspace: workspace, school: environment.isSchool)
+                dataDir: dataDir, workspace: workspace, landed: protectKinds,
+                school: environment.isSchool, hasInventory: environment.mdm != nil,
+                maxCacheAgeHours: maxCacheAgeHours)
         guard !slots.isEmpty || figures != nil else { return .keptExisting }
         summary = summary.withEnvironment(products: slots.isEmpty ? nil : slots, protect: figures)
         // After a run whose MDM summary was not written, `writeSummaryFile`'s "will reflect this

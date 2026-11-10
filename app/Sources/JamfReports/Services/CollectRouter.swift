@@ -253,6 +253,7 @@ enum CollectRouter {
                 finalizeEnvironment(
                     environment: environment, workspace: workspace, workspacePaths: workspacePaths,
                     landed: landed.all, day: now, announcesWrite: !landed.mdmSummaryUnwritten,
+                    maxCacheAgeHours: config?.jamfCli?.resolvedMaxCacheAgeHours ?? 168,
                     onLine: onLine)
             }
             let watched: @Sendable (CLIBridge.LogLine) -> Void = { line in
@@ -387,6 +388,7 @@ enum CollectRouter {
         landed: [EnvironmentProducts.Product: Set<String>],
         day: Date,
         announcesWrite: Bool = true,
+        maxCacheAgeHours: Int,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) {
         guard let dataDir = try? workspacePaths.dataDir(for: workspace.name),
@@ -398,7 +400,7 @@ enum CollectRouter {
         ReportEngine.finalizeEnvironmentSummary(
             summariesDir: summariesDir, dataDir: dataDir, environment: environment,
             workspace: workspace, landed: landed, day: day, announcesWrite: announcesWrite,
-            onLine: onLine)
+            maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
     }
 
     /// The Protect half of a Jamf Pro or Jamf School run. Never throws: a Protect failure is a

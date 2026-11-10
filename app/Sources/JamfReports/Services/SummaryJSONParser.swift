@@ -69,7 +69,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // The mobile devices' own figures, apart from the Mac fields (mobile spec 4.2).
              mobile,
              // Environment model P9: products that landed, Protect figures, aggregate maps.
-             products, protectComputerCount, protectMatchedPct, protectOpenAlerts,
+             products, protectComputerCount, protectMatched, protectOpenAlerts,
              protectAlertCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
              lastSeenBuckets
     }
@@ -164,7 +164,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
     private(set) var products: [String]?
     /// Jamf Protect figures (P9-R2); nil when Protect is absent or nothing measured them.
     private(set) var protectComputerCount: Int?
-    private(set) var protectMatchedPct: Double?
+    private(set) var protectMatched: MobileSummary.Share?
     private(set) var protectOpenAlerts: Int?
     private(set) var protectAlertCounts: [String: Int]?
     /// Aggregate maps (P9-R3); a key with no devices is left out, no devices means nil.
@@ -230,16 +230,18 @@ struct DailySummary: Codable, Identifiable, Sendable {
     }
 
     /// This summary with `products` unioned in (nil leaves it) and the four Protect fields
-    /// replaced by `protect` (nil leaves them).
+    /// replaced by each group of `protect` that this run measured.
     func withEnvironment(products added: [String]?, protect: ProtectSummaryFigures?)
         -> DailySummary {
         var resolved = self
         if let added { resolved.products = Array(Set(products ?? []).union(added)).sorted() }
-        if let protect {
-            resolved.protectComputerCount = protect.computerCount
-            resolved.protectMatchedPct = protect.matchedPct
-            resolved.protectOpenAlerts = protect.openAlerts
-            resolved.protectAlertCounts = protect.alertCounts
+        if let computers = protect?.computers {
+            resolved.protectComputerCount = computers.count
+            resolved.protectMatched = computers.matched
+        }
+        if let alerts = protect?.alerts {
+            resolved.protectOpenAlerts = alerts.open
+            resolved.protectAlertCounts = alerts.counts
         }
         return resolved
     }
@@ -289,7 +291,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
             products: products.map { Array(Set($0).union(older.products ?? [])).sorted() }
                 ?? older.products,
             protectComputerCount: protectComputerCount ?? older.protectComputerCount,
-            protectMatchedPct: protectMatchedPct ?? older.protectMatchedPct,
+            protectMatched: protectMatched ?? older.protectMatched,
             protectOpenAlerts: protectOpenAlerts ?? older.protectOpenAlerts,
             protectAlertCounts: protectAlertCounts ?? older.protectAlertCounts,
             osMajorCounts: osMajorCounts ?? older.osMajorCounts,
@@ -335,7 +337,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         mobile: MobileSummary? = nil,
         products: [String]? = nil,
         protectComputerCount: Int? = nil,
-        protectMatchedPct: Double? = nil,
+        protectMatched: MobileSummary.Share? = nil,
         protectOpenAlerts: Int? = nil,
         protectAlertCounts: [String: Int]? = nil,
         osMajorCounts: [String: Int]? = nil,
@@ -379,7 +381,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.mobile = mobile
         self.products = products
         self.protectComputerCount = protectComputerCount
-        self.protectMatchedPct = protectMatchedPct
+        self.protectMatched = protectMatched
         self.protectOpenAlerts = protectOpenAlerts
         self.protectAlertCounts = protectAlertCounts
         self.osMajorCounts = osMajorCounts
@@ -432,8 +434,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         products = try container.decodeIfPresent([String].self, forKey: .products)
         protectComputerCount = try container.decodeIfPresent(
             Int.self, forKey: .protectComputerCount)
-        protectMatchedPct = try container.decodeIfPresent(
-            Double.self, forKey: .protectMatchedPct)
+        protectMatched = try container.decodeIfPresent(
+            MobileSummary.Share.self, forKey: .protectMatched)
         protectOpenAlerts = try container.decodeIfPresent(Int.self, forKey: .protectOpenAlerts)
         protectAlertCounts = try container.decodeIfPresent(
             [String: Int].self, forKey: .protectAlertCounts)
@@ -483,7 +485,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(mobile, forKey: .mobile)
         try container.encodeIfPresent(products, forKey: .products)
         try container.encodeIfPresent(protectComputerCount, forKey: .protectComputerCount)
-        try container.encodeIfPresent(protectMatchedPct, forKey: .protectMatchedPct)
+        try container.encodeIfPresent(protectMatched, forKey: .protectMatched)
         try container.encodeIfPresent(protectOpenAlerts, forKey: .protectOpenAlerts)
         try container.encodeIfPresent(protectAlertCounts, forKey: .protectAlertCounts)
         try container.encodeIfPresent(osMajorCounts, forKey: .osMajorCounts)
@@ -503,7 +505,6 @@ extension DailySummary {
             firewallPct, gatekeeperPct, secureBootPct, bootstrapPct, xprotectPct, cvePct,
             mscpScorePct, securityScore,
         ].compactMap { $0 } + Array((securityAgentCoverage ?? [:]).values)
-            + [protectMatchedPct].compactMap { $0 }
         let bands = (mscpBands ?? [:]).values.flatMap {
             [$0.pass, $0.low, $0.medLow, $0.medium, $0.high, $0.noData]
         }
@@ -525,11 +526,13 @@ extension DailySummary {
             + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
     }
 
-    /// Counts are not negative, the matched share is 0-100, and no severity has more open
+    /// Counts are not negative, the matched pair has met <= of (of >= 0 follows from met >= 0), and no severity has more open
     /// alerts than the total.
     private var environmentFieldsAreConsistent: Bool {
         if environmentCounts.contains(where: { $0 < 0 }) { return false }
-        if let protectMatchedPct, !(0...100).contains(protectMatchedPct) { return false }
+        if let protectMatched, protectMatched.met < 0 || protectMatched.met > protectMatched.of {
+            return false
+        }
         if let protectOpenAlerts, let protectAlertCounts,
            protectAlertCounts.values.contains(where: { $0 > protectOpenAlerts }) { return false }
         return true

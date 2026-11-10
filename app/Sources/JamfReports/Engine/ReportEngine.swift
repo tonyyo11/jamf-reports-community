@@ -568,7 +568,7 @@ struct ReportEngine: Sendable {
         existing: DailySummary, fresh: DailySummary
     ) -> Bool {
         (existing.protectComputerCount == nil && fresh.protectComputerCount != nil)
-            || (existing.protectMatchedPct == nil && fresh.protectMatchedPct != nil)
+            || (existing.protectMatched == nil && fresh.protectMatched != nil)
             || (existing.protectOpenAlerts == nil && fresh.protectOpenAlerts != nil)
             || (existing.protectAlertCounts == nil && fresh.protectAlertCounts != nil)
             || (existing.osMajorCounts == nil && fresh.osMajorCounts != nil)
