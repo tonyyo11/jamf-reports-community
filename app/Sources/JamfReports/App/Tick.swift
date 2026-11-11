@@ -160,7 +160,7 @@ func summaryMissing(for schedule: Schedule, profiles: [JamfCLIProfile], now: Dat
           schedule.tiers.map({ !$0.isDisjoint(with: [.refresh, .inventory]) }) ?? true
     else { return false }
     let names = schedule.isMulti
-        ? ProfileService.runnableProfiles(
+        ? ProfileService.runnableWorkspaces(
             profiles, excluding: Set(schedule.excludedProfiles ?? [])).map(\.name)
         : [schedule.profile]
     return names.contains { !SummaryJSONParser.hasSummary(profile: $0, on: now) }
@@ -211,7 +211,7 @@ func exitAfterLockGiveUp(
 /// one an operator opens.
 func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> Void) {
     exitAfterLockGiveUp(
-        workspaces: { ProfileService.runnableProfiles(profiles, excluding: []).map(\.name) },
+        workspaces: { ProfileService.runnableWorkspaces(profiles, excluding: []).map(\.name) },
         exit: exit)
 }
 
@@ -234,7 +234,7 @@ func workspaces(
     among profiles: () -> [JamfCLIProfile] = { ProfileService.discoverLocal() }
 ) -> [String] {
     guard schedule.isMulti else { return [schedule.profile] }
-    return ProfileService.runnableProfiles(
+    return ProfileService.runnableWorkspaces(
         profiles(), excluding: Set(schedule.excludedProfiles ?? [])
     ).map(\.name)
 }
@@ -397,7 +397,7 @@ final class TickFailureLog {
 
     func record(_ schedule: Schedule, _ message: String) {
         let names = schedule.isMulti
-            ? ProfileService.runnableProfiles(
+            ? ProfileService.runnableWorkspaces(
                 profiles, excluding: Set(schedule.excludedProfiles ?? [])).map(\.name)
             : [schedule.profile]
         for name in names {
@@ -408,7 +408,7 @@ final class TickFailureLog {
     /// A failure that belongs to no schedule (the tick could not take its lock): the record
     /// goes to every runnable workspace, since any of them may be the one an operator opens.
     func recordInEveryWorkspace(_ message: String) {
-        record(message, in: ProfileService.runnableProfiles(profiles, excluding: []).map(\.name))
+        record(message, in: ProfileService.runnableWorkspaces(profiles, excluding: []).map(\.name))
     }
 
     /// A failure of the process `caller` names, recorded in the workspaces it was for.

@@ -29,6 +29,7 @@ struct SourcesView: View {
     @State private var schoolPlatformCheck: SchoolPlatformCheck.Verdict?
     @State private var reauthOpensPlatform = false
     @State private var environmentCard: EnvironmentCardState?
+    @State private var unassigned: [AddSheetPlan.UnassignedProfile] = []
 
     private var isSchoolWorkspace: Bool {
         sourcesPlan?.sources.first?.product == .school
@@ -67,6 +68,9 @@ struct SourcesView: View {
                     state: card, onAddProtect: { showingProtectConnect = true },
                     onChanged: { reloadEnvironment(); reloadSourcesPlan() })
                     .id(card.workspace)
+            }
+            if !workspace.demoMode, !unassigned.isEmpty {
+                UnassignedProfilesCard(rows: unassigned)
             }
             HStack(alignment: .top, spacing: 14) {
                 cliCard
@@ -680,6 +684,7 @@ struct SourcesView: View {
     private func sourceChanged() {
         schoolResolved = nil
         environmentCard = nil
+        unassigned = []
         sourcesPlan = nil
         cachedAt = [:]
         schoolPlatformCheck = nil
@@ -706,6 +711,7 @@ struct SourcesView: View {
         }
         reloadEnvironment()
         reloadSourcesPlan()
+        reloadUnassigned()
         families = SnapshotArchiveService().families(profile: workspace.profile)
 
         do {
@@ -807,6 +813,18 @@ struct SourcesView: View {
     ) -> Date? {
         newestSnapshots(kinds: EnvironmentCardState.kinds(for: slot), profile: profile)
             .values.max()
+    }
+
+    /// `AddSheetDiscovery.load` runs `jamf-cli config list`, so it stays off the main actor.
+    private func reloadUnassigned() {
+        let profile = workspace.profile
+        Task {
+            let rows = await Task.detached {
+                AddSheetDiscovery.load(currentWorkspace: profile).unassigned ?? []
+            }.value
+            guard profile == workspace.profile, !workspace.demoMode else { return }
+            unassigned = rows
+        }
     }
 
     private func reloadCapabilities() {

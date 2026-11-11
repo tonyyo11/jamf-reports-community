@@ -259,29 +259,43 @@ final class ProfileProductTests: XCTestCase {
             ["a", "b", "c"])
     }
 
-    func testRunnableProfilesNeverRunAProtectLoginAndNeedAFolderForSchool() {
+    func testRunnableWorkspacesNeverRunAProtectLoginAndNeedAFolder() {
         let all = [
             profile("prod", .pro), profile("prot", .protect), profile("sec", .securityCloud),
             profile("sch", .school), profile("sch2", .school), profile("unk"),
         ]
+        // prot has a folder and is still never run.
         let withFolder: (String) -> Bool = { ["prot", "sch2"].contains($0) }
         XCTAssertEqual(
-            ProfileService.runnableProfiles(
+            ProfileService.runnableWorkspaces(
                 all, excluding: [], hasWorkspace: withFolder).map(\.name),
-            ["prod", "sch2", "unk"])
+            ["sch2"])
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces(
+                [profile("prod", .pro)], excluding: [], hasWorkspace: { _ in false }).count, 0,
+            "a Jamf Pro profile with no folder is not run (D24)")
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces(
+                [profile("prod", .pro)], excluding: [], hasWorkspace: { _ in true }).count, 1)
     }
 
-    func testTheActiveProfileMovesToTheWorkspaceNamingItsProtectLogin() {
+    func testTheActiveProfileMovesToTheWorkspaceNamingItsLogin() {
         let listed = [profile("first", .pro), profile("prod", .pro)]
-        let owner: (String) -> String? = { $0 == "prod" ? "prot" : nil }
+        let owner: (String) -> [String] = { $0 == "prod" ? ["plat", "prot", "sec"] : [] }
+        let none: (String) -> Bool = { _ in false }
+        for login in ["plat", "prot", "sec"] {
+            XCTAssertEqual(
+                WorkspaceStore.activeProfile(
+                    keeping: login, in: listed, hasWorkspace: none, connectedProfiles: owner),
+                "prod", "\(login) is another workspace's login")
+        }
         XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "prot", in: listed, protectProfile: owner),
-            "prod")
-        XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "gone", in: listed, protectProfile: owner),
+            WorkspaceStore.activeProfile(
+                keeping: "gone", in: listed, hasWorkspace: none, connectedProfiles: owner),
             "first", "an unknown name falls to the first usable profile")
         XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "first", in: listed, protectProfile: owner),
+            WorkspaceStore.activeProfile(
+                keeping: "first", in: listed, hasWorkspace: none, connectedProfiles: owner),
             "first")
     }
 

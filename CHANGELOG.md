@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Data Sources lists the jamf-cli profiles that no workspace uses, with a button to add them. (#305)
 - Data Sources has an **Environment** card listing the products this workspace's environment holds
   (Jamf Pro or Jamf School, Platform API, Jamf Protect) with their profiles, auth method, newest
   data and whether a shared-config change waits for your Confirm. Check tests a profile's
@@ -57,6 +58,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The workspace menu lists workspaces only; jamf-cli profiles without one are on Data Sources. When a profile becomes another workspace's Platform API, Protect or Security Cloud login, the app opens that workspace. (#305)
+- Scheduled runs for all workspaces and the catch-up collect run only workspaces. A jamf-cli profile without one no longer gets a workspace made for it by a run; add it from Data Sources or the Add sheet. (#305)
 - The Platform API twin suggestion now says to keep the Jamf Pro (OAuth) workspace and add the
   Platform profile to it. (#305)
 - A workspace whose config.yaml has a `profiles:` block now collects the compliance benchmark, DDM and blueprint reports with the Platform API profile named in `profiles.platform`, and skips them when none is named. A Platform API profile that reaches a different Jamf Pro is skipped with a warning, and on a shared workspace a new one waits for a Confirm in Config Doctor.
