@@ -315,7 +315,7 @@ enum OverviewLiveDataLoader {
     ) -> (rows: [OSDistribution], currentShare: Double?, total: Int, versions: Int) {
         // "26.7" and "26.7.0" are one release (`OSVersionName`).
         let valid = Dictionary(
-            counts.filter { $0.value > 0 && !$0.key.isEmpty }
+            counts.filter { $0.value > 0 && OSVersionName.isMeasured($0.key) }
                 .map { (OSVersionName.normalized($0.key), $0.value) },
             uniquingKeysWith: +)
         let total = valid.values.reduce(0, +)

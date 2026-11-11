@@ -354,7 +354,8 @@ struct CoreDashboard: Sendable {
                 // "Days Behind" is shown only for titles below 100% compliance,
                 // matching Python's pct_value < 1.0 / secondary > 0 logic.
                 let pct = PatchStatusService.parseCompliancePct(item.compliancePct)
-                let belowFull = pct < 100.0 || item.onOther > 0
+                // A title with no devices (no share) is not a failure.
+                let belowFull = (pct ?? 100.0) < 100.0 || item.onOther > 0
                 if belowFull, let days = PatchReleaseDateService.daysBehind(releaseDate: releaseDate) {
                     ws.write(days, row: row, col: 7, format: .cell)
                 } else {
@@ -2180,12 +2181,10 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
-            let osMajor = asInt(item["osMajor"])
-            let osMinor = asInt(item["osMinor"])
-            let osPatch = asInt(item["osPatch"])
             let osStr: String
-            if let maj = osMajor, let min = osMinor, let pat = osPatch {
-                osStr = "\(maj).\(min).\(pat)"
+            if let maj = asInt(item["osMajor"]), let min = asInt(item["osMinor"]),
+               let pat = asInt(item["osPatch"]) {
+                osStr = "\(maj).\(min).\(pat)"  // workbook text is unchanged: keeps "x.y.0"
             } else {
                 osStr = item["osString"] as? String ?? ""
             }
@@ -2501,6 +2500,7 @@ struct CoreDashboard: Sendable {
             let gatekeeper: String
             let bootstrapToken: String
             let hardwareEncrypted: Bool?
+            var neverInventoried = false
         }
 
         let rows: [DeviceSecurityRow] = items.compactMap { item in
@@ -2511,7 +2511,7 @@ struct CoreDashboard: Sendable {
             if NeverInventoried.isNeverInventoried(computer: item) {
                 return DeviceSecurityRow(name: name, serial: serial, fileVault: "", sip: "",
                                          firewall: "", gatekeeper: "", bootstrapToken: "",
-                                         hardwareEncrypted: nil)
+                                         hardwareEncrypted: nil, neverInventoried: true)
             }
 
             let diskEncryption = item["diskEncryption"] as? [String: Any]
@@ -2571,6 +2571,11 @@ struct CoreDashboard: Sendable {
         for r in sorted {
             ws.write(r.name, row: row, col: 0, format: .cell)
             ws.write(r.serial, row: row, col: 1, format: .cell)
+            if r.neverInventoried {
+                for col in 2...6 { ws.write("No Data", row: row, col: col, format: .cell) }
+                row += 1
+                continue
+            }
             ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
                      row: row, col: 2, format: securityVerdictFormat(
                         .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))
@@ -2767,14 +2772,14 @@ struct CoreDashboard: Sendable {
     }
 
     /// Returns {osVersion: count} for macOS from the cached security report.
-    private func macosOSCounts() -> [String: Int] {
+    func macosOSCounts() -> [String: Int] {
         guard let items = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
         else { return [:] }
         var counts: [String: Int] = [:]
         for item in items {
             if case .osVersion(let v) = item {
                 let ver = v.osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !ver.isEmpty else { continue }
+                guard OSVersionName.isMeasured(ver) else { continue }
                 counts[OSVersionName.normalized(ver), default: 0] += v.count
             }
         }

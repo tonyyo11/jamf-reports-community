@@ -1235,7 +1235,11 @@ struct ReportEngine: Sendable {
         osCounts: [String: Int],
         totalDevices: Int
     ) -> Double? {
-        guard !macOSRows.isEmpty, totalDevices > 0 else { return nil }
+        // A Mac with no measured version is in neither the numerator nor the denominator.
+        let unmeasured = osCounts.filter { !OSVersionName.isMeasured($0.key) }
+            .values.reduce(0, +)
+        let measuredDevices = totalDevices - unmeasured
+        guard !macOSRows.isEmpty, measuredDevices > 0 else { return nil }
         // Latest version per major, greatest version winning where two rows share
         // a major. Shared with the Overview's macOS Distribution card, so the card's
         // "on current" share and this percentage use one definition of current.
@@ -1252,7 +1256,7 @@ struct ReportEngine: Sendable {
             currentCount += onLatest
         }
         // A count above the fleet (mixed sources) must not read past 100%.
-        return Double(min(currentCount, totalDevices)) / Double(totalDevices) * 100.0
+        return Double(min(currentCount, measuredDevices)) / Double(measuredDevices) * 100.0
     }
 
     private func pct(of count: Int?, total: Int) -> Double? {

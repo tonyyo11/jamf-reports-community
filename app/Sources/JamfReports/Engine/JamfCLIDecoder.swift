@@ -971,6 +971,9 @@ struct MobileDeviceSecurity: Decodable, Sendable {
     let passcodeCompliant: Bool?
     let dataProtected: Bool?
     let jailBreakDetected: Bool?
+    /// False when no profile requires a passcode, though Jamf then still reports
+    /// `passcodeCompliant: true`. `var` with a default keeps the memberwise init.
+    var passcodePresent: Bool? = nil
 }
 
 struct MobileDeviceGeneral: Decodable, Sendable {
@@ -1118,6 +1121,7 @@ struct ProtectComputerRow: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case uuid, hostname, serial, modelName, osString, plan, version
+        case osMajor, osMinor, osPatch
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
         case insightsStatsFail
     }
@@ -1128,7 +1132,11 @@ struct ProtectComputerRow: Decodable, Sendable {
         hostName = try? c.decodeIfPresent(String.self, forKey: .hostname)
         serial = try? c.decodeIfPresent(String.self, forKey: .serial)
         modelName = try? c.decodeIfPresent(String.self, forKey: .modelName)
-        osString = try? c.decodeIfPresent(String.self, forKey: .osString)
+        osString = ProtectComputerRow.osText(
+            major: try? c.decodeIfPresent(Int.self, forKey: .osMajor),
+            minor: try? c.decodeIfPresent(Int.self, forKey: .osMinor),
+            patch: try? c.decodeIfPresent(Int.self, forKey: .osPatch),
+            fallback: try? c.decodeIfPresent(String.self, forKey: .osString))
         planName = try? c.decodeIfPresent(String.self, forKey: .plan)
         version = try? c.decodeIfPresent(String.self, forKey: .version)
         webProtectionActive = try? c.decodeIfPresent(Bool.self, forKey: .webProtectionActive)
@@ -1137,6 +1145,14 @@ struct ProtectComputerRow: Decodable, Sendable {
         connectionStatus = try? c.decodeIfPresent(String.self, forKey: .connectionStatus)
         lastConnection = try? c.decodeIfPresent(String.self, forKey: .lastConnection)
         insightsStatsFail = try? c.decodeIfPresent(Int.self, forKey: .insightsStatsFail)
+    }
+
+    /// jamf-cli prints `osMajor`, `osMinor` and `osPatch` and no `osString`: "macOS 15.7.3",
+    /// "macOS 15.7" for patch 0. A missing major falls back to `osString`, else nil.
+    static func osText(major: Int?, minor: Int?, patch: Int?, fallback: String?) -> String? {
+        guard let major else { return fallback }
+        let tail = (patch ?? 0) == 0 ? "" : ".\(patch ?? 0)"
+        return "macOS \(major).\(minor ?? 0)\(tail)"
     }
 
     /// Maps a FULL_DISK_ACCESS_STATUS value; the Protect Computers sheet uses it too.

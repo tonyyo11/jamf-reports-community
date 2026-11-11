@@ -564,14 +564,21 @@ extension DemoData {
         return rows
     }
 
+    /// Major, minor and patch of "15.7.3" (a missing part is 0), as jamf-cli prints them.
+    private static func osNumbers(_ version: String) -> [Int] {
+        let parts = version.split(separator: ".").map { Int($0) ?? 0 }
+        return (parts + [0, 0, 0]).prefix(3).map { $0 }
+    }
+
     private static func protectComputerRows() -> [ProtectComputerRow] {
         var objects: [[String: Any]] = []
         for (mac, agent) in zip(protectPilotMacs, protectAgentStates) {
+            let osParts = osNumbers(mac.osVersion)
             var object: [String: Any] = [
                 "uuid": "meridian-protect-\(mac.jamfID)",
                 "hostname": mac.name,
                 "serial": mac.serial,
-                "osString": "macOS \(mac.osVersion)",
+                "osMajor": osParts[0], "osMinor": osParts[1], "osPatch": osParts[2],
                 "plan": agent.plan,
                 "webProtectionActive": agent.web,
                 "fullDiskAccess": agent.fullDisk ? "Authorized" : "Unauthorized",

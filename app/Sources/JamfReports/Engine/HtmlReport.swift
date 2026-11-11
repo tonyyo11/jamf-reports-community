@@ -403,11 +403,11 @@ struct HtmlReport: Sendable {
     /// Compliance of the first ten patch titles as bars on a 0–100% track.
     func buildPatchChart(patchStatus: [[String: Any]]) -> HtmlBlock {
         guard !patchStatus.isEmpty else { return .omitted("no patch-status snapshot") }
-        let rows = patchStatus.prefix(10).map { item -> (label: String, pct: Double) in
-            let pct = (item["compliance_pct"] as? String ?? "0")
-                .replacingOccurrences(of: "%", with: "")
-            return (item["title"] as? String ?? "", Double(pct) ?? 0)
-        }
+        // A title with no measured share ("N/A", no devices) has no bar, not a 0% one.
+        let rows = patchStatus.compactMap { item -> (label: String, pct: Double)? in
+            patchTitlePct(item).map { (item["title"] as? String ?? "", $0) }
+        }.prefix(10).map { $0 }
+        guard !rows.isEmpty else { return .omitted("no patch title has a measured share") }
         return .shown(HtmlSectionFormatters.block(
             id: "patch-chart", title: "Patch compliance (first 10 titles)",
             body: HtmlSectionFormatters.renderPercentBars(rows, colored: .title)))
@@ -593,7 +593,8 @@ struct HtmlReport: Sendable {
         var versions: [(String, Int)] = []
         for item in security {
             guard item["section"] as? String == "os_version" else { continue }
-            let ver = item["os_version"] as? String ?? "Unknown"
+            let ver = item["os_version"] as? String ?? ""
+            guard OSVersionName.isMeasured(ver) else { continue }
             let count = asInt(item["count"]) ?? 0
             versions.append((ver, count))
         }
