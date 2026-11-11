@@ -267,7 +267,7 @@ Grid (6 columns x 4 rows):
 | score | 2 wide x 1 | **A score you define** / "Pick the controls and agents that count." | Screenshot: Security Posture, demo mode, score ring and control KPIs |
 | trends | 2 x 2 | **History, not just today** / "Daily snapshots, trend charts, quarter reports." | Screenshot: Trends, demo mode, 12-week range |
 | reports | 1 x 1 | Text only: **Excel · HTML · PDF · CSV** / "On demand or on a schedule." | format chips |
-| runs | 2 x 2 | **Schedules you set** / "Collect, report or back up on your own cadence, with each run's next time and last result." | Screenshot: Scheduled Runs (hand-built schedules, automation policy off), demo mode, `scheduled-runs.png` |
+| runs | 2 x 2 | **Scheduled runs** / "Set your own schedules, or turn on automation and let it keep every workspace current." | Screenshot: Scheduled Runs (hand-built schedules, automation policy off), demo mode, `scheduled-runs.png` |
 | langs | 1 x 1 | Text only, big teal type: **7 languages** / "Reports stay in English." | none |
 | protect | 1 wide x 2 tall | **Jamf Protect** / "Alerts and computers, matched to your Jamf Pro Macs." | Drawn severity list (High, Medium, Low), no screenshot |
 
