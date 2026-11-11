@@ -95,6 +95,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Workbooks: when Jamf Pro reports no Managed Software Update data (no statuses, no plans), the
+  Update Status tab holds one sentence saying so instead of a "Total Devices 0" row, and Update
+  Failures says the same instead of "No update failures found." (#305)
 - Workbooks, Cover tab: the Sheet Manifest lists the tabs the workbook holds, in tab order
   (after `sheets.order`, the custom EA tabs and Charts included), each with a description. It
   used to list every tab the app can write, in the app's own order. The numbered "Sheets 9–12"

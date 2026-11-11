@@ -541,6 +541,11 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 14)
 
+        if report.total == 0, (report.planTotal ?? 0) == 0, report.statusSummary.isEmpty,
+           (report.planStateSummary ?? []).isEmpty {
+            ws.write(Self.noUpdateDataText, row: row, col: 0, format: .cell)
+            return
+        }
         ws.write("Total Devices", row: row, col: 0, format: .cell)
         ws.write(report.total, row: row, col: 1, format: .cell)
         row += 2
@@ -629,9 +634,16 @@ struct CoreDashboard: Sendable {
         }
 
         if errorDevices.isEmpty && failedPlans.isEmpty {
-            ws.write("No update failures found.", row: row, col: 0, format: .cell)
+            let noData = asInt(envelope["total"]) == 0 && asInt(envelope["plan_total"]) == 0
+            ws.write(noData ? Self.noUpdateDataText : "No update failures found.",
+                     row: row, col: 0, format: .cell)
         }
     }
+
+    /// jamf-cli's "No managed software update data found." lands as a report with no
+    /// statuses and no plans (`ReportEngine.emptyUpdateReport`): no figure, not 0 devices.
+    static let noUpdateDataText =
+        "No Managed Software Update data: Jamf Pro reported no update statuses and no plans."
 
     // MARK: - Inventory Summary
     // Source: `jamf-cli pro report inventory-summary --output json`

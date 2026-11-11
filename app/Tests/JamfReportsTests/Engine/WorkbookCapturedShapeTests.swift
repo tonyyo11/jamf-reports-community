@@ -80,4 +80,40 @@ final class WorkbookCapturedShapeTests: XCTestCase {
             ["Other EA", "Twin", "", "12"],
         ], "two Macs named Twin: no serial is guessed")
     }
+
+    /// What `ReportEngine.emptyUpdateReport` lands when jamf-cli finds no update data.
+    private let noUpdateData: [String: Any] = [
+        "total": 0, "status_summary": [Any](), "plan_total": 0, "plan_state_summary": [Any](),
+    ]
+
+    func testUpdateTabsShowNoFigureWhenJamfProReportedNoUpdateData() throws {
+        try snapshot("update-status", [noUpdateData])
+        var failures = noUpdateData
+        failures["error_devices"] = [Any]()
+        failures["failed_plans"] = [Any]()
+        try snapshot("update-device-failures", [failures])
+        let workbook = Workbook()
+        let dash = CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        try dash.writeUpdateStatus()
+        try dash.writeUpdateFailures()
+        for tab in ["Update Status", "Update Failures"] {
+            let texts = try XCTUnwrap(workbook.sheet(named: tab)).dedupedCells.compactMap {
+                if case .string(let text) = $0.value { return text } else { return nil }
+            }
+            XCTAssertTrue(texts.contains(CoreDashboard.noUpdateDataText), tab)
+            XCTAssertFalse(texts.contains("Total Devices"), tab)
+            XCTAssertFalse(texts.contains("No update failures found."), tab)
+        }
+    }
+
+    func testUpdateStatusKeepsTheTotalWhenThereAreStatuses() throws {
+        try snapshot("update-status", [[
+            "total": 3, "status_summary": [["status": "PENDING", "count": 3]],
+            "plan_total": 0, "plan_state_summary": [Any](),
+        ]])
+        let found = try rows("Update Status", after: "Update Status") {
+            try $0.writeUpdateStatus()
+        }
+        XCTAssertTrue(found.contains(["Total Devices", "3"]), "\(found)")
+    }
 }
