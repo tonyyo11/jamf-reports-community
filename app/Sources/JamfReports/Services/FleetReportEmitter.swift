@@ -52,7 +52,7 @@ enum FleetReportEmitter {
     }
 
     /// CSV text for a rollup: `Metric,Current,Previous,Delta`. Pure — testable.
-    static func csv(for rollup: FleetRollup, notes: [String] = []) -> String {
+    static func csv(for rollup: FleetRollup) -> String {
         var lines = ["Metric,Current,Previous,Delta"]
         for metric in rollup.metrics {
             // The label is text; the figures are the app's own number formats, which a delta's
@@ -64,8 +64,6 @@ enum FleetReportEmitter {
                 formatDelta(metric.delta, unit: metric.unit),
             ].joined(separator: ","))
         }
-        // After the metric rows, as `#` lines, so the table above stays parseable.
-        lines += notes.map { "# " + StaleDeviceService.csvField($0) }
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -121,7 +119,7 @@ enum FleetReportEmitter {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let stem = "fleet-\(ExportNaming.sanitize(group.name))"
         let url = dir.appendingPathComponent("\(stem)-\(timestamp).csv")
-        try csv(for: rollup, notes: siteScopeNotes(profiles: group.workspaces)).write(to: url, atomically: true, encoding: .utf8)
+        try csv(for: rollup).write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 

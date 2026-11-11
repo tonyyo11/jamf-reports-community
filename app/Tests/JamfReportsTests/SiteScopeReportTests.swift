@@ -48,6 +48,20 @@ final class SiteScopeReportTests: XCTestCase {
         XCTAssertFalse(html.contains("Nothing needs attention"))
     }
 
+    func testTheScopeSentenceIsTheFirstItemEvenWithAnotherCondition() throws {
+        let dataDir = root.appendingPathComponent("html-order", isDirectory: true)
+        try persist(limited, dataDir: dataDir)
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "computers", dataDir: dataDir, at: GoldenFleetClock.anchorNoon(),
+            rows: [["id": "1", "general": [
+                "name": "Old", "lastCheckIn": "2020-01-01T00:00:00Z",
+                "reportDate": "2020-01-01T00:00:00Z"], "hardware": ["serialNumber": "S1"]]])
+        let report = HtmlReport(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)
+        let items = report.attentionItems(report.loadInputs(for: [.interventionList]), shown: [])
+        XCTAssertGreaterThan(items.count, 1, "a stale Mac adds a second item")
+        XCTAssertTrue(items[0].text.hasPrefix("This report covers"), "\(items.map(\.text))")
+    }
+
     func testTheHTMLReportSaysNothingForAWholeOrUnknownLogin() throws {
         for scope in [SiteScope.whole, .unknown, .notApplicable] {
             XCTAssertFalse(try needsAttention(scope).contains("limited to some sites"))
@@ -56,7 +70,9 @@ final class SiteScopeReportTests: XCTestCase {
 
     // MARK: - Workbook
 
-    private func tabs(limited isLimited: Bool?) async throws -> [XLSXReader.Tab] {
+    private func tabs(
+        limited isLimited: Bool?
+    ) async throws -> (tabs: [XLSXReader.Tab], folder: URL) {
         let dataDir = root.appendingPathComponent("wb-\(isLimited.map(String.init) ?? "none")")
             .appendingPathComponent("jamf-cli-data", isDirectory: true)
         try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
@@ -69,12 +85,17 @@ final class SiteScopeReportTests: XCTestCase {
         let out = dataDir.deletingLastPathComponent().appendingPathComponent("out/report.xlsx")
         try await ReportEngine(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)
             .generate(outputURL: out, csvFolder: true, locateJamfCLI: { nil })
-        return try XLSXReader.tabs(of: out)
+        return (try XLSXReader.tabs(of: out), ReportEngine.csvFolderURL(besideWorkbook: out))
     }
 
+    /// Tabs whose body varies run to run: the Cover holds a run ID and timestamps (compared as a
+    /// set without them); Mobile Fleet Summary lists model rows that tie on count in a
+    /// different order and members, so only its row count is compared.
+    private let unstableTabs: Set<String> = ["Cover", "Mobile Fleet Summary"]
+
     func testALimitedLoginPutsTheSentenceInTheHeaderOfEveryTabAndMovesNothing() async throws {
-        let plain = try await tabs(limited: nil)
-        let scoped = try await tabs(limited: true)
+        let plain = try await tabs(limited: nil).tabs
+        let scoped = try await tabs(limited: true).tabs
         XCTAssertEqual(plain.map(\.name), scoped.map(\.name))
         let sentence = "This report covers 1 of 2 managed computers in Jamf Pro: "
             + "the login is limited to some sites."
@@ -87,27 +108,53 @@ final class SiteScopeReportTests: XCTestCase {
             } else {
                 XCTFail("\(before.name) row \(noteRow + 1) has no sentence")
             }
-            // Equal-count ties and the run ID vary between runs, so compare the rows as a set.
             func body(_ tab: XLSXReader.Tab) -> [String] {
-                tab.rows.enumerated().filter { $0.offset > 3 }.map { "\($0.element)" }
-                    .filter { !$0.contains("Run ID") }.sorted()
+                tab.rows.enumerated().filter { $0.offset != noteRow }.map { "\($0.element)" }
+                    .filter { !$0.contains("Run ID") && !$0.contains("Generated") }
             }
-            // Its model rows tie on count and come out in a different order each run.
-            if before.name != "Mobile Fleet Summary" {
-                XCTAssertEqual(body(before), body(after), before.name)
+            if before.name == "Mobile Fleet Summary" {
+                continue  // only its row count is stable
+            } else if unstableTabs.contains(before.name) {
+                XCTAssertEqual(body(before).sorted(), body(after).sorted(), before.name)
+            } else {
+                // Row 2 holds a timestamp, so skip it; every other row stays where it was.
+                let skip = { (tab: XLSXReader.Tab) in
+                    body(tab).enumerated().filter { $0.offset != 1 }.map(\.element)
+                }
+                XCTAssertEqual(skip(before), skip(after), before.name)
             }
         }
     }
 
     func testAWholeLoginLeavesTheHeaderAsItWas() async throws {
-        let plain = try await tabs(limited: nil)
-        let whole = try await tabs(limited: false)
+        let plain = try await tabs(limited: nil).tabs
+        let whole = try await tabs(limited: false).tabs
         for (before, after) in zip(plain, whole) {
             XCTAssertEqual(before.rows.count, after.rows.count, before.name)
             for r in 0..<min(3, before.rows.count) where before.name != "Cover" {
                 if r == 1 { continue }  // the subtitle holds a timestamp
                 XCTAssertEqual("\(before.rows[r])", "\(after.rows[r])", "\(before.name) \(r)")
             }
+        }
+    }
+
+    /// The CSV folder serializes the same cells, so each CSV carries the sentence in its
+    /// header rows when limited and none when whole.
+    func testTheCSVFolderInheritsTheSentenceOnlyWhenLimited() async throws {
+        func headerText(_ folder: URL) throws -> [String] {
+            try FileManager.default.contentsOfDirectory(atPath: folder.path)
+                .filter { $0.hasSuffix(".csv") }.sorted().map { name in
+                    try String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8)
+                        .components(separatedBy: "\n").prefix(3).joined(separator: "\n")
+                }
+        }
+        let limitedHeaders = try headerText(try await tabs(limited: true).folder)
+        XCTAssertFalse(limitedHeaders.isEmpty)
+        for header in limitedHeaders {
+            XCTAssertTrue(header.contains("limited to some sites"), header)
+        }
+        for header in try headerText(try await tabs(limited: false).folder) {
+            XCTAssertFalse(header.contains("limited to some sites"), header)
         }
     }
 
@@ -153,31 +200,50 @@ final class SiteScopeReportTests: XCTestCase {
 
     // MARK: - Report groups
 
-    func testTheFleetCSVAndWorkbookNameEachLimitedProfileAfterTheMetrics() throws {
+    private func fleetModel() throws -> FleetWorkbookModel {
+        let summary = DailySummary(
+            date: "2026-06-06", totalDevices: 100, fileVaultPct: 90, compliancePct: nil,
+            staleCount: 1, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil)
+        return try XCTUnwrap(FleetWorkbookModel.build(
+            groupName: "G", summariesByProfile: [(profile: "a", summaries: [summary])],
+            lookbackDays: 7, timestamp: "2026-06-06"))
+    }
+
+    func testTheFleetNotesNameOnlyLimitedProfiles() throws {
         try persist(limited)
         let other = "fine"
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("Jamf-Reports/\(other)"),
             withIntermediateDirectories: true)
         try persist(.whole, dataDir: try WorkspacePaths.dataDir(for: other))
-        let notes = FleetReportEmitter.siteScopeNotes(profiles: [profile, other])
         XCTAssertEqual(
-            notes, ["Note: scoped sees 1 of 2 managed computers (site-limited login)"])
+            FleetReportEmitter.siteScopeNotes(profiles: [profile, other]),
+            ["Note: scoped sees 1 of 2 managed computers (site-limited login)"])
+    }
 
-        let rollup = FleetRollup.compute(
-            groupName: "G",
-            current: [DailySummary(
-                date: "2026-06-06", totalDevices: 100, fileVaultPct: 90, compliancePct: nil,
-                staleCount: 1, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil)],
-            previous: [])
-        let lines = FleetReportEmitter.csv(for: rollup, notes: notes)
-            .split(separator: "\n").map(String.init)
-        XCTAssertEqual(lines.first, "Metric,Current,Previous,Delta")
-        XCTAssertEqual(
-            lines.last, "# Note: scoped sees 1 of 2 managed computers (site-limited login)")
-        XCTAssertEqual(
-            lines.dropLast().filter { $0.hasPrefix("#") }.count, 0, "notes only after the metrics")
-        XCTAssertEqual(
-            FleetReportEmitter.csv(for: rollup).split(separator: "\n").count, lines.count - 1)
+    func testTheFleetWorkbookNotesSitBelowTheMetricsAndMoveOnlyTheChart() throws {
+        let model = try fleetModel()
+        let plain = try XCTUnwrap(
+            FleetWorkbookEmitter.workbook(for: model).sheet(named: "Fleet Summary"))
+        let notes = ["Note: a sees 1 of 2 managed computers (site-limited login)", "Note: b"]
+        let noted = try XCTUnwrap(
+            FleetWorkbookEmitter.workbook(for: model, notes: notes).sheet(named: "Fleet Summary"))
+        let lastMetricRow = 3 + model.universal.count
+        func text(_ ws: Worksheet, _ row: Int) -> String? {
+            ws.cells.first { $0.row == row && $0.col == 0 }.flatMap {
+                if case .string(let value) = $0.value { return value }
+                return nil
+            }
+        }
+        for (i, note) in notes.enumerated() {
+            XCTAssertEqual(text(noted, lastMetricRow + 2 + i), note)
+            XCTAssertNil(text(plain, lastMetricRow + 2 + i))
+        }
+        let metricCells = { (ws: Worksheet) in
+            ws.cells.filter { $0.row <= lastMetricRow }.map { "\($0.row),\($0.col),\($0.value)" }
+        }
+        XCTAssertEqual(metricCells(plain), metricCells(noted))
+        let chart = try XCTUnwrap(plain.imageEmbeds.first?.row)
+        XCTAssertEqual(noted.imageEmbeds.first?.row, chart + notes.count)
     }
 }

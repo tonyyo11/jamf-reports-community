@@ -9,7 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
-- Jamf Reports now notices when the jamf-cli login can see only some Jamf Pro sites. The collect log, Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, fleet exports and period report note that they cover only the sites that login sees.
+- Jamf Reports now notices when the jamf-cli login can see only some Jamf Pro sites. The collect log, Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, fleet workbook and period report note that they cover only the sites that login sees.
 - The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
 - The daily summary records which products an environment holds and, with Jamf Protect, how many
   Protect computers it sees, how many of those match this environment's inventory, and how many

@@ -142,6 +142,7 @@ Every consumer reads the persisted verdict. Only `limited` shows anything.
    - A tab that already writes row 2 (Fleet Drift's large-change note) gets the scope sentence
      first, then its own text.
    - No column or table row moves.
+   - The Charts tab has no header (it holds images only) and carries no note.
    - Before building, check that no tab's tests pin row 2 as blank.
 5. **Webhooks.**
    - The success digest and alert cards add one fact, `Scope: 1 of 2 managed computers`. It's
@@ -151,8 +152,10 @@ Every consumer reads the persisted verdict. Only `limited` shows anything.
 6. **Report-group exports and the period report.**
    - `FleetRollup` sums `totalDevices` across profiles, and the period report carries the
      profile's counts.
-   - Each gets one note line naming the profile whose login is site-limited, in the fleet CSV,
-     the fleet workbook's summary sheet and the period report's About sheet.
+   - Each gets one note line naming the profile whose login is site-limited, in the fleet workbook's
+     summary sheet and the period report's About sheet. The fleet CSV gets none: it keeps the
+     `Metric,Current,Previous,Delta` shape header-driven readers expect, and the workbook beside
+     it carries the note.
 
 Flagged, not in this change:
 - **Trends:** the daily summary records no scope, so a series that spans a change of login mixes
