@@ -2181,7 +2181,8 @@ struct CoreDashboard: Sendable {
         for item in items {
             let osStr = ProtectComputerRow.osText(
                 major: asInt(item["osMajor"]), minor: asInt(item["osMinor"]),
-                patch: asInt(item["osPatch"]), fallback: item["osString"] as? String) ?? ""
+                patch: asInt(item["osPatch"]), fallback: item["osString"] as? String)?
+                .replacingOccurrences(of: "macOS ", with: "") ?? ""
             ws.write(item["hostname"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: .cell)
             ws.write(item["plan"] as? String ?? "", row: row, col: 2, format: .cell)
