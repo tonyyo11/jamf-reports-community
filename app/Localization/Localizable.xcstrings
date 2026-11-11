@@ -18477,6 +18477,132 @@
         }
       }
     },
+    "'%@' is not in jamf-cli's profiles, so Jamf Protect fails on every run." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ gehört nicht zu den Profilen von jamf-cli, daher schlägt Jamf Protect bei jedem Lauf fehl."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» no está en los perfiles de jamf-cli, por lo que Jamf Protect falla en cada ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %@ » ne figure pas parmi les profils de jamf-cli : Jamf Protect échoue donc à chaque exécution."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' non è tra i profili di jamf-cli, quindi Jamf Protect non riesce a ogni esecuzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は jamf-cli のプロファイルにないため、Jamf Protect は実行のたびに失敗します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' não está nos perfis do jamf-cli, então o Jamf Protect falha em toda execução."
+          }
+        }
+      }
+    },
+    "'%@' is not in jamf-cli's profiles, so Platform API reports fail on every run." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ gehört nicht zu den Profilen von jamf-cli, daher schlagen die Platform-API-Berichte bei jedem Lauf fehl."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» no está en los perfiles de jamf-cli, por lo que los informes de Platform API fallan en cada ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %@ » ne figure pas parmi les profils de jamf-cli : les rapports Platform API échouent donc à chaque exécution."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' non è tra i profili di jamf-cli, quindi i report della Platform API non riescono a ogni esecuzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は jamf-cli のプロファイルにないため、Platform API レポートは実行のたびに失敗します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' não está nos perfis do jamf-cli, então os relatórios da Platform API falham em toda execução."
+          }
+        }
+      }
+    },
+    "'%@' is profiles.%@ here and in '%@'. Every rollup counts that tenant twice." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%1$@“ ist hier und in „%3$@“ profiles.%2$@. Jede Zusammenfassung zählt diesen Tenant doppelt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "'%1$@' is profiles.%2$@ here and in '%3$@'. Every rollup counts that tenant twice."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%1$@» es profiles.%2$@ aquí y en «%3$@». Cada consolidación cuenta ese tenant dos veces."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %1$@ » est profiles.%2$@ ici et dans « %3$@ ». Chaque consolidation compte ce tenant deux fois."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' è profiles.%2$@ qui e in '%3$@'. Ogni riepilogo conta quel tenant due volte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」は、ここと「%3$@」の両方で profiles.%2$@ です。すべての集計でそのテナントが二重にカウントされます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' é profiles.%2$@ aqui e em '%3$@'. Cada consolidação conta esse tenant duas vezes."
+          }
+        }
+      }
+    },
     "'%@' names no Jamf Pro or Jamf School profile" : {
       "localizations" : {
         "de" : {
@@ -18553,6 +18679,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "'%@' não indica nenhum ID de ambiente ou de tenant, então sua credencial acessa apenas o Jamf Account. Nenhum relatório do Jamf Pro pode ser coletado com ela, e a coleta é interrompida imediatamente."
+          }
+        }
+      }
+    },
+    "'%@' reaches %@ and '%@' reaches %@, so Platform API reports are skipped. Choose the Platform profile for this Jamf Pro." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%1$@“ erreicht %2$@ und „%3$@“ erreicht %4$@, daher werden Platform-API-Berichte übersprungen. Wählen Sie das Platform-Profil dieses Jamf Pro."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "'%1$@' reaches %2$@ and '%3$@' reaches %4$@, so Platform API reports are skipped. Choose the Platform profile for this Jamf Pro."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%1$@» llega a %2$@ y «%3$@» llega a %4$@, por lo que se omiten los informes de Platform API. Elija el perfil Platform de este Jamf Pro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %1$@ » atteint %2$@ et « %3$@ » atteint %4$@ : les rapports Platform API sont donc ignorés. Choisissez le profil Platform de ce Jamf Pro."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' raggiunge %2$@ e '%3$@' raggiunge %4$@, quindi i report della Platform API vengono saltati. Scegliere il profilo Platform di questo Jamf Pro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」は %2$@ に、「%3$@」は %4$@ に接続するため、Platform API レポートはスキップされます。この Jamf Pro 用の Platform プロファイルを選択してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' alcança %2$@ e '%3$@' alcança %4$@, então os relatórios da Platform API são ignorados. Escolha o perfil Platform deste Jamf Pro."
           }
         }
       }
@@ -22001,6 +22173,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Um perfil de configuração define o registro de logs do Jamf Reports: logs detalhados %@, dados privados %@."
+          }
+        }
+      }
+    },
+    "A copy of config.yaml is in %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Kopie von config.yaml liegt in %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una copia de config.yaml en %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une copie de config.yaml se trouve dans %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una copia di config.yaml si trova in %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml のコピーは %@ にあります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma cópia de config.yaml está em %@."
           }
         }
       }
@@ -32515,6 +32727,46 @@
         }
       }
     },
+    "Cannot serve Platform reports" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kann keine Platform-Berichte liefern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No puede servir informes de Platform"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne peut pas fournir de rapports Platform"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non può fornire report Platform"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform のレポートには使用できません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não pode fornecer relatórios da Platform"
+          }
+        }
+      }
+    },
     "Cannot write to %@: %@" : {
       "localizations" : {
         "de" : {
@@ -38513,6 +38765,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirmar tudo"
+          }
+        }
+      }
+    },
+    "Confirm in Config Doctor" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Config Doctor bestätigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmar en Config Doctor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmer dans Config Doctor"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conferma in Config Doctor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Config Doctor で確認"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmar no Config Doctor"
           }
         }
       }
@@ -46721,6 +47013,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Excluir agendamento"
+          }
+        }
+      }
+    },
+    "Delete `profiles.jamf_pro` or `profiles.jamf_school` in config.yaml." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löschen Sie `profiles.jamf_pro` oder `profiles.jamf_school` in config.yaml."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimine `profiles.jamf_pro` o `profiles.jamf_school` en config.yaml."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimez `profiles.jamf_pro` ou `profiles.jamf_school` dans config.yaml."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminare `profiles.jamf_pro` o `profiles.jamf_school` in config.yaml."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml の `profiles.jamf_pro` または `profiles.jamf_school` を削除してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exclua `profiles.jamf_pro` ou `profiles.jamf_school` em config.yaml."
           }
         }
       }
@@ -58105,6 +58437,46 @@
         }
       }
     },
+    "From this workspace's settings. The first change writes a profiles block to config.yaml." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus den Einstellungen dieses Arbeitsbereichs. Die erste Änderung schreibt einen profiles-Block in config.yaml."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Según los ajustes de este espacio de trabajo. El primer cambio escribe un bloque profiles en config.yaml."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D'après les réglages de cet espace de travail. La première modification écrit un bloc profiles dans config.yaml."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dalle impostazioni di questo spazio di lavoro. La prima modifica scrive un blocco profiles in config.yaml."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースの設定から取得しています。最初の変更で profiles ブロックが config.yaml に書き込まれます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das configurações deste espaço de trabalho. A primeira alteração grava um bloco profiles em config.yaml."
+          }
+        }
+      }
+    },
     "Full" : {
       "localizations" : {
         "de" : {
@@ -67433,48 +67805,48 @@
         }
       }
     },
-    "Keep '%@' as the workspace and exclude '%@' under Automation > Excluded profiles. Keep the oauth2 profile in jamf-cli for the commands the gateway refuses. Nothing is changed for you." : {
+    "Keep '%@' as the workspace: it runs the Jamf Pro commands. Add '%@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %@` and `platform: %@`), then exclude '%@' under Automation > Excluded profiles. Nothing is changed for you." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "„%@“ als Arbeitsbereich beibehalten und „%@“ unter Automatisierung > Ausgeschlossene Profile ausschließen. Das oauth2-Profil in jamf-cli für die Befehle behalten, die das Gateway ablehnt. Es wird nichts für Sie geändert."
+            "value" : "„%1$@“ als Arbeitsbereich beibehalten: Dort laufen die Jamf-Pro-Befehle. „%2$@“ in dessen config.yaml als profiles.platform hinzufügen (`profiles:` mit `jamf_pro: %3$@` und `platform: %4$@`) und „%5$@“ anschließend unter Automatisierung > Ausgeschlossene Profile ausschließen. Es wird nichts für Sie geändert."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Keep '%1$@' as the workspace and exclude '%2$@' under Automation > Excluded profiles. Keep the oauth2 profile in jamf-cli for the commands the gateway refuses. Nothing is changed for you."
+            "value" : "Keep '%1$@' as the workspace: it runs the Jamf Pro commands. Add '%2$@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %3$@` and `platform: %4$@`), then exclude '%5$@' under Automation > Excluded profiles. Nothing is changed for you."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserve '%@' como espacio de trabajo y excluya '%@' en Automatización > Perfiles excluidos. Conserve el perfil oauth2 en jamf-cli para los comandos que rechaza la pasarela. No se cambia nada automáticamente."
+            "value" : "Conserve '%1$@' como espacio de trabajo: ejecuta los comandos de Jamf Pro. Añada '%2$@' como profiles.platform en el config.yaml de ese espacio de trabajo (`profiles:` con `jamf_pro: %3$@` y `platform: %4$@`) y luego excluya '%5$@' en Automatización > Perfiles excluidos. No se cambia nada automáticamente."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conservez « %@ » comme espace de travail et excluez « %@ » sous Automatisation > Profils exclus. Conservez le profil oauth2 dans jamf-cli pour les commandes que la passerelle refuse. Rien n’est modifié à votre place."
+            "value" : "Conservez « %1$@ » comme espace de travail : il exécute les commandes Jamf Pro. Ajoutez « %2$@ » comme profiles.platform dans son config.yaml (`profiles:` avec `jamf_pro: %3$@` et `platform: %4$@`), puis excluez « %5$@ » sous Automatisation > Profils exclus. Rien n’est modifié à votre place."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mantenere '%@' come spazio di lavoro ed escludere '%@' in Automazione > Profili esclusi. Mantenere il profilo oauth2 in jamf-cli per i comandi che il gateway rifiuta. Nessuna modifica viene applicata automaticamente."
+            "value" : "Mantenere '%1$@' come spazio di lavoro: esegue i comandi di Jamf Pro. Aggiungere '%2$@' come profiles.platform nel suo config.yaml (`profiles:` con `jamf_pro: %3$@` e `platform: %4$@`), quindi escludere '%5$@' in Automazione > Profili esclusi. Nessuna modifica viene applicata automaticamente."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%1$@”をワークスペースとして残し、“自動化”›“除外するプロファイル”で“%2$@”を除外してください。ゲートウェイが拒否するコマンドのため、oauth2プロファイルはjamf-cliに残しておいてください。自動での変更はありません。"
+            "value" : "“%1$@”をワークスペースとして残してください。Jamf Proのコマンドはこのワークスペースで実行されます。そのconfig.yamlに“%2$@”をprofiles.platformとして追加し（`profiles:`に`jamf_pro: %3$@`と`platform: %4$@`）、“自動化”›“除外プロファイル”で“%5$@”を除外してください。自動での変更はありません。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mantenha '%1$@' como espaço de trabalho e exclua '%2$@' em Automação > Perfis excluídos. Mantenha o perfil oauth2 no jamf-cli para os comandos que o gateway recusa. Nada é alterado por você."
+            "value" : "Mantenha '%1$@' como espaço de trabalho: ele executa os comandos do Jamf Pro. Adicione '%2$@' a ele como profiles.platform no config.yaml (`profiles:` com `jamf_pro: %3$@` e `platform: %4$@`) e depois exclua '%5$@' em Automação > Perfis excluídos. Nada é alterado por você."
           }
         }
       }
@@ -67595,6 +67967,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Manter os %@ mais recentes"
+          }
+        }
+      }
+    },
+    "Keep the profile in one workspace and clear it in the other." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Behalten Sie das Profil in einem Arbeitsbereich und leeren Sie es im anderen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conserve el perfil en un solo espacio de trabajo y déjelo en blanco en el otro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservez le profil dans un seul espace de travail et videz-le dans l'autre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantenere il profilo in un solo spazio di lavoro e svuotarlo nell'altro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロファイルは一方のワークスペースだけに残し、もう一方では空にしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantenha o perfil em um só espaço de trabalho e limpe-o no outro."
           }
         }
       }
@@ -74897,6 +75309,46 @@
         }
       }
     },
+    "Newest snapshot %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuester Snapshot: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última instantánea: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernier instantané : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot più recente: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新のスナップショット: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot mais recente: %@"
+          }
+        }
+      }
+    },
     "Next" : {
       "localizations" : {
         "de" : {
@@ -81681,6 +82133,46 @@
         }
       }
     },
+    "Not set" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht festgelegt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin definir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non défini"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non impostato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未設定"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não definido"
+          }
+        }
+      }
+    },
     "Not yet" : {
       "localizations" : {
         "de" : {
@@ -81757,6 +82249,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não há nada em %@. Em uma pasta sincronizada, isso geralmente significa que o provedor ainda não terminou de montar, você saiu da conta dele ou o compartilhamento foi renomeado. Até que volte, nenhum perfil pode ser lido nem gravado."
+          }
+        }
+      }
+    },
+    "Nothing is changed for you." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wird nichts für Sie geändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se cambia nada por usted."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n'est modifié à votre place."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non viene modificato nulla al posto vostro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動では何も変更されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada é alterado por você."
           }
         }
       }
@@ -82721,6 +83253,46 @@
         }
       }
     },
+    "Old profile keys are not read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alte Profilschlüssel werden nicht gelesen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de perfil antiguas no se leen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les anciennes clés de profil ne sont pas lues"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le vecchie chiavi del profilo non vengono lette"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "古いプロファイルキーは読み込まれません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As chaves de perfil antigas não são lidas"
+          }
+        }
+      }
+    },
     "On" : {
       "localizations" : {
         "de" : {
@@ -83277,6 +83849,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Um EA está desatualizado — execute a auditoria mSCP novamente para que ambos coincidam."
+          }
+        }
+      }
+    },
+    "One environment has one MDM" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Umgebung hat genau ein MDM"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un entorno tiene un solo MDM"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un environnement a un seul MDM"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un ambiente ha un solo MDM"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 つの環境に MDM は 1 つです"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um ambiente tem um único MDM"
           }
         }
       }
@@ -86163,6 +86775,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nome da organização"
+          }
+        }
+      }
+    },
+    "Organization" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organizzazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組織"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organização"
           }
         }
       }
@@ -91271,6 +91923,46 @@
         }
       }
     },
+    "Protect is on but has no profile; set protect.profile or disconnect Protect first" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect ist aktiviert, hat aber kein Profil; setzen Sie zuerst protect.profile oder trennen Sie Protect"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect está activado pero no tiene perfil; defina protect.profile o desconecte Protect primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect est activé mais n’a pas de profil ; définissez protect.profile ou déconnectez d’abord Protect"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect è attivo ma non ha un profilo; impostare prima protect.profile o disconnettere Protect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protectは有効ですがプロファイルがありません。先にprotect.profileを設定するか、Protectの接続を解除してください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Protect está ativado mas não tem perfil; defina protect.profile ou desconecte o Protect primeiro"
+          }
+        }
+      }
+    },
     "Pull a snapshot from Jamf Pro to populate dashboards." : {
       "localizations" : {
         "de" : {
@@ -94781,6 +95473,86 @@
         }
       }
     },
+    "Remove Jamf Protect from this environment?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect aus dieser Umgebung entfernen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar Jamf Protect de este entorno?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer Jamf Protect de cet environnement ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovere Jamf Protect da questo ambiente?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境から Jamf Protect を削除しますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover Jamf Protect deste ambiente?"
+          }
+        }
+      }
+    },
+    "Remove Platform API from this environment?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform API aus dieser Umgebung entfernen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar Platform API de este entorno?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer Platform API de cet environnement ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovere Platform API da questo ambiente?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境から Platform API を削除しますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover Platform API deste ambiente?"
+          }
+        }
+      }
+    },
     "Remove from connection" : {
       "localizations" : {
         "de" : {
@@ -94817,6 +95589,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remover da conexão"
+          }
+        }
+      }
+    },
+    "Remove from this environment?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus dieser Umgebung entfernen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar de este entorno?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer de cet environnement ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovere da questo ambiente?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境から削除しますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover deste ambiente?"
           }
         }
       }
@@ -98253,6 +99065,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hora da execução"
+          }
+        }
+      }
+    },
+    "Run `jamf-cli config list`, then set profiles.%@ to a profile it shows." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Führen Sie `jamf-cli config list` aus und setzen Sie profiles.%@ auf ein angezeigtes Profil."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ejecute `jamf-cli config list` y defina profiles.%@ con un perfil que aparezca."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exécutez `jamf-cli config list`, puis définissez profiles.%@ sur un profil qu'elle affiche."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eseguire `jamf-cli config list`, poi impostare profiles.%@ su un profilo mostrato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "`jamf-cli config list` を実行し、表示されたプロファイルを profiles.%@ に設定してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Execute `jamf-cli config list` e defina profiles.%@ com um perfil exibido."
           }
         }
       }
@@ -104711,6 +105563,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Defina lookback_days como um número inteiro ou remova-o."
+          }
+        }
+      }
+    },
+    "Set profiles.platform to the Platform API profile of this Jamf Pro, or clear it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setzen Sie profiles.platform auf das Platform-API-Profil dieses Jamf Pro oder leeren Sie es."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina profiles.platform con el perfil de Platform API de este Jamf Pro o déjelo en blanco."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez profiles.platform sur le profil Platform API de ce Jamf Pro, ou videz-le."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostare profiles.platform sul profilo Platform API di questo Jamf Pro oppure svuotarlo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.platform をこの Jamf Pro の Platform API プロファイルに設定するか、空にしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina profiles.platform com o perfil da Platform API deste Jamf Pro ou limpe-o."
           }
         }
       }
@@ -112151,6 +113043,46 @@
         }
       }
     },
+    "Tenant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mandant"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tenant"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tenant"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テナント"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tenant"
+          }
+        }
+      }
+    },
     "Tenant (legacy)" : {
       "localizations" : {
         "de" : {
@@ -112913,6 +113845,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O gateway do Jamf Account não aceita este ID de tenant. O perfil foi mantido e a API do Jamf School continua funcionando; corrija os campos da Platform API com Atualizar."
+          }
+        }
+      }
+    },
+    "The Jamf Pro or Jamf School slot always names this workspace's own profile" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Jamf-Pro- oder Jamf-School-Eintrag nennt immer das Profil dieses Arbeitsbereichs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ranura de Jamf Pro o Jamf School siempre nombra el perfil de este espacio de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’emplacement Jamf Pro ou Jamf School désigne toujours le profil de cet espace de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo slot di Jamf Pro o Jamf School indica sempre il profilo di questo spazio di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf ProまたはJamf Schoolのスロットには、常にこのワークスペース自身のプロファイルを指定します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O campo do Jamf Pro ou do Jamf School sempre nomeia o perfil deste espaço de trabalho"
           }
         }
       }
@@ -113993,6 +114965,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O nível de escopo da integração não corresponde a este ID. Uma integração de nível de ambiente precisa do ID do ambiente, e uma de nível de tenant (legada) precisa do ID do tenant. Corrija o nível de escopo ou o ID e salve novamente."
+          }
+        }
+      }
+    },
+    "The jamf-cli profile %@ and its snapshots stay." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das jamf-cli-Profil %@ und seine Snapshots bleiben erhalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de jamf-cli %@ y sus instantáneas se conservan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil jamf-cli %@ et ses instantanés sont conservés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo jamf-cli %@ e i suoi snapshot restano."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli プロファイル %@ とそのスナップショットは残ります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil do jamf-cli %@ e seus snapshots são mantidos."
           }
         }
       }
@@ -119081,6 +120093,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dois Macs gravaram o mesmo arquivo quase ao mesmo tempo e o provedor manteve as duas cópias. Elas são ignoradas na leitura dos dados, então nenhum relatório é gerado a partir delas."
+          }
+        }
+      }
+    },
+    "Two environments collect one tenant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwei Umgebungen erfassen denselben Tenant"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dos entornos recopilan el mismo tenant"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deux environnements collectent le même tenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Due ambienti raccolgono lo stesso tenant"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2 つの環境が同じテナントを収集しています"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dois ambientes coletam o mesmo tenant"
           }
         }
       }
@@ -125137,6 +126189,46 @@
         }
       }
     },
+    "While profiles is set these keys are not read: %@. Delete the lines when every Mac sharing this workspace runs this version." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solange profiles gesetzt ist, werden diese Schlüssel nicht gelesen: %@. Löschen Sie die Zeilen, sobald jeder Mac, der diesen Arbeitsbereich teilt, diese Version ausführt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mientras profiles esté definido, estas claves no se leen: %@. Elimine las líneas cuando todos los Mac que comparten este espacio de trabajo ejecuten esta versión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tant que profiles est défini, ces clés ne sont pas lues : %@. Supprimez ces lignes lorsque chaque Mac partageant cet espace de travail exécute cette version."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finché profiles è impostato, queste chiavi non vengono lette: %@. Eliminare le righe quando ogni Mac che condivide questo spazio di lavoro esegue questa versione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles が設定されている間、次のキーは読み込まれません: %@。このワークスペースを共有するすべての Mac がこのバージョンを実行したら、該当行を削除してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enquanto profiles estiver definido, estas chaves não são lidas: %@. Exclua as linhas quando todos os Macs que compartilham este espaço de trabalho executarem esta versão."
+          }
+        }
+      }
+    },
     "Why Flagged" : {
       "localizations" : {
         "de" : {
@@ -129109,6 +130201,46 @@
         }
       }
     },
+    "config.yaml does not load, so the profiles block was not written: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml lässt sich nicht laden, daher wurde der Block profiles nicht geschrieben: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml no se carga, por lo que no se escribió el bloque profiles: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml ne se charge pas ; le bloc profiles n’a pas été écrit : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml non si carica, quindi il blocco profiles non è stato scritto: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yamlを読み込めないため、profilesブロックは書き込まれませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O config.yaml não carrega, então o bloco profiles não foi gravado: %@"
+          }
+        }
+      }
+    },
     "config.yaml has %lld security_policy %@ the app does not read: " : {
       "localizations" : {
         "de" : {
@@ -131746,6 +132878,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O jamf-cli não está instalado — instale-o pelo Homebrew ou pela página de releases do jamf-cli no GitHub e clique em Verificar novamente acima."
+          }
+        }
+      }
+    },
+    "jamf-cli is not installed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli ist nicht installiert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli no está instalado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli n'est pas installé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli non è installato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli がインストールされていません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O jamf-cli não está instalado."
           }
         }
       }
@@ -135844,6 +137016,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "verificando…"
+          }
+        }
+      }
+    },
+    "profiles names both jamf_pro and jamf_school, so collect refuses to run. Keep one and add the other as a workspace of its own." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles nennt sowohl jamf_pro als auch jamf_school, daher verweigert die Erfassung den Lauf. Behalten Sie eines und fügen Sie das andere als eigenen Arbeitsbereich hinzu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles nombra jamf_pro y jamf_school a la vez, por lo que la recopilación se niega a ejecutarse. Conserve uno y añada el otro como espacio de trabajo propio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles nomme à la fois jamf_pro et jamf_school : la collecte refuse donc de s'exécuter. Conservez-en un et ajoutez l'autre comme espace de travail distinct."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles indica sia jamf_pro sia jamf_school, quindi la raccolta rifiuta di avviarsi. Mantenere uno e aggiungere l'altro come spazio di lavoro a sé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles に jamf_pro と jamf_school の両方が指定されているため、収集は実行を拒否します。一方を残し、もう一方は独立したワークスペースとして追加してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles nomeia jamf_pro e jamf_school ao mesmo tempo, então a coleta se recusa a executar. Mantenha um e adicione o outro como um espaço de trabalho próprio."
+          }
+        }
+      }
+    },
+    "profiles.%@ names a profile jamf-cli does not have" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.%@ nennt ein Profil, das jamf-cli nicht hat"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.%@ nombra un perfil que jamf-cli no tiene"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.%@ nomme un profil que jamf-cli n'a pas"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.%@ indica un profilo che jamf-cli non ha"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.%@ には jamf-cli に存在しないプロファイルが指定されています"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.%@ nomeia um perfil que o jamf-cli não tem"
+          }
+        }
+      }
+    },
+    "profiles.platform reaches a different Jamf Pro" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.platform erreicht ein anderes Jamf Pro"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.platform llega a otro Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.platform atteint un autre Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.platform raggiunge un altro Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.platform は別の Jamf Pro に接続します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.platform alcança outro Jamf Pro"
           }
         }
       }

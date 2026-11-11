@@ -125,17 +125,82 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
                        file: file, line: line)
     }
 
-    func testDisconnectingProtectUnderABlockWritesNothing() throws {
-        try assertWriteRefused(slot: "protect") {
-            try ProtectConnection.disconnect(
-                workspace: ws, appSupport: root.appendingPathComponent(".support"))
-        }
+    private func protectSlot() throws -> String? {
+        EnvironmentProfiles.resolve(config: try ConfigLoader.load(from: configURL), workspace: ws)
+            .protect
+    }
+
+    func testDisconnectingProtectUnderABlockClearsTheSlot() throws {
+        try writeConfig("profiles:\n  jamf_pro: blockws\n  protect: blockws-protect\n")
+        try ProtectConnection.disconnect(
+            workspace: ws, appSupport: root.appendingPathComponent(".support"))
+        XCTAssertNil(try protectSlot())
     }
 
     @MainActor
-    func testConnectingProtectUnderABlockWritesNothing() throws {
-        try assertWriteRefused(slot: "protect") {
-            try OnboardingFlow.writeProtectConfig(profileSlug: ws, protectProfileName: "other")
+    func testConnectingProtectUnderABlockWritesTheSlot() throws {
+        try writeConfig(
+            "shared_workspace:\n  enabled: true\nprofiles:\n  jamf_pro: blockws\n")
+        let support = root.appendingPathComponent(".support")
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        _ = SharedConfigPin.check(profile: ws, appSupport: support)
+        try OnboardingFlow.writeProtectConfig(
+            profileSlug: ws, protectProfileName: "blockws-Protect", appSupport: support)
+        XCTAssertEqual(try protectSlot(), "blockws-Protect")
+        XCTAssertFalse(try String(contentsOf: configURL, encoding: .utf8).contains("\nprotect:\n"))
+        XCTAssertFalse(
+            SharedConfigPin.check(profile: ws, appSupport: support).isDrifted(.protectProfile))
+    }
+
+    func testHasProfilesBlockReadsTheRawYAML() throws {
+        try? FileManager.default.removeItem(at: configURL)
+        XCTAssertFalse(ProfilesConfigWriter.hasProfilesBlock(workspace: ws))
+        try writeConfig("profiles:\n  jamf_pro: blockws\n")
+        XCTAssertTrue(ProfilesConfigWriter.hasProfilesBlock(workspace: ws))
+        try writeConfig("protect:\n  enabled: true\n  profile: p\n")
+        XCTAssertFalse(ProfilesConfigWriter.hasProfilesBlock(workspace: ws))
+        try writeConfig(Self.undecodableOldShape)
+        XCTAssertFalse(ProfilesConfigWriter.hasProfilesBlock(workspace: ws))
+        try writeConfig(Self.undecodableWithBlock)
+        XCTAssertTrue(ProfilesConfigWriter.hasProfilesBlock(workspace: ws))
+    }
+
+    private static let undecodableOldShape =
+        "protect:\n  enabled: true\n  profile: p\njamf_cli: oops\n"
+    private static let undecodableWithBlock =
+        "profiles:\n  jamf_pro: blockws\njamf_cli: oops\n"
+
+    func testDisconnectOnAnUndecodableOldShapeFileStillClearsOldKeys() throws {
+        try writeConfig(Self.undecodableOldShape)
+        try ProtectConnection.disconnect(
+            workspace: ws, appSupport: root.appendingPathComponent(".support"))
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("enabled: false"), text)
+        XCTAssertFalse(text.contains("profile: p"), text)
+    }
+
+    @MainActor
+    func testConnectOnAnUndecodableOldShapeFileStillWritesOldKeys() throws {
+        try writeConfig(Self.undecodableOldShape)
+        try OnboardingFlow.writeProtectConfig(
+            profileSlug: ws, protectProfileName: "q",
+            appSupport: root.appendingPathComponent(".support"))
+        XCTAssertTrue(try String(contentsOf: configURL, encoding: .utf8).contains("profile: q"))
+    }
+
+    /// A config.yaml the app cannot read goes to the writer, which says so, rather than
+    /// receiving old keys nothing would read.
+    @MainActor
+    func testConnectingProtectToAFileThatDoesNotLoadThrowsTheWriterError() throws {
+        try writeConfig(Self.undecodableWithBlock)
+        XCTAssertThrowsError(
+            try OnboardingFlow.writeProtectConfig(
+                profileSlug: ws, protectProfileName: "p",
+                appSupport: root.appendingPathComponent(".support"))
+        ) {
+            guard case .configDoesNotLoad = $0 as? ProfilesConfigWriter.WriteError else {
+                return XCTFail("wrong error \($0)")
+            }
         }
     }
 
@@ -147,17 +212,16 @@ final class ProfilesBlockEntryPointTests: XCTestCase {
     }
 
     /// The block already names this login: connecting it again changes nothing and is not an
-    /// error. Another login is still refused.
+    /// error.
     @MainActor
     func testConnectingTheLoginTheBlockNamesWritesNothingAndSucceeds() throws {
         try writeConfig("profiles:\n  jamf_pro: blockws\n  protect: blockws-protect\n")
         let before = try String(contentsOf: configURL, encoding: .utf8)
-        let report = try OnboardingFlow.writeProductBlock(
-            "protect", profile: " blockws-protect ", for: ws)
+        let report = try OnboardingFlow.writeProtectConfig(
+            profileSlug: ws, protectProfileName: " blockws-protect ",
+            appSupport: root.appendingPathComponent(".support"))
         XCTAssertNil(report.backupName)
         XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), before)
-        XCTAssertThrowsError(
-            try OnboardingFlow.writeProductBlock("protect", profile: "other", for: ws))
     }
 
     func testOldShapeWritersStillWrite() throws {

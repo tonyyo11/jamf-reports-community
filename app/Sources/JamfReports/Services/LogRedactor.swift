@@ -203,11 +203,12 @@ enum LogRedactor {
         _ text: String,
         profile: String?,
         scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) },
-        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) }
+        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) },
+        localWorkspaces: () -> [String] = { localWorkspaceNameForms() }
     ) -> String {
         redactedForSharing(
             text, profiles: profile.map { [$0] } ?? [],
-            scopeIDs: scopeIDs, serverHosts: serverHosts)
+            scopeIDs: scopeIDs, serverHosts: serverHosts, localWorkspaces: localWorkspaces)
     }
 
     /// As above for a log that mixes several profiles' lines (the in-app buffer): every
@@ -216,15 +217,42 @@ enum LogRedactor {
         _ text: String,
         profiles: [String],
         scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) },
-        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) }
+        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) },
+        localWorkspaces: () -> [String] = { localWorkspaceNameForms() }
     ) -> String {
         let redactor = DiagnosticRedactor()
         // Each seed call replaces the last, so hand over every profile's values at once.
         redactor.seedScopeIDs(profiles.flatMap(scopeIDs))
         redactor.seedServerHosts(profiles.flatMap(serverHosts))
         // The profile is often the organisation's name; the bundle seeds the same forms.
-        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:)))
+        // Config Doctor names another local workspace in a run log, so every one is seeded.
+        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:))
+            + (profiles.isEmpty ? [] : localWorkspaces()))
         return redactor.redactText(redact(text))
+    }
+
+    /// Words run logs and their markers are made of; a workspace named one is not masked.
+    private static let commonLogWords: Set<String> = [
+        "test", "demo", "dummy", "prod", "partial", "warn", "error", "info", "skip", "plan",
+        "fail", "ok",
+    ]
+
+    /// Every workspace folder under the workspaces root, as typed and in its path and label forms.
+    static func localWorkspaceNameForms() -> [String] {
+        let folders = (try? FileManager.default.contentsOfDirectory(
+            at: ProfileService.workspacesRoot(), includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? []
+        // Only a folder with a config.yaml is a workspace; a data folder is not a name to hide.
+        // Other workspaces' names are hidden only from 4 characters, and never a word the logs
+        // use themselves (`test`, `partial`, `warn`, ...), so such a workspace name does not mask
+        // that word or a `[partial]` marker in every shared log; the run's own name keeps the
+        // bundle's two-character rule. The scan is capped like the other folder listings.
+        return folders.prefix(200)
+            .filter { FileManager.default.fileExists(
+                atPath: $0.appendingPathComponent("config.yaml").path) }
+            .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
+            .filter { $0.count >= 4 && !commonLogWords.contains($0.lowercased()) }
+            .flatMap { [$0, ProfileName.pathComponent($0), ProfileName.labelComponent($0)] }
     }
 
     /// A profile's name and the logins its workspace names (`Acme-Protect`), each as typed and in

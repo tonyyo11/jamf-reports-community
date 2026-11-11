@@ -301,7 +301,9 @@ enum ScheduledRunSignals {
         recorder: ScheduledRunRecorder?,
         report: DoctorReport? = nil
     ) -> Int {
-        let report = report ?? ConfigDoctorService.run(profile: profile)
+        // Only `.fail` rows are kept, and the jamf-cli probes are `.warn`: a scheduled run
+        // under the tick lock asks jamf-cli for nothing it would throw away.
+        let report = report ?? ConfigDoctorService.run(profile: profile, includeProbes: false)
         let failures = report.rows.filter { $0.severity == .fail }
         guard !failures.isEmpty else { return 0 }
 
