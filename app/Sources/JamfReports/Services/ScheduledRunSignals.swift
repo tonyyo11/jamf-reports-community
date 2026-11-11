@@ -543,8 +543,10 @@ final class CollectHonestyWatcher: Sendable {
         let kinds = Self.unlandedKinds(in: line)
         let protectThrew = line.hasPrefix(ReportEngine.protectCollectFailedMarker)
         // Follows from the sources line before it, which names them.
-        let noSourceLanded = line.hasPrefix(
-            "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason)")
+        let noSourceLanded = [ReportEngine.noSourceLandedReason,
+                              ReportEngine.noJamfProSourceLandedReason].contains {
+            line.hasPrefix("\(ReportEngine.summaryNotWrittenMarker) \($0)")
+        }
         flags.withLock {
             $0.partial = true
             if summary { $0.summaryFailed = true }

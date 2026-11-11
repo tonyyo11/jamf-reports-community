@@ -21,6 +21,12 @@ final class PlatformOnlyKindTests: XCTestCase {
         }
     }
 
+    func testABlockWithoutPlatformDoesNotExpectThePlatformKinds() {
+        let kinds = WorkspaceStore.expectedKinds(
+            skipExpensive: false, authMethod: "platform", platformUnavailable: true)
+        XCTAssertTrue(Set(kinds).isDisjoint(with: ReportEngine.platformOnlyKinds))
+    }
+
     // MARK: - nonPlatformAuthMethod
 
     func testOAuth2ProfileRulesOutThePlatformKinds() {
