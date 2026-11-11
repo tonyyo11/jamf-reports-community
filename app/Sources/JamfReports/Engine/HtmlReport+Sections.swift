@@ -540,8 +540,9 @@ extension HtmlReport {
         }
         guard !alerts.isEmpty else { return .omitted("no Protect alerts in the snapshot") }
         let open = alerts.filter { ProtectAlertRow.isOpen(status: $0["status"] as? String) }
+        let closed = alerts.count - open.count
         guard !open.isEmpty else {
-            return .omitted("no open Protect alerts (\(alerts.count) Resolved or AutoResolved)")
+            return .omitted("no open Protect alerts (\(closed) Resolved or AutoResolved)")
         }
 
         var bySeverity: [String: [[String: Any]]] = [:]
@@ -572,6 +573,7 @@ extension HtmlReport {
                     ? eventType
                     : ((alert["analytics"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
                 let date = (alert["created"] as? String).map { String($0.prefix(10)) } ?? "—"
+                let status = (alert["status"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—"
 
                 // Wrap device cell in a link to its audit-evidence anchor when known.
                 let deviceCell: String
@@ -584,14 +586,14 @@ extension HtmlReport {
                 }
                 return "<tr>\(deviceCell)" +
                     "<td>\(f.escapeHTML(description))</td>" +
-                    "<td>\(f.escapeHTML(date))</td></tr>"
+                    "<td>\(f.escapeHTML(date))</td><td>\(f.escapeHTML(status))</td></tr>"
             }
             totalShown += take
             parts.append("""
             <div class="audit-severity-group">
               <h4>\(f.renderSeverityPill(sev)) (\(sevAlerts.count))</h4>
               \(f.renderCappedRows(
-                  headers: ["Computer", "Alert", "Date"], rowHTML: Array(alertRows),
+                  headers: ["Computer", "Alert", "Date", "Status"], rowHTML: Array(alertRows),
                   expanded: expandAll))
             </div>
             """)
@@ -599,7 +601,8 @@ extension HtmlReport {
 
         return .shown(f.block(
             id: "protect-alerts",
-            title: "Open Protect alerts (showing \(totalShown) of \(open.count))",
+            title: "Open Protect alerts (showing \(totalShown) of \(open.count))"
+                + (closed > 0 ? "; \(closed) Resolved or AutoResolved not listed" : ""),
             body: parts.joined(separator: "\n")))
     }
 

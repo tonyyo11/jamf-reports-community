@@ -811,7 +811,10 @@ final class HtmlSectionTests: XCTestCase {
         let html = makeReport().buildProtectAlerts(protectDataDir: tmp).html
         XCTAssertTrue(html.contains("Mac-Open"))
         XCTAssertFalse(html.contains("Mac-Closed"), "an AutoResolved alert is not listed as open")
-        XCTAssertTrue(html.contains("Open Protect alerts (showing 1 of 1)"))
+        XCTAssertTrue(html.contains("Open Protect alerts (showing 1 of 1); "
+            + "1 Resolved or AutoResolved not listed"))
+        XCTAssertTrue(html.contains("<th>Status</th>"))
+        XCTAssertTrue(html.contains("<td>InProgress</td>"), "each listed alert shows its status")
 
         try JSONSerialization.data(withJSONObject: [alerts[1]]).write(to: file)
         let none = makeReport().buildProtectAlerts(protectDataDir: tmp)

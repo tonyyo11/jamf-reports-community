@@ -152,10 +152,12 @@ final class ProtectDashboardServiceTests: XCTestCase {
             try? FileManager.default.removeItem(at: reopened)
         }
 
-        XCTAssertEqual(ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: closed, computersURL: nil, insightsURL: nil).lowAlerts, 0)
-        XCTAssertEqual(ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: reopened, computersURL: nil, insightsURL: nil).lowAlerts, 1)
+        func lowAlerts(_ url: URL) -> Int {
+            ProtectDashboardService.load(
+                overviewURL: nil, alertsURL: url, computersURL: nil, insightsURL: nil).lowAlerts
+        }
+        XCTAssertEqual(lowAlerts(closed), 0)
+        XCTAssertEqual(lowAlerts(reopened), 1)
     }
 
     func testAlertOpenStatusRule() {

@@ -161,7 +161,8 @@ versions in this repository map to git tags.
 - Jamf Protect alerts that are Resolved or AutoResolved no longer count as open: the Protect
   screen's High Alerts tile and Open Alerts by Severity card, the HTML report's Protect alerts
   section and the workbook's Protect Alerts and Threat Overview colours count New and InProgress
-  alerts only. An AutoResolved alert that reopens counts again from the next collect. (#305)
+  alerts only. The HTML list shows each alert's status and says how many closed alerts it left
+  out. An AutoResolved alert that reopens counts again from the next collect. (#305)
 - The DDM screen's Declaration failures tile counts invalid declarations only, so a fleet of
   inactive declarations no longer reads as failures in red; inactive and mixed show neutral, and
   the "DDM enabled" label is easier to read. (#305)
