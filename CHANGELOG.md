@@ -95,6 +95,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The workbook's DDM Device Status tab counts only invalid declarations in its Failing column; an
+  inactive declaration no longer counts there. (#305)
 - Jamf Pro commands are refused for a Jamf School environment, and a Protect-only environment
   whose `profiles.protect` change you have not confirmed on this Mac is refused as a run that
   does not start, with the reason, instead of failing partway. Until you confirm it, this Mac
@@ -155,6 +157,14 @@ versions in this repository map to git tags.
   before it lets you edit the factor list. (#305)
 
 ### Fixed
+
+- Jamf Protect alerts that are Resolved or AutoResolved no longer count as open: the Protect
+  screen's High Alerts tile and Open Alerts by Severity card, the HTML report's Protect alerts
+  section and the workbook's Protect Alerts and Threat Overview colours count New and InProgress
+  alerts only. An AutoResolved alert that reopens counts again from the next collect. (#305)
+- The DDM screen's Declaration failures tile counts invalid declarations only, so a fleet of
+  inactive declarations no longer reads as failures in red; inactive and mixed show neutral, and
+  the "DDM enabled" label is easier to read. (#305)
 
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
 - The Add sheet checks a Platform API profile's ID before adding one jamf-cli already holds, as

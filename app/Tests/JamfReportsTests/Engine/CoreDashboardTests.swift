@@ -908,6 +908,38 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertEqual(rowText(ws, row: 7, columns: 2), ["", "Gatekeeper Override"])
     }
 
+    /// A Resolved or AutoResolved alert keeps its row and status but is not coloured as live.
+    func testProtectAlertTabsColourOnlyOpenAlerts() throws {
+        let dataDir = try tempDataDir(copying: [])
+        let dir = dataDir.appendingPathComponent("protect-alerts", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let alerts: [[String: Any]] = [
+            ["uuid": "a1", "severity": "High", "status": "AutoResolved", "computer": "mac-closed",
+             "eventType": "GPFSEvent", "created": "2026-11-09T00:00:00Z"],
+            ["uuid": "a2", "severity": "High", "status": "InProgress", "computer": "mac-open",
+             "eventType": "GPProcessEvent", "created": "2026-11-10T00:00:00Z"],
+        ]
+        try JSONSerialization.data(withJSONObject: alerts)
+            .write(to: dir.appendingPathComponent("protect-alerts_20261111T000000.json"))
+
+        let dash = makeDashboard(dataDir: dataDir)
+        try dash.writeProtectAlerts()
+        try dash.writeProtectThreatOverview()
+        // Both tabs put the host in column 0 and the severity in column 2.
+        for sheet in ["Protect Alerts", "Protect Threat Overview"] {
+            let cells = try XCTUnwrap(dash.workbook.sheet(named: sheet)).dedupedCells
+            func severityFormat(host: String) -> CellFormat? {
+                let row = cells.first {
+                    guard $0.col == 0, case .string(let text) = $0.value else { return false }
+                    return text == host
+                }?.row
+                return cells.first { $0.row == row && $0.col == 2 }?.format
+            }
+            XCTAssertEqual(severityFormat(host: "mac-open"), .red, sheet)
+            XCTAssertEqual(severityFormat(host: "mac-closed"), .cell, sheet)
+        }
+    }
+
     func testWriteProtectComputers() throws {
         let dataDir = try tempDataDir(
             seeding: "protect-computers",

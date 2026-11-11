@@ -620,7 +620,7 @@ extension DemoData {
         let computers = protectComputerRows()
         let alerts = protectAlertRows()
         let insights = protectInsightRows()
-        let severities = alerts.compactMap(\.severity)
+        let severity = ProtectDashboardService.alertSeverityCounts(alerts)
         let plans = [
             ProtectPlanRow(
                 name: "Standard", logLevel: "INFO", autoUpdate: true,
@@ -643,10 +643,10 @@ extension DemoData {
             connectedCount: computers.filter {
                 ProtectDashboardService.isConnected($0.connectionStatus)
             }.count,
-            highAlerts: severities.filter { $0 == "High" }.count,
-            mediumAlerts: severities.filter { $0 == "Medium" }.count,
-            lowAlerts: severities.filter { $0 == "Low" }.count,
-            informationalAlerts: severities.filter { $0 == "Informational" }.count,
+            highAlerts: severity.high,
+            mediumAlerts: severity.medium,
+            lowAlerts: severity.low,
+            informationalAlerts: severity.informational,
             failingInsights: insights.filter { ($0.totalFail ?? 0) > 0 }.count,
             sourceFile: nil,
             snapshotDate: referenceDate)

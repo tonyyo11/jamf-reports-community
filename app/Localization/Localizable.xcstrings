@@ -9790,48 +9790,48 @@
         }
       }
     },
-    "%@, %lld with issues" : {
+    "%@, %lld with invalid declarations" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld mit Problemen"
+            "value" : "%@, %lld mit ungültigen Deklarationen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@, %2$lld with issues"
+            "value" : "%1$@, %2$lld with invalid declarations"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld con problemas"
+            "value" : "%@, %lld con declaraciones no válidas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld avec problèmes"
+            "value" : "%@, %lld avec déclarations invalides"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld con problemi"
+            "value" : "%@, %lld con dichiarazioni non valide"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@、問題あり%lld件"
+            "value" : "%@、無効な宣言あり%lld件"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld com problemas"
+            "value" : "%@, %lld com declarações inválidas"
           }
         }
       }
@@ -27787,46 +27787,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alertas ativos"
-          }
-        }
-      }
-    },
-    "Alerts by Severity" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alarme nach Schweregrad"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas por gravedad"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertes par gravité"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avvisi per gravità"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重大度別のアラート"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas por gravidade"
           }
         }
       }
@@ -81335,6 +81295,46 @@
         }
       }
     },
+    "No open alerts. Resolved and AutoResolved alerts are not counted." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine offenen Alarme. Alarme mit Resolved und AutoResolved werden nicht gezählt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay alertas abiertas. Las alertas Resolved y AutoResolved no se cuentan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune alerte ouverte. Les alertes Resolved et AutoResolved ne sont pas comptées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun avviso aperto. Gli avvisi Resolved e AutoResolved non vengono conteggiati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未解決のアラートはありません。Resolved と AutoResolved のアラートは数えません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum alerta aberto. Alertas Resolved e AutoResolved não são contados."
+          }
+        }
+      }
+    },
     "No other machine has recorded a run in this workspace. Coordination is armed and will engage as soon as one does." : {
       "localizations" : {
         "de" : {
@@ -86583,6 +86583,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir detalhes de %@"
+          }
+        }
+      }
+    },
+    "Open Alerts by Severity" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offene Alarme nach Schweregrad"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertas abiertas por gravedad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertes ouvertes par gravité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvisi aperti per gravità"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重大度別の未解決のアラート"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertas abertos por gravidade"
           }
         }
       }

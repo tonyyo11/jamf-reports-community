@@ -2030,9 +2030,8 @@ struct CoreDashboard: Sendable {
         row += 1
         for item in items {
             let decls = (item["declarations"] as? [[String: Any]]) ?? []
-            let failing = decls.filter {
-                ($0["active"] as? Bool) == false || ($0["valid"] as? Bool) == false
-            }.count
+            // Only an invalid declaration fails; an inactive one is a state (as on the DDM screen).
+            let failing = decls.filter { ($0["valid"] as? Bool) == false }.count
             let reported = (item["ddmReported"] as? Bool) ?? false
             let su = (item["softwareUpdate"] as? [String: Any]) ?? [:]
             let failure = su["failureReason"] as? String ?? ""
@@ -2143,7 +2142,9 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
-            let severity = (item["severity"] as? String ?? "").lowercased()
+            // A Resolved or AutoResolved alert is listed with its status but not coloured as live.
+            let severity = ProtectAlertRow.isOpen(status: item["status"] as? String)
+                ? (item["severity"] as? String ?? "").lowercased() : ""
             let fmt: CellFormat = severity == "high" || severity == "critical" ? .red
                 : severity == "medium" ? .yellow : .cell
             ws.write(item["computer"] as? String ?? "", row: row, col: 0, format: .cell)
@@ -2327,7 +2328,8 @@ struct CoreDashboard: Sendable {
         row += 1
 
         for r in rows {
-            let severity = (r["Severity"] ?? "").lowercased()
+            let severity = ProtectAlertRow.isOpen(status: r["Status"])
+                ? (r["Severity"] ?? "").lowercased() : ""
             let fmt: CellFormat = (severity == "critical" || severity == "high") ? .red
                 : severity == "medium" ? .yellow : .cell
             ws.write(r["Device"] ?? "", row: row, col: 0, format: .cell)

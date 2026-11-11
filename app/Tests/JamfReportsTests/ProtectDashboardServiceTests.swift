@@ -90,10 +90,11 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.webProtectionActiveCount, 1)
         XCTAssertEqual(snapshot.fullDiskAccessCount, 1, "only Authorized counts as granted")
         XCTAssertEqual(snapshot.connectedCount, 2, "Disconnected must not count as connected")
-        XCTAssertEqual(snapshot.highAlerts, 1)
-        XCTAssertEqual(snapshot.mediumAlerts, 1)
-        XCTAssertEqual(snapshot.lowAlerts, 1)
-        XCTAssertEqual(snapshot.informationalAlerts, 1, "the fixture's 4th alert is Informational")
+        XCTAssertEqual(snapshot.highAlerts, 1, "New")
+        XCTAssertEqual(snapshot.mediumAlerts, 1, "InProgress")
+        XCTAssertEqual(snapshot.lowAlerts, 0, "the Low alert is Resolved")
+        XCTAssertEqual(snapshot.informationalAlerts, 0, "the Informational alert is AutoResolved")
+        XCTAssertEqual(snapshot.openAlertCount, 2)
         XCTAssertEqual(snapshot.failingInsights, 2)
         XCTAssertNotNil(snapshot.sourceFile)
         XCTAssertNotNil(snapshot.snapshotDate)
@@ -118,6 +119,52 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.mediumAlerts, 1)
         XCTAssertEqual(snapshot.lowAlerts, 1)
         XCTAssertEqual(snapshot.informationalAlerts, 2)
+    }
+
+    /// NFR, 2026-11-11: an InProgress High and an AutoResolved Low alert read as High 1, Low 0.
+    func testResolvedAndAutoResolvedAlertsAreNotCounted() throws {
+        let url = try writeTemp("""
+        [{"uuid":"a1","severity":"High","status":"InProgress","computer":"mac-a",
+          "created":"2026-11-10T09:00:00Z","received":"2026-11-10T09:00:01Z",
+          "eventType":"GPProcessEvent","analytics":"Example Analytic"},
+         {"uuid":"a2","severity":"Low","status":"AutoResolved","computer":"mac-b",
+          "created":"2026-11-09T09:00:00Z","received":"2026-11-09T09:00:01Z",
+          "eventType":"GPFSEvent","analytics":"Other Analytic"},
+         {"uuid":"a3","severity":"High","status":"Resolved"}]
+        """)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: url, computersURL: nil, insightsURL: nil)
+
+        XCTAssertEqual(snapshot.alerts.count, 3, "closed alerts are still listed")
+        XCTAssertEqual(snapshot.highAlerts, 1)
+        XCTAssertEqual(snapshot.lowAlerts, 0)
+        XCTAssertEqual(snapshot.openAlertCount, 1)
+    }
+
+    /// AutoResolved is not final: the next collect's snapshot can reopen the alert.
+    func testAutoResolvedAlertThatReopensIsCountedFromTheNewSnapshot() throws {
+        let closed = try writeTemp(#"[{"uuid":"a2","severity":"Low","status":"AutoResolved"}]"#)
+        let reopened = try writeTemp(#"[{"uuid":"a2","severity":"Low","status":"InProgress"}]"#)
+        defer {
+            try? FileManager.default.removeItem(at: closed)
+            try? FileManager.default.removeItem(at: reopened)
+        }
+
+        XCTAssertEqual(ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: closed, computersURL: nil, insightsURL: nil).lowAlerts, 0)
+        XCTAssertEqual(ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: reopened, computersURL: nil, insightsURL: nil).lowAlerts, 1)
+    }
+
+    func testAlertOpenStatusRule() {
+        for status in ["New", "InProgress", "newstatus", nil] as [String?] {
+            XCTAssertTrue(ProtectAlertRow.isOpen(status: status), "\(status ?? "nil") is open")
+        }
+        for status in ["Resolved", "AutoResolved", " autoresolved ", "RESOLVED"] {
+            XCTAssertFalse(ProtectAlertRow.isOpen(status: status), "\(status) is closed")
+        }
     }
 
     func testOddFieldTypeCostsTheFieldNotTheList() throws {

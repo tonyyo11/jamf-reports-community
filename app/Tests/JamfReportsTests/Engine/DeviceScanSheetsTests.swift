@@ -64,7 +64,7 @@ final class DeviceScanSheetsTests: XCTestCase {
             if case let .int(i) = $0.value { return i } else { return nil }
         }
         XCTAssertTrue(ints.contains(2), "declaration count")
-        XCTAssertTrue(ints.contains(1), "failing declaration count (inactive or invalid)")
+        XCTAssertTrue(ints.contains(1), "failing declaration count (invalid only)")
     }
 
     func testMDMSheetListsFailedCommandNames() throws {

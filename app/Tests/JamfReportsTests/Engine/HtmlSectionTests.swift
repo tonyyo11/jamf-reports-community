@@ -793,6 +793,32 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertLessThan(low.lowerBound, info.lowerBound, "Informational is last of the four")
     }
 
+    func testProtectAlertsShowOnlyOpenAlerts() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProtectAlertsOpen-\(UUID().uuidString)", isDirectory: true)
+        let alertsDir = tmp.appendingPathComponent("protect-alerts", isDirectory: true)
+        try FileManager.default.createDirectory(at: alertsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let file = alertsDir.appendingPathComponent("protect-alerts_20261111T000000.json")
+
+        let alerts: [[String: Any]] = [
+            ["severity": "High", "status": "InProgress", "eventType": "GPProcessEvent",
+             "computer": "Mac-Open", "created": "2026-11-10T00:00:00Z"],
+            ["severity": "Low", "status": "AutoResolved", "eventType": "GPFSEvent",
+             "computer": "Mac-Closed", "created": "2026-11-09T00:00:00Z"],
+        ]
+        try JSONSerialization.data(withJSONObject: alerts).write(to: file)
+        let html = makeReport().buildProtectAlerts(protectDataDir: tmp).html
+        XCTAssertTrue(html.contains("Mac-Open"))
+        XCTAssertFalse(html.contains("Mac-Closed"), "an AutoResolved alert is not listed as open")
+        XCTAssertTrue(html.contains("Open Protect alerts (showing 1 of 1)"))
+
+        try JSONSerialization.data(withJSONObject: [alerts[1]]).write(to: file)
+        let none = makeReport().buildProtectAlerts(protectDataDir: tmp)
+        XCTAssertTrue(none.html.isEmpty)
+        XCTAssertEqual(none.omission, "no open Protect alerts (1 Resolved or AutoResolved)")
+    }
+
     func testProtectAlertsStableOutput() {
         let report = makeReport()
         let a = report.buildProtectAlerts(protectDataDir: nil)
