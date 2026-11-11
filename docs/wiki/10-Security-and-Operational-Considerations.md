@@ -134,7 +134,7 @@ Once one Mac has its workspace in the shared folder, do this on each Mac that jo
 7. Open **Health Audit → Config**. It should list the other Macs and raise no version or clock
    warning.
 
-If first launch shows the Welcome chooser (**Connect Jamf Pro**, **Try the demo first**)
+If first launch shows the Welcome chooser (**Connect with Jamf Account**, **Try the demo first**)
 instead, the app found no jamf-cli profile. Fix jamf-cli rather than running onboarding,
 which creates a separate, empty workspace under `~/Jamf-Reports`.
 
