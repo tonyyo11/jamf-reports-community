@@ -840,7 +840,9 @@ struct OnboardingView: View {
 
             automationAndWebhookCard
 
-            skipFinishCard
+            if !flow.firstReportSucceeded {
+                skipFinishCard
+            }
 
             logViewer(
                 title: flow.isRunningFirstReport ? L("Generate running") : L("Generate output"),
@@ -906,7 +908,7 @@ struct OnboardingView: View {
                     Text("Skip the first run?")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
-                    Text(Self.skipFinishText(validated: flow.connectionValidated))
+                    Text(Self.skipFinishText(validated: flow.connectionConfirmed))
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -954,12 +956,18 @@ struct OnboardingView: View {
         // profile replaces the demo; otherwise reload to pick it up.
         Task {
             await flow.finishSetup(in: workspaceStore)
-            NotificationCenter.default.post(
-                name: .navigateToTab,
-                object: nil,
-                userInfo: ["tab": Tab.overview.rawValue]
-            )
+            openOverview()
         }
+    }
+
+    /// Leaves setup for Overview. From the Add sheet's New workspace the shell stays open on
+    /// this tab after setup finishes, so the screen has to move itself.
+    private func openOverview() {
+        NotificationCenter.default.post(
+            name: .navigateToTab,
+            object: nil,
+            userInfo: ["tab": Tab.overview.rawValue]
+        )
     }
 
     private func privilegeLabel(_ privilege: CommandCatalog.Privilege) -> Text {
@@ -1086,7 +1094,9 @@ struct OnboardingView: View {
             if flow.isValidatingConnection { L("Validating") }
             else { flow.connectionValidated ? L("Continue") : L("Validate") }
         case .addProducts: L("Continue")
-        case .firstReport: flow.isRunningFirstReport ? L("Running") : L("Run now")
+        case .firstReport:
+            if flow.isRunningFirstReport { L("Running") }
+            else { flow.firstReportSucceeded ? L("Open Overview") : L("Run now") }
         case .schoolConnect: flow.schoolConnected ? L("Continue") : L("Connect School to continue")
         }
     }
@@ -1099,7 +1109,7 @@ struct OnboardingView: View {
         case .authenticate: "checkmark"
         case .validate: flow.connectionValidated ? "arrow.right" : "network.badge.shield.half.filled"
         case .addProducts: "arrow.right"
-        case .firstReport: "play.fill"
+        case .firstReport: flow.firstReportSucceeded ? "arrow.right" : "play.fill"
         case .schoolConnect: flow.schoolConnected ? "arrow.right" : "graduationcap.fill"
         }
     }
@@ -1145,8 +1155,13 @@ struct OnboardingView: View {
             // (enforced by canAdvance).
             flow.nextStep()
         case .firstReport:
-            Task {
-                await flow.runFirstReport(workspaceStore: workspaceStore)
+            if flow.firstReportSucceeded {
+                // finishSetup again, so automation or webhook choices made after the run apply.
+                skipAndFinishOnboarding()
+            } else {
+                Task {
+                    await flow.runFirstReport(workspaceStore: workspaceStore)
+                }
             }
         }
     }
