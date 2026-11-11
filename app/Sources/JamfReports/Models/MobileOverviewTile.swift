@@ -26,12 +26,14 @@ extension MobileSummary {
     ///
     /// Devices is the managed mobile device count. It stands in for the spec's iPad, iPhone and
     /// Apple TV counts until the summary carries a form-factor map (environment spec P9).
-    var overviewTiles: [MobileOverviewTile] {
+    func overviewTiles(format: PercentFormat) -> [MobileOverviewTile] {
         var tiles = [
             MobileOverviewTile(
                 label: L("Devices"), value: "\(managed)", caption: L("managed mobile devices")),
-            Self.shareTile(L("OS current"), osCurrent, of: "devices with a listed version"),
-            Self.shareTile(L("Passcode compliant"), passcode, of: "devices reporting"),
+            Self.shareTile(
+                L("OS current"), osCurrent, of: "devices with a listed version", format: format),
+            Self.shareTile(L("Passcode compliant"), passcode, of: "devices reporting",
+                           format: format),
         ]
         if let attention = needsAttentionTile { tiles.append(attention) }
         return tiles
@@ -48,7 +50,7 @@ extension MobileSummary {
     }
 
     private static func shareTile(
-        _ label: String, _ share: Share?, of population: String
+        _ label: String, _ share: Share?, of population: String, format: PercentFormat
     ) -> MobileOverviewTile {
         // A pair with no devices behind it has no share (`Share.pct`), whatever `met` says.
         guard let share, let pct = share.pct else {
@@ -57,7 +59,7 @@ extension MobileSummary {
                 caption: MobileOverviewTile.unreported)
         }
         return MobileOverviewTile(
-            label: label, value: String(format: "%.1f%%", pct),
+            label: label, value: format.text(pct),
             caption: L("\(share.met) of \(share.of) \(population)"))
     }
 }

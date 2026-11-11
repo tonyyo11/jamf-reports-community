@@ -149,6 +149,10 @@ It produces `.xlsx` and HTML reports (PDF stays GUI-only). See the
 [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line) wiki
 page for the full command reference.
 
+To print percentages as whole numbers (`57%` instead of `56.7%`) on every screen and report,
+set `display.percent_decimals: 0` in `config.yaml` or pick it under **Percentages** on the
+Customize screen.
+
 To get the HTML report with every workbook, set `html.with_workbook: true` in `config.yaml`
 or turn on **Write the HTML report with every workbook** on the Customize screen. Each
 Generate button, each scheduled run that generates and `jamf-reports generate` then write the

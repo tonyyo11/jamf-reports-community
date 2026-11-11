@@ -20,6 +20,7 @@ struct JamfReportsApp: App {
         WindowGroup {
             ContentView()
                 .environment(workspace)
+                .environment(\.percentFormat, workspace.percentFormat)
                 .frame(minWidth: Self.minSupportedWidth, minHeight: 760)
                 .preferredColorScheme(.dark)
                 .task {

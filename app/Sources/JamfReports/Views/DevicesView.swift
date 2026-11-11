@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct DevicesView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot = DeviceInventorySnapshot.empty
     @State private var ddmSnapshot: DDMDeviceStatusService.Snapshot = .empty
@@ -480,7 +481,7 @@ struct DevicesView: View {
 
     /// "—" when no Mac's FileVault value reads as on or off.
     nonisolated static func fileVaultTileValue(_ percent: Double?) -> String {
-        percent.map { "\(Int($0.rounded()))%" } ?? "—"
+        PercentFormat.whole.text(percent)
     }
 
     /// Macs the hardware rule took out of the gaps are named, so the share and the gap
@@ -859,7 +860,7 @@ struct DevicesView: View {
                                         .foregroundStyle(osFilter == item.version ? Theme.Colors.goldBright : Theme.Colors.fg2)
                                     Spacer()
                                     Mono(text: "\(item.count)")
-                                    Text("\(String(format: "%.1f", item.pct))%")
+                                    Text(percentFormat.text(item.pct))
                                         .font(Theme.Fonts.mono(10.5))
                                         .foregroundStyle(Theme.Text.tertiary(contrast))
                                 }

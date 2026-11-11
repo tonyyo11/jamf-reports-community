@@ -31,22 +31,22 @@ final class TrendsViewNoDataTests: XCTestCase {
     }
 
     func testPillWithNoPointsShowsADash() {
-        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: []), "—")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [], format: .standard), "—")
     }
 
     /// A share's change is in percentage points with one decimal; a count's is a whole number.
     func testPillChangeKeepsItsSignAndFlatForm() {
-        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [70, 72.4]), "+2.4 pp")
-        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [90, 87]), "-3.0 pp")
-        XCTAssertEqual(TrendsView.pillDeltaText(metric: .stale, series: [40, 30]), "-10")
-        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50, 50.04]), "±0")
-        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50]), "±0")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [70, 72.4], format: .standard), "+2.4 pp")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [90, 87], format: .standard), "-3.0 pp")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .stale, series: [40, 30], format: .standard), "-10")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50, 50.04], format: .standard), "±0")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50], format: .standard), "±0")
     }
 
     func testPillWithNoPointsTellsVoiceOverSo() {
         XCTAssertEqual(
             TrendsView.metricPillAccessibilityLabel(
-                label: "Patch Compliance", metric: .patch, series: []
+                label: "Patch Compliance", metric: .patch, series: [], format: .standard
             ),
             "Patch Compliance, no snapshots in range"
         )
@@ -54,7 +54,8 @@ final class TrendsViewNoDataTests: XCTestCase {
 
     func testPillAccessibilityLabelNamesDirectionFromThePolarity() {
         func label(_ metric: TrendSeries.Metric, _ series: [Double]) -> String {
-            TrendsView.metricPillAccessibilityLabel(label: "X", metric: metric, series: series)
+            TrendsView.metricPillAccessibilityLabel(
+                label: "X", metric: metric, series: series, format: .standard)
         }
         XCTAssertEqual(label(.fileVault, [70, 72.4]), "X, improving, +2.4 pp change")
         XCTAssertEqual(label(.fileVault, [72.4, 70]), "X, declining, -2.4 pp change")

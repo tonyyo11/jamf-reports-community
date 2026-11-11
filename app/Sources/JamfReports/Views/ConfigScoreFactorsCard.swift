@@ -45,6 +45,7 @@ struct ScoreFactorsSnapshot: Sendable, Equatable {
 /// screen score the same list. A workspace with no list shows the defaults; the first edit
 /// writes the whole list.
 struct ScoreFactorsCard: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var read = ScoreFactorsSnapshot()
@@ -112,7 +113,8 @@ struct ScoreFactorsCard: View {
                     label: factor.label(
                         staleDays: snapshot.staleDays, staleBasis: snapshot.staleBasis),
                     status: Self.status(of: factor, snapshot: snapshot,
-                                        policy: workspace.securityPolicy),
+                                        policy: workspace.securityPolicy,
+                                        format: percentFormat),
                     part: Self.part(factor, of: scoring),
                     weight: Binding(
                         get: { Int(factor.weight) },
@@ -201,7 +203,7 @@ struct ScoreFactorsCard: View {
     /// Today's share, or why the factor does not score.
     static func status(
         of factor: SecurityScoreFactor, snapshot: ScoreFactorsSnapshot,
-        policy: SecurityControlPolicy
+        policy: SecurityControlPolicy, format: PercentFormat
     ) -> String {
         if let control = factor.kind.control, policy.level(for: control) == .ignore {
             return L("Not counted: \(control.displayName) is set to Ignore above")
@@ -219,7 +221,7 @@ struct ScoreFactorsCard: View {
             break
         }
         guard let share = snapshot.measures[factor.key]?.share else { return L("No data yet") }
-        return String(format: "%.1f%% of Macs pass", share)
+        return L("\(format.text(share)) of Macs pass")
     }
 
     static func replacing(
@@ -303,7 +305,7 @@ private struct ScoreFactorRow: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
             Spacer(minLength: 8)
-            Text(part.map { String(format: "%.0f%% of score", $0) } ?? "—")
+            Text(part.map { L("\(PercentFormat.whole.text($0)) of score") } ?? "—")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(Theme.Text.secondary)
                 .frame(minWidth: 84, alignment: .trailing)

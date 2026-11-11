@@ -228,12 +228,14 @@ enum HtmlSectionFormatters {
         _ rows: [(label: String, pct: Double)],
         limit: Int = visibleRowLimit,
         expanded: Bool = false,
-        colored kind: ChartPalette.Kind? = nil
+        colored kind: ChartPalette.Kind? = nil,
+        percent: PercentFormat = .standard
     ) -> String {
         let colors = barColors(kind, labels: rows.map(\.label))
         return renderBarRows(rows.enumerated().map { index, row in
             let pct = row.pct.isFinite ? min(max(row.pct, 0), 100) : 0
-            let text = pct == pct.rounded() ? "\(Int(pct))%" : String(format: "%.1f%%", pct)
+            // A whole share reads "83%", as jamf-cli wrote it, at either precision.
+            let text = pct == pct.rounded() ? PercentFormat.whole.text(pct) : percent.text(pct)
             return BarRow(label: row.label, fill: pct, value: text, spoken: text,
                           colors: colors[index])
         }, limit: limit, expanded: expanded)

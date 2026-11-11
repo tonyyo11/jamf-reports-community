@@ -7,6 +7,7 @@ import Charts
 /// snapshots. Lifts the v3.5 "Patch Management Report" Excel sheet into a live,
 /// on-screen dashboard.
 struct PatchView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: PatchStatusService.Snapshot = .empty
@@ -145,8 +146,7 @@ struct PatchView: View {
             )
             StatTile(
                 label: L("Fleet Compliance"),
-                value: snapshot.fleetCompliancePct.map { String(format: "%.1f%%", $0) }
-                    ?? "\u{2014}",
+                value: percentFormat.text(snapshot.fleetCompliancePct),
                 sub: L("Weighted across all devices")
             )
             StatTile(
@@ -349,7 +349,7 @@ struct PatchView: View {
     }
 
     private func velocityRow(for title: TitleVelocity) -> some View {
-        let pctText = title.adoptionPct.map { String(format: "%.1f%%", $0) } ?? "—"
+        let pctText = percentFormat.text(title.adoptionPct)
         let daysBehindText = title.daysBehind.map { L("\($0)d behind") } ?? "—"
         let milestoneText = velocityMilestoneText(for: title)
         return HStack(spacing: 10) {
@@ -408,7 +408,7 @@ struct PatchView: View {
                     )
                     .foregroundStyle(by: .value("Title", title.title))
                     .interpolationMethod(.monotone)
-                    .accessibilityLabel("\(title.title): \(Int(pct))% adopted")
+                    .accessibilityLabel("\(title.title): \(PercentFormat.whole.text(pct)) adopted")
                 }
             }
         }

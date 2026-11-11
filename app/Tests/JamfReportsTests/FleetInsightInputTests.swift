@@ -65,13 +65,13 @@ final class FleetInsightInputTests: XCTestCase {
     func testShareAndRemainderAddUpAfterRounding() {
         let fact = Fact(label: "SIP enabled", value: .percent(98.95), prior: nil,
                         polarity: .higherIsBetter, complement: "not enabled")
-        XCTAssertEqual(fact.line, "- SIP enabled on 99.0% of devices; not enabled on 1.0%")
+        XCTAssertEqual(fact.line(format: .standard), "- SIP enabled on 99.0% of devices; not enabled on 1.0%")
     }
 
     func testSmallChangeThatRoundsToNothingIsUnchanged() {
         let fact = Fact(label: "SIP enabled", value: .percent(50), prior: .percent(50.04),
                         polarity: .higherIsBetter)
-        XCTAssertEqual(fact.line, "- SIP enabled: 50.0% (unchanged vs prior)")
+        XCTAssertEqual(fact.line(format: .standard), "- SIP enabled: 50.0% (unchanged vs prior)")
     }
 
     /// Live: "+0.1pp" FileVault was called a regression. The change is taken between the
@@ -80,7 +80,7 @@ final class FleetInsightInputTests: XCTestCase {
     func testChangeIsTakenBetweenThePrintedFiguresAndSaysItsDirectionInWords() {
         func line(_ now: Double, _ then: Double) -> String {
             Fact(label: "FileVault encrypted", value: .percent(now), prior: .percent(then),
-                 polarity: .higherIsBetter).line
+                 polarity: .higherIsBetter).line(format: .standard)
         }
         XCTAssertEqual(line(91.24, 91.16),
                        "- FileVault encrypted: 91.2% (unchanged vs prior)")
@@ -95,7 +95,7 @@ final class FleetInsightInputTests: XCTestCase {
     func testNeutralFactPrintsItsValueOnly() {
         let fact = Fact(label: "Devices", value: .percent(40), prior: .percent(30),
                         polarity: .neutral, complement: "other")
-        XCTAssertEqual(fact.line, "- Devices: 40.0%")
+        XCTAssertEqual(fact.line(format: .standard), "- Devices: 40.0%")
     }
 
     func testCountsChangeAsSignedIntegers() {
@@ -103,14 +103,14 @@ final class FleetInsightInputTests: XCTestCase {
                         polarity: .lowerIsBetter)
         let same = Fact(label: "P1 action items", value: .count(7), prior: .count(7),
                         polarity: .lowerIsBetter)
-        XCTAssertEqual(down.line, "- Stale devices: 12 (down 8 vs prior, better)")
-        XCTAssertEqual(same.line, "- P1 action items: 7 (unchanged vs prior)")
+        XCTAssertEqual(down.line(format: .standard), "- Stale devices: 12 (down 8 vs prior, better)")
+        XCTAssertEqual(same.line(format: .standard), "- P1 action items: 7 (unchanged vs prior)")
     }
 
     func testNumbersChangeWithOneDecimal() {
         let fact = Fact(label: "Stability index", value: .number(72.44), prior: .number(70),
                         polarity: .higherIsBetter)
-        XCTAssertEqual(fact.line, "- Stability index: 72.4 (up 2.4 vs prior, better)")
+        XCTAssertEqual(fact.line(format: .standard), "- Stability index: 72.4 (up 2.4 vs prior, better)")
     }
 
     /// A nonzero change says whether it is good, from the fact's polarity, so the
@@ -118,7 +118,7 @@ final class FleetInsightInputTests: XCTestCase {
     func testChangeNamesItsDirectionFromPolarity() {
         func line(_ value: FleetInsightInput.Value, _ prior: FleetInsightInput.Value,
                   _ polarity: FleetInsightInput.Polarity) -> String {
-            Fact(label: "X", value: value, prior: prior, polarity: polarity).line
+            Fact(label: "X", value: value, prior: prior, polarity: polarity).line(format: .standard)
         }
         XCTAssertEqual(line(.percent(90), .percent(95), .higherIsBetter),
                        "- X: 90.0% (down 5.0 pp vs prior, worse)")
@@ -137,8 +137,8 @@ final class FleetInsightInputTests: XCTestCase {
                          polarity: .higherIsBetter)
         let text = Fact(label: "Most failing control", value: .text("Firewall"),
                         prior: .text("SIP"), polarity: .lowerIsBetter)
-        XCTAssertEqual(mixed.line, "- SIP enabled: 50.0%")
-        XCTAssertEqual(text.line, "- Most failing control: Firewall")
+        XCTAssertEqual(mixed.line(format: .standard), "- SIP enabled: 50.0%")
+        XCTAssertEqual(text.line(format: .standard), "- Most failing control: Firewall")
     }
 
     func testPercentWithoutComplementPrintsOneSide() {

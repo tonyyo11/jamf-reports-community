@@ -506,10 +506,10 @@ struct DDMBlueprintView: View {
             (L("With failures"), failing, Theme.Colors.danger),
             (L("With pending"), pending, Theme.Colors.gold),
         ]
-        let percent = Int((rate * 100).rounded())
+        let percent = PercentFormat.whole.text(rate * 100)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(percent)%")
+                Text(verbatim: percent)
                     .font(Theme.Fonts.mono(28, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()

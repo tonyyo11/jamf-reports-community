@@ -55,6 +55,15 @@ struct FleetInsightInput: Sendable, Equatable {
     let focus: String
     let facts: [Fact]
     let notes: [String]
+    /// The workspace's `display.percent_decimals`, so the model's figures match the screen's.
+    var percentFormat: PercentFormat = .standard
+
+    /// This input with the figures printed as `format` prints them.
+    func formatted(_ format: PercentFormat) -> FleetInsightInput {
+        var copy = self
+        copy.percentFormat = format
+        return copy
+    }
 
     enum Value: Sendable, Equatable {
         case percent(Double)
@@ -90,7 +99,8 @@ struct FleetInsightInput: Sendable, Equatable {
     /// the generator sizes it from the live model's room and tokenizer. An over-budget
     /// context is cut on a line boundary so a partial fact is never emitted.
     func promptContext(maxApproxTokens: Int = 1_500) -> String {
-        let lines = [clean(title), "Focus: \(clean(focus))"] + facts.map(\.line) + notes.map(clean)
+        let lines = [clean(title), "Focus: \(clean(focus))"]
+            + facts.map { $0.line(format: percentFormat) } + notes.map(clean)
         return Self.budget(lines, maxApproxTokens: maxApproxTokens)
     }
 
@@ -287,9 +297,9 @@ extension FleetInsightInput {
 // MARK: - Rendering
 
 extension FleetInsightInput.Value {
-    var text: String {
+    func text(format: PercentFormat) -> String {
         switch self {
-        case .percent(let value): return String(format: "%.1f%%", tenths(value))
+        case .percent(let value): return format.text(value)
         case .count(let value): return "\(value)"
         case .number(let value): return String(format: "%.1f", tenths(value))
         case .text(let value): return value
@@ -297,7 +307,6 @@ extension FleetInsightInput.Value {
     }
 }
 
-/// Rounded once, so a share and its remainder always add up to 100.0%.
 private func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
 
 /// One line of at most `fieldLimit` characters, so a field can neither start a
@@ -310,28 +319,30 @@ private func clean(_ field: String) -> String {
 extension FleetInsightInput.Fact {
     /// A share with a complement states both sides, so the model never has to
     /// invert "SIP enabled: 1.0%" itself. A neutral fact prints its value only.
-    var line: String {
-        let label = clean(self.label), shown = clean(value.text)
+    func line(format: PercentFormat) -> String {
+        let label = clean(self.label), shown = clean(value.text(format: format))
         var line = "- \(label): \(shown)"
         guard polarity != .neutral else { return line }
         if case .percent(let share) = value, let complement = complement.map(clean) {
-            let rest = FleetInsightInput.Value.percent(max(0, 100 - tenths(share))).text
+            // Rounded once, so a share and its remainder always add up to 100%.
+            let rest = FleetInsightInput.Value.percent(max(0, 100 - format.rounded(share)))
+                .text(format: format)
             // A complement with its own comma would otherwise run into "on".
             let on = complement.contains(",") ? ", on" : " on"
             line = "- \(label) on \(shown) of devices; \(complement)\(on) \(rest)"
         }
-        return change.map { line + " (\($0))" } ?? line
+        return change(format: format).map { line + " (\($0))" } ?? line
     }
 
     /// The change from `prior` as the model reads it: its direction in words, its size, then
     /// the verdict when the fact has a good direction. It is taken between the rounded
     /// figures the line prints, so "91.2% (up 0.1 pp)" can never occur.
-    private var change: String? {
+    private func change(format: PercentFormat) -> String? {
         let delta: Double, size: String
         switch (value, prior) {
         case (.percent(let now), .percent(let then)?):
-            delta = tenths(tenths(now) - tenths(then))
-            size = String(format: "%.1f pp", abs(delta))
+            delta = format.roundedChange(format.rounded(now) - format.rounded(then))
+            size = format.points(abs(delta))
         case (.number(let now), .number(let then)?):
             delta = tenths(tenths(now) - tenths(then))
             size = String(format: "%.1f", abs(delta))

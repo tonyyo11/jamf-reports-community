@@ -6,6 +6,7 @@ import Charts
 /// derived from `pro security report`. Designed to grow into the full mSCP
 /// failure-count banding once an Extension Attribute is configured.
 struct CompliancePostureView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
@@ -249,7 +250,7 @@ struct CompliancePostureView: View {
                                 Text("Compliance Rate")
                                     .font(.caption)
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                                Text(String(format: "%.1f%%", pct))
+                                Text(percentFormat.text(pct))
                                     .font(.title2.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
                                 Text(result.complianceRateBasisText)
@@ -304,7 +305,7 @@ struct CompliancePostureView: View {
             )
             .foregroundStyle(Color(cgColor: slice.color))
             .accessibilityLabel(slice.label)
-            .accessibilityValue("\(slice.count) devices, \(Int(slice.pct.rounded()))%")
+            .accessibilityValue("\(slice.count) devices, \(PercentFormat.whole.text(slice.pct))")
         }
         .chartLegend(.hidden)
         .accessibilityLabel("\(result.name) compliance bands")
@@ -342,7 +343,7 @@ struct CompliancePostureView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    Text(String(format: "%.1f%%", slice.pct))
+                    Text(percentFormat.text(slice.pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(minWidth: 56, alignment: .trailing)
@@ -383,7 +384,7 @@ struct CompliancePostureView: View {
             )
             .foregroundStyle(Color(hex: band.colorHex))
             .accessibilityLabel(band.label)
-            .accessibilityValue("\(band.count) devices, \(Int(band.pct.rounded()))%")
+            .accessibilityValue("\(band.count) devices, \(PercentFormat.whole.text(band.pct))")
         }
         .chartLegend(.hidden)
         .accessibilityLabel("Fleet compliance bands")
@@ -419,7 +420,7 @@ struct CompliancePostureView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    Text(String(format: "%.1f%%", band.pct))
+                    Text(percentFormat.text(band.pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(minWidth: 56, alignment: .trailing)
@@ -475,7 +476,7 @@ struct CompliancePostureView: View {
                 Text(Self.controlBarCountText(gap))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", gap.pct))
+                Text(percentFormat.text(gap.pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(barColor(for: gap.pct))
                     .frame(minWidth: 56, alignment: .trailing)
@@ -494,7 +495,7 @@ struct CompliancePostureView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.controlBarAccessibilityLabel(gap))
+        .accessibilityLabel(Self.controlBarAccessibilityLabel(gap, format: percentFormat))
     }
 
     static func controlBarCountText(_ gap: CompliancePostureService.Snapshot.ControlGap) -> String {
@@ -505,9 +506,9 @@ struct CompliancePostureView: View {
 
     /// The bar ignores its children for VoiceOver, so the warnings must be in the label.
     static func controlBarAccessibilityLabel(
-        _ gap: CompliancePostureService.Snapshot.ControlGap
+        _ gap: CompliancePostureService.Snapshot.ControlGap, format: PercentFormat
     ) -> String {
-        let label = L("\(gap.control) control coverage, \(String(format: "%.1f", gap.pct)) percent failing, \(gap.failingDevices) of \(gap.totalDevices) devices")
+        let label = L("\(gap.control) control coverage, \(format.numberText(gap.pct)) percent failing, \(gap.failingDevices) of \(gap.totalDevices) devices")
         guard gap.warningDevices > 0 else { return label }
         return label + ", " + warningCount(gap.warningDevices)
     }
@@ -607,6 +608,7 @@ struct CompliancePostureView: View {
 /// `band.colorHex` values directly — they're already chosen for category
 /// distinguishability on light backgrounds.
 private struct CompliancePostureBandsDonutExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let bands: [ComplianceBand]
 
     private var visibleBands: [ComplianceBand] { bands.filter { $0.count > 0 } }
@@ -643,7 +645,7 @@ private struct CompliancePostureBandsDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", band.pct))
+                        Text(percentFormat.text(band.pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 50, alignment: .trailing)
@@ -666,6 +668,7 @@ private struct CompliancePostureBandsDonutExport: View {
 
 /// Light-mode export rendering of an mSCP compliance bands donut.
 private struct MSCPComplianceBandsDonutExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let result: MSCPComplianceService.BaselineResult
     let slices: [ChartRenderer.DonutSlice]
 
@@ -699,7 +702,7 @@ private struct MSCPComplianceBandsDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", slice.pct))
+                        Text(percentFormat.text(slice.pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 50, alignment: .trailing)
@@ -712,7 +715,7 @@ private struct MSCPComplianceBandsDonutExport: View {
                             .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                         if let pct = result.compliancePct {
-                            Text("Compliance: \(String(format: "%.1f%%", pct))")
+                            Text("Compliance: \(percentFormat.text(pct))")
                                 .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color(hex: 0x475569))
                         }

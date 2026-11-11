@@ -147,15 +147,19 @@ enum MetricAlertEvaluator {
     static func evaluate(
         rules: [AlertRule],
         current: DailySummary,
-        prior: DailySummary?
+        prior: DailySummary?,
+        format: PercentFormat = .standard
     ) -> [MetricAlertHit] {
-        rules.compactMap { rule in hit(for: rule, current: current, prior: prior) }
+        rules.compactMap { rule in
+            hit(for: rule, current: current, prior: prior, format: format)
+        }
     }
 
     private static func hit(
         for rule: AlertRule,
         current: DailySummary,
-        prior: DailySummary?
+        prior: DailySummary?,
+        format pf: PercentFormat
     ) -> MetricAlertHit? {
         guard let metric = rule.resolvedMetric,
               let comparison = rule.resolvedComparison,
@@ -174,12 +178,14 @@ enum MetricAlertEvaluator {
             guard value < threshold else { return nil }
             return makeHit(metric: metric, value: value, prior: nil,
                            ruleDescription: "below \(trim(threshold))",
-                           message: "\(format(value, metric)) — below threshold \(trim(threshold))")
+                           message: "\(shown(value, metric, pf, beside: threshold)) — "
+                               + "below threshold \(trim(threshold))")
         case .above:
             guard value > threshold else { return nil }
             return makeHit(metric: metric, value: value, prior: nil,
                            ruleDescription: "above \(trim(threshold))",
-                           message: "\(format(value, metric)) — above threshold \(trim(threshold))")
+                           message: "\(shown(value, metric, pf, beside: threshold)) — "
+                               + "above threshold \(trim(threshold))")
         case .dropsMoreThan:
             guard let priorSummary = prior,
                   let priorValue = metric.value(in: priorSummary) else { return nil }
@@ -187,8 +193,10 @@ enum MetricAlertEvaluator {
             let drop = priorValue - value
             guard drop > threshold else { return nil }
             let unit = metric.isPercentage ? "pp" : ""
-            let msg = "\(format(value, metric)) — dropped \(trim(drop))\(unit) vs "
-                + "\(priorSummary.date) (\(format(priorValue, metric)))"
+            let dropText = metric.isPercentage
+                ? trimmedZero(pf.numberText(drop, beside: threshold)) : trim(drop)
+            let msg = "\(shown(value, metric, pf)) — dropped \(dropText)\(unit) vs "
+                + "\(priorSummary.date) (\(shown(priorValue, metric, pf)))"
             return makeHit(metric: metric, value: value, prior: priorValue,
                            ruleDescription: "drops_more_than \(trim(threshold))",
                            message: msg)
@@ -234,9 +242,20 @@ enum MetricAlertEvaluator {
         "\(hit.metricLabel)|\(hit.ruleDescription)"
     }
 
-    /// Format a value with its unit for the message (percentages get a "%").
-    private static func format(_ value: Double, _ metric: AlertMetric) -> String {
-        metric.isPercentage ? "\(trim(value))%" : trim(value)
+    /// A value with its unit for the message: a percentage through the workspace's format,
+    /// kept apart from the threshold it is compared with; a count as typed.
+    private static func shown(
+        _ value: Double, _ metric: AlertMetric, _ format: PercentFormat,
+        beside threshold: Double? = nil
+    ) -> String {
+        guard metric.isPercentage else { return trim(value) }
+        return trimmedZero(
+            threshold.map { format.text(value, beside: $0) } ?? format.text(value))
+    }
+
+    /// Cards have always read "90%", not "90.0%", for a whole figure.
+    private static func trimmedZero(_ text: String) -> String {
+        text.replacingOccurrences(of: #"\.0(?=%|$)"#, with: "", options: .regularExpression)
     }
 
     /// Drop a trailing ".0" so whole numbers read cleanly ("90" not "90.0"). `Int(exactly:)` is

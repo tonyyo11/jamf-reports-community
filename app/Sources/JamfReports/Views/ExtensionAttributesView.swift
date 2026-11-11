@@ -357,7 +357,7 @@ struct ExtensionAttributesView: View {
                 .foregroundStyle(Theme.Colors.fg)
             Text("—")
                 .foregroundStyle(Theme.Text.tertiary(contrast))
-            Text("\(Int(drift.previousPct.rounded()))% → \(Int(drift.currentPct.rounded()))%")
+            Text(verbatim: "\(PercentFormat.whole.text(drift.previousPct)) → \(PercentFormat.whole.text(drift.currentPct))")
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Text("(\(Int(drift.deltaPP.rounded()))pp)")

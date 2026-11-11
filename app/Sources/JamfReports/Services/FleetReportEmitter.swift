@@ -121,22 +121,28 @@ enum FleetReportEmitter {
 
     // MARK: - Formatting
 
-    /// Shared with `FleetWorkbookEmitter` — one Current/Previous formatting rule.
-    static func format(_ value: Double?, unit: FleetRollup.Unit) -> String {
+    /// Shared with `FleetWorkbookEmitter` and the period report — one Current/Previous
+    /// formatting rule. A group report spans workspaces with no one config.yaml, so it keeps
+    /// `.standard`; the period report passes its workspace's format.
+    static func format(
+        _ value: Double?, unit: FleetRollup.Unit, percent: PercentFormat = .standard
+    ) -> String {
         guard let value else { return "—" }
         switch unit {
         case .count:   return String(Int(value.rounded()))
-        case .percent: return String(format: "%.1f%%", value)
+        case .percent: return percent.text(value)
         }
     }
 
     /// Shared with `FleetWorkbookEmitter` — one Δ formatting rule.
-    static func formatDelta(_ delta: Double?, unit: FleetRollup.Unit) -> String {
+    static func formatDelta(
+        _ delta: Double?, unit: FleetRollup.Unit, percent: PercentFormat = .standard
+    ) -> String {
         guard let delta else { return "—" }
         let sign = delta > 0 ? "+" : ""
         switch unit {
         case .count:   return "\(sign)\(Int(delta.rounded()))"
-        case .percent: return "\(sign)\(String(format: "%.1f", delta))pp"
+        case .percent: return "\(sign)\(percent.changeNumberText(delta))pp"
         }
     }
 }

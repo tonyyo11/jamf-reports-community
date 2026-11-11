@@ -61,6 +61,7 @@ struct MultiLineChartDescriptor: AXChartDescriptorRepresentable {
     }
     let title: String
     let seriesList: [Series]
+    let percentFormat: PercentFormat
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let f = SummaryJSONParser.dateFormatter
@@ -79,7 +80,7 @@ struct MultiLineChartDescriptor: AXChartDescriptorRepresentable {
             title: L("Percentage"),
             range: min(minVal * 0.9, 0.0)...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { "\(String(format: "%.1f", $0))%" }
+        ) { percentFormat.text($0) }
 
         let seriesData = seriesList.map { s -> AXDataSeriesDescriptor in
             let sF = SummaryJSONParser.dateFormatter

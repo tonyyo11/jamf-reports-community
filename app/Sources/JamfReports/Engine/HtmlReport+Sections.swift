@@ -695,11 +695,11 @@ extension HtmlReport {
                 "\(agent.installed)",
                 "\(max(agent.reporting - agent.installed, 0))",
                 "\(max(total - agent.reporting, 0))",
-                pct.map { String(format: "%.1f%%", $0) } ?? "\u{2014}",
+                config.percentFormat.text(pct),
             ])
             barCards.append(HtmlSectionFormatters.SectionCard(
                 name: agent.name,
-                value: pct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",
+                value: pct.map { PercentFormat.whole.text($0) } ?? "\u{2014}",
                 sublabel: agent.reporting > 0
                     ? "\(agent.installed) of \(total) installed"
                     : "no Mac reports \(agent.column)"
@@ -1067,9 +1067,9 @@ extension HtmlReport {
 
         // Date + key metrics, oldest first.
         let tableRows: [[String]] = summaries.map { s in
-            let fvStr = s.fileVaultPct.map { String(format: "%.1f%%", $0) } ?? "—"
-            let sipStr = s.sipPct.map { String(format: "%.1f%%", $0) } ?? "—"
-            let compStr = s.compliancePct.map { String(format: "%.1f%%", $0) } ?? "—"
+            let fvStr = config.percentFormat.text(s.fileVaultPct)
+            let sipStr = config.percentFormat.text(s.sipPct)
+            let compStr = config.percentFormat.text(s.compliancePct)
             let macs = s.totalDevices > 0 ? "\(s.totalDevices)" : "—"
             return [s.date, macs, fvStr, sipStr, compStr]
         }
@@ -1295,7 +1295,7 @@ extension HtmlReport {
                 seriesHTML += """
                 <circle cx="\(String(format: "%.1f", xPos(i)))" \
                 cy="\(String(format: "%.1f", yPos(val)))" \
-                r="3" fill="currentColor" aria-label="\(f.escapeHTML(series.label)): \(String(format: "%.1f", val))%"/>
+                r="3" fill="currentColor" aria-label="\(f.escapeHTML(series.label)): \(config.percentFormat.text(val))"/>
                 """
             }
             seriesHTML += "</g>"

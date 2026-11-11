@@ -6,8 +6,9 @@ import CoreGraphics
 /// `FleetReportEmitter` (CSV): pure `workbook(for:)` + thin IO `emit`, same
 /// `_fleet-reports/` output dir, same injectable `summariesFor` loader.
 ///
-/// Percentages render as `"%.1f%%"` strings (the `CoreDashboard` convention —
-/// `CellFormat.pct` would multiply a 0–100 value by 100). Cell values route
+/// Percentages render as one-decimal text through `PercentFormat.standard` (the `CoreDashboard`
+/// convention — `CellFormat.pct` would multiply a 0–100 value by 100): a group spans workspaces
+/// with no one `display.percent_decimals`. Cell values route
 /// through `Worksheet.write` → `CellValue.safe`, so profile/baseline names are
 /// formula-injection-safe by construction. nil metrics render "—", never 0.
 enum FleetWorkbookEmitter {
@@ -250,7 +251,7 @@ enum FleetWorkbookEmitter {
     // MARK: - Cell formatting
 
     private static func pct(_ value: Double?) -> String {
-        value.map { String(format: "%.1f%%", $0) } ?? "—"
+        PercentFormat.standard.text(value)
     }
 
 }

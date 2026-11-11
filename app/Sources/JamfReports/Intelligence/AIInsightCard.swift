@@ -46,7 +46,8 @@ struct AIInsightCard: View {
     /// Decided synchronously, so an absent card adds nothing to its stack, not even spacing.
     var body: some View {
         let shown = model.shown(
-            profile: workspace.profile, demoMode: workspace.demoMode, input: makeInput)
+            profile: workspace.profile, demoMode: workspace.demoMode,
+            input: { makeInput()?.formatted(workspace.percentFormat) })
         if shown.isPresent {
             card
                 .onChange(of: shown.input, initial: true) { _, new in model.setInput(new) }

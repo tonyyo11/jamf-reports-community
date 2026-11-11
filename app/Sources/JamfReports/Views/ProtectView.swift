@@ -298,7 +298,7 @@ struct ProtectView: View {
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg2)
                     .monospacedDigit()
-                Text(String(format: "%.0f%%", pct))
+                Text(PercentFormat.whole.text(pct))
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
@@ -408,7 +408,7 @@ struct ProtectView: View {
                 StatTile(
                     label: L("Web Protection"),
                     value: "\(snapshot.webProtectionActiveCount)",
-                    sub: L("\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
+                    sub: L("\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(PercentFormat.whole.text(snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
@@ -417,7 +417,7 @@ struct ProtectView: View {
                 StatTile(
                     label: L("Full Disk Access"),
                     value: "\(snapshot.fullDiskAccessCount)",
-                    sub: L("\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
+                    sub: L("\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(PercentFormat.whole.text(snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
@@ -532,7 +532,7 @@ struct ProtectView: View {
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg2)
                     .monospacedDigit()
-                Text(String(format: "%.0f%%", pct))
+                Text(PercentFormat.whole.text(pct))
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
@@ -1086,6 +1086,7 @@ struct ProtectView: View {
 /// in-dashboard view uses Theme tokens which read poorly on the light export
 /// canvas.
 private struct ProtectAlertsSeverityExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let high: Int
     let medium: Int
     let low: Int
@@ -1124,7 +1125,7 @@ private struct ProtectAlertsSeverityExport: View {
                             .font(.caption.monospaced().weight(.semibold))
                             .foregroundStyle(Theme.Chart.textPrimary)
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", pct))
+                        Text(percentFormat.text(pct))
                             .font(.caption.monospaced())
                             .foregroundStyle(Theme.Chart.textSecondary)
                             .frame(width: 50, alignment: .trailing)

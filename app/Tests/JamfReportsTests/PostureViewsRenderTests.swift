@@ -38,10 +38,10 @@ final class PostureViewsRenderTests: XCTestCase {
         XCTAssertEqual(CompliancePostureView.controlBarCountText(two), "3 failing · 2 warnings")
 
         let label = "Firewall control coverage, 30.0 percent failing, 3 of 10 devices"
-        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(none), label)
-        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(one),
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(none, format: .standard), label)
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(one, format: .standard),
                        label + ", 1 warning")
-        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(two),
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(two, format: .standard),
                        label + ", 2 warnings")
     }
 

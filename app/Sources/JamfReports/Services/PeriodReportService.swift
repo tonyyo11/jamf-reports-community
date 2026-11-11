@@ -161,7 +161,10 @@ enum PeriodReportService {
         let url = dir.appendingPathComponent(ExportNaming.filename(
             kind: PeriodReportEmitter.reportKind(for: model),
             profile: profile, ext: "xlsx", now: now))
-        try Localization.english { try PeriodReportEmitter.emit(model: model, to: url) }
+        let percent = DisplayConfigLoader.percentFormat(profile: profile)
+        try Localization.english {
+            try PeriodReportEmitter.emit(model: model, to: url, percent: percent)
+        }
         return url
     }
 

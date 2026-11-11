@@ -90,7 +90,7 @@ struct ReportEngine: Sendable {
         try Self.preflightStrictManifestCheck(config: config, dataDir: dataDir)
 
         let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
-        let workbook = Workbook(accentColor: accent)
+        let workbook = Workbook(accentColor: accent, percentFormat: config.percentFormat)
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
         let prov = await Provenance.current(
@@ -4129,7 +4129,7 @@ struct ReportEngine: Sendable {
         // should abort the run, not silently render against tampered data.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
         let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
-        let workbook = Workbook(accentColor: accent)
+        let workbook = Workbook(accentColor: accent, percentFormat: config.percentFormat)
         // The workspace's daily summaries feed the Trends tab; none leaves it out.
         let summaries = workspace.flatMap { try? WorkspacePaths.summariesDir(for: $0.name) }
             .map(SummaryJSONParser.parseDirectory) ?? []

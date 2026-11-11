@@ -9,6 +9,14 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Percentages can be whole numbers. `display.percent_decimals: 0` in `config.yaml`, or
+  **Percentages** on the Customize screen, prints `57%` instead of `56.7%` on every screen and
+  in the workbook, CSV folder, HTML report, PDF, period report, alert cards and on-device
+  insights. Rounding is to the nearest step; stored figures, thresholds and alerts keep full
+  precision. A figure printed beside the threshold it missed keeps one more decimal, so 89.6%
+  never reads "90% (below 90%)", and changes read in whole percentage points. The default stays
+  one decimal, and the cross-workspace fleet reports keep one decimal.
+
 - The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
 - The daily summary records which products an environment holds and, with Jamf Protect, how many
   Protect computers it sees, how many of those match this environment's inventory, and how many
@@ -94,6 +102,12 @@ versions in this repository map to git tags.
   releases). A workspace without the block keeps working exactly as before. (#305)
 
 ### Changed
+
+- A share just below 100% or just above 0% no longer prints as 100% or 0%: 99.96% reads 99.9%
+  and 0.04% reads 0.1%, on screens and in reports. With `display.percent_decimals: 0`, workbook
+  text cells that hold a percentage (and the CSV folder) hold whole numbers, and percentage
+  number cells use the `0%` format; their stored values are unchanged. If a tool reads these
+  workbooks, check it against a new one.
 
 - Jamf Pro commands are refused for a Jamf School environment, and a Protect-only environment
   whose `profiles.protect` change you have not confirmed on this Mac is refused as a run that

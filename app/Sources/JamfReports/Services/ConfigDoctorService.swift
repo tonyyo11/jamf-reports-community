@@ -896,7 +896,7 @@ extension ConfigDoctorService {
             return DoctorRow(
                 id: "accuracy.coverage_drift.\(drop.eaName)", severity: .warn,
                 title: L("EA coverage dropped"),
-                detail: L("'\(drop.eaName)' coverage fell \(delta) points (\(Int(drop.previousPct.rounded()))% → \(Int(drop.currentPct.rounded()))%)."),
+                detail: L("'\(drop.eaName)' coverage fell \(delta) points (\(Int(PercentFormat.whole.rounded(drop.previousPct)))% → \(Int(PercentFormat.whole.rounded(drop.currentPct)))%)."),
                 hint: L("Confirm the EA still populates — a drop can silently thin a report.")
             )
         }

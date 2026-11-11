@@ -377,7 +377,8 @@ enum ScheduledRunSignals {
                 "metric alerts skipped — newest summary \(current.date) is not today (\(today))")
             return
         }
-        let hits = evaluateHits(rules: rules, current: current, history: summaries)
+        let hits = evaluateHits(
+            rules: rules, current: current, history: summaries, format: config.percentFormat)
         guard !hits.isEmpty else { return }
         // Dedup per-day per-rule: a second same-day run (managed freshness + scan)
         // doesn't re-card, but a rule that trips for the first time later today does.
@@ -414,7 +415,8 @@ enum ScheduledRunSignals {
     static func evaluateHits(
         rules: [AlertRule],
         current: DailySummary,
-        history: [DailySummary]
+        history: [DailySummary],
+        format: PercentFormat = .standard
     ) -> [MetricAlertHit] {
         let candidates = Array(history.dropLast())  // everything older than `current`
         var hits: [MetricAlertHit] = []
@@ -430,7 +432,8 @@ enum ScheduledRunSignals {
                 metrics: dropMetrics, lookbackDays: lookback
             )
             hits.append(contentsOf:
-                MetricAlertEvaluator.evaluate(rules: group, current: current, prior: prior))
+                MetricAlertEvaluator.evaluate(
+                    rules: group, current: current, prior: prior, format: format))
         }
         hits.sort { MetricAlertEvaluator.dedupKey(for: $0) < MetricAlertEvaluator.dedupKey(for: $1) }
         return hits

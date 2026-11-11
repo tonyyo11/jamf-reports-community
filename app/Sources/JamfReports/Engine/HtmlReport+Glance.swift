@@ -37,7 +37,7 @@ extension HtmlReport {
     }
 
     private func figureSpecs(current: DailySummary) -> [FigureSpec] {
-        func percent(_ value: Double) -> String { String(format: "%.1f%%", value) }
+        func percent(_ value: Double) -> String { config.percentFormat.text(value) }
         func always(_: DailySummary, _: DailySummary) -> Bool { true }
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         return [
@@ -141,7 +141,8 @@ extension HtmlReport {
         if let prior, let before = spec.read(prior) {
             if spec.comparable(current, prior) {
                 let change = TrendChange(
-                    unit: spec.unit, polarity: spec.polarity, first: before, last: value)
+                    unit: spec.unit, polarity: spec.polarity, first: before, last: value,
+                    format: config.percentFormat)
                 was = "was \(spec.format(before))"
                 switch change.verdict {
                 case _ where change.direction == .flat:
@@ -261,7 +262,7 @@ extension HtmlReport {
         }
         let partial = agentCoverage(inputs).filter { $0.pct < 100 }
         if !partial.isEmpty {
-            let list = partial.map { "\($0.name) \(String(format: "%.1f%%", $0.pct))" }
+            let list = partial.map { "\($0.name) \(config.percentFormat.text($0.pct))" }
             add(.agentHealth, .security,
                 "Security agents are not on every Mac: \(list.joined(separator: ", ")).")
         }

@@ -1004,6 +1004,30 @@ Protect-only workspaces all sweep, on every collect path including headless sche
 Per-device raw-history *rendering* (reading dated raw snapshots, not just
 summaries) is a planned follow-up; retention makes the raw durable for it.
 
+### display config (2.12 — percentage precision)
+
+```yaml
+display:
+  percent_decimals: 1   # 1 (default) or 0; anything else reads as 1, Config Doctor names it
+```
+
+`PercentFormat` (`Models/PercentFormat.swift`) is the one way a percentage is printed:
+`text(_:)` rounds half away from zero to `decimals` and never prints 0% or 100% for a share
+strictly between them; `text(_:beside:)` adds a decimal when rounding would reach the threshold
+the figure is printed against; `points(_:)` and `changeNumberText(_:)` print changes, which
+`TrendChange` and the other change sites take between the figures as printed. Only display
+rounds: stored figures, thresholds and alert comparisons keep full precision. The engine reads
+`config.percentFormat` (CoreDashboard, SchoolDashboard, HtmlReport, `Workbook(percentFormat:)`,
+whose `0.0%`/`0%` numFmt and CSV-folder text follow it); views read `\.percentFormat`, set at
+the root from `WorkspaceStore.percentFormat` (`DisplayConfigLoader`, `.standard` in demo mode);
+alert cards, the AI inputs (`FleetInsightInput.percentFormat`, `ReportNarrativeInput`) and the
+period report take the workspace's format; the cross-workspace fleet CSV and workbook keep
+`.standard`. Customize › Percentages writes it through `DisplayConfigWriter` (`saveBlock`).
+Already-whole labels (pie labels, the Trends hero, compact cells) use `PercentFormat.whole`.
+`PercentFormatTests.testNoPercentageIsPrintedOutsideTheFormatter` fails on a hand-built
+percentage outside the allow-list; axis ticks, SVG coordinates and jamf-cli's own strings are
+not routed.
+
 ### html config (2.9 — HTML report with every workbook)
 
 ```yaml

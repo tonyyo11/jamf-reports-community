@@ -9,8 +9,12 @@ struct FleetWorkspaceOverview: Sendable {
     var summaries: [DailySummary] = []
     /// A Jamf School workspace writes no daily summary, so none of the summary issues applies.
     var isSchool = false
+    /// The workspace's `display.percent_decimals`, for the issue lines.
+    var percentFormat: PercentFormat = .standard
 
-    var issues: [FleetProfileIssue] { isSchool ? [] : fleetProfileIssues(summary) }
+    var issues: [FleetProfileIssue] {
+        isSchool ? [] : fleetProfileIssues(summary, format: percentFormat)
+    }
     var hasIssue: Bool { !issues.isEmpty }
 
     /// This overview when it was loaded for `profile`, else nil: a load that finished after
@@ -33,9 +37,11 @@ extension WorkspaceStore {
         if demoMode { return demoFleetOverview() }
         let name = profile
         let isSchool = isSchoolWorkspace
+        let format = percentFormat
         let summaries = await Task.detached(priority: .utility) { readSummaries(name) }.value
         return FleetWorkspaceOverview(
-            profile: name, summary: summaries.last, summaries: summaries, isSchool: isSchool)
+            profile: name, summary: summaries.last, summaries: summaries, isSchool: isSchool,
+            percentFormat: format)
     }
 
     /// The first demo profile reads the Overview's own demo fleet; each later one is a
