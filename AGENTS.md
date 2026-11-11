@@ -264,9 +264,12 @@ Mac with no Last Contact is left out. It shows as an app-computed Health Audit c
 in the detail panel, a detail table on the workbook's Check-in Health sheet, and Needs attention
 lines in the HTML report, whose intervention list holds those Macs with a Reason column (2.10).
 Config › Thresholds edits both keys (`ConfigStaleBasisControls`).
-**Binary missing (2.10):** `BinaryMissing` (`Models/BinaryMissing.swift`) is a Mac Jamf lists as
-unmanaged that has never checked in (the "DEP - <serial>" records: enrolled, no Jamf binary),
-read from the managed flag, never the name; an unknown managed state is not unmanaged. It is not
+**Binary missing (2.10):** `BinaryMissing` (`Models/BinaryMissing.swift`) is a Mac that has never
+checked in and that Jamf lists as unmanaged or has never inventoried (2.12: MDM-managed, no
+`general.reportDate` and no OS version, `NeverInventoried`; the "DEP - <serial>" records: enrolled,
+no Jamf binary), read from the managed flag and the data, never the name; an unknown managed state
+with an inventory is not flagged (the record carries `neverInventoried`, set from the `computers`
+item; no grace period for a new Mac, which corrects itself the next day). It is not
 stale and not a contact gap: Computers (own filter and detail section with the three remediations),
 Offline Outreach, the HTML intervention list and Needs attention, and the Check-in Health sheet
 list it apart. The daily summary's `stale_count` and jamf-cli's percentages are unchanged. The

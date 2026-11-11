@@ -34,6 +34,14 @@ final class BinaryMissingTests: XCTestCase {
         return ["id": name, "general": general, "hardware": ["serialNumber": "SER-\(name)"]]
     }
 
+    /// A `computers` element Jamf never got an inventory for: `reportDate` and the OS version
+    /// are present and null (shape of a real snapshot; values invented).
+    private func uninventoried(_ name: String, managed: Bool?) -> [String: Any] {
+        var item = computer(name, managed: managed, checkIn: nil)
+        item["operatingSystem"] = ["version": NSNull(), "name": NSNull()]
+        return item
+    }
+
     private func record(_ item: [String: Any]) -> DeviceInventoryRecord {
         DeviceInventoryService.recordFromComputer(item, source: "computers")
     }
@@ -50,6 +58,42 @@ final class BinaryMissingTests: XCTestCase {
         XCTAssertFalse(BinaryMissing.isMissing(managedState: "", neverCheckedIn: true),
                        "an unknown managed state is not unmanaged")
         XCTAssertFalse(BinaryMissing.isMissing(managedState: "Pending", neverCheckedIn: true))
+    }
+
+    func testAManagedMacWithNoInventoryAndNoCheckInIsMissingTheBinary() {
+        XCTAssertTrue(BinaryMissing.isMissing(
+            managedState: "Managed", neverCheckedIn: true, neverInventoried: true))
+        XCTAssertFalse(BinaryMissing.isMissing(
+            managedState: "Managed", neverCheckedIn: false, neverInventoried: true))
+        XCTAssertFalse(BinaryMissing.isMissing(managedState: "Managed", neverCheckedIn: true))
+
+        let managed = uninventoried("M", managed: true)
+        XCTAssertTrue(BinaryMissing.isMissing(computer: managed))
+        XCTAssertTrue(record(managed).isBinaryMissing)
+        XCTAssertTrue(BinaryMissing.isMissing(computer: uninventoried("U", managed: nil)),
+                      "never inventoried counts whatever the managed state says")
+
+        var inventoried = computer("I", managed: true, checkIn: nil)
+        inventoried["general"] = (inventoried["general"] as? [String: Any] ?? [:])
+            .merging(["reportDate": iso(daysAgo: 3)]) { $1 }
+        inventoried["operatingSystem"] = ["version": "26.1"]
+        XCTAssertFalse(BinaryMissing.isMissing(computer: inventoried))
+        XCTAssertFalse(record(inventoried).isBinaryMissing)
+
+        XCTAssertFalse(BinaryMissing.isMissing(computer: computer("K", managed: nil, checkIn: nil)),
+                       "keys missing and managed unknown: no evidence")
+        XCTAssertFalse(record(computer("K", managed: nil, checkIn: nil)).isBinaryMissing)
+        XCTAssertTrue(BinaryMissing.isMissing(computer: uninventoried("X", managed: false)))
+    }
+
+    func testAManagedNeverInventoriedMacIsListedApartAndTheSummaryStaleFigureStands() throws {
+        let fleet = fleet + [uninventoried("Managed-DEP", managed: true)]
+        let html = try report(computers: fleet).buildInterventionList(computersInventory: fleet).html
+        XCTAssertEqual(try tableRows(html).first { $0[0] == "Managed-DEP" }?[5],
+                       "Jamf binary missing")
+        let inputs = try report(computers: fleet).loadInputs(for: Set(SectionID.allCases))
+        XCTAssertEqual(inputs.binaryMissingCount, 3)
+        XCTAssertEqual(inputs.staleMacCount, 1, "the stale figure the report shows is unchanged")
     }
 
     func testARecordFollowsTheRuleAndNeverTheName() {
@@ -215,6 +259,6 @@ final class BinaryMissingTests: XCTestCase {
 
     func testTheSingularSentence() {
         XCTAssertTrue(BinaryMissing.attentionSentence(count: 1).hasPrefix(
-            "1 Mac enrolled but never received the Jamf binary: Jamf Pro lists it as"))
+            "1 Mac enrolled but never received the Jamf binary: never checked in, and not managed"))
     }
 }
