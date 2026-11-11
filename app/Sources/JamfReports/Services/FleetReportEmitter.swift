@@ -67,6 +67,15 @@ enum FleetReportEmitter {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// One line per profile of `profiles` whose persisted verdict is `limited`.
+    static func siteScopeNotes(profiles: [String]) -> [String] {
+        profiles.compactMap { profile in
+            SiteScope.persisted(profile: profile).summary.map {
+                "Note: \(ConfigSchema.displayText(profile)) sees \($0) (site-limited login)"
+            }
+        }
+    }
+
     /// Prior-period summary for deltas: the newest summary at least
     /// `lookbackDays` older than the current (last) summary, falling back to the
     /// immediately-prior summary. nil when fewer than two summaries exist.

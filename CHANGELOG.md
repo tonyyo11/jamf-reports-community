@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Jamf Reports now notices when the jamf-cli login can see only some Jamf Pro sites. The collect log, Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, fleet workbook and period report note that they cover only the sites that login sees.
 - The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
 - The daily summary records which products an environment holds and, with Jamf Protect, how many
   Protect computers it sees, how many of those match this environment's inventory, and how many
@@ -95,6 +96,7 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- **Workbook layout, for anything that reads the workbooks automatically.** When the jamf-cli login sees only some Jamf Pro sites, every Jamf Pro tab carries a sentence saying so in the header row just above its table (the row that was blank). No tab, column or table row moves, and a login that sees every site writes nothing new. Separately, rows that tie on a count (Mobile Fleet Summary, Hardware Models, text extension attribute tables) now sort by name, so their order no longer changes between runs. If a script or a tool such as Power BI reads these workbooks, check it against a new report.
 - A new app icon in Apple's Liquid Glass style: the same four compliance bands on the dark
   background, now as glass shapes. On macOS Tahoe 26 and later it also follows the Mac's
   tinted and clear icon styles.
@@ -159,6 +161,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Workbook rows that tie on a count now come out in the same order every run. The Mobile Fleet Summary's distributions and Top Models list, the Hardware Models tab and each text extension attribute's value table ordered tied rows at random, so the top ten models could change between two runs on the same data.
 - Setup's last step no longer strands you after a first report that worked. Once it finishes, the button reads **Open Overview** and the Skip card goes away; before, a workspace added from the Add sheet stayed on the step with only **Skip & finish setup** to leave by. A Jamf School setup is no longer told its profile did not validate: its Connect step is the check.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
 - The Add sheet checks a Platform API profile's ID before adding one jamf-cli already holds, as

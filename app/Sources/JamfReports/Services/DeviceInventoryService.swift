@@ -767,10 +767,11 @@ private extension DeviceInventoryService {
     }
 
     static func managedLabel(_ value: String) -> String {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["true", "yes", "1", "managed"].contains(text) { return "Managed" }
-        if ["false", "no", "0", "unmanaged"].contains(text) { return "Unmanaged" }
-        return value
+        switch BinaryMissing.managed(value) {
+        case true?: "Managed"
+        case false?: "Unmanaged"
+        case nil: value
+        }
     }
 
 }

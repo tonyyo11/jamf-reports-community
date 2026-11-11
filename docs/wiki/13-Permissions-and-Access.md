@@ -243,6 +243,16 @@ and secret are saved on the same School profile. The integration needs `blueprin
 the tenant ID or the permission is wrong, setup says which, and the School API key keeps
 working either way. Without these fields a School collect skips blueprints.
 
+## Logins limited to some sites
+
+A Jamf Pro user account can be limited to some sites. If jamf-cli signs in as one (a profile with
+`--auth-method token`), every list and report it returns covers only those sites, and Jamf Pro
+gives no error. After each collect, Jamf Reports compares the server-wide device totals in
+`pro overview` with the devices that login can list. When the login sees fewer, the collect log,
+Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, report-group
+exports and period report note that they cover only part of the server. A Jamf Pro API client
+(`oauth2`) has no site limit and sees every site, so use one for fleet-wide reports.
+
 ## Reading a permission error
 
 A 403 exits 5, and jamf-cli's hint names what was missing in the vocabulary of the

@@ -214,6 +214,9 @@ extension HtmlReport {
             items.append((text, attentionAnchor(id, group: group, shown: shown)))
         }
 
+        if let sentence = inputs.siteScope.reportSentence {
+            items.append((sentence, nil))
+        }
         let (stale, missing) = Self.staleFigure(inputs)
         if stale > 0 {
             add(.interventionList, .devices,

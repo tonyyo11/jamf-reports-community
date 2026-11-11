@@ -107,6 +107,7 @@ enum ConfigDoctorService {
         rows += organizationLevelRows(profile: profile)
         rows += platformTwinRows(profile: profile)
         rows += sharedConfigRows(profile: profile)
+        rows += siteScopeRows(profile: profile)
         let workspace = (try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot))?
             .deletingLastPathComponent()
         rows += automationFolderRows(workspace: workspace)
@@ -678,6 +679,34 @@ extension ConfigDoctorService {
         /// don't exercise this check at all). When gathered, distinguishes a
         /// computed drift (possibly empty/stable) from insufficient data.
         var coverageDrift: EAParseHealthService.CoverageDriftOutcome?
+    }
+
+    /// One warn row while the persisted collect verdict says the login sees only some sites.
+    static func siteScopeRows(profile: String) -> [DoctorRow] {
+        guard let dir = try? WorkspacePaths.stateDir(for: profile) else { return [] }
+        return siteScopeRows(SiteScopeRecord.load(stateDir: dir))
+    }
+
+    static func siteScopeRows(_ scope: SiteScope) -> [DoctorRow] {
+        guard case .limited(let computers, let mobile) = scope else { return [] }
+        let summary = [
+            computers.map {
+                $0.total == 1 ? L("\($0.seen) of 1 managed computer")
+                    : L("\($0.seen) of \($0.total) managed computers")
+            },
+            mobile.map {
+                $0.total == 1 ? L("\($0.seen) of 1 managed mobile device")
+                    : L("\($0.seen) of \($0.total) managed mobile devices")
+            },
+        ].compactMap { $0 }.joined(separator: ", ")
+        return [DoctorRow(
+            id: "accuracy.site_scope", severity: .warn,
+            title: L("This login sees only part of Jamf Pro"),
+            detail: summary,
+            hint: L("""
+                Collect with a Jamf Pro API client, which sees every site, \
+                or treat these reports as one site's.
+                """))]
     }
 
     // MARK: IO gather (real run)

@@ -1,0 +1,7 @@
+[
+  {
+    "auth-method": "token",
+    "name": "site-limited",
+    "url": "https://example.jamfcloud.com"
+  }
+]

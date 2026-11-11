@@ -65,6 +65,8 @@ extension HtmlReport {
         var p0Gaps = P0Gaps()
         /// The mobile device snapshot, read only for a report that lists `.mobileFleet`.
         var mobile: MobileFleetService.Snapshot?
+        /// The collect's persisted site-scope verdict; only `limited` shows anything.
+        var siteScope: SiteScope = .unknown
     }
 
     /// Loads what the sections in `sections` and the figures at the top need.
@@ -126,6 +128,7 @@ extension HtmlReport {
            let data = BoundedFile.readLogged(url, inside: dataDir) {
             inputs.eaRows = EAResultRow.decodeSnapshot(data).rows
         }
+        inputs.siteScope = SiteScope.persisted(dataDir: dataDir)
         inputs.summaries = loadDailySummaries()
         inputs.p0 = inputs.summaries.last?.actionItemsP0 ?? inputs.fleet?.p0
         if let latest = inputs.summaries.last {
