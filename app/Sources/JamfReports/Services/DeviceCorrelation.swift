@@ -68,15 +68,19 @@ struct ProtectProCorrelation: Sendable {
     var matched = 0
     var ambiguous = 0
     var noIdentifier = 0
+    /// Protect rows that matched a Jamf Pro computer an earlier row already claimed.
+    var duplicates = 0
     var notInPro: [ProtectComputerRow] = []
     var proWithoutProtect: [DeviceInventoryRecord] = []
 
     /// Protect computers that carry a UUID or serial: the denominator of the match.
     var identified: Int { protectCount - noIdentifier }
 
-    /// matched of identified; nil with no inventory or no identified Protect computer.
+    /// matched of the identified computers less duplicates, so each Mac counts once; nil with no
+    /// inventory or no identified Protect computer.
     var matchedShare: MobileSummary.Share? {
-        inventorySize > 0 && identified > 0 ? .init(met: matched, of: identified) : nil
+        let of = identified - duplicates
+        return inventorySize > 0 && of > 0 ? .init(met: matched, of: of) : nil
     }
 
     static func build(
@@ -91,8 +95,11 @@ struct ProtectProCorrelation: Sendable {
             probe.serial = row.serial ?? ""
             switch correlation.match(probe) {
             case .matched(let position, _):
-                result.matched += 1
-                claimed.insert(position)
+                if claimed.insert(position).inserted {
+                    result.matched += 1
+                } else {
+                    result.duplicates += 1
+                }
             case .unmatched: result.notInPro.append(row)
             case .ambiguous: result.ambiguous += 1
             case .noIdentifier: result.noIdentifier += 1

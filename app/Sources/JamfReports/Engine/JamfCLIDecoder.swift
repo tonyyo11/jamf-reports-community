@@ -1115,8 +1115,8 @@ struct ProtectComputerRow: Decodable, Sendable {
     let insightsStatsFail: Int?
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, hostname, serial, modelName, osString, plan, version
-        case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
+        case uuid, hostname, serial, modelName, osString, osMajor, osMinor, osPatch, plan
+        case version, webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
         case insightsStatsFail
     }
 
@@ -1126,7 +1126,13 @@ struct ProtectComputerRow: Decodable, Sendable {
         hostName = try? c.decodeIfPresent(String.self, forKey: .hostname)
         serial = try? c.decodeIfPresent(String.self, forKey: .serial)
         modelName = try? c.decodeIfPresent(String.self, forKey: .modelName)
-        osString = try? c.decodeIfPresent(String.self, forKey: .osString)
+        // jamf-cli sends osMajor/osMinor/osPatch and no osString; the Protect Computers sheet
+        // reads them in the same order.
+        let parts = [CodingKeys.osMajor, .osMinor, .osPatch]
+            .compactMap { try? c.decodeIfPresent(Int.self, forKey: $0) }
+        osString = parts.count == 3
+            ? parts.map(String.init).joined(separator: ".")
+            : try? c.decodeIfPresent(String.self, forKey: .osString)
         planName = try? c.decodeIfPresent(String.self, forKey: .plan)
         version = try? c.decodeIfPresent(String.self, forKey: .version)
         webProtectionActive = try? c.decodeIfPresent(Bool.self, forKey: .webProtectionActive)

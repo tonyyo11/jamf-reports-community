@@ -140932,6 +140932,86 @@
         }
       }
     },
+    "repeat a matched %@ computer and are counted once." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "wiederholen einen bereits zugeordneten %@-Computer und werden einmal gezählt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repiten un ordenador de %@ ya emparejado y se cuentan una vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "répètent un ordinateur %@ déjà associé et ne sont comptés qu’une fois."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ripetono un computer %@ già associato e vengono conteggiati una volta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一致済みの%@コンピュータと重複するため、1台として数えます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repetem um computador de %@ já correspondido e são contados uma vez."
+          }
+        }
+      }
+    },
+    "repeats a matched %@ computer and is counted once." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "wiederholt einen bereits zugeordneten %@-Computer und wird einmal gezählt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repite un ordenador de %@ ya emparejado y se cuenta una vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "répète un ordinateur %@ déjà associé et n’est compté qu’une fois."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ripete un computer %@ già associato e viene conteggiato una volta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一致済みの%@コンピュータと重複するため、1台として数えます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repete um computador de %@ já correspondido e é contado uma vez."
+          }
+        }
+      }
+    },
     "replaced by score_factors[%lld], which lists it again" : {
       "localizations" : {
         "de" : {

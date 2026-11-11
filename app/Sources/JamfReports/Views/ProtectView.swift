@@ -873,6 +873,9 @@ struct ProtectView: View {
             protectLine(match.ambiguous,
                         one: L("matches more than one \(product) computer and is not counted."),
                         many: L("match more than one \(product) computer and are not counted.")),
+            protectLine(match.duplicates,
+                        one: L("repeats a matched \(product) computer and is counted once."),
+                        many: L("repeat a matched \(product) computer and are counted once.")),
             protectLine(match.noIdentifier, one: L("reports no UUID or serial."),
                         many: L("report no UUID or serial.")),
         ].compactMap { $0 }
