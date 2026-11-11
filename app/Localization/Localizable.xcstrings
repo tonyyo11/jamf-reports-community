@@ -15978,6 +15978,86 @@
         }
       }
     },
+    "%lld of %lld managed computers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld verwalteten Computern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld ordenadores gestionados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur %2$lld ordinateurs gérés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld su %2$lld computer gestiti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理対象のコンピュータ %2$lld 台中 %1$lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld computadores gerenciados"
+          }
+        }
+      }
+    },
+    "%lld of %lld managed mobile devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld verwalteten mobilen Geräten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld dispositivos móviles gestionados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur %2$lld appareils mobiles gérés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld su %2$lld dispositivi mobili gestiti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理対象のモバイルデバイス %2$lld 台中 %1$lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld dispositivos móveis gerenciados"
+          }
+        }
+      }
+    },
     "%lld of %lld shown" : {
       "localizations" : {
         "de" : {
@@ -37269,6 +37349,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Colete este espaço de trabalho para listar os benchmarks de conformidade e obter os resultados de regras e dispositivos de cada um."
+          }
+        }
+      }
+    },
+    "Collect with a Jamf Pro API client, which sees every site, or treat these reports as one site's." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfassen Sie mit einem Jamf Pro API-Client, der alle Sites sieht, oder behandeln Sie diese Berichte als Bericht einer einzelnen Site."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recopile con un cliente de API de Jamf Pro, que ve todos los sitios, o trate estos informes como los de un solo sitio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collectez avec un client API Jamf Pro, qui voit tous les sites, ou considérez ces rapports comme ceux d’un seul site."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccogli con un client API di Jamf Pro, che vede tutti i siti, oppure considera questi report come quelli di un solo sito."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのサイトを参照できる Jamf Pro API クライアントで収集するか、これらのレポートを 1 つのサイトのものとして扱ってください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colete com um cliente de API do Jamf Pro, que vê todos os sites, ou trate estes relatórios como os de um único site."
           }
         }
       }
@@ -120347,6 +120467,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este é o backup mais recente com arquivos."
+          }
+        }
+      }
+    },
+    "This login sees only part of Jamf Pro" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Anmeldung sieht nur einen Teil von Jamf Pro"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este inicio de sesión solo ve una parte de Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette connexion ne voit qu’une partie de Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo accesso vede solo una parte di Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このログインでは Jamf Pro の一部しか見えません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este login vê apenas parte do Jamf Pro"
           }
         }
       }

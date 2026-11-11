@@ -1,0 +1,22 @@
+[
+  {
+    "section": "Fleet",
+    "resource": "Managed Computers",
+    "value": "2"
+  },
+  {
+    "section": "Fleet",
+    "resource": "Unmanaged Computers",
+    "value": "0"
+  },
+  {
+    "section": "Fleet",
+    "resource": "Managed Devices",
+    "value": "1"
+  },
+  {
+    "section": "Fleet",
+    "resource": "Unmanaged Devices",
+    "value": "0"
+  }
+]
