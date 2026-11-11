@@ -253,7 +253,7 @@ struct PatchView: View {
                                 .monospacedDigit()
                         }
                         .accessibilityLabel(pct == nil ? L("No data yet")
-                                            : "\(title.compliancePct) compliance rate")
+                                            : L("\(title.compliancePct) compliance rate"))
                     }
                     .width(min: 80, ideal: 90)
 
