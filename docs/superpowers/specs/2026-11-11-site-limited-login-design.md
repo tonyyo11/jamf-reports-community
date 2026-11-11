@@ -1,8 +1,8 @@
 # Site-limited login detection: design
 
-Status: draft for the owner's review, 2026-11-11. Target: 2.12. It was reviewed once against
-the code (plan reviewer, 2026-11-11), and that review's findings are folded in. One owner
-decision is open: the state file (see Persisted verdict).
+Status: approved by the owner on 2026-11-11, including the state file. Target: 2.12. It was
+reviewed once against the code (plan reviewer, 2026-11-11), and that review's findings are
+folded in.
 
 ## Problem
 
@@ -96,7 +96,7 @@ Once per collect, in `ReportEngine.collect`, after `finalizeCollect`. That's whe
   collect and from a different login (a shared workspace, a re-authenticated profile), and
   neither HtmlReport nor CoreDashboard resolves auth.
 
-## Persisted verdict (owner decision)
+## Persisted verdict
 
 The verdict is written to `state/site-scope.json` in the data folder, beside the per-kind state
 files:
@@ -105,9 +105,8 @@ files:
 - the profile name.
 
 It's written atomically through `AtomicInstall.write` and read through `BoundedFile.readLogged`.
-A missing or unreadable file is `unknown`. This is a new file in the workspace layout, so it
-needs the owner's yes. The alternative is a field in the daily summary, but that's a data-model
-change and its own spec.
+A missing or unreadable file is `unknown`. The owner approved this new file on 2026-11-11, over
+a field in the daily summary, which would be a data-model change and its own spec.
 
 ## Where it shows
 
