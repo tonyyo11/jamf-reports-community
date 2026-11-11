@@ -314,9 +314,9 @@ final class WorkspaceStore {
     /// cards edit them through `saveSecurityLevel` and its siblings.
     var securityPolicy: SecurityControlPolicy = .default
     var securityPolicyIssues: [SecurityPolicyIssue] = []
-    /// The active workspace has Jamf Protect connected; read with the config and when Data
-    /// Sources connects or disconnects it (`refreshProtectConnection`). False in demo mode.
-    var protectConnected = false
+    /// The products the active workspace's config.yaml names, read with the config and when
+    /// Data Sources connects or disconnects one (`refreshEnvironmentProducts`).
+    private var environmentProfiles = EnvironmentProfiles.none
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -397,7 +397,7 @@ final class WorkspaceStore {
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
-        if isDemo { applyDemoConfig() } else { refreshProtectConnection() }
+        if isDemo { applyDemoConfig() } else { refreshEnvironmentProducts() }
     }
 
     /// Managed schedules come from the policy; hand-built from the store.
@@ -479,7 +479,7 @@ final class WorkspaceStore {
                 profile = next
             }
             org = Self.org(for: real.first(where: { $0.name == profile }))
-            refreshProtectConnection()
+            refreshEnvironmentProducts()
             Task { await refreshAuthStatus() }
             if wasDemo { restoreLiveStateAfterDemo() }
         }
@@ -793,7 +793,7 @@ final class WorkspaceStore {
     /// file doesn't exist yet (new workspace). Other errors are rethrown.
     func loadConfig() async throws {
         configRepairedKeys = []
-        refreshProtectConnection()
+        refreshEnvironmentProducts()
         // A config.yaml under the demo profile's name is not the demo's, and
         // reading it would put real values on demo screens.
         if demoMode {
@@ -1151,19 +1151,32 @@ final class WorkspaceStore {
     /// The active workspace is a Jamf School one: its profile logs in to Jamf School
     /// (`school setup`, discovered as `JamfCLIProduct.school`), which is also the profile
     /// `ProfileProductType.detect` routes to School collect.
-    var isSchoolWorkspace: Bool { activeCLIProfile?.product == .school }
+    var isSchoolWorkspace: Bool { environmentProducts.isSchool }
 
     /// The sidebar's visibility for the active workspace: the user's hidden tabs, and the tabs
     /// its product cannot fill.
     func tabVisibility(hiddenRaw: String) -> TabVisibility {
-        TabVisibility.parse(hiddenRaw)
-            .limited(toSchool: isSchoolWorkspace, protectConnected: protectConnected)
+        TabVisibility.parse(hiddenRaw).limited(to: environmentProducts)
     }
 
-    /// Re-reads whether the active workspace has Jamf Protect connected (`EnvironmentProfiles`).
-    func refreshProtectConnection() {
-        protectConnected = !demoMode
-            && EnvironmentProfiles.read(workspace: profile).protect != nil
+    /// The products and device types of the active environment; `.demo` in demo mode. A School
+    /// profile whose config.yaml cannot be read is still School, and the Platform API login of a
+    /// workspace without `profiles:` is read live from discovery, which fills `auth` late.
+    var environmentProducts: EnvironmentProducts {
+        if demoMode { return .demo }
+        var products = EnvironmentProducts.from(
+            environmentProfiles, composition: environmentComposition,
+            legacyPlatformAuth: activeCLIProfile?.auth?.isPlatform == true)
+        if activeCLIProfile?.product == .school && !products.isSchool {
+            products.products.remove(.jamfPro)
+            products.products.insert(.jamfSchool)
+        }
+        return products
+    }
+
+    /// Re-reads which products the active workspace names (`EnvironmentProfiles`).
+    func refreshEnvironmentProducts() {
+        environmentProfiles = demoMode ? .none : EnvironmentProfiles.read(workspace: profile)
     }
 
     /// After credentials are saved: a profile's auth method or scope level may have changed, so
@@ -1389,7 +1402,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     /// Jamf Pro screen reads, so it keeps its own Overview and Devices and the screens about the
     /// workspace, its reports and its automation, and Trends, which charts the School daily
     /// summary (`ReportEngine.writeSchoolSummary`). Fleet Overview stays out until its tiles
-    /// read that summary. Applied by `TabVisibility.limited(toSchool:)`, never stored.
+    /// read that summary. Applied by `TabVisibility.limited(to:)`, never stored.
     static let schoolTabs: Set<Tab> = [
         .overview, .schoolDevices, .trends, .reports, .schedules, .runs, .config, .sources,
         .settings, .onboarding,
@@ -1474,15 +1487,25 @@ struct TabVisibility: Sendable, Equatable {
         !unavailable.contains(tab) && (tab.isCoreTab || !hidden.contains(tab))
     }
 
-    /// This visibility for the active workspace: a Jamf School workspace also leaves out every
-    /// tab outside `Tab.schoolTabs`, except Jamf Protect while Protect is connected (2.11), and
-    /// any other workspace leaves out the School Devices tab.
-    func limited(toSchool isSchool: Bool, protectConnected: Bool = false) -> TabVisibility {
+    /// The tabs the environment's products can fill, never stored (R5, R6, R8).
+    func limited(to environment: EnvironmentProducts) -> TabVisibility {
         var copy = self
-        let schoolTabs = protectConnected
-            ? Tab.schoolTabs.union([.protectDashboard]) : Tab.schoolTabs
-        copy.unavailable = isSchool
-            ? Set(Tab.allCases).subtracting(schoolTabs) : [.schoolDevices]
+        let keep: Set<Tab>
+        if environment.isSchool {
+            keep = environment.has(.protect)
+                ? Tab.schoolTabs.union([.protectDashboard]) : Tab.schoolTabs
+        } else if environment.isProtectOnly {
+            keep = [.overview, .protectDashboard, .reports, .schedules, .runs, .config,
+                    .sources, .settings, .onboarding]
+        } else {
+            var out: Set<Tab> = [.schoolDevices]
+            if !environment.has(.platform) { out.insert(.complianceBenchmarks) }
+            if !environment.has(.protect) { out.insert(.protectDashboard) }
+            if environment.composition == .macsOnly { out.insert(.mobileFleet) }
+            copy.unavailable = out
+            return copy
+        }
+        copy.unavailable = Set(Tab.allCases).subtracting(keep)
         return copy
     }
 

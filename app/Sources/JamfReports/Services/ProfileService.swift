@@ -274,10 +274,25 @@ enum ProfileService {
             }
         }
         return profiles.filter { profile in
-            if profile.product.isNeverAWorkspace { return false }
+            if neverAWorkspace(profile, under: root) { return false }
             guard paired.contains(profile.name) else { return true }
             return active.contains(profile.name) || hasWorkspace(profile.name, under: root)
         }
+    }
+
+    /// True when `name` has a workspace folder whose config.yaml is Protect-only for that name
+    /// (P8): a `profiles:` block with `protect` naming it and neither MDM slot.
+    static func isProtectOnlyWorkspace(_ name: String, root: URL? = nil) -> Bool {
+        let root = root ?? workspacesRoot()
+        guard hasWorkspace(name, under: root) else { return false }
+        let environment = EnvironmentProfiles.read(workspace: name, under: root)
+        return environment.isProtectOnly && environment.protect == name
+    }
+
+    /// A Protect or Security Cloud login is never a workspace, except a Protect login that is
+    /// the Protect-only environment of its own folder.
+    static func neverAWorkspace(_ profile: JamfCLIProfile, under root: URL? = nil) -> Bool {
+        profile.product.isNeverAWorkspace && !isProtectOnlyWorkspace(profile.name, root: root)
     }
 
     /// True when `name` has a workspace folder under `root` holding a `config.yaml`.
@@ -336,10 +351,11 @@ enum ProfileService {
     static func runnableWorkspaces(
         _ profiles: [JamfCLIProfile],
         excluding excluded: Set<String>,
+        under root: URL = workspacesRoot(),
         hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) }
     ) -> [JamfCLIProfile] {
         applyingExclusions(profiles, excluding: excluded).filter { profile in
-            profile.status != .error && !profile.product.isNeverAWorkspace
+            profile.status != .error && !neverAWorkspace(profile, under: root)
                 && hasWorkspace(profile.name)
         }
     }

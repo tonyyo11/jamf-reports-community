@@ -863,6 +863,23 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertEqual(try run("protect:\n  enabled: true\n").written, ["Protect Overview"])
     }
 
+    /// A Protect-only environment (`profiles:` with only `protect`) still writes the Protect tabs.
+    func testAProtectOnlyEnvironmentWritesTheProtectTabs() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let subdir = tmp.appendingPathComponent("protect-overview", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        try Data(#"[{"resource":"Computers","section":"Endpoints","value":"1"}]"#.utf8)
+            .write(to: subdir.appendingPathComponent("protect-overview.json"))
+        let dash = CoreDashboard(
+            config: try ConfigLoader.loadFromString("profiles:\n  protect: po\n"),
+            dataDir: tmp, workbook: Workbook())
+        let result = SheetRegistry(plan: dash.sheetPlan).writeSelected(
+            template: CustomTemplate(includedSheets: [.protectOverview]), onLine: { _ in })
+        XCTAssertEqual(result.written, ["Protect Overview"])
+    }
+
     /// Protect writer fixture dirs contain both `*_empty.json` and `*_happy.json`.
     /// `loadLatestJSON` picks by mtime, which on freshly-checked-out trees is
     /// effectively alphabetical — so the empty file wins and the writer hits its

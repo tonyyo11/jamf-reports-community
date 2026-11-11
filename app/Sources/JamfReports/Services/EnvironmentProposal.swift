@@ -125,7 +125,11 @@ struct EnvironmentProposal: Equatable, Sendable {
 
         let targets = result.environments.map(\.workspace)
             + existingWorkspaces.filter { $0.value.protect == nil }.map(\.key)
-        result.protectChoices = open.filter { $0.product == .protect }.map(\.name).sorted()
+        result.protectChoices = open.filter {
+            // A Protect-only environment's own login is a workspace, never attached elsewhere.
+            $0.product == .protect
+                && existingKeys[ProfileName.folderKey($0.name)]?.value.isProtectOnly != true
+        }.map(\.name).sorted()
             .map { ProtectChoice(profile: $0, suggested: suggestion(for: $0, among: targets)) }
         return result
     }

@@ -424,6 +424,10 @@ struct AddSheet: View {
                 }
             }
         }
+        if AddSheetPlan.step(choice: choice, takesProtect: currentTakesProtect) == .newWorkspace,
+           !workspace.demoMode {
+            rowGroup(L("Jamf Protect"), AddSheetPlan.ownEnvironmentRows(discovery))
+        }
     }
 
     @ViewBuilder
@@ -516,15 +520,26 @@ struct AddSheet: View {
                 .accessibilityLabel("Set up workspace for \(row.name)")
             }
         case .addToCurrent(let slot):
-            PNPButton(title: L("Add to \(workspace.profile)"), icon: "plus", size: .sm) {
-                if slot == .platform {
-                    Task { await addPlatform(row.name, to: workspace.profile) }
-                } else {
-                    addProtect(row)
+            if AddSheetPlan.step(choice: choice, takesProtect: currentTakesProtect)
+                == .addToCurrent {
+                PNPButton(title: L("Add to \(workspace.profile)"), icon: "plus", size: .sm) {
+                    if slot == .platform {
+                        Task { await addPlatform(row.name, to: workspace.profile) }
+                    } else {
+                        addProtect(row)
+                    }
                 }
+                .disabled(isAdopting || isChecking || isAddingPlatform)
+                .accessibilityLabel("Add \(row.name) to \(workspace.profile)")
             }
-            .disabled(isAdopting || isChecking || isAddingPlatform)
-            .accessibilityLabel("Add \(row.name) to \(workspace.profile)")
+            if AddSheetPlan.offersOwnEnvironment(row) {
+                PNPButton(
+                    title: L("Its own environment (Jamf Protect only)"),
+                    icon: "folder.badge.plus", size: .sm
+                ) { Task { await createProtectEnvironment(row) } }
+                .disabled(isAdopting || isChecking || isAddingPlatform)
+                .accessibilityLabel("Make \(row.name) an environment of its own")
+            }
         case .unavailable:
             EmptyView()
         }
@@ -625,6 +640,24 @@ struct AddSheet: View {
             workspace.credentialsChanged()
         } catch {
             errorText = L("Could not add \(profile): \(error.localizedDescription)")
+        }
+        await recheck()
+    }
+
+    /// Makes a Protect login a workspace of its own, then refreshes the profiles and tabs.
+    private func createProtectEnvironment(_ row: AddSheetPlan.UnassignedProfile) async {
+        guard !workspace.demoMode else { return }
+        message = nil
+        errorText = nil
+        do {
+            let login = row.name
+            try await Task.detached {
+                try OnboardingFlow.createProtectOnlyEnvironment(login: login)
+            }.value
+            message = L("\(row.name) is set up as a Jamf Protect environment. Switch to it from the workspace menu.")
+            workspace.credentialsChanged()
+        } catch {
+            errorText = L("Could not add \(row.name): \(error.localizedDescription)")
         }
         await recheck()
     }

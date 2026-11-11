@@ -234,24 +234,19 @@ final class CollectHonestyTests: XCTestCase {
     }
 
     /// End to end: a peer that collected minutes ago makes this Mac stand down,
-    /// and the run says so on the stream. `locateJamfCLI` returns nil to prove
-    /// the decision is made before the binary check — a peer already working is
-    /// a reason to defer whether or not this Mac could have collected.
+    /// and the run says so on the stream. The gate runs before any jamf-cli work, so a peer already
+    /// working is a reason to defer whether or not this Mac could have collected.
     func testCollectStandsDownForARecentPeerAndSaysSo() async throws {
         try writeConfig("shared_workspace:\n  enabled: true\n")
         try writePeerCollect(at: Date())
         let collector = LogTextCollector()
 
-        let disposition = try await ReportEngine.collect(
-            workspace: WorkspaceID(validating: profile),
-            profile: profile,
-            workspacePaths: WorkspacePaths.self,
-            force: false,
-            locateJamfCLI: { nil },
-            onLine: collector.append
-        )
+        let disposition = try ReportEngine.environmentGate(
+            workspace: WorkspaceID(validating: profile), workspacePaths: WorkspacePaths.self,
+            tiers: Set(CollectionTier.allCases), force: false, now: Date(),
+            onLine: collector.append)
 
-        XCTAssertEqual(disposition, .stoodDown,
+        XCTAssertEqual(disposition, .stop(.stoodDown),
                        "CollectRouter keys Protect on this; a stand-down is not a collect")
         let standDown = collector.texts.filter { $0.hasPrefix(ReportEngine.standDownMarker) }
         XCTAssertEqual(standDown.count, 1, "got: \(collector.texts)")

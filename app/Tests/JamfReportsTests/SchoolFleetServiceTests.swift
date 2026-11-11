@@ -110,8 +110,10 @@ final class SchoolFleetServiceTests: XCTestCase {
     }
 
     func test_tabs_schoolDevicesOnlyOnSchool() {
-        XCTAssertTrue(TabVisibility().limited(toSchool: true).isVisible(.schoolDevices))
-        XCTAssertFalse(TabVisibility().limited(toSchool: false).isVisible(.schoolDevices))
-        XCTAssertFalse(TabVisibility().limited(toSchool: true).isVisible(.devices))
+        let school = TabVisibility().limited(to: SchoolWorkspaceTests.env(.jamfSchool))
+        let pro = TabVisibility().limited(to: SchoolWorkspaceTests.env(.jamfPro))
+        XCTAssertTrue(school.isVisible(.schoolDevices))
+        XCTAssertFalse(pro.isVisible(.schoolDevices))
+        XCTAssertFalse(school.isVisible(.devices))
     }
 }

@@ -9,10 +9,27 @@ versions in this repository map to git tags.
 
 ### Added
 
+- A Jamf Protect-only environment is listed and run as a workspace, its Data Sources list shows
+  only the Protect sources, and the health strip expects only the Protect data. (#305)
+- The health strip now watches a Jamf School workspace's own data (devices, users, classes and
+  the rest), not only SOFA and Protect. (#305)
+- An environment with only a Jamf Protect profile collects Protect and records a daily summary;
+  backups, audits and device lookups still need Jamf Pro and say so. (#305)
 - The Add sheet adds a Platform API profile to the current environment, either one jamf-cli
   already holds or a new one (Connect new), after checking that it reaches the same Jamf Pro. (#305)
 - Re-check on the Add sheet suggests where a new Platform API profile belongs when it reaches
   the same Jamf Pro as an existing workspace. (#305)
+- The Add sheet offers an unassigned Jamf Protect login as its own environment (Jamf Protect
+  only), never preselected. (#305)
+- The Overview of a Jamf Protect-only environment shows the Protect screen. Tabs follow the
+  environment's products: Jamf Protect only with Protect, Compliance Benchmarks and the Config
+  Platform tab only with a Platform API profile, Trends and Mobile Devices only where there are
+  data for them. (#305)
+- The once-a-day collect guard and the shared-workspace claim now stop every product of an
+  environment together, Jamf School included. (#305)
+- HTML reports list the environment's products and their profiles under the title, and the
+  success and daily heartbeat webhook cards in full detail name the products (never the profile
+  names). (#305)
 - Data Sources lists the jamf-cli profiles that no workspace uses, with a button to add them. (#305)
 - The Environment card can merge a Platform API workspace into this one, after checking that
   both reach the same Jamf Pro. The sheet lists what is copied, what stays as it is and which
@@ -67,6 +84,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A Jamf School workspace now collects once a day unless the collect is forced (Refresh or a
+  full schedule), as Jamf Pro does, and a Mac that stands down for another Mac in a shared
+  workspace no longer collects Jamf Protect either (#305).
 - First launch proposes one workspace per environment, shown as one card each. A Platform API
   profile that reaches the same Jamf Pro as an OAuth profile joins that workspace as its Platform
   API connection instead of leaving the OAuth profile out; Remove on the card takes it off, and
@@ -120,6 +140,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Snapshot retention now also runs for Jamf School and Jamf Protect-only workspaces. (#305)
 - In French, a jamf-cli update whose brew, tar or unzip step ran past its time limit could crash
   the app while it wrote the message.
 - HTML and period reports, Fleet Drift and other dates the app writes or reads back no longer follow

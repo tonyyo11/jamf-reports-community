@@ -11,7 +11,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
 @MainActor
 @Observable final class TrendStore {
-    private var allSummaries: [DailySummary] = []
+    private var allSummaries: [DailySummary] = [] {
+        didSet { newestTwoSummaries = Self.newestTwo(of: allSummaries) }
+    }
     private(set) var filteredSummaries: [DailySummary] = []
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w4
@@ -374,7 +376,12 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     /// The newest summary and the one before it, by date, from everything loaded rather than
     /// the range shown, so a short range cannot hide the day before.
-    var newestTwoSummaries: (newest: DailySummary?, previous: DailySummary?) {
+    private(set) var newestTwoSummaries: (newest: DailySummary?, previous: DailySummary?) =
+        (nil, nil)
+
+    private static func newestTwo(
+        of allSummaries: [DailySummary]
+    ) -> (newest: DailySummary?, previous: DailySummary?) {
         var newest: DailySummary?, previous: DailySummary?
         for summary in allSummaries {
             if let top = newest, summary.date <= top.date {

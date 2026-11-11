@@ -230,12 +230,16 @@ final class RefreshCoordinator {
 
     /// The kind whose age says `tier` is stale. A School collect never writes `overview`, so that
     /// probe would call a School workspace stale after every collect.
-    nonisolated private static func probeKind(
+    nonisolated static func probeKind(
         for tier: CollectionTier, profile: String
     ) -> String? {
         guard let probe = tier.stalenessProbeKind else { return nil }
         let config = ProfileService.workspaceURL(for: profile).flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        // A Protect-only environment lands no Jamf Pro kind, so `overview` would stay stale.
+        if EnvironmentProfiles.resolve(config: config, workspace: profile).isProtectOnly {
+            return "protect-overview"
         }
         return ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
             ? SchoolFleetService.devicesKind : probe

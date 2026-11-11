@@ -114,7 +114,11 @@ enum AddSheetPlan {
         }
         // A Protect login is added to the current workspace; the flow refuses it only as a
         // workspace of its own.
-        if profile.product == .protect { return .addToCurrent(.protect) }
+        if profile.product == .protect {
+            return ProfileService.isProtectOnlyWorkspace(profile.name)
+                ? .unavailable(L("This Jamf Protect login is an environment of its own."))
+                : .addToCurrent(.protect)
+        }
         if let reason = ExistingCLISetupFlow.refusal(for: profile) { return .unavailable(reason) }
         // D24: a Platform login becomes a slot of the current environment, not a workspace.
         if platformSlotOpen, profile.auth?.isPlatform == true { return .addToCurrent(.platform) }
@@ -238,6 +242,16 @@ enum AddSheetPlan {
                     takesProtect: takesProtect, discovery: discovery))
         }
         return rows.filter { !$0.use.isAddOn }
+    }
+
+    /// A Protect login can also become an environment of its own (P8). Never the default: the
+    /// preselection and the add rows are unchanged, so the user picks it.
+    static func ownEnvironmentRows(_ discovery: AddSheetDiscovery?) -> [UnassignedProfile] {
+        (discovery?.unassigned ?? []).filter(offersOwnEnvironment)
+    }
+
+    static func offersOwnEnvironment(_ row: UnassignedProfile) -> Bool {
+        row.use == .addToCurrent(.protect)
     }
 
     /// What the "Profiles jamf-cli already has" card shows.
@@ -409,7 +423,8 @@ struct AddSheetDiscovery: Sendable {
         let names = listed.map(\.name)
         // A Protect or Security Cloud login's own folder (made by 2.9.0) is not a workspace.
         let workspaces = listed.filter {
-            !$0.product.isNeverAWorkspace && ProfileService.hasWorkspace($0.name, under: root)
+            !ProfileService.neverAWorkspace($0, under: root)
+                && ProfileService.hasWorkspace($0.name, under: root)
         }.map(\.name) + ProfileService.localOnlyWorkspaces(under: root, cliNames: names)
         let slots = Dictionary(
             workspaces.map { ($0, EnvironmentProfiles.read(workspace: $0, under: root)) },

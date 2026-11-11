@@ -19,7 +19,8 @@ func successFacts(
     profile: String,
     mode: Schedule.RunMode,
     artifact: String?,
-    sheetFailures: Int
+    sheetFailures: Int,
+    products: String? = nil
 ) -> [WebhookNotifier.Fact] {
     let statusValue = sheetFailures > 0 ? "Partial" : "Success"
     var facts: [WebhookNotifier.Fact] = [
@@ -32,6 +33,7 @@ func successFacts(
         facts.append(.init(label: "Sheets failed", value: "\(sheetFailures)"))
     }
     if let artifact { facts.append(.init(label: "Report", value: artifact)) }
+    if let products { facts.append(.init(label: "Products", value: products)) }
     return facts
 }
 
@@ -80,9 +82,10 @@ func alertFacts(
 
 /// Facts for the daily heartbeat card. `full` adds the newest daily summary's date, so the
 /// receiver can see data is current as well as the Mac alive; `minimal` is Profile and Status
-/// only. Never a device count or name.
+/// only. Never a device count or name. `products` names products, never profiles.
 func heartbeatFacts(
-    detail: NotifyConfig.Detail, profile: String, newestSummaryDay: String?
+    detail: NotifyConfig.Detail, profile: String, newestSummaryDay: String?,
+    products: String? = nil
 ) -> [WebhookNotifier.Fact] {
     var facts: [WebhookNotifier.Fact] = [
         .init(label: "Profile", value: profile),
@@ -90,6 +93,7 @@ func heartbeatFacts(
     ]
     if detail == .full {
         facts.append(.init(label: "Newest summary", value: newestSummaryDay ?? "none"))
+        if let products { facts.append(.init(label: "Products", value: products)) }
     }
     return facts
 }
@@ -136,7 +140,8 @@ enum ScheduledRunSignals {
               notify.isUsable else { return }
         let facts = successFacts(
             detail: notify.resolvedDetail, profile: profile, mode: mode,
-            artifact: artifact, sheetFailures: sheetFailures
+            artifact: artifact, sheetFailures: sheetFailures,
+            products: EnvironmentProducts.webhookValue(workspace: profile)
         )
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.send(
@@ -240,7 +245,8 @@ enum ScheduledRunSignals {
             guard !marker.isStamped(day, in: folder) else { continue }
             let facts = heartbeatFacts(
                 detail: target.notify.resolvedDetail, profile: target.profile,
-                newestSummaryDay: SummaryJSONParser.newestSummaryDay(profile: target.profile))
+                newestSummaryDay: SummaryJSONParser.newestSummaryDay(profile: target.profile),
+                products: EnvironmentProducts.webhookValue(workspace: target.profile))
             let failure = WebhookNotifier.DeliveryFailure()
             let outcome = await AttentionLog.recording(profile: target.profile) {
                 let outcome = await marker.sendOnce(

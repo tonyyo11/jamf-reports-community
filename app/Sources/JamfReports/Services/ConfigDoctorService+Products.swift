@@ -14,7 +14,7 @@ extension ConfigDoctorService {
     ) -> [DoctorRow] {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         guard let named = environment.protect, named != profile,
-              discovered().contains(where: { $0.name == named && $0.product.isNeverAWorkspace }),
+              discovered().contains(where: { $0.name == named && ProfileService.neverAWorkspace($0) }),
               folderExists(named) else { return [] }
         let shown = ConfigSchema.displayText(named)
         return [DoctorRow(

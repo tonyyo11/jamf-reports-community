@@ -14,7 +14,7 @@ struct ComplianceBenchmarksView: View {
     @State private var reloads = 0
     /// A Platform API profile, as profile discovery read it from jamf-cli.
     private var platformAvailable: Bool {
-        !workspace.demoMode && workspace.activeCLIProfile?.auth?.isPlatform == true
+        !workspace.demoMode && workspace.environmentProducts.has(.platform)
     }
 
     /// A tenant-level integration, which collect skips benchmarks for.

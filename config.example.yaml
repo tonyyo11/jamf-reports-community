@@ -137,6 +137,13 @@ jamf_cli:
 #   jamf_school: ""               # the Jamf School profile; never with jamf_pro
 #   protect: "Example-Protect"    # a `jamf-cli protect setup` profile
 #   security_cloud: ""            # a `jamf-cli security setup` profile
+#
+# A Jamf Protect-only environment sets protect and nothing else; it collects
+# Protect alone, and backups, audits and device lookups (Jamf Pro commands)
+# are refused:
+#
+# profiles:
+#   protect: "Example-Protect"
 
 
 # ---------------------------------------------------------------------------

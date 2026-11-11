@@ -27,7 +27,7 @@ struct ProtectView: View {
     /// the screen decided from snapshots on disk alone, so an unconnected workspace was told
     /// to run jamf-cli commands that write nothing into it.
     private var protectConnected: Bool {
-        workspace.demoMode || environment.protect != nil
+        workspace.environmentProducts.has(.protect)
     }
 
     /// The demo shows the deep dive: its data is populated, and a locked card on

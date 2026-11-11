@@ -70,8 +70,11 @@ struct ConfigView: View {
 
         /// The tabs a workspace can use. Jamf School has no security agents, Extension
         /// Attributes, Platform API or score, so it keeps Thresholds, Output and the file view.
-        static func offered(school: Bool) -> [ConfigTab] {
-            school ? [.thresholds, .output, .fromFile] : allCases
+        static func offered(_ environment: EnvironmentProducts) -> [ConfigTab] {
+            if environment.isSchool || environment.isProtectOnly {
+                return [.thresholds, .output, .fromFile]
+            }
+            return environment.has(.platform) ? allCases : allCases.filter { $0 != .platform }
         }
     }
 
@@ -438,7 +441,7 @@ struct ConfigView: View {
     // MARK: Tab routing
 
     private var offeredTabs: [ConfigTab] {
-        ConfigTab.offered(school: workspace.isSchoolWorkspace)
+        ConfigTab.offered(workspace.environmentProducts)
     }
 
     /// The selected tab, or the first offered one when the workspace does not offer it.
@@ -862,7 +865,7 @@ private struct PlatformTab: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     private var isPlatformProfile: Bool {
-        workspace.profiles.first(where: { $0.name == workspace.profile })?.auth?.isPlatform == true
+        workspace.environmentProducts.has(.platform)
     }
 
     var body: some View {

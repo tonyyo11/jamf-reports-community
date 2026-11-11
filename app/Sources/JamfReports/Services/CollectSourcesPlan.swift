@@ -31,6 +31,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
         var product: ProfileProductType
         var profile: String
         var protectProfile: String?
+        /// A Protect-only environment (P8): nothing but the Protect list runs.
+        var protectOnly = false
         /// Why `protectProfile` is not collected (a login of another product), or nil.
         var protectRefusal: String?
         var staleDays: Int = 30
@@ -63,6 +65,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
     func sources(for product: Product) -> [Source] { sources.filter { $0.product == product } }
 
     static func build(_ inputs: Inputs) -> CollectSourcesPlan {
+        if inputs.protectOnly { return CollectSourcesPlan(sources: protect(inputs)) }
         switch inputs.product {
         case .jamfSchool:
             let plan = ReportEngine.planSchoolCollect(

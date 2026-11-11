@@ -728,7 +728,7 @@ struct SourcesView: View {
     private func reloadEnvironment() {
         environment = workspace.demoMode
             ? .none : EnvironmentProfiles.read(workspace: workspace.profile)
-        workspace.refreshProtectConnection()
+        workspace.refreshEnvironmentProducts()
         guard let named = environment.protect else {
             cliProfileNames = nil
             return
@@ -774,6 +774,8 @@ struct SourcesView: View {
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
+                    protectOnly: EnvironmentProfiles.resolve(
+                        config: config, workspace: profile).isProtectOnly,
                     protectRefusal: protectProfile.flatMap { name in
                         ProfileAuthMethod.resolve(profile: name)?.protectRefusal(profile: name)
                     },

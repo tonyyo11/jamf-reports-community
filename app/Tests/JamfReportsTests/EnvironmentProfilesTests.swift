@@ -164,8 +164,13 @@ final class EnvironmentProfilesTests: XCTestCase {
     func testBlockRefusals() throws {
         let both = try resolve("profiles:\n  jamf_pro: ws\n  jamf_school: ws\n")
         XCTAssertTrue(both.refusal(workspace: ws)?.contains("one environment has one MDM") == true)
-        let none = try resolve("profiles:\n  protect: ws-protect\n")
+        let none = try resolve("profiles:\n  platform: ws-api\n")
         XCTAssertTrue(none.refusal(workspace: ws)?.contains("names neither") == true)
+        let protectOnly = try resolve("profiles:\n  protect: \(ws)\n")
+        XCTAssertNil(protectOnly.refusal(workspace: ws))
+        XCTAssertTrue(protectOnly.isProtectOnly)
+        let otherProtect = try resolve("profiles:\n  protect: other\n")
+        XCTAssertTrue(otherProtect.refusal(workspace: ws)?.contains("profiles.protect") == true)
         let other = try resolve("profiles:\n  jamf_pro: tenant-b\n")
         XCTAssertEqual(other.refusal(workspace: ws),
                        "profiles.jamf_pro names 'tenant-b' but this workspace is 'ws', so nothing "
@@ -193,7 +198,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                 workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
                 proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
                 schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
-                protectCollect: { _, _, _ in calls.add("protect") },
+                protectCollect: { _, _, _ in calls.add("protect"); return ["protect-alerts"] },
                 resolved: { _ in nil }, onLine: { calls.add($0.text) })
             XCTFail("two MDMs must not collect")
         } catch CLIBridgeError.wrongProduct(let refusal) {
@@ -223,7 +228,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                 calls.add("pro \(profile)"); return .collected
             },
             schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
-            protectCollect: { profile, _, _ in calls.add("protect \(profile)") },
+            protectCollect: { profile, _, _ in calls.add("protect \(profile)"); return ["protect-alerts"] },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["pro ws", "protect ws-protect"])
     }
@@ -248,7 +253,7 @@ final class EnvironmentProfilesTests: XCTestCase {
             workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
             proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
             schoolCollect: { _, profile, _, _, _, _ in calls.add("school \(profile)") },
-            protectCollect: { _, _, _ in calls.add("protect") },
+            protectCollect: { _, _, _ in calls.add("protect"); return ["protect-alerts"] },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["school ws"])
     }

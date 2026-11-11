@@ -1072,6 +1072,52 @@ struct ReportEngine: Sendable {
             mobile: mobile)
     }
 
+    /// The day's summary for a Protect-only environment: no Macs and no mobile devices, so
+    /// `totalDevices` is 0 and every other figure is nil (unmeasured, never 0%).
+    static func protectOnlySummary(
+        date: String, collectionSources: [String: String], collectedByHost: String?
+    ) -> DailySummary {
+        DailySummary(
+            date: date, totalDevices: 0, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", collectionSources: collectionSources,
+            mobileDeviceCount: nil, collectedByHost: collectedByHost)
+    }
+
+    /// Writes today's `protectOnlySummary`. A same-day summary that counted Macs or mobile
+    /// devices is kept; one that is itself Protect-only is replaced.
+    @discardableResult
+    static func writeProtectOnlySummary(
+        summariesDir: URL, dataDir: URL, landedKinds: [String], day: Date = Date(),
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> SummaryEmitOutcome {
+        let date = SummaryJSONParser.dateFormatter.string(from: day)
+        let file = summariesDir.appendingPathComponent("summary_\(date).json")
+        if let data = try? BoundedFile.read(
+               file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
+           let existing = try? JSONDecoder().decode(DailySummary.self, from: data),
+           existing.totalDevices > 0 || existing.mobile != nil
+            || (existing.mobileDeviceCount ?? 0) > 0 {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] \(file.lastPathComponent) already exists — kept"))
+            return .keptExisting
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: summariesDir, withIntermediateDirectories: true)
+        } catch {
+            let msg = "\(summaryNotWrittenMarker) the summaries directory could not be created"
+            AppLogger.collect.warning("\(msg, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            return .directoryUnavailable
+        }
+        let sources = Dictionary(uniqueKeysWithValues: landedKinds.map { ($0, "live") })
+        let summary = protectOnlySummary(
+            date: date, collectionSources: sources,
+            collectedByHost: collectingHostLabel(dataDir: dataDir))
+        return writeSummaryFile(summary, to: file, onLine: onLine) ? .wrote : .writeFailed
+    }
+
     /// The score's sources from what the summary writer already read, plus the `computers`
     /// snapshot and the SOFA feed, which the summary's Secure Boot, bootstrap token and
     /// XProtect figures need whatever the score lists.
@@ -2025,6 +2071,78 @@ struct ReportEngine: Sendable {
         case stoodDown
     }
 
+    /// What the collect gate decided for an environment.
+    enum EnvironmentGate: Equatable, Sendable {
+        case proceed(holdsClaim: Bool, coordinating: Bool)
+        case stop(CollectDisposition)
+    }
+
+    /// The once-per-day guard, then `coordinationGate`: `CollectRouter` asks before any product
+    /// runs, so a stop covers Jamf Pro, Jamf School and Jamf Protect alike. The caller releases
+    /// the claim when `holdsClaim` is true and stamps activity when `coordinating` is.
+    static func environmentGate(
+        workspace: WorkspaceID, workspacePaths: WorkspacePaths.Type, tiers: Set<CollectionTier>,
+        force: Bool, now: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> EnvironmentGate {
+        // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
+        // summary for today already exists, unless the caller passes force: true.
+        // Placed before the jamf-cli binary check so it short-circuits without
+        // requiring jamf-cli to be installed (testable without the binary).
+        // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
+        // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
+        // never gated by a prior scheduled collect.
+        //
+        // Only a FULL collect (all tiers) is gated here. A tier-scoped collect (e.g.
+        // the weekly managed-scan run, tiers [.scan]) must fall through to the
+        // per-kind cadence check below, or its tier — skipped by the daily freshness
+        // run that already wrote today's summary — would never be collected. The
+        // per-kind cadence check already prevents redundant work, so dropping the
+        // coarse day-guard for tier subsets is safe.
+        let isFullCollect = tiers == Set(CollectionTier.allCases)
+        // The tick's same-day retry skips the guard: today's summary is what the failed run wrote,
+        // and the per-kind cadence below still fetches only what has not landed.
+        if !force, !isSameDayRetry, isFullCollect,
+           let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
+            let today = SummaryJSONParser.dateFormatter.string(from: now)
+            let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+            if let data = try? BoundedFile.read(
+                   summaryFile, limit: SummaryJSONParser.maxSummaryFileBytes,
+                   followSymlinks: false),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
+                let msg = "[info] already collected today — skipping (use Refresh to force)"
+                AppLogger.collect.info("\(msg, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .info, text: msg))
+                return .stop(.alreadyCollected)
+            }
+        }
+
+        // Shared-workspace coordination, placed beside the once-per-day guard
+        // and BEFORE the jamf-cli check. "Should I collect" belongs ahead of
+        // "can I collect": a teammate's Mac already collecting is a reason to
+        // stand down that has nothing to do with whether this Mac has jamf-cli
+        // installed. Keeping the whole decision here also makes it reachable
+        // without the binary, which is the only way it can be tested.
+        let coordination = Self.coordinationGate(profile: workspace.name, force: force)
+        switch coordination {
+        case .standDown(let reason):
+            // Marked `[partial]`, not `[info]`: this run collected nothing, so
+            // Run History must not show it as a clean success next to a run
+            // that actually fetched the fleet.
+            let line = Self.standDownLine(reason: reason)
+            AppLogger.collect.info("\(line, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .warn, text: line))
+            return .stop(.stoodDown)
+        case .proceed(let state, let notes):
+            for note in notes {
+                AppLogger.collect.warning("\(note, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .warn, text: note))
+            }
+            return .proceed(holdsClaim: state.holdsClaim, coordinating: state.coordinating)
+        }
+    }
+
     /// True inside the tick's same-day retry of a run that failed or came back incomplete.
     @TaskLocal static var isSameDayRetry = false
 
@@ -2131,72 +2249,8 @@ struct ReportEngine: Sendable {
         // the same one, or a collect that crosses midnight leaves the next day looking done.
         let collectDay = now
 
-        // Snapshot retention (v2.2.0): config-driven, OFF by default, once per
-        // calendar day. Placed before the early-return guard so it runs on any
-        // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
-        // own marker keeps it idempotent. Best-effort — never fails the collect.
-        SnapshotRetentionService.sweepIfDue(profile: workspace.name, onLine: onLine)
         rewriteLostModeTextOnce(
             profile: workspace.name, workspacePaths: workspacePaths, onLine: onLine)
-
-        // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
-        // summary for today already exists, unless the caller passes force: true.
-        // Placed before the jamf-cli binary check so it short-circuits without
-        // requiring jamf-cli to be installed (testable without the binary).
-        // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
-        // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
-        // never gated by a prior scheduled collect.
-        //
-        // Only a FULL collect (all tiers) is gated here. A tier-scoped collect (e.g.
-        // the weekly managed-scan run, tiers [.scan]) must fall through to the
-        // per-kind cadence check below, or its tier — skipped by the daily freshness
-        // run that already wrote today's summary — would never be collected. The
-        // per-kind cadence check already prevents redundant work, so dropping the
-        // coarse day-guard for tier subsets is safe.
-        let isFullCollect = tiers == Set(CollectionTier.allCases)
-        // The tick's same-day retry skips the guard: today's summary is what the failed run wrote,
-        // and the per-kind cadence below still fetches only what has not landed.
-        if !force, !isSameDayRetry, isFullCollect,
-           let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
-            let today = SummaryJSONParser.dateFormatter.string(from: collectDay)
-            let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
-            if let data = try? BoundedFile.read(
-                   summaryFile, limit: SummaryJSONParser.maxSummaryFileBytes,
-                   followSymlinks: false),
-               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-                let msg = "[info] already collected today — skipping (use Refresh to force)"
-                AppLogger.collect.info("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .info, text: msg))
-                return .alreadyCollected
-            }
-        }
-
-        // Shared-workspace coordination, placed beside the once-per-day guard
-        // and BEFORE the jamf-cli check. "Should I collect" belongs ahead of
-        // "can I collect": a teammate's Mac already collecting is a reason to
-        // stand down that has nothing to do with whether this Mac has jamf-cli
-        // installed. Keeping the whole decision here also makes it reachable
-        // without the binary, which is the only way it can be tested.
-        let coordination = Self.coordinationGate(profile: workspace.name, force: force)
-        var holdsClaim = false
-        switch coordination {
-        case .standDown(let reason):
-            // Marked `[partial]`, not `[info]`: this run collected nothing, so
-            // Run History must not show it as a clean success next to a run
-            // that actually fetched the fleet.
-            let line = Self.standDownLine(reason: reason)
-            AppLogger.collect.info("\(line, privacy: .private)")
-            onLine(.init(timestamp: Date(), level: .warn, text: line))
-            return .stoodDown
-        case .proceed(let state, let notes):
-            holdsClaim = state.holdsClaim
-            for note in notes {
-                AppLogger.collect.warning("\(note, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: note))
-            }
-        }
-        defer { if holdsClaim { SharedWorkspace.release(profile: workspace.name) } }
 
         // Test seam. Production callers omit it and get the real locator; a test
         // passes a stub so the whole collect body below is reachable without a
@@ -2231,19 +2285,9 @@ struct ReportEngine: Sendable {
         let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
 
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
-        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
-        // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
-        if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: JamfCLIInstaller.floorLine(installed: detectedVersion, profile: profile)))
-            throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
-        }
+        let (detectedVersion, profileAuth) = try await collectPreflight(
+            profile: profile, binary: bin, onLine: onLine)
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
-        // Resolved once per run, not per kind — it spawns `config list`.
-        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
-        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
-            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
-        }
         let platformRun = Self.resolvePlatformRun(
             config: loadedConfig, workspace: workspace, profile: profile,
             profileAuth: profileAuth, bin: bin, platformHosts: platformHosts, onLine: onLine)
@@ -2406,12 +2450,6 @@ struct ReportEngine: Sendable {
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
         )
 
-        // Stamp this machine's activity so other Macs sharing the folder can
-        // see the collect happened without parsing summaries. One file per
-        // host, so concurrent runs never write the same path.
-        if case .proceed(let state, _) = coordination, state.coordinating {
-            SharedWorkspace.recordActivity(profile: workspace.name)
-        }
         return .collected
     }
 
@@ -2510,6 +2548,27 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
         return nil
+    }
+
+    /// The checks before any jamf-cli source runs, shared by the Jamf Pro collect and a
+    /// Protect-only one: a binary below the floor, and a login `config list` does not name.
+    /// Returns the version and the resolved auth method the run keys on.
+    static func collectPreflight(
+        profile: String, binary bin: URL, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) async throws -> (version: String?, auth: ProfileAuthMethod.Resolved?) {
+        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
+        // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
+        if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: JamfCLIInstaller.floorLine(installed: detectedVersion, profile: profile)))
+            throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
+        }
+        // Resolved once per run, not per kind — it spawns `config list`.
+        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
+            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
+        }
+        return (detectedVersion, profileAuth)
     }
 
     /// Logs a dead collect's `[error]` line and returns the error for the caller to throw.
@@ -3908,12 +3967,14 @@ struct ReportEngine: Sendable {
     ///   - profile: jamf-cli protect profile slug.
     ///   - dataDir: Directory under which snapshots are written.
     ///   - onLine: Progress callback for log lines.
+    /// - Returns: The kinds of the Protect sources that landed.
+    @discardableResult
     static func protectCollect(
         profile: String,
         dataDir: URL,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws {
+    ) async throws -> [String] {
         guard let bin = locateJamfCLI() else {
             throw ReportEngineError.jamfCLINotFound
         }
@@ -3986,6 +4047,7 @@ struct ReportEngine: Sendable {
             }
         }
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
+        return commands.map(\.kind).filter { !unlanded.contains($0) }
     }
 
     // MARK: - Public API: schoolGenerate
@@ -4813,6 +4875,8 @@ enum ReportEngineError: Error, LocalizedError {
     /// Partial failures (≥1 success) do NOT reach this — they warm the cache
     /// and the run continues normally.
     case collectDead(profile: String, failedCount: Int, cause: ReportEngine.DeadRunCause = .outage)
+    /// A Protect-only run whose `profiles.protect` is a shared value not yet confirmed here.
+    case protectNotConfirmed(String)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -4854,6 +4918,8 @@ enum ReportEngineError: Error, LocalizedError {
                 "returned 401 (expired or revoked credentials) and none succeeded. " +
                 "Re-authenticate with: jamf-cli -p \(ProfileName.shellWord(p)) pro auth token. " +
                 "No snapshot was written."
+        case .protectNotConfirmed(let reason):
+            return reason
         case .collectDead(let p, let n, let cause):
             switch cause {
             case .outage:
