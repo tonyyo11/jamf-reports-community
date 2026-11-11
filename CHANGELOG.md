@@ -216,6 +216,10 @@ versions in this repository map to git tags.
   benchmark, patch compliance's definition), where it used to say "No change". The Overview
   cards and their detail now do the same for compliance and patch compliance, and the AI
   insights no longer compare across those changes. (#305)
+- The Jamf Protect screen showed "Unknown OS" for every computer: jamf-cli sends the macOS version
+  as separate numbers, which are now read. Its Jamf Pro match card counted a Mac twice when two
+  Protect records matched it; each Mac now counts once and the card says how many records repeat
+  one. The daily summary's Protect match share counts each Mac once too. (#305)
 - Setup's last step no longer strands you after a first report that worked. Once it finishes, the button reads **Open Overview** and the Skip card goes away; before, a workspace added from the Add sheet stayed on the step with only **Skip & finish setup** to leave by. A Jamf School setup is no longer told its profile did not validate: its Connect step is the check.
 - A new workspace starts close to empty. Setting one up from an existing jamf-cli profile, or with Initialize, copied the whole example configuration: seven example security agents, seven example extension attributes and mSCP compliance columns no tenant has, so the EDR card read "--" and the Overview named a benchmark that was not there. It now gets the same short config.yaml as onboarding, and agents, extension attributes and compliance are set up from the app.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
