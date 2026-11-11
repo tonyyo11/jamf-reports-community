@@ -172,6 +172,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A backup's `manifest.json` records Jamf Pro's object counts per resource folder under
+  `products.pro.object_counts`, as it already did for Jamf Protect (#305).
 - The Cover tab listed tabs the workbook did not have (Environment Stats, the Platform tabs)
   and showed "(Function)" in place of seven descriptions (#305).
 - A custom EA percentage tab counted a blank value as a row graded OK, and a value that is not a

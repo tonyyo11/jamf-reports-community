@@ -2182,8 +2182,13 @@ try await ReportEngine.inventoryCSV(
             var products: [String: Any] = [
                 "pro": proSkip.map {
                     BackupProductResult(state: .skipped, reason: $0.reason).manifestValue
-                } ?? ["exit_code": Int(exit),
-                      "state": proFailed ? "failed" : isPartial ? "partial" : "ok"],
+                } ?? BackupProductResult(
+                    state: proFailed ? .failed : isPartial ? .partial : .ok, exitCode: exit,
+                    // Counted as Protect's are, before manifest.json exists; a failed part's
+                    // files are already gone.
+                    objectCounts: proFailed ? [:] : ProtectBackup.objectCounts(in: validatedFinal)
+                        .filter { $0.key != ProtectBackup.folderName }
+                ).manifestValue,
             ]
             products["protect"] = protectResult?.manifestValue
             manifest["products"] = products
