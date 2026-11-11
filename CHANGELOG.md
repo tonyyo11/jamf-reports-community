@@ -101,6 +101,22 @@ versions in this repository map to git tags.
 - Device Security State writes "No Data" in every control column for a Mac that never sent inventory, where it was blank.
 - The workbook's DDM Device Status tab counts only invalid declarations in its Failing column; an
   inactive declaration no longer counts there. (#305)
+- Workbooks: when Jamf Pro reports no Managed Software Update data (no statuses, no plans), the
+  Update Status tab holds one sentence saying so instead of a "Total Devices 0" row, and Update
+  Failures says the same instead of "No update failures found." (#305)
+- Workbooks, Cover tab: the Sheet Manifest lists the tabs the workbook holds, in tab order
+  (after `sheets.order`, the custom EA tabs and Charts included), each with a description. It
+  used to list every tab the app can write, in the app's own order. The numbered "Sheets 9–12"
+  guide lines under "How to read this workbook" are replaced by one line. (#305)
+- Workbooks, custom EA tabs: a blank value is no value. The percentage and version tabs list
+  blanks in one last row, Unknown/Blank, with no status; a percentage value that is not a number
+  is listed after the numbers with no status. On a boolean tab the first row reads
+  `<true value> (pass)` instead of the value alone, and its Percent is of the Macs that reported
+  a value (blank when none did). (#305)
+- Workbooks: the Software Installs tab fills its Name and Count columns from jamf-cli's title
+  and device count (they were empty and 0), and EA Coverage fills Computer, plus Serial where
+  only one Mac has that name. A software row with no count leaves Count blank. No column moved.
+  (#305)
 - A new app icon in Apple's Liquid Glass style: the same four compliance bands on the dark
   background, now as glass shapes. On macOS Tahoe 26 and later it also follows the Mac's
   tinted and clear icon styles.
@@ -183,6 +199,15 @@ versions in this repository map to git tags.
 - The DDM screen's Declaration failures tile counts invalid declarations only, so a fleet of
   inactive declarations no longer reads as failures in red; inactive and mixed show neutral, and
   the "DDM enabled" label is easier to read. (#305)
+- A backup's `manifest.json` records Jamf Pro's object counts per resource folder under
+  `products.pro.object_counts`, as it already did for Jamf Protect (#305).
+- The Cover tab listed tabs the workbook did not have (Environment Stats, the Platform tabs)
+  and showed "(Function)" in place of seven descriptions (#305).
+- A custom EA percentage tab counted a blank value as a row graded OK, and a value that is not a
+  number as 0 and OK; a version tab graded a blank Outdated; a boolean tab's share counted blanks
+  as failing, so three of three passing Macs read 75% (#305).
+- The Software Installs tab listed only versions, every count 0, and EA Coverage had no Mac
+  name on its rows: both read keys jamf-cli does not write (#305).
 - Setup's last step no longer strands you after a first report that worked. Once it finishes, the button reads **Open Overview** and the Skip card goes away; before, a workspace added from the Add sheet stayed on the step with only **Skip & finish setup** to leave by. A Jamf School setup is no longer told its profile did not validate: its Connect step is the check.
 - A new workspace starts close to empty. Setting one up from an existing jamf-cli profile, or with Initialize, copied the whole example configuration: seven example security agents, seven example extension attributes and mSCP compliance columns no tenant has, so the EDR card read "--" and the Overview named a benchmark that was not there. It now gets the same short config.yaml as onboarding, and agents, extension attributes and compliance are set up from the app.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.

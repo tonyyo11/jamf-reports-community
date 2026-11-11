@@ -542,6 +542,11 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 14)
 
+        if report.total == 0, (report.planTotal ?? 0) == 0, report.statusSummary.isEmpty,
+           (report.planStateSummary ?? []).isEmpty {
+            ws.write(Self.noUpdateDataText, row: row, col: 0, format: .cell)
+            return
+        }
         ws.write("Total Devices", row: row, col: 0, format: .cell)
         ws.write(report.total, row: row, col: 1, format: .cell)
         row += 2
@@ -630,9 +635,16 @@ struct CoreDashboard: Sendable {
         }
 
         if errorDevices.isEmpty && failedPlans.isEmpty {
-            ws.write("No update failures found.", row: row, col: 0, format: .cell)
+            let noData = asInt(envelope["total"]) == 0 && asInt(envelope["plan_total"]) == 0
+            ws.write(noData ? Self.noUpdateDataText : "No update failures found.",
+                     row: row, col: 0, format: .cell)
         }
     }
+
+    /// jamf-cli's "No managed software update data found." lands as a report with no
+    /// statuses and no plans (`ReportEngine.emptyUpdateReport`): no figure, not 0 devices.
+    static let noUpdateDataText =
+        "No Managed Software Update data: Jamf Pro reported no update statuses and no plans."
 
     // MARK: - Inventory Summary
     // Source: `jamf-cli pro report inventory-summary --output json`
@@ -935,10 +947,11 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
+        // jamf-cli's rows: `title`, `version`, `device_count`. A missing count stays blank.
         for item in items {
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["title"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["version"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(asInt(item["count"]) ?? 0, row: row, col: 2, format: .cell)
+            ws.write(asInt(item["device_count"]), row: row, col: 2, format: .cell)
             row += 1
         }
     }
@@ -979,7 +992,9 @@ struct CoreDashboard: Sendable {
     // Source: `jamf-cli pro report ea-results --all --output json`
 
     func writeEACoverage() throws {
-        let raw = try loadLatestJSON(names: ["ea-results", "ea_results"])
+        let names = ["ea-results", "ea_results"]
+        guard let items = EAResultRow.decodeSnapshot(try loadLatestJSONData(names: names)).rows
+        else { throw CoreDashboardError.noCachedData(names: names) }
         let ws = workbook.addSheet("EA Coverage")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("EA Coverage"),
@@ -990,26 +1005,24 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 12)
         ws.setColumnWidth(4, 4, 20)
 
-        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
+        // jamf-cli's rows name the Mac (`device`) and carry no serial: it comes from the
+        // `computers` snapshot, only for a name one Mac has.
+        let serials = (try? loadLatestJSONData(names: ["computers"]))
+            .map(EASheets.serialsByName) ?? [:]
 
         let hdrs = ["EA Name", "Computer", "Serial", "Value"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
         for item in items {
-            ws.write(item["ea_name"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["computer_name"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 2, format: .cell)
-            let val = item["value"]
-            let valStr: String
-            switch val {
-            case let s as String: valStr = s
-            case let n as Int: valStr = "\(n)"
-            case let b as Bool: valStr = b ? "true" : "false"
-            default: valStr = ""
-            }
-            ws.write(valStr, row: row, col: 3, format: .cell)
+            let device = (item.device ?? item.computerName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            ws.write(item.eaName ?? "", row: row, col: 0, format: .cell)
+            ws.write(device, row: row, col: 1, format: .cell)
+            ws.write(item.serial ?? serials[EASheets.key(device)] ?? "",
+                     row: row, col: 2, format: .cell)
+            ws.write(item.value?.stringValue ?? "", row: row, col: 3, format: .cell)
             row += 1
         }
     }
@@ -3141,43 +3154,31 @@ struct CoreDashboard: Sendable {
         // How-to-read section
         ws.write("How to read this workbook", row: row, col: 0, format: .header)
         row += 1
-        let guidance: [String] = [
-            "Sheet 1 (Executive Summary) — Fleet-level KPIs at a glance: security score, "
-                + "patch compliance, stale device tiers, and key control coverage.",
-            "Sheet 2 (Cover) — This sheet — workbook guide and sheet manifest.",
-            "Sheet 3 (Compliance Posture) — Single-page executive summary: compliance %, "
-                + "security controls, patch coverage, and RAG status.",
-            "Sheet 4 (Fleet Overview) — Total enrolled devices, mobile counts, OS breakdown.",
-            "Sheet 5 (Security Posture) — FileVault, SIP, Gatekeeper, Firewall percentages.",
-            "Sheet 6 (Patch Compliance) — Per-title patch coverage, latest version vs. installed.",
-            "Sheet 7 (Device Compliance) — Per-device compliance and days since check-in.",
-            "Sheet 8 (Audit Summary) — jamf-cli health findings (critical, warning, info).",
-            "Sheets 9–12 — Inventory and hardware detail (computers and mobile).",
-            "Sheets 13–21 — Configuration health: policies, profiles, apps, software, EAs.",
-            "Sheets 22–28 — Device health, patch failures, update failures, smart groups.",
-            "Sheets 29–36 — Platform compliance, DDM, and Jamf Protect (optional; "
-                + "shown only when data is available).",
-        ]
-        for line in guidance {
-            ws.write(line, row: row, col: 0, format: .cell)
-            row += 1
-        }
-        row += 1
+        ws.write("Every tab of this workbook is listed below, in tab order.",
+                 row: row, col: 0, format: .cell)
+        row += 2
 
-        // Sheet manifest table
+        // Sheet manifest table: its rows are written by `writeCoverManifest` once the
+        // workbook's tabs are known and in order.
         ws.write("Sheet Manifest", row: row, col: 0, format: .header)
         ws.write("Description", row: row, col: 1, format: .header)
-        row += 1
-        let descriptions = sheetManifestDescriptions()
-        for (i, (name, desc)) in sheetPlan.enumerated() {
-            ws.write("\(i + 1). \(name)", row: row, col: 0, format: .cell)
-            ws.write(descriptions[name] ?? desc, row: row, col: 1, format: .cell)
+    }
+
+    /// Lists the workbook's tabs on the Cover, in tab order: run after every tab is written and
+    /// `Workbook.arrange(by:)`. `extra` describes tabs other writers add (custom EA tabs).
+    static func writeCoverManifest(in workbook: Workbook, extra: [String: String] = [:]) {
+        guard let ws = workbook.sheet(named: "Cover") else { return }
+        var row = (ws.cells.map(\.row).max() ?? 0) + 1
+        let descriptions = sheetManifestDescriptions().merging(extra) { own, _ in own }
+        for (i, tab) in workbook.worksheets.enumerated() {
+            ws.write("\(i + 1). \(tab.name)", row: row, col: 0, format: .cell)
+            ws.write(descriptions[tab.name] ?? "", row: row, col: 1, format: .cell)
             row += 1
         }
     }
 
-    /// One-line description for every sheet name in the plan.
-    private func sheetManifestDescriptions() -> [String: String] {
+    /// One-line description for every tab a report workbook can hold.
+    static func sheetManifestDescriptions() -> [String: String] {
         [
             "Executive Summary": "Fleet KPIs at a glance: security score + band, fleet size, "
                 + "patch compliance %, key control coverage, and stale device tiers.",
@@ -3248,6 +3249,23 @@ struct CoreDashboard: Sendable {
                 + "Med-Low / Medium / High with count and percent.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
                 + "primary configured baseline.",
+            "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
+                + "stale since the last collect on an earlier day.",
+            "Protect Plans": "Jamf Protect plans with log level, auto-update, and the "
+                + "configurations each plan uses.",
+            "Protect Threat Overview": "Jamf Protect alerts per Mac with type, severity, "
+                + "status and analytics.",
+            "Patch Summary Dashboard": "Fleet and patch overview from patch-status and "
+                + "device-compliance.",
+            "Patch Velocity": "How fast each patch title is adopted after its release.",
+            "Device Security State": "Per-Mac FileVault, SIP, Gatekeeper and Firewall state.",
+            "Mobile Supervision Status": "Supervised and unsupervised mobile devices per "
+                + "device family.",
+            "OS Currency": "Each Apple OS's latest release from SOFA, and how many devices "
+                + "run it.",
+            "EA Warnings": "Custom extension attributes that have no tab, and why.",
+            ReportEngine.chartsSheetName: "Trend and distribution charts from the daily "
+                + "summaries.",
         ]
     }
 

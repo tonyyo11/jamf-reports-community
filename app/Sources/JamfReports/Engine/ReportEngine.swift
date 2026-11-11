@@ -157,6 +157,9 @@ struct ReportEngine: Sendable {
 
         // The tabs of every writer above, the Charts tab included, as one list.
         workbook.arrange(by: sheets)
+        CoreDashboard.writeCoverManifest(in: workbook, extra: Dictionary(
+            (config.customEas ?? []).map { ($0.name, "Custom extension attribute: \($0.column)") },
+            uniquingKeysWith: { first, _ in first }))
         if let logo = ReportLogo.load(from: config, profile: workspaceName) {
             workbook.firstSheet?.insertLogo(data: logo, filename: "logo.png")
         }

@@ -272,6 +272,8 @@ final class ProtectBackupTests: XCTestCase {
         let products = try XCTUnwrap(manifest["products"] as? [String: Any])
         XCTAssertEqual((products["pro"] as? [String: Any])?["state"] as? String, "ok")
         XCTAssertEqual((products["pro"] as? [String: Any])?["exit_code"] as? Int, 0)
+        XCTAssertEqual(BackupProductResult.pro(inManifest: manifest)?.objectCounts,
+                       ["computers": 1], "Jamf Pro's objects, counted without protect/")
         let protect = try XCTUnwrap(BackupProductResult.protect(inManifest: manifest))
         XCTAssertEqual(protect, BackupProductResult(
             state: .ok, exitCode: 0,
