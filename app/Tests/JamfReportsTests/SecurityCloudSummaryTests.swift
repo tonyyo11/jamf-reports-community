@@ -241,6 +241,20 @@ final class SecurityCloudSummaryTests: XCTestCase {
         XCTAssertNil(s.securityCloudHighRiskCount)
     }
 
+    func testAStaleSchoolInventoryLeavesNoMatch() throws {
+        try makeRoot()
+        try writeMDMSummary()
+        try SchoolRows.write(
+            [SchoolRows.device(1, ["udid": up1])], kind: "school-devices", into: dataDir(),
+            stamp: "20200101T080000")
+        try save(String(decoding: reducedFixture(), as: UTF8.self), "security-risk")
+        try finalize(schoolFile, landed: [.jamfSchool: ["school-devices"],
+                                          .securityCloud: ["security-risk"]])
+        let s = try summary()
+        XCTAssertEqual(s.securityCloudDeviceCount, 3)
+        XCTAssertNil(s.securityCloudMatched)
+    }
+
     func testJamfSchoolMatchesAgainstSchoolDevices() throws {
         try makeRoot()
         try writeMDMSummary()
@@ -356,6 +370,15 @@ final class SecurityCloudSummaryTests: XCTestCase {
             50.0)
         XCTAssertNil(
             AlertMetric.securityCloudMatchedPct.value(in: day(matched: .init(met: 0, of: 0))))
+    }
+
+    func testAlertKeyUnitsAndTheOverviewOfferOnAMobileOnlyEnvironment() {
+        XCTAssertTrue(AlertMetric.securityCloudMatchedPct.isPercentage)
+        XCTAssertFalse(AlertMetric.securityCloudDeviceCount.isPercentage)
+        XCTAssertFalse(AlertMetric.securityCloudHighRiskCount.isPercentage)
+        for metric in TrendSeries.Metric.securityCloudMetrics {
+            XCTAssertTrue(metric.isOffered(under: .default, in: .mobileOnly), "\(metric)")
+        }
     }
 
     func testMetricsPolarityUnitsAndStoreOffering() {
