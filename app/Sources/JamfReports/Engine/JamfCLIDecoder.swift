@@ -989,6 +989,8 @@ struct MobileDeviceGeneral: Decodable, Sendable {
     /// GENERAL's flag for a Shared iPad. `var` with a default keeps the memberwise
     /// initialiser source-compatible.
     var sharedIpad: Bool? = nil
+    /// GENERAL's UDID, for the Security Cloud match (`externalId`).
+    var udid: String? = nil
 }
 
 /// ADE prestage detail attached to mobile devices enrolled via Automated Device

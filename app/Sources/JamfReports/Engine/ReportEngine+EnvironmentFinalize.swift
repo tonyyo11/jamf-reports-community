@@ -34,7 +34,8 @@ extension ReportEngine {
     /// `max_cache_age_hours`, the summary builder's own rule.
     static func protectSummaryFigures(
         dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
-        hasInventory: Bool = true, maxCacheAgeHours: Int = 168
+        hasInventory: Bool = true, maxCacheAgeHours: Int = 168,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void = { _ in }
     ) -> ProtectSummaryFigures? {
         func readable(_ kind: String) -> Bool {
             landed.contains(kind)
@@ -43,8 +44,13 @@ extension ReportEngine {
         let snapshot = ProtectDashboardService.load(dataDir: dataDir)
         var figures = ProtectSummaryFigures()
         if readable("protect-computers"), !snapshot.unreadableKinds.contains("protect-computers") {
-            let matched = hasInventory && inventoryIsFresh(
-                dataDir: dataDir, school: school, maxCacheAgeHours: maxCacheAgeHours)
+            let stale = hasInventory ? staleInventoryKind(
+                dataDir: dataDir, kinds: [school ? "school-devices" : "computers"],
+                maxCacheAgeHours: maxCacheAgeHours) : nil
+            if let stale {
+                logMatchLeftOut("Jamf Protect", kind: stale, hours: maxCacheAgeHours, onLine)
+            }
+            let matched = hasInventory && stale == nil
                 ? ProtectProCorrelation.load(
                     protect: snapshot.computers, profile: workspace.name, demoMode: false,
                     school: school)?.matchedShare
@@ -64,19 +70,63 @@ extension ReportEngine {
         return figures.computers == nil && figures.alerts == nil ? nil : figures
     }
 
-    /// False only when the newest inventory snapshot exists and is past the age limit; an absent
-    /// or unreadable one is left to `ProtectProCorrelation.load`, which returns nil for it.
-    private static func inventoryIsFresh(
-        dataDir: URL, school: Bool, maxCacheAgeHours: Int
-    ) -> Bool {
-        do {
-            _ = try loadLatestSnapshotData(
-                kind: school ? "school-devices" : "computers", dataDir: dataDir,
-                maxCacheAgeHours: maxCacheAgeHours)
-        } catch is SnapshotCacheExpired {
-            return false
-        } catch {}
-        return true
+    /// The first of `kinds` whose newest snapshot exists and is past the age limit; nil when
+    /// none is. An absent or unreadable one is left to the match's own loader, which returns
+    /// nil for it.
+    private static func staleInventoryKind(
+        dataDir: URL, kinds: [String], maxCacheAgeHours: Int
+    ) -> String? {
+        for kind in kinds {
+            do {
+                _ = try loadLatestSnapshotData(
+                    kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours)
+            } catch is SnapshotCacheExpired {
+                return kind
+            } catch {}
+        }
+        return nil
+    }
+
+    /// One `[info]` line, never `[partial]`: a match left out for old inventory is not a failure.
+    private static func logMatchLeftOut(
+        _ product: String, kind: String, hours: Int,
+        _ onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) {
+        onLine(.init(timestamp: Date(), level: .info, text:
+            "[info] \(product) match left out: \(kind) is older than \(hours) hours"))
+    }
+
+    /// The Security Cloud figures (P12), read only when `landed` has `security-risk` and its
+    /// newest snapshot reads; nil otherwise. The match uses `SecurityCloudCorrelation`, the one
+    /// calculator, against the environment's inventory, and is left out when any inventory
+    /// snapshot it would read (computers and mobile devices, or School's devices) is past
+    /// `max_cache_age_hours`.
+    static func securityCloudSummaryFigures(
+        dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
+        hasInventory: Bool = true, maxCacheAgeHours: Int = 168,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void = { _ in }
+    ) -> SecurityCloudSummaryFigures? {
+        guard landed.contains(securityRiskKind),
+              let rows = SecurityRiskRow.load(dataDir: dataDir) else { return nil }
+        // The mobile rows come from whichever kind the reader picks (it can be the legacy one).
+        let mobile = school ? nil : MobileFleetService.load(dataDir: dataDir)
+        let kinds = school ? ["school-devices"]
+            : ["computers"] + [mobile?.inventoryKind].compactMap { $0 }
+        let stale = hasInventory ? staleInventoryKind(
+            dataDir: dataDir, kinds: kinds, maxCacheAgeHours: maxCacheAgeHours) : nil
+        if let stale {
+            logMatchLeftOut("Security Cloud", kind: stale, hours: maxCacheAgeHours, onLine)
+        }
+        let correlation: SecurityCloudCorrelation? = if !hasInventory || stale != nil {
+            nil
+        } else if let mobile {
+            SecurityCloudCorrelation.load(rows: rows, profile: workspace.name, mobile: mobile)
+        } else {
+            SecurityCloudCorrelation.load(rows: rows, schoolProfile: workspace.name)
+        }
+        return .init(
+            count: rows.count, matched: correlation?.matchedShare,
+            riskCounts: SecurityRiskRow.riskCounts(rows))
     }
 
     /// Adds `products` and the Protect figures to today's summary (P9-R1, R2, R4). Creates a
@@ -123,9 +173,14 @@ extension ReportEngine {
             ? nil : protectSummaryFigures(
                 dataDir: dataDir, workspace: workspace, landed: protectKinds,
                 school: environment.isSchool, hasInventory: environment.mdm != nil,
-                maxCacheAgeHours: maxCacheAgeHours)
+                maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
+        let securityFigures = securityCloudSummaryFigures(
+            dataDir: dataDir, workspace: workspace, landed: landed[.securityCloud] ?? [],
+            school: environment.isSchool, hasInventory: environment.mdm != nil,
+            maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
         guard !slots.isEmpty || figures != nil else { return .keptExisting }
-        summary = summary.withEnvironment(products: slots.isEmpty ? nil : slots, protect: figures)
+        summary = summary.withEnvironment(
+            products: slots.isEmpty ? nil : slots, protect: figures, securityCloud: securityFigures)
         // After a run whose MDM summary was not written, `writeSummaryFile`'s "will reflect this
         // run" line would contradict the [partial] line already logged: drop its [ok] line.
         let write: @Sendable (CLIBridge.LogLine) -> Void = {

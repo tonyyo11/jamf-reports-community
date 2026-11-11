@@ -1896,6 +1896,8 @@ struct OverviewView: View {
             L("Open Mobile Devices to inspect current records.")
         case .protectComputers, .protectMatched, .protectOpenAlerts:
             L("Open Jamf Protect to inspect current records.")
+        case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
+            L("Open Data Sources to see the Jamf Security Cloud collect.")
         case .sip, .firewall, .gatekeeper:
             L("Open Security Posture for the per-control breakdown.")
         }
@@ -1921,6 +1923,8 @@ struct OverviewView: View {
             return [.mobileFleet]
         case .protectComputers, .protectMatched, .protectOpenAlerts:
             return [.protectDashboard]
+        case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
+            return [.sources]
         case .sip, .firewall, .gatekeeper:
             return [.securityPosture, .devices]
         }

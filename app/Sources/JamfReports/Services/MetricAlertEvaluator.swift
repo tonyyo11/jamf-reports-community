@@ -35,6 +35,10 @@ enum AlertMetric: String, CaseIterable, Sendable {
     case protectMatchedPct = "protect_matched_pct"
     case protectOpenAlertCount = "protect_open_alert_count"
     case protectHighAlertCount = "protect_high_alert_count"
+    // Jamf Security Cloud (`DailySummary.securityCloud*`); absent without a Security Cloud collect.
+    case securityCloudDeviceCount = "security_cloud_device_count"
+    case securityCloudMatchedPct = "security_cloud_matched_pct"
+    case securityCloudHighRiskCount = "security_cloud_high_risk_count"
 
     /// Short human label for the alert card (never a percentage sign — the
     /// message string carries units).
@@ -66,6 +70,9 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .protectMatchedPct: return "Jamf Protect match with inventory"
         case .protectOpenAlertCount: return "Jamf Protect open alerts"
         case .protectHighAlertCount: return "Jamf Protect high alerts"
+        case .securityCloudDeviceCount: return "Security Cloud devices"
+        case .securityCloudMatchedPct: return "Security Cloud match with inventory"
+        case .securityCloudHighRiskCount: return "Security Cloud high-risk devices"
         }
     }
 
@@ -74,7 +81,8 @@ enum AlertMetric: String, CaseIterable, Sendable {
         switch self {
         case .staleCount, .actionItemsP0, .totalDevices, .mobileStaleCount,
              .mobileJailbrokenCount, .protectComputerCount, .protectOpenAlertCount,
-             .protectHighAlertCount: return false
+             .protectHighAlertCount, .securityCloudDeviceCount,
+             .securityCloudHighRiskCount: return false
         default: return true
         }
     }
@@ -115,6 +123,10 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .protectHighAlertCount:
             return (summary.protectAlertCounts?["high"]
                 ?? (summary.protectOpenAlerts != nil ? 0 : nil)).map(Double.init)
+        case .securityCloudDeviceCount: return summary.securityCloudDeviceCount.map(Double.init)
+        case .securityCloudMatchedPct: return summary.securityCloudMatched?.pctOneDecimal
+        // Risk counts were recorded and none is HIGH: a real 0.
+        case .securityCloudHighRiskCount: return summary.securityCloudHighRiskCount.map(Double.init)
         }
     }
 }

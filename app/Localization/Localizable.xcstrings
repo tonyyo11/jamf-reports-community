@@ -76837,6 +76837,46 @@
         }
       }
     },
+    "Needs Jamf Security Cloud collected for this environment." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert die Erfassung von Jamf Security Cloud für diese Umgebung."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere que se recopile Jamf Security Cloud para este entorno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite la collecte de Jamf Security Cloud pour cet environnement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richiede la raccolta di Jamf Security Cloud per questo ambiente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境でJamf Security Cloudを収集する必要があります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requer a coleta do Jamf Security Cloud para este ambiente."
+          }
+        }
+      }
+    },
     "Needs a collected inventory." : {
       "localizations" : {
         "de" : {
@@ -87303,6 +87343,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir Fontes de dados"
+          }
+        }
+      }
+    },
+    "Open Data Sources to see the Jamf Security Cloud collect." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen Sie Datenquellen, um die Erfassung von Jamf Security Cloud zu sehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Fuentes de datos para ver la recopilación de Jamf Security Cloud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez Sources de données pour voir la collecte de Jamf Security Cloud."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Origini dati per vedere la raccolta di Jamf Security Cloud."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Security Cloudの収集を確認するには、データソースを開いてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Fontes de dados para ver a coleta do Jamf Security Cloud."
           }
         }
       }
@@ -106383,6 +106463,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Agentes de segurança"
+          }
+        }
+      }
+    },
+    "Security Cloud devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security-Cloud-Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de Security Cloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareils Security Cloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivi Security Cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Cloudのデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos do Security Cloud"
+          }
+        }
+      }
+    },
+    "Security Cloud high-risk devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security-Cloud-Geräte mit hohem Risiko"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de alto riesgo de Security Cloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareils à risque élevé Security Cloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivi ad alto rischio di Security Cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Cloudの高リスクデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de alto risco do Security Cloud"
+          }
+        }
+      }
+    },
+    "Security Cloud match with inventory" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security-Cloud-Abgleich mit dem Inventar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coincidencia de Security Cloud con el inventario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correspondance Security Cloud avec l’inventaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Corrispondenza di Security Cloud con l’inventario"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Cloudとインベントリの一致"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correspondência do Security Cloud com o inventário"
           }
         }
       }
