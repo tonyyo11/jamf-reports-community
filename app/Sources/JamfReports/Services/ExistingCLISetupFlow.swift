@@ -95,35 +95,37 @@ final class ExistingCLISetupFlow {
         return defaults.bool(forKey: legacyDismissedKey) ? .completed : nil
     }
 
-    /// jamf-cli profiles discovered at launch, in discovery order.
-    let profileNames: [String]
+    /// jamf-cli profiles discovered at launch, in discovery order; `resolveProposal` replaces
+    /// them with jamf-cli's whole listing.
+    private(set) var profileNames: [String] = []
 
-    private let profiles: [JamfCLIProfile]
-
-    /// Each profile's product, for the rows that are not Jamf Pro.
-    let products: [String: JamfCLIProduct]
+    private var profiles: [JamfCLIProfile] = []
 
     /// Profiles that are never a workspace here, with the reason the screen shows. A Protect or
     /// Security Cloud login holds no Jamf Pro data (Protect is added from the Jamf Pro workspace
     /// that uses it), and an organization-level Platform integration reaches only Jamf Account.
-    let refusals: [String: String]
+    private(set) var refusals: [String: String] = [:]
 
     /// Profiles the app can't set up, with the reason the screen shows. They are
     /// never selected or run: initializing one used to fail as "Workspace not found".
-    let unusable: [String: ProfileService.UnusableReason]
+    private(set) var unusable: [String: ProfileService.UnusableReason] = [:]
 
-    /// An oauth2 profile for the same Jamf Pro instance as a platform profile, keyed by its name:
-    /// the platform profile that reaches it, learned by `resolveTwins`. The oauth2 profile stays
-    /// ticked only if the user ticks it: one fleet is one workspace.
-    private(set) var twinOf: [String: String] = [:]
-    /// The Jamf Pro URL learned for each platform profile, for its connection.
-    private(set) var learnedJamfProURLs: [String: String] = [:]
-    /// Profiles the user ticked or unticked by hand; `resolveTwins` never overrides them.
-    private var touched: Set<String> = []
+    /// The environments adoption proposes, one workspace each (D17). First paint lists every
+    /// environment; `resolveProposal` re-proposes once the Platform profiles' Jamf Pro URLs are
+    /// known.
+    private(set) var proposal = EnvironmentProposal(
+        environments: [], extensions: [], protectChoices: [], unassigned: [:])
+    /// The first `resolveProposal` has returned, so the cards show what a run will create.
+    private(set) var proposalResolved = false
+    /// Platform slots the user removed from their card (D26); the profile then stays unassigned.
+    private(set) var removedPlatform: Set<String> = []
+    /// Each Protect login's chosen environment; starts at its suggestion (R7). nil leaves it out.
+    var protectAssignment: [String: String?] = [:]
+    /// The user ticked or unticked a workspace by hand; `resolveProposal` then keeps the choice.
+    private var selectionTouched = false
 
-    /// Profiles the user wants set up. Defaults to every usable one — the common
-    /// case is one tenant, and excluding is the exception.
-    var selected: Set<String>
+    /// Workspaces the user wants created; defaults to every proposed environment.
+    var selected: Set<String> = []
 
     /// Whether completing the setup also turns on managed automation.
     var enableAutomation = true
@@ -158,24 +160,48 @@ final class ExistingCLISetupFlow {
     }
 
     init(profiles: [JamfCLIProfile]) {
+        let defaults = AutomationPolicy()
+        self.scanWeekday = defaults.scanWeekday
+        self.reportsCadence = defaults.reportsCadence
+        self.runTime = defaults.runTime
+        use(profiles)
+    }
+
+    /// Takes `profiles` as the ones to propose from, keeping a hand-made selection and the Protect
+    /// assignments that still apply.
+    private func use(_ profiles: [JamfCLIProfile]) {
         self.profiles = profiles
-        let profileNames = profiles.map(\.name)
-        self.profileNames = profileNames
-        self.products = Dictionary(
-            profiles.map { ($0.name, $0.product) }, uniquingKeysWith: { first, _ in first })
+        profileNames = profiles.map(\.name)
         var refusals: [String: String] = [:]
         for profile in profiles {
             if let reason = Self.refusal(for: profile) { refusals[profile.name] = reason }
         }
         self.refusals = refusals
-        let unusable = ProfileService.unusableProfiles(in: profileNames)
-        self.unusable = unusable
-        self.selected = Set(profileNames.filter { unusable[$0] == nil && refusals[$0] == nil })
-        let defaults = AutomationPolicy()
-        self.scanWeekday = defaults.scanWeekday
-        self.reportsCadence = defaults.reportsCadence
-        self.runTime = defaults.runTime
-        for name in profileNames { statuses[name] = .pending }
+        unusable = ProfileService.unusableProfiles(in: profileNames)
+        for name in profileNames where statuses[name] == nil { statuses[name] = .pending }
+        apply(EnvironmentProposal.propose(
+            profiles: profiles, learnedJamfProURLs: [:], existingWorkspaces: [:],
+            unusable: unusable.mapValues(\.explanation)))
+    }
+
+    /// Shows `next`; the selection and the Protect assignments the user made carry over.
+    private func apply(_ next: EnvironmentProposal) {
+        let workspaces = Set(next.environments.map(\.workspace))
+        selected = selectionTouched ? selected.intersection(workspaces) : workspaces
+        var assignments = Self.suggestedAssignments(next)
+        for (login, target) in protectAssignment where assignments[login] != nil {
+            if let target, !workspaces.contains(target) { continue }
+            assignments[login] = .some(target)
+        }
+        // A merged-in suggestion can name an environment a kept assignment holds: the first
+        // login by name keeps it.
+        var held = Set<String>()
+        for login in assignments.keys.sorted() {
+            guard let target = assignments[login] ?? nil else { continue }
+            if !held.insert(target).inserted { assignments[login] = .some(nil) }
+        }
+        protectAssignment = assignments
+        proposal = next
     }
 
     nonisolated static let securityCloudReason = L("Jamf Security Cloud is not supported yet.")
@@ -227,55 +253,72 @@ final class ExistingCLISetupFlow {
         return L("No workspace for \(profiles.joined(separator: ", ")) under \(root) — expected \(example). Pick the folder that contains the profile folders, or initialize a new workspace below.")
     }
 
-    // MARK: - Same Jamf Pro, two profiles
+    // MARK: - Proposal
 
-    /// Ticks or unticks a profile as the user did, so `resolveTwins` leaves the choice alone.
+    /// A Protect login starts on the environment its name suggests, when that is a workspace
+    /// this run creates. An environment takes one Protect login, so the first by name gets it.
+    private static func suggestedAssignments(_ proposal: EnvironmentProposal) -> [String: String?] {
+        let workspaces = Set(proposal.environments.map(\.workspace))
+        var held = Set<String>()
+        var assignments: [String: String?] = [:]
+        for choice in proposal.protectChoices.sorted(by: { $0.profile < $1.profile }) {
+            let target = choice.suggested.flatMap { workspaces.contains($0) ? $0 : nil }
+                .flatMap { held.insert($0).inserted ? $0 : nil }
+            assignments[choice.profile] = .some(target)
+        }
+        return assignments
+    }
+
+    /// Ticks or unticks a workspace as the user did, so `resolveProposal` keeps the choice.
     func setSelected(_ name: String, _ on: Bool) {
-        touched.insert(name)
+        selectionTouched = true
         if on { selected.insert(name) } else { selected.remove(name) }
     }
 
-    /// The line under an oauth2 profile that reaches the same Jamf Pro as a platform one.
-    func twinNote(for name: String) -> String? {
-        twinOf[name].map {
-            L("Same Jamf Pro as \($0). Kept for commands the gateway refuses; not collected, so history and fleet totals count the fleet once. Tick it to collect it anyway.")
-        }
+    /// Takes a Platform profile off its environment's card (D26); it is not written as a slot.
+    func removePlatform(from workspace: String) {
+        guard let platform = proposal.environments.first(where: { $0.workspace == workspace })?
+            .platform else { return }
+        removedPlatform.insert(platform)
     }
 
-    /// Looks for an oauth2 profile that reaches the same Jamf Pro as each platform profile and
-    /// unticks it. `learn` asks one platform profile for its Jamf Pro URL (default: the
-    /// read-only `pro jamf-pro-server-url get` through the bounded probe, off the main actor);
-    /// a failed ask finds no twin and changes nothing.
-    func resolveTwins(
+    /// Reads jamf-cli's whole listing, learns each Platform profile's Jamf Pro URL and proposes
+    /// again, so a Platform profile that reaches the same Jamf Pro as an oauth2 one folds into
+    /// that workspace. The app's own profile list has dropped every Protect and Security Cloud
+    /// login, which adoption still offers or explains: `list` reads `config list` off the main
+    /// actor, and nil (could not read) keeps the profiles the flow was made with. `learn` asks one
+    /// profile for its URL (default: the read-only `pro jamf-pro-server-url get` through the
+    /// bounded probe, off the main actor); a failed ask learns nothing.
+    func resolveProposal(
+        list: @escaping @Sendable () async -> [JamfCLIProfile]? = {
+            await Task.detached { ProfileService.listJamfCLIProfiles(scheduleCounts: [:]) }.value
+        },
         learn: @escaping @Sendable (String) async -> String? = { profile in
             await Task.detached { PlatformTwin.learnJamfProURL(profile: profile) }.value
         }
     ) async {
-        let usable = profiles.filter { unusable[$0.name] == nil && refusals[$0.name] == nil }
-        let platforms = usable.filter { $0.auth?.isPlatform == true }
-        guard !platforms.isEmpty, usable.contains(where: { $0.auth == .oauth2 }) else { return }
-        for platform in platforms {
-            guard let url = await learn(platform.name),
-                  let found = PlatformTwin.twins(
-                    ofPlatformProfile: platform, among: usable, learn: { _ in url })
-            else { continue }
-            guard !isRunning, !didComplete else { return }
-            learnedJamfProURLs[platform.name] = found.url
-            for twin in found.twins where twinOf[twin.name] == nil {
-                twinOf[twin.name] = platform.name
-                if !touched.contains(twin.name) { selected.remove(twin.name) }
-            }
+        defer { proposalResolved = true }
+        if let listed = await list(), !listed.isEmpty, !isRunning, !didComplete { use(listed) }
+        let platforms = profiles.filter {
+            unusable[$0.name] == nil && refusals[$0.name] == nil && $0.auth?.isPlatform == true
         }
-    }
-
-    /// Twins left unticked: kept out of all-profiles runs so none creates the workspace.
-    var twinsLeftOut: [String] {
-        profileNames.filter { twinOf[$0] != nil && !selected.contains($0) }
+        guard !platforms.isEmpty else { return }
+        var learned: [String: String] = [:]
+        for platform in platforms {
+            if let url = await learn(platform.name) { learned[platform.name] = url }
+        }
+        guard !isRunning, !didComplete, !learned.isEmpty else { return }
+        apply(EnvironmentProposal.propose(
+            profiles: profiles, learnedJamfProURLs: learned, existingWorkspaces: [:],
+            unusable: unusable.mapValues(\.explanation)))
     }
 
     /// Keeps each learned Jamf Pro URL on its profile's connection, where one exists.
     func recordLearnedURLs(in store: ConnectionStore = ConnectionStore()) {
-        for (profile, url) in learnedJamfProURLs.sorted(by: { $0.key < $1.key }) {
+        let learned = proposal.environments.compactMap { env in
+            env.learnedJamfProURL.map { (env.platform ?? env.workspace, $0) }
+        }
+        for (profile, url) in learned.sorted(by: { $0.0 < $1.0 }) {
             do {
                 try store.recordJamfProURL(profile: profile, url: url)
             } catch {
@@ -294,9 +337,6 @@ final class ExistingCLISetupFlow {
     /// only when the user kept automation enabled.
     func configuredPolicy(basedOn base: AutomationPolicy = .current()) -> AutomationPolicy {
         var policy = base
-        for name in twinsLeftOut where !policy.excludedWorkspaces.contains(name) {
-            policy.excludedWorkspaces.append(name)
-        }
         return AutomationSetupChoice(
             enabled: enableAutomation, scanWeekday: scanWeekday,
             reportsCadence: reportsCadence, runTime: runTime
@@ -331,6 +371,10 @@ final class ExistingCLISetupFlow {
     ///
     /// `connectionRunner` runs the Platform connection check for each Platform profile before
     /// its workspace is created (nil when jamf-cli is absent: nothing is checked).
+    ///
+    /// A run creates one workspace per selected environment, then records its Platform and
+    /// Protect slots before the first collect. A slot that cannot be written is a note on the
+    /// row, never a failed workspace: the workspace exists and collects its MDM.
     func run(
         connectionRunner: ConnectionCheck.Runner? = ConnectionCheck.liveRunner(),
         initialize: @escaping (String) async throws -> Int32 = { profile in
@@ -338,6 +382,16 @@ final class ExistingCLISetupFlow {
         },
         configureSchool: @escaping (String) throws -> Void = { profile in
             try OnboardingFlow.writeProductBlock("school_cli", profile: profile, for: profile)
+        },
+        writePlatform: @escaping (_ workspace: String, _ platform: String) async throws -> Void = {
+            workspace, platform in
+            // Seeding a `profiles:` block can run `config list`, so it runs off the main actor.
+            _ = try await Task.detached {
+                try ProfilesConfigWriter.save(.platform, to: platform, workspace: workspace)
+            }.value
+        },
+        writeProtect: @escaping (_ workspace: String, _ protect: String) throws -> Void = {
+            _ = try OnboardingFlow.writeProtectConfig(profileSlug: $0, protectProfileName: $1)
         },
         collect: @escaping (String, @escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32 = {
             profile, onLine in
@@ -372,23 +426,38 @@ final class ExistingCLISetupFlow {
         didComplete = false
         defer { isRunning = false }
 
-        for name in profileNames where isRunnable(name) {
+        for env in proposal.environments where selected.contains(env.workspace) {
+            let name = env.workspace
             statuses[name] = .initializing
             failureStages[name] = nil
             initializedWorkspaces.remove(name)
             var stage = FailureStage.workspace
+            connectionNotes[name] = nil
             if let refusal = await connectionRefusal(for: name, runner: connectionRunner) {
                 fail(name, refusal, at: .connection)
                 continue
             }
+            let platform = await platformSlot(of: env, runner: connectionRunner)
             do {
                 let initExit = try await initialize(name)
                 guard initExit == 0 else {
                     fail(name, L("workspace init exited \(initExit)"), at: stage)
                     continue
                 }
-                if products[name] == .school { try configureSchool(name) }
+                if env.isSchool { try configureSchool(name) }
                 initializedWorkspaces.insert(name)
+                if let platform {
+                    do { try await writePlatform(name, platform) } catch {
+                        let reason = error.localizedDescription
+                        addNote(L("Platform API profile \(platform) was not recorded: \(reason)"),
+                                to: name)
+                    }
+                }
+                for login in profileNames where (protectAssignment[login] ?? nil) == name {
+                    record(name, { L("Jamf Protect profile \(login) was not recorded: \($0)") }) {
+                        try writeProtect(name, login)
+                    }
+                }
                 stage = .collect
                 statuses[name] = .collecting
                 progress = CollectProgress()
@@ -419,24 +488,45 @@ final class ExistingCLISetupFlow {
     /// The check's reason to refuse a Platform profile (a rejected ID, or a tenant with no Jamf
     /// Pro); a missing permission or no answer lets it proceed with a note on its row.
     private func connectionRefusal(
-        for name: String, runner: ConnectionCheck.Runner?
+        for name: String, runner: ConnectionCheck.Runner?, noteOn row: String? = nil
     ) async -> String? {
-        connectionNotes[name] = nil
         guard let runner, let profile = profiles.first(where: { $0.name == name }),
               profile.auth?.isPlatform == true else { return nil }
         let verdict = await ConnectionCheck.run(profile: name, runner: runner)
         let text = verdict.message(tenantLevel: profile.platformLevel == .tenant)
         switch verdict {
         case .rejectedID, .noJamfPro: return text
-        case .missingPermission, .undecided: connectionNotes[name] = text
+        case .missingPermission, .undecided: addNote(text, to: row ?? name)
         case .accepted: break
         }
         return nil
     }
 
-    /// Selected, usable and not refused: the profiles a run sets up.
-    private func isRunnable(_ name: String) -> Bool {
-        selected.contains(name) && unusable[name] == nil && refusals[name] == nil
+    /// The environment's Platform slot after the connection check: nil when it has none, the user
+    /// removed it, or the check refused it (the row says so and the workspace goes on).
+    private func platformSlot(
+        of env: EnvironmentProposal.Environment, runner: ConnectionCheck.Runner?
+    ) async -> String? {
+        guard let platform = env.platform, !removedPlatform.contains(platform) else { return nil }
+        let row = env.workspace
+        if let refusal = await connectionRefusal(for: platform, runner: runner, noteOn: row) {
+            addNote(L("Platform API profile \(platform) was not added: \(refusal)"), to: row)
+            return nil
+        }
+        return platform
+    }
+
+    /// Runs one slot write; a failure becomes a note on the workspace's row.
+    private func record(
+        _ workspace: String, _ failure: (String) -> String, _ write: () throws -> Void
+    ) {
+        do { try write() } catch {
+            addNote(failure(error.localizedDescription), to: workspace)
+        }
+    }
+
+    private func addNote(_ text: String, to row: String) {
+        connectionNotes[row] = [connectionNotes[row], text].compactMap { $0 }.joined(separator: " ")
     }
 
     private func fail(_ name: String, _ reason: String, at stage: FailureStage) {

@@ -3758,6 +3758,52 @@
         }
       }
     },
+    "%@ already has Platform API profile %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ hat bereits das Platform-API-Profil %2$@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ already has Platform API profile %2$@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ya tiene el perfil de Platform API %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a déjà le profil Platform API %2$@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ha già il profilo Platform API %2$@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ にはすでに Platform API プロファイル %2$@ があります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ já tem o perfil da Platform API %2$@."
+          }
+        }
+      }
+    },
     "%@ already uses the Jamf Protect profile %@. Change it from Data Sources." : {
       "localizations" : {
         "de" : {
@@ -3800,6 +3846,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ já usa o perfil do Jamf Protect %@. Altere em Fontes de dados."
+          }
+        }
+      }
+    },
+    "%@ already uses the Platform API profile %@. Change it from Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ verwendet bereits das Platform-API-Profil %@. Ändern Sie es unter „Datenquellen“."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ already uses the Platform API profile %2$@. Change it from Data Sources."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya usa el perfil de la Platform API %@. Cámbielo desde Fuentes de datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ utilise déjà le profil Platform API %@. Modifiez-le depuis Sources de données."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ usa già il profilo Platform API %@. Modificalo da Origini dati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はすでに Platform API プロファイル %@ を使用しています。データソースから変更してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ já usa o perfil da Platform API %@. Altere-o em Fontes de dados."
           }
         }
       }
@@ -7822,6 +7914,98 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Perfil %@"
+          }
+        }
+      }
+    },
+    "%@ reaches %@, not this workspace's Jamf Pro (%@). Nothing was changed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ erreicht %@, nicht das Jamf Pro dieses Arbeitsbereichs (%@). Es wurde nichts geändert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ reaches %2$@, not this workspace's Jamf Pro (%3$@). Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ llega a %@, no al Jamf Pro de este espacio de trabajo (%@). No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ atteint %@ et non le Jamf Pro de cet espace de travail (%@). Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ raggiunge %@, non il Jamf Pro di questo spazio di lavoro (%@). Non è stato modificato nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は %@ に接続しており、このワークスペースの Jamf Pro (%@) ではありません。変更は行われていません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ alcança %@, não o Jamf Pro deste espaço de trabalho (%@). Nada foi alterado."
+          }
+        }
+      }
+    },
+    "%@ reaches the same Jamf Pro as %@. Add it?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ erreicht dasselbe Jamf Pro wie %@. Hinzufügen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ reaches the same Jamf Pro as %2$@. Add it?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ llega al mismo Jamf Pro que %@. ¿Desea añadirlo?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ atteint le même Jamf Pro que %@. L'ajouter ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ raggiunge lo stesso Jamf Pro di %@. Aggiungerlo?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は %@ と同じ Jamf Pro に接続します。追加しますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ alcança o mesmo Jamf Pro que %@. Adicionar?"
           }
         }
       }
@@ -24943,6 +25127,46 @@
         }
       }
     },
+    "Add a Platform profile jamf-cli already has. It must reach this workspace's Jamf Pro. The Platform reports are collected with this workspace." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fügen Sie ein Platform-Profil hinzu, das jamf-cli bereits hat. Es muss das Jamf Pro dieses Arbeitsbereichs erreichen. Die Platform-Berichte werden mit diesem Arbeitsbereich erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añada un perfil de Platform que jamf-cli ya tenga. Debe llegar al Jamf Pro de este espacio de trabajo. Los informes de Platform se recopilan con este espacio de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoutez un profil Platform que jamf-cli possède déjà. Il doit atteindre le Jamf Pro de cet espace de travail. Les rapports Platform sont collectés avec cet espace de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi un profilo Platform che jamf-cli ha già. Deve raggiungere il Jamf Pro di questo spazio di lavoro. I report Platform vengono raccolti con questo spazio di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli にすでにある Platform プロファイルを追加します。このワークスペースの Jamf Pro に接続できる必要があります。Platform のレポートはこのワークスペースと一緒に収集されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adicione um perfil da Platform que o jamf-cli já tem. Ele precisa alcançar o Jamf Pro deste espaço de trabalho. Os relatórios da Platform são coletados com este espaço de trabalho."
+          }
+        }
+      }
+    },
     "Add a factor to the score." : {
       "localizations" : {
         "de" : {
@@ -25425,10 +25649,10 @@
     },
     "Add or set up…" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ajouter ou configurer…"
+            "value" : "Hinzufügen oder einrichten …"
           }
         },
         "es" : {
@@ -25437,16 +25661,10 @@
             "value" : "Añadir o configurar…"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hinzufügen oder einrichten …"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adicionar ou configurar…"
+            "value" : "Ajouter ou configurer…"
           }
         },
         "it" : {
@@ -25459,6 +25677,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "追加または設定…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adicionar ou configurar…"
           }
         }
       }
@@ -33933,6 +34157,46 @@
         }
       }
     },
+    "Checking which profiles reach the same Jamf Pro…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wird geprüft, welche Profile dasselbe Jamf Pro erreichen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobando qué perfiles llegan al mismo Jamf Pro…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérification des profils qui atteignent le même Jamf Pro…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifica dei profili che raggiungono lo stesso Jamf Pro…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同じ Jamf Pro に接続するプロファイルを確認しています…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificando quais perfis acessam o mesmo Jamf Pro…"
+          }
+        }
+      }
+    },
     "Checks" : {
       "localizations" : {
         "de" : {
@@ -39565,6 +39829,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conectar novo perfil do Jamf Protect a %@"
+          }
+        }
+      }
+    },
+    "Connect new Platform API profile to %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Platform-API-Profil mit %@ verbinden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectar nuevo perfil de Platform API a %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecter un nouveau profil Platform API à %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collega un nuovo profilo Platform API a %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいPlatform APIプロファイルを%@に接続"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectar novo perfil da Platform API a %@"
           }
         }
       }
@@ -50897,6 +51201,46 @@
         }
       }
     },
+    "Each environment gets its own workspace under %@/ — config, cached snapshots, and generated reports stay per-tenant." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jede Umgebung erhält unter %@/ einen eigenen Arbeitsbereich — Konfiguration, zwischengespeicherte Snapshots und erstellte Berichte bleiben pro Mandant getrennt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada entorno tiene su propio espacio de trabajo en %@/: la configuración, las instantáneas en caché y los informes generados permanecen separados por tenant."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque environnement a son propre espace de travail sous %@/ — la configuration, les instantanés en cache et les rapports générés restent séparés par tenant."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ogni ambiente ha il proprio spazio di lavoro in %@/ — configurazione, snapshot in cache e report generati restano separati per tenant."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各環境には %@/ の下に専用のワークスペースが作成されます。構成、キャッシュされたスナップショット、生成されたレポートはテナントごとに分けて保持されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada ambiente tem seu próprio espaço de trabalho em %@/ — a configuração, os snapshots em cache e os relatórios gerados permanecem separados por tenant."
+          }
+        }
+      }
+    },
     "Each group's profiles roll up into one consolidated fleet report; profiles in no group get a per-profile report. Combine prod/dev/sandbox into one fleet, or make one group per customer." : {
       "localizations" : {
         "de" : {
@@ -50933,46 +51277,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Os perfis de cada grupo são consolidados em um único relatório de frota; os perfis sem grupo recebem um relatório por perfil. Combine produção/desenvolvimento/sandbox em uma frota ou crie um grupo por cliente."
-          }
-        }
-      }
-    },
-    "Each profile gets its own workspace under %@/ — config, cached snapshots, and generated reports stay per-tenant." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jedes Profil erhält unter %@/ einen eigenen Arbeitsbereich — Konfiguration, zwischengespeicherte Snapshots und erstellte Berichte bleiben pro Mandant getrennt."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cada perfil tiene su propio espacio de trabajo en %@/: la configuración, las instantáneas en caché y los informes generados permanecen separados por tenant."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chaque profil a son propre espace de travail sous %@/ — la configuration, les instantanés en cache et les rapports générés restent séparés par tenant."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ogni profilo ottiene un proprio spazio di lavoro in %@/: configurazione, snapshot in cache e report generati restano separati per tenant."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各プロファイルは%@/の下に専用のワークスペースを持ちます。設定、キャッシュ済みスナップショット、生成したレポートはテナントごとに分かれて保持されます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cada perfil recebe seu próprio espaço de trabalho em %@/ — configuração, snapshots em cache e relatórios gerados ficam separados por tenant."
           }
         }
       }
@@ -52059,6 +52363,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O nível a usar é Ambiente: ele alcança o Jamf Pro, os Blueprints, os Compliance Benchmarks e o DDM. Tenant é legado: apenas endpoints diretos do Jamf Pro, sem Compliance Benchmarks nem Blueprints."
+          }
+        }
+      }
+    },
+    "Environments to set up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einzurichtende Umgebungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entornos que configurar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Environnements à configurer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ambienti da configurare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定する環境"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ambientes a configurar"
           }
         }
       }
@@ -58071,48 +58415,82 @@
         }
       }
     },
-    "Found %lld configured %@. Three steps and the app is live: create a reporting workspace for each profile, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point." : {
+    "Found %lld environments to set up. Three steps and the app is live: create a reporting workspace for each environment, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld konfiguriert gefunden: %@. Drei Schritte, dann ist die App einsatzbereit: Erstellen Sie für jedes Profil einen Berichts-Arbeitsbereich, legen Sie fest, wie oft die Daten automatisch aktualisiert werden, und führen Sie eine erste Erfassung aus, damit Dashboards und Trendverlauf einen Ausgangspunkt haben."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Found %1$lld configured %2$@. Three steps and the app is live: create a reporting workspace for each profile, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point."
+            "value" : "%lld Umgebungen zum Einrichten gefunden. Drei Schritte, dann ist die App einsatzbereit: Erstellen Sie für jede Umgebung einen Berichts-Arbeitsbereich, legen Sie fest, wie oft die Daten automatisch aktualisiert werden, und führen Sie eine erste Erfassung aus, damit Dashboards und Trendverlauf einen Ausgangspunkt haben."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se han encontrado %lld %@ configurados. Con tres pasos la app queda lista: cree un espacio de trabajo de informes para cada perfil, elija con qué frecuencia se actualizan los datos automáticamente y ejecute una primera recopilación para que los paneles y el historial de tendencias tengan un punto de partida."
+            "value" : "Se han encontrado %lld entornos para configurar. Con tres pasos la app queda lista: cree un espacio de trabajo de informes para cada entorno, elija con qué frecuencia se actualizan los datos automáticamente y ejecute una primera recopilación para que los paneles y el historial de tendencias tengan un punto de partida."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configurés et trouvés : %lld %@. Trois étapes et l’app est prête : créez un espace de travail de reporting pour chaque profil, choisissez la fréquence d’actualisation automatique des données, puis lancez une première collecte pour que les tableaux de bord et l’historique des tendances aient un point de départ."
+            "value" : "%lld environnements à configurer ont été trouvés. Trois étapes et l’app est prête : créez un espace de travail de reporting pour chaque environnement, choisissez la fréquence d’actualisation automatique des données, puis lancez une première collecte pour que les tableaux de bord et l’historique des tendances aient un point de départ."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trovati %lld %@ configurati. Bastano tre passaggi: creare uno spazio di lavoro per ogni profilo, scegliere la frequenza di aggiornamento automatico dei dati ed eseguire una prima raccolta, così le dashboard e lo storico degli andamenti hanno un punto di partenza."
+            "value" : "Trovati %lld ambienti da configurare. Bastano tre passaggi: creare uno spazio di lavoro per ogni ambiente, scegliere la frequenza di aggiornamento automatico dei dati ed eseguire una prima raccolta, così le dashboard e lo storico degli andamenti hanno un punto di partenza."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定済みの%2$@が%1$lld件見つかりました。3つのステップでアプリを使い始められます: プロファイルごとにレポート用ワークスペースを作成し、データを自動更新する頻度を選び、最初の収集を実行してダッシュボードとトレンド履歴の起点を作ります。"
+            "value" : "設定する環境が%lld件見つかりました。3つのステップでアプリを使い始められます: 環境ごとにレポート用ワークスペースを作成し、データを自動更新する頻度を選び、最初の収集を実行してダッシュボードとトレンド履歴の起点を作ります。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Encontrados %lld %@ configurados. São três etapas para o app começar a funcionar: criar um espaço de trabalho para cada perfil, escolher com que frequência os dados são atualizados automaticamente e executar uma primeira coleta para que os painéis e o histórico de tendências tenham um ponto de partida."
+            "value" : "Encontrados %lld ambientes para configurar. São três etapas para o app começar a funcionar: criar um espaço de trabalho para cada ambiente, escolher com que frequência os dados são atualizados automaticamente e executar uma primeira coleta para que os painéis e o histórico de tendências tenham um ponto de partida."
+          }
+        }
+      }
+    },
+    "Found 1 environment to set up. Three steps and the app is live: create its reporting workspace, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Umgebung zum Einrichten gefunden. Drei Schritte, dann ist die App einsatzbereit: Erstellen Sie ihren Berichts-Arbeitsbereich, legen Sie fest, wie oft die Daten automatisch aktualisiert werden, und führen Sie eine erste Erfassung aus, damit Dashboards und Trendverlauf einen Ausgangspunkt haben."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha encontrado 1 entorno para configurar. Con tres pasos la app queda lista: cree su espacio de trabajo de informes, elija con qué frecuencia se actualizan los datos automáticamente y ejecute una primera recopilación para que los paneles y el historial de tendencias tengan un punto de partida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 environnement à configurer a été trouvé. Trois étapes et l’app est prête : créez son espace de travail de reporting, choisissez la fréquence d’actualisation automatique des données, puis lancez une première collecte pour que les tableaux de bord et l’historique des tendances aient un point de départ."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trovato 1 ambiente da configurare. Bastano tre passaggi: creare il suo spazio di lavoro, scegliere la frequenza di aggiornamento automatico dei dati ed eseguire una prima raccolta, così le dashboard e lo storico degli andamenti hanno un punto di partenza."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定する環境が1件見つかりました。3つのステップでアプリを使い始められます: その環境のレポート用ワークスペースを作成し、データを自動更新する頻度を選び、最初の収集を実行してダッシュボードとトレンド履歴の起点を作ります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encontrado 1 ambiente para configurar. São três etapas para o app começar a funcionar: criar o espaço de trabalho dele, escolher com que frequência os dados são atualizados automaticamente e executar uma primeira coleta para que os painéis e o histórico de tendências tenham um ponto de partida."
           }
         }
       }
@@ -66639,46 +67017,6 @@
         }
       }
     },
-    "Jamf Protect alerts and analytics beside this workspace's Jamf Pro data." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Protect-Warnungen und -Analysedaten neben den Jamf Pro-Daten dieses Arbeitsbereichs."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas y analíticas de Jamf Protect junto a los datos de Jamf Pro de este espacio de trabajo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertes et analyses Jamf Protect à côté des données Jamf Pro de cet espace de travail."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avvisi e analisi di Jamf Protect accanto ai dati Jamf Pro di questo spazio di lavoro."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このワークスペースのJamf Proデータと並べて表示するJamf Protectのアラートと分析。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas e análises do Jamf Protect ao lado dos dados do Jamf Pro deste espaço de trabalho."
-          }
-        }
-      }
-    },
     "Jamf Protect alerts and analytics beside this workspace's Jamf School data." : {
       "localizations" : {
         "de" : {
@@ -66959,6 +67297,46 @@
         }
       }
     },
+    "Jamf Protect logins" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect-Anmeldungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicios de sesión de Jamf Protect"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexions Jamf Protect"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessi Jamf Protect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect のログイン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logins do Jamf Protect"
+          }
+        }
+      }
+    },
     "Jamf Protect profile %@ added to %@. The next collect reads its data." : {
       "localizations" : {
         "de" : {
@@ -67001,6 +67379,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Perfil %1$@ do Jamf Protect adicionado a %2$@. A próxima coleta lê os dados dele."
+          }
+        }
+      }
+    },
+    "Jamf Protect profile %@ was not recorded: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Jamf-Protect-Profil %@ wurde nicht erfasst: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Jamf Protect profile %1$@ was not recorded: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de Jamf Protect %@ no se ha registrado: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil Jamf Protect %@ n’a pas été enregistré : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo Jamf Protect %@ non è stato registrato: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protectプロファイル%@は記録されませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil do Jamf Protect %@ não foi registrado: %@"
           }
         }
       }
@@ -67081,6 +67505,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jamf Protect · %@"
+          }
+        }
+      }
+    },
+    "Jamf Protect, or a Platform API profile, beside this workspace's Jamf Pro data." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect oder ein Platform-API-Profil neben den Jamf Pro-Daten dieses Arbeitsbereichs."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect o un perfil de la Platform API junto a los datos de Jamf Pro de este espacio de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect ou un profil Platform API à côté des données Jamf Pro de cet espace de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect o un profilo Platform API accanto ai dati Jamf Pro di questo spazio di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースの Jamf Pro データと並べて表示する Jamf Protect または Platform API プロファイル。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect ou um perfil da Platform API ao lado dos dados do Jamf Pro deste espaço de trabalho."
           }
         }
       }
@@ -79687,6 +80151,46 @@
         }
       }
     },
+    "No profile in jamf-cli is free to add. Connect new above." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In jamf-cli ist kein Profil zum Hinzufügen frei. Verbinden Sie oben ein neues."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ningún perfil libre en jamf-cli para añadir. Conecte uno nuevo arriba."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun profil de jamf-cli n'est disponible à l'ajout. Connectez-en un nouveau ci-dessus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun profilo di jamf-cli è libero da aggiungere. Collegane uno nuovo qui sopra."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli に追加できる空きのプロファイルはありません。上で新規に接続してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum perfil do jamf-cli está livre para adicionar. Conecte um novo acima."
+          }
+        }
+      }
+    },
     "No profiles discovered." : {
       "localizations" : {
         "de" : {
@@ -81853,6 +82357,46 @@
         }
       }
     },
+    "Not now" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt nicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahora no"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas maintenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non ora"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今はしない"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agora não"
+          }
+        }
+      }
+    },
     "Not now?" : {
       "localizations" : {
         "de" : {
@@ -82209,6 +82753,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não definido"
+          }
+        }
+      }
+    },
+    "Not set up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht eingerichtet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin configurar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non configurés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non configurati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未設定"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não configurados"
           }
         }
       }
@@ -89997,6 +90581,144 @@
         }
       }
     },
+    "Platform API profile %@ added to %@. The next collect uses it for the Platform reports." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform-API-Profil %@ zu %@ hinzugefügt. Die nächste Erfassung verwendet es für die Platform-Berichte."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Platform API profile %1$@ added to %2$@. The next collect uses it for the Platform reports."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil de la Platform API %@ añadido a %@. La próxima recopilación lo usa para los informes de Platform."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil Platform API %@ ajouté à %@. La prochaine collecte l'utilise pour les rapports Platform."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profilo Platform API %@ aggiunto a %@. La prossima raccolta lo usa per i report Platform."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform API プロファイル %@ を %@ に追加しました。次回の収集で Platform のレポートに使用されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil da Platform API %@ adicionado a %@. A próxima coleta o usa para os relatórios da Platform."
+          }
+        }
+      }
+    },
+    "Platform API profile %@ was not added: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Platform-API-Profil %@ wurde nicht hinzugefügt: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Platform API profile %1$@ was not added: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de la API de Platform %@ no se ha añadido: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil API Platform %@ n’a pas été ajouté : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo API Platform %@ non è stato aggiunto: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform APIプロファイル%@は追加されませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil da API Platform %@ não foi adicionado: %@"
+          }
+        }
+      }
+    },
+    "Platform API profile %@ was not recorded: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Platform-API-Profil %@ wurde nicht erfasst: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Platform API profile %1$@ was not recorded: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de la API de Platform %@ no se ha registrado: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil API Platform %@ n’a pas été enregistré : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo API Platform %@ non è stato registrato: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform APIプロファイル%@は記録されませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil da API Platform %@ não foi registrado: %@"
+          }
+        }
+      }
+    },
     "Platform API profile required" : {
       "localizations" : {
         "de" : {
@@ -91685,10 +92407,10 @@
     },
     "Profiles not in an environment" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Profils hors d’un environnement"
+            "value" : "Profile, die in keiner Umgebung sind"
           }
         },
         "es" : {
@@ -91697,16 +92419,10 @@
             "value" : "Perfiles que no están en un entorno"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Profile, die in keiner Umgebung sind"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Perfis fora de um ambiente"
+            "value" : "Profils hors d’un environnement"
           }
         },
         "it" : {
@@ -91720,45 +92436,11 @@
             "state" : "translated",
             "value" : "環境に属していないプロファイル"
           }
-        }
-      }
-    },
-    "Profiles to set up" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einzurichtende Profile"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Perfiles que configurar"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profils à configurer"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profili da configurare"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定するプロファイル"
-          }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Perfis a configurar"
+            "value" : "Perfis fora de um ambiente"
           }
         }
       }
@@ -95633,6 +96315,46 @@
         }
       }
     },
+    "Remove Platform API profile %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform-API-Profil %@ entfernen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar el perfil de Platform API %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer le profil Platform API %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovi il profilo Platform API %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform API プロファイル %@ を削除"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover o perfil de Platform API %@"
+          }
+        }
+      }
+    },
     "Remove from connection" : {
       "localizations" : {
         "de" : {
@@ -96321,6 +97043,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Demonstração %@ removida."
+          }
+        }
+      }
+    },
+    "Removed from its environment." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus seiner Umgebung entfernt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitado de su entorno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retiré de son environnement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimosso dal suo ambiente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "環境から削除されました。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removido do seu ambiente."
           }
         }
       }
@@ -101031,46 +101793,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mesmo Jamf Pro de %@, que tem um espaço de trabalho. Um segundo espaço de trabalho coleta a frota duas vezes, dividindo o histórico e contando a frota duas vezes nos totais. Configure-o somente se quiser coletá-lo mesmo assim."
-          }
-        }
-      }
-    },
-    "Same Jamf Pro as %@. Kept for commands the gateway refuses; not collected, so history and fleet totals count the fleet once. Tick it to collect it anyway." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dasselbe Jamf Pro wie %@. Wird für Befehle beibehalten, die das Gateway ablehnt; nicht erfasst, sodass Verlauf und Flottensummen die Flotte nur einmal zählen. Aktivieren Sie es, um es trotzdem zu erfassen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El mismo Jamf Pro que %@. Se mantiene para los comandos que rechaza la pasarela; no se recopila, por lo que el historial y los totales de la flota la cuentan una sola vez. Márquelo para recopilarlo de todos modos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Même Jamf Pro que %@. Conservé pour les commandes que la passerelle refuse ; non collecté, de sorte que l’historique et les totaux du parc ne comptent le parc qu’une fois. Cochez-le pour le collecter quand même."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stesso Jamf Pro di %@. Conservato per i comandi che il gateway rifiuta; non viene raccolto, quindi cronologia e totali contano il parco dispositivi una sola volta. Selezionarlo per raccoglierlo comunque."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@と同じJamf Proです。ゲートウェイが拒否するコマンド用に保持されています。収集されないため、履歴とフリート合計ではフリートが1回だけ数えられます。それでも収集する場合は、チェックを入れてください。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mesmo Jamf Pro de %@. Mantido para comandos que o gateway recusa; não é coletado, então o histórico e os totais da frota contam a frota uma vez. Marque para coletá-lo mesmo assim."
           }
         }
       }
@@ -106167,42 +106889,42 @@
         }
       }
     },
-    "Set up a new workspace, add Jamf Protect to this one, or use a profile jamf-cli already has." : {
+    "Set up a new workspace, add Jamf Protect or a Platform API profile to this one, or use a profile jamf-cli already has." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Richten Sie einen neuen Arbeitsbereich ein, fügen Sie diesem Jamf Protect hinzu oder verwenden Sie ein Profil, das jamf-cli bereits hat."
+            "value" : "Richten Sie einen neuen Arbeitsbereich ein, fügen Sie diesem Jamf Protect oder ein Platform-API-Profil hinzu oder verwenden Sie ein Profil, das jamf-cli bereits hat."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configure un espacio de trabajo nuevo, añada Jamf Protect a este o utilice un perfil que jamf-cli ya tiene."
+            "value" : "Configure un nuevo espacio de trabajo, añada a este Jamf Protect o un perfil de la Platform API, o use un perfil que jamf-cli ya tenga."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configurez un nouvel espace de travail, ajoutez Jamf Protect à celui-ci, ou utilisez un profil que jamf-cli possède déjà."
+            "value" : "Configurez un nouvel espace de travail, ajoutez Jamf Protect ou un profil Platform API à celui-ci, ou utilisez un profil que jamf-cli possède déjà."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configurare un nuovo spazio di lavoro, aggiungere Jamf Protect a questo oppure usare un profilo già presente in jamf-cli."
+            "value" : "Configura un nuovo spazio di lavoro, aggiungi a questo Jamf Protect o un profilo Platform API, oppure usa un profilo che jamf-cli ha già."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新しいワークスペースの設定、このワークスペースへのJamf Protectの追加、またはjamf-cliにすでにあるプロファイルの使用ができます。"
+            "value" : "新しいワークスペースを設定するか、このワークスペースに Jamf Protect または Platform API プロファイルを追加するか、jamf-cli にすでにあるプロファイルを使用します。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configure um novo espaço de trabalho, adicione o Jamf Protect a este ou use um perfil que o jamf-cli já tenha."
+            "value" : "Configure um novo espaço de trabalho, adicione Jamf Protect ou um perfil da Platform API a este, ou use um perfil que o jamf-cli já tem."
           }
         }
       }
@@ -111803,6 +112525,46 @@
         }
       }
     },
+    "Suggested by name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach Name vorgeschlagen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerido por el nombre"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggéré d’après le nom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggerito in base al nome"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前から推奨"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerido pelo nome"
+          }
+        }
+      }
+    },
     "Suggestions" : {
       "localizations" : {
         "de" : {
@@ -115861,6 +116623,52 @@
         }
       }
     },
+    "The profile %@ is still in jamf-cli; remove it with jamf-cli config remove-profile %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Profil %1$@ ist noch in jamf-cli vorhanden; entfernen Sie es mit jamf-cli config remove-profile %2$@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The profile %1$@ is still in jamf-cli; remove it with jamf-cli config remove-profile %2$@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil %1$@ sigue en jamf-cli; elimínelo con jamf-cli config remove-profile %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil %1$@ est toujours dans jamf-cli ; supprimez-le avec jamf-cli config remove-profile %2$@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo %1$@ è ancora in jamf-cli; rimuovilo con jamf-cli config remove-profile %2$@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロファイル%1$@はjamf-cliに残っています。jamf-cli config remove-profile %2$@ で削除してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil %1$@ ainda está no jamf-cli; remova-o com jamf-cli config remove-profile %2$@."
+          }
+        }
+      }
+    },
     "The profile is saved even though validation failed. Fix the URL, client ID, or secret later from Data Sources, or continue now." : {
       "localizations" : {
         "de" : {
@@ -117115,6 +117923,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este é um novo espaço de trabalho em uma pasta que você escolheu"
+          }
+        }
+      }
+    },
+    "This is not a usable profile name." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dies ist kein verwendbarer Profilname."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este no es un nombre de perfil utilizable."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce nom de profil n’est pas utilisable."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo non è un nome di profilo utilizzabile."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロファイル名は使用できません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este não é um nome de perfil utilizável."
           }
         }
       }
@@ -120173,6 +121021,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dois Macs gravaram o mesmo arquivo quase ao mesmo tempo e o provedor manteve as duas cópias. Elas são ignoradas na leitura dos dados, então nenhum relatório é gerado a partir delas."
+          }
+        }
+      }
+    },
+    "Two Platform profiles reach the same Jamf Pro (%@). Add the one you want from the Add sheet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwei Platform-Profile erreichen dasselbe Jamf Pro (%@). Fügen Sie das gewünschte über das Hinzufügen-Blatt hinzu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dos perfiles de Platform llegan al mismo Jamf Pro (%@). Añada el que desee desde la hoja Añadir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deux profils Platform atteignent le même Jamf Pro (%@). Ajoutez celui que vous voulez depuis la feuille Ajouter."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Due profili Platform raggiungono lo stesso Jamf Pro (%@). Aggiungi quello che vuoi dal foglio Aggiungi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2つの Platform プロファイルが同じ Jamf Pro(%@)に接続しています。追加シートから使用するものを追加してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dois perfis da Platform chegam ao mesmo Jamf Pro (%@). Adicione o que você quer pela folha Adicionar."
           }
         }
       }
@@ -132406,6 +133294,46 @@
         }
       }
     },
+    "jamf-cli already has a profile with this name." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli hat bereits ein Profil mit diesem Namen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli ya tiene un perfil con este nombre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli a déjà un profil portant ce nom."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli ha già un profilo con questo nome."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この名前のプロファイルはjamf-cliに既にあります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O jamf-cli já tem um perfil com este nome."
+          }
+        }
+      }
+    },
     "jamf-cli could not be started to remove the profile %@. %@" : {
       "localizations" : {
         "de" : {
@@ -132884,10 +133812,10 @@
     },
     "jamf-cli has these profiles, but no workspace uses them, so nothing collects them." : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "jamf-cli contient ces profils, mais aucun espace de travail ne les utilise, donc rien ne les collecte."
+            "value" : "jamf-cli enthält diese Profile, aber kein Arbeitsbereich verwendet sie, daher erfasst sie nichts."
           }
         },
         "es" : {
@@ -132896,16 +133824,10 @@
             "value" : "jamf-cli tiene estos perfiles, pero ningún espacio de trabajo los usa, así que nada los recopila."
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "jamf-cli enthält diese Profile, aber kein Arbeitsbereich verwendet sie, daher erfasst sie nichts."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O jamf-cli tem estes perfis, mas nenhum espaço de trabalho os usa, então nada os coleta."
+            "value" : "jamf-cli contient ces profils, mais aucun espace de travail ne les utilise, donc rien ne les collecte."
           }
         },
         "it" : {
@@ -132918,6 +133840,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "jamf-cli にはこれらのプロファイルがありますが、どのワークスペースも使用していないため、何も収集されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O jamf-cli tem estes perfis, mas nenhum espaço de trabalho os usa, então nada os coleta."
           }
         }
       }

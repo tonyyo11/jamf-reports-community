@@ -72,9 +72,9 @@ the second half of 2027), and only the create path offers a scope choice.
 
 When you run multiple Jamf Pro instances, give each its own profile and select it with
 `jamf-cli -p <profile>`. jamf-cli suggests keeping a direct (oauth2) profile beside a gateway
-profile, for the commands the gateway refuses. Jamf Reports collects one profile per fleet:
-when both reach the same Jamf Pro, setup keeps the Platform API profile and leaves the
-direct one out.
+profile, for the commands the gateway refuses. Jamf Reports collects each fleet once: when
+both reach the same Jamf Pro, setup proposes one workspace for the pair, named after the
+direct profile, with the Platform API profile as its Platform API profile.
 
 ## Jamf Pro API permissions
 
