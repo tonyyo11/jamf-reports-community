@@ -44,6 +44,17 @@ final class ComplianceBenchmarkLabelTests: XCTestCase {
         )
     }
 
+    /// The four-control proxy is never named after the configured benchmark.
+    func testProxyFigureCarriesTheProxyTitle() {
+        XCTAssertEqual(
+            TrendSeries.Metric.compliance.displayLabel(
+                benchmarkLabel: "DISA STIG", complianceIsProxy: true),
+            "Compliance (4-control proxy)")
+        XCTAssertEqual(
+            TrendSeries.Metric.patch.displayLabel(benchmarkLabel: nil, complianceIsProxy: true),
+            "Patch Compliance")
+    }
+
     func testNilBenchmarkLabelReturnsFallback() {
         XCTAssertEqual(
             TrendSeries.Metric.compliance.displayLabel(benchmarkLabel: nil),

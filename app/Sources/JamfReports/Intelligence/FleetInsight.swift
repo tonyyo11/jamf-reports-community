@@ -205,10 +205,14 @@ extension FleetInsightInput {
             share("System Integrity Protection (SIP) enabled", \.sipPct, "not enabled"),
             share("Firewall enabled", \.firewallPct, "not enabled"),
             share("Gatekeeper enabled", \.gatekeeperPct, "not enabled"),
-            share("Compliance" + proxy, \.compliancePct),
+            // The proxy and a benchmark's result, or two score definitions, do not compare.
+            share("Compliance" + proxy, \.compliancePct,
+                  comparable: previous?.complianceIsProxy == current.complianceIsProxy),
             current.securityScore.map {
                 Fact(label: "Security score", value: .number($0),
-                     prior: previous?.securityScore.map(Value.number), polarity: .higherIsBetter)
+                     prior: previous?.securityScoreBasis == current.securityScoreBasis
+                        ? previous?.securityScore.map(Value.number) : nil,
+                     polarity: .higherIsBetter)
             },
             count("Stale devices (no recent check-in)", \.staleCount),
             count("P0 action items", \.actionItemsP0),
