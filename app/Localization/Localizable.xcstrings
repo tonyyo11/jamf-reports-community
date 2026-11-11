@@ -7144,6 +7144,46 @@
         }
       }
     },
+    "%@ is read from, not moved." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird gelesen, aber nicht verschoben."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se lee, pero no se mueve."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est lu, mais pas déplacé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ viene letto, ma non spostato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@は読み取られますが、移動されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ é lido, mas não movido."
+          }
+        }
+      }
+    },
     "%@ is running %@" : {
       "localizations" : {
         "de" : {
@@ -7272,6 +7312,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ está configurado. Alterne para ele no menu de espaços de trabalho."
+          }
+        }
+      }
+    },
+    "%@ is working in %@ — try the merge again when it finishes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ arbeitet in %2$@ — versuchen Sie die Zusammenführung erneut, wenn der Vorgang abgeschlossen ist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ is working in %2$@ — try the merge again when it finishes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ está trabajando en %2$@ — vuelva a intentar la fusión cuando termine."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ travaille dans %2$@ — relancez la fusion à la fin."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ sta lavorando in %2$@ — riprovare l’unione al termine."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ が %2$@ で作業中です — 完了後にもう一度統合をお試しください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ está trabalhando em %2$@ — tente a mesclagem novamente quando terminar."
           }
         }
       }
@@ -11634,6 +11720,46 @@
         }
       }
     },
+    "%lld already the same" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld bereits identisch"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld ya idénticos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld déjà identiques"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld già identici"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件は同一"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld já idênticos"
+          }
+        }
+      }
+    },
     "%lld archived summaries" : {
       "localizations" : {
         "de" : {
@@ -13310,6 +13436,86 @@
         }
       }
     },
+    "%lld differing file kept in the archive" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld abweichende Datei im Archiv aufbewahrt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archivo distinto conservado en el archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld fichier différent conservé dans l’archive"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld file diverso conservato nell’archivio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "異なるファイル%lld件をアーカイブに保管"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld arquivo diferente mantido no arquivo morto"
+          }
+        }
+      }
+    },
+    "%lld differing files kept in the archive" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld abweichende Dateien im Archiv aufbewahrt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archivos distintos conservados en el archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld fichiers différents conservés dans l’archive"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld file diversi conservati nell’archivio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "異なるファイル%lld件をアーカイブに保管"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld arquivos diferentes mantidos no arquivo morto"
+          }
+        }
+      }
+    },
     "%lld error" : {
       "localizations" : {
         "de" : {
@@ -13632,6 +13838,166 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld campos"
+          }
+        }
+      }
+    },
+    "%lld file of this workspace moved to the archive" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Datei dieses Arbeitsbereichs ins Archiv verschoben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archivo de este espacio de trabajo movido al archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld fichier de cet espace de travail déplacé vers l’archive"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld file di questo spazio di lavoro spostato nell’archivio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースのファイル%lld件をアーカイブに移動"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld arquivo deste espaço de trabalho movido para o arquivo morto"
+          }
+        }
+      }
+    },
+    "%lld files of this workspace moved to the archive" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Dateien dieses Arbeitsbereichs ins Archiv verschoben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archivos de este espacio de trabajo movidos al archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld fichiers de cet espace de travail déplacés vers l’archive"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld file di questo spazio di lavoro spostati nell’archivio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースのファイル%lld件をアーカイブに移動"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld arquivos deste espaço de trabalho movidos para o arquivo morto"
+          }
+        }
+      }
+    },
+    "%lld folder to copy" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Ordner zu kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld carpeta por copiar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld dossier à copier"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld cartella da copiare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピー対象フォルダ: %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pasta a copiar"
+          }
+        }
+      }
+    },
+    "%lld folders to copy" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Ordner zu kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld carpetas por copiar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld dossiers à copier"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld cartelle da copiare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピー対象フォルダ: %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pastas a copiar"
           }
         }
       }
@@ -16362,6 +16728,46 @@
         }
       }
     },
+    "%lld replaced by the newer record" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld durch den neueren Eintrag ersetzt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld reemplazados por el registro más reciente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld remplacés par l’enregistrement plus récent"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sostituiti dal record più recente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件を新しい記録で置き換え"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld substituídos pelo registro mais recente"
+          }
+        }
+      }
+    },
     "%lld reports" : {
       "localizations" : {
         "de" : {
@@ -17626,6 +18032,86 @@
         }
       }
     },
+    "%lld summaries filled in" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Zusammenfassungen ergänzt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld resúmenes completados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld résumés complétés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld riepiloghi integrati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サマリー%lld件を補完"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld resumos preenchidos"
+          }
+        }
+      }
+    },
+    "%lld summary filled in" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Zusammenfassung ergänzt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld resumen completado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld résumé complété"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld riepilogo integrato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サマリー%lld件を補完"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld resumo preenchido"
+          }
+        }
+      }
+    },
     "%lld sync-conflict file(s) in the workspace" : {
       "localizations" : {
         "de" : {
@@ -17702,6 +18188,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld itens precisam de atenção"
+          }
+        }
+      }
+    },
+    "%lld to copy" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld zu kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld por copiar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld à copier"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld da copiare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピー対象: %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld a copiar"
           }
         }
       }
@@ -22761,6 +23287,166 @@
         }
       }
     },
+    "A merge into this workspace did not finish and its record can't be read." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zusammenführung in diesen Arbeitsbereich wurde nicht abgeschlossen, und ihr Protokoll kann nicht gelesen werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fusión en este espacio de trabajo no terminó y su registro no se puede leer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion dans cet espace de travail ne s’est pas terminée et son historique est illisible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’unione in questo spazio di lavoro non è stata completata e il suo registro non è leggibile."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースへのマージが完了しておらず、その記録を読み取れません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem neste espaço de trabalho não foi concluída e o registro dela não pode ser lido."
+          }
+        }
+      }
+    },
+    "A merge into this workspace did not finish and its record can't be read. Choose Start over on the Environment card before merging again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zusammenführung in diesen Arbeitsbereich wurde nicht abgeschlossen, und ihr Protokoll kann nicht gelesen werden. Wählen Sie auf der Karte „Umgebung“ „Neu beginnen“, bevor Sie erneut zusammenführen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fusión en este espacio de trabajo no terminó y su registro no se puede leer. Elija Empezar de nuevo en la tarjeta Entorno antes de volver a fusionar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion dans cet espace de travail ne s’est pas terminée et son historique est illisible. Choisissez Recommencer sur la carte Environnement avant de fusionner à nouveau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’unione in questo spazio di lavoro non è stata completata e il suo registro non è leggibile. Scegli Ricomincia nella scheda Ambiente prima di unire di nuovo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースへのマージが完了しておらず、その記録を読み取れません。もう一度マージする前に、「環境」カードで「最初からやり直す」を選択してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem neste espaço de trabalho não foi concluída e o registro dela não pode ser lido. Escolha Recomeçar no cartão Ambiente antes de mesclar novamente."
+          }
+        }
+      }
+    },
+    "A merge into this workspace did not finish." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zusammenführung in diesen Arbeitsbereich wurde nicht abgeschlossen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fusión en este espacio de trabajo no terminó."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion dans cet espace de travail ne s’est pas terminée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’unione in questo spazio di lavoro non è stata completata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースへのマージが完了しませんでした。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem neste espaço de trabalho não foi concluída."
+          }
+        }
+      }
+    },
+    "A merge of %@ into this workspace did not finish. Resume it or start over before merging another workspace." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Zusammenführung von %@ in diesen Arbeitsbereich wurde nicht abgeschlossen. Setzen Sie sie fort oder beginnen Sie neu, bevor Sie einen anderen Arbeitsbereich zusammenführen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusión de %@ en este espacio de trabajo no terminó. Reanúdela o empiece de nuevo antes de fusionar otro espacio de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusion de %@ dans cet espace de travail ne s’est pas terminée. Reprenez-la ou recommencez avant de fusionner un autre espace de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’unione di %@ in questo spazio di lavoro non è stata completata. Riprendila o ricomincia prima di unire un altro spazio di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ のこのワークスペースへのマージが完了していません。別のワークスペースをマージする前に、再開するか最初からやり直してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mesclagem de %@ neste espaço de trabalho não foi concluída. Retome-a ou recomece antes de mesclar outro espaço de trabalho."
+          }
+        }
+      }
+    },
     "A name that differs from %@ only by letter case would share its folder. Pick another label." : {
       "localizations" : {
         "de" : {
@@ -23357,6 +24043,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Um espaço de trabalho é um local próprio de cada instância do Jamf, que contém configuração, snapshots, relatórios gerados e logs de automação."
+          }
+        }
+      }
+    },
+    "A workspace merge is running — try again when it finishes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arbeitsbereiche werden gerade zusammengeführt — versuchen Sie es erneut, wenn der Vorgang abgeschlossen ist"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se está fusionando un espacio de trabajo — inténtelo de nuevo cuando termine"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fusion d’espaces de travail est en cours — réessayez à la fin"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È in corso l’unione di spazi di lavoro — riprovare al termine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークスペースを統合中です — 完了後にもう一度お試しください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma mesclagem de espaços de trabalho está em andamento — tente novamente quando ela terminar"
           }
         }
       }
@@ -33317,6 +34043,46 @@
         }
       }
     },
+    "Chart history" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagrammverlauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial de gráficos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historique des graphiques"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cronologia dei grafici"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラフ履歴"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Histórico de gráficos"
+          }
+        }
+      }
+    },
     "Chart options" : {
       "localizations" : {
         "de" : {
@@ -34157,6 +34923,46 @@
         }
       }
     },
+    "Checking that both workspaces reach the same Jamf Pro…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wird geprüft, ob beide Arbeitsbereiche dasselbe Jamf Pro erreichen …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobando que ambos espacios de trabajo acceden al mismo Jamf Pro…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérification que les deux espaces de travail atteignent le même Jamf Pro…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifica che i due spazi di lavoro raggiungano lo stesso Jamf Pro…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "両方のワークスペースが同じJamf Proに接続していることを確認しています…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificando se os dois espaços de trabalho acessam o mesmo Jamf Pro…"
+          }
+        }
+      }
+    },
     "Checking which profiles reach the same Jamf Pro…" : {
       "localizations" : {
         "de" : {
@@ -34353,6 +35159,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O host dos checksums não está na lista de permissões confiáveis; o download de %@ foi recusado."
+          }
+        }
+      }
+    },
+    "Choose" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auswählen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolher"
           }
         }
       }
@@ -36091,6 +36937,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Coletar agora"
+          }
+        }
+      }
+    },
+    "Collect state" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfassungsstatus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de la recopilación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État de la collecte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato della raccolta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収集の状態"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado da coleta"
           }
         }
       }
@@ -42039,6 +42925,46 @@
         }
       }
     },
+    "Could not confirm that %@ reaches the same Jamf Pro as %@. Nothing was changed. You can still add %@ as this workspace's Platform API profile from the Add sheet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es konnte nicht bestätigt werden, dass %@ dasselbe Jamf Pro wie %@ erreicht. Es wurde nichts geändert. Sie können %@ weiterhin über das Blatt „Hinzufügen“ als Platform-API-Profil dieses Arbeitsbereichs hinzufügen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo confirmar que %@ accede al mismo Jamf Pro que %@. No se cambió nada. Aún puede añadir %@ como perfil de Platform API de este espacio de trabajo desde la hoja Añadir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de confirmer que %@ atteint le même Jamf Pro que %@. Rien n’a été modifié. Vous pouvez toujours ajouter %@ comme profil Platform API de cet espace de travail depuis la feuille Ajouter."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile confermare che %@ raggiunga lo stesso Jamf Pro di %@. Non è stato modificato nulla. È ancora possibile aggiungere %@ come profilo Platform API di questo spazio di lavoro dal foglio Aggiungi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@が%@と同じJamf Proに接続していることを確認できませんでした。何も変更されていません。「追加」シートから、%@をこのワークスペースのPlatform APIプロファイルとして追加できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível confirmar que %@ acessa o mesmo Jamf Pro que %@. Nada foi alterado. Você ainda pode adicionar %@ como perfil da Platform API deste espaço de trabalho pela folha Adicionar."
+          }
+        }
+      }
+    },
     "Could not confirm · %@" : {
       "localizations" : {
         "de" : {
@@ -45677,6 +46603,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Snapshot diário"
+          }
+        }
+      }
+    },
+    "Daily summaries" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tägliche Zusammenfassungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resúmenes diarios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Résumés quotidiens"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riepiloghi giornalieri"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日次サマリー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumos diários"
           }
         }
       }
@@ -68309,52 +69275,6 @@
         }
       }
     },
-    "Keep '%@' as the workspace: it runs the Jamf Pro commands. Add '%@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %@` and `platform: %@`), then exclude '%@' under Automation > Excluded profiles. Nothing is changed for you." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "„%1$@“ als Arbeitsbereich beibehalten: Dort laufen die Jamf-Pro-Befehle. „%2$@“ in dessen config.yaml als profiles.platform hinzufügen (`profiles:` mit `jamf_pro: %3$@` und `platform: %4$@`) und „%5$@“ anschließend unter Automatisierung > Ausgeschlossene Profile ausschließen. Es wird nichts für Sie geändert."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Keep '%1$@' as the workspace: it runs the Jamf Pro commands. Add '%2$@' to it as profiles.platform in its config.yaml (`profiles:` with `jamf_pro: %3$@` and `platform: %4$@`), then exclude '%5$@' under Automation > Excluded profiles. Nothing is changed for you."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conserve '%1$@' como espacio de trabajo: ejecuta los comandos de Jamf Pro. Añada '%2$@' como profiles.platform en el config.yaml de ese espacio de trabajo (`profiles:` con `jamf_pro: %3$@` y `platform: %4$@`) y luego excluya '%5$@' en Automatización > Perfiles excluidos. No se cambia nada automáticamente."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conservez « %1$@ » comme espace de travail : il exécute les commandes Jamf Pro. Ajoutez « %2$@ » comme profiles.platform dans son config.yaml (`profiles:` avec `jamf_pro: %3$@` et `platform: %4$@`), puis excluez « %5$@ » sous Automatisation > Profils exclus. Rien n’est modifié à votre place."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mantenere '%1$@' come spazio di lavoro: esegue i comandi di Jamf Pro. Aggiungere '%2$@' come profiles.platform nel suo config.yaml (`profiles:` con `jamf_pro: %3$@` e `platform: %4$@`), quindi escludere '%5$@' in Automazione > Profili esclusi. Nessuna modifica viene applicata automaticamente."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%1$@”をワークスペースとして残してください。Jamf Proのコマンドはこのワークスペースで実行されます。そのconfig.yamlに“%2$@”をprofiles.platformとして追加し（`profiles:`に`jamf_pro: %3$@`と`platform: %4$@`）、“自動化”›“除外プロファイル”で“%5$@”を除外してください。自動での変更はありません。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mantenha '%1$@' como espaço de trabalho: ele executa os comandos do Jamf Pro. Adicione '%2$@' a ele como profiles.platform no config.yaml (`profiles:` com `jamf_pro: %3$@` e `platform: %4$@`) e depois exclua '%5$@' em Automação > Perfis excluídos. Nada é alterado por você."
-          }
-        }
-      }
-    },
     "Keep data fresh automatically" : {
       "localizations" : {
         "de" : {
@@ -73047,6 +73967,218 @@
         }
       }
     },
+    "Merge" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionner"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisci"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesclar"
+          }
+        }
+      }
+    },
+    "Merge '%@' into '%@' from Data Sources › Environment › Merge another workspace into this one. '%@' keeps running the Jamf Pro commands and '%@' becomes its Platform API profile. Nothing is changed until you merge." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%1$@“ unter Datenquellen › Umgebung › Einen anderen Arbeitsbereich in diesen zusammenführen in „%2$@“ zusammenführen. „%3$@“ führt weiterhin die Jamf-Pro-Befehle aus und „%4$@“ wird sein Platform-API-Profil. Bis zum Zusammenführen wird nichts geändert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Merge '%1$@' into '%2$@' from Data Sources › Environment › Merge another workspace into this one. '%3$@' keeps running the Jamf Pro commands and '%4$@' becomes its Platform API profile. Nothing is changed until you merge."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusione '%1$@' en '%2$@' desde Fuentes de datos › Entorno › Fusionar otro espacio de trabajo en este. '%3$@' sigue ejecutando los comandos de Jamf Pro y '%4$@' pasa a ser su perfil de Platform API. No se cambia nada hasta que fusione."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionnez « %1$@ » dans « %2$@ » depuis Sources de données › Environnement › Fusionner un autre espace de travail dans celui-ci. « %3$@ » continue d'exécuter les commandes Jamf Pro et « %4$@ » devient son profil Platform API. Rien n'est modifié tant que vous ne fusionnez pas."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisci '%1$@' in '%2$@' da Origini dati › Ambiente › Unisci un altro spazio di lavoro in questo. '%3$@' continua a eseguire i comandi di Jamf Pro e '%4$@' diventa il suo profilo Platform API. Non viene modificato nulla finché non esegui l'unione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データソース › 環境 › 別のワークスペースをこのワークスペースにマージ から、“%1$@”を“%2$@”にマージしてください。“%3$@”は引き続きJamf Proのコマンドを実行し、“%4$@”はそのPlatform APIプロファイルになります。マージするまで何も変更されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mescle '%1$@' em '%2$@' em Fontes de dados › Ambiente › Mesclar outro espaço de trabalho neste. '%3$@' continua executando os comandos do Jamf Pro e '%4$@' passa a ser seu perfil de Platform API. Nada é alterado até você mesclar."
+          }
+        }
+      }
+    },
+    "Merge another workspace into this one" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einen anderen Arbeitsbereich in diesen zusammenführen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionar otro espacio de trabajo en este"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionner un autre espace de travail dans celui-ci"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisci un altro spazio di lavoro in questo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のワークスペースをこのワークスペースにマージ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesclar outro espaço de trabalho neste"
+          }
+        }
+      }
+    },
+    "Merge finished. The source folder is in %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführung abgeschlossen. Der Quellordner liegt in %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusión terminada. La carpeta de origen está en %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusion terminée. Le dossier source se trouve dans %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unione completata. La cartella di origine si trova in %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージが完了しました。ソースフォルダは%@にあります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesclagem concluída. A pasta de origem está em %@."
+          }
+        }
+      }
+    },
+    "Merge step %lld did not finish: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schritt %1$lld der Zusammenführung wurde nicht abgeschlossen: %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Merge step %1$lld did not finish: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El paso %1$lld de la fusión no terminó: %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’étape %1$lld de la fusion n’a pas abouti : %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il passaggio %1$lld dell’unione non è terminato: %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "統合のステップ %1$lld が完了しませんでした: %2$@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A etapa %1$lld da mesclagem não terminou: %2$@"
+          }
+        }
+      }
+    },
     "Meridian East" : {
       "localizations" : {
         "de" : {
@@ -74369,6 +75501,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Movido para /archive"
+          }
+        }
+      }
+    },
+    "Moves a Platform API workspace's history into %@ and makes its profile this workspace's Platform API profile." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verschiebt den Verlauf eines Platform-API-Arbeitsbereichs nach %@ und macht dessen Profil zum Platform-API-Profil dieses Arbeitsbereichs."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mueve el historial de un espacio de trabajo de Platform API a %@ y convierte su perfil en el perfil de Platform API de este espacio de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplace l’historique d’un espace de travail Platform API dans %@ et fait de son profil le profil Platform API de cet espace de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sposta la cronologia di uno spazio di lavoro Platform API in %@ e rende il suo profilo il profilo Platform API di questo spazio di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Platform APIワークスペースの履歴を%@に移し、そのプロファイルをこのワークスペースのPlatform APIプロファイルにします。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move o histórico de um espaço de trabalho da Platform API para %@ e torna o perfil dele o perfil da Platform API deste espaço de trabalho."
           }
         }
       }
@@ -82913,6 +84085,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nada é alterado por você."
+          }
+        }
+      }
+    },
+    "Nothing is lost. Close this sheet and choose Resume on the Environment card to continue." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es geht nichts verloren. Schließen Sie dieses Blatt und wählen Sie auf der Umgebungskarte „Fortsetzen“, um weiterzumachen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pierde nada. Cierre esta hoja y elija Reanudar en la tarjeta Entorno para continuar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n’est perdu. Fermez cette feuille et choisissez Reprendre sur la carte Environnement pour continuer."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non si perde nulla. Chiudere questo foglio e scegliere Riprendi nella scheda Ambiente per continuare."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失われたものはありません。このシートを閉じ、「環境」カードで「再開」を選んで続行してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada se perde. Feche esta folha e escolha Retomar no cartão Ambiente para continuar."
           }
         }
       }
@@ -98693,6 +99905,46 @@
         }
       }
     },
+    "Resume" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortsetzen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reanudar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprendre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riprendi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再開"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retomar"
+          }
+        }
+      }
+    },
     "Retention on a shared folder applies to backups this Mac made — each one records which machine produced it. Another Mac's backups, and any made before ownership was recorded, are left alone rather than counted against this machine's retention budget." : {
       "localizations" : {
         "de" : {
@@ -100347,6 +101599,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Executar a automação às"
+          }
+        }
+      }
+    },
+    "Run history" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laufverlauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial de ejecuciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historique des exécutions"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cronologia esecuzioni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "実行履歴"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Histórico de execuções"
           }
         }
       }
@@ -107409,6 +108701,46 @@
         }
       }
     },
+    "Settings and schedules" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen und Zeitpläne"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes y programaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages et planifications"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostazioni e pianificazioni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定とスケジュール"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes e agendamentos"
+          }
+        }
+      }
+    },
     "Settings here are defaults" : {
       "localizations" : {
         "de" : {
@@ -111673,6 +113005,86 @@
         }
       }
     },
+    "Start over…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neu beginnen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar de nuevo…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommencer…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricomincia…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最初からやり直す…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recomeçar…"
+          }
+        }
+      }
+    },
+    "Start the merge over?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführung neu beginnen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Empezar la fusión de nuevo?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommencer la fusion ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricominciare l’unione?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージを最初からやり直しますか？"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recomeçar a mesclagem?"
+          }
+        }
+      }
+    },
     "Starting" : {
       "localizations" : {
         "de" : {
@@ -112235,6 +113647,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Etapa %lld de %lld - %@"
+          }
+        }
+      }
+    },
+    "Step %lld of %lld. Keep this window open." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schritt %lld von %lld. Lassen Sie dieses Fenster geöffnet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paso %lld de %lld. Mantenga abierta esta ventana."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Étape %lld sur %lld. Gardez cette fenêtre ouverte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passaggio %lld di %lld. Tenere aperta questa finestra."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ステップ %lld / %lld。このウインドウを開いたままにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etapa %lld de %lld. Mantenha esta janela aberta."
           }
         }
       }
@@ -116423,6 +117875,86 @@
         }
       }
     },
+    "The merge did not start: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Zusammenführung wurde nicht gestartet: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusión no se inició: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusion n’a pas démarré : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’unione non è stata avviata: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージを開始できませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mesclagem não foi iniciada: %@"
+          }
+        }
+      }
+    },
+    "The merge finished." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Zusammenführung ist abgeschlossen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusión ha terminado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La fusion est terminée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’unione è stata completata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージが完了しました。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mesclagem foi concluída."
+          }
+        }
+      }
+    },
     "The metric tiles you pick below, each with its trend." : {
       "localizations" : {
         "de" : {
@@ -116829,6 +118361,86 @@
         }
       }
     },
+    "The source folder moved to %@ and was not deleted." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Quellordner wurde nach %@ verschoben und nicht gelöscht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta de origen se movió a %@ y no se eliminó."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dossier source a été déplacé vers %@ et n’a pas été supprimé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cartella di origine è stata spostata in %@ e non è stata eliminata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ソースフォルダは%@に移動され、削除されていません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pasta de origem foi movida para %@ e não foi excluída."
+          }
+        }
+      }
+    },
+    "The source folder moves to %@ and is never deleted." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Quellordner wird nach %@ verschoben und nie gelöscht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta de origen se mueve a %@ y nunca se elimina."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dossier source est déplacé vers %@ et n’est jamais supprimé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cartella di origine viene spostata in %@ e non viene mai eliminata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ソースフォルダは%@に移動され、削除されることはありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pasta de origem é movida para %@ e nunca é excluída."
+          }
+        }
+      }
+    },
     "The two per-device --scan-failures queries (patch + update failures) that can stall on-prem Jamf Pro — run weekly, never daily." : {
       "localizations" : {
         "de" : {
@@ -116865,6 +118477,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "As duas consultas --scan-failures por dispositivo (falhas de patch + atualização) que podem travar o Jamf Pro on-prem — execute semanalmente, nunca diariamente."
+          }
+        }
+      }
+    },
+    "The unfinished merge's record moves into its merged folder. Files it already copied stay where they are." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Protokoll der unvollständigen Zusammenführung wird in ihren zusammengeführten Ordner verschoben. Bereits kopierte Dateien bleiben, wo sie sind."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El registro de la fusión sin terminar se mueve a su carpeta fusionada. Los archivos que ya copió se quedan donde están."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’historique de la fusion inachevée est déplacé dans son dossier fusionné. Les fichiers déjà copiés restent où ils sont."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il registro dell’unione non completata viene spostato nella sua cartella unita. I file già copiati restano dove sono."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了のマージの記録は、マージ先フォルダに移動されます。すでにコピーされたファイルはそのまま残ります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O registro da mesclagem inacabada é movido para a pasta mesclada. Os arquivos que ela já copiou ficam onde estão."
           }
         }
       }
@@ -117077,6 +118729,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O local do espaço de trabalho é definido pelo perfil de configuração da sua organização e não pode ser alterado aqui."
+          }
+        }
+      }
+    },
+    "There is no unfinished merge to resume." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es gibt keine unvollständige Zusammenführung, die fortgesetzt werden könnte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ninguna fusión sin terminar que reanudar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune fusion inachevée à reprendre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non c’è alcuna unione incompleta da riprendere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再開できる未完了のマージはありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não há nenhuma mesclagem inacabada para retomar."
           }
         }
       }
@@ -117357,6 +119049,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estes agendamentos foram importados e agora são executados pelo item em segundo plano do JamfReports, mas os arquivos LaunchAgent antigos ainda estão carregados — cada um é executado duas vezes por disparo até ser desativado. Ao desativar, o arquivo é arquivado antes no Application Support deste Mac."
+          }
+        }
+      }
+    },
+    "These settings differ, and this workspace's values stay: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Einstellungen unterscheiden sich, und die Werte dieses Arbeitsbereichs bleiben erhalten: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estos ajustes difieren y se conservan los valores de este espacio de trabajo: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ces réglages diffèrent, et les valeurs de cet espace de travail sont conservées : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queste impostazioni differiscono e restano i valori di questo spazio di lavoro: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "これらの設定は異なります。このワークスペースの値が維持されます: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estas configurações diferem, e os valores deste espaço de trabalho são mantidos: %@"
           }
         }
       }
@@ -123151,6 +124883,46 @@
         }
       }
     },
+    "Update it again when the merge finishes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisieren Sie es erneut, wenn die Zusammenführung abgeschlossen ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelva a actualizarlo cuando termine la fusión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relancez la mise à jour à la fin de la fusion."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiornarlo di nuovo al termine dell’unione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "統合の完了後にもう一度更新してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atualize novamente quando a mesclagem terminar."
+          }
+        }
+      }
+    },
     "Update it again when the refresh finishes." : {
       "localizations" : {
         "de" : {
@@ -125791,6 +127563,46 @@
         }
       }
     },
+    "Waiting for: a workspace merge to finish" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warten auf: Abschluss der Zusammenführung von Arbeitsbereichen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En espera: que termine la fusión de espacios de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente : fin de la fusion d’espaces de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa: il termine dell’unione di spazi di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待機中: ワークスペースの統合の完了"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aguardando: o término da mesclagem de espaços de trabalho"
+          }
+        }
+      }
+    },
     "Waiting for: the jamf-cli update to finish" : {
       "localizations" : {
         "de" : {
@@ -126997,6 +128809,46 @@
         }
       }
     },
+    "What the merge does" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was die Zusammenführung bewirkt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué hace la fusión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que fait la fusion"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cosa fa l’unione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージの内容"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O que a mesclagem faz"
+          }
+        }
+      }
+    },
     "What will be written" : {
       "localizations" : {
         "de" : {
@@ -128197,6 +130049,46 @@
         }
       }
     },
+    "Workspace merge" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführung von Arbeitsbereichen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusión de espacios de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusion d’espaces de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unione di spazi di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークスペースの統合"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesclagem de espaços de trabalho"
+          }
+        }
+      }
+    },
     "Workspace not found for profile '%@'." : {
       "localizations" : {
         "de" : {
@@ -128353,6 +130245,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Espaço de trabalho configurado"
+          }
+        }
+      }
+    },
+    "Workspace to merge" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenzuführender Arbeitsbereich"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espacio de trabajo que se fusionará"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espace de travail à fusionner"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spazio di lavoro da unire"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マージするワークスペース"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espaço de trabalho a mesclar"
           }
         }
       }
@@ -135864,6 +137796,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "gráfico de rosca da distribuição do macOS: %lld Macs"
+          }
+        }
+      }
+    },
+    "macOS update feed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS-Update-Feed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuente de actualizaciones de macOS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flux des mises à jour de macOS"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feed degli aggiornamenti di macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSアップデートフィード"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feed de atualizações do macOS"
           }
         }
       }

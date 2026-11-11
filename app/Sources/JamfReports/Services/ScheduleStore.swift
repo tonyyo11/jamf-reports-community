@@ -138,3 +138,18 @@ struct ScheduleStore: Sendable {
         try save(load().filter { $0.label != label })
     }
 }
+
+extension ScheduleStore {
+    /// Records naming `from` name `to`; exclusions merge through `mergingExclusion`.
+    /// Labels are never changed, so tick state and status files stay linked.
+    func retarget(from: String, to: String) throws {
+        let records = load()
+        let next = records.map { record in
+            var record = record
+            if record.workspace == from { record.workspace = to }
+            record.excludedWorkspaces = record.excludedWorkspaces.mergingExclusion(from, into: to)
+            return record
+        }
+        if next != records { try save(next) }
+    }
+}

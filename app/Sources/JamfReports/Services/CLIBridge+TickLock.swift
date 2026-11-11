@@ -18,12 +18,16 @@ extension CLIBridge {
         case collect
         case generate
         case toolUpdate
+        /// A workspace merge (P7): it moves snapshots and summaries between workspaces, so no
+        /// collect, report or tick may run under it.
+        case merge
 
         var label: String {
             switch self {
             case .collect: L("Collect")
             case .generate: L("Report")
             case .toolUpdate: "jamf-cli update"
+            case .merge: L("Workspace merge")
             }
         }
     }
@@ -68,6 +72,7 @@ extension CLIBridge {
         case .collect: .collectInProgress
         case .generate: .generateInProgress
         case .toolUpdate: .toolUpdateInProgress
+        case .merge: .mergeInProgress
         case nil: nil
         }
     }

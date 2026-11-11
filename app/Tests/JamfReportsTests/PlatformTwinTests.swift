@@ -195,11 +195,11 @@ final class PlatformTwinTests: XCTestCase {
             XCTAssertEqual(rows.map(\.id), ["platform.twin"], me)
             XCTAssertEqual(rows.first?.severity, .suggest)
             XCTAssertTrue(rows[0].detail.contains("'gw'") && rows[0].detail.contains("'direct'"))
-            XCTAssertTrue(rows[0].hint?.contains("profiles.platform") == true)
             let hint = rows[0].hint ?? ""
-            XCTAssertTrue(hint.contains("Keep 'direct'"), "the OAuth workspace is kept")
-            XCTAssertTrue(hint.contains("Add 'gw' to it as profiles.platform"), hint)
-            XCTAssertTrue(hint.contains("exclude 'gw'"), "the Platform workspace is excluded")
+            XCTAssertTrue(hint.hasPrefix("Merge 'gw' into 'direct' from Data Sources"), hint)
+            XCTAssertTrue(hint.contains("Merge another workspace into this one"), hint)
+            XCTAssertTrue(hint.contains("'direct' keeps running the Jamf Pro commands"), hint)
+            XCTAssertTrue(hint.hasSuffix("Nothing is changed until you merge."), hint)
         }
     }
 
