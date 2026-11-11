@@ -593,7 +593,8 @@ struct HtmlReport: Sendable {
         var versions: [(String, Int)] = []
         for item in security {
             guard item["section"] as? String == "os_version" else { continue }
-            let ver = item["os_version"] as? String ?? "Unknown"
+            let ver = item["os_version"] as? String ?? ""
+            guard OSVersionName.isMeasured(ver) else { continue }
             let count = asInt(item["count"]) ?? 0
             versions.append((ver, count))
         }

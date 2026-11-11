@@ -354,7 +354,7 @@ struct CoreDashboard: Sendable {
                 // "Days Behind" is shown only for titles below 100% compliance,
                 // matching Python's pct_value < 1.0 / secondary > 0 logic.
                 let pct = PatchStatusService.parseCompliancePct(item.compliancePct)
-                let belowFull = pct < 100.0 || item.onOther > 0
+                let belowFull = (pct ?? 100.0) < 100.0 || item.onOther > 0
                 if belowFull, let days = PatchReleaseDateService.daysBehind(releaseDate: releaseDate) {
                     ws.write(days, row: row, col: 7, format: .cell)
                 } else {
@@ -2179,15 +2179,9 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
-            let osMajor = asInt(item["osMajor"])
-            let osMinor = asInt(item["osMinor"])
-            let osPatch = asInt(item["osPatch"])
-            let osStr: String
-            if let maj = osMajor, let min = osMinor, let pat = osPatch {
-                osStr = "\(maj).\(min).\(pat)"
-            } else {
-                osStr = item["osString"] as? String ?? ""
-            }
+            let osStr = ProtectComputerRow.osText(
+                major: asInt(item["osMajor"]), minor: asInt(item["osMinor"]),
+                patch: asInt(item["osPatch"]), fallback: item["osString"] as? String) ?? ""
             ws.write(item["hostname"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: .cell)
             ws.write(item["plan"] as? String ?? "", row: row, col: 2, format: .cell)
@@ -2773,7 +2767,7 @@ struct CoreDashboard: Sendable {
         for item in items {
             if case .osVersion(let v) = item {
                 let ver = v.osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !ver.isEmpty else { continue }
+                guard OSVersionName.isMeasured(ver) else { continue }
                 counts[OSVersionName.normalized(ver), default: 0] += v.count
             }
         }

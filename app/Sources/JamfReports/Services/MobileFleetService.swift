@@ -184,8 +184,10 @@ struct MobileFleetService: Sendable {
         firstNonBlank(device.hardware?.model, listRow?.hardware?.model, listRow?.model)
     }
 
+    /// No passcode set is not compliant, whatever Jamf's own flag says. Nil stays nil.
     static func passcodeCompliant(of device: MobileDeviceInventoryItem) -> Bool? {
-        device.security?.passcodeCompliant ?? device.general?.passcodeCompliant
+        if device.security?.passcodePresent == false { return false }
+        return device.security?.passcodeCompliant ?? device.general?.passcodeCompliant
     }
 
     static func activationLockEnabled(of device: MobileDeviceInventoryItem) -> Bool? {

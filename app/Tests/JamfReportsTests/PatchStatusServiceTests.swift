@@ -188,9 +188,9 @@ final class PatchStatusServiceTests: XCTestCase {
 
         // Edge cases
         XCTAssertEqual(PatchStatusService.parseCompliancePct(" 75% "), 75.0)
-        XCTAssertEqual(PatchStatusService.parseCompliancePct(""), 0.0)
-        XCTAssertEqual(PatchStatusService.parseCompliancePct("invalid"), 0.0)
-        XCTAssertEqual(PatchStatusService.parseCompliancePct("N/A"), 0.0)
+        XCTAssertNil(PatchStatusService.parseCompliancePct(""))
+        XCTAssertNil(PatchStatusService.parseCompliancePct("invalid"))
+        XCTAssertNil(PatchStatusService.parseCompliancePct("N/A"))
     }
 
     // MARK: - Compliance CSV export
@@ -325,5 +325,10 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.devicesWithFailures, 0)
         XCTAssertTrue(snapshot.failuresByTitle.isEmpty)
         XCTAssertEqual(snapshot.fleetCompliancePct, 50.0)
+    }
+
+    func testNotApplicableTitleIsNotZeroPercent() {
+        XCTAssertNil(PatchStatusService.parseCompliancePct("N/A"))
+        XCTAssertEqual(PatchStatusService.parseCompliancePct("0%"), 0.0)
     }
 }

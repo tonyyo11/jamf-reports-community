@@ -1016,6 +1016,19 @@ final class MobileFleetServiceTests: XCTestCase {
         try JSONDecoder().decode(MobileDeviceInventoryItem.self, from: Data(json.utf8))
     }
 
+    /// Jamf calls a device compliant when no profile requires a passcode; none is set.
+    func testNoPasscodeSetIsNotCompliantWhateverJamfSays() throws {
+        let none = try decodeDevice(
+            #"{"mobileDeviceId": "1", "security": {"passcodeCompliant": true, "passcodePresent": false}}"#)
+        let set = try decodeDevice(
+            #"{"mobileDeviceId": "2", "security": {"passcodeCompliant": true, "passcodePresent": true}}"#)
+        let unknown = try decodeDevice(#"{"mobileDeviceId": "3", "security": {"passcodePresent": true}}"#)
+        XCTAssertEqual(MobileFleetService.passcodeCompliant(of: none), false)
+        XCTAssertEqual(MobileFleetService.passcodeCompliant(of: set), true)
+        XCTAssertNil(MobileFleetService.passcodeCompliant(of: unknown))
+        XCTAssertEqual(MobileSummary.device(none).passcodeCompliant, false)
+    }
+
     /// The flags are under `security`; earlier decoders read `general`, kept as a fallback.
     /// A device reporting neither is unknown and counts toward nothing.
     func testPostureCountsReadSecurityThenGeneral() throws {
