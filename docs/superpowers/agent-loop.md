@@ -75,10 +75,33 @@ Project skills live in `.claude/skills/` (tracked despite the ignored `.claude/`
 | `stack-adopt BRANCH...` | Adopt branches into a `gh stack`; person-started; never submits. |
 | `tip-test REF` | Build and test a ref from a local-disk worktree; prints the totals. |
 | `loop-eval LEDGER` | Score a ledger; compare with a baseline. |
+| `wave-review PLAN TASK...` | A wave's first reviews as one workflow run (`.claude/workflows/wave-review.js`); returns ledger lines and any seat that died. |
 
 Scripts are zsh (the changelog union and the eval are Python: they parse structure). Each script
 that would write to git or GitHub has `--dry-run`; none pushes, merges to a shared branch or opens a
 PR.
+
+## Subagent or workflow
+
+A seat that gets a follow-up message is an Agent-tool subagent: the implementer, whose fix rounds
+are messages to the same thread. A seat that returns one verdict and is done can run in a workflow:
+the task reviewer, the security reviewer and a dispatched re-review. A workflow agent cannot be
+messaged after it returns, and a run can end "completed" with a seat that died, so `wave-review`
+lists dead seats and the controller dispatches them by hand.
+
+## Plugins in the loop
+
+Each plugin owns one stage; where two overlap, one is chosen and the other is not used for that
+stage.
+
+| Stage | Owner | Notes |
+|---|---|---|
+| Spec and plan | superpowers `brainstorming`, `writing-plans` (vendored into `~/.claude/skills`; the plugin is off) | EGM's `egm-brainstorm` and `egm-draft` are not used. |
+| Spec review, before `writing-plans` | EGM `egm-review` (a local plugin, not part of the repository) | Its reviewers run with `omitClaudeMd`, so they read the spec cold: independent verification under rule 2. Pass them `review-checklist.md` as context, since they do not load CLAUDE.md. The person starts EGM skills (`disable-model-invocation`); no skill or workflow here calls them. |
+| Implementation and fix rounds | superpowers `subagent-driven-development`, Agent tool | Unchanged. |
+| Task review | `wave-review` (Workflow tool) | This document's reviewer and security-reviewer seats. |
+| Spec drift | EGM `egm-drift-report` | On a spec with no recent review; runs in the main context. |
+| How much code a subagent writes | ponytail | `PONYTAIL_DEFAULT_MODE=full` at user level; its SubagentStart hook adds its rules to every subagent except `egm:` ones (`PONYTAIL_SUBAGENT_MATCHER` in the untracked `.claude/settings.local.json`, so EGM's reviewers stay cold). Reviewers get it too. |
 
 ## The eval
 

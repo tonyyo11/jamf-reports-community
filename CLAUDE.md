@@ -76,8 +76,9 @@ recurred from 2.8.0 to 2.11.0 and the check for each; reviewers read it first.
 context, independent verification, or reading far more than the loop needs) and which stays in the
 main loop; the controller reads small, plain fix diffs instead of dispatching a re-review. The
 recurring controller steps are project skills in `.claude/skills/`: `review-package`,
-`class-sweep`, `changelog-union`, `bundle-wave`, `stack-adopt` (person-started), `tip-test`, and
-`loop-eval`, which scores a wave against the committed baseline.
+`class-sweep`, `changelog-union`, `bundle-wave`, `stack-adopt` (person-started), `tip-test`,
+`loop-eval`, which scores a wave against the committed baseline, and `wave-review`, which runs a
+wave's one-shot reviewer seats as one workflow (`.claude/workflows/wave-review.js`).
 
 **No scaffolding without wiring.** Do not add a new
 Service/View/Model/Engine file unless a caller for it lands in the same
