@@ -22933,6 +22933,46 @@
         }
       }
     },
+    "A Jamf Security Cloud login holds no device inventory, so it is not a workspace. Add it from the Jamf Pro or Jamf School workspace's Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Jamf-Security-Cloud-Login enthält kein Geräteinventar und ist daher kein Arbeitsbereich. Fügen Sie ihn in den Datenquellen des Jamf-Pro- oder Jamf-School-Arbeitsbereichs hinzu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un inicio de sesión de Jamf Security Cloud no contiene inventario de dispositivos, así que no es un espacio de trabajo. Añádalo desde Fuentes de datos del espacio de trabajo de Jamf Pro o Jamf School."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une connexion Jamf Security Cloud ne contient aucun inventaire d’appareils ; ce n’est donc pas un espace de travail. Ajoutez-la depuis les Sources de données de l’espace de travail Jamf Pro ou Jamf School."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un accesso Jamf Security Cloud non contiene alcun inventario di dispositivi, quindi non è uno spazio di lavoro. Aggiungilo dalle Origini dati dello spazio di lavoro Jamf Pro o Jamf School."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Security Cloudのログインにはデバイスインベントリがないため、ワークスペースにはなりません。Jamf ProまたはJamf Schoolのワークスペースのデータソースから追加してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um login do Jamf Security Cloud não contém inventário de dispositivos, portanto não é um espaço de trabalho. Adicione-o em Fontes de dados do espaço de trabalho do Jamf Pro ou do Jamf School."
+          }
+        }
+      }
+    },
     "A Mac is stale when any date turned on is more than the stale threshold ago. Last contact counts MDM and declarative device management too; a Mac with none recorded is not judged by it." : {
       "localizations" : {
         "de" : {
@@ -26941,6 +26981,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Adicionar a %@"
+          }
+        }
+      }
+    },
+    "Add to this environment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu dieser Umgebung hinzufügen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir a este entorno"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter à cet environnement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi a questo ambiente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境に追加"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adicionar a este ambiente"
           }
         }
       }
@@ -69567,46 +69647,6 @@
         }
       }
     },
-    "Jamf Security Cloud is not supported yet." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud wird noch nicht unterstützt."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud aún no es compatible."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud n’est pas encore pris en charge."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud non è ancora supportato."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloudにはまだ対応していません。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O Jamf Security Cloud ainda não é compatível."
-          }
-        }
-      }
-    },
     "Jamf admins, MacAdmins, full-detail review" : {
       "localizations" : {
         "de" : {
@@ -108433,6 +108473,46 @@
         }
       }
     },
+    "Set profiles.security_cloud to the profile `jamf-cli security setup` created, or clear it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setzen Sie profiles.security_cloud auf das von `jamf-cli security setup` erstellte Profil oder leeren Sie den Wert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establezca profiles.security_cloud en el perfil que creó `jamf-cli security setup`, o bórrelo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez profiles.security_cloud sur le profil créé par `jamf-cli security setup`, ou videz-le."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imposta profiles.security_cloud sul profilo creato da `jamf-cli security setup`, oppure svuotalo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloudを`jamf-cli security setup`で作成したプロファイルに設定するか、空にしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina profiles.security_cloud como o perfil criado por `jamf-cli security setup` ou limpe o valor."
+          }
+        }
+      }
+    },
     "Set protect.profile to the profile `jamf-cli protect setup` created, or turn protect.enabled off." : {
       "localizations" : {
         "de" : {
@@ -141008,6 +141088,92 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "profiles.platform alcança outro Jamf Pro"
+          }
+        }
+      }
+    },
+    "profiles.security_cloud is not a Jamf Security Cloud login" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud ist kein Jamf-Security-Cloud-Login"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud no es un inicio de sesión de Jamf Security Cloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud n’est pas une connexion Jamf Security Cloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud non è un accesso Jamf Security Cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloudはJamf Security Cloudのログインではありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud não é um login do Jamf Security Cloud"
+          }
+        }
+      }
+    },
+    "profiles.security_cloud names '%@', a %@ profile. Security Cloud commands would go to the wrong API, so Jamf Security Cloud is not collected until it names a Jamf Security Cloud login." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud nennt „%@“, ein %@-Profil. Security-Cloud-Befehle würden an die falsche API gehen, daher wird Jamf Security Cloud nicht erfasst, bis es einen Jamf-Security-Cloud-Login nennt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "profiles.security_cloud names '%1$@', a %2$@ profile. Security Cloud commands would go to the wrong API, so Jamf Security Cloud is not collected until it names a Jamf Security Cloud login."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud nombra “%@”, un perfil de %@. Los comandos de Security Cloud irían a la API equivocada, así que Jamf Security Cloud no se recopila hasta que nombre un inicio de sesión de Jamf Security Cloud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud désigne « %@ », un profil %@. Les commandes Security Cloud iraient vers la mauvaise API ; Jamf Security Cloud n’est donc pas collecté tant que cette valeur ne désigne pas une connexion Jamf Security Cloud."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud indica '%@', un profilo %@. I comandi Security Cloud andrebbero all’API sbagliata, quindi Jamf Security Cloud non viene raccolto finché non indica un accesso Jamf Security Cloud."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloudには%2$@プロファイルの'%1$@'が指定されています。Security Cloudのコマンドが誤ったAPIに送られるため、Jamf Security Cloudのログインを指定するまでJamf Security Cloudは収集されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud indica '%@', um perfil %@. Os comandos do Security Cloud iriam para a API errada, então o Jamf Security Cloud não é coletado até que indique um login do Jamf Security Cloud."
           }
         }
       }

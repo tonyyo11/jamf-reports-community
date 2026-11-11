@@ -53,6 +53,16 @@ enum ProfileAuthMethod {
             return "'\(ConfigSchema.displayText(profile))' is a \(product.displayName) profile, "
                 + "not a Jamf Protect profile"
         }
+
+        /// Why this profile cannot be the `profiles.security_cloud` login, or nil; the rule is
+        /// `protectRefusal`'s, for Jamf Security Cloud.
+        func securityCloudRefusal(profile: String) -> String? {
+            guard product != .securityCloud, product != .unknown, !productIsDefaulted else {
+                return nil
+            }
+            return "'\(ConfigSchema.displayText(profile))' is a \(product.displayName) profile, "
+                + "not a Jamf Security Cloud profile"
+        }
     }
 
     private static let cache = Mutex<[String: Resolved]>([:])
@@ -132,6 +142,14 @@ enum ProfileAuthMethod {
         resolved: @escaping @Sendable (String) -> Resolved? = { resolve(profile: $0) }
     ) async -> String? {
         await Task.detached { resolved(profile)?.protectRefusal(profile: profile) }.value
+    }
+
+    /// `Resolved.securityCloudRefusal` for `profile`, off the main actor like `protectRefusal`.
+    static func securityCloudRefusal(
+        profile: String,
+        resolved: @escaping @Sendable (String) -> Resolved? = { resolve(profile: $0) }
+    ) async -> String? {
+        await Task.detached { resolved(profile)?.securityCloudRefusal(profile: profile) }.value
     }
 
     /// Whether `pro auth token` has no meaning for `profile`: API-key auth (Jamf School) or a

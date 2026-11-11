@@ -70,7 +70,11 @@ struct SourcesView: View {
                     .id(card.workspace)
             }
             if !workspace.demoMode, !unassigned.isEmpty {
-                UnassignedProfilesCard(rows: unassigned)
+                UnassignedProfilesCard(
+                    rows: unassigned, workspace: workspace.profile,
+                    acceptsSecurityCloud: environmentCard?.acceptsSecurityCloud == true,
+                    demo: workspace.demoMode,
+                    onChanged: { reloadEnvironment(); reloadSourcesPlan(); reloadUnassigned() })
             }
             HStack(alignment: .top, spacing: 14) {
                 cliCard
@@ -771,6 +775,8 @@ struct SourcesView: View {
                 let auth = routed.auth
                 let protectProfile = EnvironmentProfiles.resolve(
                     config: config, workspace: profile).protect
+                let securityCloudProfile = EnvironmentProfiles.resolve(
+                    config: config, workspace: profile).securityCloud
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
@@ -778,6 +784,11 @@ struct SourcesView: View {
                         config: config, workspace: profile).isConfirmedProtectOnly(workspace: profile),
                     protectRefusal: protectProfile.flatMap { name in
                         ProfileAuthMethod.resolve(profile: name)?.protectRefusal(profile: name)
+                    },
+                    securityCloudProfile: securityCloudProfile,
+                    securityCloudRefusal: securityCloudProfile.flatMap { name in
+                        ProfileAuthMethod.resolve(profile: name)?
+                            .securityCloudRefusal(profile: name)
                     },
                     staleDays: config?.thresholds?.resolvedStaleDays ?? 30,
                     installedVersion: version, skipExpensive: skipExpensive,

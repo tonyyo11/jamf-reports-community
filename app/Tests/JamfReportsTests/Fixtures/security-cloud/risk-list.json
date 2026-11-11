@@ -1,0 +1,158 @@
+[
+  {
+    "guid": "3f1c9a52-7b0e-4d6a-9c1e-2a5b8d4e6f01",
+    "externalId": "a1b2c3d4-0001-4aaa-8bbb-000000000001",
+    "phoneNumber": null,
+    "user": {
+      "email": "user01.example@example.invalid",
+      "name": "Example User 01"
+    },
+    "joinDate": 1760000000001,
+    "status": "NOTIFIED",
+    "traffic": {
+      "lastTrafficRun": 1762000000000
+    },
+    "info": {
+      "location": {
+        "city": "Springfield",
+        "country": "Exampleland",
+        "latitude": 12.34,
+        "longitude": 56.78
+      },
+      "lastStatusUpdateTime": 1762000100000,
+      "device": {
+        "deviceName": "Example Device 01",
+        "model": "Example Model"
+      },
+      "app": null
+    },
+    "hardwareSpec": {
+      "platform": "Mac",
+      "version": null,
+      "osType": "macOS"
+    },
+    "statusUpdate": {
+      "connector": {
+        "payload": {
+          "email": "user01.example@example.invalid",
+          "name": "Example User 01",
+          "phoneNumber": "+15555550199",
+          "externalId": "a1b2c3d4-0001-4aaa-8bbb-000000000001",
+          "deviceName": "Example Device 01"
+        }
+      },
+      "device": null
+    },
+    "connectorState": "SYNCED_METADATA",
+    "riskCategory": "HIGH",
+    "group": "Example Group",
+    "deploymentState": "NONE",
+    "lastPrivateAccessDnsTraffic": 1762000200000,
+    "lastDnsTraffic": 1762000300001,
+    "lastOnDeviceTraffic": 1762000400000
+  },
+  {
+    "guid": "3f1c9a52-7b0e-4d6a-9c1e-2a5b8d4e6f02",
+    "externalId": "a1b2c3d4-0002-4aaa-8bbb-000000000002",
+    "phoneNumber": null,
+    "user": {
+      "email": "user02.example@example.invalid",
+      "name": "Example User 02"
+    },
+    "joinDate": 1760000000002,
+    "status": "NOTIFIED",
+    "traffic": {
+      "lastTrafficRun": 1762000000000
+    },
+    "info": {
+      "location": {
+        "city": "Springfield",
+        "country": "Exampleland",
+        "latitude": 12.34,
+        "longitude": 56.78
+      },
+      "lastStatusUpdateTime": 1762000100000,
+      "device": {
+        "deviceName": "Example Device 02",
+        "model": "Example Model"
+      },
+      "app": null
+    },
+    "hardwareSpec": {
+      "platform": "iPad",
+      "version": null,
+      "osType": "iPadOS"
+    },
+    "statusUpdate": {
+      "connector": {
+        "payload": {
+          "email": "user02.example@example.invalid",
+          "name": "Example User 02",
+          "phoneNumber": "+15555550199",
+          "externalId": "a1b2c3d4-0002-4aaa-8bbb-000000000002",
+          "deviceName": "Example Device 02"
+        }
+      },
+      "device": null
+    },
+    "connectorState": "SYNCED_METADATA",
+    "riskCategory": "MEDIUM",
+    "group": "Example Group",
+    "deploymentState": "NONE",
+    "lastPrivateAccessDnsTraffic": 1762000200000,
+    "lastDnsTraffic": 1762000300002,
+    "lastOnDeviceTraffic": 1762000400000
+  },
+  {
+    "guid": "3f1c9a52-7b0e-4d6a-9c1e-2a5b8d4e6f03",
+    "externalId": "a1b2c3d4-0003-4aaa-8bbb-000000000003",
+    "phoneNumber": null,
+    "user": {
+      "email": "user03.example@example.invalid",
+      "name": "Example User 03"
+    },
+    "joinDate": 1760000000003,
+    "status": "NOTIFIED",
+    "traffic": {
+      "lastTrafficRun": 1762000000000
+    },
+    "info": {
+      "location": {
+        "city": "Springfield",
+        "country": "Exampleland",
+        "latitude": 12.34,
+        "longitude": 56.78
+      },
+      "lastStatusUpdateTime": 1762000100000,
+      "device": {
+        "deviceName": "Example Device 03",
+        "model": "Example Model"
+      },
+      "app": null
+    },
+    "hardwareSpec": {
+      "platform": "iPhone",
+      "version": null,
+      "osType": "iOS"
+    },
+    "statusUpdate": {
+      "connector": {
+        "payload": {
+          "email": "user03.example@example.invalid",
+          "name": "Example User 03",
+          "phoneNumber": "+15555550199",
+          "externalId": "a1b2c3d4-0003-4aaa-8bbb-000000000003",
+          "deviceName": "Example Device 03"
+        }
+      },
+      "device": null
+    },
+    "connectorState": "SYNCED_METADATA",
+    "riskCategory": "SECURE",
+    "group": "Example Group",
+    "deploymentState": "NONE",
+    "lastPrivateAccessDnsTraffic": 1762000200000,
+    "lastDnsTraffic": 1762000300003,
+    "lastOnDeviceTraffic": 1762000400000
+  }
+]

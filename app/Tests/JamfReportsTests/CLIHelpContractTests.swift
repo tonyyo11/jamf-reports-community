@@ -61,7 +61,7 @@ final class CLIHelpContractTests: XCTestCase {
 
     @MainActor
     enum AppCommand: CaseIterable {
-        case collectMatrix, protectMatrix, schoolMatrix, dashboard, audit
+        case collectMatrix, protectMatrix, securityMatrix, schoolMatrix, dashboard, audit
         case deviceScan, patchDefinitions, benchmarks, authRefreshProbe
         case cliCommand, connectionCheck, schoolPlatformCheck, productSetupCheck
         case platformTwin, deviceDetail, backupAndDiff, groupAnalysis, configValidate
@@ -74,6 +74,9 @@ final class CLIHelpContractTests: XCTestCase {
                     .map { Invocation(label: $0.kind, argv: $0.args) }
             case .protectMatrix:
                 return ReportEngine.protectCommandMatrix(profile: "p")
+                    .map { Invocation(label: $0.kind, argv: $0.args) }
+            case .securityMatrix:
+                return ReportEngine.securityCommandMatrix(profile: "p")
                     .map { Invocation(label: $0.kind, argv: $0.args) }
             case .schoolMatrix:
                 return ReportEngine.schoolCommandMatrix(profile: "p")

@@ -557,6 +557,7 @@ final class CollectHonestyWatcher: Sendable {
         let summary = line.hasPrefix(ReportEngine.summaryNotWrittenMarker)
         let kinds = Self.unlandedKinds(in: line)
         let protectThrew = line.hasPrefix(ReportEngine.protectCollectFailedMarker)
+            || line.hasPrefix(ReportEngine.securityCollectFailedMarker)
         // Follows from the sources line before it, which names them.
         let noSourceLanded = [ReportEngine.noSourceLandedReason,
                               ReportEngine.noJamfProSourceLandedReason].contains {

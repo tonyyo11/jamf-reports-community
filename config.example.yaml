@@ -129,14 +129,17 @@ jamf_cli:
 #   - protect is collected after each Jamf Pro or Jamf School collect, as
 #     protect.profile is; platform runs the Platform-only reports (compliance
 #     benchmarks, DDM status, blueprints), leave it blank for none; security_cloud
-#     is not used yet (P12).
+#     runs `security risk list` after each Jamf Pro or Jamf School collect and
+#     saves each device's risk category and a few status fields (never a user,
+#     phone number, location or device name); `jamf_cli.collect_skip: [security-risk]` leaves
+#     it out.
 #
 # profiles:
 #   jamf_pro: "Example"           # the Jamf Pro profile (any auth method)
 #   platform: "Example-API"       # a Platform API profile for the same Jamf Pro
 #   jamf_school: ""               # the Jamf School profile; never with jamf_pro
 #   protect: "Example-Protect"    # a `jamf-cli protect setup` profile
-#   security_cloud: ""            # a `jamf-cli security setup` profile
+#   security_cloud: ""            # a `jamf-cli security setup` profile; collects the device risk list
 #
 # A Jamf Protect-only environment sets protect and nothing else; it collects
 # Protect alone, and backups, audits and device lookups (Jamf Pro commands)
