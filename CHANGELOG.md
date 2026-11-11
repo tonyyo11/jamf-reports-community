@@ -97,6 +97,9 @@ versions in this repository map to git tags.
 ### Changed
 
 - **Workbook layout, for anything that reads the workbooks automatically.** When the jamf-cli login sees only some Jamf Pro sites, every Jamf Pro tab carries a sentence saying so in the header row just above its table (the row that was blank). No tab, column or table row moves, and a login that sees every site writes nothing new. Separately, rows that tie on a count (Mobile Fleet Summary, Hardware Models, text extension attribute tables) now sort by name, so their order no longer changes between runs. If a script or a tool such as Power BI reads these workbooks, check it against a new report.
+- A new app icon in Apple's Liquid Glass style: the same four compliance bands on the dark
+  background, now as glass shapes. On macOS Tahoe 26 and later it also follows the Mac's
+  tinted and clear icon styles.
 - Jamf Pro commands are refused for a Jamf School environment, and a Protect-only environment
   whose `profiles.protect` change you have not confirmed on this Mac is refused as a run that
   does not start, with the reason, instead of failing partway. Until you confirm it, this Mac
