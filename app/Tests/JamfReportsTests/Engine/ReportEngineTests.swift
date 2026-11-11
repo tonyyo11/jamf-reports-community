@@ -863,5 +863,6 @@ final class ReportEngineTests: XCTestCase {
         let config = try ConfigLoader.load(from: configURL)
         XCTAssertEqual(config.securityAgents?.count ?? 0, 0, "no example agents")
         XCTAssertEqual(config.customEas?.count ?? 0, 0, "no example EAs")
+        XCTAssertFalse(text.contains("compliance:"), "no example compliance columns")
     }
 }

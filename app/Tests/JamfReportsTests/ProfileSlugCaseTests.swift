@@ -340,8 +340,6 @@ final class ProfileSlugCaseTests: XCTestCase {
     /// A new workspace is written with the profile recorded, so binding it writes nothing and
     /// no backup of a file the app just made is kept.
     func testBindingANewWorkspaceKeepsNoBackupOfIt() async throws {
-        try ReportEngine.initializeWorkspace(
-            profile: "Seeded", workspacesRoot: tempRoot, onLine: { _ in })
         let lines = CaseTestBox<[String]>([])
 
         _ = try await CLIBridge().initializeWorkspace(profile: "Seeded") { line in
