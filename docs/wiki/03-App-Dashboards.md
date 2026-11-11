@@ -251,3 +251,11 @@ Overview, Devices and Trends screens and a workbook of its own; see
   [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)),
   diagnostics, and Sidebar Visibility.
   Data source: no tier (app configuration).
+
+## Language
+
+The app is in English, French, Spanish, German, Brazilian Portuguese, Italian and Japanese. It
+follows your Mac's language, or the one set for Jamf Reports in System Settings › General ›
+Language & Region › Applications. The translations are machine-made and best effort. Reports,
+workbooks, logs, webhook cards and the command-line tool stay in English, so a report reads the
+same whichever language the person who made it uses.
