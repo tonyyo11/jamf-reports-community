@@ -95,6 +95,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Workbooks, custom EA tabs: a blank value is no value. The percentage and version tabs list
+  blanks in one last row, Unknown/Blank, with no status; a percentage value that is not a number
+  is listed after the numbers with no status. On a boolean tab the first row reads
+  `<true value> (pass)` instead of the value alone, and its Percent is of the Macs that reported
+  a value (blank when none did). (#305)
 - Workbooks: the Software Installs tab fills its Name and Count columns from jamf-cli's title
   and device count (they were empty and 0), and EA Coverage fills Computer, plus Serial where
   only one Mac has that name. A software row with no count leaves Count blank. No column moved.
@@ -160,6 +165,9 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A custom EA percentage tab counted a blank value as a row graded OK, and a value that is not a
+  number as 0 and OK; a version tab graded a blank Outdated; a boolean tab's share counted blanks
+  as failing, so three of three passing Macs read 75% (#305).
 - The Software Installs tab listed only versions, every count 0, and EA Coverage had no Mac
   name on its rows: both read keys jamf-cli does not write (#305).
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
