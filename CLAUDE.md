@@ -909,6 +909,17 @@ of which the app passes (its one `--page-size`, the patch-definition walk, has n
 catalog (`commands-1.35.0.json`, 1,783 rows) keeps every command and flag the app builds
 (`CLIHelpContractTests`); six write commands lost flags the app does not use.
 
+**v1.36.0 (2026-11-06) — SMB package uploads, log flush, blueprint takeover opt-in.** No code
+change. New write commands the app does not run: `pro classic-logflush` (computer, policy),
+`pro packages smb-setup` and `upload-multiple`; `packages upload`/`delete`/`delete-multiple` gain
+`--distribution-point`, and `blueprints import-profile` takes over the installed profile only with
+`--takeover`. A profile in jamf-cli's config file may hold a nested `smb-credentials:` map
+(password a `keychain:`/`env:`/`file:` reference), which `ProfileService.parseConfigFile` skips as
+it skips every nested key, and `config list -o json` rows may carry `smb-distribution-points`,
+which `JamfCLIConfigList` ignores. The catalog (1,788 rows) adds five rows and reorders some
+`pro cloud-*` aliases; every command and flag the app builds is unchanged, and the fixture stays
+`commands-1.35.0.json`.
+
 ### notify config (v2.2.0 — opt-in webhook digest)
 
 ```yaml
