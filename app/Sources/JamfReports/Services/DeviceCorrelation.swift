@@ -1,6 +1,7 @@
 import Foundation
 
-/// Finds the Jamf Pro computer a probe row describes, by identifier only. Same rule as
+/// Finds the inventory record (a Jamf Pro computer or mobile device, a Jamf School device) a
+/// probe row describes, by identifier only. Same rule as
 /// `DeviceRecordMerger`: a candidate shares an identifier with the probe and no identifier
 /// they both carry differs. A name never decides. An identifier value on more than
 /// `DeviceRecordMerger.maxRecordsPerSharedIdentifier` records is a placeholder and joins nothing.
@@ -98,7 +99,10 @@ struct ProtectProCorrelation: Sendable {
             case .noIdentifier: result.noIdentifier += 1
             }
         }
-        result.inventorySize = pro.count
+        // A record with no UDID or serial can never match, so it is not inventory to match against.
+        result.inventorySize = pro.filter {
+            $0.identifier(.udid) != nil || $0.identifier(.serial) != nil
+        }.count
         result.proWithoutProtect = pro.enumerated()
             .filter { !claimed.contains($0.offset) }.map(\.element)
         return result
@@ -167,8 +171,10 @@ struct SecurityCloudCorrelation: Sendable {
         rows: [SecurityRiskRow], inventory records: [DeviceInventoryRecord]
     ) -> SecurityCloudCorrelation {
         let correlation = DeviceCorrelation(records: records)
+        // Only a UDID can match, so a record with none is not inventory to match against.
         var result = SecurityCloudCorrelation(
-            securityCount: rows.count, inventorySize: records.count)
+            securityCount: rows.count,
+            inventorySize: records.filter { $0.identifier(.udid) != nil }.count)
         for row in rows {
             var probe = DeviceInventoryRecord.empty(id: "security-cloud", source: "security-cloud")
             probe.udid = row.externalId ?? ""
@@ -192,10 +198,9 @@ struct SecurityCloudCorrelation: Sendable {
     /// Against Jamf Pro: the `computers` snapshot plus the mobile devices' `general.udid`; nil
     /// when neither snapshot exists. Protect's match stays computers only.
     static func load(
-        rows: [SecurityRiskRow], profile: String, dataDir: URL
+        rows: [SecurityRiskRow], profile: String, mobile: MobileFleetService.Snapshot
     ) -> SecurityCloudCorrelation? {
         let computers = DeviceInventoryService.cachedComputerRecords(profile: profile)
-        let mobile = MobileFleetService.load(dataDir: dataDir)
         guard computers != nil || mobile.isDetected else { return nil }
         let devices = mobile.richDevices.map { udidRecord($0.general?.udid, source: "mobile") }
         return build(rows: rows, inventory: (computers ?? []) + devices)

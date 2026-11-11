@@ -202,6 +202,14 @@ final class WorkspaceStore {
     /// The demo history carries no Protect series, so only a live environment with Protect.
     var protectMetricsOffered: Bool { !demoMode && environmentProducts.has(.protect) }
 
+    /// The mobile, Protect and Security Cloud cards the Overview's picker adds to the Mac ones;
+    /// none in demo mode, whose history has no such series.
+    var scoreCardExtraMetrics: [TrendSeries.Metric] {
+        demoMode ? [] : TrendSeries.Metric.mobileMetrics
+            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
+            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+    }
+
     /// Likewise for Jamf Security Cloud.
     var securityCloudMetricsOffered: Bool { !demoMode && environmentProducts.has(.securityCloud) }
 

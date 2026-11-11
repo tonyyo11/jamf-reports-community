@@ -1,3 +1,4 @@
+import Synchronization
 import XCTest
 @testable import JamfReports
 
@@ -136,9 +137,26 @@ final class SecurityCloudSummaryTests: XCTestCase {
         try computers()
         try mobile()
         let match = try XCTUnwrap(SecurityCloudCorrelation.load(
-            rows: rows(), profile: ws, dataDir: dataDir()))
+            rows: rows(), profile: ws, mobile: MobileFleetService.load(dataDir: dataDir())))
         XCTAssertEqual(match.matchedShare, .init(met: 2, of: 3))
         XCTAssertEqual(match.inventorySize, 2)
+    }
+
+    func testRecordsWithoutAUDIDAreNotInventoryToMatchAgainst() throws {
+        let noUDID = SecurityCloudCorrelation.build(
+            rows: [.init(externalId: "a")], inventory: [record(nil), record("")])
+        XCTAssertEqual(noUDID.inventorySize, 0)
+        XCTAssertNil(noUDID.matchedShare, "a list with no UDIDs gives no share, not 0 of N")
+        let mixed = SecurityCloudCorrelation.build(
+            rows: [.init(externalId: "a")], inventory: [record(nil), record("A")])
+        XCTAssertEqual(mixed.inventorySize, 1)
+        let protect = try JSONDecoder().decode(
+            [ProtectComputerRow].self, from: Data(#"[{"uuid":"aaa"}]"#.utf8))
+        let bare = ProtectProCorrelation.build(protect: protect, pro: [record(nil)])
+        XCTAssertNil(bare.matchedShare)
+        let serialOnly = ProtectProCorrelation.build(
+            protect: protect, pro: [record(nil, serial: "C02")])
+        XCTAssertEqual(serialOnly.matchedShare, .init(met: 0, of: 1))
     }
 
     func testAJamfSchoolDeviceMatchesByUDID() throws {
@@ -226,6 +244,69 @@ final class SecurityCloudSummaryTests: XCTestCase {
         try mobile()
         try finalize(proFile, landed: both)
         XCTAssertEqual(try summary().securityCloudMatched, .init(met: 2, of: 3))
+    }
+
+    private final class Lines: Sendable {
+        private let items = Mutex<[String]>([])
+        func add(_ text: String) { items.withLock { $0.append(text) } }
+        var all: [String] { items.withLock { $0 } }
+    }
+
+    func testAWithheldMatchLogsOneInfoLineNamingTheStaleKind() throws {
+        try makeRoot()
+        try computers()
+        try mobile(stamp: "20200101T080000")
+        try save(String(decoding: reducedFixture(), as: UTF8.self), "security-risk")
+        let lines = Lines()
+        let figures = ReportEngine.securityCloudSummaryFigures(
+            dataDir: try dataDir(), workspace: try WorkspaceID(validating: ws),
+            landed: ["security-risk"], onLine: { lines.add($0.text) })
+        XCTAssertNil(figures?.matched)
+        XCTAssertEqual(lines.all, [
+            "[info] Security Cloud match left out: mobile-devices-list is older than 168 hours",
+        ])
+        let fresh = Lines()
+        try mobile()
+        _ = ReportEngine.securityCloudSummaryFigures(
+            dataDir: try dataDir(), workspace: try WorkspaceID(validating: ws),
+            landed: ["security-risk"], onLine: { fresh.add($0.text) })
+        XCTAssertEqual(fresh.all, [])
+    }
+
+    func testAWithheldProtectMatchLogsTheSameLine() throws {
+        try makeRoot()
+        try computers(stamp: "20200101T080000")
+        let rows = try String(
+            contentsOf: TestFixtures.dir("jamf-cli-data/protect-computers/computers_happy.json"),
+            encoding: .utf8)
+        try save(rows, "protect-computers")
+        let lines = Lines()
+        let figures = ReportEngine.protectSummaryFigures(
+            dataDir: try dataDir(), workspace: try WorkspaceID(validating: ws),
+            landed: ["protect-computers"], onLine: { lines.add($0.text) })
+        XCTAssertNotNil(figures?.computers)
+        XCTAssertNil(figures?.computers?.matched)
+        XCTAssertEqual(lines.all, [
+            "[info] Jamf Protect match left out: computers is older than 168 hours",
+        ])
+    }
+
+    func testTheAgeCheckFollowsTheMobileKindTheReaderPicks() throws {
+        try makeRoot()
+        try computers()
+        try save(String(decoding: reducedFixture(), as: UTF8.self), "security-risk")
+        // A stale list and a fresher legacy snapshot: the reader uses the legacy rows.
+        try mobile(stamp: "20200101T080000")
+        try save(#"[{"mobileDeviceId":"1","deviceType":"iOS","general":{"udid":"\#(up2)"}}]"#,
+                 MobileFleetService.legacyInventoryKind)
+        let lines = Lines()
+        let figures = ReportEngine.securityCloudSummaryFigures(
+            dataDir: try dataDir(), workspace: try WorkspaceID(validating: ws),
+            landed: ["security-risk"], onLine: { lines.add($0.text) })
+        XCTAssertEqual(MobileFleetService.load(dataDir: try dataDir()).inventoryKind,
+                       MobileFleetService.legacyInventoryKind)
+        XCTAssertEqual(figures?.matched, .init(met: 2, of: 3))
+        XCTAssertEqual(lines.all, [])
     }
 
     func testAnEmptyRiskListIsAMeasuredZeroWithNoMatchOrCategories() throws {
@@ -370,6 +451,27 @@ final class SecurityCloudSummaryTests: XCTestCase {
             50.0)
         XCTAssertNil(
             AlertMetric.securityCloudMatchedPct.value(in: day(matched: .init(met: 0, of: 0))))
+    }
+
+    func testThePickerListsSecurityCloudCardsOnlyWhereTheEnvironmentHasIt() throws {
+        try makeRoot()
+        let workspace = try WorkspacePaths.workspaceURL(for: WorkspaceID(validating: ws))
+        let config = workspace.appendingPathComponent("config.yaml")
+        try Data("profiles:\n  jamf_pro: scws\n".utf8).write(to: config)
+        let store = WorkspaceStore(demoMode: false)
+        store.profile = ws
+        store.refreshEnvironmentProducts()
+        func rows() -> [TrendSeries.Metric] {
+            OverviewCustomizeSheet.scoreCardRows(
+                selected: [], policy: .default, mobile: store.scoreCardExtraMetrics,
+                composition: .mixed)
+        }
+        let all = TrendSeries.Metric.securityCloudMetrics
+        XCTAssertTrue(all.allSatisfy { !rows().contains($0) })
+        try Data(proFile.utf8).write(to: config)
+        store.refreshEnvironmentProducts()
+        XCTAssertTrue(all.allSatisfy { rows().contains($0) })
+        XCTAssertTrue(WorkspaceStore(demoMode: true).scoreCardExtraMetrics.isEmpty)
     }
 
     func testAlertKeyUnitsAndTheOverviewOfferOnAMobileOnlyEnvironment() {
