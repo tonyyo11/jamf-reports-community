@@ -8,7 +8,7 @@
 Fleet reporting for Jamf on your Mac: Excel, HTML and PDF reports, dashboards and history for
 Jamf Pro, Jamf School and Jamf Protect. Read-only, through Jamf's jamf-cli.
 
-![Jamf Reports: your fleet on one screen, a Security Score you define, history from daily snapshots, Excel, HTML, PDF and CSV reports, unattended runs, read-only access through jamf-cli for Jamf Pro, Jamf School, Jamf Protect and the Platform API, and seven languages.](docs/images/readme/bento.png)
+![Jamf Reports: your fleet on one screen, a Security Score you define, history from daily snapshots, Excel, HTML, PDF and CSV reports, scheduled runs, read-only access through jamf-cli for Jamf Pro, Jamf School, Jamf Protect and the Platform API, and seven languages.](docs/images/readme/bento.png)
 
 ## What it is
 
