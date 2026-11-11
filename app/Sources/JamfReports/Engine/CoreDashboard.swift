@@ -934,10 +934,11 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
+        // jamf-cli's rows: `title`, `version`, `device_count`. A missing count stays blank.
         for item in items {
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["title"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["version"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(asInt(item["count"]) ?? 0, row: row, col: 2, format: .cell)
+            ws.write(asInt(item["device_count"]), row: row, col: 2, format: .cell)
             row += 1
         }
     }
@@ -978,7 +979,9 @@ struct CoreDashboard: Sendable {
     // Source: `jamf-cli pro report ea-results --all --output json`
 
     func writeEACoverage() throws {
-        let raw = try loadLatestJSON(names: ["ea-results", "ea_results"])
+        let names = ["ea-results", "ea_results"]
+        guard let items = EAResultRow.decodeSnapshot(try loadLatestJSONData(names: names)).rows
+        else { throw CoreDashboardError.noCachedData(names: names) }
         let ws = workbook.addSheet("EA Coverage")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("EA Coverage"),
@@ -989,26 +992,24 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 12)
         ws.setColumnWidth(4, 4, 20)
 
-        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
+        // jamf-cli's rows name the Mac (`device`) and carry no serial: it comes from the
+        // `computers` snapshot, only for a name one Mac has.
+        let serials = (try? loadLatestJSONData(names: ["computers"]))
+            .map(EASheets.serialsByName) ?? [:]
 
         let hdrs = ["EA Name", "Computer", "Serial", "Value"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
         for item in items {
-            ws.write(item["ea_name"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["computer_name"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 2, format: .cell)
-            let val = item["value"]
-            let valStr: String
-            switch val {
-            case let s as String: valStr = s
-            case let n as Int: valStr = "\(n)"
-            case let b as Bool: valStr = b ? "true" : "false"
-            default: valStr = ""
-            }
-            ws.write(valStr, row: row, col: 3, format: .cell)
+            let device = (item.device ?? item.computerName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            ws.write(item.eaName ?? "", row: row, col: 0, format: .cell)
+            ws.write(device, row: row, col: 1, format: .cell)
+            ws.write(item.serial ?? serials[EASheets.key(device)] ?? "",
+                     row: row, col: 2, format: .cell)
+            ws.write(item.value?.stringValue ?? "", row: row, col: 3, format: .cell)
             row += 1
         }
     }

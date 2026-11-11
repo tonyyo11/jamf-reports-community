@@ -333,7 +333,7 @@ struct EASheets: Sendable {
         }
     }
 
-    private static func key(_ text: String?) -> String {
+    static func key(_ text: String?) -> String {
         (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
@@ -372,7 +372,7 @@ struct EASheets: Sendable {
 
     /// Serial by computer name, only for a name one Mac has: two Macs can share a name, and a
     /// guess would put one Mac's serial on the other's row.
-    private static func serialsByName(_ data: Data) -> [String: String] {
+    static func serialsByName(_ data: Data) -> [String: String] {
         let object = try? JSONSerialization.jsonObject(with: data)
         let items = (object as? [[String: Any]])
             ?? (object as? [String: Any]).flatMap { $0["results"] as? [[String: Any]] } ?? []
