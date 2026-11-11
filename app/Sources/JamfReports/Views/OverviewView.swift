@@ -1178,12 +1178,15 @@ struct OverviewView: View {
             guard lastValue != nil, values.count >= 2 else { return L("No Data") }
             guard comparable else { return L("Not comparable") }
             let absDiff = abs(diff)
+            // A change that rounds to nothing reads "±0", as the Trends pills do.
             if metric.unit == "%" {
                 let shown = percentFormat.roundedChange(
                     percentFormat.rounded(current) - percentFormat.rounded(prev))
-                return "\(shown >= 0 ? "+" : "−")\(percentFormat.changeNumberText(abs(shown)))pp"
+                guard shown != 0 else { return "±0" }
+                return "\(shown > 0 ? "+" : "−")\(percentFormat.changeNumberText(abs(shown)))pp"
             } else {
-                return "\(diff >= 0 ? "+" : "−")\(Int(absDiff))"
+                guard absDiff.rounded() != 0 else { return "±0" }
+                return "\(diff > 0 ? "+" : "−")\(Int(absDiff.rounded()))"
             }
         }()
 

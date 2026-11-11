@@ -108,7 +108,8 @@ versions in this repository map to git tags.
   workbook's Executive Summary compliance and patch cells, chart labels, the Trends headline)
   99.6% reads 99% instead of 100%. An exact half now rounds up (56.25% reads 56.3%) where it
   sometimes rounded down. Security and stability scores follow the same precision as
-  percentages. With `display.percent_decimals: 0`, workbook text cells that hold a percentage,
+  percentages. An Overview score card whose figure did not move reads "±0", as the Trends pills
+  do, instead of "+0pp" or "+0". With `display.percent_decimals: 0`, workbook text cells that hold a percentage,
   and the CSV folder, hold whole numbers, and percentage number cells use the `0%` format with
   their stored values unchanged. If a tool reads these workbooks, check it against a new one.
 
