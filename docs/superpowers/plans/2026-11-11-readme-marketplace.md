@@ -261,7 +261,7 @@ Grid (6 columns x 4 rows):
 | Tile | Size | Copy | Visual |
 |---|---|---|---|
 | brand | 2 x 2 | **Jamf Reports** / "Fleet reports for Jamf, built on your Mac." | App icon (current icon; swapped if the new icon lands first) |
-| overview | 2 x 2 | **Your fleet on one screen** / "Security Score, stale Macs, patching and OS currency." | Screenshot: Overview, demo mode, score cards row |
+| overview | 2 x 2 | **Your fleet on one screen** / "Devices, stability, encryption and OS versions at a glance." | Screenshot: Overview, demo mode, score cards row |
 | readonly | 1 x 1 | Text only, big gold type: **Read-only** / "Everything goes through Jamf's jamf-cli." | none |
 | products | 1 x 1 | Text only: **Jamf Pro · Jamf School · Jamf Protect · Platform API** | product chips |
 | score | 2 wide x 1 | **A score you define** / "Pick the controls and agents that count." | Screenshot: Security Posture, demo mode, score ring and control KPIs |
@@ -269,9 +269,9 @@ Grid (6 columns x 4 rows):
 | reports | 1 x 1 | Text only: **Excel · HTML · PDF · CSV** / "On demand or on a schedule." | format chips |
 | runs | 2 x 2 | **Runs on its own** / "Daily collects, weekly scans, a Teams or Slack card when something needs you." | Screenshot: Automation screen, demo mode (policy and health) |
 | langs | 1 x 1 | Text only, big teal type: **7 languages** / "Reports stay in English." | none |
-| protect | 1 wide x 2 tall | **Jamf Protect** / "Alerts matched to your Jamf Pro Macs." | Screenshot crop: Jamf Protect screen, NFR server |
+| protect | 1 wide x 2 tall | **Jamf Protect** / "Alerts and computers, matched to your Jamf Pro Macs." | Drawn severity list (High, Medium, Low), no screenshot |
 
-Nine tiles. Five screenshots: four demo mode, one NFR.
+Nine tiles. Four screenshots, all demo mode.
 
 - The NFR Protect shot is taken after the walkthrough fixes land, since the current screens
   show wrong counts.
@@ -285,7 +285,7 @@ Files committed (new folder, so the wiki images stay as they are):
 
 - `docs/images/readme/bento.png` — the image the README shows.
 - `docs/images/readme/bento.html` — its source, so the next update edits text, not pixels.
-- `docs/images/readme/<screen>.png` — the five crops the HTML references.
+- `docs/images/readme/<screen>.png` — the four crops the HTML references, and `icon.png`.
 
 Alt text: one sentence listing the tiles' headings, so a screen reader gets the same eight claims.
 

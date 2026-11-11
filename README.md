@@ -57,14 +57,18 @@ The repository is `jamf-reports-community`. The app is featured in the
   macOS keychain; the app never saves a secret.
 - **Products:** Jamf Pro (Jamf Cloud or on-premises), the Jamf Platform API, Jamf School and Jamf
   Protect. Jamf Security Cloud is planned.
-- **Your data stays on your Mac**, in a workspace folder you choose.
-- **Other connections**, each optional:
+- **Your data stays on your Mac**, in a workspace folder you choose, unless you choose a shared
+  team folder.
+- **Other connections** besides Jamf, each optional:
   - the [SOFA](https://sofa.macadmins.io) feed for the current macOS and iOS releases (can be
     turned off in `config.yaml`);
-  - one check a day for a new release on GitHub (can be turned off by configuration profile);
-  - a Teams or Slack webhook, only if you set one up.
+  - GitHub: one check a day for a new release of the app (can be turned off by configuration
+    profile), and the jamf-cli update check and download when you use them;
+  - a Teams or Slack webhook, only if you set one up;
+  - a timestamp authority for signed report manifests, only if you set one up.
 
-  AI insights are off by default and use Apple's on-device model, on the Mac.
+  AI insights are off by default and use Apple's on-device model, on the Mac. The full list is on
+  [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 - **Permissions** for each report area are on
   [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access).
   Settings an organization can manage are on

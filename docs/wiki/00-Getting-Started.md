@@ -55,8 +55,8 @@ for the exact privilege table.
 Open `JamfReports.app`. On first launch you'll see a **Welcome chooser** with four
 cards: **Connect with Jamf Account** (recommended for Jamf Cloud), **Connect a Jamf Pro
 server**, **Connect Jamf School**, and **Try the demo first**.
-Choose **Connect Jamf Pro** to start the guided onboarding flow (Jamf School-only
-districts pick **Connect Jamf School** instead).
+Choose **Connect with Jamf Account** or **Connect a Jamf Pro server** to start the guided
+onboarding flow (Jamf School-only districts pick **Connect Jamf School** instead).
 
 ## 5. Follow the onboarding steps
 
