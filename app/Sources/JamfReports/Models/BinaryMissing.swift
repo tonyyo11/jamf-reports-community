@@ -25,10 +25,18 @@ enum BinaryMissing {
         neverCheckedIn && isUnmanaged(managedState)
     }
 
+    /// The one reader of a managed-state text: true for `true`, `yes`, `1`, `Managed`, false for
+    /// `false`, `no`, `0`, `Unmanaged`, nil for anything else (blank, unknown).
+    static func managed(_ managedState: String) -> Bool? {
+        let text = managedState.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["true", "yes", "1", "managed"].contains(text) { return true }
+        if ["false", "no", "0", "unmanaged"].contains(text) { return false }
+        return nil
+    }
+
     /// True only for a value that says unmanaged (`false`, `no`, `0`, `Unmanaged`).
     static func isUnmanaged(_ managedState: String) -> Bool {
-        ["false", "no", "0", "unmanaged"].contains(
-            managedState.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        managed(managedState) == false
     }
 
     /// The "Needs attention" line, "3 Macs enrolled but never received the Jamf binary."

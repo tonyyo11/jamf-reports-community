@@ -87,11 +87,14 @@ enum SiteScope: Codable, Equatable, Sendable {
 
 Once per collect, in `ReportEngine.collect`, after `finalizeCollect`. That's where the run's
 `profileAuth` and `savedKinds` already exist.
-- It's evaluated only when the run saved both `overview` and `computers` (and `mobile-devices-list`
-  for the mobile half). Payloads saved in one run are paired by construction, so no time window
-  is needed.
-- A tier-only collect (a Refresh button, per-tier self-remediation) saves one kind without the
-  other. It keeps the previous verdict.
+- An API-client, Platform, School or Security Cloud login is `notApplicable` whatever was saved,
+  so the first collect after a switch to an API client clears a stale `limited`. A nil auth
+  method touches nothing.
+- Any other login is judged only when the run saved `computers`, and `overview` was saved this
+  run or its newest snapshot is stamped the same local day. Overview is the 12 h tier and
+  computers the 48 h tier, so requiring both in one run would starve for days. Mobile devices
+  count only when `mobile-devices-list` was saved this run.
+- A run that cannot judge keeps the previous verdict.
 - Report-time consumers never re-derive the verdict. A report can be generated long after the
   collect and from a different login (a shared workspace, a re-authenticated profile), and
   neither HtmlReport nor CoreDashboard resolves auth.

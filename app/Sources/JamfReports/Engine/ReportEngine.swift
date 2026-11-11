@@ -2487,9 +2487,8 @@ struct ReportEngine: Sendable {
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
         )
         recordSiteScope(
-            profile: workspace.name, auth: profileAuth?.method, dataDir: dataDir,
-            savedKinds: savedKinds, stateDir: try? workspacePaths.stateDir(for: workspace.name),
-            onLine: onLine)
+            workspacePaths: workspacePaths, profile: profile, auth: profileAuth?.method,
+            dataDir: dataDir, savedKinds: savedKinds, onLine: onLine)
 
         return .collected
     }

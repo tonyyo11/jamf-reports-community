@@ -102,12 +102,12 @@ enum ConfigDoctorService {
                 ProBackup.syncedStorageChoice(profile: profile, config: config))
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
-            rows += siteScopeRows(profile: profile)
             rows += securityPolicyRows(profile: profile, config: config)
         }
         rows += organizationLevelRows(profile: profile)
         rows += platformTwinRows(profile: profile)
         rows += sharedConfigRows(profile: profile)
+        rows += siteScopeRows(profile: profile)
         let workspace = (try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot))?
             .deletingLastPathComponent()
         rows += automationFolderRows(workspace: workspace)
@@ -690,8 +690,14 @@ extension ConfigDoctorService {
     static func siteScopeRows(_ scope: SiteScope) -> [DoctorRow] {
         guard case .limited(let computers, let mobile) = scope else { return [] }
         let summary = [
-            computers.map { L("\($0.seen) of \($0.total) managed computers") },
-            mobile.map { L("\($0.seen) of \($0.total) managed mobile devices") },
+            computers.map {
+                $0.total == 1 ? L("\($0.seen) of 1 managed computer")
+                    : L("\($0.seen) of \($0.total) managed computers")
+            },
+            mobile.map {
+                $0.total == 1 ? L("\($0.seen) of 1 managed mobile device")
+                    : L("\($0.seen) of \($0.total) managed mobile devices")
+            },
         ].compactMap { $0 }.joined(separator: ", ")
         return [DoctorRow(
             id: "accuracy.site_scope", severity: .warn,

@@ -1,41 +1,66 @@
 import Foundation
 
 extension ReportEngine {
-    /// Judges the login once per collect, from the snapshots this run just saved, and keeps
-    /// the verdict in `state/site-scope.json`. A run that saved only one of the two inputs
-    /// (a tier refresh) and an `unknown` verdict leave the earlier file and attention item.
+    /// Judges the login once per collect and keeps the verdict in `state/site-scope.json`.
+    /// An API-client, Platform, School or Security Cloud login is `notApplicable` whatever was
+    /// saved. Any other login is judged only when this run saved `computers` and `overview` was
+    /// saved this run or is stamped today (overview is the 12 h tier, computers the 48 h one);
+    /// mobile devices count only when saved this run. A run that cannot judge, a nil auth
+    /// method and an `unknown` verdict leave the earlier file and attention item.
     static func recordSiteScope(
-        profile: String, auth: JamfCLIAuthMethod?, dataDir: URL, savedKinds: Set<String>,
-        stateDir: URL?, now: Date = Date(), onLine: (CLIBridge.LogLine) -> Void
+        workspacePaths: WorkspacePaths.Type, profile: String, auth: JamfCLIAuthMethod?,
+        dataDir: URL, savedKinds: Set<String>, now: Date = Date(),
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) {
-        guard savedKinds.contains("overview"), savedKinds.contains("computers"),
-              let stateDir else { return }
-        func newest(_ kind: String, saved: Bool = true) -> [Any]? {
-            guard saved,
-                  let url = FileManager.newestSnapshotFile(
-                    in: dataDir.appendingPathComponent(kind, isDirectory: true)),
-                  let data = BoundedFile.readLogged(url, inside: dataDir) else { return nil }
-            return (try? JSONSerialization.jsonObject(with: data)) as? [Any]
+        var scope = SiteScope.evaluate(
+            auth: auth, overview: nil, computers: nil, mobileDevices: nil)
+        if auth == nil { return }
+        if scope == .unknown {
+            guard savedKinds.contains("computers"),
+                  let overviewURL = newestKindSnapshot("overview", in: dataDir),
+                  savedKinds.contains("overview") || CloudStorage.snapshotTimestamp(of: overviewURL)
+                    .map({ Calendar.current.isDate($0, inSameDayAs: now) }) == true
+            else { return }
+            func rows(_ url: URL?) -> [Any]? {
+                url.flatMap { BoundedFile.readLogged($0, inside: dataDir) }.flatMap {
+                    (try? JSONSerialization.jsonObject(with: $0)) as? [Any]
+                }
+            }
+            let mobile = savedKinds.contains(MobileFleetService.deviceKind)
+                ? newestKindSnapshot(MobileFleetService.deviceKind, in: dataDir)
+                    .flatMap { BoundedFile.readLogged($0, inside: dataDir) }
+                    .flatMap {
+                        try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: $0)
+                    }
+                : nil
+            scope = SiteScope.evaluate(
+                auth: auth, overview: rows(overviewURL),
+                computers: rows(newestKindSnapshot("computers", in: dataDir)),
+                mobileDevices: mobile)
+            if scope == .unknown { return }
         }
-        let scope = SiteScope.evaluate(
-            auth: auth, overview: newest("overview"), computers: newest("computers"),
-            mobileDevices: newest(
-                MobileFleetService.deviceKind,
-                saved: savedKinds.contains(MobileFleetService.deviceKind)))
-        if scope == .unknown { return }
-        do {
-            try SiteScopeRecord(scope: scope, collectedAt: now, profile: profile)
-                .save(stateDir: stateDir)
-        } catch {
-            onLine(.init(timestamp: now, level: .warn,
-                text: "[warn] site scope not saved: \(error.localizedDescription)"))
+        var saved = false
+        if let stateDir = workspacePaths.confinedFolderOrWarn(
+            ["state"], under: dataDir, onLine: onLine) {
+            do {
+                try SiteScopeRecord(scope: scope, collectedAt: now, profile: profile)
+                    .save(stateDir: stateDir)
+                saved = true
+            } catch {
+                onLine(.init(timestamp: now, level: .warn,
+                    text: "[warn] site scope not saved: \(error.localizedDescription)"))
+            }
         }
-        guard let summary = scope.summary else {
+        if let summary = scope.summary {
+            onLine(.init(timestamp: now, level: .warn, text: warnLine(summary)))
+            AttentionLog.raise(.siteLimitedLogin, "This login sees \(summary) in Jamf Pro")
+        } else if saved {
             AttentionLog.clear(.siteLimitedLogin)
-            return
         }
-        onLine(.init(timestamp: now, level: .warn, text: warnLine(summary)))
-        AttentionLog.raise(.siteLimitedLogin, "This login sees \(summary) in Jamf Pro")
+    }
+
+    private static func newestKindSnapshot(_ kind: String, in dataDir: URL) -> URL? {
+        FileManager.newestSnapshotFile(in: dataDir.appendingPathComponent(kind, isDirectory: true))
     }
 
     static func warnLine(_ summary: String) -> String {
