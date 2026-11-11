@@ -54,11 +54,11 @@ final class PairedProductProfileTests: XCTestCase {
                 profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
                 protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                               product: .protect) },
-                protectPinAllows: { _ in true }),
+                protectPinAllows: { _, _ in true }),
             DataFreshnessHealth.protectKinds)
     }
 
-    func testAnUnconfirmedProtectOnlyEditIsJudgedAsBefore() throws {
+    func testAnUnconfirmedProtectOnlyEditExpectsNothing() throws {
         try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
@@ -66,9 +66,8 @@ final class PairedProductProfileTests: XCTestCase {
             profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
             protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                           product: .protect) },
-            protectPinAllows: { _ in false })
-        XCTAssertNotEqual(kinds, DataFreshnessHealth.protectKinds)
-        XCTAssertFalse(kinds.isEmpty)
+            protectPinAllows: { _, _ in false })
+        XCTAssertEqual(kinds, [])
     }
 
     func testTheSourcesPlanOfAProtectOnlyEnvironmentIsTheProtectListAlone() {

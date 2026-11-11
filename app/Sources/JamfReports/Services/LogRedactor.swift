@@ -226,7 +226,7 @@ enum LogRedactor {
         redactor.seedServerHosts(profiles.flatMap(serverHosts))
         // The profile is often the organisation's name; the bundle seeds the same forms.
         // Config Doctor names another local workspace in a run log, so every one is seeded.
-        redactor.seedWorkspaceNames(profiles.flatMap(profileNameForms(of:))
+        redactor.seedWorkspaceNames(profiles.flatMap { profileNameForms(of: $0) }
             + (profiles.isEmpty ? [] : localWorkspaces()))
         return redactor.redactText(redact(text))
     }
@@ -256,10 +256,19 @@ enum LogRedactor {
     }
 
     /// A profile's name and the logins its workspace names (`Acme-Protect`), each as typed and in
-    /// its folder and label forms: run logs and config.yaml carry all of them.
-    static func profileNameForms(of profile: String) -> [String] {
-        let environment = EnvironmentProfiles.read(workspace: profile)
-        return ([profile, environment.mdm].compactMap { $0 } + environment.connectedProfiles)
+    /// its folder and label forms: run logs and config.yaml carry all of them. A login name comes
+    /// from a peer-writable file, so it gets the other-workspace rule: 4 characters, no log word.
+    static func profileNameForms(
+        of profile: String,
+        environment: EnvironmentProfiles? = nil
+    ) -> [String] {
+        let environment = environment ?? EnvironmentProfiles.read(workspace: profile)
+        // The MDM slot is the workspace's own name wherever anything runs, so it adds no seed;
+        // `isValid` caps a login's length.
+        let logins = environment.connectedProfiles.filter {
+            $0.count >= 4 && !commonLogWords.contains($0.lowercased()) && ProfileService.isValid($0)
+        }
+        return ([profile] + logins)
             .flatMap { name in
                 [name, ProfileName.pathComponent(name), ProfileName.labelComponent(name)]
             }

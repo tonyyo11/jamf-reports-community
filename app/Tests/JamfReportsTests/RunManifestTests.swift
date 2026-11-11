@@ -894,12 +894,14 @@ final class TimestampAuthorityPinTests: XCTestCase {
             appSupport: appSupport)
         XCTAssertNotNil(SharedConfigPin.effectiveNotify(
             notify, profile: profile, appSupport: appSupport))
-        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(
+            profile: profile, name: "protect-a", appSupport: appSupport))
 
         try FileManager.default.removeItem(at: configURL)
         XCTAssertNil(SharedConfigPin.effectiveNotify(
             notify, profile: profile, appSupport: appSupport))
-        XCTAssertFalse(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertFalse(SharedConfigPin.protectAllowed(
+            profile: profile, name: "protect-a", appSupport: appSupport))
         XCTAssertFalse(SharedConfigPin.protectBackupOnSyncedStorage(
             true, profile: profile, appSupport: appSupport))
         XCTAssertEqual(SharedConfigPin.proBackupSetting(

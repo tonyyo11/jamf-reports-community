@@ -11,7 +11,8 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     /// The fixed steps after the files, in this order.
     enum Tail: String, Codable, CaseIterable, Sendable {
         case archiveSourceConfig, writePlatformSlot, copyBenchmarks
-        case retargetSchedules, rewritePolicy, removeSourcePin, moveSource
+        // The pin goes last: if the move fails the source is still live and keeps its pin.
+        case retargetSchedules, rewritePolicy, moveSource, removeSourcePin
     }
 
     enum Action: Codable, Equatable, Sendable {
@@ -70,12 +71,64 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     var differingConfigKeys: [String]
     /// Source folders read from outside the source workspace (R10).
     var outsideSourceFolder: [String]
+    /// Exclusion lists that held both workspaces when planned, which keep the target excluded
+    /// (`mergingExclusion`): the policy's and, by label, each schedule's. Decided here so a
+    /// step run twice leaves the same lists.
+    /// Product logins the source names that the target lacks; the merge drops them (R5).
+    var droppedConnections: [Connection] = []
+    struct Connection: Codable, Equatable, Sendable {
+        /// Product name as the sheet shows it.
+        var product: String
+        var profile: String
+    }
+    var keepTargetExcludedInPolicy = false
+    var keepTargetExcludedInSchedules: [String] = []
 
     /// Where a summary's two originals are archived before a fill (`side`: "target" or
     /// "source"), so a fill the executor falls back to uses the plan's paths.
     static func summaryArchive(mergedFolder: String, side: String, name: String) -> URL {
         URL(fileURLWithPath: mergedFolder, isDirectory: true)
             .appendingPathComponent("archive/summaries/\(side)/\(name)")
+    }
+
+    /// A path the plan names lies outside the workspaces folder.
+    struct ConfinementError: Error, LocalizedError, Equatable {
+        let what: String
+        var errorDescription: String? {
+            L("The merge plan names a path outside the workspaces folder (\(what)); nothing was changed.")
+        }
+    }
+
+    /// `path` as a URL when it is absolute, has no `..` and lies strictly below `base` (a
+    /// component-wise check: `Jamf-Reports-evil` is not below `Jamf-Reports`), else nil.
+    static func confined(_ path: String, under base: URL) -> URL? {
+        guard path.hasPrefix("/"), !path.split(separator: "/").contains("..") else { return nil }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        let bases = [base.standardizedFileURL.path, base.resolvingSymlinksInPath().path]
+        return bases.contains { url.path.hasPrefix($0 + "/") } ? url : nil
+    }
+
+    /// Every path the plan names, the one check before a step runs, a journal is retired or
+    /// Start over moves files. No step names Application Support: per-Mac state steps (pin,
+    /// schedules, policy) go through the executor's dependencies, never a plan path.
+    func requireConfined(root: URL = ProfileService.workspacesRoot()) throws {
+        guard Self.confined(mergedFolder, under: root.appendingPathComponent("_merged")) != nil
+        else { throw ConfinementError(what: "merged folder") }
+        for name in [source, target] {
+            guard let folder = ProfileService.workspaceURL(for: name),
+                  Self.confined(folder.path, under: root) != nil
+            else { throw ConfinementError(what: "workspace folder") }
+        }
+        for (index, step) in steps.enumerated() {
+            var paths = [step.source, step.target, step.archive ?? ""]
+            if case .fillSummary(let sourceArchive) = step.action { paths.append(sourceArchive) }
+            for path in paths where !path.isEmpty {
+                guard Self.confined(path, under: root) != nil else {
+                    throw ConfinementError(
+                        what: "step \(index + 1), \(URL(fileURLWithPath: path).lastPathComponent)")
+                }
+            }
+        }
     }
 
     /// How many steps of each action each area has, for the sheet. Tail steps are left out.
@@ -107,7 +160,9 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
     /// the subfolders come from there.
     static func make(
         source: String, target: String, now: Date = Date(),
-        root: URL = ProfileService.workspacesRoot()
+        root: URL = ProfileService.workspacesRoot(),
+        schedules: [ScheduleRecord] = ScheduleStore().load(),
+        policy: AutomationPolicy = .current()
     ) throws -> WorkspaceMergePlan {
         guard let sourceID = WorkspaceID(source) else { throw PlanError.noWorkspace(source) }
         guard let targetID = WorkspaceID(target) else { throw PlanError.noWorkspace(target) }
@@ -135,7 +190,28 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
             source: source, target: target, stamp: stamp, mergedFolder: merged.path,
             steps: builder.steps + tail,
             differingConfigKeys: try builder.differingKeys(source: sourceWS, target: targetWS),
-            outsideSourceFolder: builder.outside)
+            outsideSourceFolder: builder.outside,
+            droppedConnections: Self.droppedConnections(source: source, target: target, root: root),
+            keepTargetExcludedInPolicy: policy.excludedWorkspaces.excludesBoth(source, target),
+            keepTargetExcludedInSchedules: schedules
+                .filter { $0.excludedWorkspaces.excludesBoth(source, target) }.map(\.label))
+    }
+
+    /// The source's Protect, Security Cloud and School logins whose slot the target leaves blank;
+    /// `platform` is what the merge moves and `jamf_pro` is the workspace itself.
+    private static func droppedConnections(
+        source: String, target: String, root: URL
+    ) -> [Connection] {
+        let from = EnvironmentProfiles.read(workspace: source, under: root)
+        let to = EnvironmentProfiles.read(workspace: target, under: root)
+        let slots: [(String, String?, String?)] = [
+            ("Jamf Protect", from.protect, to.protect),
+            ("Security Cloud", from.securityCloud, to.securityCloud),
+            ("Jamf School", from.jamfSchool ?? from.foreignSchool, to.jamfSchool ?? to.foreignSchool),
+        ]
+        return slots.compactMap { product, name, existing in
+            name.flatMap { existing == nil ? Connection(product: product, profile: $0) : nil }
+        }
     }
 
     static var stampFormatter: DateFormatter {
@@ -291,8 +367,23 @@ private final class Builder {
         let srcDir = try WorkspacePaths.confinedFolder(["backups"], under: srcWS)
         let tgtDir = try WorkspacePaths.confinedFolder(["backups"], under: tgtWS)
         let have = Set(try Self.children(of: tgtDir, directories: true))
-        for name in try Self.children(of: srcDir, directories: true)
-        where !name.hasPrefix(".") && !have.contains(name) {
+        let copying = try Self.children(of: srcDir, directories: true)
+            .filter { !$0.hasPrefix(".") && !have.contains($0) }
+        // Scheduled backups past the newest `defaultKeepCount` of both folders together would
+        // make the target's next prune delete its own; they stay in the moved source folder.
+        // A name with no parseable stamp is never pruned by order, so it is copied.
+        var pool: [(key: (Date, Int), name: String?)] = []
+        var dropped = Set<String>()
+        for (dir, names, fromSource) in [(tgtDir, Array(have), false), (srcDir, copying, true)] {
+            for name in names where BackupMaintenance.isScheduledBackup(dir.appendingPathComponent(name)) {
+                guard let stamp = CloudStorage.backupDirectoryTimestamp(name: name) else { continue }
+                pool.append(((stamp.date, stamp.sequence), fromSource ? name : nil))
+                if fromSource { dropped.insert(name) }
+            }
+        }
+        dropped.subtract(pool.sorted { $0.key > $1.key }.prefix(BackupMaintenance.defaultKeepCount)
+            .compactMap(\.name))
+        for name in copying where !dropped.contains(name) {
             try Self.requireNotLink(srcDir.appendingPathComponent(name))
             steps.append(step(.backups, .copyFolder, srcDir, tgtDir, name))
         }

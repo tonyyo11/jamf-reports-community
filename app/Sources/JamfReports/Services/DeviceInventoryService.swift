@@ -451,6 +451,7 @@ extension DeviceInventoryService {
         record.serial = serial
         record.osVersion = first(flat, ["operatingSystem.version", "operatingSystemVersion", "general.osVersion"])
         record.model = first(flat, ["hardware.modelIdentifier", "hardware.model", "modelIdentifier", "general.model"])
+        record.marketingModel = first(flat, ["hardware.model"])
         record.user = first(flat, ["userAndLocation.username", "location.username", "username"])
         record.email = first(flat, ["userAndLocation.email", "userAndLocation.emailAddress", "location.emailAddress"])
         // Tenants that keep the address in "Username" and leave "Email" blank
@@ -481,6 +482,14 @@ extension DeviceInventoryService {
         // snapshots that carry it. bootstrapTokenAllowed says escrow is allowed, not done.
         record.bootstrapToken = first(
             flat, ["security.bootstrapTokenEscrowedStatus", "security.bootstrapTokenEscrowed"])
+        // Jamf fills these with false and blanks before the first inventory; none is a reading.
+        if NeverInventoried.isNeverInventoried(computer: item) {
+            record.fileVault = ""
+            record.sip = ""
+            record.firewall = ""
+            record.gatekeeper = ""
+            record.bootstrapToken = ""
+        }
         record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
         return record
     }

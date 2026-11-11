@@ -66,7 +66,7 @@ final class EnvironmentProductsTests: XCTestCase {
 
     func testProtectOnlyTabs() {
         XCTAssertEqual(tabs(env(.protect)), [
-            .overview, .protectDashboard, .reports, .schedules, .runs, .config, .sources,
+            .overview, .protectDashboard, .trends, .reports, .schedules, .runs, .config, .sources,
             .settings, .onboarding,
         ])
     }

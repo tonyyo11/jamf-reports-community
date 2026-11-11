@@ -76,10 +76,12 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
             releaseClaim: { claims.add("release \($0)") },
             writePlatformSlot: { calls.add("slot \($0)->\($1)") },
             copyBenchmarks: { calls.add("bench \($0)->\($1)") },
-            retargetSchedules: { calls.add("schedules \($0)->\($1)") },
-            rewritePolicy: { calls.add("policy \($0)->\($1)") },
+            retargetSchedules: { from, to, _ in calls.add("schedules \(from)->\(to)") },
+            rewritePolicy: { from, to, _ in calls.add("policy \(from)->\(to)") },
             appSupport: root.appendingPathComponent(".app-support", isDirectory: true))
     }
+
+    private var support: URL { root.appendingPathComponent(".app-support", isDirectory: true) }
 
     private func journal() throws -> WorkspaceMergeJournal {
         WorkspaceMergeJournal(
@@ -153,7 +155,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
             let inside = String(rel.dropFirst(src.count + 1))
             XCTAssertTrue(fm.fileExists(atPath: moved.appendingPathComponent(inside).path), rel)
         }
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
         XCTAssertTrue(fm.fileExists(
             atPath: merged(j).appendingPathComponent("merge-journal.json").path))
         XCTAssertEqual(calls.all, [
@@ -174,7 +176,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
             try await WorkspaceMergeExecutor.run(j, deps: deps(), stopAfter: 3)
             XCTFail("stopAfter must stop the run")
         } catch is CancellationError {}
-        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt, appSupport: support) else {
             return XCTFail("no pending journal")
         }
         XCTAssertEqual(pending.done, 3)
@@ -197,7 +199,44 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         do {
             try await WorkspaceMergeExecutor.run(again, deps: deps(), stopAfter: 1)
         } catch is CancellationError {}
-        XCTAssertEqual(try tree(), before)
+        let after = try tree()
+        XCTAssertEqual(after, before)
+    }
+
+    /// With both twins excluded the first run keeps the target; a rerun after a crash must too.
+    func testExclusionStepRunTwiceKeepsTheTarget() async throws {
+        let store = ScheduleStore(url: root.appendingPathComponent("schedules.json"))
+        var record = try JSONDecoder().decode(ScheduleRecord.self, from: Data(
+            #"{"label":"l.all","profile":"","allProfiles":true}"#.utf8))
+        record.excludedWorkspaces = [src, tgt]
+        try store.save([record])
+        let plan = try WorkspaceMergePlan.make(
+            source: src, target: tgt, root: root, schedules: store.load(), policy: AutomationPolicy())
+        XCTAssertEqual(plan.keepTargetExcludedInSchedules, ["l.all"])
+        var d = deps()
+        d.retargetSchedules = { try store.retarget(from: $0, to: $1, keepTargetIn: $2) }
+        let index = try XCTUnwrap(plan.steps.firstIndex { $0.action == .tail(.retargetSchedules) })
+        let j = WorkspaceMergeJournal(plan: plan, done: 0)
+        do { try await WorkspaceMergeExecutor.run(j, deps: d, stopAfter: index + 1) }
+        catch is CancellationError {}
+        XCTAssertEqual(store.load().first?.excludedWorkspaces, [tgt])
+        var again = j
+        again.done = index
+        do { try await WorkspaceMergeExecutor.run(again, deps: d, stopAfter: 1) }
+        catch is CancellationError {}
+        XCTAssertEqual(store.load().first?.excludedWorkspaces, [tgt])
+    }
+
+    func testCopiedStatusFileCarriesNoAttentionItems() async throws {
+        try write(#"{"exit_code":0,"attention":[{"code":"x"}],"attention_at":"2026-01-01T00:00:00Z"}"#,
+                  src, "automation/l.one_status.json")
+        let j = try journal()
+        try await WorkspaceMergeExecutor.run(j, deps: deps())
+        let copied = try XCTUnwrap(read(url(tgt, "automation/l.one_status.json")))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(copied.utf8)) as? [String: Any])
+        XCTAssertEqual(object["exit_code"] as? Int, 0)
+        XCTAssertNil(object["attention"])
+        XCTAssertNil(object["attention_at"])
     }
 
     func testRefusedHoldWritesNothing() async throws {
@@ -210,7 +249,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
             XCTAssertEqual(error as? CLIBridgeError, .tickLockHeld)
         }
         XCTAssertEqual(try tree(), before)
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
     }
 
     func testPeerClaimWritesNothing() async throws {
@@ -230,7 +269,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
                            .peerClaim(workspace: tgt, host: "Peer Mac"))
         }
         XCTAssertEqual(try tree(), before)
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
         // The source's claim, taken before the target refused, is given back.
         XCTAssertEqual(claims.all, ["acquire \(src)", "release \(src)"])
     }
@@ -296,7 +335,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
               "excludedProfiles":["\(src)","\(tgt)","Other"]}]
             """
         try store.save(JSONDecoder().decode([ScheduleRecord].self, from: Data(json.utf8)))
-        try store.retarget(from: src, to: tgt)
+        try store.retarget(from: src, to: tgt, keepTargetIn: ["l.all"])
         let records = store.load()
         let one = try XCTUnwrap(records.first { $0.label == "l.one" })
         XCTAssertEqual(one.workspace, tgt)
@@ -309,7 +348,7 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         policy.excludedWorkspaces = [src, "Other", tgt]
         policy.reportGroups = [ReportGroup(name: "fleet", workspaces: [tgt, src, "Other"]),
                                ReportGroup(name: "two", workspaces: [src])]
-        let next = policy.replacingWorkspace(src, with: tgt)
+        let next = policy.replacingWorkspace(src, with: tgt, keepTargetExcluded: true)
         XCTAssertEqual(next.excludedWorkspaces, ["Other", tgt])
         XCTAssertEqual(next.reportGroups.map(\.workspaces), [[tgt, "Other"], [tgt]])
     }
@@ -324,8 +363,9 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         for (before, after) in exclusionCases {
             var policy = AutomationPolicy()
             policy.excludedWorkspaces = before
-            XCTAssertEqual(policy.replacingWorkspace(src, with: tgt).excludedWorkspaces, after,
-                           "\(before)")
+            XCTAssertEqual(policy.replacingWorkspace(
+                src, with: tgt, keepTargetExcluded: before.excludesBoth(src, tgt))
+                .excludedWorkspaces, after, "\(before)")
         }
     }
 
@@ -336,7 +376,9 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
                 #"{"label":"l.all","profile":"","allProfiles":true}"#.utf8))
             record.excludedWorkspaces = before
             try store.save([record])
-            try store.retarget(from: src, to: tgt)
+            try store.retarget(
+                from: src, to: tgt,
+                keepTargetIn: before.excludesBoth(src, tgt) ? ["l.all"] : [])
             XCTAssertEqual(store.load().first?.excludedWorkspaces, after, "\(before)")
         }
     }
@@ -415,7 +457,7 @@ extension WorkspaceMergeExecutorTests {
                                withIntermediateDirectories: true)
         try fm.copyItem(at: URL(fileURLWithPath: step.target), to: archive)
         try "changed".write(toFile: step.target, atomically: true, encoding: .utf8)
-        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt, appSupport: support) else {
             return XCTFail("no pending journal")
         }
         do {
@@ -470,11 +512,11 @@ extension WorkspaceMergeExecutorTests {
         try setUpWithError()
         let j = try journal()
         try await stopped(j, after: j.plan.steps.count - 1)
-        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt, appSupport: support) else {
             return XCTFail("no pending journal")
         }
         try await WorkspaceMergeExecutor.run(pending, deps: deps())
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
         XCTAssertTrue(fm.fileExists(
             atPath: merged(j).appendingPathComponent("merge-journal.json").path))
         XCTAssertEqual(try tree(), expected)
@@ -483,7 +525,7 @@ extension WorkspaceMergeExecutorTests {
     func testResumeWhoseJournalWasMovedAsideIsRefused() async throws {
         let j = try journal()
         try await stopped(j, after: 2)
-        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt, appSupport: support) else {
             return XCTFail("no pending journal")
         }
         for name in [".merge-journal.json", ".merge-plan.json"] {
@@ -495,20 +537,20 @@ extension WorkspaceMergeExecutorTests {
             XCTFail("a resume with no journal on disk must not start")
         } catch WorkspaceMergeExecutor.RunError.notStarted {
         }
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
     }
 
     func testResumeAtMoveSourceAfterTheFolderMoved() async throws {
         let j = try journal()
-        try await stopped(j, after: j.plan.steps.count - 1)
+        try await stopped(j, after: j.plan.steps.count - 2)
         let moved = merged(j).appendingPathComponent("workspace")
         try fm.moveItem(at: root.appendingPathComponent(src), to: moved)
-        guard let pending = WorkspaceMergeJournal.pending(target: tgt) else {
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt, appSupport: support) else {
             return XCTFail("no pending journal")
         }
         let claims = Calls()
         try await WorkspaceMergeExecutor.run(pending, deps: deps(claims: claims))
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
         XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent(src).path))
         XCTAssertTrue(fm.fileExists(atPath: moved.appendingPathComponent("config.yaml").path))
         XCTAssertFalse(claims.all.contains("acquire \(src)"), "no claim at the moved name")
@@ -545,7 +587,7 @@ extension WorkspaceMergeExecutorTests {
             XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,
                            .peerClaim(workspace: src, host: "Peer Mac"))
         }
-        let pending = try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt))
+        let pending = try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
         XCTAssertEqual(pending.done, 3)
         XCTAssertEqual(calls.value, blockAt)
     }
@@ -616,7 +658,7 @@ extension WorkspaceMergeExecutorTests {
             XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,
                            .pendingMerge(source: src))
         }
-        XCTAssertEqual(WorkspaceMergeJournal.pending(target: tgt), WorkspaceMergeJournal(
+        XCTAssertEqual(WorkspaceMergeJournal.pending(target: tgt, appSupport: support), WorkspaceMergeJournal(
             plan: first.plan, done: 1))
     }
 
@@ -624,31 +666,36 @@ extension WorkspaceMergeExecutorTests {
         let first = try journal()
         try await stopped(first, after: 1)
         try await WorkspaceMergeExecutor.startOver(target: tgt, deps: deps())
-        XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt), .none)
+        XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt, appSupport: support), .none)
         XCTAssertEqual(try WorkspaceMergeJournal.readProgress(
             merged(first).appendingPathComponent("merge-journal.json")).done, 1)
         XCTAssertTrue(fm.fileExists(
             atPath: merged(first).appendingPathComponent("merge-plan.json").path))
         let next = try laterJournal()
         try await WorkspaceMergeExecutor.run(next, deps: deps())
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
     }
 
-    /// Writes both pending files as a run would.
-    private func writePending(_ j: WorkspaceMergeJournal) throws {
+    /// Writes both pending files as a run would; `own` records this Mac's start of the plan.
+    private func writePending(_ j: WorkspaceMergeJournal, own: Bool = true) throws {
         let hash = try WorkspaceMergeJournal.write(
             planData: WorkspaceMergeJournal.encodedPlan(j.plan),
             to: WorkspaceMergeJournal.planLocation(target: tgt))
         try WorkspaceMergeJournal.write(
             .init(done: j.done, planSHA256: hash, mergedFolder: j.plan.mergedFolder),
             to: WorkspaceMergeJournal.location(target: tgt))
+        if own {
+            try WorkspaceMergeJournal.markStarted(
+                planSHA256: hash, target: tgt, mergedFolder: j.plan.mergedFolder, done: j.done,
+                appSupport: support)
+        }
     }
 
     func testAFinishedPendingJournalIsRetired() throws {
         var finished = try journal()
         finished.done = finished.plan.steps.count
         try writePending(finished)
-        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
         XCTAssertFalse(fm.fileExists(atPath: try WorkspaceMergeJournal.location(target: tgt).path))
         XCTAssertFalse(fm.fileExists(
             atPath: try WorkspaceMergeJournal.planLocation(target: tgt).path))
@@ -664,10 +711,10 @@ extension WorkspaceMergeExecutorTests {
         let planFile = try WorkspaceMergeJournal.planLocation(target: tgt)
         let size = try XCTUnwrap(fm.attributesOfItem(atPath: planFile.path)[.size] as? Int)
         XCTAssertGreaterThan(size, BoundedFile.documentLimit)
-        let pending = try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt))
+        let pending = try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
         XCTAssertEqual(pending, WorkspaceMergeJournal(plan: j.plan, done: 2))
         try await WorkspaceMergeExecutor.run(pending, deps: deps())
-        XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt), .none)
+        XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt, appSupport: support), .none)
         XCTAssertEqual(read(url(tgt, snap + "c_2026-01-01_000000.json")), "a")
     }
 
@@ -676,7 +723,7 @@ extension WorkspaceMergeExecutorTests {
         try await stopped(first, after: 1)
         let planFile = try WorkspaceMergeJournal.planLocation(target: tgt)
         try "not json".write(to: planFile, atomically: true, encoding: .utf8)
-        XCTAssertTrue(WorkspaceMergeJournal.state(target: tgt).isUnreadable)
+        XCTAssertTrue(WorkspaceMergeJournal.state(target: tgt, appSupport: support).isUnreadable)
         do {
             try await WorkspaceMergeExecutor.run(try laterJournal(), deps: deps())
             XCTFail("an unreadable journal must refuse a fresh merge")
@@ -686,7 +733,7 @@ extension WorkspaceMergeExecutorTests {
         XCTAssertEqual(read(planFile), "not json")
         // The journal still names its merged folder, so Start over moves both files there.
         try await WorkspaceMergeExecutor.startOver(target: tgt, deps: deps())
-        XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt), .none)
+        XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt, appSupport: support), .none)
         XCTAssertEqual(read(merged(first).appendingPathComponent("merge-plan.json")), "not json")
         try await WorkspaceMergeExecutor.run(try laterJournal(), deps: deps())
     }
@@ -705,7 +752,7 @@ extension WorkspaceMergeExecutorTests {
             XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,
                            .peerClaim(workspace: tgt, host: "Peer Mac"))
         }
-        XCTAssertNotNil(WorkspaceMergeJournal.pending(target: tgt))
+        XCTAssertNotNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
     }
 
     func testARefusedJournalFolderIsAPreWriteRefusal() async throws {
@@ -720,5 +767,185 @@ extension WorkspaceMergeExecutorTests {
             try await WorkspaceMergeExecutor.run(j, deps: deps())
             XCTFail("a linked automation folder must refuse")
         } catch WorkspaceMergeExecutor.RunError.notStarted {}
+    }
+
+    // MARK: Peer-written plans
+
+    private func started() -> WorkspaceMergeJournal.Started? {
+        WorkspaceMergeJournal.started(target: tgt, appSupport: support)
+    }
+
+    func testAPlantedPlanIsForeignAndNeverRuns() async throws {
+        var j = try journal()
+        let victim = root.appendingPathComponent("victim.txt")
+        try "keep".write(to: victim, atomically: true, encoding: .utf8)
+        j.plan.steps[0].target = victim.path
+        try writePending(j, own: false)
+        XCTAssertTrue(WorkspaceMergeJournal.state(target: tgt, appSupport: support).isForeign)
+        XCTAssertNil(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
+        do {
+            try await WorkspaceMergeExecutor.run(j, deps: deps())
+            XCTFail("a foreign journal must refuse")
+        } catch {
+            XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError, .foreignJournal)
+        }
+        XCTAssertEqual(read(victim), "keep")
+    }
+
+    func testAForgedFinishedJournalIsNotRetired() throws {
+        var finished = try journal()
+        finished.done = finished.plan.steps.count
+        try writePending(finished, own: false)
+        XCTAssertTrue(WorkspaceMergeJournal.state(target: tgt, appSupport: support).isForeign)
+        XCTAssertTrue(fm.fileExists(atPath: try WorkspaceMergeJournal.location(target: tgt).path))
+        XCTAssertFalse(fm.fileExists(atPath: finished.mergedFolder.path))
+    }
+
+    func testAnOwnPlanWithAPathOutsideTheRootRefusesBeforeAnyStep() async throws {
+        let outside = fm.temporaryDirectory.appendingPathComponent("jrc-out-\(UUID().uuidString)")
+        let evilSibling = root.deletingLastPathComponent()
+            .appendingPathComponent(root.lastPathComponent + "-evil/x")
+        for bad in [outside.path, root.path + "/../escape", evilSibling.path, "relative/x"] {
+            var j = try journal()
+            let last = try XCTUnwrap(j.plan.steps.firstIndex {
+                if case .copy = $0.action { return true }
+                return false
+            })
+            j.plan.steps[last].target = bad
+            let before = try tree()
+            do {
+                try await WorkspaceMergeExecutor.run(j, deps: deps())
+                XCTFail("\(bad) must be refused")
+            } catch {
+                XCTAssertEqual((error as? WorkspaceMergeExecutor.RunError).map {
+                    if case .notStarted = $0 { return true } else { return false }
+                }, true, bad)
+            }
+            XCTAssertEqual(try tree(), before, bad)
+            XCTAssertNil(started())
+        }
+        XCTAssertFalse(fm.fileExists(atPath: outside.path))
+    }
+
+    func testRetireRefusesAMergedFolderOutsideTheRoot() throws {
+        var j = try journal()
+        j.done = j.plan.steps.count
+        j.plan.mergedFolder = root.deletingLastPathComponent().path + "/jrc-retire-\(UUID().uuidString)"
+        let data = try WorkspaceMergeJournal.encodedPlan(j.plan)
+        XCTAssertThrowsError(try j.retire(
+            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+        XCTAssertFalse(fm.fileExists(atPath: j.mergedFolder.path))
+        j.plan.mergedFolder = root.path + "/../elsewhere"
+        XCTAssertThrowsError(try j.retire(
+            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+    }
+
+    func testRetireRefusesALinkedMergedRootAndWritesNothingOutside() throws {
+        var j = try journal()
+        j.done = j.plan.steps.count
+        let outside = fm.temporaryDirectory.appendingPathComponent("jrc-out-\(UUID().uuidString)")
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: outside) }
+        try fm.createSymbolicLink(at: root.appendingPathComponent("_merged"),
+                                  withDestinationURL: outside)
+        let data = try WorkspaceMergeJournal.encodedPlan(j.plan)
+        XCTAssertThrowsError(try j.retire(
+            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: outside.path), [])
+    }
+
+    func testStartOverOfAForeignPlanMovesOnlyTheJournalFiles() async throws {
+        var j = try journal()
+        // A folder the old direct-child-of-_merged check would have accepted.
+        let other = root.appendingPathComponent("_merged/Other-20250101-000000")
+        try fm.createDirectory(at: other, withIntermediateDirectories: true)
+        j.plan.mergedFolder = other.path
+        try writePending(j, own: false)
+        let before = try tree()
+        try await WorkspaceMergeExecutor.startOver(target: tgt, deps: deps())
+        XCTAssertEqual(WorkspaceMergeJournal.state(target: tgt, appSupport: support), .none)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: other.path), [])
+        XCTAssertEqual(try tree(), before)
+        let kept = try fm.contentsOfDirectory(atPath: root.appendingPathComponent("_merged").path)
+        XCTAssertEqual(kept.filter { $0.contains("-unfinished-") }.count, 1)
+    }
+
+    func testStartOverUsesTheRecordedFolderNotTheJournals() async throws {
+        let j = try journal()
+        try await stopped(j, after: 1)
+        let progressURL = try WorkspaceMergeJournal.location(target: tgt)
+        var progress = try WorkspaceMergeJournal.readProgress(progressURL)
+        let other = root.appendingPathComponent("_merged/Other-20250101-000000")
+        try fm.createDirectory(at: other, withIntermediateDirectories: true)
+        progress.mergedFolder = other.path
+        try WorkspaceMergeJournal.write(progress, to: progressURL)
+        try await WorkspaceMergeExecutor.startOver(target: tgt, deps: deps())
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: other.path), [])
+        XCTAssertTrue(fm.fileExists(
+            atPath: merged(j).appendingPathComponent("merge-journal.json").path))
+    }
+
+    func testAPeerRaisedJournalCountStartsAtTheRecordsCount() async throws {
+        let plain = try journal()
+        try await WorkspaceMergeExecutor.run(plain, deps: deps())
+        let expected = try tree()
+        try fm.removeItem(at: root)
+        try setUpWithError()
+        try await stopped(try journal(), after: 1)
+        let progressURL = try WorkspaceMergeJournal.location(target: tgt)
+        var progress = try WorkspaceMergeJournal.readProgress(progressURL)
+        progress.done = try journal().plan.steps.count - 1
+        try WorkspaceMergeJournal.write(progress, to: progressURL)
+        let pending = try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt, appSupport: support))
+        XCTAssertEqual(pending.done, 1)
+        // Handed in with the peer's count, the run still starts at the record's.
+        var raised = pending
+        raised.done = progress.done
+        try await WorkspaceMergeExecutor.run(raised, deps: deps())
+        XCTAssertEqual(try tree(), expected)
+    }
+
+    func testAJournalCountingEveryStepWithALowerRecordIsNotRetired() throws {
+        let j = try journal()
+        try writePending(j)
+        let progressURL = try WorkspaceMergeJournal.location(target: tgt)
+        var progress = try WorkspaceMergeJournal.readProgress(progressURL)
+        progress.done = j.plan.steps.count
+        try WorkspaceMergeJournal.write(progress, to: progressURL)
+        guard case .pending(let read) = WorkspaceMergeJournal.state(
+            target: tgt, appSupport: support) else { return XCTFail("must stay pending") }
+        XCTAssertEqual(read.done, 0)
+        XCTAssertTrue(fm.fileExists(atPath: progressURL.path))
+        XCTAssertFalse(fm.fileExists(atPath: j.recordURL.path))
+    }
+
+    func testTheStartNoteIsClearedWhenTheStartFails() async throws {
+        let automation = url(tgt, "automation")
+        try fm.createDirectory(at: automation, withIntermediateDirectories: true)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: automation.path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: automation.path) }
+        do {
+            try await WorkspaceMergeExecutor.run(try journal(), deps: deps())
+            XCTFail("an unwritable automation folder must refuse")
+        } catch WorkspaceMergeExecutor.RunError.notStarted {}
+        XCTAssertNil(started())
+    }
+
+    func testTheStartNoteIsRecordedAndRemovedAfterRetire() async throws {
+        let j = try journal()
+        try await stopped(j, after: 1)
+        XCTAssertEqual(started()?.target, tgt)
+        XCTAssertEqual(started()?.planSHA256, WorkspaceMergeJournal.sha256Hex(
+            try WorkspaceMergeJournal.encodedPlan(j.plan)))
+        try await WorkspaceMergeExecutor.run(
+            try XCTUnwrap(WorkspaceMergeJournal.pending(target: tgt, appSupport: support)),
+            deps: deps())
+        XCTAssertNil(started())
+    }
+
+    func testStartOverRemovesTheStartNote() async throws {
+        try await stopped(try journal(), after: 1)
+        try await WorkspaceMergeExecutor.startOver(target: tgt, deps: deps())
+        XCTAssertNil(started())
     }
 }

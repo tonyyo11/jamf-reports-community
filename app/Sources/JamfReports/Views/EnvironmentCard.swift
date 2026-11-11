@@ -166,7 +166,8 @@ struct EnvironmentCard: View {
     private var mergeSection: some View {
         if pendingMerge != .none {
             MergeResumeBanner(
-                readable: !pendingMerge.isUnreadable, onResume: { startMerge(resumes: true) },
+                readable: pendingMerge.canResume, foreign: pendingMerge.isForeign,
+                onResume: { startMerge(resumes: true) },
                 onStartOver: { confirmStartOver = true })
         } else if !mergeCandidates.isEmpty {
             WrappingRow {
@@ -189,9 +190,10 @@ struct EnvironmentCard: View {
 
     private func startMerge(resumes: Bool) {
         let store = workspace
-        let deps = WorkspaceMergeModel.Dependencies.live { from, to in
+        let deps = WorkspaceMergeModel.Dependencies.live { from, to, keepTarget in
             await MainActor.run {
-                let policy = AutomationPolicy.current().replacingWorkspace(from, with: to)
+                let policy = AutomationPolicy.current().replacingWorkspace(
+                    from, with: to, keepTargetExcluded: keepTarget)
                 UserDefaults.standard.set(policy.serialize(), forKey: AutomationPolicy.storageKey)
             }
             await store.applyAutomationPolicy()
@@ -207,7 +209,7 @@ struct EnvironmentCard: View {
         Task {
             do {
                 try await WorkspaceMergeExecutor.startOver(
-                    target: target, deps: .live(rewritePolicy: { _, _ in }))
+                    target: target, deps: .live(rewritePolicy: { _, _, _ in }))
             } catch {
                 guard target == state.workspace else { return }
                 actionError = error.localizedDescription
@@ -299,6 +301,8 @@ struct EnvironmentCard: View {
 struct MergeResumeBanner: View {
     /// False when the journal cannot be read: only Start over is offered.
     var readable = true
+    /// Started on another Mac or changed since: only Start over is offered.
+    var foreign = false
     var onResume: () -> Void
     var onStartOver: () -> Void
 
@@ -309,7 +313,9 @@ struct MergeResumeBanner: View {
                 action: readable
                     ? .init(label: L("Resume"), icon: "play.fill", handler: onResume) : nil
             ) {
-                Text(readable
+                Text(foreign
+                     ? L("A merge into this workspace was started on another Mac, or its files changed.")
+                     : readable
                      ? L("A merge into this workspace did not finish.")
                      : L("A merge into this workspace did not finish and its record can't be read."))
             }

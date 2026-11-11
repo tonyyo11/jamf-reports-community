@@ -187,7 +187,8 @@ struct OverviewCustomizeSheet: View {
                 let rows = Self.scoreCardRows(
                     selected: workspace.selectedScoreCards,
                     policy: workspace.securityPolicy, agents: workspace.agentMetrics,
-                    mobile: workspace.demoMode ? [] : TrendSeries.Metric.mobileMetrics,
+                    mobile: workspace.demoMode ? [] : TrendSeries.Metric.mobileMetrics
+                        + (workspace.protectMetricsOffered ? TrendSeries.Metric.protectMetrics : []),
                     composition: workspace.environmentComposition)
                 ForEach(Array(rows.enumerated()), id: \.element) { index, metric in
                     scoreCardRow(metric)

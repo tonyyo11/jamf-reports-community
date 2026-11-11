@@ -344,6 +344,10 @@ notify:
 #   mobile_os_current_pct, mobile_passcode_pct, mobile_supervised_pct,
 #   mobile_data_protection_pct   (0–100, over the devices that report the field)
 #   mobile_stale_count, mobile_jailbroken_count   (whole-number counts)
+#   Jamf Protect (a workspace that collects it):
+#   protect_matched_pct   (0–100, Protect computers found in Jamf Pro inventory)
+#   protect_computer_count, protect_open_alert_count, protect_high_alert_count
+#   (whole-number counts)
 # when — one of:
 #   below            fires when the value is below threshold
 #   above            fires when the value is above threshold

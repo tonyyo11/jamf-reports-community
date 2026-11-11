@@ -63,11 +63,21 @@ struct ProtectProCorrelation: Sendable {
 
     var inventory = Inventory.jamfPro
     var protectCount = 0
+    /// How many inventory records the match ran against.
+    var inventorySize = 0
     var matched = 0
     var ambiguous = 0
     var noIdentifier = 0
     var notInPro: [ProtectComputerRow] = []
     var proWithoutProtect: [DeviceInventoryRecord] = []
+
+    /// Protect computers that carry a UUID or serial: the denominator of the match.
+    var identified: Int { protectCount - noIdentifier }
+
+    /// matched of identified; nil with no inventory or no identified Protect computer.
+    var matchedShare: MobileSummary.Share? {
+        inventorySize > 0 && identified > 0 ? .init(met: matched, of: identified) : nil
+    }
 
     static func build(
         protect: [ProtectComputerRow], pro: [DeviceInventoryRecord]
@@ -88,6 +98,7 @@ struct ProtectProCorrelation: Sendable {
             case .noIdentifier: result.noIdentifier += 1
             }
         }
+        result.inventorySize = pro.count
         result.proWithoutProtect = pro.enumerated()
             .filter { !claimed.contains($0.offset) }.map(\.element)
         return result

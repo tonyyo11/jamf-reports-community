@@ -95,6 +95,7 @@ enum ConfigDoctorService {
                 profile: profile, config: config, includeProbes: includeProbes)
             rows += protectProfileFolderRows(profile: profile, config: config)
             rows += protectProfileProductRows(config: config, workspace: profile)
+            rows += protectMatchRows(profile: profile, config: config)
             rows += protectSyncedBackupRows(
                 ProtectBackup.syncedStorageChoice(profile: profile, config: config))
             rows += proSyncedBackupRows(

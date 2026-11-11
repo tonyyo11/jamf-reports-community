@@ -49,7 +49,7 @@ final class WorkspaceMergeModel {
 
         /// `rewritePolicy` is the GUI's: it owns the stored `AutomationPolicy`.
         static func live(
-            rewritePolicy: @escaping @Sendable (String, String) async -> Void
+            rewritePolicy: @escaping @Sendable (String, String, Bool) async -> Void
         ) -> Dependencies {
             Dependencies(
                 hostVerdict: { target, source in
@@ -145,7 +145,8 @@ final class WorkspaceMergeModel {
     static func refusedBeforeWriting(_ error: Error) -> Bool {
         if let bridge = error as? CLIBridgeError { return bridge.isCollectRefusal }
         switch error as? WorkspaceMergeExecutor.RunError {
-        case .peerClaim, .pendingMerge, .unreadableJournal, .notStarted: return true
+        case .peerClaim, .pendingMerge, .unreadableJournal, .foreignJournal, .notStarted:
+            return true
         default: return false
         }
     }

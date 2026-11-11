@@ -223,4 +223,21 @@ final class ServerHostRedactionTests: XCTestCase {
         XCTAssertEqual(LogRedactor.redactedForSharing(
             text, profile: nil, scopeIDs: { _ in [] }, serverHosts: { _ in [] }), text)
     }
+
+    /// The workspace rule runs last, so a peer-chosen word cannot split a seeded name or address.
+    func testAWorkspaceNameCannotSplitASeededNameOrAnAddress() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ws-seed-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"[{"general": {"name": "Jane Smith"}}]"#.write(
+            to: dir.appendingPathComponent("computers.json"), atomically: true, encoding: .utf8)
+        let r = DiagnosticRedactor()
+        r.seedFromWorkspace(dir)
+        r.seedWorkspaceNames(["Jane", "10"])
+        let out = r.redactText("Jane Smith checked in from 10.0.0.1")
+        XCTAssertFalse(out.contains("Smith"), "got: \(out)")
+        XCTAssertFalse(out.contains(".0.0.1"), "got: \(out)")
+        XCTAssertFalse(out.contains("10.0"), "got: \(out)")
+    }
 }

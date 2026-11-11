@@ -497,6 +497,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var serial: String
     var osVersion: String
     var model: String
+    /// `hardware.model` ("MacBook Air (M2, 2022)"); empty when the source carries none.
+    var marketingModel = ""
     var user: String
     var email: String
     var department: String
@@ -1103,6 +1105,8 @@ struct TrendSeries: Identifiable, Sendable {
         /// The summary's `mobile` figures (mobile spec 4.1), counted apart from Macs.
         case mobileManaged, mobileOSCurrent, mobilePasscode, mobileSupervised,
              mobileDataProtection, mobileStale, mobileJailbroken
+        /// The summary's Jamf Protect figures (P9), offered only where the environment has Protect.
+        case protectComputers, protectMatched, protectOpenAlerts
 
         /// Every metric that does not depend on the workspace, in their original order. The
         /// agent metrics come from `security_agents`, so they are not listed here.
@@ -1127,7 +1131,14 @@ struct TrendSeries: Identifiable, Sendable {
             .mobileManaged, .mobileSupervised, .mobileStale, .mobileOSCurrent,
         ]
 
+        /// The Protect metrics, offered only where a summary carries them and Protect is in the
+        /// environment, so they are not in `allCases`.
+        static let protectMetrics: [Metric] = [
+            .protectComputers, .protectMatched, .protectOpenAlerts,
+        ]
+
         var isMobile: Bool { Self.mobileMetrics.contains(self) }
+        var isProtect: Bool { Self.protectMetrics.contains(self) }
 
         static let agentPrefix = "agent:"
 
@@ -1157,6 +1168,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .mobileDataProtection: return "mobileDataProtection"
             case .mobileStale: return "mobileStale"
             case .mobileJailbroken: return "mobileJailbroken"
+            case .protectComputers: return "protectComputers"
+            case .protectMatched: return "protectMatched"
+            case .protectOpenAlerts: return "protectOpenAlerts"
             }
         }
 
@@ -1169,7 +1183,7 @@ struct TrendSeries: Identifiable, Sendable {
                 self = .agent(name)
                 return
             }
-            guard let match = (Self.allCases + Self.mobileMetrics)
+            guard let match = (Self.allCases + Self.mobileMetrics + Self.protectMetrics)
                 .first(where: { $0.rawValue == rawValue }) else {
                 return nil
             }
@@ -1211,6 +1225,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .mobileDataProtection: return L("Mobile data protection")
             case .mobileStale: return L("Stale mobile devices")
             case .mobileJailbroken: return L("Jailbroken mobile devices")
+            case .protectComputers: return L("Jamf Protect computers")
+            case .protectMatched: return L("Jamf Protect match with inventory")
+            case .protectOpenAlerts: return L("Jamf Protect open alerts")
             }
         }
 
@@ -1226,7 +1243,8 @@ struct TrendSeries: Identifiable, Sendable {
         var unit: String {
             switch self {
             case .stale, .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
-                 .mobileStale, .mobileJailbroken: return ""
+                 .mobileStale, .mobileJailbroken, .protectComputers,
+                 .protectOpenAlerts: return ""
             default: return "%"
             }
         }
@@ -1236,11 +1254,12 @@ struct TrendSeries: Identifiable, Sendable {
         /// needs a decision here. Read by the Trends colours and the AI trend input alike.
         var polarity: FleetInsightInput.Polarity {
             switch self {
-            case .stale, .mobileStale, .mobileJailbroken: .lowerIsBetter
-            case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged: .neutral
+            case .stale, .mobileStale, .mobileJailbroken, .protectOpenAlerts: .lowerIsBetter
+            case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
+                 .protectComputers: .neutral
             case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
                  .securityScore, .sip, .firewall, .gatekeeper, .mobileOSCurrent, .mobilePasscode,
-                 .mobileSupervised, .mobileDataProtection: .higherIsBetter
+                 .mobileSupervised, .mobileDataProtection, .protectMatched: .higherIsBetter
             }
         }
         /// A count of devices, not a share or score: the Trends axis fits its top to the data
@@ -1248,14 +1267,15 @@ struct TrendSeries: Identifiable, Sendable {
         var isDeviceCount: Bool {
             switch self {
             case .managedDevices, .activeDevices, .stale, .mobileManaged, .mobileStale,
-                 .mobileJailbroken: true
+                 .mobileJailbroken, .protectComputers, .protectOpenAlerts: true
             default: false
             }
         }
         var minY: Double {
             switch self {
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged, .mobileStale,
-                 .mobileJailbroken: return 0
+                 .mobileJailbroken, .protectComputers, .protectOpenAlerts: return 0
+            case .protectMatched: return 50
             case .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
                  .mobileDataProtection: return 50
             case .stability:     return 40
@@ -1271,8 +1291,8 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var maxY: Double {
             switch self {
-            case .activeDevices, .managedDevices, .mobileManaged: return 1000
-            case .stale, .mobileStale: return 60
+            case .activeDevices, .managedDevices, .mobileManaged, .protectComputers: return 1000
+            case .stale, .mobileStale, .protectOpenAlerts: return 60
             case .mobileJailbroken: return 10
             case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100

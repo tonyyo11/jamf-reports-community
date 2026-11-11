@@ -40,7 +40,7 @@ final class ProtectBackupTests: XCTestCase {
         var evaluated = 0
         let none = ProtectBackup.plan(
             config: nil, workspaceProfile: "ws",
-            pinAllows: { evaluated += 1; return true },
+            pinAllows: { _ in evaluated += 1; return true },
             sharedStorage: { evaluated += 1; return nil })
         XCTAssertEqual(none, .notConnected)
         for yaml in ["protect:\n  enabled: false\n  profile: \"p\"\n",
@@ -50,18 +50,28 @@ final class ProtectBackupTests: XCTestCase {
             XCTAssertEqual(
                 ProtectBackup.plan(
                     config: config, workspaceProfile: "ws",
-                    pinAllows: { evaluated += 1; return true },
+                    pinAllows: { _ in evaluated += 1; return true },
                     sharedStorage: { evaluated += 1; return nil }),
                 .notConnected, yaml)
         }
         XCTAssertEqual(evaluated, 0)
     }
 
+    func testAPlanHandsThePinCheckTheNameItWouldRun() throws {
+        var asked: [String] = []
+        let plan = ProtectBackup.plan(
+            config: try loadConfig("protect:\n  enabled: true\n  profile: \"p\"\n"),
+            workspaceProfile: "ws",
+            pinAllows: { asked.append($0); return false }, sharedStorage: { nil })
+        XCTAssertEqual(asked, ["p"])
+        guard case .skip = plan else { return XCTFail("a stale name is skipped") }
+    }
+
     func test_plan_runsWhenConnectedLocalAndPinned() throws {
         let config = try loadConfig(connectedConfig)
         XCTAssertEqual(
             ProtectBackup.plan(config: config, workspaceProfile: "ws",
-                               pinAllows: { true }, sharedStorage: { nil }),
+                               pinAllows: { _ in true }, sharedStorage: { nil }),
             .run(profile: "protect-login"))
     }
 
@@ -69,18 +79,18 @@ final class ProtectBackupTests: XCTestCase {
         let config = try loadConfig(connectedConfig)
         guard case .skip(let drift) = ProtectBackup.plan(
             config: config, workspaceProfile: "ws",
-            pinAllows: { false }, sharedStorage: { nil }) else { return XCTFail("drift") }
+            pinAllows: { _ in false }, sharedStorage: { nil }) else { return XCTFail("drift") }
         XCTAssertTrue(drift.contains("protect.profile changed"), drift)
 
         guard case .skip(let shared) = ProtectBackup.plan(
             config: config, workspaceProfile: "ws",
-            pinAllows: { true }, sharedStorage: { "on OneDrive" }) else { return XCTFail("shared") }
+            pinAllows: { _ in true }, sharedStorage: { "on OneDrive" }) else { return XCTFail("shared") }
         XCTAssertTrue(shared.contains("on OneDrive"), shared)
 
         let blank = try loadConfig("protect:\n  enabled: true\n  profile: \"\"\n")
         guard case .skip(let empty) = ProtectBackup.plan(
             config: blank, workspaceProfile: "ws",
-            pinAllows: { true }, sharedStorage: { nil }) else { return XCTFail("empty") }
+            pinAllows: { _ in true }, sharedStorage: { nil }) else { return XCTFail("empty") }
         XCTAssertTrue(empty.contains("protect.profile is empty"), empty)
     }
 
@@ -88,7 +98,7 @@ final class ProtectBackupTests: XCTestCase {
         let config = try loadConfig(connectedConfig)
         let folder = try makeTempDir()
         guard case .skip(let reason) = ProtectBackup.plan(
-            config: config, workspaceProfile: "ws", pinAllows: { true },
+            config: config, workspaceProfile: "ws", pinAllows: { _ in true },
             sharedStorage: {
                 BackupMaintenance.sharedStorageDescription(
                     folder, profile: "ws", volumeIsLocal: { _ in true },
@@ -101,7 +111,7 @@ final class ProtectBackupTests: XCTestCase {
         let config = try loadConfig(connectedConfig)
         guard case .skip(let reason) = ProtectBackup.plan(
             config: config, workspaceProfile: "ws",
-            pinAllows: { true }, sharedStorage: { "on a network volume" })
+            pinAllows: { _ in true }, sharedStorage: { "on a network volume" })
         else { return XCTFail("skip by default") }
         XCTAssertEqual(reason, ProtectBackup.syncedStorageReason(place: "on a network volume"))
         for text in ["this workspace is on a network volume", "request headers",
@@ -112,14 +122,14 @@ final class ProtectBackupTests: XCTestCase {
 
         XCTAssertEqual(
             ProtectBackup.plan(
-                config: config, workspaceProfile: "ws", pinAllows: { true },
+                config: config, workspaceProfile: "ws", pinAllows: { _ in true },
                 sharedStorage: { "on a network volume" }, syncedStorageAllowed: { true }),
             .run(profile: "protect-login"))
 
         var asked = false
         XCTAssertEqual(
             ProtectBackup.plan(
-                config: config, workspaceProfile: "ws", pinAllows: { true },
+                config: config, workspaceProfile: "ws", pinAllows: { _ in true },
                 sharedStorage: { nil }, syncedStorageAllowed: { asked = true; return false }),
             .run(profile: "protect-login"))
         XCTAssertFalse(asked, "local storage never asks for the opt-in")
@@ -137,7 +147,7 @@ final class ProtectBackupTests: XCTestCase {
     func test_plan_skipsAProfileOfAnotherProduct() throws {
         let config = try loadConfig(connectedConfig)
         let plan = ProtectBackup.plan(
-            config: config, workspaceProfile: "ws", pinAllows: { true },
+            config: config, workspaceProfile: "ws", pinAllows: { _ in true },
             protectRefusal: { "'\($0)' is a Jamf Pro profile, not a Jamf Protect profile" },
             sharedStorage: { nil })
         XCTAssertEqual(plan, .skip(
@@ -936,4 +946,5 @@ private final class Lines: @unchecked Sendable {
 
     func append(_ line: CLIBridge.LogLine) { lock.withLock { stored.append(line) } }
     var texts: [String] { lock.withLock { stored.map(\.text) } }
+
 }

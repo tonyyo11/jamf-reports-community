@@ -120,6 +120,11 @@ struct WorkspaceMergeSheet: View {
                     .font(.caption).foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            ForEach(plan.droppedConnections, id: \.product) { connection in
+                Text(L("\(connection.product) profile '\(ConfigSchema.displayText(connection.profile))' is not carried over; add it to \(ConfigSchema.displayText(plan.target)) after the merge."))
+                    .font(.caption).foregroundStyle(Theme.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(plan.outsideSourceFolder, id: \.self) { folder in
                 Text(L("\(Self.full(folder)) is read from, not moved."))
                     .font(.caption).foregroundStyle(Theme.Text.secondary)

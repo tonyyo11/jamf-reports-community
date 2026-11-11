@@ -392,9 +392,19 @@ struct DeviceComplianceRow: Decodable, Sendable {
     let jamfID: String?
     /// The last check-in as jamf-cli wrote it (`last_contact`).
     let lastContact: String?
+    /// `os_version`; blank on a Mac that has never sent inventory.
+    let osVersion: String?
+
+    /// A Mac that has never sent inventory (`NeverInventoried`) and has no check-in date.
+    var isNeverInventoried: Bool {
+        NeverInventoried.isNeverInventoried(osVersion: osVersion)
+            && (lastContact ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+            && daysSinceContact == nil && daysSinceCheckin == nil
+    }
 
     private enum CodingKeys: String, CodingKey {
         case name, serial, managed, stale
+        case osVersion = "os_version"
         case daysSinceCheckin = "days_since_checkin"
         case daysSinceContact = "days_since_contact"
         case id, jamfID = "jamf_id", deviceID = "device_id"
@@ -408,6 +418,7 @@ struct DeviceComplianceRow: Decodable, Sendable {
         serial = try c.decodeIfPresent(String.self, forKey: .serial)
         managed = try c.decodeIfPresent(Bool.self, forKey: .managed)
         stale = try c.decodeIfPresent(Bool.self, forKey: .stale)
+        osVersion = (try? c.decodeIfPresent(String.self, forKey: .osVersion)) ?? nil
         // Tolerant int decode: both keys can arrive as String or number across
         // jamf-cli versions (reuses AnyCodable.intValue like other decoders here).
         daysSinceCheckin = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceCheckin)?.intValue
@@ -441,6 +452,9 @@ struct DeviceComplianceRow: Decodable, Sendable {
         _ rule: StaleRule, computers: ComputerDateIndex?
     ) -> StaleInputs {
         var inputs = StaleInputs(checkInDays: resolvedDaysSinceContact, flag: stale == true)
+        // A Mac that never checked in has no date to age: it reads as never, as on Computers,
+        // not as jamf-cli's "not stale".
+        inputs.carriesDates = isNeverInventoried
         guard rule.needsComputers, let match = computers?.match(jamfID: jamfID, serial: serial)
         else { return inputs }
         inputs.checkIn = match.checkIn

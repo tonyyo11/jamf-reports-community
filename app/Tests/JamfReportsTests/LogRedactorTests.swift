@@ -366,4 +366,24 @@ final class LogRedactorTests: XCTestCase {
             "client_secret: super-secret-value-1234", profile: nil)
         XCTAssertFalse(shared.contains("super-secret-value-1234"))
     }
+
+    func testAConnectedLoginNamedLikeALogWordMasksNothing() {
+        let forms = LogRedactor.profileNameForms(
+            of: "Example", environment: EnvironmentProfiles(jamfPro: "Example", platform: "partial"))
+        XCTAssertFalse(forms.contains("partial"), "\(forms)")
+        let named = LogRedactor.profileNameForms(
+            of: "Example", environment: EnvironmentProfiles(jamfPro: "Example", platform: "Example-API"))
+        XCTAssertTrue(named.contains("Example-API"))
+    }
+
+    func testTheMDMSlotAddsNoSeedAndALongLoginIsDropped() {
+        let long = String(repeating: "a", count: 130)
+        let forms = LogRedactor.profileNameForms(
+            of: "Example",
+            environment: EnvironmentProfiles(
+                jamfPro: "OtherMDM", platform: "Example-API", protect: long))
+        XCTAssertFalse(forms.contains("OtherMDM"), "\(forms)")
+        XCTAssertFalse(forms.contains(long), "\(forms)")
+        XCTAssertTrue(forms.contains("Example") && forms.contains("Example-API"), "\(forms)")
+    }
 }

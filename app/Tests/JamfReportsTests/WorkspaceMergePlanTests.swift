@@ -52,6 +52,20 @@ final class WorkspaceMergePlanTests: XCTestCase {
         XCTAssertTrue(archived.archive?.hasPrefix(p.mergedFolder) == true)
     }
 
+    func testBackupsPastTheKeepCountStayWithTheSource() throws {
+        func backup(_ ws: String, _ name: String, label: String) throws {
+            try write(#"{"label":"\#(label)"}"#, ws, "backups/\(name)/manifest.json")
+        }
+        for day in 10..<20 { try backup(tgt, "202602\(day)T000000", label: "scheduled-x") }
+        for day in 10..<20 { try backup(src, "202601\(day)T000000", label: "scheduled-x") }
+        try backup(src, "20260105T000000", label: "manual-keep")
+        let copied = steps(try plan(), .backups).map { URL(fileURLWithPath: $0.source).lastPathComponent }
+        XCTAssertEqual(copied, ["20260105T000000"])
+        // Fewer than the keep count in total: every one is copied.
+        for day in 12..<20 { try fm.removeItem(at: root.appendingPathComponent("\(tgt)/backups/202602\(day)T000000")) }
+        XCTAssertEqual(steps(try plan(), .backups).count, 1 + 8)
+    }
+
     func testSummaries() throws {
         try write("{}", src, "snapshots/summaries/summary_2026-01-01.json")
         try write("{}", src, "snapshots/summaries/summary_2026-01-02.json")
@@ -96,6 +110,20 @@ final class WorkspaceMergePlanTests: XCTestCase {
         XCTAssertEqual(steps(p, .runHistory).map(\.action), [.copy, .copy])
         XCTAssertFalse(paths.contains { $0.contains("claim") || $0.contains("hosts") })
         XCTAssertEqual(steps(p, .backups).map(\.action), [.copyFolder])
+    }
+
+    func testSourceProductLoginsTheTargetLacksAreListed() throws {
+        try write("profiles:\n  platform: \"Cloud\"\n  protect: \"Cloud-Protect\"\n  security_cloud: \"SC\"\n",
+                  src, "config.yaml")
+        try write("profiles:\n  jamf_pro: \"OnPrem\"\n  platform: \"Cloud\"\n  security_cloud: \"SC2\"\n",
+                  tgt, "config.yaml")
+        XCTAssertEqual(try plan().droppedConnections,
+                       [.init(product: "Jamf Protect", profile: "Cloud-Protect")])
+    }
+
+    func testSourcePinIsRemovedOnlyAfterTheMove() throws {
+        XCTAssertEqual(try plan().steps.suffix(2).map(\.action),
+                       [.tail(.moveSource), .tail(.removeSourcePin)])
     }
 
     func testTailComesLastAndConfigKeys() throws {

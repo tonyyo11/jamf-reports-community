@@ -187,6 +187,9 @@ final class MobileOnlySummaryTests: XCTestCase {
       "firewallPct" : 80,
       "gatekeeperPct" : 100,
       "mobileDeviceCount" : 2,
+      "mobileFormFactorCounts" : {
+        "iPad" : 2
+      },
       "patchPct" : 60,
       "patchPctBasis" : "device",
       "securityScore" : 85,

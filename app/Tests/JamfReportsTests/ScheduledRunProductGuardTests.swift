@@ -103,11 +103,11 @@ final class ScheduledRunProductGuardTests: XCTestCase {
 
     func testRefusalIsTheSameRuleAsTheRouterAndSchedulesAdd() throws {
         try ProductGuardSeed.seed(profile: profile, product: "protect", in: root)
-        XCTAssertNotNil(CollectRouter.proRunRefusal(
+        XCTAssertNotNil(CollectRouter.runRefusal(
             profile: profile, operation: "Collect", config: nil))
         let school = try ConfigLoader.loadFromString(
             "school_cli:\n  enabled: true\n  profile: \(profile)\n")
-        XCTAssertNil(CollectRouter.proRunRefusal(
+        XCTAssertNil(CollectRouter.runRefusal(
             profile: profile, operation: "Collect", config: school),
                      "a School workspace is not a Pro run")
         XCTAssertThrowsError(try Schedules.Add.record(

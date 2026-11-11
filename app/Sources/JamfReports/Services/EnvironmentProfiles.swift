@@ -114,12 +114,18 @@ struct EnvironmentProfiles: Equatable, Sendable {
     func isConfirmedProtectOnly(
         workspace: String, appSupport: URL = AppSupport.directory()
     ) -> Bool {
-        isProtectOnly && SharedConfigPin.protectAllowed(profile: workspace, appSupport: appSupport)
+        isProtectOnly && SharedConfigPin.protectAllowed(
+            profile: workspace, name: protect ?? "", appSupport: appSupport)
     }
 
     /// `refusal`, plus a refusal of a Protect-only environment for a command that needs Jamf Pro.
     func proCommandRefusal(workspace: String, operation: String) -> String? {
         if let refusal = refusal(workspace: workspace) { return refusal }
+        // From config.yaml, so it holds when jamf-cli cannot be asked which product a login is.
+        if isSchool {
+            return "\(operation) is a Jamf Pro command; "
+                + "'\(ConfigSchema.displayText(workspace))' is a Jamf School workspace"
+        }
         guard isProtectOnly else { return nil }
         return "'\(ConfigSchema.displayText(workspace))' holds only a Jamf Protect profile; "
             + "\(operation) needs Jamf Pro."
@@ -190,15 +196,16 @@ extension EnvironmentProfiles {
     }
 
     /// `platformPinAllows` is `SharedConfigPin.platformAllowed`; it matters only under a block,
-    /// and only for another profile than the Jamf Pro slot (D18): the writer's seed names the
-    /// workspace's own, which cannot point this Mac at another tenant.
-    func platformRoute(platformPinAllows: Bool) -> PlatformRoute {
+    /// and only for another profile than the workspace's own (D18): the writer's seed names the
+    /// workspace, which cannot point this Mac at another tenant. Compared with the workspace, not
+    /// the Jamf Pro slot, which the same file could set to match.
+    func platformRoute(workspace: String, platformPinAllows: Bool) -> PlatformRoute {
         guard source == .profilesBlock else { return .workspaceProfile }
         guard let platform else { return .unavailable(Self.noPlatformReason) }
         guard ProfileService.isValid(platform) else {
             return .unavailable(Self.invalidPlatformReason)
         }
-        guard platformPinAllows || platform == jamfPro else {
+        guard platformPinAllows || platform == workspace else {
             return .unavailable(Self.heldPlatformReason)
         }
         return .profile(platform)

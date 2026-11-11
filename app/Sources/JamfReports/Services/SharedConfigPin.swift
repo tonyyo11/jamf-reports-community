@@ -246,6 +246,11 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         if !current.platformProfile.isEmpty, current.platformProfile != profile {
             waiting.append(.platformProfile)
         }
+        // A Protect login naming the workspace itself is a Protect-only environment, which a peer
+        // can plant as a folder; it runs only after this Mac confirms it.
+        if !current.protectProfile.isEmpty, current.protectProfile == profile {
+            waiting.append(.protectProfile)
+        }
         return waiting.filter(keys.contains)
     }
 
@@ -755,16 +760,37 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             && pin.timestampAuthorityHash == (value.isEmpty ? "" : sha256Hex(value))
     }
 
-    /// False when `protect.profile` differs from the pinned one: Protect is not collected and
-    /// the dashboard does not include it.
-    static func protectAllowed(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
-        !check(profile: profile, appSupport: appSupport).isDrifted(.protectProfile)
+    /// Whether `name`, the Protect login the caller is about to send `-p`, may be used: always on
+    /// a workspace that is not pinned; on a pinned one only when the key is not drifted and
+    /// `name` is the pinned value, so a name the run loaded before a peer's edit was reverted
+    /// is still held.
+    static func protectAllowed(
+        profile: String, name: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        pinAllows(.protectProfile, name: name, profile: profile, appSupport: appSupport) {
+            $0.protectProfile
+        }
     }
 
-    /// False when `profiles.platform` differs from the pinned one or waits for a Confirm: the
-    /// Platform-only kinds are not collected (`PlatformRoute.unavailable`).
-    static func platformAllowed(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
-        !check(profile: profile, appSupport: appSupport).isDrifted(.platformProfile)
+    /// The same for the Platform login (`profiles.platform`): the Platform-only kinds are not
+    /// collected for a name that is not the confirmed one (`PlatformRoute.unavailable`).
+    static func platformAllowed(
+        profile: String, name: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        pinAllows(.platformProfile, name: name, profile: profile, appSupport: appSupport) {
+            $0.platformProfile
+        }
+    }
+
+    private static func pinAllows(
+        _ key: Key, name: String, profile: String, appSupport: URL,
+        pinnedValue: (SharedConfigPin) -> String
+    ) -> Bool {
+        let result = check(profile: profile, appSupport: appSupport)
+        guard let pin = result.pinned else { return result.isLocal && !result.isDrifted(key) }
+        // Trimmed as `current` trims the file value, so the two compare like for like.
+        return !result.isDrifted(key)
+            && pinnedValue(pin) == name.trimmingCharacters(in: .whitespaces)
     }
 
     /// `protect.backup_on_synced_storage` as this Mac may use it: on only while config.yaml

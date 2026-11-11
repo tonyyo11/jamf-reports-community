@@ -65,13 +65,16 @@ struct Schedules: AsyncParsableCommand {
                 throw Invalid(description: "unknown mode '\(mode)'")
             }
             _ = try LaunchAgentWriter.calendarIntervals(for: cadence)
+            if !allProfiles, let refusal = ProfileService.connectedProfileRefusal(of: profile) {
+                throw Invalid(description: refusal)
+            }
             // A schedule for a base profile of another product would only ever be skipped.
             if !allProfiles, runMode != .jamfCLIOnly {
                 let config = collectRoutingConfig(profile: profile)
                 // A School workspace collects and generates, but has nothing for `pro backup`.
                 let refusal = runMode == .backup
                     ? CollectRouter.backupRefusal(profile: profile, config: config)
-                    : CollectRouter.proRunRefusal(
+                    : CollectRouter.runRefusal(
                         profile: profile, operation: "A \(runMode.rawValue) schedule",
                         config: config)
                 if let refusal { throw Invalid(description: refusal) }

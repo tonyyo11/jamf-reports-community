@@ -553,6 +553,7 @@ struct ReportEngine: Sendable {
         // replaced by nil.
         if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
         if existing.mobile == nil, fresh.mobile != nil { return true }
+        if freshMeasuresNewEnvironmentField(existing: existing, fresh: fresh) { return true }
         // The same for the EDR figure: the first collect after an upgrade past the build that
         // began recording it must not leave that day's summary, and the Overview's EDR score
         // card reading it, empty. Upgrade only; a recorded figure is never replaced by nil.
@@ -560,6 +561,21 @@ struct ReportEngine: Sendable {
         // A later run landed a source: its numbers are newer, whatever the morning's said.
         if fresh.collectionSources?.values.contains("live") == true { return true }
         return false
+    }
+
+    /// P9 fields: true when `fresh` measures one `existing` lacks (upgrade only).
+    private static func freshMeasuresNewEnvironmentField(
+        existing: DailySummary, fresh: DailySummary
+    ) -> Bool {
+        (existing.protectComputerCount == nil && fresh.protectComputerCount != nil)
+            || (existing.protectMatched == nil && fresh.protectMatched != nil)
+            || (existing.protectOpenAlerts == nil && fresh.protectOpenAlerts != nil)
+            || (existing.protectAlertCounts == nil && fresh.protectAlertCounts != nil)
+            || (existing.osMajorCounts == nil && fresh.osMajorCounts != nil)
+            || (existing.modelFamilyCounts == nil && fresh.modelFamilyCounts != nil)
+            || (existing.mobileFormFactorCounts == nil && fresh.mobileFormFactorCounts != nil)
+            || (existing.lastSeenBuckets == nil && fresh.lastSeenBuckets != nil)
+            || !Set(fresh.products ?? []).isSubset(of: existing.products ?? [])
     }
 
     /// A rebuilt same-day point keeps "live" for a source an earlier run landed and this run
@@ -822,6 +838,9 @@ struct ReportEngine: Sendable {
             guard let count = mobileDeviceCount, count > 0 else { return nil }
             return Self.mobileOnlySummary(
                 date: date, mobileDeviceCount: count, mobile: mobile,
+                maps: SummaryDeviceMaps.jamfPro(
+                    computersData: nil, mobileData: cachedData(kind: "mobile-devices-list"),
+                    rule: config.staleRule, now: Date()),
                 collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil,
                 collectedByHost: Self.collectingHostLabel(dataDir: dataDir))
         }
@@ -959,16 +978,23 @@ struct ReportEngine: Sendable {
         // all optional — when a tenant lacks any of these signals the field
         // is left nil so consumers (TrendStore, SecurityPostureView) can
         // distinguish "no data" from a zero.
-        let sipPct = pct(of: sipCount, total: totalDevices)
-        let firewallPct = pct(of: firewallCount, total: totalDevices)
-        let gatekeeperPct = pct(of: gatekeeperCount, total: totalDevices)
-
         // P0 = FileVault, SIP or Firewall failures, P1 = Gatekeeper failures, and the score,
         // all as the Security Posture screen counts them. `totalDevices` here may come from
         // inventory-summary when the security summary carries none.
         let fleet = SecurityFleetCounts.build(
             totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
             hardware: hardware, policy: securityPolicy)
+        // Nil when no Mac reported the control (a fleet of Macs with no inventory yet).
+        let sipPct = fleet.summaryPct(
+            .sip, reported: pct(of: sipCount, total: totalDevices), reportedOn: sipCount)
+        let firewallPct = fleet.summaryPct(
+            .firewall, reported: pct(of: firewallCount, total: totalDevices),
+            reportedOn: firewallCount)
+        let gatekeeperPct = fleet.summaryPct(
+            .gatekeeper, reported: pct(of: gatekeeperCount, total: totalDevices),
+            reportedOn: gatekeeperCount)
+        fileVaultPct = fleet.summaryPct(
+            .fileVault, reported: fileVaultPct, reportedOn: securityOnCounts[.fileVault])
         // The workspace's score factors, through the one function the Security Posture screen
         // and the workbook use, so a fleet has one score everywhere. A factor without data
         // drops out of the denominator.
@@ -1004,6 +1030,12 @@ struct ReportEngine: Sendable {
             complianceIsProxy = nil
         }
 
+        // Same rule as `staleCount`; the dates come from the `computers` snapshot read above.
+        let maps = SummaryDeviceMaps.jamfPro(
+            computersData: cachedData(kind: "computers"),
+            mobileData: cachedData(kind: "mobile-devices-list"),
+            rule: staleRule, now: Date())
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
@@ -1037,7 +1069,11 @@ struct ReportEngine: Sendable {
             patchPctBasis: DailySummary.deviceWeightedPatchBasis,
             securityScoreBasis: score.basis,
             securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct,
-            mobile: mobile
+            mobile: mobile,
+            osMajorCounts: maps.osMajor,
+            modelFamilyCounts: maps.modelFamily,
+            mobileFormFactorCounts: maps.formFactor,
+            lastSeenBuckets: maps.lastSeen
         )
     }
 
@@ -1062,6 +1098,7 @@ struct ReportEngine: Sendable {
     /// 0 and every Mac figure is nil, which every reader treats as unmeasured (never 0%).
     static func mobileOnlySummary(
         date: String, mobileDeviceCount: Int, mobile: MobileSummary? = nil,
+        maps: SummaryDeviceMaps.Fields = .init(),
         collectionSources: [String: String]?, collectedByHost: String?
     ) -> DailySummary {
         DailySummary(
@@ -1069,7 +1106,8 @@ struct ReportEngine: Sendable {
             staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
             source: "jamf-cli", collectionSources: collectionSources,
             mobileDeviceCount: mobileDeviceCount, collectedByHost: collectedByHost,
-            mobile: mobile)
+            mobile: mobile, osMajorCounts: maps.osMajor,
+            mobileFormFactorCounts: maps.formFactor, lastSeenBuckets: maps.lastSeen)
     }
 
     /// The day's summary for a Protect-only environment: no Macs and no mobile devices, so
@@ -1082,40 +1120,6 @@ struct ReportEngine: Sendable {
             staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
             source: "jamf-cli", collectionSources: collectionSources,
             mobileDeviceCount: nil, collectedByHost: collectedByHost)
-    }
-
-    /// Writes today's `protectOnlySummary`. A same-day summary that counted Macs or mobile
-    /// devices is kept; one that is itself Protect-only is replaced.
-    @discardableResult
-    static func writeProtectOnlySummary(
-        summariesDir: URL, dataDir: URL, landedKinds: [String], day: Date = Date(),
-        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) -> SummaryEmitOutcome {
-        let date = SummaryJSONParser.dateFormatter.string(from: day)
-        let file = summariesDir.appendingPathComponent("summary_\(date).json")
-        if let data = try? BoundedFile.read(
-               file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
-           let existing = try? JSONDecoder().decode(DailySummary.self, from: data),
-           existing.totalDevices > 0 || existing.mobile != nil
-            || (existing.mobileDeviceCount ?? 0) > 0 {
-            onLine(.init(timestamp: Date(), level: .info,
-                         text: "[info] \(file.lastPathComponent) already exists — kept"))
-            return .keptExisting
-        }
-        do {
-            try FileManager.default.createDirectory(
-                at: summariesDir, withIntermediateDirectories: true)
-        } catch {
-            let msg = "\(summaryNotWrittenMarker) the summaries directory could not be created"
-            AppLogger.collect.warning("\(msg, privacy: .private)")
-            onLine(.init(timestamp: Date(), level: .warn, text: msg))
-            return .directoryUnavailable
-        }
-        let sources = Dictionary(uniqueKeysWithValues: landedKinds.map { ($0, "live") })
-        let summary = protectOnlySummary(
-            date: date, collectionSources: sources,
-            collectedByHost: collectingHostLabel(dataDir: dataDir))
-        return writeSummaryFile(summary, to: file, onLine: onLine) ? .wrote : .writeFailed
     }
 
     /// The score's sources from what the summary writer already read, plus the `computers`
@@ -1745,6 +1749,12 @@ struct ReportEngine: Sendable {
     /// `platformOnlyKinds`; nil for a platform profile and — deliberately —
     /// for an unknown method. Unknown fails toward collecting: never skip a
     /// kind because we could not ask.
+    static func platformSlotApplies(
+        separateProfile: Bool, profileAuthIsPlatform: Bool, source: EnvironmentProfiles.Source
+    ) -> Bool {
+        separateProfile || (profileAuthIsPlatform && source == .legacyKeys)
+    }
+
     static func nonPlatformAuthMethod(_ authMethod: String?) -> String? {
         guard let method = JamfCLIAuthMethod(raw: authMethod), !method.isPlatform else {
             return nil
@@ -2146,13 +2156,27 @@ struct ReportEngine: Sendable {
     /// True inside the tick's same-day retry of a run that failed or came back incomplete.
     @TaskLocal static var isSameDayRetry = false
 
+    /// The environment the router resolved and applied `EnvironmentProfiles.refusal` to, so
+    /// `collect` routes the Platform kinds from it and not from a second read of config.yaml.
+    @TaskLocal static var routedEnvironment: EnvironmentProfiles?
+
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
-        let environment = EnvironmentProfiles.resolve(config: config, workspace: workspace.name)
-        // The pin is a full check; it matters only once a block names the slot.
-        return environment.platformRoute(
+        platformRoute(
+            environment: EnvironmentProfiles.resolve(config: config, workspace: workspace.name),
+            workspace: workspace)
+    }
+
+    /// The pin is a full check on the name this run would use; it matters only once a block
+    /// names the slot.
+    static func platformRoute(
+        environment: EnvironmentProfiles, workspace: WorkspaceID
+    ) -> PlatformRoute {
+        environment.platformRoute(
+            workspace: workspace.name,
             platformPinAllows: environment.source != .profilesBlock
-                || SharedConfigPin.platformAllowed(profile: workspace.name))
+                || SharedConfigPin.platformAllowed(
+                    profile: workspace.name, name: environment.platform ?? ""))
     }
 
     /// Where the Platform kinds run and what skips them, resolved once per run.
@@ -2169,7 +2193,7 @@ struct ReportEngine: Sendable {
     /// still means "the Platform kinds ran on another profile". An organization-level one
     /// skips them too, but `profile` stays the named one, which its verdicts then judge.
     private static func resolvePlatformRun(
-        config: ReportConfig?, workspace: WorkspaceID, profile: String,
+        environment: EnvironmentProfiles, workspace: WorkspaceID, profile: String,
         profileAuth: ProfileAuthMethod.Resolved?, bin: URL,
         platformHosts: PlatformHostCheck.Lookup,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
@@ -2180,7 +2204,7 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .warn, text: text))
         }
         var platformAuth: ProfileAuthMethod.Resolved?
-        switch platformRoute(config: config, workspace: workspace) {
+        switch platformRoute(environment: environment, workspace: workspace) {
         case .workspaceProfile: break
         case .unavailable(let reason): run.unavailable = reason
         case .profile(let named) where named == profile: break
@@ -2289,7 +2313,9 @@ struct ReportEngine: Sendable {
             profile: profile, binary: bin, onLine: onLine)
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
         let platformRun = Self.resolvePlatformRun(
-            config: loadedConfig, workspace: workspace, profile: profile,
+            environment: routedEnvironment
+                ?? EnvironmentProfiles.resolve(config: loadedConfig, workspace: workspace.name),
+            workspace: workspace, profile: profile,
             profileAuth: profileAuth, bin: bin, platformHosts: platformHosts, onLine: onLine)
         let platformProfile = platformRun.profile
         let platformUnavailable = platformRun.unavailable
@@ -2440,6 +2466,17 @@ struct ReportEngine: Sendable {
             authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
+        // P9-R1: Platform-only kinds count under `platform` for a separate profiles.platform, or
+        // (no profiles: block) a Jamf Pro profile that logs in with the Platform API.
+        let platformSlot = platformSlotApplies(
+            separateProfile: platformSeparate,
+            profileAuthIsPlatform: profileAuth?.method?.isPlatform == true,
+            source: EnvironmentProfiles.resolve(
+                config: loadedConfig, workspace: workspace.name).source)
+        let platformLanded = savedKinds.intersection(platformOnlyKinds)
+        landedSources?.record(
+            .jamfPro, platformSlot ? savedKinds.subtracting(platformLanded) : savedKinds)
+        landedSources?.record(.platform, platformSlot ? platformLanded : [])
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
@@ -3885,6 +3922,7 @@ struct ReportEngine: Sendable {
         _ = await fetchSOFAIfPlanned(
             afterMatrix: afterMatrix, profile: profile, dataDir: dataDir,
             refreshSOFA: refreshSOFA, stateStore: stateStore, onLine: onLine)
+        landedSources?.record(.jamfSchool, schoolSaved)
         writeSchoolSummaryAfterCollect(
             profile: workspace.name, dataDir: dataDir, workspacePaths: workspacePaths,
             landedKinds: schoolSaved, day: now, onLine: onLine)

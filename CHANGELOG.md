@@ -9,6 +9,17 @@ versions in this repository map to git tags.
 
 ### Added
 
+- The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
+- The daily summary records which products an environment holds and, with Jamf Protect, how many
+  Protect computers it sees, how many of those match this environment's inventory, and how many
+  alerts are open (and how many of those are high). It also records counts by macOS major version,
+  Mac model family, mobile device type and last-seen age. Trends can chart the three Protect
+  figures, and alert rules can use `protect_computer_count`, `protect_matched_pct`,
+  `protect_open_alert_count` and `protect_high_alert_count`. A figure the day's run could not
+  measure is left out, and an earlier run's value for it is kept. (#305)
+- Config Doctor warns when fewer than half of the identified Jamf Protect computers match this
+  environment's inventory, which usually means the Protect profile belongs to another
+  environment. (#305)
 - A Jamf Protect-only environment is listed and run as a workspace, its Data Sources list shows
   only the Protect sources, and the health strip expects only the Protect data. (#305)
 - The health strip now watches a Jamf School workspace's own data (devices, users, classes and
@@ -84,6 +95,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Jamf Pro commands are refused for a Jamf School environment, and a Protect-only environment
+  whose `profiles.protect` change you have not confirmed on this Mac is refused as a run that
+  does not start, with the reason, instead of failing partway. Until you confirm it, this Mac
+  treats the workspace as it was. A Protect-only environment has Trends with the Protect figures
+  only. (#305)
 - A Jamf School workspace now collects once a day unless the collect is forced (Refresh or a
   full schedule), as Jamf Pro does, and a Mac that stands down for another Mac in a shared
   workspace no longer collects Jamf Protect either (#305).
@@ -140,6 +156,16 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
+- The Add sheet checks a Platform API profile's ID before adding one jamf-cli already holds, as
+  Connect new does, so a profile it would have refused can no longer be added from the list.
+  (#305)
+- Copied `jamf-cli config remove-profile` commands work for a profile name that starts with a
+  dash. (#305)
+- A merge copies only the scheduled backups the target would keep, so the target's next scheduled
+  backup no longer deletes its own oldest ones; a copied status file no longer replaces the
+  target's open attention items; and when both workspaces were excluded from a schedule, running
+  that step again keeps the target excluded. (#305)
 - Snapshot retention now also runs for Jamf School and Jamf Protect-only workspaces. (#305)
 - In French, a jamf-cli update whose brew, tar or unzip step ran past its time limit could crash
   the app while it wrote the message.
@@ -254,6 +280,17 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A merge resumes only when this Mac started it, and every path in a merge plan must lie inside
+  the workspaces folder. A merge plan found in a shared folder that this Mac did not start offers
+  Start over only, which moves the two files aside and runs nothing. The source's per-Mac pin is
+  removed after the move, not before. (#305)
+- The Platform API and Jamf Protect profile names in a shared config.yaml are checked where they
+  are used: a name is used only when it is the one you confirmed on this Mac, so a name a peer
+  wrote and then reverted while a run was loading is not run. A Jamf Protect profile that names
+  the workspace itself waits for a Confirm the first time this Mac sees it. (#305)
+- Shared logs and diagnostic bundles now also hide the IDs of the Platform API and other
+  connected profiles, and a connected profile named like a log word (`partial`) no longer
+  hides that word. (#305)
 - Shared logs, copied logs and webhook failure cards now hide the names of the other workspaces
   on this Mac. (#305)
 - A scheduled run behind the System Settings proxy no longer leaves the proxy's host name in
