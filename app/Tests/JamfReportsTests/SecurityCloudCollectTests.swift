@@ -23,8 +23,9 @@ private final class SCCalls: @unchecked Sendable {
 /// `CollectRouter` runs it. Tests never run jamf-cli: a stub not named `jamf-cli` stands in.
 @MainActor
 final class SecurityCloudCollectTests: XCTestCase {
-    private var root: URL!
-    private var profile = ""
+    // Swift 6.1 refuses a nonisolated setUpWithError writing main-actor state.
+    nonisolated(unsafe) private var root: URL!
+    nonisolated(unsafe) private var profile = ""
 
     override func setUpWithError() throws {
         try super.setUpWithError()
