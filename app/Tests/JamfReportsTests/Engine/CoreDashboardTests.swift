@@ -422,7 +422,7 @@ final class CoreDashboardTests: XCTestCase {
         let slash = DateFormatter()
         slash.locale = Locale(identifier: "en_US_POSIX")
         slash.dateFormat = "MM/dd/yyyy HH:mm:ss"
-        let recent = slash.string(from: Date().addingTimeInterval(-5 * 86_400 - 3_600))
+        let recent = slash.string(from: Date().calendarDays(ago: 5))
         let rows: [[String: Any]] = [
             ["packageName": "Reads", "fileName": "a.pkg", "size": 1_048_576, "uploadDate": recent],
             ["packageName": "Garbled", "fileName": "b.pkg", "size": 1_048_576,

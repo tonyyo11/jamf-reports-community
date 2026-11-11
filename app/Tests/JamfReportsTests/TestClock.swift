@@ -25,6 +25,15 @@ func dailyScheduleFiringAtTen(profile: String) -> Schedule {
 }
 
 extension Date {
+    /// `days` calendar days before this date, as `Calendar.dateComponents([.day])` and a local
+    /// day count them: `-days * 86_400` is a day short just after clocks go back. Whole seconds,
+    /// so a formatter that rounds milliseconds up cannot put the stamp after the boundary.
+    func calendarDays(ago days: Int) -> Date {
+        let date = Calendar.current.date(byAdding: .day, value: -days, to: self) ?? self
+        return Date(timeIntervalSinceReferenceDate:
+            date.timeIntervalSinceReferenceDate.rounded(.down))
+    }
+
     /// Past the window in which `tickLockHeldRecently` still reads a released lock as busy.
     static var testNoonAfterTheLockWindow: Date {
         testNoon.addingTimeInterval(TickLock.wakeInterval + 61)
