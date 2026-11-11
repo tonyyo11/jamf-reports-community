@@ -91,6 +91,8 @@ struct ReportEngine: Sendable {
 
         let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let workbook = Workbook(accentColor: accent)
+        // Read from the collect's verdict, never re-derived: this run may be hours later.
+        workbook.siteScopeNote = SiteScope.persisted(dataDir: dataDir).reportSentence
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
         let prov = await Provenance.current(

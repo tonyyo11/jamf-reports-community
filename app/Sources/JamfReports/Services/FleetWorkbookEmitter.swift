@@ -32,14 +32,16 @@ enum FleetWorkbookEmitter {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(
             "fleet-\(ExportNaming.sanitize(group.name))-\(timestamp).xlsx")
-        try workbook(for: model).write(to: url)
+        try workbook(
+            for: model, notes: FleetReportEmitter.siteScopeNotes(profiles: group.workspaces)
+        ).write(to: url)
         return url
     }
 
     /// Pure model → workbook assembly (5 sheets). Testable without IO.
-    static func workbook(for model: FleetWorkbookModel) -> Workbook {
+    static func workbook(for model: FleetWorkbookModel, notes: [String] = []) -> Workbook {
         let wb = Workbook()
-        fleetSummarySheet(wb.addSheet("Fleet Summary"), model)
+        fleetSummarySheet(wb.addSheet("Fleet Summary"), model, notes: notes)
         perProfileSheet(wb.addSheet("Per-Profile Breakdown"), model)
         securityPostureSheet(wb.addSheet("Security Posture"), model)
         complianceSheet(wb.addSheet("Compliance"), model)
@@ -49,7 +51,9 @@ enum FleetWorkbookEmitter {
 
     // MARK: - Fleet Summary
 
-    private static func fleetSummarySheet(_ ws: Worksheet, _ model: FleetWorkbookModel) {
+    private static func fleetSummarySheet(
+        _ ws: Worksheet, _ model: FleetWorkbookModel, notes: [String]
+    ) {
         ws.setColumnWidth(0, 0, 22)
         ws.setColumnWidth(1, 3, 14)
         ws.write(model.groupName, row: 0, col: 0, format: .title)
@@ -65,6 +69,10 @@ enum FleetWorkbookEmitter {
             ws.write(FleetReportEmitter.format(m.previous, unit: m.unit), row: r, col: 2, format: .cell)
             ws.write(FleetReportEmitter.formatDelta(m.delta, unit: m.unit), row: r, col: 3, format: .cell)
         }
+        // Below the metric rows, so no figure moves.
+        for (i, note) in notes.enumerated() {
+            ws.write(note, row: head + model.universal.count + 2 + i, col: 0, format: .yellow)
+        }
         let withFV = model.perProfile.filter { $0.fileVaultPct != nil }
         guard !withFV.isEmpty else { return }
         let bar = BarChartData(
@@ -72,7 +80,7 @@ enum FleetWorkbookEmitter {
             values: withFV.map { $0.fileVaultPct ?? 0 },
             colors: withFV.map { _ in ChartPalette.cgColor(forMetric: .fileVault) })
         if let png = ChartRenderer.barChart(data: bar, title: "FileVault % by Profile") {
-            ws.insertImage(row: head + model.universal.count + 3, col: 0,
+            ws.insertImage(row: head + model.universal.count + 3 + notes.count, col: 0,
                            data: png, filename: "fleet-fv-by-profile.png")
         }
     }

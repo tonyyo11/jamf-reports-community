@@ -93,6 +93,26 @@ enum SiteScope: Codable, Equatable, Sendable {
     }
 }
 
+extension SiteScope {
+    /// The line a report carries when the login is limited; nil otherwise.
+    var reportSentence: String? {
+        summary.map { "This report covers \($0) in Jamf Pro: the login is limited to some sites." }
+    }
+
+    /// The persisted verdict of a profile's data folder (`unknown` when there is none).
+    static func persisted(dataDir: URL?) -> SiteScope {
+        guard let dataDir,
+              let stateDir = try? WorkspacePaths.confinedFolder(["state"], under: dataDir)
+        else { return .unknown }
+        return SiteScopeRecord.load(stateDir: stateDir)
+    }
+
+    /// The same, found through the profile's workspace.
+    static func persisted(profile: String) -> SiteScope {
+        persisted(dataDir: try? WorkspacePaths.dataDir(for: profile))
+    }
+}
+
 /// `state/site-scope.json`: the verdict of the newest collect that saw both inputs. Report-time
 /// code reads this and never re-derives it (a report can outlive the login that collected).
 struct SiteScopeRecord: Codable, Equatable, Sendable {

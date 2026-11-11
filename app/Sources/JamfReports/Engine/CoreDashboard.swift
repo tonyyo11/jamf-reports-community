@@ -3104,6 +3104,7 @@ struct CoreDashboard: Sendable {
         ws.mergeRange(firstRow: 0, firstCol: 0, lastRow: 0, lastCol: 1,
                       value: "Jamf Reports \u{00B7} Fleet Posture Report", format: .title)
         ws.freezePane(row: 1, col: 0)
+        ws.writeSiteScopeNote(row: 1)
 
         var row = 2
 
