@@ -400,6 +400,11 @@ enum BackupMaintenance {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// A folder whose manifest label starts with `scheduled-`: what retention counts.
+    static func isScheduledBackup(_ backupDir: URL) -> Bool {
+        manifestLabel(of: backupDir)?.hasPrefix("scheduled-") == true
+    }
+
     private static func manifestLabel(of backupDir: URL) -> String? {
         let manifestURL = backupDir.appendingPathComponent("manifest.json")
         guard let data = try? BoundedFile.read(

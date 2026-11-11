@@ -185,7 +185,7 @@ final class WorkspaceFreshnessEvaluationTests: XCTestCase {
         ) -> Set<String> {
             Set(WorkspaceStore.expectedKinds(
                 profile: profile, jamfCLIVersion: nil, auth: nil,
-                protectResolved: { _ in resolved }, protectPinAllows: { _ in pinAllows }))
+                protectResolved: { _ in resolved }, protectPinAllows: { _, _ in pinAllows }))
         }
         func login(_ product: JamfCLIProduct) -> ProfileAuthMethod.Resolved {
             .init(authMethod: "oauth2", isTenantLevel: false, product: product)

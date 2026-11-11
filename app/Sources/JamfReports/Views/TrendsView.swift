@@ -438,7 +438,9 @@ struct TrendsView: View {
     private var availableMetrics: [TrendSeries.Metric] {
         workspaceStore.availableMetrics.filter { metric in
             // The demo history has no mobile series; a live one offers by device type.
-            if metric.isMobile { return !workspaceStore.demoMode && trendStore.offers(metric) }
+            if metric.isMobile || metric.isProtect {
+                return !workspaceStore.demoMode && trendStore.offers(metric)
+            }
             guard workspaceStore.demoMode || trendStore.offers(metric) else { return false }
             switch metric {
             case .mscpBandTrend:

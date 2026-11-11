@@ -127,8 +127,9 @@ jamf_cli:
 #   - jamf_pro or jamf_school must be this workspace's own profile, or nothing
 #     runs and the run log says why;
 #   - protect is collected after each Jamf Pro or Jamf School collect, as
-#     protect.profile is; platform and security_cloud are recorded for later
-#     releases and not used yet.
+#     protect.profile is; platform runs the Platform-only reports (compliance
+#     benchmarks, DDM status, blueprints), leave it blank for none; security_cloud
+#     is not used yet (P12).
 #
 # profiles:
 #   jamf_pro: "Example"           # the Jamf Pro profile (any auth method)
@@ -136,6 +137,13 @@ jamf_cli:
 #   jamf_school: ""               # the Jamf School profile; never with jamf_pro
 #   protect: "Example-Protect"    # a `jamf-cli protect setup` profile
 #   security_cloud: ""            # a `jamf-cli security setup` profile
+#
+# A Jamf Protect-only environment sets protect and nothing else; it collects
+# Protect alone, and backups, audits and device lookups (Jamf Pro commands)
+# are refused:
+#
+# profiles:
+#   protect: "Example-Protect"
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +344,10 @@ notify:
 #   mobile_os_current_pct, mobile_passcode_pct, mobile_supervised_pct,
 #   mobile_data_protection_pct   (0–100, over the devices that report the field)
 #   mobile_stale_count, mobile_jailbroken_count   (whole-number counts)
+#   Jamf Protect (a workspace that collects it):
+#   protect_matched_pct   (0–100, Protect computers found in Jamf Pro inventory)
+#   protect_computer_count, protect_open_alert_count, protect_high_alert_count
+#   (whole-number counts)
 # when — one of:
 #   below            fires when the value is below threshold
 #   above            fires when the value is above threshold

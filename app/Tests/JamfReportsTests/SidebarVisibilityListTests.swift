@@ -4,7 +4,7 @@ import XCTest
 final class SidebarVisibilityListTests: XCTestCase {
 
     private var listed: [Tab] {
-        SettingsView.toggleableGroups(school: false).flatMap(\.tabs)
+        SettingsView.toggleableGroups(environment: .demo).flatMap(\.tabs)
     }
 
     /// Every tab the user may hide has a switch, once, and no tab that cannot be hidden does.
@@ -25,9 +25,9 @@ final class SidebarVisibilityListTests: XCTestCase {
 
     func testTheGroupsAreTheSidebarsInTheSidebarsOrder() {
         let sidebar = Tab.navGroups.map(\.label)
-        let shown = SettingsView.toggleableGroups(school: false).map(\.label)
+        let shown = SettingsView.toggleableGroups(environment: .demo).map(\.label)
         XCTAssertEqual(shown, sidebar.filter { shown.contains($0) })
-        let fleet = SettingsView.toggleableGroups(school: false).first { $0.label == "FLEET" }
+        let fleet = SettingsView.toggleableGroups(environment: .demo).first { $0.label == "FLEET" }
         XCTAssertEqual(
             fleet?.tabs, [.mobileFleet, .deviceLookup, .protectDashboard, .groupInventory])
         XCTAssertFalse(shown.contains("SYSTEM"), "Settings is core, so its group is empty")
@@ -35,12 +35,14 @@ final class SidebarVisibilityListTests: XCTestCase {
 
     /// A Jamf School workspace lists only the tabs it has.
     func testSchoolListsOnlyItsOwnTabs() {
-        let school = SettingsView.toggleableGroups(school: true).flatMap(\.tabs)
+        let school = SettingsView.toggleableGroups(
+            environment: SchoolWorkspaceTests.env(.jamfSchool)).flatMap(\.tabs)
         XCTAssertEqual(Set(school), Tab.schoolTabs.filter { !$0.isCoreTab })
         XCTAssertFalse(school.contains(.schoolDevices), "Devices is the School core tab")
         XCTAssertFalse(school.contains(.fleet))
         XCTAssertFalse(school.contains(.protectDashboard))
-        let withProtect = SettingsView.toggleableGroups(school: true, protectConnected: true)
+        let withProtect = SettingsView.toggleableGroups(
+            environment: SchoolWorkspaceTests.env(.jamfSchool, .protect))
             .flatMap(\.tabs)
         XCTAssertEqual(Set(withProtect), Set(school).union([.protectDashboard]))
     }

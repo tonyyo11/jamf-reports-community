@@ -107,6 +107,7 @@ struct SettingsView: View {
             // so a profile that just gained platform auth must not stay excluded for the
             // rest of the session.
             ProfileAuthMethod.invalidateCache()
+            PlatformTwin.invalidateCache()
         }
     }
 
@@ -1240,8 +1241,7 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(
                     SettingsView.toggleableGroups(
-                        school: workspace.isSchoolWorkspace,
-                        protectConnected: workspace.protectConnected),
+                        environment: workspace.environmentProducts),
                     id: \.label
                 ) { group in
                     visibilityGroupRow(label: group.label, tabs: group.tabs)
@@ -1257,10 +1257,9 @@ struct SettingsView: View {
     /// `Tab.navGroups` gets a switch here with no second list to forget (Groups & Searches
     /// had none). A group left with no tab to switch is dropped.
     nonisolated static func toggleableGroups(
-        school: Bool, protectConnected: Bool = false
+        environment: EnvironmentProducts
     ) -> [(label: String, tabs: [Tab])] {
-        let available = TabVisibility()
-            .limited(toSchool: school, protectConnected: protectConnected)
+        let available = TabVisibility().limited(to: environment)
         return Tab.navGroups.compactMap { group in
             let tabs = group.items.filter { !$0.isCoreTab && available.isAvailable($0) }
             return tabs.isEmpty ? nil : (label: group.label, tabs: tabs)

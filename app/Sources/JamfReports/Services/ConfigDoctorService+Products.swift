@@ -14,7 +14,7 @@ extension ConfigDoctorService {
     ) -> [DoctorRow] {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         guard let named = environment.protect, named != profile,
-              discovered().contains(where: { $0.name == named && $0.product.isNeverAWorkspace }),
+              discovered().contains(where: { $0.name == named && ProfileService.neverAWorkspace($0) }),
               folderExists(named) else { return [] }
         let shown = ConfigSchema.displayText(named)
         return [DoctorRow(
@@ -168,7 +168,7 @@ extension ConfigDoctorService {
             severity: .suggest,
             title: L("Two workspaces collect the same Jamf Pro"),
             detail: L("'\(platform)' (Platform API) and '\(twin)' (oauth2) reach the same Jamf Pro server, and both have a workspace. Jamf Reports collects one profile per fleet, so history is split across two folders and a consolidated report counts the fleet twice."),
-            hint: L("Keep '\(platform)' as the workspace and exclude '\(twin)' under Automation > Excluded profiles. Keep the oauth2 profile in jamf-cli for the commands the gateway refuses. Nothing is changed for you.")
+            hint: L("Merge '\(platform)' into '\(twin)' from Data Sources › Environment › Merge another workspace into this one. '\(twin)' keeps running the Jamf Pro commands and '\(platform)' becomes its Platform API profile. Nothing is changed until you merge.")
         )]
     }
 

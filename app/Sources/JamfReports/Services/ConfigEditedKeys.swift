@@ -3,9 +3,9 @@ import Foundation
 /// The key paths the app's screens write to config.yaml, read off the code that writes them:
 /// `ConfigService.apply` for the Config screen's blocks, and the `apply` of each scoped
 /// writer (`ChartsConfigWriter`, `HTMLReportConfigWriter`, `NotifyConfigWriter`,
-/// `AIConfigWriter`, `SecurityPolicyConfigWriter`, `BackupChoiceConfigWriter`). A key added
-/// to an editor joins the set with no second list to update. A path leaves out list indices
-/// (`custom_eas`, `name`), as `ConfigSchema` does.
+/// `AIConfigWriter`, `SecurityPolicyConfigWriter`, `BackupChoiceConfigWriter`,
+/// `ProfilesConfigWriter`). A key added to an editor joins the set with no second list to
+/// update. A path leaves out list indices (`custom_eas`, `name`), as `ConfigSchema` does.
 enum ConfigEditedKeys {
     static let paths: Set<[String]> = derive()
 
@@ -21,6 +21,9 @@ enum ConfigEditedKeys {
         AIConfigWriter.apply(AIConfig(), to: &root)
         BackupChoiceConfigWriter.apply(.protect, on: true, to: &root)
         BackupChoiceConfigWriter.apply(.pro, on: true, to: &root)
+        for slot in [ProfilesConfigWriter.Slot.platform, .protect] {
+            ProfilesConfigWriter.apply(slot, to: "probe", derived: .none, root: &root)
+        }
         root.set("security_policy", value: .mapping(securityPolicyProbe))
         var found: Set<[String]> = []
         collect(root, under: [], into: &found)

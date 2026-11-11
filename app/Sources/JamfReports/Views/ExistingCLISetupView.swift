@@ -18,6 +18,8 @@ struct ExistingCLISetupView: View {
     @State private var isFinishing = false
     @State private var pendingSharedRoot: URL?
     @State private var existingRootMessage: String?
+    /// Protect pickers the user changed, which ends "Suggested by name".
+    @State private var touchedProtect: Set<String> = []
 
     init(profiles: [JamfCLIProfile]) {
         _flow = State(initialValue: ExistingCLISetupFlow(profiles: profiles))
@@ -40,7 +42,7 @@ struct ExistingCLISetupView: View {
         }
         .background(Theme.Colors.winBG)
         .sharedFolderConsent(pending: $pendingSharedRoot) { applyExistingRoot($0) }
-        .task { await flow.resolveTwins() }
+        .task { await flow.resolveProposal() }
     }
 
     // MARK: - Existing workspace
@@ -103,9 +105,10 @@ struct ExistingCLISetupView: View {
     // MARK: - Header
 
     private var headerSubtitle: String {
-        let count = flow.profileNames.count
-        let noun = count == 1 ? "profile" : "profiles"
-        return L("Found \(count) configured \(noun). Three steps and the app is live: create a reporting workspace for each profile, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point.")
+        let count = flow.proposal.environments.count
+        return count == 1
+            ? L("Found 1 environment to set up. Three steps and the app is live: create its reporting workspace, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point.")
+            : L("Found \(count) environments to set up. Three steps and the app is live: create a reporting workspace for each environment, choose how often data refreshes automatically, and run a first collection so the dashboards and trend history have a starting point.")
     }
 
     private var header: some View {
@@ -126,28 +129,13 @@ struct ExistingCLISetupView: View {
 
     private var profilesCard: some View {
         Card(padding: 22) {
-            VStack(alignment: .leading, spacing: 10) {
-                stepTitle(number: 1, title: L("Profiles to set up"))
-                ForEach(flow.profileNames, id: \.self) { name in
-                    Toggle(profileTitle(name), isOn: selectionBinding(name))
-                        .toggleStyle(.checkbox)
-                        .disabled(isLocked || flow.unusable[name] != nil
-                            || flow.refusals[name] != nil)
-                    if let reason = flow.unusable[name] {
-                        profileNote(L("\(name) can't be used. \(reason.explanation)"))
-                    }
-                    if let reason = flow.refusals[name] {
-                        profileNote(reason)
-                    }
-                    if let note = flow.twinNote(for: name) {
-                        Text(note)
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+            VStack(alignment: .leading, spacing: 14) {
+                stepTitle(number: 1, title: L("Environments to set up"))
+                ForEach(flow.proposal.environments) { environmentCard($0) }
+                if !flow.proposal.protectChoices.isEmpty { protectPickers }
+                notSetUp
                 Text(
-                    "Each profile gets its own workspace under \(WorkspaceRootStore.displayRoot)/ — config, cached snapshots, and generated reports stay per-tenant."
+                    "Each environment gets its own workspace under \(WorkspaceRootStore.displayRoot)/ — config, cached snapshots, and generated reports stay per-tenant."
                 )
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
@@ -155,8 +143,109 @@ struct ExistingCLISetupView: View {
         }
     }
 
+    private func environmentCard(_ env: EnvironmentProposal.Environment) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(profileTitle(env.workspace), isOn: selectionBinding(env.workspace))
+                .toggleStyle(.checkbox)
+                .disabled(isLocked)
+            slotRow(env.isSchool ? L("Jamf School") : L("Jamf Pro"), env.workspace)
+            if let platform = env.platform, !flow.removedPlatform.contains(platform) {
+                HStack {
+                    slotRow(L("Platform API"), platform)
+                    PNPButton(title: L("Remove"), size: .sm) {
+                        flow.removePlatform(from: env.workspace)
+                    }
+                    .disabled(isLocked || !flow.selected.contains(env.workspace))
+                    .accessibilityLabel(L("Remove Platform API profile \(platform)"))
+                }
+            }
+            ForEach(protectLogins(in: env.workspace), id: \.self) {
+                slotRow(L("Jamf Protect"), $0)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.Colors.fgMuted.opacity(0.3)))
+    }
+
+    private func slotRow(_ product: String, _ profile: String) -> some View {
+        Text(verbatim: "\(product) · \(profile)")
+            .font(.callout)
+            .foregroundStyle(Theme.Colors.fgMuted)
+            .padding(.leading, 20)
+    }
+
+    private func protectLogins(in workspace: String) -> [String] {
+        flow.proposal.protectChoices.map(\.profile)
+            .filter { assignedEnvironment($0) == workspace }
+    }
+
+    /// An assignment to an unticked environment reads as "Not now"; the flow keeps it so
+    /// ticking the environment again restores it.
+    private func assignedEnvironment(_ login: String) -> String? {
+        (flow.protectAssignment[login] ?? nil).flatMap { flow.selected.contains($0) ? $0 : nil }
+    }
+
+    private var protectPickers: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Kicker(text: L("Jamf Protect logins"), tone: .gold)
+            ForEach(flow.proposal.protectChoices) { choice in
+                VStack(alignment: .leading, spacing: 2) {
+                    Picker(choice.profile, selection: protectBinding(choice.profile)) {
+                        Text("Not now").tag(String?.none)
+                        ForEach(protectTargets(for: choice.profile), id: \.self) {
+                            Text($0).tag(String?.some($0))
+                        }
+                    }
+                    .disabled(isLocked)
+                    if assignedEnvironment(choice.profile) == choice.suggested,
+                       choice.suggested != nil, !touchedProtect.contains(choice.profile) {
+                        Text("Suggested by name")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The ticked environments `login` can go to: one Protect login each, so an environment
+    /// another login holds is left out.
+    private func protectTargets(for login: String) -> [String] {
+        let held = Set(flow.proposal.protectChoices.map(\.profile)
+            .filter { $0 != login }.compactMap(assignedEnvironment))
+        return flow.proposal.environments.map(\.workspace)
+            .filter { flow.selected.contains($0) && !held.contains($0) }
+    }
+
+    @ViewBuilder
+    private var notSetUp: some View {
+        let removed = flow.proposal.environments.compactMap(\.platform)
+            .filter(flow.removedPlatform.contains)
+        let rows = flow.proposal.unassigned.sorted { $0.key < $1.key }
+            .map { ($0.key, $0.value) }
+            + removed.map { ($0, L("Removed from its environment.")) }
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Kicker(text: L("Not set up"), tone: .gold)
+                ForEach(rows, id: \.0) { profileNote("\($0.0): \($0.1)") }
+            }
+        }
+    }
+
+    private func protectBinding(_ login: String) -> Binding<String?> {
+        Binding(
+            get: { assignedEnvironment(login) },
+            set: {
+                touchedProtect.insert(login)
+                flow.protectAssignment[login] = .some($0)
+            }
+        )
+    }
+
     private func profileTitle(_ name: String) -> String {
-        flow.products[name] == .school ? L("\(name) (Jamf School)") : name
+        let isSchool = flow.proposal.environments.first { $0.workspace == name }?.isSchool == true
+        return isSchool ? L("\(name) (Jamf School)") : name
     }
 
     private func profileNote(_ text: String) -> some View {
@@ -228,10 +317,16 @@ struct ExistingCLISetupView: View {
                         icon: flow.isRunning ? "hourglass" : "play.fill",
                         style: .gold, size: .lg
                     ) {
-                        guard !flow.isRunning, !flow.selected.isEmpty else { return }
+                        guard !flow.isRunning, !flow.selected.isEmpty, flow.proposalResolved
+                        else { return }
                         Task { await flow.run() }
                     }
-                    .disabled(flow.isRunning || flow.selected.isEmpty)
+                    .disabled(flow.isRunning || flow.selected.isEmpty || !flow.proposalResolved)
+                    if !flow.proposalResolved {
+                        Text("Checking which profiles reach the same Jamf Pro…")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
                     if flow.canRetry {
                         PNPButton(
                             title: L("Skip — set up later"), icon: "arrow.right",
@@ -293,6 +388,7 @@ struct ExistingCLISetupView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
         } label: {
             Text("Collection detail")
@@ -343,6 +439,14 @@ struct ExistingCLISetupView: View {
                 .buttonStyle(.link)
                 .font(.footnote)
                 .disabled(flow.isRunning || isFinishing)
+            Text(verbatim: "·")
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+            // Records no outcome, so leaving demo mode brings this screen back.
+            Button(L("Use demo data")) { workspace.setDemoMode(true) }
+                .buttonStyle(.link)
+                .font(.footnote)
+                .disabled(flow.isRunning || isFinishing)
         }
         .padding(.top, 4)
     }
@@ -384,13 +488,10 @@ struct ExistingCLISetupView: View {
         isFinishing = true
         Task {
             flow.recordLearnedURLs()
-            // A twin left unticked is excluded from all-profiles runs even without automation.
-            if flow.enableAutomation || !flow.twinsLeftOut.isEmpty {
+            if flow.enableAutomation {
                 UserDefaults.standard.set(
                     flow.configuredPolicy().serialize(), forKey: AutomationPolicy.storageKey
                 )
-            }
-            if flow.enableAutomation {
                 await workspace.applyAutomationPolicy()
                 workspace.warnIfTickerNeedsApproval()
             }
@@ -414,10 +515,29 @@ private extension ExistingCLISetupFlow.CollectKindStatus.Outcome {
     }
 }
 
-#Preview {
-    ExistingCLISetupView(profiles: ["acme-prod", "acme-dev"].map {
-        JamfCLIProfile(name: $0, url: "acme.jamfcloud.com", schedules: 0, status: .idle)
-    })
-        .environment(WorkspaceStore(demoMode: false))
-        .frame(width: 960, height: 860)
+#if DEBUG
+private func previewProfile(
+    _ name: String, _ product: JamfCLIProduct, auth: String = "oauth2"
+) -> JamfCLIProfile {
+    var profile = JamfCLIProfile(name: name, url: "", schedules: 0, status: .idle)
+    profile.product = product
+    profile.authMethod = auth
+    return profile
 }
+
+private let previewProfiles: [JamfCLIProfile] = [
+    previewProfile("Example", .pro),
+    previewProfile("Example-API", .pro, auth: "platform"),
+    previewProfile("Example-Dev", .pro),
+    previewProfile("Example-School", .school, auth: "apikey"),
+    previewProfile("Example-Protect", .protect),
+    previewProfile("Example-Cloud", .securityCloud, auth: "security"),
+]
+
+#Preview {
+    ExistingCLISetupView(profiles: previewProfiles)
+        .environment(WorkspaceStore(demoMode: false))
+        .preferredColorScheme(.dark)
+        .frame(width: PageScaffold<EmptyView>.minSupportedWidth)
+}
+#endif

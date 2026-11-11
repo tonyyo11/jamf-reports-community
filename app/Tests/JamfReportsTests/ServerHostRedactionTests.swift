@@ -79,6 +79,27 @@ final class ServerHostRedactionTests: XCTestCase {
         XCTAssertFalse(shared.contains("jss.example.org"), "got: \(shared)")
     }
 
+    /// The Jamf Pro a platform profile reaches can be a custom domain the jamfcloud pattern
+    /// misses; the host-check warning names it, so shared logs must mask it.
+    func testServerHostsIncludeAConnectionMembersJamfProURL() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-conn-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let store = ConnectionStore(url: url)
+        try store.recordMember(profile: "api", scopeID: "e1", product: .pro,
+                               region: .us, level: .environment)
+        try store.recordJamfProURL(profile: "api", url: "https://jss.example-district.org")
+        let hosts = DiagnosticBundleService.serverHosts(
+            profile: "api", configURL: url.appendingPathExtension("none"),
+            proxy: .none, connections: store)
+        XCTAssertTrue(hosts.contains("jss.example-district.org"), "\(hosts)")
+        let shared = LogRedactor.redactedForSharing(
+            "[warn] Platform API not collected: profiles.platform reaches "
+                + "jss.example-district.org, not other.example.org",
+            profile: "api", scopeIDs: { _ in [] }, serverHosts: { _ in hosts })
+        XCTAssertFalse(shared.contains("jss.example-district.org"), shared)
+    }
+
     func testHostFormsOfAConfiguredURL() {
         let forms = DiagnosticBundleService.hostForms(ofURL:)
         let both = ["jss.example.org:8443", "jss.example.org"]
@@ -201,5 +222,22 @@ final class ServerHostRedactionTests: XCTestCase {
             plain, profile: "Contoso", scopeIDs: { _ in [] }, serverHosts: { _ in [] }), plain)
         XCTAssertEqual(LogRedactor.redactedForSharing(
             text, profile: nil, scopeIDs: { _ in [] }, serverHosts: { _ in [] }), text)
+    }
+
+    /// The workspace rule runs last, so a peer-chosen word cannot split a seeded name or address.
+    func testAWorkspaceNameCannotSplitASeededNameOrAnAddress() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ws-seed-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"[{"general": {"name": "Jane Smith"}}]"#.write(
+            to: dir.appendingPathComponent("computers.json"), atomically: true, encoding: .utf8)
+        let r = DiagnosticRedactor()
+        r.seedFromWorkspace(dir)
+        r.seedWorkspaceNames(["Jane", "10"])
+        let out = r.redactText("Jane Smith checked in from 10.0.0.1")
+        XCTAssertFalse(out.contains("Smith"), "got: \(out)")
+        XCTAssertFalse(out.contains(".0.0.1"), "got: \(out)")
+        XCTAssertFalse(out.contains("10.0"), "got: \(out)")
     }
 }

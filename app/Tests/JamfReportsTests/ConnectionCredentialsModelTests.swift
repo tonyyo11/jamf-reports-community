@@ -150,7 +150,7 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         XCTAssertEqual(row.outcome, .notJamfPro)
         XCTAssertTrue(row.suggestsJamfSchool)
         XCTAssertTrue(row.leavesProfileRegistered)
-        XCTAssertTrue(row.message.contains("jamf-cli config remove-profile acme-school"))
+        XCTAssertTrue(row.message.contains("jamf-cli config remove-profile -- acme-school"))
         XCTAssertTrue(h.provisioned.profiles.isEmpty)
         XCTAssertEqual(members(h).map(\.profile), ["acme-prod"])
     }

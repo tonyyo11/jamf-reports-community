@@ -184,10 +184,7 @@ struct ContentView: View {
         }
         // Switching to a Jamf School workspace removes the Jamf Pro tabs, and disconnecting
         // Protect there removes the Protect tab; do not leave the detail pane on one.
-        .onChange(of: workspace.isSchoolWorkspace) { _, _ in
-            if !workspace.tabVisibility(hiddenRaw: hiddenTabsRaw).isVisible(tab) { tab = .overview }
-        }
-        .onChange(of: workspace.protectConnected) { _, _ in
+        .onChange(of: workspace.environmentProducts) { _, _ in
             if !workspace.tabVisibility(hiddenRaw: hiddenTabsRaw).isVisible(tab) { tab = .overview }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToPreviousTab)) { _ in
@@ -418,7 +415,13 @@ struct TabPage: View {
     var body: some View {
         switch tab {
         case .overview:
-            if workspace.isSchoolWorkspace { SchoolOverviewView() } else { OverviewView() }
+            if workspace.isSchoolWorkspace {
+                SchoolOverviewView()
+            } else if workspace.environmentProducts.isProtectOnly {
+                ProtectView()
+            } else {
+                OverviewView()
+            }
         case .fleet:             FleetOverviewView()
         case .devices:           DevicesView()
         case .deviceLookup:      DeviceLookupView()

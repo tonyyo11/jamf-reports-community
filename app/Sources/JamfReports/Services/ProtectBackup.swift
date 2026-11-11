@@ -162,15 +162,18 @@ enum ProtectBackup {
     static func plan(
         config: ReportConfig?,
         workspaceProfile: String,
-        pinAllows: () -> Bool,
+        pinAllows: (String) -> Bool,
         protectRefusal: (String) -> String? = { _ in nil },
         sharedStorage: () -> String?,
         syncedStorageAllowed: () -> Bool = { false }
     ) -> Plan {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: workspaceProfile)
-        guard !environment.isSchool, environment.runsProtect else { return .notConnected }
+        // A Protect-only environment has no Jamf Pro backup to carry one (P8).
+        // Unconfirmed, it falls through to the pin check below and skips with that reason.
+        let protectOnly = environment.isProtectOnly && pinAllows(environment.protect ?? "")
+        guard !environment.isSchool, !protectOnly, environment.runsProtect else { return .notConnected }
         let key = environment.protectKey
-        guard pinAllows() else {
+        guard pinAllows(environment.protect ?? "") else {
             return .skip(reason: "\(key) changed in the shared config.yaml and is not confirmed on this Mac (Config Doctor)")
         }
         guard let protectProfile = environment.protect else {
@@ -204,6 +207,8 @@ enum ProtectBackup {
     ) -> SyncedStorageChoice? {
         let detected = ProfileProductType.detect(from: config, profile: profile)
         guard detected.type == .jamfPro, detected.runsProtect,
+              !EnvironmentProfiles.resolve(config: config, workspace: profile)
+                .isConfirmedProtectOnly(workspace: profile, appSupport: appSupport),
               let workspace = ProfileService.workspaceURL(for: profile),
               let place = BackupMaintenance.sharedStorageDescription(
                 workspace.appendingPathComponent("backups", isDirectory: true),
@@ -313,7 +318,7 @@ extension CLIBridge {
         var syncedPlace: String?
         let plan = ProtectBackup.plan(
             config: config, workspaceProfile: profile,
-            pinAllows: { SharedConfigPin.protectAllowed(profile: profile) },
+            pinAllows: { SharedConfigPin.protectAllowed(profile: profile, name: $0) },
             protectRefusal: { _ in refusal },
             sharedStorage: { syncedPlace = sharedStorage(); return syncedPlace },
             syncedStorageAllowed: {

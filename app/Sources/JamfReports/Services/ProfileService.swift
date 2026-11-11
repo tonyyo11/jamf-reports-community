@@ -266,18 +266,70 @@ enum ProfileService {
         under root: URL = workspacesRoot(),
         keeping active: Set<String> = []
     ) -> [JamfCLIProfile] {
-        var paired = Set<String>()
-        for profile in profiles where hasWorkspace(profile.name, under: root) {
-            let environment = EnvironmentProfiles.read(workspace: profile.name, under: root)
-            for name in environment.connectedProfiles where name != profile.name {
-                paired.insert(name)
-            }
-        }
+        let paired = Set(pairedProfileOwners(among: profiles.map(\.name), under: root).keys)
         return profiles.filter { profile in
-            if profile.product.isNeverAWorkspace { return false }
+            // Listed even while unconfirmed, or a second Mac on the shared root could never
+            // open it to confirm it (Config Doctor); `runnableWorkspaces` still needs the Confirm.
+            if neverAWorkspace(profile, under: root, confirmedOnly: false) { return false }
             guard paired.contains(profile.name) else { return true }
             return active.contains(profile.name) || hasWorkspace(profile.name, under: root)
         }
+    }
+
+    /// Each login another workspace's environment names besides its own MDM, with the first
+    /// workspace of `workspaces` that names it.
+    static func pairedProfileOwners(
+        among workspaces: [String], under root: URL
+    ) -> [String: String] {
+        var owners: [String: String] = [:]
+        for workspace in workspaces where hasWorkspace(workspace, under: root) {
+            let environment = EnvironmentProfiles.read(workspace: workspace, under: root)
+            for name in environment.connectedProfiles where name != workspace {
+                owners[name] = owners[name] ?? workspace
+            }
+        }
+        return owners
+    }
+
+    /// Why a run for `profile` must not start: it has no workspace of its own and another
+    /// workspace's environment names it (a merged-away Platform API profile, a Protect login).
+    /// Without this a stale schedule or `collect -p` would recreate its folder.
+    static func connectedProfileRefusal(
+        of profile: String, under root: URL = workspacesRoot()
+    ) -> String? {
+        guard !hasWorkspace(profile, under: root) else { return nil }
+        let workspaces = localOnlyWorkspaces(under: root, cliNames: [])
+        guard let owner = pairedProfileOwners(among: workspaces, under: root)[profile] else {
+            return nil
+        }
+        return "'\(ConfigSchema.displayText(profile))' belongs to environment "
+            + "'\(ConfigSchema.displayText(owner))'"
+    }
+
+    /// True when `name` has a workspace folder whose config.yaml is Protect-only for that name
+    /// (P8): a `profiles:` block with `protect` naming it and neither MDM slot, and this Mac has
+    /// confirmed that name (a folder a peer planted is not a workspace until then).
+    static func isProtectOnlyWorkspace(
+        _ name: String, root: URL? = nil, appSupport: URL = AppSupport.directory(),
+        confirmedOnly: Bool = true
+    ) -> Bool {
+        let root = root ?? workspacesRoot()
+        guard hasWorkspace(name, under: root) else { return false }
+        let environment = EnvironmentProfiles.read(workspace: name, under: root)
+        guard environment.protect == name, environment.isProtectOnly else { return false }
+        return !confirmedOnly
+            || environment.isConfirmedProtectOnly(workspace: name, appSupport: appSupport)
+    }
+
+    /// A Protect or Security Cloud login is never a workspace, except a Protect login that is
+    /// the Protect-only environment of its own folder.
+    static func neverAWorkspace(
+        _ profile: JamfCLIProfile, under root: URL? = nil, appSupport: URL = AppSupport.directory(),
+        confirmedOnly: Bool = true
+    ) -> Bool {
+        profile.product.isNeverAWorkspace
+            && !isProtectOnlyWorkspace(
+                profile.name, root: root, appSupport: appSupport, confirmedOnly: confirmedOnly)
     }
 
     /// True when `name` has a workspace folder under `root` holding a `config.yaml`.
@@ -328,23 +380,32 @@ enum ProfileService {
         return Set(localOnlyWorkspaces(under: root, cliNames: listed))
     }
 
-    /// The profiles a multi-profile run collects: exclusions applied, and the
-    /// `.error` ones dropped. Discovery marks a profile the app can't use that way
-    /// (unsupported name, or a case variant sharing another's folder); it has no
-    /// workspace in which to run, and counting it failed every run of the schedule.
-    /// A Protect or Security Cloud login is never run. A Jamf School login or an
-    /// organization-level Platform integration is left out until it has a workspace of its
-    /// own (which is how it keeps running as before).
-    static func runnableProfiles(
+    /// The workspaces a multi-profile run collects (D24): exclusions applied, and only profiles
+    /// with a workspace folder. An `.error` profile (unsupported name, or a case variant sharing
+    /// another's folder) and a Protect or Security Cloud login are never run. A jamf-cli
+    /// profile with no workspace waits on Data Sources' "Profiles not in an environment" card;
+    /// before 2.12 a run created its folder.
+    static func runnableWorkspaces(
         _ profiles: [JamfCLIProfile],
         excluding excluded: Set<String>,
+        under root: URL = workspacesRoot(),
         hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) }
     ) -> [JamfCLIProfile] {
         applyingExclusions(profiles, excluding: excluded).filter { profile in
-            guard profile.status != .error, !profile.product.isNeverAWorkspace else { return false }
-            let needsWorkspace = profile.product == .school || profile.isOrganizationLevel
-            return !needsWorkspace || hasWorkspace(profile.name)
+            profile.status != .error && !neverAWorkspace(profile, under: root)
+                && hasWorkspace(profile.name)
         }
+    }
+
+    /// Names Automation's exclusion checklist and report-group form offer (D24): those with a
+    /// workspace, plus any the policy already names, so a stale entry can still be removed.
+    static func listableWorkspaceNames(
+        _ profiles: [JamfCLIProfile],
+        policy: AutomationPolicy,
+        hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) }
+    ) -> [String] {
+        let named = Set(policy.excludedWorkspaces).union(policy.reportGroups.flatMap(\.workspaces))
+        return profiles.map(\.name).filter { hasWorkspace($0) || named.contains($0) }
     }
 
     // MARK: - Command-line arguments

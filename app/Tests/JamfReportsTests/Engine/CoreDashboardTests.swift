@@ -422,7 +422,7 @@ final class CoreDashboardTests: XCTestCase {
         let slash = DateFormatter()
         slash.locale = Locale(identifier: "en_US_POSIX")
         slash.dateFormat = "MM/dd/yyyy HH:mm:ss"
-        let recent = slash.string(from: Date().addingTimeInterval(-5 * 86_400 - 3_600))
+        let recent = slash.string(from: Date().calendarDays(ago: 5))
         let rows: [[String: Any]] = [
             ["packageName": "Reads", "fileName": "a.pkg", "size": 1_048_576, "uploadDate": recent],
             ["packageName": "Garbled", "fileName": "b.pkg", "size": 1_048_576,
@@ -861,6 +861,23 @@ final class CoreDashboardTests: XCTestCase {
             XCTAssertEqual(result.skips, ["[skip] Protect Overview: protect.enabled is off"])
         }
         XCTAssertEqual(try run("protect:\n  enabled: true\n").written, ["Protect Overview"])
+    }
+
+    /// A Protect-only environment (`profiles:` with only `protect`) still writes the Protect tabs.
+    func testAProtectOnlyEnvironmentWritesTheProtectTabs() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let subdir = tmp.appendingPathComponent("protect-overview", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        try Data(#"[{"resource":"Computers","section":"Endpoints","value":"1"}]"#.utf8)
+            .write(to: subdir.appendingPathComponent("protect-overview.json"))
+        let dash = CoreDashboard(
+            config: try ConfigLoader.loadFromString("profiles:\n  protect: po\n"),
+            dataDir: tmp, workbook: Workbook())
+        let result = SheetRegistry(plan: dash.sheetPlan).writeSelected(
+            template: CustomTemplate(includedSheets: [.protectOverview]), onLine: { _ in })
+        XCTAssertEqual(result.written, ["Protect Overview"])
     }
 
     /// Protect writer fixture dirs contain both `*_empty.json` and `*_happy.json`.

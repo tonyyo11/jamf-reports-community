@@ -1894,6 +1894,8 @@ struct OverviewView: View {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             L("Open Mobile Devices to inspect current records.")
+        case .protectComputers, .protectMatched, .protectOpenAlerts:
+            L("Open Jamf Protect to inspect current records.")
         case .sip, .firewall, .gatekeeper:
             L("Open Security Posture for the per-control breakdown.")
         }
@@ -1917,6 +1919,8 @@ struct OverviewView: View {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             return [.mobileFleet]
+        case .protectComputers, .protectMatched, .protectOpenAlerts:
+            return [.protectDashboard]
         case .sip, .firewall, .gatekeeper:
             return [.securityPosture, .devices]
         }

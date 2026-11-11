@@ -68,7 +68,7 @@ final class ProtectConnectionTests: XCTestCase {
 
     func testTheDisconnectNoteNamesTheCommandThatRemovesTheProfile() {
         let note = ProtectConnection.disconnectedNote(profile: "my protect", profileMissing: false)
-        XCTAssertTrue(note.contains("jamf-cli config remove-profile 'my protect'"), note)
+        XCTAssertTrue(note.contains("jamf-cli config remove-profile -- 'my protect'"), note)
         let gone = ProtectConnection.disconnectedNote(profile: "x", profileMissing: true)
         XCTAssertFalse(gone.contains("remove-profile"))
     }

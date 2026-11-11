@@ -511,7 +511,8 @@ extension WorkspaceStore {
         tenantLevel: Bool = false,
         collectSkip: Set<String> = [],
         dashboardSupported: Bool = false,
-        protectConnected: Bool = false
+        protectConnected: Bool = false,
+        platformUnavailable: Bool = false
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
         let protect = protectConnected ? DataFreshnessHealth.protectKinds : []
@@ -524,7 +525,8 @@ extension WorkspaceStore {
                 return false
             }
             if collectSkip.contains(kind) { return false }
-            return !(skipsPlatform && ReportEngine.platformOnlyKinds.contains(kind))
+            let platformOut = platformUnavailable || skipsPlatform
+            return !(platformOut && ReportEngine.platformOnlyKinds.contains(kind))
         } + protect
     }
 
@@ -602,7 +604,7 @@ extension WorkspaceStore {
         let issues = AutomationHealthModel.shared.freshnessIssues
         guard !issues.isEmpty else { return false }
         let profile = self.profile
-        guard ProfileService.isValid(profile),
+        guard ProfileService.isValid(profile), ProfileService.hasWorkspace(profile),
               let workspace = ProfileService.workspaceURL(for: profile) else { return false }
         // Stand down WITHOUT claiming the hour, so the next pass retries once
         // the running collect is done rather than an hour later.
@@ -777,9 +779,22 @@ extension WorkspaceStore {
         return false
     }
 
+    /// A refused profile (an unconfirmed Protect-only edit, another product's login) fails the
+    /// same way every hour, so it stands down before a Run History record opens.
+    nonisolated static func refusedBeforeAutomaticCollect(
+        profile: String, config: ReportConfig?
+    ) -> Bool {
+        guard let refusal = CollectRouter.runRefusal(
+            profile: profile, operation: "Automatic collect", config: config) else { return false }
+        AppLogger.collect.info(
+            "Automatic collect stood down for \(profile, privacy: .private): \(refusal, privacy: .private)")
+        return true
+    }
+
     /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultRemediationCollector: RemediationCollector = {
         profile, tiers, config in
+        guard !WorkspaceStore.refusedBeforeAutomaticCollect(profile: profile, config: config) else { return }
         try await recordingAutomaticCollect(profile: profile) { onLine in
             _ = try await CLIBridge.holdingTickLock {
                 try await CollectRouter.run(
@@ -1007,7 +1022,7 @@ extension WorkspaceStore {
         guard Self.lastCatchUpDay != today else { return false }
 
         let discovered = ProfileService.discoverLocal()
-        let runnable = ProfileService.runnableProfiles(discovered, excluding: [])
+        let runnable = ProfileService.runnableWorkspaces(discovered, excluding: [])
         let targets = Self.catchUpTargets(policy: policy, discovered: runnable.map(\.name))
         guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
@@ -1026,6 +1041,7 @@ extension WorkspaceStore {
 
     /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
+        guard !WorkspaceStore.refusedBeforeAutomaticCollect(profile: profile, config: config) else { return }
         try await recordingAutomaticCollect(profile: profile) { onLine in
             _ = try await CLIBridge.holdingTickLock {
                 try await CollectRouter.run(

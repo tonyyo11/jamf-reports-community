@@ -102,6 +102,7 @@ final class OnboardingFlow {
         case invalidScopeID
         case missingJamfCLI
         case missingWorkspace
+        case workspaceHasConfig(String)
         case processFailed(String)
 
         var errorDescription: String? {
@@ -120,6 +121,8 @@ final class OnboardingFlow {
                 L("Could not find jamf-cli on PATH.")
             case .missingWorkspace:
                 L("Create the workspace before running this step.")
+            case .workspaceHasConfig(let name):
+                L("\(name) already has a config.yaml, so it was not made a Jamf Protect environment. Nothing was changed.")
             case .processFailed(let message):
                 message
             }
@@ -460,7 +463,7 @@ final class OnboardingFlow {
 
     /// The folders of `profile`'s workspace, private to this user and kept out of Spotlight.
     /// Add environments creates its workspaces through this too.
-    static func createWorkspaceFolders(for profile: String) throws {
+    nonisolated static func createWorkspaceFolders(for profile: String) throws {
         guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile
@@ -532,6 +535,7 @@ final class OnboardingFlow {
         // the health strip read both through ProfileAuthMethod's process-lifetime cache,
         // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
     }
 
     private func registerOAuth2Profile() async throws {
@@ -1350,13 +1354,20 @@ final class OnboardingFlow {
     /// The same write for a Protect profile jamf-cli already has (the Add sheet).
     @discardableResult
     static func writeProtectConfig(
-        profileSlug: String, protectProfileName: String
+        profileSlug: String, protectProfileName: String,
+        appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
+        // Decided once; the block writer confirms the slot itself.
+        if ProfilesConfigWriter.hasProfilesBlock(workspace: profileSlug) {
+            return try ProfilesConfigWriter.save(
+                .protect, to: protectProfileName.trimmingCharacters(in: .whitespaces),
+                workspace: profileSlug, appSupport: appSupport)
+        }
         let report = try writeProductBlock(
             "protect", profile: protectProfileName, for: profileSlug)
         SharedConfigPin.confirmWritten(
             protectProfileName.trimmingCharacters(in: .whitespaces),
-            key: .protectProfile, profile: profileSlug)
+            key: .protectProfile, profile: profileSlug, appSupport: appSupport)
         return report
     }
 

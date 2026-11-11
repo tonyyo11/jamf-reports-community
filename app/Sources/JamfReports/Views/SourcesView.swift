@@ -28,6 +28,8 @@ struct SourcesView: View {
     @State private var schoolResolved: ProfileAuthMethod.Resolved?
     @State private var schoolPlatformCheck: SchoolPlatformCheck.Verdict?
     @State private var reauthOpensPlatform = false
+    @State private var environmentCard: EnvironmentCardState?
+    @State private var unassigned: [AddSheetPlan.UnassignedProfile] = []
 
     private var isSchoolWorkspace: Bool {
         sourcesPlan?.sources.first?.product == .school
@@ -60,16 +62,26 @@ struct SourcesView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
+            if let card = workspace.demoMode
+                ? EnvironmentCardState.demo(workspace: workspace.profile) : environmentCard {
+                EnvironmentCard(
+                    state: card, onAddProtect: { showingProtectConnect = true },
+                    onChanged: { reloadEnvironment(); reloadSourcesPlan() })
+                    .id(card.workspace)
+            }
+            if !workspace.demoMode, !unassigned.isEmpty {
+                UnassignedProfilesCard(rows: unassigned)
+            }
             HStack(alignment: .top, spacing: 14) {
                 cliCard
                 // Jamf School has no Extension Attributes to adopt.
-                if !isSchoolWorkspace { eaCard }
+                if workspace.environmentProducts.has(.jamfPro) { eaCard }
             }
             doctorCard
             if isSchoolWorkspace { schoolPlatformCard }
             ConnectionCard()
             // The matrix lists `pro` commands, which a School workspace never runs.
-            if !isSchoolWorkspace { capabilityCard }
+            if workspace.environmentProducts.has(.jamfPro) { capabilityCard }
             familiesCard
             additionalProductsCard
         }
@@ -671,6 +683,8 @@ struct SourcesView: View {
     /// The profile or demo mode changed: nothing of the previous source stays on screen.
     private func sourceChanged() {
         schoolResolved = nil
+        environmentCard = nil
+        unassigned = []
         sourcesPlan = nil
         cachedAt = [:]
         schoolPlatformCheck = nil
@@ -697,6 +711,7 @@ struct SourcesView: View {
         }
         reloadEnvironment()
         reloadSourcesPlan()
+        reloadUnassigned()
         families = SnapshotArchiveService().families(profile: workspace.profile)
 
         do {
@@ -713,7 +728,7 @@ struct SourcesView: View {
     private func reloadEnvironment() {
         environment = workspace.demoMode
             ? .none : EnvironmentProfiles.read(workspace: workspace.profile)
-        workspace.refreshProtectConnection()
+        workspace.refreshEnvironmentProducts()
         guard let named = environment.protect else {
             cliProfileNames = nil
             return
@@ -739,34 +754,78 @@ struct SourcesView: View {
         let version = workspace.jamfCLIVersion
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
         Task {
-            let (plan, dates, school) = await Task.detached(priority: .userInitiated) {
+            let (plan, dates, school, card) = await Task.detached(priority: .userInitiated) {
                 let config = ProfileService.workspaceURL(for: profile).flatMap {
                     try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
                 }
                 let detected = ProfileProductType.detect(from: config, profile: profile)
-                let auth = ProfileAuthMethod.resolve(profile: profile)
+                let workspaceAuth = ProfileAuthMethod.resolve(profile: profile)
+                // The Platform kinds follow the route `collect` takes (no network probe here).
+                let route = WorkspaceID(profile).map {
+                    ReportEngine.platformRoute(config: config, workspace: $0)
+                } ?? .workspaceProfile
+                let routed = CollectSourcesPlan.routedAuth(
+                    product: detected.type, route: route, workspace: profile,
+                    workspaceAuth: workspaceAuth,
+                    resolve: { ProfileAuthMethod.resolve(profile: $0) })
+                let auth = routed.auth
                 let protectProfile = EnvironmentProfiles.resolve(
                     config: config, workspace: profile).protect
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
+                    protectOnly: EnvironmentProfiles.resolve(
+                        config: config, workspace: profile).isConfirmedProtectOnly(workspace: profile),
                     protectRefusal: protectProfile.flatMap { name in
                         ProfileAuthMethod.resolve(profile: name)?.protectRefusal(profile: name)
                     },
                     staleDays: config?.thresholds?.resolvedStaleDays ?? 30,
                     installedVersion: version, skipExpensive: skipExpensive,
                     authMethod: auth?.authMethod, tenantLevel: auth?.isTenantLevel == true,
-                    hasTenantID: auth?.hasTenantID == true,
-                    collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)))
-                let school = detected.type == .jamfSchool
-                    ? ProfileAuthMethod.resolve(profile: profile) : nil
+                    hasTenantID: workspaceAuth?.hasTenantID == true,
+                    collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+                    platformUnavailable: routed.unavailable))
+                let school = detected.type == .jamfSchool ? workspaceAuth : nil
+                let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+                // The derived Platform slot can equal the MDM profile: resolve each name once.
+                var resolved: [String: ProfileAuthMethod.Resolved?] = [:]
+                let card = EnvironmentCardState.build(
+                    workspace: profile, environment: environment,
+                    resolve: { name in
+                        if let known = resolved[name] { return known }
+                        let value = ProfileAuthMethod.resolve(profile: name)
+                        resolved[name] = value
+                        return value
+                    },
+                    newest: { Self.newestSnapshot(of: $0, profile: profile) },
+                    drifted: SharedConfigPin.check(profile: profile, persist: false).isDrifted)
                 return (plan, Self.newestSnapshots(
-                    kinds: plan.sources.map(\.kind), profile: profile), school)
+                    kinds: plan.sources.map(\.kind), profile: profile), school, card)
             }.value
             guard profile == workspace.profile, !workspace.demoMode else { return }
             sourcesPlan = plan
             cachedAt = dates
             schoolResolved = school
+            environmentCard = card
+        }
+    }
+
+    nonisolated private static func newestSnapshot(
+        of slot: ProfilesConfigWriter.Slot, profile: String
+    ) -> Date? {
+        newestSnapshots(kinds: EnvironmentCardState.kinds(for: slot), profile: profile)
+            .values.max()
+    }
+
+    /// `AddSheetDiscovery.load` runs `jamf-cli config list`, so it stays off the main actor.
+    private func reloadUnassigned() {
+        let profile = workspace.profile
+        Task {
+            let rows = await Task.detached {
+                AddSheetDiscovery.load(currentWorkspace: profile).unassigned ?? []
+            }.value
+            guard profile == workspace.profile, !workspace.demoMode else { return }
+            unassigned = rows
         }
     }
 

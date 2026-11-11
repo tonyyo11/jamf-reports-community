@@ -84,12 +84,19 @@ extension WorkspaceStore {
         !demoMode && ProfileService.isValid(profileSlug)
     }
 
+    /// `canRefresh` plus a workspace on disk: an automatic collect never creates the folder of a
+    /// profile that has none (D24). A person's own Refresh, Collect now and first collect use
+    /// `canRefresh` alone and may initialize one.
+    func canRefreshAutomatically(profileSlug: String) -> Bool {
+        canRefresh(profileSlug: profileSlug) && ProfileService.hasWorkspace(profileSlug)
+    }
+
     // MARK: Public trigger
 
     /// Fire a `.refresh`-tier refresh for `profile`, subject to coordinator
-    /// backoff/coalescing. No-ops when `canRefresh` is false.
+    /// backoff/coalescing. No-ops when `canRefreshAutomatically` is false.
     func triggerRefresh(for profileSlug: String) {
-        guard canRefresh(profileSlug: profileSlug) else { return }
+        guard canRefreshAutomatically(profileSlug: profileSlug) else { return }
         coordinator.refreshIfStale(profile: profileSlug, tier: .refresh)
     }
 
@@ -100,7 +107,7 @@ extension WorkspaceStore {
     /// doesn't spawn a refresh per intermediate selection. No-ops when
     /// `canRefresh` is false.
     func observeProfileSwitchRefresh(for profileSlug: String) {
-        guard canRefresh(profileSlug: profileSlug) else { return }
+        guard canRefreshAutomatically(profileSlug: profileSlug) else { return }
         coordinator.observeProfileSwitch(profileSlug)
     }
 
@@ -520,7 +527,7 @@ extension WorkspaceStore {
         }
     ) async {
         guard !autoAuditRefreshInFlight else { return }
-        guard canRefresh(profileSlug: profile) else { return }
+        guard canRefreshAutomatically(profileSlug: profile) else { return }
         // `pro audit` is Jamf Pro's; a School workspace has none to refresh (2.10).
         guard !isSchoolWorkspace else { return }
         autoAuditRefreshInFlight = true
@@ -528,8 +535,14 @@ extension WorkspaceStore {
 
         let activeProfile = profile
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
+        // Reads config.yaml, so off the main actor; a Protect-only workspace has no `pro audit`.
         let auditIsStale = await Task.detached(priority: .utility) {
-            Self.newestSnapshotAge(profile: activeProfile, kind: "audit")
+            guard !EnvironmentProfiles.read(workspace: activeProfile)
+                .isConfirmedProtectOnly(workspace: activeProfile)
+            else {
+                return false
+            }
+            return Self.newestSnapshotAge(profile: activeProfile, kind: "audit")
                 .map { $0 >= threshold } ?? true
         }.value
         guard auditIsStale, profile == activeProfile else { return }
@@ -613,31 +626,54 @@ extension WorkspaceStore {
     nonisolated static func expectedKinds(
         profile: String, jamfCLIVersion: String?, auth: ProfileAuthMethod.Resolved?,
         protectResolved: (String) -> ProfileAuthMethod.Resolved? = { ProfileAuthMethod.resolve(profile: $0) },
-        protectPinAllows: (String) -> Bool = { SharedConfigPin.protectAllowed(profile: $0) }
+        protectPinAllows: (_ profile: String, _ name: String) -> Bool = {
+            SharedConfigPin.protectAllowed(profile: $0, name: $1)
+        }
     ) -> [String] {
         let config = ProfileService.workspaceURL(for: profile).flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
         let protectProfile = EnvironmentProfiles.resolve(config: config, workspace: profile).protect
         let protectCollected = protectProfile.map {
-            protectPinAllows(profile) && protectResolved($0)?.protectRefusal(profile: $0) == nil
+            protectPinAllows(profile, $0) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false
+        // A Protect-only environment collects Protect alone (P8).
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        // Unconfirmed (a peer's edit), it is judged as before, so failing kinds stay visible.
+        if environment.isProtectOnly {
+            // Unconfirmed, this Mac still shows the workspace as it was and expects nothing.
+            return protectPinAllows(profile, protectProfile ?? "") && protectCollected
+                ? DataFreshnessHealth.protectKinds : []
+        }
+        // config.yaml unreadable and the login known to be School or Protect: no Jamf Pro kinds.
+        if config == nil, let product = auth?.product, !product.canBeProWorkspace { return [] }
         // A Jamf School workspace runs `schoolCollect`, which lands none of the Jamf Pro kinds,
         // so judging it by them only raised alarms (2.10). Protect follows a School collect as
         // it follows a Pro one (2.11), so its kinds still count, and so does `sofa`, which a
-        // School collect fetches as a Pro one does unless `collect_skip` lists it.
+        // School collect fetches as a Pro one does unless `collect_skip` lists it. Its own kinds count
+        // too (#207), less `school-blueprints`, which needs Platform fields.
         if ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool {
             let skipped = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
-            return (skipped.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
+            return DataFreshnessHealth.schoolKinds
+                + (skipped.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
                 + (protectCollected ? DataFreshnessHealth.protectKinds : [])
         }
+        // The Platform kinds follow the same route `collect` takes, so the strip never expects
+        // what collect will not run, nor judges them by the workspace login's auth method.
+        let route = WorkspaceID(profile).map {
+            ReportEngine.platformRoute(config: config, workspace: $0)
+        } ?? .workspaceProfile
+        let platform = EnvironmentProfiles.platformInputs(
+            route: route, workspace: profile, workspaceAuth: auth,
+            resolve: { ProfileAuthMethod.resolve(profile: $0) })
         return expectedKinds(
             skipExpensive: UserDefaults.standard.bool(forKey: "skipExpensiveCollections"),
-            authMethod: auth?.authMethod,
-            tenantLevel: auth?.isTenantLevel == true,
+            authMethod: platform.auth?.authMethod,
+            tenantLevel: platform.auth?.isTenantLevel == true,
             collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
             dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
-            protectConnected: protectCollected
+            protectConnected: protectCollected,
+            platformUnavailable: platform.unavailable != nil
         )
     }
 

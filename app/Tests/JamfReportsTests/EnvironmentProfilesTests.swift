@@ -7,28 +7,59 @@ import XCTest
 final class EnvironmentProfilesTests: XCTestCase {
     private let ws = "ws"
 
-    private func resolve(
-        _ yaml: String, auth: ProfileAuthMethod.Resolved? = nil
-    ) throws -> EnvironmentProfiles {
-        EnvironmentProfiles.resolve(
-            config: try ConfigLoader.loadFromString(yaml), workspace: ws, auth: auth)
+    private func resolve(_ yaml: String) throws -> EnvironmentProfiles {
+        EnvironmentProfiles.resolve(config: try ConfigLoader.loadFromString(yaml), workspace: ws)
     }
 
     // MARK: - Old shapes
 
     func testProWorkspaceOverOAuthFillsJamfProWithTheWorkspace() throws {
-        let environment = try resolve("jamf_cli:\n  data_dir: data\n",
-                                      auth: .init(authMethod: "oauth2", isTenantLevel: false))
+        let environment = try resolve("jamf_cli:\n  data_dir: data\n")
         XCTAssertEqual(environment, EnvironmentProfiles(jamfPro: ws))
         XCTAssertEqual(EnvironmentProfiles.resolve(config: nil, workspace: ws),
                        EnvironmentProfiles(jamfPro: ws), "no config.yaml is the same shape")
     }
 
-    func testProWorkspaceOnAPlatformProfileFillsJamfProAndPlatform() throws {
-        let environment = try resolve("jamf_cli:\n  data_dir: data\n",
-                                      auth: .init(authMethod: "platform", isTenantLevel: false))
-        XCTAssertEqual(environment.jamfPro, ws)
-        XCTAssertEqual(environment.platform, ws)
+    /// D19: an old-shape file derives no `platform` slot, whatever the profile's auth method.
+    /// Its Platform kinds run on the workspace's own profile, as before (`.workspaceProfile`).
+    func testAnOldShapeDerivesNoPlatformSlot() throws {
+        let environment = try resolve("jamf_cli:\n  data_dir: data\n")
+        XCTAssertEqual(environment, EnvironmentProfiles(jamfPro: ws))
+        XCTAssertNil(environment.platform)
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true), .workspaceProfile)
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: false), .workspaceProfile,
+                       "no slot, so nothing to hold")
+    }
+
+    func testABlockWithAPlatformSlotRoutesToIt() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true), .profile("ws-API"))
+    }
+
+    func testABlockWithoutAPlatformSlotLeavesThePlatformKindsOut() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n")
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true),
+                       .unavailable(EnvironmentProfiles.noPlatformReason))
+    }
+
+    func testAHeldPlatformSlotLeavesThePlatformKindsOut() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: false),
+                       .unavailable(EnvironmentProfiles.heldPlatformReason))
+    }
+
+    /// D18 holds only another profile: the writer's seed names the workspace's own, and a peer
+    /// whose pin predates the seed must keep collecting the Platform kinds.
+    func testAPlatformSlotNamingTheWorkspaceIsNotHeld() throws {
+        let environment = try resolve("profiles:\n  jamf_pro: ws\n  platform: ws\n")
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: false), .profile("ws"))
+    }
+
+    func testAPlatformSlotWithAnUnusableNameLeavesThePlatformKindsOut() throws {
+        let environment = EnvironmentProfiles(
+            jamfPro: ws, platform: "ws\u{07}API", source: .profilesBlock)
+        XCTAssertEqual(environment.platformRoute(workspace: ws, platformPinAllows: true),
+                       .unavailable(EnvironmentProfiles.invalidPlatformReason))
     }
 
     func testProtectEnabledNamesItsLogin() throws {
@@ -133,8 +164,13 @@ final class EnvironmentProfilesTests: XCTestCase {
     func testBlockRefusals() throws {
         let both = try resolve("profiles:\n  jamf_pro: ws\n  jamf_school: ws\n")
         XCTAssertTrue(both.refusal(workspace: ws)?.contains("one environment has one MDM") == true)
-        let none = try resolve("profiles:\n  protect: ws-protect\n")
+        let none = try resolve("profiles:\n  platform: ws-api\n")
         XCTAssertTrue(none.refusal(workspace: ws)?.contains("names neither") == true)
+        let protectOnly = try resolve("profiles:\n  protect: \(ws)\n")
+        XCTAssertNil(protectOnly.refusal(workspace: ws))
+        XCTAssertTrue(protectOnly.isProtectOnly)
+        let otherProtect = try resolve("profiles:\n  protect: other\n")
+        XCTAssertTrue(otherProtect.refusal(workspace: ws)?.contains("profiles.protect") == true)
         let other = try resolve("profiles:\n  jamf_pro: tenant-b\n")
         XCTAssertEqual(other.refusal(workspace: ws),
                        "profiles.jamf_pro names 'tenant-b' but this workspace is 'ws', so nothing "
@@ -149,7 +185,7 @@ final class EnvironmentProfilesTests: XCTestCase {
         let refusal = try XCTUnwrap(EnvironmentProfiles.resolve(config: config, workspace: ws)
             .refusal(workspace: ws))
         XCTAssertEqual(
-            CollectRouter.proRunRefusal(profile: ws, operation: "Collect", config: config), refusal)
+            CollectRouter.runRefusal(profile: ws, operation: "Collect", config: config), refusal)
         XCTAssertEqual(CollectRouter.backupRefusal(profile: ws, config: config), refusal)
     }
 
@@ -162,7 +198,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                 workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
                 proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
                 schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
-                protectCollect: { _, _, _ in calls.add("protect") },
+                protectCollect: { _, _, _ in calls.add("protect"); return ["protect-alerts"] },
                 resolved: { _ in nil }, onLine: { calls.add($0.text) })
             XCTFail("two MDMs must not collect")
         } catch CLIBridgeError.wrongProduct(let refusal) {
@@ -192,7 +228,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                 calls.add("pro \(profile)"); return .collected
             },
             schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
-            protectCollect: { profile, _, _ in calls.add("protect \(profile)") },
+            protectCollect: { profile, _, _ in calls.add("protect \(profile)"); return ["protect-alerts"] },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["pro ws", "protect ws-protect"])
     }
@@ -217,7 +253,7 @@ final class EnvironmentProfilesTests: XCTestCase {
             workspace: WorkspaceID(validating: ws), config: config, now: .testNoon,
             proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
             schoolCollect: { _, profile, _, _, _, _ in calls.add("school \(profile)") },
-            protectCollect: { _, _, _ in calls.add("protect") },
+            protectCollect: { _, _, _ in calls.add("protect"); return ["protect-alerts"] },
             resolved: { _ in nil }, onLine: { _ in })
         XCTAssertEqual(calls.all, ["school ws"])
     }
@@ -226,7 +262,7 @@ final class EnvironmentProfilesTests: XCTestCase {
         func plan(_ yaml: String) throws -> ProtectBackup.Plan {
             ProtectBackup.plan(
                 config: try ConfigLoader.loadFromString(yaml), workspaceProfile: ws,
-                pinAllows: { true }, sharedStorage: { nil })
+                pinAllows: { _ in true }, sharedStorage: { nil })
         }
         XCTAssertEqual(try plan("profiles:\n  jamf_pro: ws\n  protect: ws-protect\n"),
                        .run(profile: "ws-protect"))
@@ -237,7 +273,7 @@ final class EnvironmentProfilesTests: XCTestCase {
                        .notConnected, "a School workspace has no backup")
         let drifted = ProtectBackup.plan(
             config: try ConfigLoader.loadFromString("profiles:\n  jamf_pro: ws\n  protect: p\n"),
-            workspaceProfile: ws, pinAllows: { false }, sharedStorage: { nil })
+            workspaceProfile: ws, pinAllows: { _ in false }, sharedStorage: { nil })
         XCTAssertEqual(drifted, .skip(reason: "profiles.protect changed in the shared config.yaml "
             + "and is not confirmed on this Mac (Config Doctor)"))
     }

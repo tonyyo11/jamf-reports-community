@@ -191,9 +191,15 @@ final class WorkspaceStore {
     /// Every metric the Trends picker can show for this workspace; a Jamf School workspace has
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
-        isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
-            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics + agentMetrics
+        (environmentProducts.isProtectOnly ? []
+            : isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
+            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
+            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
+            + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
     }
+
+    /// The demo history carries no Protect series, so only a live environment with Protect.
+    var protectMetricsOffered: Bool { !demoMode && environmentProducts.has(.protect) }
 
     /// Whether the Overview shows `metric` as a score card: an agent metric needs its agent
     /// configured (and not counted as EDR), a control card needs its control counted by the
@@ -202,6 +208,7 @@ final class WorkspaceStore {
     func isOffered(_ metric: TrendSeries.Metric) -> Bool {
         // The demo history has no mobile series, as Trends offers none in demo mode.
         if metric.isMobile, demoMode { return false }
+        if metric.isProtect, !protectMetricsOffered { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
             return false
         }
@@ -266,9 +273,17 @@ final class WorkspaceStore {
         connections = demoMode ? [] : connectionStore.load()
     }
 
-    /// All profiles under their connections, for the sidebar menu.
+    /// Workspaces for the sidebar menu, plus the active profile when it has no folder (right
+    /// after onboarding), so the menu always holds the current entry. `profiles` stays whole.
+    var workspaceMenuProfiles: [JamfCLIProfile] {
+        let workspaces = Set(initializedProfiles.map(\.name))
+        return profiles.filter { workspaces.contains($0.name) || $0.name == profile }
+    }
+
+    /// The workspaces under their connections, for the sidebar menu.
     var connectionGrouping: ConnectionGrouping {
-        ProfileService.connectionGrouping(profiles: profiles, connections: activeConnections)
+        ProfileService.connectionGrouping(
+            profiles: workspaceMenuProfiles, connections: activeConnections)
     }
 
     /// True when the active profile has a `config.yaml` on disk under
@@ -288,11 +303,7 @@ final class WorkspaceStore {
     var initializedProfiles: [JamfCLIProfile] {
         if demoMode { return profiles }
         return profiles.filter { profile in
-            guard profile.status != .error,
-                  let url = ProfileService.workspaceURL(for: profile.name) else { return false }
-            return FileManager.default.fileExists(
-                atPath: url.appendingPathComponent("config.yaml").path
-            )
+            profile.status != .error && ProfileService.hasWorkspace(profile.name)
         }
     }
 
@@ -310,9 +321,11 @@ final class WorkspaceStore {
     /// cards edit them through `saveSecurityLevel` and its siblings.
     var securityPolicy: SecurityControlPolicy = .default
     var securityPolicyIssues: [SecurityPolicyIssue] = []
-    /// The active workspace has Jamf Protect connected; read with the config and when Data
-    /// Sources connects or disconnects it (`refreshProtectConnection`). False in demo mode.
-    var protectConnected = false
+    /// The products the active workspace's config.yaml names, read with the config and when
+    /// Data Sources connects or disconnects one (`refreshEnvironmentProducts`).
+    private var environmentProfiles = EnvironmentProfiles.none
+    /// config.yaml is missing or does not decode, so `environmentProfiles` is a guess.
+    private var environmentConfigUnreadable = false
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -374,7 +387,8 @@ final class WorkspaceStore {
         let realProfiles = isDemo ? [] : discoverProfiles()
 
         self.demoMode = isDemo
-        let start = Self.initialProfile(in: realProfiles)
+        let start = Self.initialProfile(
+            in: realProfiles, hasWorkspace: { ProfileService.hasWorkspace($0) })
         self.org = isDemo ? DemoData.org : Self.org(for: start)
         self.profile = isDemo ? DemoData.org.profile : (start?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
@@ -392,7 +406,7 @@ final class WorkspaceStore {
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
-        if isDemo { applyDemoConfig() } else { refreshProtectConnection() }
+        if isDemo { applyDemoConfig() } else { refreshEnvironmentProducts() }
     }
 
     /// Managed schedules come from the policy; hand-built from the store.
@@ -474,7 +488,7 @@ final class WorkspaceStore {
                 profile = next
             }
             org = Self.org(for: real.first(where: { $0.name == profile }))
-            refreshProtectConnection()
+            refreshEnvironmentProducts()
             Task { await refreshAuthStatus() }
             if wasDemo { restoreLiveStateAfterDemo() }
         }
@@ -788,7 +802,7 @@ final class WorkspaceStore {
     /// file doesn't exist yet (new workspace). Other errors are rethrown.
     func loadConfig() async throws {
         configRepairedKeys = []
-        refreshProtectConnection()
+        refreshEnvironmentProducts()
         // A config.yaml under the demo profile's name is not the demo's, and
         // reading it would put real values on demo screens.
         if demoMode {
@@ -1146,25 +1160,57 @@ final class WorkspaceStore {
     /// The active workspace is a Jamf School one: its profile logs in to Jamf School
     /// (`school setup`, discovered as `JamfCLIProduct.school`), which is also the profile
     /// `ProfileProductType.detect` routes to School collect.
-    var isSchoolWorkspace: Bool { activeCLIProfile?.product == .school }
+    var isSchoolWorkspace: Bool { environmentProducts.isSchool }
 
     /// The sidebar's visibility for the active workspace: the user's hidden tabs, and the tabs
     /// its product cannot fill.
     func tabVisibility(hiddenRaw: String) -> TabVisibility {
-        TabVisibility.parse(hiddenRaw)
-            .limited(toSchool: isSchoolWorkspace, protectConnected: protectConnected)
+        TabVisibility.parse(hiddenRaw).limited(to: environmentProducts)
     }
 
-    /// Re-reads whether the active workspace has Jamf Protect connected (`EnvironmentProfiles`).
-    func refreshProtectConnection() {
-        protectConnected = !demoMode
-            && EnvironmentProfiles.read(workspace: profile).protect != nil
+    /// The products and device types of the active environment; `.demo` in demo mode. A School
+    /// profile whose config.yaml cannot be read is still School, and the Platform API login of a
+    /// workspace without `profiles:` is read live from discovery, which fills `auth` late.
+    var environmentProducts: EnvironmentProducts {
+        if demoMode { return .demo }
+        var products = EnvironmentProducts.from(
+            environmentProfiles, composition: environmentComposition,
+            legacyPlatformAuth: activeCLIProfile?.auth?.isPlatform == true)
+        if activeCLIProfile?.product == .school && !products.isSchool {
+            products.products.remove(.jamfPro)
+            products.products.insert(.jamfSchool)
+        }
+        // The Protect-only twin: a Protect login owns this folder, so there is no Jamf Pro.
+        if activeCLIProfile?.product == .protect, environmentConfigUnreadable {
+            products.products = [.protect]
+        }
+        return products
+    }
+
+    /// Re-reads which products the active workspace names (`EnvironmentProfiles`).
+    func refreshEnvironmentProducts() {
+        guard !demoMode else {
+            environmentProfiles = .none
+            environmentConfigUnreadable = false
+            return
+        }
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        var environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        // A peer's Protect-only edit this Mac has not confirmed leaves the workspace as it was.
+        if environment.isProtectOnly, !environment.isConfirmedProtectOnly(workspace: profile) {
+            environment.jamfPro = profile
+        }
+        environmentProfiles = environment
+        environmentConfigUnreadable = config == nil
     }
 
     /// After credentials are saved: a profile's auth method or scope level may have changed, so
     /// the headless cache (`ProfileAuthMethod`) is cleared and the profile list read again.
     func credentialsChanged() {
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
         reloadFromDisk()
     }
 
@@ -1202,24 +1248,33 @@ final class WorkspaceStore {
         return url
     }
 
-    /// The profile a launch or reload opens on: the first one the app can use,
-    /// else the first, so an `.error` profile is active only when nothing else is.
-    nonisolated static func initialProfile(in profiles: [JamfCLIProfile]) -> JamfCLIProfile? {
-        profiles.first { $0.status != .error } ?? profiles.first
+    /// The profile a launch or reload opens on: the first one the app can use that has a
+    /// workspace, else the first usable one, else the first, so an `.error` profile is active
+    /// only when nothing else is.
+    nonisolated static func initialProfile(
+        in profiles: [JamfCLIProfile], hasWorkspace: (String) -> Bool
+    ) -> JamfCLIProfile? {
+        profiles.first { $0.status != .error && hasWorkspace($0.name) }
+            ?? profiles.first { $0.status != .error } ?? profiles.first
     }
 
-    /// The profile a reload keeps active: the current one while it is still
-    /// listed and usable. When it is gone because it is a Protect login (discovery no longer
-    /// lists one), the workspace whose Protect slot names it; else `initialProfile(in:)`.
+    /// The profile a reload keeps active: the current one while it is still listed and usable.
+    /// When it is gone because another workspace holds it as a Platform API, Protect or Security
+    /// Cloud login (discovery no longer lists one), that workspace; else `initialProfile`.
     nonisolated static func activeProfile(
         keeping current: String, in profiles: [JamfCLIProfile],
-        protectProfile: (String) -> String? = { EnvironmentProfiles.read(workspace: $0).protect }
+        hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) },
+        connectedProfiles: (String) -> [String] = {
+            EnvironmentProfiles.read(workspace: $0).connectedProfiles
+        }
     ) -> String? {
         if profiles.contains(where: { $0.name == current && $0.status != .error }) {
             return current
         }
-        let owner = profiles.first { $0.status != .error && protectProfile($0.name) == current }
-        return (owner ?? initialProfile(in: profiles))?.name
+        let owner = profiles.first {
+            $0.status != .error && connectedProfiles($0.name).contains(current)
+        }
+        return (owner ?? initialProfile(in: profiles, hasWorkspace: hasWorkspace))?.name
     }
 
     private static func org(for profile: JamfCLIProfile?) -> Org {
@@ -1374,7 +1429,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     /// Jamf Pro screen reads, so it keeps its own Overview and Devices and the screens about the
     /// workspace, its reports and its automation, and Trends, which charts the School daily
     /// summary (`ReportEngine.writeSchoolSummary`). Fleet Overview stays out until its tiles
-    /// read that summary. Applied by `TabVisibility.limited(toSchool:)`, never stored.
+    /// read that summary. Applied by `TabVisibility.limited(to:)`, never stored.
     static let schoolTabs: Set<Tab> = [
         .overview, .schoolDevices, .trends, .reports, .schedules, .runs, .config, .sources,
         .settings, .onboarding,
@@ -1459,15 +1514,25 @@ struct TabVisibility: Sendable, Equatable {
         !unavailable.contains(tab) && (tab.isCoreTab || !hidden.contains(tab))
     }
 
-    /// This visibility for the active workspace: a Jamf School workspace also leaves out every
-    /// tab outside `Tab.schoolTabs`, except Jamf Protect while Protect is connected (2.11), and
-    /// any other workspace leaves out the School Devices tab.
-    func limited(toSchool isSchool: Bool, protectConnected: Bool = false) -> TabVisibility {
+    /// The tabs the environment's products can fill, never stored (R5, R6, R8).
+    func limited(to environment: EnvironmentProducts) -> TabVisibility {
         var copy = self
-        let schoolTabs = protectConnected
-            ? Tab.schoolTabs.union([.protectDashboard]) : Tab.schoolTabs
-        copy.unavailable = isSchool
-            ? Set(Tab.allCases).subtracting(schoolTabs) : [.schoolDevices]
+        let keep: Set<Tab>
+        if environment.isSchool {
+            keep = environment.has(.protect)
+                ? Tab.schoolTabs.union([.protectDashboard]) : Tab.schoolTabs
+        } else if environment.isProtectOnly {
+            keep = [.overview, .protectDashboard, .trends, .reports, .schedules, .runs, .config,
+                    .sources, .settings, .onboarding]
+        } else {
+            var out: Set<Tab> = [.schoolDevices]
+            if !environment.has(.platform) { out.insert(.complianceBenchmarks) }
+            if !environment.has(.protect) { out.insert(.protectDashboard) }
+            if environment.composition == .macsOnly { out.insert(.mobileFleet) }
+            copy.unavailable = out
+            return copy
+        }
+        copy.unavailable = Set(Tab.allCases).subtracting(keep)
         return copy
     }
 

@@ -9,8 +9,9 @@ import SwiftUI
 // launching the GUI. This replaces the former jamf-cli-only ProgramArguments
 // that only collected data and never ran generate.
 //
-// When --all-profiles is also present, discover all local profiles via
-// ProfileService.discoverLocal() and run the cycle for each in sequence.
+// When --all-profiles is also present, discover the local profiles via
+// ProfileService.discoverLocal() and run the cycle for each one that has a workspace folder
+// (ProfileService.runnableWorkspaces), in sequence.
 
 /// Emit one consolidated fleet CSV per configured `report_group` after an
 /// all-profiles reports run. No-op when no groups are configured. Best-effort:
@@ -323,10 +324,11 @@ private func scheduledRunSingleBody(
     // spelling's folder get nothing written into them.
     let productRefusal: () -> String? = {
         guard mode != .jamfCLIOnly, configError == nil || mode == .backup else { return nil }
-        return CollectRouter.proRunRefusal(
+        return CollectRouter.runRefusal(
             profile: profile, operation: "Scheduled \(mode.rawValue) run", config: routingConfig)
     }
-    if let refusal = caseVariant ?? productRefusal() {
+    if let refusal = caseVariant ?? ProfileService.connectedProfileRefusal(of: profile)
+        ?? productRefusal() {
         let message = "[skip] scheduled \(mode.rawValue) run skipped for '\(profile)': "
             + "\(refusal). Not a failure. Exclude this profile from the schedule to stop "
             + "scheduling it."
@@ -432,9 +434,22 @@ private func scheduledRunSingleBody(
         // A schedule that has nothing to do for a profile is not a failed
         // schedule — log why and return success.
         let backupDetected = ProfileProductType.detect(from: routingConfig, profile: profile)
-        guard backupDetected.type == .jamfPro else {
+        let environment = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
+        let protectOnly = environment.isConfirmedProtectOnly(workspace: profile)
+        if environment.isProtectOnly, !protectOnly {
+            let warning = "[warn] profiles.protect for '\(profile)' was changed in the shared "
+                + "config.yaml and is not confirmed on this Mac (Config Doctor); the backup is "
+                + "refused until it is"
+            print(warning)
+            recorder?.record(warning)
+        }
+        guard backupDetected.type == .jamfPro, !protectOnly else {
+            let reason = protectOnly
+                ? "'\(profile)' holds only a Jamf Protect profile; there is no Jamf Pro in this "
+                    + "environment"
+                : CollectRouter.schoolBackupReason(profile: profile)
             let message = "[skip] scheduled backup skipped for '\(profile)': "
-                + "\(CollectRouter.schoolBackupReason(profile: profile)). Nothing to back up — "
+                + "\(reason). Nothing to back up — "
                 + "not a failure. Exclude this profile from the backup schedule to stop "
                 + "scheduling it."
             print(message)
@@ -544,7 +559,10 @@ private func scheduledRunSingleBody(
             // reached disk. Claiming it otherwise is the specific lie this
             // release is closing: the operator reads "Trends updated" as proof
             // the fleet was polled today.
-            let trendsSuffix = detected.type == .jamfPro && honesty.producedFreshSnapshot
+            let protectOnly = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
+                .isConfirmedProtectOnly(workspace: profile)
+            let trendsSuffix = detected.type == .jamfPro && !protectOnly
+                && honesty.producedFreshSnapshot
                 ? " — Trends updated" : ""
             let message = honesty.stoodDown
                 ? "[ok] scheduled snapshot for '\(profile)' stood down — another machine "
@@ -796,7 +814,7 @@ func runSchedule(
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
     let discovered = ProfileService.discoverLocal()
-    let profiles = ProfileService.runnableProfiles(discovered, excluding: excluded)
+    let profiles = ProfileService.runnableWorkspaces(discovered, excluding: excluded)
     for p in discovered where p.status == .error && !excluded.contains(p.name) {
         let reason = p.unusableReason ?? "not usable"
         fputs("[info] skipping \(p.name): \(reason)\n", stderr)
@@ -805,8 +823,14 @@ func runSchedule(
             "skipping \(p.name, privacy: .private): \(reason, privacy: .private)"
         )
     }
+    let runnable = Set(profiles.map(\.name))
+    for p in discovered where p.status != .error && !ProfileService.neverAWorkspace(p)
+        && !excluded.contains(p.name) && !runnable.contains(p.name) {
+        fputs("[info] skipping \(p.name): no workspace (add it from Data Sources)\n", stderr)
+        AppLogger.schedule.notice("skipping \(p.name, privacy: .private): no workspace")
+    }
     guard !profiles.isEmpty else {
-        fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
+        fputs("[error] \(label ?? "all-profiles"): no workspaces found\n", stderr)
         return ScheduleRunOutcome(exitCode: 1, incomplete: false, considered: [])
     }
     if !excluded.isEmpty {

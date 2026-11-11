@@ -67,6 +67,28 @@ extension OnboardingFlow {
         SharedConfigPin.confirmWrittenConfig(at: config, profile: profile)
         return true
     }
+
+    /// A Protect-only environment (P8): the workspace folder named after the login and one
+    /// config.yaml (minimal settings plus `profiles: {protect: <login>}`, no MDM slot), created
+    /// in one exclusive write and confirmed on this Mac. A config.yaml already there is never
+    /// overwritten.
+    nonisolated static func createProtectOnlyEnvironment(
+        login: String, appSupport: URL = AppSupport.directory()
+    ) throws {
+        try createWorkspaceFolders(for: login)
+        guard let workspace = ProfileService.workspaceURL(for: login) else {
+            throw FlowError.invalidProfile
+        }
+        let config = workspace.appendingPathComponent("config.yaml")
+        do {
+            try ScaffoldService.createProtectOnlyConfig(at: config, profile: login)
+        } catch CocoaError.fileWriteFileExists {
+            throw FlowError.workspaceHasConfig(login)
+        }
+        SharedConfigPin.confirmWrittenConfig(at: config, profile: login, appSupport: appSupport)
+        SharedConfigPin.confirmWritten(
+            login, key: .protectProfile, profile: login, appSupport: appSupport)
+    }
 }
 
 extension Data {

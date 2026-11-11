@@ -282,6 +282,8 @@ extension TrendSeries.Metric {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             L("Needs the mobile device inventory.")
+        case .protectComputers, .protectMatched, .protectOpenAlerts:
+            L("Needs Jamf Protect collected for this environment.")
         }
     }
 
@@ -304,6 +306,7 @@ extension TrendSeries.Metric {
     func isOffered(
         under policy: SecurityControlPolicy, in composition: EnvironmentComposition = .unknown
     ) -> Bool {
+        if isProtect { return true }  // WorkspaceStore.isOffered checks the product
         if isMobile { return composition.allowsMobile }
         guard composition.allowsMacs else { return false }
         guard let control = securityControl else { return true }

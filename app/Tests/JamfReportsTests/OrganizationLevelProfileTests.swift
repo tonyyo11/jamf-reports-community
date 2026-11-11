@@ -190,13 +190,13 @@ final class OrganizationLevelProfileTests: XCTestCase {
             ConfigDoctorService.organizationLevelRows(profile: profile, auth: nil).isEmpty)
     }
 
-    func testRunnableProfilesLeaveAnOrganizationProfileOutUntilItHasAFolder() {
+    func testRunnableWorkspacesLeaveAnOrganizationProfileOutUntilItHasAFolder() {
         let org = JamfCLIProfile(
             name: "org", url: "", schedules: 0, status: .idle, authMethod: "platform",
             platformLevel: .organization)
-        XCTAssertTrue(ProfileService.runnableProfiles(
+        XCTAssertTrue(ProfileService.runnableWorkspaces(
             [org], excluding: [], hasWorkspace: { _ in false }).isEmpty)
-        XCTAssertEqual(ProfileService.runnableProfiles(
+        XCTAssertEqual(ProfileService.runnableWorkspaces(
             [org], excluding: [], hasWorkspace: { _ in true }).count, 1)
     }
 

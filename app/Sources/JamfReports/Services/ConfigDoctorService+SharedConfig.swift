@@ -26,7 +26,7 @@ extension ConfigDoctorService {
             severity: .warn,
             title: L("Shared config changed since this Mac pinned it"),
             detail: items.map(\.text).joined(separator: "\n\n"),
-            hint: L("A Mac sharing this workspace edited config.yaml, or it was edited here. Until you confirm, every screen, report and run on this Mac uses the safe value for each key (workspace Generated Reports folder, archive instead of delete, no webhook send, no Protect collection, no logo, the history file beside the report, no report timestamp)."),
+            hint: L("A Mac sharing this workspace edited config.yaml, or it was edited here. Until you confirm, every screen, report and run on this Mac uses the safe value for each key (workspace Generated Reports folder, archive instead of delete, no webhook send, no Protect collection, no Platform API collection, no logo, the history file beside the report, no report timestamp)."),
             action: unreadable ? .confirmSharedConfig(check.drifts) : nil,
             items: items
         )]

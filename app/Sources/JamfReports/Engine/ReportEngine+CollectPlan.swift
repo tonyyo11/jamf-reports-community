@@ -12,6 +12,7 @@ extension ReportEngine {
         case platformOnly(authMethod: String)
         case environmentLevel
         case schoolNoPlatform
+        case platformUnavailable(String)
         case collectSkip
         case dashboardUnsupported(installedVersion: String?)
         case tierNotSelected(CollectionTier)
@@ -29,6 +30,8 @@ extension ReportEngine {
             case .schoolNoPlatform:
                 return "the Jamf School profile has no Platform API fields "
                     + "(Data Sources › Add Platform API)"
+            case .platformUnavailable(let reason):
+                return reason
             case .collectSkip:
                 return "listed in jamf_cli.collect_skip"
             case .dashboardUnsupported(let installed):
@@ -49,6 +52,7 @@ extension ReportEngine {
                 return "requires a Platform API profile, auth-method is \(authMethod)"
             case .environmentLevel: return "needs a platform environment integration"
             case .schoolNoPlatform: return "the School profile has no Platform API fields"
+            case .platformUnavailable(let reason): return reason
             case .collectSkip: return "jamf_cli.collect_skip"
             case .dashboardUnsupported:
                 return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later"
@@ -82,6 +86,7 @@ extension ReportEngine {
         let dashboardSupported: Bool
         let installedVersion: String?
         let now: Date
+        var platformUnavailable: String?
     }
 
     /// Decides every matrix command. The order is the loop's always was: Settings, then what
@@ -115,6 +120,9 @@ extension ReportEngine {
     private static func profileSkip(
         for kind: String, inputs: CollectPlanInputs
     ) -> CollectSkipReason? {
+        if let reason = inputs.platformUnavailable, platformOnlyKinds.contains(kind) {
+            return .platformUnavailable(reason)
+        }
         if let auth = inputs.nonPlatformAuth, platformOnlyKinds.contains(kind) {
             return .platformOnly(authMethod: auth)
         }

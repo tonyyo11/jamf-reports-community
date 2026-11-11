@@ -590,6 +590,34 @@ final class DataFreshnessHealthTests: XCTestCase {
             hasCollectedBefore: true, now: now)
         XCTAssertEqual(issues.first?.cause, cause)
     }
+
+    /// A School kind that keeps failing with a permanent cause reads failing and is not retried.
+    func testAPermanentlyFailingSchoolKindIsFailingButNotRemediated() throws {
+        let profile = "schoolfail"
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-School-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.record(.failed(exitCode: CLIBridge.exitCodeRefusedByPolicy),
+                     report: "school-devices", at: now)
+        store.record(.failed(exitCode: CLIBridge.exitCodeRefusedByPolicy),
+                     report: "school-devices", at: now)
+        let states = store.collectionStates(for: DataFreshnessHealth.schoolKinds)
+        let issues = DataFreshnessHealth.evaluate(
+            states: states, hasCollectedBefore: true, now: now)
+        let failing = issues.first { $0.snapshotKind == "school-devices" }
+        XCTAssertEqual(failing?.kind, .failing)
+        XCTAssertEqual(failing?.tier, .refresh)
+        XCTAssertFalse(WorkspaceStore.excludingPermanentUsageFailures(issues, profile: profile)
+            .contains { $0.snapshotKind == "school-devices" })
+    }
 }
 
 /// Thread-safe call recorder for `WorkspaceStore.RemediationCollector` spies —

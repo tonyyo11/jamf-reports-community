@@ -44,12 +44,9 @@ struct EnvironmentProfiles: Equatable, Sendable {
         [platform, protect, securityCloud, foreignSchool].compactMap { $0 }
     }
 
-    /// `workspace` is the profile whose config.yaml this is. `auth` is that profile's resolved
-    /// auth method, which only says whether an old-shape workspace also fills `platform`; nil
-    /// leaves it blank.
-    static func resolve(
-        config: ReportConfig?, workspace: String, auth: ProfileAuthMethod.Resolved? = nil
-    ) -> EnvironmentProfiles {
+    /// `workspace` is the profile whose config.yaml this is. An old-shape file derives no
+    /// `platform` slot (D19): see `platformRoute`.
+    static func resolve(config: ReportConfig?, workspace: String) -> EnvironmentProfiles {
         if let block = config?.profiles {
             var environment = EnvironmentProfiles(
                 jamfPro: named(block.jamfPro), platform: named(block.platform),
@@ -66,7 +63,6 @@ struct EnvironmentProfiles: Equatable, Sendable {
             environment.jamfSchool = recorded
         } else {
             environment.jamfPro = recorded
-            if auth?.method?.isPlatform == true { environment.platform = recorded }
             if school?.isForeign(toWorkspace: workspace) == true {
                 environment.foreignSchool = named(school?.profile)
             }
@@ -95,16 +91,44 @@ struct EnvironmentProfiles: Equatable, Sendable {
                 + "environment has one MDM, so nothing runs. Keep one and add the other as a "
                 + "workspace of its own."
         }
-        guard let mdm else {
-            return "config.yaml's profiles block names neither profiles.jamf_pro nor "
-                + "profiles.jamf_school, so nothing runs for '\(shown(workspace))'."
+        guard let first = mdm ?? protect else {
+            return "config.yaml's profiles block names neither profiles.jamf_pro, "
+                + "profiles.jamf_school nor profiles.protect, so nothing runs for "
+                + "'\(shown(workspace))'."
         }
-        guard mdm == workspace else {
-            let key = jamfPro != nil ? "profiles.jamf_pro" : "profiles.jamf_school"
-            return "\(key) names '\(shown(mdm))' but this workspace is '\(shown(workspace))', "
-                + "so nothing runs. Set \(key) to '\(shown(workspace))'."
+        guard first == workspace else {
+            let key = jamfPro != nil ? "profiles.jamf_pro"
+                : jamfSchool != nil ? "profiles.jamf_school" : "profiles.protect"
+            return "\(key) names '\(shown(first))' but this workspace is "
+                + "'\(shown(workspace))', so nothing runs. Set \(key) to "
+                + "'\(shown(workspace))'."
         }
         return nil
+    }
+
+    /// A `profiles:` block with a `protect` slot and neither MDM slot.
+    var isProtectOnly: Bool { source == .profilesBlock && mdm == nil && protect != nil }
+
+    /// Protect-only, and this Mac has confirmed the `profiles.protect` change: the one test for
+    /// treating a workspace as having no Jamf Pro where a peer's unconfirmed edit must not count.
+    func isConfirmedProtectOnly(
+        workspace: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        isProtectOnly && SharedConfigPin.protectAllowed(
+            profile: workspace, name: protect ?? "", appSupport: appSupport)
+    }
+
+    /// `refusal`, plus a refusal of a Protect-only environment for a command that needs Jamf Pro.
+    func proCommandRefusal(workspace: String, operation: String) -> String? {
+        if let refusal = refusal(workspace: workspace) { return refusal }
+        // From config.yaml, so it holds when jamf-cli cannot be asked which product a login is.
+        if isSchool {
+            return "\(operation) is a Jamf Pro command; "
+                + "'\(ConfigSchema.displayText(workspace))' is a Jamf School workspace"
+        }
+        guard isProtectOnly else { return nil }
+        return "'\(ConfigSchema.displayText(workspace))' holds only a Jamf Protect profile; "
+            + "\(operation) needs Jamf Pro."
     }
 
     /// A config.yaml that is missing or does not decode reads as the old shape with no keys:
@@ -130,5 +154,60 @@ struct EnvironmentProfiles: Equatable, Sendable {
             return nil
         }
         return name
+    }
+}
+
+/// Who collects the Platform-only kinds (`ReportEngine.platformOnlyKinds`), spec 3.2 and D19.
+/// The one answer for `collect`, the Data Sources plan and the freshness strip.
+enum PlatformRoute: Equatable, Sendable {
+    /// No `profiles:` block: the workspace's own profile, skipped by its auth method as before.
+    case workspaceProfile
+    /// The `platform` slot's profile.
+    case profile(String)
+    /// The block leaves them out; the text is the `[skip]` and `[plan]` reason.
+    case unavailable(String)
+}
+
+extension EnvironmentProfiles {
+    static let noPlatformReason = "no Platform API profile in this environment"
+    static let invalidPlatformReason = "profiles.platform is not a usable profile name"
+    static let organizationLevelPlatformReason =
+        "profiles.platform names an organization-level profile"
+    static let heldPlatformReason =
+        "profiles.platform changed in the shared config.yaml and is not confirmed on this Mac"
+
+    /// The auth method that judges the Platform kinds, and why they do not run, for a route:
+    /// the one answer `collect`'s screens (freshness strip, Data Sources) share. `resolve` is
+    /// asked only for a separate profile, so a slot naming the workspace costs no second probe.
+    static func platformInputs(
+        route: PlatformRoute, workspace: String, workspaceAuth: ProfileAuthMethod.Resolved?,
+        resolve: (String) -> ProfileAuthMethod.Resolved?
+    ) -> (auth: ProfileAuthMethod.Resolved?, unavailable: String?) {
+        switch route {
+        case .workspaceProfile: return (workspaceAuth, nil)
+        case .unavailable(let reason): return (workspaceAuth, reason)
+        case .profile(let named):
+            guard named != workspace else { return (workspaceAuth, nil) }
+            let auth = resolve(named)
+            // Collect skips these for an organization-level profile (spec 3.1).
+            return auth?.isOrganizationLevel == true
+                ? (workspaceAuth, Self.organizationLevelPlatformReason) : (auth, nil)
+        }
+    }
+
+    /// `platformPinAllows` is `SharedConfigPin.platformAllowed`; it matters only under a block,
+    /// and only for another profile than the workspace's own (D18): the writer's seed names the
+    /// workspace, which cannot point this Mac at another tenant. Compared with the workspace, not
+    /// the Jamf Pro slot, which the same file could set to match.
+    func platformRoute(workspace: String, platformPinAllows: Bool) -> PlatformRoute {
+        guard source == .profilesBlock else { return .workspaceProfile }
+        guard let platform else { return .unavailable(Self.noPlatformReason) }
+        guard ProfileService.isValid(platform) else {
+            return .unavailable(Self.invalidPlatformReason)
+        }
+        guard platformPinAllows || platform == workspace else {
+            return .unavailable(Self.heldPlatformReason)
+        }
+        return .profile(platform)
     }
 }

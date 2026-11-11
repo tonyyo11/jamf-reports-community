@@ -1,7 +1,7 @@
 import XCTest
 @testable import JamfReports
 
-/// The part of `ReportEngine.collect` that no test could reach before: what
+/// The part of a collect that no test could reach before: what
 /// happens to the workspace claim once the collect body actually runs.
 ///
 /// Reachable now because `collect` takes a `locateJamfCLI` seam. The stub is
@@ -57,6 +57,26 @@ final class CollectClaimLifecycleTests: XCTestCase {
         return url
     }
 
+    /// The run goes through the router, which now takes and releases the claim.
+    private func routedCollect(locate: @escaping @Sendable () -> URL?) async throws {
+        let config = try ConfigLoader.loadFromString("shared_workspace:\n  enabled: true\n")
+        try await CollectRouter.run(
+            workspace: WorkspaceID(validating: profile), force: true, config: config,
+            workspacePaths: WorkspacePaths.self,
+            proEngine: { workspace, profile, paths, tiers, skip, force, now, onLine in
+                try await ReportEngine.collect(
+                    workspace: workspace, profile: profile, workspacePaths: paths, tiers: tiers,
+                    skipExpensive: skip, force: force, locateJamfCLI: locate, now: now,
+                    onLine: onLine)
+            },
+            resolved: { _ in nil }, onLine: { _ in })
+    }
+
+    private func hostFiles() -> [String] {
+        let dir = ProfileService.workspaceURL(for: profile)!.appendingPathComponent("automation/hosts")
+        return (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+    }
+
     private func claimFile() -> URL {
         ProfileService.workspaceURL(for: profile)!
             .appendingPathComponent("automation/.workspace-claim.json")
@@ -69,14 +89,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
         let stub = try makeStub(exitCode: 1, stdout: "")
 
         do {
-            try await ReportEngine.collect(
-                workspace: WorkspaceID(validating: profile),
-                profile: profile,
-                workspacePaths: WorkspacePaths.self,
-                force: true,
-                locateJamfCLI: { stub },
-                onLine: { _ in }
-            )
+            try await routedCollect(locate: { stub })
             XCTFail("a stub that fails every call should end the collect")
         } catch {
             // Expected — every live call failed.
@@ -86,6 +99,7 @@ final class CollectClaimLifecycleTests: XCTestCase {
             FileManager.default.fileExists(atPath: claimFile().path),
             "the claim must be released even when the collect throws"
         )
+        XCTAssertTrue(hostFiles().isEmpty, "a thrown collect is not recorded for peers")
     }
 
     /// And on the ordinary path: claim released, activity recorded, so other
@@ -93,37 +107,20 @@ final class CollectClaimLifecycleTests: XCTestCase {
     func testSuccessfulCollectReleasesClaimAndRecordsActivity() async throws {
         let stub = try makeStub(exitCode: 0, stdout: "[]")
 
-        try await ReportEngine.collect(
-            workspace: WorkspaceID(validating: profile),
-            profile: profile,
-            workspacePaths: WorkspacePaths.self,
-            force: true,
-            locateJamfCLI: { stub },
-            onLine: { _ in }
-        )
+        try await routedCollect(locate: { stub })
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: claimFile().path),
             "a finished collect leaves no claim behind"
         )
-        let hostsDir = ProfileService.workspaceURL(for: profile)!
-            .appendingPathComponent("automation/hosts")
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: hostsDir.path)) ?? []
-        XCTAssertEqual(files.count, 1, "this machine's collect must be recorded for peers")
+        XCTAssertEqual(hostFiles().count, 1, "this machine's collect must be recorded for peers")
     }
 
     /// A missing binary must still be a clean failure, and must not leave a
     /// claim behind — the gate takes one before the binary check now.
     func testMissingBinaryLeavesNoClaim() async {
         do {
-            try await ReportEngine.collect(
-                workspace: WorkspaceID(validating: profile),
-                profile: profile,
-                workspacePaths: WorkspacePaths.self,
-                force: true,
-                locateJamfCLI: { nil },
-                onLine: { _ in }
-            )
+            try await routedCollect(locate: { nil })
             XCTFail("expected jamfCLINotFound")
         } catch ReportEngineError.jamfCLINotFound {
             // Expected.
@@ -136,4 +133,30 @@ final class CollectClaimLifecycleTests: XCTestCase {
             "a run that could not start must not hold the folder"
         )
     }
+
+    /// R1: a School run on shared storage takes the claim for its collect and is recorded.
+    func testSchoolRunTakesTheClaimAndRecordsActivity() async throws {
+        let config = try ConfigLoader.loadFromString(
+            "school_cli:\n  enabled: true\nshared_workspace:\n  enabled: true\n")
+        let claimFile = claimFile()
+        let heldDuringRun = LockedFlag()
+        try await CollectRouter.run(
+            workspace: WorkspaceID(validating: profile), force: true, config: config,
+            workspacePaths: WorkspacePaths.self,
+            schoolCollect: { _, _, _, _, _, _ in
+                heldDuringRun.set(FileManager.default.fileExists(atPath: claimFile.path))
+            },
+            resolved: { _ in nil }, onLine: { _ in })
+
+        XCTAssertTrue(heldDuringRun.value, "School collects behind the claim")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claimFile.path))
+        XCTAssertEqual(hostFiles().count, 1)
+    }
+}
+
+private final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    var value: Bool { lock.withLock { flag } }
+    func set(_ v: Bool) { lock.withLock { flag = v } }
 }

@@ -31,6 +31,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
         var product: ProfileProductType
         var profile: String
         var protectProfile: String?
+        /// A Protect-only environment (P8): nothing but the Protect list runs.
+        var protectOnly = false
         /// Why `protectProfile` is not collected (a login of another product), or nil.
         var protectRefusal: String?
         var staleDays: Int = 30
@@ -42,6 +44,20 @@ struct CollectSourcesPlan: Equatable, Sendable {
         /// The profile names a tenant, as a School profile needs for the Platform API.
         var hasTenantID = false
         var collectSkip: Set<String> = []
+        /// Why the Platform-only kinds do not run (no Platform profile), or nil.
+        var platformUnavailable: String?
+    }
+
+    /// The auth method and Platform skip reason Data Sources judges by. Only Jamf Pro has a
+    /// `platform` slot; a School workspace keeps its own login's auth method.
+    static func routedAuth(
+        product: ProfileProductType, route: PlatformRoute, workspace: String,
+        workspaceAuth: ProfileAuthMethod.Resolved?,
+        resolve: (String) -> ProfileAuthMethod.Resolved?
+    ) -> (auth: ProfileAuthMethod.Resolved?, unavailable: String?) {
+        guard product == .jamfPro else { return (workspaceAuth, nil) }
+        return EnvironmentProfiles.platformInputs(
+            route: route, workspace: workspace, workspaceAuth: workspaceAuth, resolve: resolve)
     }
 
     let sources: [Source]
@@ -49,6 +65,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
     func sources(for product: Product) -> [Source] { sources.filter { $0.product == product } }
 
     static func build(_ inputs: Inputs) -> CollectSourcesPlan {
+        if inputs.protectOnly { return CollectSourcesPlan(sources: protect(inputs)) }
         switch inputs.product {
         case .jamfSchool:
             let plan = ReportEngine.planSchoolCollect(
@@ -78,7 +95,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 nonPlatformAuth: ReportEngine.nonPlatformAuthMethod(inputs.authMethod),
                 tenantLevel: inputs.tenantLevel, collectSkip: inputs.collectSkip,
                 dashboardSupported: JamfCLIInstaller.supportsDashboard(inputs.installedVersion),
-                installedVersion: inputs.installedVersion, now: Date()),
+                installedVersion: inputs.installedVersion, now: Date(),
+                platformUnavailable: inputs.platformUnavailable),
             lastRun: { _ in nil })
         return plan.map { planned in
             Source(

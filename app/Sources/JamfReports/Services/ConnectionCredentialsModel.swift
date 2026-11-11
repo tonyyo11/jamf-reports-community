@@ -211,6 +211,7 @@ final class ConnectionCredentialsModel {
             await updateAll(context, gatewayURL: gatewayURL, clientID: id, secret: secret)
         }
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
     }
 
     private func addEnvironments(
@@ -403,6 +404,6 @@ extension ConnectionCredentialsModel.Row {
 
     private var removalHint: String {
         guard leavesProfileRegistered else { return "" }
-        return L("The jamf-cli profile \(profile) stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile \(ProfileName.shellWord(profile)).")
+        return L("The jamf-cli profile \(profile) stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile -- \(ProfileName.shellWord(profile)).")
     }
 }

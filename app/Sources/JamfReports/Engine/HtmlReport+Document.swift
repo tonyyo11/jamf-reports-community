@@ -87,6 +87,7 @@ extension HtmlReport {
     func headerFacts(_ inputs: Inputs, profile: String) -> [(label: String, value: String)] {
         var facts: [(label: String, value: String)] = []
         if !profile.isEmpty { facts.append(("Profile", profile)) }
+        if let line = productsLine() { facts.append(("Products", line)) }
         let snapshotDates = inputs.sources.filter { $0.kind != "snapshots/summaries" }
             .compactMap(\.date)
         if let collected = snapshotDates.max() {
@@ -106,6 +107,16 @@ extension HtmlReport {
                 ?? "ending \(current.date)"))
         }
         return facts
+    }
+
+    /// The environment's products with their profile names; nil with no config.yaml or product.
+    private func productsLine() -> String? {
+        guard let workspace else { return nil }
+        let configURL = WorkspacePaths.workspaceURL(for: workspace)
+            .appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
+        return EnvironmentProducts.headerLine(
+            EnvironmentProfiles.read(configURL: configURL, workspace: workspace.name))
     }
 
     /// The version number in `text` ("jamf-cli version 1.31.1 (abc)" gives "1.31.1"); the

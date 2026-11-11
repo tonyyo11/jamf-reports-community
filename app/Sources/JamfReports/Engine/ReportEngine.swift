@@ -553,6 +553,7 @@ struct ReportEngine: Sendable {
         // replaced by nil.
         if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
         if existing.mobile == nil, fresh.mobile != nil { return true }
+        if freshMeasuresNewEnvironmentField(existing: existing, fresh: fresh) { return true }
         // The same for the EDR figure: the first collect after an upgrade past the build that
         // began recording it must not leave that day's summary, and the Overview's EDR score
         // card reading it, empty. Upgrade only; a recorded figure is never replaced by nil.
@@ -560,6 +561,21 @@ struct ReportEngine: Sendable {
         // A later run landed a source: its numbers are newer, whatever the morning's said.
         if fresh.collectionSources?.values.contains("live") == true { return true }
         return false
+    }
+
+    /// P9 fields: true when `fresh` measures one `existing` lacks (upgrade only).
+    private static func freshMeasuresNewEnvironmentField(
+        existing: DailySummary, fresh: DailySummary
+    ) -> Bool {
+        (existing.protectComputerCount == nil && fresh.protectComputerCount != nil)
+            || (existing.protectMatched == nil && fresh.protectMatched != nil)
+            || (existing.protectOpenAlerts == nil && fresh.protectOpenAlerts != nil)
+            || (existing.protectAlertCounts == nil && fresh.protectAlertCounts != nil)
+            || (existing.osMajorCounts == nil && fresh.osMajorCounts != nil)
+            || (existing.modelFamilyCounts == nil && fresh.modelFamilyCounts != nil)
+            || (existing.mobileFormFactorCounts == nil && fresh.mobileFormFactorCounts != nil)
+            || (existing.lastSeenBuckets == nil && fresh.lastSeenBuckets != nil)
+            || !Set(fresh.products ?? []).isSubset(of: existing.products ?? [])
     }
 
     /// A rebuilt same-day point keeps "live" for a source an earlier run landed and this run
@@ -681,6 +697,8 @@ struct ReportEngine: Sendable {
     /// Why no summary is written when every attempted source failed. The watcher reads that
     /// line as a result of the sources named in `unlandedSourcesLine`, not a cause of its own.
     static let noSourceLandedReason = "no source landed this run"
+    /// Jamf Pro attempted and none of it landed while Platform kinds did (spec 7.2, D20).
+    static let noJamfProSourceLandedReason = "no Jamf Pro source landed this run"
 
     /// The `[partial]` line for a collect where some attempted sources did not land.
     static func unlandedSourcesLine(_ kinds: [String], attempted: Int) -> String {
@@ -820,6 +838,9 @@ struct ReportEngine: Sendable {
             guard let count = mobileDeviceCount, count > 0 else { return nil }
             return Self.mobileOnlySummary(
                 date: date, mobileDeviceCount: count, mobile: mobile,
+                maps: SummaryDeviceMaps.jamfPro(
+                    computersData: nil, mobileData: cachedData(kind: "mobile-devices-list"),
+                    rule: config.staleRule, now: Date()),
                 collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil,
                 collectedByHost: Self.collectingHostLabel(dataDir: dataDir))
         }
@@ -957,16 +978,23 @@ struct ReportEngine: Sendable {
         // all optional — when a tenant lacks any of these signals the field
         // is left nil so consumers (TrendStore, SecurityPostureView) can
         // distinguish "no data" from a zero.
-        let sipPct = pct(of: sipCount, total: totalDevices)
-        let firewallPct = pct(of: firewallCount, total: totalDevices)
-        let gatekeeperPct = pct(of: gatekeeperCount, total: totalDevices)
-
         // P0 = FileVault, SIP or Firewall failures, P1 = Gatekeeper failures, and the score,
         // all as the Security Posture screen counts them. `totalDevices` here may come from
         // inventory-summary when the security summary carries none.
         let fleet = SecurityFleetCounts.build(
             totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
             hardware: hardware, policy: securityPolicy)
+        // Nil when no Mac reported the control (a fleet of Macs with no inventory yet).
+        let sipPct = fleet.summaryPct(
+            .sip, reported: pct(of: sipCount, total: totalDevices), reportedOn: sipCount)
+        let firewallPct = fleet.summaryPct(
+            .firewall, reported: pct(of: firewallCount, total: totalDevices),
+            reportedOn: firewallCount)
+        let gatekeeperPct = fleet.summaryPct(
+            .gatekeeper, reported: pct(of: gatekeeperCount, total: totalDevices),
+            reportedOn: gatekeeperCount)
+        fileVaultPct = fleet.summaryPct(
+            .fileVault, reported: fileVaultPct, reportedOn: securityOnCounts[.fileVault])
         // The workspace's score factors, through the one function the Security Posture screen
         // and the workbook use, so a fleet has one score everywhere. A factor without data
         // drops out of the denominator.
@@ -1002,6 +1030,12 @@ struct ReportEngine: Sendable {
             complianceIsProxy = nil
         }
 
+        // Same rule as `staleCount`; the dates come from the `computers` snapshot read above.
+        let maps = SummaryDeviceMaps.jamfPro(
+            computersData: cachedData(kind: "computers"),
+            mobileData: cachedData(kind: "mobile-devices-list"),
+            rule: staleRule, now: Date())
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
@@ -1035,7 +1069,11 @@ struct ReportEngine: Sendable {
             patchPctBasis: DailySummary.deviceWeightedPatchBasis,
             securityScoreBasis: score.basis,
             securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct,
-            mobile: mobile
+            mobile: mobile,
+            osMajorCounts: maps.osMajor,
+            modelFamilyCounts: maps.modelFamily,
+            mobileFormFactorCounts: maps.formFactor,
+            lastSeenBuckets: maps.lastSeen
         )
     }
 
@@ -1060,6 +1098,7 @@ struct ReportEngine: Sendable {
     /// 0 and every Mac figure is nil, which every reader treats as unmeasured (never 0%).
     static func mobileOnlySummary(
         date: String, mobileDeviceCount: Int, mobile: MobileSummary? = nil,
+        maps: SummaryDeviceMaps.Fields = .init(),
         collectionSources: [String: String]?, collectedByHost: String?
     ) -> DailySummary {
         DailySummary(
@@ -1067,7 +1106,20 @@ struct ReportEngine: Sendable {
             staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
             source: "jamf-cli", collectionSources: collectionSources,
             mobileDeviceCount: mobileDeviceCount, collectedByHost: collectedByHost,
-            mobile: mobile)
+            mobile: mobile, osMajorCounts: maps.osMajor,
+            mobileFormFactorCounts: maps.formFactor, lastSeenBuckets: maps.lastSeen)
+    }
+
+    /// The day's summary for a Protect-only environment: no Macs and no mobile devices, so
+    /// `totalDevices` is 0 and every other figure is nil (unmeasured, never 0%).
+    static func protectOnlySummary(
+        date: String, collectionSources: [String: String], collectedByHost: String?
+    ) -> DailySummary {
+        DailySummary(
+            date: date, totalDevices: 0, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", collectionSources: collectionSources,
+            mobileDeviceCount: nil, collectedByHost: collectedByHost)
     }
 
     /// The score's sources from what the summary writer already read, plus the `computers`
@@ -1697,6 +1749,12 @@ struct ReportEngine: Sendable {
     /// `platformOnlyKinds`; nil for a platform profile and — deliberately —
     /// for an unknown method. Unknown fails toward collecting: never skip a
     /// kind because we could not ask.
+    static func platformSlotApplies(
+        separateProfile: Bool, profileAuthIsPlatform: Bool, source: EnvironmentProfiles.Source
+    ) -> Bool {
+        separateProfile || (profileAuthIsPlatform && source == .legacyKeys)
+    }
+
     static func nonPlatformAuthMethod(_ authMethod: String?) -> String? {
         guard let method = JamfCLIAuthMethod(raw: authMethod), !method.isPlatform else {
             return nil
@@ -1801,7 +1859,8 @@ struct ReportEngine: Sendable {
     /// credentials work, so a co-occurring 401 is transient/per-endpoint and falls
     /// back to cache. An exit code alone proves nothing — some commands exit 0 after
     /// a failed fetch (spec §13.2) — so `savedKinds` is the only evidence of success.
-    /// An empty outcome set is never auth-dead.
+    /// An empty outcome set is never auth-dead. When Platform kinds ran on a profile of their
+    /// own, the caller passes the Jamf Pro group (`jamfProGroup`).
     static func isCollectAuthDead(_ outcomes: [CollectOutcome], savedKinds: Set<String>) -> Bool {
         guard !outcomes.isEmpty, savedKinds.isEmpty else { return false }
         return outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
@@ -1832,6 +1891,9 @@ struct ReportEngine: Sendable {
     ///   excluded from the "failure" evidence; an all-exit-2 run is a broken invocation,
     ///   not an outage, and only warns per-kind.
     ///
+    /// The caller passes the Jamf Pro group (`jamfProGroup`) when Platform kinds ran on their
+    /// own profile.
+    ///
     /// Returns false for an empty outcome set, when any kind landed a snapshot this run, when
     /// at least one kind was skipped as not due, and for a failure set that is exit-2-only.
     /// An exit code is not evidence of success: `pro report update-status` exits 0 after both
@@ -1859,6 +1921,17 @@ struct ReportEngine: Sendable {
         outcomes.filter { $0.exitCode != CLIBridge.exitCodeUsage }.allSatisfy {
             $0.cause.map(causesShowingJamfAnswered.contains) ?? false
         }
+    }
+
+    /// The outcomes and landed kinds the dead verdicts judge (spec 7.2, D20): those that ran as
+    /// the Jamf Pro profile. Platform-only kinds on a profile of their own are another
+    /// credential: they never make the run dead, and never keep a dead Jamf Pro run alive.
+    static func jamfProGroup(
+        outcomes: [CollectOutcome], savedKinds: Set<String>, platformSeparate: Bool
+    ) -> (outcomes: [CollectOutcome], savedKinds: Set<String>) {
+        guard platformSeparate else { return (outcomes, savedKinds) }
+        return (outcomes.filter { !platformOnlyKinds.contains($0.kind) },
+                savedKinds.subtracting(platformOnlyKinds))
     }
 
     /// What a dead run's failures say, for its message (spec §9.6).
@@ -2008,45 +2081,20 @@ struct ReportEngine: Sendable {
         case stoodDown
     }
 
-    /// True inside the tick's same-day retry of a run that failed or came back incomplete.
-    @TaskLocal static var isSameDayRetry = false
+    /// What the collect gate decided for an environment.
+    enum EnvironmentGate: Equatable, Sendable {
+        case proceed(holdsClaim: Bool, coordinating: Bool)
+        case stop(CollectDisposition)
+    }
 
-    /// Collects the Jamf Pro sources into `workspace`, which names every folder the run reads or
-    /// writes. `profile` is the jamf-cli profile the commands run as (`-p`):
-    /// `EnvironmentProfiles.jamfPro`, which `CollectRouter` resolves.
-    @discardableResult
-    static func collect(
-        workspace: WorkspaceID,
-        profile: String,
-        workspacePaths: WorkspacePaths.Type,
-        tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
-        skipExpensive: Bool = false,
-        force: Bool = false,
-        authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
-        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
-        refreshSOFA: @escaping SOFARefresh = defaultSOFARefresh,
-        kindTimeout: TimeInterval = collectKindTimeout,
-        deviceLimits: DeviceCallLimits = DeviceCallLimits(),
-        patchDefinitionLimits: DeviceCallLimits = DeviceCallLimits(
-            timeout: patchDefinitionTimeout),
-        now: Date = Date(),
+    /// The once-per-day guard, then `coordinationGate`: `CollectRouter` asks before any product
+    /// runs, so a stop covers Jamf Pro, Jamf School and Jamf Protect alike. The caller releases
+    /// the claim when `holdsClaim` is true and stamps activity when `coordinating` is.
+    static func environmentGate(
+        workspace: WorkspaceID, workspacePaths: WorkspacePaths.Type, tiers: Set<CollectionTier>,
+        force: Bool, now: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws -> CollectDisposition {
-        guard ProfileService.isValid(profile) else {
-            throw ReportEngineError.invalidProfile(profile)
-        }
-        // The day is fixed at the start: the guard below and the summary at the end must name
-        // the same one, or a collect that crosses midnight leaves the next day looking done.
-        let collectDay = now
-
-        // Snapshot retention (v2.2.0): config-driven, OFF by default, once per
-        // calendar day. Placed before the early-return guard so it runs on any
-        // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
-        // own marker keeps it idempotent. Best-effort — never fails the collect.
-        SnapshotRetentionService.sweepIfDue(profile: workspace.name, onLine: onLine)
-        rewriteLostModeTextOnce(
-            profile: workspace.name, workspacePaths: workspacePaths, onLine: onLine)
-
+    ) -> EnvironmentGate {
         // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
         // summary for today already exists, unless the caller passes force: true.
         // Placed before the jamf-cli binary check so it short-circuits without
@@ -2066,7 +2114,7 @@ struct ReportEngine: Sendable {
         // and the per-kind cadence below still fetches only what has not landed.
         if !force, !isSameDayRetry, isFullCollect,
            let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
-            let today = SummaryJSONParser.dateFormatter.string(from: collectDay)
+            let today = SummaryJSONParser.dateFormatter.string(from: now)
             let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
             if let data = try? BoundedFile.read(
                    summaryFile, limit: SummaryJSONParser.maxSummaryFileBytes,
@@ -2076,7 +2124,7 @@ struct ReportEngine: Sendable {
                 let msg = "[info] already collected today — skipping (use Refresh to force)"
                 AppLogger.collect.info("\(msg, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .info, text: msg))
-                return .alreadyCollected
+                return .stop(.alreadyCollected)
             }
         }
 
@@ -2087,7 +2135,6 @@ struct ReportEngine: Sendable {
         // installed. Keeping the whole decision here also makes it reachable
         // without the binary, which is the only way it can be tested.
         let coordination = Self.coordinationGate(profile: workspace.name, force: force)
-        var holdsClaim = false
         switch coordination {
         case .standDown(let reason):
             // Marked `[partial]`, not `[info]`: this run collected nothing, so
@@ -2096,15 +2143,138 @@ struct ReportEngine: Sendable {
             let line = Self.standDownLine(reason: reason)
             AppLogger.collect.info("\(line, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: line))
-            return .stoodDown
+            return .stop(.stoodDown)
         case .proceed(let state, let notes):
-            holdsClaim = state.holdsClaim
             for note in notes {
                 AppLogger.collect.warning("\(note, privacy: .private)")
                 onLine(.init(timestamp: Date(), level: .warn, text: note))
             }
+            return .proceed(holdsClaim: state.holdsClaim, coordinating: state.coordinating)
         }
-        defer { if holdsClaim { SharedWorkspace.release(profile: workspace.name) } }
+    }
+
+    /// True inside the tick's same-day retry of a run that failed or came back incomplete.
+    @TaskLocal static var isSameDayRetry = false
+
+    /// The environment the router resolved and applied `EnvironmentProfiles.refusal` to, so
+    /// `collect` routes the Platform kinds from it and not from a second read of config.yaml.
+    @TaskLocal static var routedEnvironment: EnvironmentProfiles?
+
+    /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
+    static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
+        platformRoute(
+            environment: EnvironmentProfiles.resolve(config: config, workspace: workspace.name),
+            workspace: workspace)
+    }
+
+    /// The pin is a full check on the name this run would use; it matters only once a block
+    /// names the slot.
+    static func platformRoute(
+        environment: EnvironmentProfiles, workspace: WorkspaceID
+    ) -> PlatformRoute {
+        environment.platformRoute(
+            workspace: workspace.name,
+            platformPinAllows: environment.source != .profilesBlock
+                || SharedConfigPin.platformAllowed(
+                    profile: workspace.name, name: environment.platform ?? ""))
+    }
+
+    /// Where the Platform kinds run and what skips them, resolved once per run.
+    private struct PlatformRun {
+        var profile: String
+        var unavailable: String?
+        var nonPlatformAuth: String?
+        var tenantLevel: Bool
+    }
+
+    /// The profile the Platform kinds run as, why they are skipped when they are, and the auth
+    /// method and level of the profile they run as. A separate profile that reaches another
+    /// Jamf Pro (spec 3.1) skips them and `profile` stands in, so `platformProfile != profile`
+    /// still means "the Platform kinds ran on another profile". An organization-level one
+    /// skips them too, but `profile` stays the named one, which its verdicts then judge.
+    private static func resolvePlatformRun(
+        environment: EnvironmentProfiles, workspace: WorkspaceID, profile: String,
+        profileAuth: ProfileAuthMethod.Resolved?, bin: URL,
+        platformHosts: PlatformHostCheck.Lookup,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> PlatformRun {
+        var run = PlatformRun(profile: profile, unavailable: nil, nonPlatformAuth: nil,
+                              tenantLevel: false)
+        func warn(_ text: String) {
+            onLine(.init(timestamp: Date(), level: .warn, text: text))
+        }
+        var platformAuth: ProfileAuthMethod.Resolved?
+        switch platformRoute(environment: environment, workspace: workspace) {
+        case .workspaceProfile: break
+        case .unavailable(let reason): run.unavailable = reason
+        case .profile(let named) where named == profile: break
+        case .profile(let named):
+            run.profile = named
+            platformAuth = ProfileAuthMethod.resolve(profile: named, binary: bin)
+            // Only a profile that can serve Platform kinds is worth a probe; an unresolved one
+            // fails toward collecting, as everywhere.
+            let usable = platformAuth.map {
+                nonPlatformAuthMethod($0.authMethod) == nil && !$0.isOrganizationLevel
+            } ?? true
+            guard usable else { break }
+            let hosts = platformHosts(profile, named, bin)
+            switch PlatformHostCheck.verdict(
+                jamfProURL: hosts.jamfPro, platformJamfProURL: hosts.platform) {
+            case .different:
+                run.profile = profile
+                // Profile names, never the hosts: a custom domain is in no redaction seed.
+                run.unavailable = "profiles.platform (\(ConfigSchema.displayText(named))) reaches "
+                    + "a different Jamf Pro than profiles.jamf_pro "
+                    + "(\(ConfigSchema.displayText(profile)))"
+                warn("[warn] Platform API not collected: \(run.unavailable ?? "")")
+            case .unknown:
+                warn("[warn] could not confirm that profiles.platform reaches the same "
+                    + "Jamf Pro as profiles.jamf_pro; collecting the Platform API anyway")
+            case .same: break
+            }
+        }
+        // The Platform kinds' own profile decides their auth-method and level skips.
+        if run.profile == profile { platformAuth = profileAuth }
+        run.nonPlatformAuth = nonPlatformAuthMethod(platformAuth?.authMethod)
+        run.tenantLevel = platformAuth?.isTenantLevel == true
+        // Spec 3.1: an organization-level profile reaches no Jamf Pro report.
+        if run.profile != profile, platformAuth?.isOrganizationLevel == true {
+            run.unavailable = EnvironmentProfiles.organizationLevelPlatformReason
+        }
+        return run
+    }
+
+    /// Collects the Jamf Pro sources into `workspace`, which names every folder the run reads or
+    /// writes. `profile` is the jamf-cli profile the commands run as (`-p`):
+    /// `EnvironmentProfiles.jamfPro`, which `CollectRouter` resolves.
+    @discardableResult
+    static func collect(
+        workspace: WorkspaceID,
+        profile: String,
+        workspacePaths: WorkspacePaths.Type,
+        tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
+        skipExpensive: Bool = false,
+        force: Bool = false,
+        authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        platformHosts: PlatformHostCheck.Lookup = PlatformHostCheck.live,
+        refreshSOFA: @escaping SOFARefresh = defaultSOFARefresh,
+        kindTimeout: TimeInterval = collectKindTimeout,
+        deviceLimits: DeviceCallLimits = DeviceCallLimits(),
+        patchDefinitionLimits: DeviceCallLimits = DeviceCallLimits(
+            timeout: patchDefinitionTimeout),
+        now: Date = Date(),
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async throws -> CollectDisposition {
+        guard ProfileService.isValid(profile) else {
+            throw ReportEngineError.invalidProfile(profile)
+        }
+        // The day is fixed at the start: the guard below and the summary at the end must name
+        // the same one, or a collect that crosses midnight leaves the next day looking done.
+        let collectDay = now
+
+        rewriteLostModeTextOnce(
+            profile: workspace.name, workspacePaths: workspacePaths, onLine: onLine)
 
         // Test seam. Production callers omit it and get the real locator; a test
         // passes a stub so the whole collect body below is reachable without a
@@ -2139,16 +2309,18 @@ struct ReportEngine: Sendable {
         let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
 
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
-        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
-        // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
-        if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: JamfCLIInstaller.floorLine(installed: detectedVersion, profile: profile)))
-            throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
-        }
+        let (detectedVersion, profileAuth) = try await collectPreflight(
+            profile: profile, binary: bin, onLine: onLine)
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
+        let platformRun = Self.resolvePlatformRun(
+            environment: routedEnvironment
+                ?? EnvironmentProfiles.resolve(config: loadedConfig, workspace: workspace.name),
+            workspace: workspace, profile: profile,
+            profileAuth: profileAuth, bin: bin, platformHosts: platformHosts, onLine: onLine)
+        let platformProfile = platformRun.profile
+        let platformUnavailable = platformRun.unavailable
         let commands = Self.collectCommandMatrix(
-            profile: profile,
+            profile: profile, platformProfile: platformProfile,
             staleDays: loadedConfig?.thresholds?.resolvedStaleDays ?? 30)
 
         // Cadence state store: persists per-kind last-success timestamps so
@@ -2164,24 +2336,18 @@ struct ReportEngine: Sendable {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
 
-        // Resolved once per run, not per kind — it spawns `config list`.
-        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
-        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
-            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
-        }
-        let nonPlatformAuth = Self.nonPlatformAuthMethod(profileAuth?.authMethod)
-        let tenantLevel = profileAuth?.isTenantLevel == true
         let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
 
         // Every skip decision is made here, once, before the first command: the `[plan]`
         // lines and the loop below both read this list.
+        var planInputs = CollectPlanInputs(
+            tiers: tiers, force: force, skipExpensive: skipExpensive,
+            nonPlatformAuth: platformRun.nonPlatformAuth, tenantLevel: platformRun.tenantLevel,
+            collectSkip: collectSkip, dashboardSupported: dashboardSupported,
+            installedVersion: detectedVersion, now: collectStart)
+        planInputs.platformUnavailable = platformUnavailable
         let plan = Self.planCollect(
-            commands: commands,
-            inputs: CollectPlanInputs(
-                tiers: tiers, force: force, skipExpensive: skipExpensive,
-                nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel,
-                collectSkip: collectSkip, dashboardSupported: dashboardSupported,
-                installedVersion: detectedVersion, now: collectStart),
+            commands: commands, inputs: planInputs,
             lastRun: { stateStore?.lastRun(report: $0) }
         )
         let scanPlan = Self.planDeviceScan(
@@ -2192,6 +2358,11 @@ struct ReportEngine: Sendable {
             profile: profile, plan: plan, afterMatrix: afterMatrix,
             afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
             deviceScan: scanPlan, onLine: onLine)
+        if platformProfile != profile, platformUnavailable == nil,
+           plan.contains(where: { $0.skip == nil && Self.platformOnlyKinds.contains($0.kind) }) {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[plan] Platform API kinds run as \(platformProfile)"))
+        }
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -2202,7 +2373,6 @@ struct ReportEngine: Sendable {
         // Cadence "not due" skips only — NOT tier-filter skips, which say nothing
         // about server reachability. Feeds isCollectDead's veto: a run that skipped
         // fresh-cache kinds and failed only the chronic residue is not an outage.
-        let skippedNotDueCount = plan.filter { $0.skip?.isNotDue == true }.count
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
         for planned in plan {
@@ -2223,7 +2393,7 @@ struct ReportEngine: Sendable {
             let result: KindCollectResult
             if Self.benchmarkReportKinds.contains(kind) {
                 result = try await Self.collectBenchmarkReport(
-                    kind: kind, profile: profile, arguments: args,
+                    kind: kind, profile: platformProfile, arguments: args,
                     configuredTitles: loadedConfig?.platform?.benchmarkTitles ?? [],
                     discovery: &benchmarkDiscovery,
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
@@ -2245,8 +2415,11 @@ struct ReportEngine: Sendable {
                     collectStart: collectStart, onLine: onLine
                 )
             } else {
+                // The log names the profile the command ran as (its argv carries it).
                 result = try await Self.collectOneKind(
-                    kind: kind, profile: profile, arguments: args,
+                    kind: kind,
+                    profile: Self.platformOnlyKinds.contains(kind) ? platformProfile : profile,
+                    arguments: args,
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
                     dataDir: dataDir, recordManifest: recordManifest,
                     useCachedData: useCachedData, stateStore: stateStore,
@@ -2257,16 +2430,31 @@ struct ReportEngine: Sendable {
             if result.saved { savedKinds.insert(kind) }
         }
 
+        let platformSeparate = platformProfile != profile
+        let judged = Self.jamfProGroup(
+            outcomes: outcomes, savedKinds: savedKinds, platformSeparate: platformSeparate)
+        // A "not due" skip proves the credential that ran it; Platform skips prove nothing
+        // about Jamf Pro when they ran as another profile.
+        let judgedNotDue = plan.filter {
+            $0.skip?.isNotDue == true
+                && (!platformSeparate || !Self.platformOnlyKinds.contains($0.kind))
+        }.count
         let deadAfterScan = try await Self.enforceCollectVerdicts(
-            outcomes: outcomes, savedKinds: savedKinds,
-            skippedNotDueCount: skippedNotDueCount, profile: profile, bin: bin,
+            outcomes: outcomes, savedKinds: savedKinds, judged: judged,
+            skippedNotDueCount: judgedNotDue, profile: profile, bin: bin,
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
 
-        // Judged before the scan phase adds its kinds. The scan works from the cached
-        // `computers` snapshot and lands an EMPTY ddm-device-status for a fleet with no
-        // DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
-        let matrixLandedNothing = !outcomes.isEmpty && savedKinds.isEmpty
+        // Judged before the scan phase adds its kinds, on the Jamf Pro group. The scan works
+        // from the cached `computers` snapshot and lands an EMPTY ddm-device-status for a fleet
+        // with no DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
+        // Nothing landed when the run attempted something and none landed, or (spec 7.2, D20)
+        // Jamf Pro attempted and none of it landed: Platform kinds that landed must not date
+        // cached Mac figures today. Jamf Pro not due plus Platform landing is not nothing.
+        let nothingLandedReason: String? =
+            (!outcomes.isEmpty && savedKinds.isEmpty) ? Self.noSourceLandedReason
+            : (!judged.outcomes.isEmpty && judged.savedKinds.isEmpty)
+            ? Self.noJamfProSourceLandedReason : nil
 
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
@@ -2278,22 +2466,27 @@ struct ReportEngine: Sendable {
             authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
+        // P9-R1: Platform-only kinds count under `platform` for a separate profiles.platform, or
+        // (no profiles: block) a Jamf Pro profile that logs in with the Platform API.
+        let platformSlot = platformSlotApplies(
+            separateProfile: platformSeparate,
+            profileAuthIsPlatform: profileAuth?.method?.isPlatform == true,
+            source: EnvironmentProfiles.resolve(
+                config: loadedConfig, workspace: workspace.name).source)
+        let platformLanded = savedKinds.intersection(platformOnlyKinds)
+        landedSources?.record(
+            .jamfPro, platformSlot ? savedKinds.subtracting(platformLanded) : savedKinds)
+        landedSources?.record(.platform, platformSlot ? platformLanded : [])
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
             workspace: workspace, profile: profile, afterMatrix: afterMatrix, bin: bin,
-            dataDir: dataDir, savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
+            dataDir: dataDir, savedKinds: savedKinds, nothingLandedReason: nothingLandedReason,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore,
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
         )
 
-        // Stamp this machine's activity so other Macs sharing the folder can
-        // see the collect happened without parsing summaries. One file per
-        // host, so concurrent runs never write the same path.
-        if case .proceed(let state, _) = coordination, state.coordinating {
-            SharedWorkspace.recordActivity(profile: workspace.name)
-        }
         return .collected
     }
 
@@ -2303,10 +2496,13 @@ struct ReportEngine: Sendable {
     /// landed. Both dead verdicts abort BEFORE any summary is written, so a run that
     /// fetched nothing can never promote stale cache as fresh data. A dead run whose
     /// failures all show Jamf answered is returned instead of thrown, for the caller to
-    /// throw once the device scan has run (`deadRunAllowsDeviceScan`).
+    /// throw once the device scan has run (`deadRunAllowsDeviceScan`). The dead verdicts judge
+    /// `judged`, the outcomes that ran as the Jamf Pro profile (`jamfProGroup`, spec 7.2); the
+    /// `[partial]` line covers every outcome.
     private static func enforceCollectVerdicts(
         outcomes: [CollectOutcome],
         savedKinds: Set<String>,
+        judged: (outcomes: [CollectOutcome], savedKinds: Set<String>),
         skippedNotDueCount: Int,
         profile: String,
         bin: URL,
@@ -2326,7 +2522,7 @@ struct ReportEngine: Sendable {
         // defect this fixes): one endpoint's 401 is not proof credentials are dead.
         // evaluateAuthDead only calls the probe when isCollectAuthDead is true.
         if let decision = await Self.evaluateAuthDead(
-            outcomes: outcomes, savedKinds: savedKinds, profile: profile, bin: bin,
+            outcomes: judged.outcomes, savedKinds: judged.savedKinds, profile: profile, bin: bin,
             probe: authConfirmationProbe
         ) {
             switch decision {
@@ -2365,12 +2561,13 @@ struct ReportEngine: Sendable {
         // auth-dead: no degraded snapshot should be promoted as fresh data. See
         // isCollectDead's doc comment for the field defect this veto set fixes.
         if Self.isCollectDead(
-            outcomes, savedKinds: savedKinds, skippedNotDueCount: skippedNotDueCount
+            judged.outcomes, savedKinds: judged.savedKinds, skippedNotDueCount: skippedNotDueCount
         ) {
             let error = ReportEngineError.collectDead(
-                profile: profile, failedCount: outcomes.count, cause: Self.deadRunCause(outcomes)
+                profile: profile, failedCount: judged.outcomes.count,
+                cause: Self.deadRunCause(judged.outcomes)
             )
-            if Self.deadRunAllowsDeviceScan(outcomes) { return error }
+            if Self.deadRunAllowsDeviceScan(judged.outcomes) { return error }
             throw Self.reportDeadCollect(error, onLine: onLine)
         }
 
@@ -2388,6 +2585,27 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
         return nil
+    }
+
+    /// The checks before any jamf-cli source runs, shared by the Jamf Pro collect and a
+    /// Protect-only one: a binary below the floor, and a login `config list` does not name.
+    /// Returns the version and the resolved auth method the run keys on.
+    static func collectPreflight(
+        profile: String, binary bin: URL, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) async throws -> (version: String?, auth: ProfileAuthMethod.Resolved?) {
+        let detectedVersion = await JamfCLIInstaller.installedVersionOffMain(at: bin)
+        // Older binaries exit 2 on the 1.29 resource names, so every source would fail one by one.
+        if let detectedVersion, JamfCLIInstaller.isBelowMinimumSupported(detectedVersion) {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: JamfCLIInstaller.floorLine(installed: detectedVersion, profile: profile)))
+            throw ReportEngineError.jamfCLITooOld(installed: detectedVersion)
+        }
+        // Resolved once per run, not per kind — it spawns `config list`.
+        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        if profileAuth == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
+            throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
+        }
+        return (detectedVersion, profileAuth)
     }
 
     /// Logs a dead collect's `[error]` line and returns the error for the caller to throw.
@@ -2433,7 +2651,7 @@ struct ReportEngine: Sendable {
         bin: URL,
         dataDir: URL,
         savedKinds: Set<String>,
-        nothingLanded: Bool,
+        nothingLandedReason: String?,
         loadedConfig: ReportConfig?,
         refreshSOFA: SOFARefresh,
         workspacePaths: WorkspacePaths.Type,
@@ -2481,10 +2699,10 @@ struct ReportEngine: Sendable {
         // only other site that produces these files, so the trend chart will
         // simply not advance until the next configured run.
         let unwritten: String?
-        if nothingLanded, loadedConfig != nil {
+        if let nothingLandedReason, loadedConfig != nil {
             // Every attempted source failed: a summary now would stamp cached numbers
             // with today's date and chart them as a fresh trend point.
-            unwritten = Self.noSourceLandedReason
+            unwritten = nothingLandedReason
         } else if let config = loadedConfig,
            let summariesDir = try? workspacePaths.summariesDir(for: workspace.name) {
             let prov = await Provenance.current(
@@ -2593,7 +2811,22 @@ struct ReportEngine: Sendable {
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
     /// `knownCollectKinds` — `CollectionTierLookupTests` enforces that in CI.
+    /// The Platform-only kinds take `platformProfile` for `-p` (every row's `-p` value is
+    /// `args[1]`), so one environment can collect Jamf Pro and Platform data through two logins.
     static func collectCommandMatrix(
+        profile: String, platformProfile: String? = nil, staleDays: Int
+    ) -> [(args: [String], kind: String)] {
+        let matrix = jamfProCommandMatrix(profile: profile, staleDays: staleDays)
+        guard let platformProfile, platformProfile != profile else { return matrix }
+        return matrix.map { command in
+            guard platformOnlyKinds.contains(command.kind) else { return command }
+            var args = command.args
+            args[1] = platformProfile
+            return (args, command.kind)
+        }
+    }
+
+    private static func jamfProCommandMatrix(
         profile: String, staleDays: Int
     ) -> [(args: [String], kind: String)] {
         let mobileSections = mobileInventorySections.flatMap { ["--section", $0] }
@@ -3689,6 +3922,7 @@ struct ReportEngine: Sendable {
         _ = await fetchSOFAIfPlanned(
             afterMatrix: afterMatrix, profile: profile, dataDir: dataDir,
             refreshSOFA: refreshSOFA, stateStore: stateStore, onLine: onLine)
+        landedSources?.record(.jamfSchool, schoolSaved)
         writeSchoolSummaryAfterCollect(
             profile: workspace.name, dataDir: dataDir, workspacePaths: workspacePaths,
             landedKinds: schoolSaved, day: now, onLine: onLine)
@@ -3771,12 +4005,14 @@ struct ReportEngine: Sendable {
     ///   - profile: jamf-cli protect profile slug.
     ///   - dataDir: Directory under which snapshots are written.
     ///   - onLine: Progress callback for log lines.
+    /// - Returns: The kinds of the Protect sources that landed.
+    @discardableResult
     static func protectCollect(
         profile: String,
         dataDir: URL,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws {
+    ) async throws -> [String] {
         guard let bin = locateJamfCLI() else {
             throw ReportEngineError.jamfCLINotFound
         }
@@ -3849,6 +4085,7 @@ struct ReportEngine: Sendable {
             }
         }
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
+        return commands.map(\.kind).filter { !unlanded.contains($0) }
     }
 
     // MARK: - Public API: schoolGenerate
@@ -4676,6 +4913,8 @@ enum ReportEngineError: Error, LocalizedError {
     /// Partial failures (≥1 success) do NOT reach this — they warm the cache
     /// and the run continues normally.
     case collectDead(profile: String, failedCount: Int, cause: ReportEngine.DeadRunCause = .outage)
+    /// A Protect-only run whose `profiles.protect` is a shared value not yet confirmed here.
+    case protectNotConfirmed(String)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -4717,6 +4956,8 @@ enum ReportEngineError: Error, LocalizedError {
                 "returned 401 (expired or revoked credentials) and none succeeded. " +
                 "Re-authenticate with: jamf-cli -p \(ProfileName.shellWord(p)) pro auth token. " +
                 "No snapshot was written."
+        case .protectNotConfirmed(let reason):
+            return reason
         case .collectDead(let p, let n, let cause):
             switch cause {
             case .outage:

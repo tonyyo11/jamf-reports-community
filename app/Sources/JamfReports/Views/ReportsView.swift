@@ -174,7 +174,8 @@ struct ReportsView: View {
         .sheet(isPresented: $showGenerate) {
             GenerateSheet(
                 profile: workspace.profile, bridge: bridge, freshness: generateFreshness,
-                schoolWorkspace: workspace.isSchoolWorkspace, onGenerated: reload)
+                schoolWorkspace: workspace.isSchoolWorkspace,
+                noJamfPro: !workspace.environmentProducts.has(.jamfPro), onGenerated: reload)
         }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
@@ -254,7 +255,7 @@ struct ReportsView: View {
                         : "Choose a template or sheets and the formats, then generate"
                     )
                     // Both render Jamf Pro data; a Jamf School workspace has a workbook only.
-                    if !workspace.isSchoolWorkspace {
+                    if workspace.environmentProducts.has(.jamfPro) {
                         PNPButton(
                             title: isGeneratingPDF ? L("Generating...") : L("Export PDF"),
                             icon: "doc.richtext",

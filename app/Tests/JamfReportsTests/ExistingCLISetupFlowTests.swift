@@ -523,6 +523,239 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         XCTAssertNil(flow.connectionNotes["prod"])
     }
 
+    // MARK: - Environments, Platform and Protect slots
+
+    private func pro(_ name: String, auth: String, url: String) -> JamfCLIProfile {
+        JamfCLIProfile(
+            name: name, url: url, schedules: 0, status: .idle, authMethod: auth, product: .pro,
+            platformLevel: auth == "platform" ? .environment : nil)
+    }
+
+    private func protect(_ name: String) -> JamfCLIProfile {
+        JamfCLIProfile(
+            name: name, url: "x.protect.jamfcloud.com", schedules: 0, status: .idle,
+            authMethod: "oauth2", product: .protect)
+    }
+
+    private var example: JamfCLIProfile {
+        pro("Example", auth: "oauth2", url: "example.jamfcloud.com")
+    }
+    private var exampleAPI: JamfCLIProfile {
+        pro("Example-API", auth: "platform", url: "us.api.jamfcloud.com")
+    }
+
+    private struct Calls {
+        var initialized: [String] = []
+        var collected: [String] = []
+        var platform: [[String]] = []
+        var protect: [[String]] = []
+    }
+
+    private func runSpied(
+        _ flow: ExistingCLISetupFlow, platformFails: Bool = false
+    ) async -> Calls {
+        struct Boom: LocalizedError { var errorDescription: String? { "boom" } }
+        var calls = Calls()
+        await flow.run(
+            connectionRunner: nil,
+            initialize: { calls.initialized.append($0); return 0 },
+            writePlatform: { ws, p in
+                calls.platform.append([ws, p])
+                if platformFails { throw Boom() }
+            },
+            writeProtect: { ws, p in calls.protect.append([ws, p]) },
+            collect: { name, _ in calls.collected.append(name); return 0 })
+        return calls
+    }
+
+    func testPairedEnvironmentCreatesOneWorkspaceAndWritesItsPlatformSlot() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
+        await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })
+        let calls = await runSpied(flow)
+        XCTAssertEqual(calls.initialized, ["Example"])
+        XCTAssertEqual(calls.platform, [["Example", "Example-API"]])
+        XCTAssertEqual(calls.collected, ["Example"])
+        XCTAssertEqual(flow.statuses["Example"], .done)
+        XCTAssertEqual(flow.statuses["Example-API"], .pending)
+    }
+
+    func testRemovedPlatformIsNotWritten() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
+        await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })
+        flow.removePlatform(from: "Example")
+        let calls = await runSpied(flow)
+        XCTAssertEqual(calls.initialized, ["Example"])
+        XCTAssertTrue(calls.platform.isEmpty)
+    }
+
+    func testProtectAssignedToAnUntickedEnvironmentIsNotWritten() async {
+        let other = pro("Other", auth: "oauth2", url: "other.jamfcloud.com")
+        let flow = ExistingCLISetupFlow(profiles: [example, other, protect("Example-Protect")])
+        flow.setSelected("Example", false)
+        let calls = await runSpied(flow)
+        XCTAssertEqual(calls.initialized, ["Other"])
+        XCTAssertTrue(calls.protect.isEmpty)
+        XCTAssertEqual(flow.protectAssignment["Example-Protect"] ?? nil, "Example")
+    }
+
+    func testProtectWrittenOnlyToItsAssignedWorkspace() async {
+        let other = pro("Other", auth: "oauth2", url: "other.jamfcloud.com")
+        let flow = ExistingCLISetupFlow(profiles: [example, other, protect("Example-Protect")])
+        XCTAssertEqual(flow.protectAssignment["Example-Protect"] ?? nil, "Example")
+        var calls = await runSpied(flow)
+        XCTAssertEqual(calls.protect, [["Example", "Example-Protect"]])
+
+        flow.protectAssignment["Example-Protect"] = "Other"
+        calls = await runSpied(flow)
+        XCTAssertEqual(calls.protect, [["Other", "Example-Protect"]])
+
+        flow.protectAssignment["Example-Protect"] = .some(nil)
+        calls = await runSpied(flow)
+        XCTAssertTrue(calls.protect.isEmpty, "left out writes nothing")
+    }
+
+    func testProtectSlotWriteFailureLeavesTheWorkspaceDone() async {
+        struct Boom: LocalizedError { var errorDescription: String? { "boom" } }
+        let flow = ExistingCLISetupFlow(profiles: [example, protect("Example-Protect")])
+        await flow.run(
+            connectionRunner: nil,
+            initialize: { _ in 0 },
+            writePlatform: { _, _ in },
+            writeProtect: { _, _ in throw Boom() },
+            collect: { _, _ in 0 })
+        XCTAssertEqual(flow.statuses["Example"], .done)
+        XCTAssertTrue(flow.connectionNotes["Example"]?.contains("boom") == true)
+    }
+
+    /// The live writers, in run order, on a fresh minimal workspace.
+    func testTheRealWritersRecordBothSlotsInOrder() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("JRC-P6-\(UUID().uuidString)", isDirectory: true)
+        let support = root.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: "Example"))
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let config = workspace.appendingPathComponent("config.yaml")
+        try ScaffoldService.writeMinimalConfig(to: config, profile: "Example")
+
+        _ = try ProfilesConfigWriter.save(
+            .platform, to: "Example-API", workspace: "Example", appSupport: support,
+            workspaceAuth: { _ in nil })
+        _ = try OnboardingFlow.writeProtectConfig(
+            profileSlug: "Example", protectProfileName: "Example-Protect", appSupport: support)
+
+        let profiles = try XCTUnwrap(ConfigLoader.load(from: config).profiles)
+        XCTAssertEqual(profiles.jamfPro, "Example")
+        XCTAssertEqual(profiles.platform, "Example-API")
+        XCTAssertEqual(profiles.protect, "Example-Protect")
+    }
+
+    func testProtectLoginIsNeverAWorkspace() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, protect("Example-Protect")])
+        let calls = await runSpied(flow)
+        XCTAssertEqual(calls.initialized, ["Example"])
+    }
+
+    func testPlatformSlotWriteFailureLeavesTheWorkspaceDone() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
+        await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })
+        _ = await runSpied(flow, platformFails: true)
+        XCTAssertEqual(flow.statuses["Example"], .done)
+        XCTAssertTrue(flow.connectionNotes["Example"]?.contains("boom") == true,
+                      flow.connectionNotes["Example"] ?? "no note")
+    }
+
+    func testARefusedPlatformSlotIsDroppedAndTheWorkspaceStillRuns() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
+        await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })
+        let bare404 = failure(4, "resource not found (HTTP 404): GET /pro/v1/jamf-pro-version")
+        var calls = Calls()
+        await flow.run(
+            connectionRunner: { args in
+                args.contains("Example-API")
+                    ? (args.contains("jamf-pro-version") ? (4, bare404) : (0, Data("[]".utf8)))
+                    : nil
+            },
+            initialize: { calls.initialized.append($0); return 0 },
+            writePlatform: { ws, p in calls.platform.append([ws, p]) },
+            writeProtect: { _, _ in },
+            collect: { _, _ in 0 })
+        XCTAssertEqual(calls.initialized, ["Example"])
+        XCTAssertTrue(calls.platform.isEmpty)
+        XCTAssertEqual(flow.statuses["Example"], .done)
+        XCTAssertNotNil(flow.connectionNotes["Example"])
+    }
+
+    // The app's own list has dropped every Protect and Security Cloud login, so adoption
+    // reads jamf-cli's whole listing before it proposes.
+    func testResolveReadsTheUnfilteredListingForProtectAndSecurityCloud() async {
+        let cloud = JamfCLIProfile(
+            name: "Example-Cloud", url: "", schedules: 0, status: .idle,
+            authMethod: "security", product: .securityCloud)
+        let listed = [example, protect("Example-Protect"), cloud]
+        let flow = ExistingCLISetupFlow(profiles: [example])
+        XCTAssertTrue(flow.proposal.protectChoices.isEmpty)
+        XCTAssertFalse(flow.proposalResolved)
+        await flow.resolveProposal(list: { listed }, learn: { _ in nil })
+        XCTAssertEqual(flow.proposal.protectChoices.map(\.profile), ["Example-Protect"])
+        XCTAssertEqual(flow.protectAssignment["Example-Protect"] ?? nil, "Example")
+        XCTAssertEqual(
+            flow.proposal.unassigned["Example-Cloud"], ExistingCLISetupFlow.securityCloudReason)
+        XCTAssertEqual(flow.selected, ["Example"])
+        XCTAssertTrue(flow.proposalResolved)
+    }
+
+    func testAnUnreadableListingKeepsTheProfilesItWasGiven() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, protect("Example-Protect")])
+        await flow.resolveProposal(list: { nil }, learn: { _ in nil })
+        XCTAssertEqual(flow.proposal.protectChoices.map(\.profile), ["Example-Protect"])
+        XCTAssertTrue(flow.proposalResolved)
+    }
+
+    func testOnlyTheFirstProtectLoginByNameIsSuggestedForAnEnvironment() {
+        let flow = ExistingCLISetupFlow(profiles: [
+            example, protect("Example-Protect-Old"), protect("Example-Protect"),
+        ])
+        XCTAssertEqual(flow.protectAssignment["Example-Protect"] ?? nil, "Example")
+        XCTAssertNil(flow.protectAssignment["Example-Protect-Old"] ?? nil)
+    }
+
+    func testResolveKeepsAHandMadeSelection() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
+        XCTAssertEqual(flow.selected, ["Example", "Example-API"])
+        flow.setSelected("Example", false)
+        await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })
+        XCTAssertTrue(flow.selected.isEmpty, "Example-API folded away; the unticked one stays off")
+    }
+
+    func testConfiguredPolicyNoLongerExcludesTwins() async {
+        let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
+        await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })
+        var base = AutomationPolicy()
+        base.excludedWorkspaces = ["kept"]
+        XCTAssertEqual(flow.configuredPolicy(basedOn: base).excludedWorkspaces, ["kept"])
+    }
+
+    func testRecordedURLBelongsToThePlatformProfile() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("p6-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ConnectionStore(url: dir.appendingPathComponent("connections.json"))
+        try store.upsert(Connection(
+            name: "E", region: .us, level: .environment,
+            members: [.init(profile: "Example-API", scopeID: "e1", product: .pro)]))
+        let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
+        await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })
+        flow.recordLearnedURLs(in: store)
+        XCTAssertEqual(store.jamfProURL(profile: "Example-API"), "https://example.jamfcloud.com")
+    }
+
     private final class Counter: @unchecked Sendable {
         private let lock = NSLock()
         private var value = 0

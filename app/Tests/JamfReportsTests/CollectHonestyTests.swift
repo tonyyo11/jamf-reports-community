@@ -234,24 +234,19 @@ final class CollectHonestyTests: XCTestCase {
     }
 
     /// End to end: a peer that collected minutes ago makes this Mac stand down,
-    /// and the run says so on the stream. `locateJamfCLI` returns nil to prove
-    /// the decision is made before the binary check — a peer already working is
-    /// a reason to defer whether or not this Mac could have collected.
+    /// and the run says so on the stream. The gate runs before any jamf-cli work, so a peer already
+    /// working is a reason to defer whether or not this Mac could have collected.
     func testCollectStandsDownForARecentPeerAndSaysSo() async throws {
         try writeConfig("shared_workspace:\n  enabled: true\n")
         try writePeerCollect(at: Date())
         let collector = LogTextCollector()
 
-        let disposition = try await ReportEngine.collect(
-            workspace: WorkspaceID(validating: profile),
-            profile: profile,
-            workspacePaths: WorkspacePaths.self,
-            force: false,
-            locateJamfCLI: { nil },
-            onLine: collector.append
-        )
+        let disposition = try ReportEngine.environmentGate(
+            workspace: WorkspaceID(validating: profile), workspacePaths: WorkspacePaths.self,
+            tiers: Set(CollectionTier.allCases), force: false, now: Date(),
+            onLine: collector.append)
 
-        XCTAssertEqual(disposition, .stoodDown,
+        XCTAssertEqual(disposition, .stop(.stoodDown),
                        "CollectRouter keys Protect on this; a stand-down is not a collect")
         let standDown = collector.texts.filter { $0.hasPrefix(ReportEngine.standDownMarker) }
         XCTAssertEqual(standDown.count, 1, "got: \(collector.texts)")
@@ -365,9 +360,10 @@ final class CollectHonestyTests: XCTestCase {
 
     // MARK: - Same-day retry and failures a retry repeats (#207)
 
-    private func noSourceLandedLine() -> String {
-        "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason) "
-            + "— Trends did not advance"
+    private func noSourceLandedLine(
+        _ reason: String = ReportEngine.noSourceLandedReason
+    ) -> String {
+        "\(ReportEngine.summaryNotWrittenMarker) \(reason) — Trends did not advance"
     }
 
     /// The field case: a freshness run attempted only update-status, which failed because
@@ -384,6 +380,18 @@ final class CollectHonestyTests: XCTestCase {
         watcher.observe(noSourceLandedLine())
         XCTAssertTrue(watcher.incomplete, "Run History still reads the run as Partial")
         XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// The Jamf Pro wording (Platform kinds landed, Jamf Pro did not) is read the same way.
+    func testTheJamfProWordingIsClassifiedLikeTheFirst() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.record(.failed(exitCode: CLIBridge.exitCodeUsage), report: "computers", at: Date())
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["computers"], attempted: 1))
+        watcher.observe(noSourceLandedLine(ReportEngine.noJamfProSourceLandedReason))
+        XCTAssertTrue(watcher.incomplete)
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile),
+                       "an unexplained [partial] would make the retry worthwhile")
     }
 
     /// Exit 2 and 8 repeat on a retry too: the self-remediation rule.
@@ -664,7 +672,7 @@ final class CollectHonestyTests: XCTestCase {
         let stampFormatter = DateFormatter()
         stampFormatter.locale = Locale(identifier: "en_US_POSIX")
         stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let stamp = stampFormatter.string(from: Date().calendarDays(ago: 1))
         let payload: [[String: Any]] = [["section": "summary", "data": [
             "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
             "sip_enabled": 249, "firewall_enabled": 245,
@@ -699,7 +707,7 @@ final class CollectHonestyTests: XCTestCase {
         let stampFormatter = DateFormatter()
         stampFormatter.locale = Locale(identifier: "en_US_POSIX")
         stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let stamp = stampFormatter.string(from: Date().calendarDays(ago: 1))
         let payload: [[String: Any]] = [["section": "summary", "data": [
             "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
             "sip_enabled": 249, "firewall_enabled": 245,

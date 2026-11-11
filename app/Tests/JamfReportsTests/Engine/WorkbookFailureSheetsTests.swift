@@ -233,7 +233,7 @@ final class WorkbookFailureSheetsTests: XCTestCase {
     }
 
     func testPackageLifecycleKeepsTheColumnsWhenSomePackageCarriesThem() throws {
-        let recent = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86_400 * 5))
+        let recent = ISO8601DateFormatter().string(from: Date().calendarDays(ago: 5))
         let dash = try dashboard([("packages", 0, [
             package("Test A", size: 2_097_152, uploaded: recent), package("Test B"),
         ])])

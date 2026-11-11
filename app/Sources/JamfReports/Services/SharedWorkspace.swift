@@ -250,7 +250,7 @@ enum SharedWorkspace {
         var appVersion: String
     }
 
-    private static let claimFilename = ".workspace-claim.json"
+    static let claimFilename = ".workspace-claim.json"
 
     private static func claimURL(profile: String) -> URL? {
         ProfileService.workspaceURL(for: profile).flatMap {
