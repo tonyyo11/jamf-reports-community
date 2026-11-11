@@ -673,7 +673,8 @@ struct MobileFleetView: View {
             title: "iOS / iPadOS Version Distribution",
             subtitle: "Mobile Devices",
             footnote: "Source: pro mobile-devices · \(total) mobile devices",
-            suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             MobileFleetOSDistributionExport(rows: rows, totalDevices: total)
         }

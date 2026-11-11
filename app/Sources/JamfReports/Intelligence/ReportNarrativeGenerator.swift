@@ -32,7 +32,7 @@ struct ReportNarrativeInput: Sendable {
         appendInt(&lines, "Total devices", metrics.totalDevices)
         appendInt(&lines, "Managed devices", metrics.managedCount)
         if let score = metrics.securityScore {
-            var line = "- Security score: \(String(format: "%.1f", score)) / 100"
+            var line = "- Security score: \(percentFormat.numberText(score)) / 100"
             if let grade = metrics.securityGrade { line += " (grade \(grade.rawValue))" }
             lines.append(line)
         }

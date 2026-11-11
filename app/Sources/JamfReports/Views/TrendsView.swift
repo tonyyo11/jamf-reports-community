@@ -771,7 +771,8 @@ struct TrendsView: View {
                         seriesName: metricLabel(metric),
                         dates: trendPoints.map(\.date),
                         values: trendPoints.map(\.value),
-                        unit: metric.unit
+                        unit: metric.unit,
+                        percentFormat: percentFormat
                     ))
                 } else {
                     ProgressView().frame(height: 260)
@@ -1491,10 +1492,9 @@ struct TrendsView: View {
         let exportResult = DashboardChartExport.run(
             title: label,
             subtitle: subtitle,
-            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile)
-        ) { ChartExportView(
-            trendPoints: pts, metric: m, domain: dom, axisLabel: label,
-            percentFormat: percentFormat) }
+            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile),
+            percentFormat: percentFormat
+        ) { ChartExportView(trendPoints: pts, metric: m, domain: dom, axisLabel: label) }
 
         if case .failure(let error) = exportResult {
             workspaceStore.toast = Toast(message: error.userMessage, style: .danger)
@@ -1664,13 +1664,12 @@ struct FlowLayout: Layout {
 /// Chart-only content view used as the body of DashboardChartExport.run.
 /// DashboardExportCanvas owns the outer frame, background, title, and footnote.
 private struct ChartExportView: View {
+    @Environment(\.percentFormat) private var percentFormat
     let trendPoints: [TrendPoint]
     let metric: TrendSeries.Metric
     let domain: ClosedRange<Date>?
     /// The metric's name as the screen shows it (configured benchmark, agent).
     let axisLabel: String
-    /// Passed in: an exported image is rendered outside the window's environment.
-    let percentFormat: PercentFormat
 
     private struct ExportPoint: Identifiable {
         let index: Int

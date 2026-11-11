@@ -161,6 +161,18 @@ final class PercentFormatTests: XCTestCase {
         XCTAssertTrue(reasons.contains("Patch 70% (below 80%)"), "\(reasons)")
     }
 
+    func testHTMLSecurityTilesFollowTheWorkspacePrecision() throws {
+        let config = try ConfigLoader.loadFromString("display:\n  percent_decimals: 0\n")
+        let report = HtmlReport(config: config, dataDir: URL(fileURLWithPath: "/tmp/nonexistent"))
+        let html = report.buildSummaryTiles(
+            total: 10, fileVaultPct: 56.7, sipPct: 99.6, firewallPct: nil, gatekeeperPct: 100,
+            fleet: nil)
+        XCTAssertTrue(html.contains(">57%<"), html)
+        XCTAssertTrue(html.contains(">99%<"), html)
+        XCTAssertTrue(html.contains(">100%<"), html)
+        XCTAssertFalse(html.contains("56.7%"), html)
+    }
+
     // MARK: - The class stays closed
 
     /// A percentage printed outside `PercentFormat` would ignore `display.percent_decimals`.
@@ -170,15 +182,16 @@ final class PercentFormatTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/JamfReports", isDirectory: true)
         let pattern = try NSRegularExpression(pattern:
-            #"%\.[0-9]f%%|%\.[0-9]f pp|"%\.[0-9]f", [^)]*\)\)%|\.rounded\(\)\)\)%"#)
+            #"%\.[0-9]f%%|%\.[0-9]f pp|"%\.[0-9]f", [^)]*\)\)(%|pp)|\.rounded\(\)\)\)%|Int\([^()]*\)\)%"#)
         let allowed: [String: Int] = [
             "Models/PercentFormat.swift": 0,
             // Demo labels drop ".0" on purpose and never read a workspace.
-            "Models/DemoData+Security.swift": 1,
-            // jamf-cli's own patch compliance label, kept as data.
+            "Models/DemoData+Security.swift": 2,
+            // The patch record's fallback label when jamf-cli sends none; no screen shows it.
             "Services/DeviceInventoryService.swift": 1,
-            // The Trends chart's y-axis ticks.
+            // Chart y-axis ticks (0, 25, 50, 75, 100).
             "Views/TrendsView.swift": 1,
+            "Views/FleetOverviewView.swift": 1,
         ]
         let walker = try XCTUnwrap(FileManager.default.enumerator(atPath: sources.path))
         var counts: [String: Int] = [:]

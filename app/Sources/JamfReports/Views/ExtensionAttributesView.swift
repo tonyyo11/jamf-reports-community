@@ -6,6 +6,7 @@ import Charts
 /// snapshots. Shows which EAs are actually populating data across the fleet
 /// and what values are appearing.
 struct ExtensionAttributesView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ExtensionAttributeService.Snapshot = .empty
@@ -601,7 +602,8 @@ struct ExtensionAttributesView: View {
         let totalRowCount = snapshot.totalRowCount
         let snapshotDate = snapshot.snapshotDate
         let result = DashboardChartExport.render(
-            suggestedFilename: DashboardChartExport.filename(for: "ea-values-\(distribution.eaName)", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "ea-values-\(distribution.eaName)", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             BarChartExportView(
                 distribution: distribution,

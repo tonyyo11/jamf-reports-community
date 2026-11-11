@@ -74,7 +74,7 @@ struct FleetOverviewView: View {
     private func workspaceDetail(_ row: FleetWorkspaceOverview) -> some View {
         // #184: each flagged condition gets its explanation and a route to the
         // screen where the operator can act on it.
-        if row.hasIssue {
+        if !row.issues(format: percentFormat).isEmpty {
             profileIssuesCard(for: row)
         }
 
@@ -262,7 +262,8 @@ struct FleetOverviewView: View {
             seriesName: L("Stability Index"),
             dates: points.map(\.date),
             values: points.map(\.value),
-            unit: "%"
+            unit: "%",
+            percentFormat: percentFormat
         ))
     }
 
@@ -309,7 +310,7 @@ struct FleetOverviewView: View {
                         .accessibilityHidden(true)
                     SectionHeader(title: L("Issues on This Workspace"))
                 }
-                ForEach(row.issues) { issue in
+                ForEach(row.issues(format: percentFormat)) { issue in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(issue.reason)
                             .font(.callout.weight(.semibold))

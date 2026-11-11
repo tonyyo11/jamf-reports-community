@@ -5,6 +5,7 @@ import Charts
 /// agent health, and insights from `jamf-cli protect *` snapshots. Renders a
 /// clear empty state when no Protect data exists (many tenants don't run Protect).
 struct ProtectView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
@@ -501,7 +502,8 @@ struct ProtectView: View {
             title: "Alerts by Severity",
             subtitle: "Jamf Protect",
             footnote: "Source: jamf-cli protect alerts · \(total) alert\(total == 1 ? "" : "s")",
-            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             ProtectAlertsSeverityExport(
                 high: high, medium: medium, low: low, informational: informational

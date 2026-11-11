@@ -1392,7 +1392,8 @@ struct OverviewView: View {
         .accessibilityChartDescriptor(SectorChartDescriptor(
             title: L("macOS Distribution"),
             unit: "%",
-            slices: osRows.map { .init(label: $0.version, value: $0.pct) }
+            slices: osRows.map { .init(label: $0.version, value: $0.pct) },
+            percentFormat: percentFormat
         ))
     }
 

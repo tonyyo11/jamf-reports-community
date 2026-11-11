@@ -222,7 +222,8 @@ struct UpdatesView: View {
             title: "Plan State Distribution",
             subtitle: "OS Updates",
             footnote: "Source: pro report update-status · \(planTotal) plans tracked",
-            suggestedFilename: DashboardChartExport.filename(for: "update-plan-states", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "update-plan-states", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             UpdatesPlanStateDonutExport(slices: slices, planTotal: planTotal)
         }

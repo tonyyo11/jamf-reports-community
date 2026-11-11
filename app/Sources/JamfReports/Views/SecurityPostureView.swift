@@ -211,9 +211,9 @@ struct SecurityPostureView: View {
     static let noScoreCaption = L("No factor had data")
 
     /// The ring's number: a dash when nothing was scored, never a 0.0 that reads as grade F.
-    static func scoreText(_ score: SecurityScore) -> String {
+    static func scoreText(_ score: SecurityScore, format: PercentFormat) -> String {
         guard !score.parts.isEmpty, score.value.isFinite else { return "—" }
-        return String(format: "%.1f", score.value)
+        return format.numberText(score.value)
     }
 
     /// The hero card's line for metrics the ring does not score. FileVault, when the report
@@ -397,7 +397,8 @@ struct SecurityPostureView: View {
             title: "macOS Version Distribution",
             subtitle: "Security Posture",
             footnote: "Source: pro report security · \(total) devices",
-            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             SecurityPostureOSDonutExport(rows: rows, totalDevices: total)
         }
@@ -462,6 +463,7 @@ struct SecurityPostureView: View {
 /// `Circle` shapes: track + filled arc. The center renders the score and
 /// letter grade in the same `Theme.Fonts.serif` used by `StatTile`.
 private struct ScoreRing: View {
+    @Environment(\.percentFormat) private var percentFormat
     let score: SecurityScore
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -502,7 +504,7 @@ private struct ScoreRing: View {
         return min(max(score.value / 100, 0), 1)
     }
 
-    private var displayValue: String { SecurityPostureView.scoreText(score) }
+    private var displayValue: String { SecurityPostureView.scoreText(score, format: percentFormat) }
 }
 
 // MARK: - Export-only chart

@@ -1,6 +1,7 @@
 # Percentage rounding — design
 
-Status: draft, awaiting Tony's approval. Branch `feat/percent-rounding` from `dev/2-12-0`.
+Status: approved by Tony 2026-11-11 with the Customize picker. Branch `feat/percent-rounding`
+from `dev/2-12-0`.
 
 ## Problem
 
@@ -25,7 +26,7 @@ display:
   changes no path, host or retention and cannot point this Mac anywhere.
 - A value other than `0` or `1` (2, "one", true) reads as 1, and Config Doctor names it in
   `valueRows` (warn, never fail), as for the other clamped values.
-- Hand-edit only in this change. A Config screen control is an open question below.
+- Customize Reports has a Percentages picker for it (see Decisions).
 
 ### Rounding rule
 
@@ -152,9 +153,12 @@ BI specifics.
 - HTML: one tile and one table at 0. Alert card text with `beside:`.
 - The literal-pin test.
 
-## Open questions for Tony
+## Decisions
 
-1. **Config screen control?** Recommendation: a "Percentages: 56.7% / 57%" picker on Customize
-   Reports, written through a scoped `saveBlock` writer like `HTMLReportConfigWriter`. Without
-   it the key is hand-edit only, which works but nobody finds it.
-2. **Group exports**: stay at one decimal (recommended), or follow the base profile's setting?
+1. **Config screen control:** a "56.7% / 57%" picker on Customize Reports, written through
+   `DisplayConfigWriter` (a scoped `saveBlock` like `HTMLReportConfigWriter`).
+2. **Group exports** stay at one decimal.
+3. **Scores** (security, stability) follow the same precision, since their trend changes are
+   already in percentage points.
+4. **French spacing:** the bare percent sign stays untranslated (`%@%%` was already
+   `shouldTranslate: false`), so French screens print "57%", as most of them already did.

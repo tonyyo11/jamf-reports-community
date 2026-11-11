@@ -301,13 +301,13 @@ extension FleetInsightInput.Value {
         switch self {
         case .percent(let value): return format.text(value)
         case .count(let value): return "\(value)"
-        case .number(let value): return String(format: "%.1f", tenths(value))
+        // Every `.number` fact is a 0-100 score, printed as its percentage figure is.
+        case .number(let value): return format.numberText(value)
         case .text(let value): return value
         }
     }
 }
 
-private func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
 
 /// One line of at most `fieldLimit` characters, so a field can neither start a
 /// prompt line of its own nor crowd out the facts.
@@ -344,8 +344,8 @@ extension FleetInsightInput.Fact {
             delta = format.roundedChange(format.rounded(now) - format.rounded(then))
             size = format.points(abs(delta))
         case (.number(let now), .number(let then)?):
-            delta = tenths(tenths(now) - tenths(then))
-            size = String(format: "%.1f", abs(delta))
+            delta = format.roundedChange(format.rounded(now) - format.rounded(then))
+            size = format.changeNumberText(abs(delta))
         case (.count(let now), .count(let then)?):
             delta = Double(now - then)
             size = "\(abs(now - then))"

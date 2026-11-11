@@ -522,7 +522,8 @@ struct PatchView: View {
         let result = DashboardChartExport.run(
             title: "Patch Titles",
             subtitle: "Fleet patch compliance summary",
-            suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
         }

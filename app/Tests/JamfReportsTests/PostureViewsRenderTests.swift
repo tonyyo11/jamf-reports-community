@@ -138,12 +138,12 @@ final class PostureViewsRenderTests: XCTestCase {
 
     /// A score where nothing had data shows a dash, not 0.0 (which would read as grade F).
     func testScoreTextIsADashWhenNothingWasScored() {
-        XCTAssertEqual(SecurityPostureView.scoreText(.empty), "—")
+        XCTAssertEqual(SecurityPostureView.scoreText(.empty, format: .standard), "—")
         let on = SecurityFleetCounts.Control(level: .fail, on: 2, fail: 0, warning: 0)
         let scored = SecurityScoreTestSupport.score(SecurityFleetCounts(
             totalDevices: 2, controls: [.sip: on], fileVaultOffHardwareEncrypted: 0))
         XCTAssertFalse(scored.parts.isEmpty)
-        XCTAssertEqual(SecurityPostureView.scoreText(scored), "100.0")
+        XCTAssertEqual(SecurityPostureView.scoreText(scored, format: .standard), "100.0")
     }
 
     // MARK: - Reading off the main actor

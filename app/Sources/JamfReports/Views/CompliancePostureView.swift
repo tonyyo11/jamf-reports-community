@@ -209,7 +209,8 @@ struct CompliancePostureView: View {
             title: "Compliance Bands",
             subtitle: "Compliance Posture",
             footnote: "Source: pro report security · \(total) devices banded by control-gap count",
-            suggestedFilename: DashboardChartExport.filename(for: "compliance-bands", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "compliance-bands", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             CompliancePostureBandsDonutExport(bands: bands)
         }
@@ -363,7 +364,8 @@ struct CompliancePostureView: View {
             subtitle: "Compliance Posture",
             footnote: "Source: mSCP Extension Attribute · \(result.devicesWithData) of "
                 + "\(result.totalDevices) devices evaluated",
-            suggestedFilename: filename
+            suggestedFilename: filename,
+            percentFormat: percentFormat
         ) {
             MSCPComplianceBandsDonutExport(
                 result: result,

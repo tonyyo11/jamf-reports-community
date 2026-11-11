@@ -2475,7 +2475,7 @@ struct CoreDashboard: Sendable {
             let adjPctStr = config.percentFormat.text(pr.adjPct * 100)
             ws.write(pr.title, row: row, col: 0, format: .cell)
             ws.write(pr.latest, row: row, col: 1, format: .cell)
-            ws.write(adjPctStr, row: row, col: 2, format: colorForPct(pr.adjPct * 100))
+            ws.write(adjPctStr, row: row, col: 2, format: Self.colorForPct(pr.adjPct * 100))
             ws.write(pr.adjSecondary, row: row, col: 3, format: .cell)
             row += 1
         }
@@ -2993,7 +2993,7 @@ struct CoreDashboard: Sendable {
         let dash = "—"
         let scoreLabel: String = {
             guard let v = m.securityScore, let g = m.securityGrade else { return dash }
-            return String(format: "%.1f", v) + " / 100 (\(g.rawValue))"
+            return config.percentFormat.numberText(v) + " / 100 (\(g.rawValue))"
         }()
 
         func fmtPct(_ d: Double?) -> String {
@@ -3615,11 +3615,11 @@ struct CoreDashboard: Sendable {
     private func colorForPctString(_ pct: String) -> CellFormat {
         let text = pct.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
         guard let num = Double(text) else { return .cell }
-        return colorForPct(num)
+        return Self.colorForPct(num)
     }
 
     /// From the raw share, never the printed one, so rounding cannot move a colour band.
-    private func colorForPct(_ num: Double) -> CellFormat {
+    static func colorForPct(_ num: Double) -> CellFormat {
         guard num.isFinite else { return .cell }
         if num >= 95 { return .green }
         if num >= 80 { return .yellow }

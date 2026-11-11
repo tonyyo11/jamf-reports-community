@@ -42,7 +42,7 @@ extension HtmlReport {
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         return [
             FigureSpec(label: "Security score", unit: "%", polarity: .higherIsBetter,
-                       read: { $0.securityScore }, format: { String(format: "%.1f", $0) },
+                       read: { $0.securityScore }, format: { config.percentFormat.numberText($0) },
                        comparable: { $0.securityScoreBasis == $1.securityScoreBasis }),
             FigureSpec(label: "P0 security gaps", unit: "", polarity: .lowerIsBetter,
                        read: { $0.actionItemsP0.map(Double.init) },

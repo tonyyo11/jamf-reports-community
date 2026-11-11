@@ -103,11 +103,14 @@ versions in this repository map to git tags.
 
 ### Changed
 
-- A share just below 100% or just above 0% no longer prints as 100% or 0%: 99.96% reads 99.9%
-  and 0.04% reads 0.1%, on screens and in reports. With `display.percent_decimals: 0`, workbook
-  text cells that hold a percentage (and the CSV folder) hold whole numbers, and percentage
-  number cells use the `0%` format; their stored values are unchanged. If a tool reads these
-  workbooks, check it against a new one.
+- A share just below 100% or just above 0% no longer prints as 100% or 0%, on screens and in
+  reports: 99.96% reads 99.9%, 0.04% reads 0.1%, and where a figure was already whole (the
+  workbook's Executive Summary compliance and patch cells, chart labels, the Trends headline)
+  99.6% reads 99% instead of 100%. An exact half now rounds up (56.25% reads 56.3%) where it
+  sometimes rounded down. Security and stability scores follow the same precision as
+  percentages. With `display.percent_decimals: 0`, workbook text cells that hold a percentage,
+  and the CSV folder, hold whole numbers, and percentage number cells use the `0%` format with
+  their stored values unchanged. If a tool reads these workbooks, check it against a new one.
 
 - Jamf Pro commands are refused for a Jamf School environment, and a Protect-only environment
   whose `profiles.protect` change you have not confirmed on this Mac is refused as a run that
