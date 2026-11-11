@@ -252,17 +252,17 @@ enum CollectRouter {
         let landed = LandedSources()
         // Protect, then Jamf Security Cloud: both are add-ons to the MDM and follow it under the
         // same rule (a Protect-only environment never reaches this, so it collects no Security
-        // Cloud). Security Cloud lands nothing in `landed`: it adds no summary field yet.
+        // Cloud). What each lands is recorded for the daily summary's `products` and figures.
         func followWithAddOns(_ disposition: ReportEngine.CollectDisposition) async {
             landed.record(.protect, await collectProtect(
                 environment: environment, profile: profile, disposition: disposition,
                 workspacePaths: workspacePaths, protectCollect: protectCollect,
                 resolved: resolved, onLine: onLine))
-            await collectSecurityCloud(
+            landed.record(.securityCloud, await collectSecurityCloud(
                 environment: environment, profile: profile, disposition: disposition,
                 collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
                 workspacePaths: workspacePaths, securityCollect: securityCollect,
-                resolved: resolved, onLine: onLine)
+                resolved: resolved, onLine: onLine))
         }
         // Before any product: a stop covers Jamf Pro, Jamf School and Protect alike.
         switch gate(workspace, workspacePaths, tiers, force, now, onLine) {
@@ -502,13 +502,13 @@ enum CollectRouter {
         securityCollect: SecurityCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async {
-        guard let login = environment.securityCloud else { return }
+    ) async -> [String] {
+        guard let login = environment.securityCloud else { return [] }
         guard SharedConfigPin.securityCloudAllowed(profile: profile, name: login) else {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[skip] Jamf Security Cloud not collected: profiles.security_cloud "
                             + "changed in the shared config.yaml and is not confirmed on this Mac"))
-            return
+            return []
         }
         guard disposition == .collected else {
             let product = environment.isSchool ? "Jamf School" : "Jamf Pro"
@@ -518,25 +518,26 @@ enum CollectRouter {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[skip] security-risk: \(reason) — "
                             + "Jamf Security Cloud not collected"))
-            return
+            return []
         }
         if let refusal = await ProfileAuthMethod.securityCloudRefusal(
             profile: login, resolved: resolved) {
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] Jamf Security Cloud not collected: \(refusal)"))
-            return
+            return []
         }
         guard let dataDir = try? workspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] security-risk: could not resolve dataDir for \(profile) "
                     + "— skipping"))
-            return
+            return []
         }
         do {
-            _ = try await securityCollect(login, dataDir, collectSkip, onLine)
+            return try await securityCollect(login, dataDir, collectSkip, onLine)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "\(ReportEngine.securityCollectFailedMarker)\(error.localizedDescription)"))
+            return []
         }
     }
 
