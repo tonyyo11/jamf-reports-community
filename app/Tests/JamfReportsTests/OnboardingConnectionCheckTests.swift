@@ -38,6 +38,17 @@ final class OnboardingConnectionCheckTests: XCTestCase {
         XCTAssertTrue(flow.firstReportSucceeded)
     }
 
+    /// Going back from the last step can change the profile, so coming forward runs again.
+    func testGoingBackFromTheFirstReportClearsItsResult() {
+        let flow = OnboardingFlow()
+        flow.currentStep = .firstReport
+        flow.firstReportExitCode = 0
+        flow.previousStep()
+        XCTAssertNotEqual(flow.currentStep, .firstReport)
+        XCTAssertNil(flow.firstReportExitCode)
+        XCTAssertFalse(flow.firstReportSucceeded)
+    }
+
 
     private func flowAtValidate(
         _ type: OnboardingFlow.ProConnectionType, exit: Int32

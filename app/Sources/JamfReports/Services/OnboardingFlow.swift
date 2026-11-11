@@ -456,6 +456,10 @@ final class OnboardingFlow {
             schoolConnected = false
             schoolConnectionError = nil
         }
+        if currentStep == .firstReport {
+            // An earlier step can change the profile, so the first report is run again.
+            firstReportExitCode = nil
+        }
         currentStep = sequence[idx - 1]
         lastError = nil
     }

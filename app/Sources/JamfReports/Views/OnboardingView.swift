@@ -1156,7 +1156,8 @@ struct OnboardingView: View {
             flow.nextStep()
         case .firstReport:
             if flow.firstReportSucceeded {
-                openOverview()
+                // finishSetup again, so automation or webhook choices made after the run apply.
+                skipAndFinishOnboarding()
             } else {
                 Task {
                     await flow.runFirstReport(workspaceStore: workspaceStore)
