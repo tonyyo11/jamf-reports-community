@@ -95,6 +95,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Workbooks, Cover tab: the Sheet Manifest lists the tabs the workbook holds, in tab order
+  (after `sheets.order`, the custom EA tabs and Charts included), each with a description. It
+  used to list every tab the app can write, in the app's own order. The numbered "Sheets 9–12"
+  guide lines under "How to read this workbook" are replaced by one line. (#305)
 - Workbooks, custom EA tabs: a blank value is no value. The percentage and version tabs list
   blanks in one last row, Unknown/Blank, with no status; a percentage value that is not a number
   is listed after the numbers with no status. On a boolean tab the first row reads
@@ -165,6 +169,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The Cover tab listed tabs the workbook did not have (Environment Stats, the Platform tabs)
+  and showed "(Function)" in place of seven descriptions (#305).
 - A custom EA percentage tab counted a blank value as a row graded OK, and a value that is not a
   number as 0 and OK; a version tab graded a blank Outdated; a boolean tab's share counted blanks
   as failing, so three of three passing Macs read 75% (#305).

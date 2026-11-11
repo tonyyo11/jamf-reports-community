@@ -3133,43 +3133,31 @@ struct CoreDashboard: Sendable {
         // How-to-read section
         ws.write("How to read this workbook", row: row, col: 0, format: .header)
         row += 1
-        let guidance: [String] = [
-            "Sheet 1 (Executive Summary) — Fleet-level KPIs at a glance: security score, "
-                + "patch compliance, stale device tiers, and key control coverage.",
-            "Sheet 2 (Cover) — This sheet — workbook guide and sheet manifest.",
-            "Sheet 3 (Compliance Posture) — Single-page executive summary: compliance %, "
-                + "security controls, patch coverage, and RAG status.",
-            "Sheet 4 (Fleet Overview) — Total enrolled devices, mobile counts, OS breakdown.",
-            "Sheet 5 (Security Posture) — FileVault, SIP, Gatekeeper, Firewall percentages.",
-            "Sheet 6 (Patch Compliance) — Per-title patch coverage, latest version vs. installed.",
-            "Sheet 7 (Device Compliance) — Per-device compliance and days since check-in.",
-            "Sheet 8 (Audit Summary) — jamf-cli health findings (critical, warning, info).",
-            "Sheets 9–12 — Inventory and hardware detail (computers and mobile).",
-            "Sheets 13–21 — Configuration health: policies, profiles, apps, software, EAs.",
-            "Sheets 22–28 — Device health, patch failures, update failures, smart groups.",
-            "Sheets 29–36 — Platform compliance, DDM, and Jamf Protect (optional; "
-                + "shown only when data is available).",
-        ]
-        for line in guidance {
-            ws.write(line, row: row, col: 0, format: .cell)
-            row += 1
-        }
-        row += 1
+        ws.write("Every tab of this workbook is listed below, in tab order.",
+                 row: row, col: 0, format: .cell)
+        row += 2
 
-        // Sheet manifest table
+        // Sheet manifest table: its rows are written by `writeCoverManifest` once the
+        // workbook's tabs are known and in order.
         ws.write("Sheet Manifest", row: row, col: 0, format: .header)
         ws.write("Description", row: row, col: 1, format: .header)
-        row += 1
-        let descriptions = sheetManifestDescriptions()
-        for (i, (name, desc)) in sheetPlan.enumerated() {
-            ws.write("\(i + 1). \(name)", row: row, col: 0, format: .cell)
-            ws.write(descriptions[name] ?? desc, row: row, col: 1, format: .cell)
+    }
+
+    /// Lists the workbook's tabs on the Cover, in tab order: run after every tab is written and
+    /// `Workbook.arrange(by:)`. `extra` describes tabs other writers add (custom EA tabs).
+    static func writeCoverManifest(in workbook: Workbook, extra: [String: String] = [:]) {
+        guard let ws = workbook.sheet(named: "Cover") else { return }
+        var row = (ws.cells.map(\.row).max() ?? 0) + 1
+        let descriptions = sheetManifestDescriptions().merging(extra) { own, _ in own }
+        for (i, tab) in workbook.worksheets.enumerated() {
+            ws.write("\(i + 1). \(tab.name)", row: row, col: 0, format: .cell)
+            ws.write(descriptions[tab.name] ?? "", row: row, col: 1, format: .cell)
             row += 1
         }
     }
 
-    /// One-line description for every sheet name in the plan.
-    private func sheetManifestDescriptions() -> [String: String] {
+    /// One-line description for every tab a report workbook can hold.
+    static func sheetManifestDescriptions() -> [String: String] {
         [
             "Executive Summary": "Fleet KPIs at a glance: security score + band, fleet size, "
                 + "patch compliance %, key control coverage, and stale device tiers.",
@@ -3240,6 +3228,23 @@ struct CoreDashboard: Sendable {
                 + "Med-Low / Medium / High with count and percent.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
                 + "primary configured baseline.",
+            "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
+                + "stale since the last collect on an earlier day.",
+            "Protect Plans": "Jamf Protect plans with log level, auto-update, and the "
+                + "configurations each plan uses.",
+            "Protect Threat Overview": "Jamf Protect alerts per Mac with type, severity, "
+                + "status and analytics.",
+            "Patch Summary Dashboard": "Fleet and patch overview from patch-status and "
+                + "device-compliance.",
+            "Patch Velocity": "How fast each patch title is adopted after its release.",
+            "Device Security State": "Per-Mac FileVault, SIP, Gatekeeper and Firewall state.",
+            "Mobile Supervision Status": "Supervised and unsupervised mobile devices per "
+                + "device family.",
+            "OS Currency": "Each Apple OS's latest release from SOFA, and how many devices "
+                + "run it.",
+            "EA Warnings": "Custom extension attributes that have no tab, and why.",
+            ReportEngine.chartsSheetName: "Trend and distribution charts from the daily "
+                + "summaries.",
         ]
     }
 
