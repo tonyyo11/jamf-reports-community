@@ -1625,6 +1625,7 @@ struct OverviewView: View {
         let first = values.first ?? current
         let figures = MetricDetailFigures.make(
             values: values,
+            comparable: workspace.demoMode ? values : trendStore.comparableValues(metric: metric),
             value: { metricValueLabel($0, metric: metric) },
             delta: { metricDeltaLabel($0, metric: metric) })
         // Same reasoning as the Overview tiles: name the day rather than imply
@@ -2252,19 +2253,24 @@ struct MetricDetailFigures: Equatable {
 
     static let noData = L("No data yet")
 
+    /// `comparable` is the newest run of `values` measured one way (the whole series when
+    /// nil); the previous figure and the change come from it, never across a definition change.
     static func make(
-        values: [Double], value: (Double) -> String, delta: (Double) -> String
+        values: [Double], comparable: [Double]? = nil,
+        value: (Double) -> String, delta: (Double) -> String
     ) -> MetricDetailFigures {
-        guard let latest = values.last, let first = values.first else {
+        guard let latest = values.last else {
             return MetricDetailFigures(
                 current: noData, previous: noData, change: "—", hasChange: false)
         }
-        guard values.count > 1 else {
+        let run = comparable ?? values
+        guard run.count > 1, let first = run.first else {
             return MetricDetailFigures(
-                current: value(latest), previous: "—", change: "—", hasChange: false)
+                current: value(latest), previous: "—",
+                change: values.count > 1 ? L("Not comparable") : "—", hasChange: false)
         }
         return MetricDetailFigures(
-            current: value(latest), previous: value(values[values.count - 2]),
+            current: value(latest), previous: value(run[run.count - 2]),
             change: delta(latest - first), hasChange: true)
     }
 

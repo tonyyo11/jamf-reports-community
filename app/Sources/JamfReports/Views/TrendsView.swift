@@ -553,7 +553,7 @@ struct TrendsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Self.metricPillAccessibilityLabel(
-            label: metricLabel(m), metric: m, series: series
+            label: metricLabel(m), metric: m, series: changeSeries(for: m, series)
         ))
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(metricLabel(m)) trend")

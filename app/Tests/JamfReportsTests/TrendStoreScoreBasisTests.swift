@@ -182,6 +182,25 @@ final class TrendStoreScoreBasisTests: XCTestCase {
         XCTAssertNil(TrendStore.comparableValues(of: .fileVault, in: []))
     }
 
+    /// The fleet insight gives no prior across the proxy or a score definition change.
+    func testTheFleetInsightGivesNoPriorAcrossABasisChange() throws {
+        func fact(_ input: FleetInsightInput, _ prefix: String) throws -> FleetInsightInput.Fact {
+            try XCTUnwrap(input.facts.first { $0.label.hasPrefix(prefix) })
+        }
+        let flip = FleetInsightInput.fleet(
+            current: compliance("2026-04-08", 96, proxy: true),
+            previous: compliance("2026-04-01", 71, proxy: false))
+        XCTAssertNil(try fact(flip, "Compliance").prior)
+        let same = FleetInsightInput.fleet(
+            current: compliance("2026-04-08", 73, proxy: false),
+            previous: compliance("2026-04-01", 71, proxy: false))
+        XCTAssertEqual(try fact(same, "Compliance").prior, .percent(71))
+        let rescored = FleetInsightInput.fleet(
+            current: day("2026-04-08", score: 79, basis: new),
+            previous: day("2026-04-01", score: 90, basis: old))
+        XCTAssertNil(try fact(rescored, "Security score").prior)
+    }
+
     /// The proxy names the figure, so a benchmark label never sits on a proxy number.
     func testTheNewestComplianceFigureDecidesTheProxyTitle() {
         XCTAssertTrue(store([
