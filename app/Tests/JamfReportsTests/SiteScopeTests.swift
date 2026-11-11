@@ -198,7 +198,8 @@ final class SiteScopeTests: XCTestCase {
     ) async throws -> ([String], [AttentionItem]) {
         let fixtures = TestFixtures.dir("site-scope")
         let stub = root.appendingPathComponent("bin/stub-cli")
-        let computersCommand = failComputers ? "exit 1" : "cat \"\(fixtures.path)/\(computers).json\""
+        let computersCommand = failComputers
+            ? "exit 1" : "cat \"\(fixtures.path)/\(computers).json\""
         try """
         #!/bin/sh
         [ "$1 $2" = "config list" ] && {
