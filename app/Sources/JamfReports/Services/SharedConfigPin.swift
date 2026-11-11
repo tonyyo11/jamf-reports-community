@@ -252,6 +252,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         if !current.platformProfile.isEmpty, current.platformProfile != profile {
             waiting.append(.platformProfile)
         }
+        // D18: the Security Cloud login is held the same way, whatever it names.
+        if !current.securityCloudProfile.isEmpty { waiting.append(.securityCloudProfile) }
         // A Protect login naming the workspace itself is a Protect-only environment, which a peer
         // can plant as a folder; it runs only after this Mac confirms it.
         if !current.protectProfile.isEmpty, current.protectProfile == profile {

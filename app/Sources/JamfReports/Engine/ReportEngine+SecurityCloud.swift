@@ -21,16 +21,21 @@ extension ReportEngine {
     }
 
     /// The payload as an array of rows holding only `securityRiskRowKeys` and
-    /// `hardwareSpec.osType`; a row that is not an object is dropped. Nil, so nothing is saved,
-    /// when the payload is not an array: the text must not reach disk on a guess.
+    /// `hardwareSpec.osType`, each kept only when it is a string, a number or a boolean; a row
+    /// that is not an object is dropped. A top-level `null` is an empty list. Nil, so nothing is
+    /// saved, for any other payload: the text must not reach disk on a guess.
     static func reducingSecurityRisk(_ data: Data) -> Data? {
-        guard let rows = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else {
-            return nil
-        }
+        guard let object = try? JSONSerialization.jsonObject(
+            with: data, options: [.fragmentsAllowed]) else { return nil }
+        let rows: [Any]
+        if object is NSNull { rows = [] } else if let array = object as? [Any] {
+            rows = array
+        } else { return nil }
+        func isScalar(_ value: Any) -> Bool { value is String || value is NSNumber }
         let kept: [[String: Any]] = rows.compactMap { row in
             guard let row = row as? [String: Any] else { return nil }
-            var reduced = row.filter { securityRiskRowKeys.contains($0.key) }
-            if let osType = (row["hardwareSpec"] as? [String: Any])?["osType"] {
+            var reduced = row.filter { securityRiskRowKeys.contains($0.key) && isScalar($0.value) }
+            if let osType = (row["hardwareSpec"] as? [String: Any])?["osType"], isScalar(osType) {
                 reduced["hardwareSpec"] = ["osType": osType]
             }
             return reduced

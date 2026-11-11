@@ -131,7 +131,7 @@ jamf_cli:
 #     benchmarks, DDM status, blueprints), leave it blank for none; security_cloud
 #     runs `security risk list` after each Jamf Pro or Jamf School collect and
 #     saves each device's risk category and a few status fields (never a user,
-#     phone number or location); `jamf_cli.collect_skip: [security-risk]` leaves
+#     phone number, location or device name); `jamf_cli.collect_skip: [security-risk]` leaves
 #     it out.
 #
 # profiles:

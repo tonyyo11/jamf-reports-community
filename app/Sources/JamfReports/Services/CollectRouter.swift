@@ -505,8 +505,8 @@ enum CollectRouter {
     ) async {
         guard let login = environment.securityCloud else { return }
         guard SharedConfigPin.securityCloudAllowed(profile: profile, name: login) else {
-            onLine(.init(timestamp: Date(), level: .warn,
-                         text: "[warn] Jamf Security Cloud not collected: profiles.security_cloud "
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[skip] Jamf Security Cloud not collected: profiles.security_cloud "
                             + "changed in the shared config.yaml and is not confirmed on this Mac"))
             return
         }

@@ -9,7 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
-- A Jamf Security Cloud login you set up with `jamf-cli security setup` can be added to a Jamf Pro or Jamf School environment from Data Sources. Each collect then saves every device's risk category and a few status fields (never a user, phone number or location); `jamf_cli.collect_skip: [security-risk]` leaves it out.
+- A Jamf Security Cloud login you set up with `jamf-cli security setup` can be added to a Jamf Pro or Jamf School environment from Data Sources. Each collect then saves every device's risk category and a few status fields (never a user, phone number, location or device name); `jamf_cli.collect_skip: [security-risk]` leaves it out.
 - Jamf Reports now notices when the jamf-cli login can see only some Jamf Pro sites. The collect log, Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, fleet workbook and period report note that they cover only the sites that login sees.
 - The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
 - The daily summary records which products an environment holds and, with Jamf Protect, how many

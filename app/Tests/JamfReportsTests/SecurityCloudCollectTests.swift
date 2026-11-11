@@ -91,8 +91,9 @@ final class SecurityCloudCollectTests: XCTestCase {
                        ["HIGH", "MEDIUM", "SECURE"])
         let raw = try String(contentsOf: XCTUnwrap(FileManager.newestJSONFile(
             in: dir.appendingPathComponent("security-risk"))), encoding: .utf8)
-        for secret in ["Casey", "example.invalid", "+1555", "Springfield", "Example Laptop",
-                       "Example App", "Example Group"] {
+        for secret in ["Example User", "example.invalid", "+1555", "Springfield", "Exampleland",
+                       "Example Device", "Example Model", "Example Group", "deviceName",
+                       "payload", "latitude", "12.34"] {
             XCTAssertFalse(raw.contains(secret), secret)
         }
     }
@@ -105,6 +106,25 @@ final class SecurityCloudCollectTests: XCTestCase {
         XCTAssertEqual(decoded.count, 1)
         XCTAssertEqual(Set(decoded[0].keys), ["guid"])
         XCTAssertNil(ReportEngine.reducingSecurityRisk(Data(#"{"guid":"g"}"#.utf8)))
+    }
+
+    func testANonScalarValueUnderAnAllowListedKeyIsDropped() throws {
+        let json = #"[{"guid":"g","status":{"user":"x"},"riskCategory":["HIGH"],"#
+            + #""lastDnsTraffic":5,"hardwareSpec":{"osType":{"a":1}}}]"#
+        let data = try XCTUnwrap(ReportEngine.reducingSecurityRisk(Data(json.utf8)))
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        XCTAssertEqual(Set(rows[0].keys), ["guid", "lastDnsTraffic"])
+    }
+
+    func testATopLevelNullLandsAnEmptySnapshotWithoutPartial() async throws {
+        let dir = try dataDir()
+        let lines = SCLines()
+        let bin = try stub(script: "printf 'null'")
+        let kinds = try await ReportEngine.securityCollect(
+            profile: "sc", dataDir: dir, locateJamfCLI: { bin }, onLine: lines.append)
+        XCTAssertEqual(kinds, ["security-risk"])
+        XCTAssertEqual(try savedRows(dir).count, 0)
+        XCTAssertFalse(lines.texts.contains { $0.hasPrefix("[partial]") }, "\(lines.texts)")
     }
 
     func testAnEmptyArrayLandsAnEmptySnapshotWithoutPartial() async throws {
@@ -315,19 +335,27 @@ final class SecurityCloudCollectTests: XCTestCase {
         XCTAssertEqual(calls.skipSets, [["security-risk"]])
     }
 
-    func testADriftedPinSkipsWithOneWarn() async throws {
+    func testAHeldOrDriftedPinSkipsWithOneSkipLine() async throws {
         let shared = "shared_workspace:\n  enabled: true\nprofiles:\n"
             + "  jamf_pro: \"\(profile)\"\n  security_cloud: \"my-sc\"\n"
-        let (first, _, _) = try await runRouter(yaml: shared)
-        XCTAssertEqual(first.value, 1, "pinned at first sight, so it runs")
+        let (first, firstLines, _) = try await runRouter(yaml: shared)
+        XCTAssertEqual(first.value, 0, "held unconfirmed at first sight (D18)")
+        try SharedConfigPin.confirm(profile: profile, keys: [.securityCloudProfile])
+        let (confirmed, _, _) = try await runRouter(yaml: shared)
+        XCTAssertEqual(confirmed.value, 1, "Confirm on this Mac releases it")
         let drifted = shared.replacingOccurrences(of: "my-sc", with: "peer-sc")
         let (calls, lines, _) = try await runRouter(yaml: drifted)
         XCTAssertEqual(calls.value, 0)
-        XCTAssertEqual(
-            lines.filter { $0.hasPrefix("[warn] Jamf Security Cloud not collected") }.count, 1)
+        for run in [firstLines, lines] {
+            XCTAssertEqual(
+                run.filter { $0.hasPrefix("[skip] Jamf Security Cloud not collected") }.count, 1)
+            // The checkpoint's own `[warn] shared config changed` line is the one warning.
+            XCTAssertFalse(
+                run.contains { $0.hasPrefix("[warn] Jamf Security Cloud") }, "\(run)")
+        }
         try SharedConfigPin.confirm(profile: profile, keys: [.securityCloudProfile])
         let (again, _, _) = try await runRouter(yaml: drifted)
-        XCTAssertEqual(again.value, 1, "Confirm on this Mac re-pins it")
+        XCTAssertEqual(again.value, 1)
     }
 
     func testAProtectOnlyEnvironmentRunsNoSecurityCollect() async throws {
@@ -339,9 +367,10 @@ final class SecurityCloudCollectTests: XCTestCase {
 
     func testAProtectOnlyEnvironmentRunsNoSecurityCollectAfterAGateStopEither() async throws {
         let yaml = "profiles:\n  protect: \"\(profile)\"\n  security_cloud: \"my-sc\"\n"
-        let (calls, _, _) = try await runRouter(
+        let (calls, lines, _) = try await runRouter(
             yaml: yaml, gate: { _, _, _, _, _, _ in .stop(.stoodDown) })
         XCTAssertEqual(calls.value, 0)
+        XCTAssertFalse(lines.contains { $0.contains("security-risk") }, "\(lines)")
     }
 
     func testAJamfSchoolEnvironmentCollectsItToo() async throws {

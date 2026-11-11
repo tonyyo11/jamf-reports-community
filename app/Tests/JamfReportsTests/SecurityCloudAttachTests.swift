@@ -44,9 +44,11 @@ final class SecurityCloudAttachTests: XCTestCase {
 
     // MARK: - Pin
 
-    func testTheSlotIsPinnedAtFirstSightAndADriftNeedsAConfirm() throws {
+    func testTheSlotIsHeldAtFirstSightAndADriftNeedsAConfirm() throws {
         try write(shared + "  security_cloud: sc-a\n")
-        XCTAssertTrue(check().drifts.isEmpty)
+        XCTAssertEqual(check().drifts.map(\.key), [.securityCloudProfile])
+        XCTAssertFalse(allowed("sc-a"))
+        try SharedConfigPin.confirm(profile: ws, drifts: check().drifts, appSupport: support)
         XCTAssertTrue(allowed("sc-a"))
         try write(shared + "  security_cloud: sc-peer\n")
         XCTAssertEqual(check().drifts.map(\.key), [.securityCloudProfile])
@@ -56,15 +58,22 @@ final class SecurityCloudAttachTests: XCTestCase {
         XCTAssertTrue(allowed("sc-peer"))
     }
 
-    func testAnOlderPinWithoutTheKeyAdoptsItAtFirstSight() throws {
+    func testAnEmptySlotIsNotHeld() throws {
+        try write(shared)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
+    func testAnOlderPinWithoutTheKeyAdoptsItAsUnconfirmed() throws {
         try write(shared)
         _ = check()
         var older = try XCTUnwrap(SharedConfigPin.load(profile: ws, appSupport: support))
         older.pinnedKeys.removeAll { $0 == SharedConfigPin.Key.securityCloudProfile.rawValue }
         try SharedConfigPin.save(older, profile: ws, appSupport: support)
         try write(shared + "  security_cloud: sc-a\n")
-        XCTAssertTrue(check().drifts.isEmpty)
-        XCTAssertTrue(allowed("sc-a"))
+        XCTAssertEqual(check().drifts.map(\.key), [.securityCloudProfile])
+        let pin = try XCTUnwrap(SharedConfigPin.load(profile: ws, appSupport: support))
+        XCTAssertTrue(pin.unconfirmed.contains(SharedConfigPin.Key.securityCloudProfile.rawValue))
+        XCTAssertFalse(allowed("sc-a"))
     }
 
     func testAPinFileWithoutTheFieldStillDecodes() throws {

@@ -96,7 +96,7 @@ struct UnassignedProfilesCard: View {
             PNPButton(title: L("Add to this environment"), icon: "plus", style: .ghost, size: .sm) {
                 attach(row.name)
             }
-            .accessibilityLabel("Add \(row.name) to \(workspace)")
+            .accessibilityLabel("Add \(ConfigSchema.displayText(row.name)) to \(workspace)")
         }
     }
 
@@ -110,7 +110,7 @@ struct UnassignedProfilesCard: View {
                 }.value
                 onChanged()
             } catch {
-                attachError = L("Could not add \(name): \(error.localizedDescription)")
+                attachError = L("Could not add \(ConfigSchema.displayText(name)): \(error.localizedDescription)")
             }
         }
     }
