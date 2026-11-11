@@ -2499,6 +2499,7 @@ struct CoreDashboard: Sendable {
             let gatekeeper: String
             let bootstrapToken: String
             let hardwareEncrypted: Bool?
+            var neverInventoried = false
         }
 
         let rows: [DeviceSecurityRow] = items.compactMap { item in
@@ -2509,7 +2510,7 @@ struct CoreDashboard: Sendable {
             if NeverInventoried.isNeverInventoried(computer: item) {
                 return DeviceSecurityRow(name: name, serial: serial, fileVault: "", sip: "",
                                          firewall: "", gatekeeper: "", bootstrapToken: "",
-                                         hardwareEncrypted: nil)
+                                         hardwareEncrypted: nil, neverInventoried: true)
             }
 
             let diskEncryption = item["diskEncryption"] as? [String: Any]
@@ -2569,6 +2570,11 @@ struct CoreDashboard: Sendable {
         for r in sorted {
             ws.write(r.name, row: row, col: 0, format: .cell)
             ws.write(r.serial, row: row, col: 1, format: .cell)
+            if r.neverInventoried {
+                for col in 2...6 { ws.write("No Data", row: row, col: col, format: .cell) }
+                row += 1
+                continue
+            }
             ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
                      row: row, col: 2, format: securityVerdictFormat(
                         .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))

@@ -95,6 +95,7 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Device Security State writes "No Data" in every control column for a Mac that never sent inventory, where it was blank.
 - Jamf Pro commands are refused for a Jamf School environment, and a Protect-only environment
   whose `profiles.protect` change you have not confirmed on this Mac is refused as a run that
   does not start, with the reason, instead of failing partway. Until you confirm it, this Mac
@@ -156,6 +157,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A Mac that never sent inventory reads No Data for FileVault, SIP, Firewall and Gatekeeper on every screen and report, not Jamf's placeholder values (firewall off, FileVault unencrypted), so it no longer appears under Failing controls. A Mac with real inventory and the firewall off still reads off.
 - A Mac whose FileVault (or SIP, firewall or Gatekeeper) Jamf reports as not applicable now counts as not reported, not as off: it shows neutral and adds no risk.
 - A patch title Jamf reports as "N/A" shows a dash in muted grey, sorts last and no longer reads as 0% compliant.
 - A Mac with no known macOS version ("Unknown") is left out of the Overview's macOS distribution, the Security Posture table and donut, and the report's OS table and chart, instead of counting as a version.
