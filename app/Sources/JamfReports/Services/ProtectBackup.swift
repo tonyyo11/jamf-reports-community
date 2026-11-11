@@ -39,6 +39,13 @@ struct BackupProductResult: Sendable, Hashable {
     /// operator has not allowed it on this storage.
     var leavesNoJamfProBackup: Bool { state == .failed || state == .skipped }
 
+    /// The Jamf Pro reason a Jamf School workspace's backup records: the part does not exist,
+    /// so retention counts the backup like any other. Fixed text, never localized.
+    static let noJamfProReason = "this Jamf School workspace has no Jamf Pro to back up"
+
+    /// For a Jamf Pro result: skipped because the workspace has no Jamf Pro (Jamf School).
+    var isNoJamfPro: Bool { state == .skipped && reason == Self.noJamfProReason }
+
     /// A count a manifest may hold: a whole number from 0 to `Int32.max`, as the Platform count
     /// checks read one. `manifest.json` sits in a folder a peer can write, and a larger value
     /// would trap `objectTotal`'s sum.
@@ -171,7 +178,9 @@ enum ProtectBackup {
         // A Protect-only environment has no Jamf Pro backup to carry one (P8).
         // Unconfirmed, it falls through to the pin check below and skips with that reason.
         let protectOnly = environment.isProtectOnly && pinAllows(environment.protect ?? "")
-        guard !environment.isSchool, !protectOnly, environment.runsProtect else { return .notConnected }
+        // Jamf School backs up Protect alone, and only with a Protect profile named (2.12).
+        guard !environment.isSchool || environment.isSchoolWithProtect, !protectOnly,
+              environment.runsProtect else { return .notConnected }
         let key = environment.protectKey
         guard pinAllows(environment.protect ?? "") else {
             return .skip(reason: "\(key) changed in the shared config.yaml and is not confirmed on this Mac (Config Doctor)")
@@ -206,9 +215,10 @@ enum ProtectBackup {
         profile: String, config: ReportConfig?, appSupport: URL = AppSupport.directory()
     ) -> SyncedStorageChoice? {
         let detected = ProfileProductType.detect(from: config, profile: profile)
-        guard detected.type == .jamfPro, detected.runsProtect,
-              !EnvironmentProfiles.resolve(config: config, workspace: profile)
-                .isConfirmedProtectOnly(workspace: profile, appSupport: appSupport),
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        guard (detected.type == .jamfPro && detected.runsProtect)
+                || environment.isSchoolWithProtect,
+              !environment.isConfirmedProtectOnly(workspace: profile, appSupport: appSupport),
               let workspace = ProfileService.workspaceURL(for: profile),
               let place = BackupMaintenance.sharedStorageDescription(
                 workspace.appendingPathComponent("backups", isDirectory: true),
@@ -311,8 +321,11 @@ extension CLIBridge {
             return BackupProductResult(state: .skipped, reason: reason)
         }
         let config = read.config
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        // A Jamf School workspace has no Jamf Pro part for a line to reassure about.
+        let unaffected = environment.isSchool ? "" : " The Jamf Pro backup is unaffected."
         var refusal: String?
-        if let named = EnvironmentProfiles.resolve(config: config, workspace: profile).protect {
+        if let named = environment.protect {
             refusal = await ProfileAuthMethod.protectRefusal(profile: named)
         }
         var syncedPlace: String?
@@ -332,8 +345,7 @@ extension CLIBridge {
             return nil
         case .skip(let reason):
             onLine(.init(timestamp: Date(), level: .warn,
-                         text: "[warn] Jamf Protect not backed up: \(reason). "
-                             + "The Jamf Pro backup is unaffected."))
+                         text: "[warn] Jamf Protect not backed up: \(reason)." + unaffected))
             AttentionLog.raise(.protectBackupSkipped, "Protect not backed up: \(reason)")
             return BackupProductResult(state: .skipped, reason: reason)
         case .run(let name):
@@ -375,14 +387,14 @@ extension CLIBridge {
         // It ran, so a skip is over; what it left decides the other code.
         AttentionLog.clear(.protectBackupSkipped)
         reportProtectBackup(
-            result, exit: exit, timeout: timeout, output: validated, proState: proState,
-            onLine: onLine)
+            result, exit: exit, timeout: timeout, output: validated,
+            proState: environment.isSchool ? nil : proState, onLine: onLine)
         return result
     }
 
     private func reportProtectBackup(
         _ result: BackupProductResult, exit: Int32, timeout: TimeInterval, output: URL,
-        proState: BackupProductResult.State, onLine: @Sendable (LogLine) -> Void
+        proState: BackupProductResult.State?, onLine: @Sendable (LogLine) -> Void
     ) {
         // A clean run of a tenant with nothing to export is complete, as retention reads it.
         if result.isEmptyExport {
@@ -440,9 +452,11 @@ extension CLIBridge {
                          + Self.proBackupClause(proState)))
     }
 
-    /// How the Jamf Pro part of the same backup ended, for the Protect `[partial]` line.
-    nonisolated static func proBackupClause(_ state: BackupProductResult.State) -> String {
+    /// How the Jamf Pro part of the same backup ended, for the Protect `[partial]` line; nil is
+    /// a Jamf School workspace, which has none.
+    nonisolated static func proBackupClause(_ state: BackupProductResult.State?) -> String {
         switch state {
+        case nil: "this Jamf School workspace has no Jamf Pro backup"
         case .ok: "the Jamf Pro backup is complete"
         case .partial: "the Jamf Pro backup is partial too"
         case .failed: "the Jamf Pro backup failed too"

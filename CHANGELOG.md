@@ -9,6 +9,11 @@ versions in this repository map to git tags.
 
 ### Added
 
+- A Jamf School workspace with Jamf Protect connected now backs up Protect: the Backups screen,
+  `jamf-reports backup` and scheduled backups run `protect backup` alone, with the same
+  synced-storage choice, shared-config check and retention as a Jamf Pro workspace. Such a
+  backup reads as having no Jamf Pro part, not as a skipped one, and Diff stays off for it. A
+  School workspace without Protect is still refused. (#305)
 - The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
 - The daily summary records which products an environment holds and, with Jamf Protect, how many
   Protect computers it sees, how many of those match this environment's inventory, and how many
@@ -156,6 +161,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- **Diff Selected** on the Backups screen is now off when one of the two backups has no Jamf Pro
+  part, instead of failing after the click. (#305)
 - The Jamf Protect screen showed "Unknown OS" for every computer: jamf-cli sends the macOS version
   as separate numbers, which are now read. Its Jamf Pro match card counted a Mac twice when two
   Protect records matched it; each Mac now counts once and the card says how many records repeat

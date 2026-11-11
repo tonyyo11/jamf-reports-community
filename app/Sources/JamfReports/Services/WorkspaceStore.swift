@@ -1519,8 +1519,9 @@ struct TabVisibility: Sendable, Equatable {
         var copy = self
         let keep: Set<Tab>
         if environment.isSchool {
+            // With Protect, the Backups screen backs Protect up alone (2.12).
             keep = environment.has(.protect)
-                ? Tab.schoolTabs.union([.protectDashboard]) : Tab.schoolTabs
+                ? Tab.schoolTabs.union([.protectDashboard, .backups]) : Tab.schoolTabs
         } else if environment.isProtectOnly {
             keep = [.overview, .protectDashboard, .trends, .reports, .schedules, .runs, .config,
                     .sources, .settings, .onboarding]

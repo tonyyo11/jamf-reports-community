@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ProtectBackupTests: XCTestCase {
 
-    private enum ProtectMode { case ok, partial, failed, hang, empty }
+    private enum ProtectMode { case ok, partial, partialExit1, failed, hang, empty }
 
     private let connectedConfig = """
     protect:
@@ -45,7 +45,8 @@ final class ProtectBackupTests: XCTestCase {
         XCTAssertEqual(none, .notConnected)
         for yaml in ["protect:\n  enabled: false\n  profile: \"p\"\n",
                      "output:\n  output_dir: x\n",
-                     "school_cli:\n  enabled: true\nprotect:\n  enabled: true\n  profile: \"p\"\n"] {
+                     // School backs up Protect alone (2.12), but only with a profile named.
+                     "school_cli:\n  enabled: true\nprotect:\n  enabled: true\n  profile: \"\"\n"] {
             let config = try loadConfig(yaml)
             XCTAssertEqual(
                 ProtectBackup.plan(
@@ -303,6 +304,149 @@ final class ProtectBackupTests: XCTestCase {
             XCTAssertEqual(Set(manifest.keys), ["label", "created_at", "file_count", "size_bytes"])
             XCTAssertFalse(lines.texts.contains { $0.contains("Protect") }, "\(lines.texts)")
         }
+    }
+
+    // MARK: - backup(): Jamf School with Protect (2.12)
+
+    private var schoolConfig: String { "school_cli:\n  enabled: true\n" + connectedConfig }
+
+    func test_backup_schoolWithProtectBacksUpProtectAlone() async throws {
+        let ctx = try makeContext(config: schoolConfig, protect: .ok)
+        XCTAssertNil(CollectRouter.backupRefusal(
+            profile: ctx.profile, config: try loadConfig(schoolConfig)))
+        let lines = Lines()
+        let exit = try await CLIBridge().backup(
+            profile: ctx.profile, label: "scheduled-t", _testExecutable: ctx.stub
+        ) { lines.append($0) }
+
+        XCTAssertEqual(exit, 0)
+        let calls = try ctx.calls()
+        XCTAssertEqual(calls.count, 1, "no pro backup: \(calls)")
+        XCTAssertTrue(calls[0].hasPrefix("-p protect-login --no-input protect backup"), calls[0])
+        let final = try ctx.onlyBackup()
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: final.appendingPathComponent("protect/plans/a.yaml").path))
+        let pro = try XCTUnwrap(BackupProductResult.pro(inBackup: final))
+        XCTAssertEqual(pro, BackupProductResult(
+            state: .skipped, reason: BackupProductResult.noJamfProReason))
+        XCTAssertTrue(pro.isNoJamfPro && pro.leavesNoJamfProBackup, "Diff stays off")
+        let record = try XCTUnwrap(BackupLibrary().list(profile: ctx.profile).first)
+        XCTAssertTrue(record.noJamfPro && record.lacksJamfPro)
+        XCTAssertTrue(lines.texts.contains { $0.hasPrefix("[ok] Jamf Protect backup written") },
+                      "\(lines.texts)")
+        XCTAssertFalse(
+            lines.texts.contains { $0.hasPrefix("[partial]") || $0.contains("Jamf Pro was") },
+            "\(lines.texts)")
+    }
+
+    /// Protect is the whole backup, so its failure is the run's, and partial keeps its files.
+    func test_backup_schoolTakesProtectsExitWhenThatPartFallsShort() async throws {
+        let failed = try makeContext(config: schoolConfig, protect: .failed)
+        let failedLines = Lines()
+        let failedExit = try await CLIBridge().backup(
+            profile: failed.profile, label: "scheduled-t", _testExecutable: failed.stub
+        ) { failedLines.append($0) }
+        XCTAssertEqual(failedExit, 3)
+        let backups = failed.workspace.appendingPathComponent("backups", isDirectory: true)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: backups.path), [])
+        XCTAssertTrue(failedLines.texts.contains {
+            $0.contains("this Jamf School workspace has no Jamf Pro backup")
+        }, "\(failedLines.texts)")
+        XCTAssertFalse(failedLines.texts.contains { $0.contains("Jamf Pro backup is unaffected") })
+
+        let partial = try makeContext(config: schoolConfig, protect: .partial)
+        let partialExit = try await CLIBridge().backup(
+            profile: partial.profile, label: "scheduled-t", _testExecutable: partial.stub
+        ) { _ in }
+        XCTAssertEqual(partialExit, CLIBridge.exitCodePartialFailure)
+        XCTAssertEqual(
+            BackupProductResult.protect(inBackup: try partial.onlyBackup())?.state, .partial)
+
+        // A partial part that exits 1 keeps its folder too, so it reads as jamf-cli's partial
+        // exit, which the callers stamp and prune.
+        let other = try makeContext(config: schoolConfig, protect: .partialExit1)
+        let otherExit = try await CLIBridge().backup(
+            profile: other.profile, label: "scheduled-t", _testExecutable: other.stub
+        ) { _ in }
+        XCTAssertEqual(otherExit, CLIBridge.exitCodePartialFailure)
+        XCTAssertTrue(CLIBridge.backupOutputIsPrunable(exit: otherExit))
+        XCTAssertEqual(
+            BackupProductResult.protect(inBackup: try other.onlyBackup())?.exitCode, 1)
+    }
+
+    /// On shared storage without the opt-in Protect is skipped, and on School that is the whole
+    /// backup: no folder, and a Partial run instead of a quiet success.
+    func test_backup_schoolWithProtectSkippedWritesNothingAndReadsPartial() async throws {
+        let ctx = try makeContext(
+            config: "shared_workspace:\n  enabled: true\n" + schoolConfig, protect: .ok)
+        let lines = Lines()
+        let exit = try await CLIBridge().backup(
+            profile: ctx.profile, label: "scheduled-t", _testExecutable: ctx.stub
+        ) { lines.append($0) }
+        XCTAssertEqual(exit, 0)
+        XCTAssertEqual(try ctx.calls(), [], "neither backup runs")
+        let backups = ctx.workspace.appendingPathComponent("backups", isDirectory: true)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: backups.path), [])
+        XCTAssertTrue(lines.texts.contains {
+            $0.hasPrefix("[partial] no backup written: Jamf Protect was skipped")
+        }, "\(lines.texts)")
+        XCTAssertNotNil(ProtectBackup.syncedStorageChoice(
+            profile: ctx.profile, config: try loadConfig(
+                "shared_workspace:\n  enabled: true\n" + schoolConfig)),
+            "the Backups screen offers the synced-storage switch")
+    }
+
+    func test_backup_schoolWithoutAProtectProfileIsStillRefused() throws {
+        let yaml = "school_cli:\n  enabled: true\nprotect:\n  enabled: true\n  profile: \"\"\n"
+        let ctx = try makeContext(config: yaml, protect: .ok)
+        XCTAssertEqual(
+            CollectRouter.backupRefusal(profile: ctx.profile, config: try loadConfig(yaml)),
+            CollectRouter.schoolBackupReason(profile: ctx.profile))
+    }
+
+    func test_pruneCountsSchoolBackupsLikeAnyOtherAndStillProtectsJamfProOnes() throws {
+        let ctx = try makeContext(config: schoolConfig, protect: .ok)
+        let backups = ctx.workspace.appendingPathComponent("backups", isDirectory: true)
+        let ok = BackupProductResult(state: .ok, exitCode: 0, objectCounts: ["plans": 1])
+        func make(_ name: String, pro: BackupProductResult) throws {
+            let dir = backups.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: dir.appendingPathComponent("protect"), withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: ["label": "scheduled-x", "products": [
+                "pro": pro.manifestValue, "protect": ok.manifestValue]])
+                .write(to: dir.appendingPathComponent("manifest.json"))
+        }
+        let school = BackupProductResult(
+            state: .skipped, reason: BackupProductResult.noJamfProReason)
+        for day in 1...4 { try make("2026050\(day)T010101", pro: school) }
+        BackupMaintenance.pruneScheduledBackups(profile: ctx.profile, keep: 2)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: backups.path).sorted(),
+            ["20260503T010101", "20260504T010101"], "the newest two, not just one")
+
+        // A workspace that moved from Jamf Pro to Jamf School: its School backups are ordinary
+        // backups, so after `keep` of them the older Jamf Pro ones are pruned as usual.
+        try FileManager.default.removeItem(at: backups)
+        try make("20260501T010101", pro: BackupProductResult(state: .ok, exitCode: 0))
+        try make("20260502T010101", pro: BackupProductResult(state: .ok, exitCode: 0))
+        for day in 3...5 { try make("2026050\(day)T010101", pro: school) }
+        BackupMaintenance.pruneScheduledBackups(profile: ctx.profile, keep: 3)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: backups.path).sorted(),
+            ["20260503T010101", "20260504T010101", "20260505T010101"])
+
+        // Another skip reason still never displaces a Jamf Pro backup.
+        try FileManager.default.removeItem(at: backups)
+        let proOK = BackupProductResult(state: .ok, exitCode: 0)
+        let elsewhere = BackupProductResult(state: .skipped, reason: "not allowed here")
+        try make("20260501T010101", pro: proOK)
+        try make("20260502T010101", pro: proOK)
+        try make("20260503T010101", pro: elsewhere)
+        try make("20260504T010101", pro: elsewhere)
+        BackupMaintenance.pruneScheduledBackups(profile: ctx.profile, keep: 2)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: backups.path).sorted(),
+            ["20260501T010101", "20260502T010101", "20260504T010101"])
     }
 
     // MARK: - backup(): skipped
@@ -881,6 +1025,8 @@ final class ProtectBackupTests: XCTestCase {
             protectBody = writeFiles + "\nexit 0"
         case .partial:
             protectBody = writeFiles + "\necho 'plans: boom' > \"$out/_failures.yaml\"\nexit 7"
+        case .partialExit1:
+            protectBody = writeFiles + "\necho 'plans: boom' > \"$out/_failures.yaml\"\nexit 1"
         case .failed:
             protectBody = writeFiles + "\nexit 3"
         case .hang:

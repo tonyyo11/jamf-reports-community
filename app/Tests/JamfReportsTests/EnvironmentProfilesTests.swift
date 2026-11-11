@@ -270,7 +270,10 @@ final class EnvironmentProfilesTests: XCTestCase {
             try plan("protect:\n  enabled: true\n  profile: p\nprofiles:\n  jamf_pro: ws\n"),
             .notConnected, "protect.* is not read under the block")
         XCTAssertEqual(try plan("profiles:\n  jamf_school: ws\n  protect: ws-protect\n"),
-                       .notConnected, "a School workspace has no backup")
+                       .run(profile: "ws-protect"), "a School workspace backs up Protect alone")
+        XCTAssertEqual(
+            try plan("school_cli:\n  enabled: true\nprotect:\n  enabled: true\n  profile: \"\"\n"),
+            .notConnected, "School with no Protect profile named has nothing to back up")
         let drifted = ProtectBackup.plan(
             config: try ConfigLoader.loadFromString("profiles:\n  jamf_pro: ws\n  protect: p\n"),
             workspaceProfile: ws, pinAllows: { _ in false }, sharedStorage: { nil })

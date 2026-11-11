@@ -22853,6 +22853,46 @@
         }
       }
     },
+    "A backup without Jamf Pro cannot be diffed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Sicherung ohne Jamf Pro kann nicht verglichen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede comparar una copia de seguridad sin Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une sauvegarde sans Jamf Pro ne peut pas être comparée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un backup senza Jamf Pro non può essere confrontato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Pro を含まないバックアップは比較できません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um backup sem Jamf Pro não pode ser comparado"
+          }
+        }
+      }
+    },
     "A collect failed on jamf-cli sign-in. Once jamf-cli auth is fixed, re-collect from the Overview banner (Sources page shows connection status)." : {
       "localizations" : {
         "de" : {
@@ -50579,6 +50619,46 @@
         }
       }
     },
+    "Diff compares Jamf Pro backups; this backup holds Jamf Protect only." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Vergleich prüft Jamf Pro-Sicherungen; diese Sicherung enthält nur Jamf Protect."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La comparación revisa copias de seguridad de Jamf Pro; esta copia contiene solo Jamf Protect."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La comparaison porte sur les sauvegardes Jamf Pro ; cette sauvegarde ne contient que Jamf Protect."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il confronto riguarda i backup di Jamf Pro; questo backup contiene solo Jamf Protect."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "比較の対象は Jamf Pro のバックアップです。このバックアップには Jamf Protect のみが含まれます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A comparação abrange backups do Jamf Pro; este backup contém apenas o Jamf Protect."
+          }
+        }
+      }
+    },
     "Diffing..." : {
       "localizations" : {
         "de" : {
@@ -54597,42 +54677,42 @@
         }
       }
     },
-    "Experimental: Jamf Protect with Jamf School. Protect is collected and reported; it is not backed up, as a Jamf School workspace has no backups." : {
+    "Experimental: Jamf Protect with Jamf School. Protect is collected, reported and backed up; a backup holds Jamf Protect alone, as there is no Jamf Pro." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Experimentell: Jamf Protect mit Jamf School. Protect wird erfasst und berichtet, aber nicht gesichert, da ein Jamf School-Arbeitsbereich keine Backups hat."
+            "value" : "Experimentell: Jamf Protect mit Jamf School. Protect wird erfasst, ausgewertet und gesichert; eine Sicherung enthält nur Jamf Protect, da es kein Jamf Pro gibt."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Experimental: Jamf Protect con Jamf School. Protect se recopila y se incluye en los informes, pero no se incluye en las copias de seguridad, ya que un espacio de trabajo de Jamf School no tiene copias de seguridad."
+            "value" : "Experimental: Jamf Protect con Jamf School. Protect se recopila, se incluye en los informes y se copia; una copia de seguridad contiene solo Jamf Protect, ya que no hay Jamf Pro."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Expérimental : Jamf Protect avec Jamf School. Protect est collecté et rapporté, mais pas sauvegardé, car un espace de travail Jamf School n’a pas de sauvegardes."
+            "value" : "Expérimental : Jamf Protect avec Jamf School. Protect est collecté, présenté dans les rapports et sauvegardé ; une sauvegarde ne contient que Jamf Protect, car il n’y a pas de Jamf Pro."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sperimentale: Jamf Protect con Jamf School. Protect viene raccolto e incluso nei report, ma non ne viene eseguito il backup, perché uno spazio di lavoro Jamf School non prevede backup."
+            "value" : "Sperimentale: Jamf Protect con Jamf School. Protect viene raccolto, incluso nei report e sottoposto a backup; un backup contiene solo Jamf Protect, poiché non c’è Jamf Pro."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "実験的: Jamf School向けのJamf Protect。Protectは収集とレポートの対象ですが、Jamf Schoolワークスペースにはバックアップがないため、バックアップされません。"
+            "value" : "試験的: Jamf School での Jamf Protect。Protect は収集、レポート、バックアップされます。Jamf Pro がないため、バックアップには Jamf Protect のみが含まれます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Experimental: Jamf Protect com Jamf School. O Protect é coletado e relatado, mas não tem backup, pois um espaço de trabalho do Jamf School não tem backups."
+            "value" : "Experimental: Jamf Protect com Jamf School. O Protect é coletado, incluído nos relatórios e copiado; um backup contém apenas o Jamf Protect, pois não há Jamf Pro."
           }
         }
       }

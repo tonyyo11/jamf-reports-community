@@ -1024,9 +1024,9 @@ struct SourcesView: View {
     }
 
     /// Jamf Protect on a Jamf School workspace (2.11): collected and reported as on Jamf Pro,
-    /// but not backed up, since a School workspace has no backups.
+    /// and from 2.12 backed up on its own, since there is no Jamf Pro part.
     nonisolated static let schoolProtectNote =
-        L("Experimental: Jamf Protect with Jamf School. Protect is collected and reported; it is not backed up, as a Jamf School workspace has no backups.")
+        L("Experimental: Jamf Protect with Jamf School. Protect is collected, reported and backed up; a backup holds Jamf Protect alone, as there is no Jamf Pro.")
 
     /// JSON snapshots, and the jamf-cli dashboard's page, the one kind saved as HTML.
     private nonisolated static func cacheDates(

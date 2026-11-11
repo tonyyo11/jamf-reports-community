@@ -58,7 +58,7 @@ name as `%2C` and a percent sign as `%25`.
 | `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`); a Jamf School workspace gets the School workbook | `--profile`, `--output <path>`, `--template <id>`, `--csv-folder` |
 | `collect` | Collect fresh `jamf-cli` snapshots (Jamf Pro, Jamf School, and Jamf Protect when connected) | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
 | `html` | Generate the self-contained HTML report (the Full Instance layout: figures and attention list first, collapsed detail groups, audit appendix); refuses a Jamf School workspace | `--profile`, `--output <path>` |
-| `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`), and Jamf Protect's (`jamf-cli protect backup`) when the workspace has Protect connected and is not on shared storage | `--profile` |
+| `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`), and Jamf Protect's (`jamf-cli protect backup`) when the workspace has Protect connected and is not on shared storage; a Jamf School workspace with Protect backs up Protect alone | `--profile` |
 | `scaffold` | Write a minimal jamf-cli-only `config.yaml`; with a Jamf Pro CSV export, also add its extra columns as `custom_eas` (read once) | `--csv <path>` (optional), `--out <path>` |
 | `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile`, `--json` |
 | `capabilities` | Report which `jamf-cli` commands are available | `--json` |
@@ -145,10 +145,11 @@ A few behaviors worth knowing:
   at `generate`.
 - Product guard (2.11): a Jamf Pro command never runs on a profile that belongs to another
   product. `backup` and `device` refuse a Jamf School, Jamf Protect or Security Cloud
-  profile and an organization-level Platform API profile; `collect` refuses a Jamf Protect or
+  profile and an organization-level Platform API profile (`backup` takes a Jamf School
+  workspace that has a Jamf Protect profile and backs up Protect alone, 2.12); `collect` refuses a Jamf Protect or
   Security Cloud profile and an organization-level one (a School workspace collects School
   data), and `schedules add` refuses them for a per-profile schedule, as well as `--mode backup`
-  for a School workspace. Each prints
+  for a School workspace without Jamf Protect. Each prints
   the reason once on stderr and exits `1`, before any lock, Run History record or workspace
   file is created. `school-check` refuses a workspace that is not a Jamf School one the same way.
   A scheduled run of such a profile (`--scheduled-run` or the background item) instead prints a
@@ -156,7 +157,9 @@ A few behaviors worth knowing:
 - `backup` also backs up Jamf Protect into the same backup folder when the workspace has
   Protect connected.
   When only the Protect part falls short, the Jamf Pro backup stands: the command prints
-  warnings and exits `0`.
+  warnings and exits `0`. On a Jamf School workspace (2.12) the backup is the Protect part
+  alone, `products.pro` in `manifest.json` reads skipped ("no Jamf Pro"), and the command
+  exits with Protect's own exit code when that part failed or came back partial.
 - `scaffold` **overwrites** the `--out` file if it already exists — it's an
   initial-setup command. It copies the existing file to `<out>.bak-<date-time>`
   first and prints the path on stderr. To add extension attributes to an existing

@@ -74,11 +74,19 @@ struct BackupsView: View {
         backups.contains { selectedBackups.contains($0.id) && $0.isEmpty }
     }
 
+    /// `pro diff` cannot read a backup without a Jamf Pro part (failed, skipped or Jamf School).
+    private var selectionLacksJamfPro: Bool {
+        backups.contains { selectedBackups.contains($0.id) && $0.lacksJamfPro }
+    }
+
     private var diffSelectionHint: String {
         switch selectedBackups.count {
         case 0: L("Command-click to select multiple")
         case 1: L("Select 1 more to diff")
-        case 2: selectionIncludesEmptyBackup ? L("An empty backup cannot be diffed") : L("Ready to diff")
+        case 2:
+            selectionIncludesEmptyBackup ? L("An empty backup cannot be diffed")
+                : selectionLacksJamfPro ? L("A backup without Jamf Pro cannot be diffed")
+                : L("Ready to diff")
         default: L("Select exactly 2 to diff")
         }
     }
@@ -86,6 +94,9 @@ struct BackupsView: View {
     private func diffLatestHelp(for backup: BackupRecord) -> String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
         if backup.isEmpty { return L("This backup has no files, so there is nothing to compare.") }
+        if backup.noJamfPro {
+            return L("Diff compares Jamf Pro backups; this backup holds Jamf Protect only.")
+        }
         if diffTarget?.id == backup.id { return L("This is the latest backup with files.") }
         return L("Compare this backup with the latest one that has files.")
     }
@@ -171,6 +182,7 @@ struct BackupsView: View {
                     text: diffSelectionHint,
                     size: 10.5,
                     color: selectedBackups.count == 2 && !selectionIncludesEmptyBackup
+                        && !selectionLacksJamfPro
                         ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
                 )
                 PNPButton(
@@ -183,7 +195,8 @@ struct BackupsView: View {
                 .disabled(
                     workspace.demoMode || isRunningBackup || isRunningDiff
                         || loadedSource != dataSource
-                        || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
+                        || selectedBackups.count != 2 || selectionIncludesEmptyBackup
+                        || selectionLacksJamfPro)
                 .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 PNPButton(
                     title: isRunningBackup ? L("Backing Up...") : L("New Backup"),
@@ -233,7 +246,7 @@ struct BackupsView: View {
     @ViewBuilder
     private var protectBanner: some View {
         if syncedChoice != nil || proChoice != nil { syncedStorageBanner }
-        if latestBackup?.proSkipped == true, proChoice == nil {
+        if latestBackup?.proSkipped == true, latestBackup?.noJamfPro != true, proChoice == nil {
             InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
                 Text("The latest backup has no Jamf Pro part: it was skipped. Run History has the reason; Diff compares Jamf Pro backups and skips this one.")
                     .font(.footnote)
@@ -376,7 +389,7 @@ struct BackupsView: View {
                                 Text("Jamf Pro part failed: Jamf Protect only")
                                     .font(Theme.Fonts.mono(10.5))
                                     .foregroundStyle(Theme.Colors.warn)
-                            } else if backup.proSkipped {
+                            } else if backup.proSkipped, !backup.noJamfPro {
                                 Text("Jamf Pro part skipped")
                                     .font(Theme.Fonts.mono(10.5))
                                     .foregroundStyle(Theme.Colors.warn)
@@ -847,7 +860,8 @@ struct BackupLibrary {
             url: dir,
             protect: manifest.protect,
             proFailed: manifest.pro?.state == .failed,
-            proSkipped: manifest.pro?.state == .skipped
+            proSkipped: manifest.pro?.state == .skipped,
+            noJamfPro: manifest.pro?.isNoJamfPro == true
         )
     }
 

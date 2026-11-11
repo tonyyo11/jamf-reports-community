@@ -4,7 +4,8 @@ import Foundation
 struct Backup: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Back up a Jamf Pro profile's config objects, and Jamf Protect too when "
-            + "connected. Refuses a Jamf School or other-product profile.")
+            + "connected; a Jamf School workspace backs up its Jamf Protect alone. Refuses a "
+            + "Jamf School workspace without Jamf Protect, or another product's profile.")
     @Option(help: "Workspace profile slug.") var profile: String
 
     static func refusal(profile: String) -> String? {
