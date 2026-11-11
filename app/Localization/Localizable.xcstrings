@@ -1508,46 +1508,6 @@
         }
       }
     },
-    " as not managed. Mark each computer as managed in Jamf Pro, deploy the binary another way, or run sudo profiles renew -type enrollment on the Mac." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " als nicht verwaltet. Markieren Sie jeden Computer in Jamf Pro als verwaltet, verteilen Sie die Binärdatei auf anderem Weg oder führen Sie auf dem Mac sudo profiles renew -type enrollment aus."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " como no gestionados. Marque cada ordenador como gestionado en Jamf Pro, despliegue el binario de otra forma o ejecute sudo profiles renew -type enrollment en el Mac."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " comme non gérés. Marquez chaque ordinateur comme géré dans Jamf Pro, déployez le binaire autrement, ou exécutez sudo profiles renew -type enrollment sur le Mac."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " come non gestito. Contrassegnare ogni computer come gestito in Jamf Pro, distribuire il binario in altro modo oppure eseguire sudo profiles renew -type enrollment sul Mac."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " が管理対象外になっています。Jamf Proで各コンピュータを管理対象にするか、別の方法でバイナリを配布するか、Macでsudo profiles renew -type enrollmentを実行してください。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " como não gerenciado. Marque cada computador como gerenciado no Jamf Pro, implante o binário de outra forma ou execute sudo profiles renew -type enrollment no Mac."
-          }
-        }
-      }
-    },
     " at " : {
       "localizations" : {
         "de" : {
@@ -5242,42 +5202,42 @@
         }
       }
     },
-    "%@ enrolled but never received the Jamf binary: Jamf Pro lists " : {
+    "%@ enrolled but never received the Jamf binary: never checked in, and not managed or never inventoried. Mark each computer as managed in Jamf Pro, deploy the binary another way, or run sudo profiles renew -type enrollment on the Mac." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ registriert, aber nie die Jamf-Binary erhalten: Jamf Pro führt "
+            "value" : "%@ eingeschrieben, aber nie mit dem Jamf-Binary versorgt: nie eingecheckt und nicht verwaltet oder nie inventarisiert. Markieren Sie jeden Computer in Jamf Pro als verwaltet, verteilen Sie das Binary auf anderem Weg oder führen Sie auf dem Mac sudo profiles renew -type enrollment aus."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ se inscribieron pero nunca recibieron el binario de Jamf: Jamf Pro enumera "
+            "value" : "%@ inscritos pero que nunca recibieron el binario de Jamf: nunca han registrado actividad y no están gestionados o nunca se han inventariado. Marque cada ordenador como gestionado en Jamf Pro, despliegue el binario de otra forma o ejecute sudo profiles renew -type enrollment en el Mac."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inscription faite pour %@, mais le binaire Jamf n’a jamais été reçu : Jamf Pro répertorie "
+            "value" : "%@ inscrits mais n’ayant jamais reçu le binaire Jamf : jamais signalés, et non gérés ou jamais inventoriés. Marquez chaque ordinateur comme géré dans Jamf Pro, déployez le binaire autrement, ou exécutez sudo profiles renew -type enrollment sur le Mac."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ si sono registrati ma non hanno mai ricevuto il binario Jamf: Jamf Pro li elenca "
+            "value" : "%@ registrati ma che non hanno mai ricevuto il binary Jamf: mai eseguito il check-in, e non gestiti o mai inventariati. Contrassegnare ogni computer come gestito in Jamf Pro, distribuire il binary in altro modo oppure eseguire sudo profiles renew -type enrollment sul Mac."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@は登録されましたが、Jamfバイナリを受け取っていません。Jamf Proの一覧では "
+            "value" : "%@ が登録されましたが、Jamfバイナリを受け取っていません。一度もチェックインしておらず、管理対象外または一度もインベントリを送信していません。Jamf Proで各コンピュータを管理対象にするか、別の方法でバイナリを配布するか、Macでsudo profiles renew -type enrollmentを実行してください。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inscrição concluída para %@, mas o binário do Jamf nunca foi recebido: o Jamf Pro lista "
+            "value" : "%@ inscritos, mas que nunca receberam o binário do Jamf: nunca fizeram check-in e não são gerenciados ou nunca enviaram inventário. Marque cada computador como gerenciado no Jamf Pro, implante o binário de outra forma ou execute sudo profiles renew -type enrollment no Mac."
           }
         }
       }
@@ -68195,42 +68155,42 @@
         }
       }
     },
-    "Jamf Pro lists this Mac as not managed and it has never checked in. It needs manual intervention. Any one of these gets the binary on:" : {
+    "Jamf Pro lists this Mac as not managed or as never inventoried, and it has never checked in. It needs manual intervention. Any one of these gets the binary on:" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro führt diesen Mac als nicht verwaltet und er hat sich nie eingecheckt. Er erfordert ein manuelles Eingreifen. Jede dieser Möglichkeiten bringt das Binary darauf:"
+            "value" : "Jamf Pro führt diesen Mac als nicht verwaltet oder als nie inventarisiert, und er hat sich nie eingecheckt. Er erfordert ein manuelles Eingreifen. Jede dieser Möglichkeiten bringt das Binary darauf:"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro enumera este Mac como no gestionado y nunca ha registrado actividad. Requiere intervención manual. Cualquiera de estas opciones instala el binario:"
+            "value" : "Jamf Pro enumera este Mac como no gestionado o nunca inventariado, y nunca ha registrado actividad. Requiere intervención manual. Cualquiera de estas opciones instala el binario:"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro indique que ce Mac n’est pas géré et qu’il ne s’est jamais signalé. Il nécessite une intervention manuelle. L’une de ces méthodes installe le binaire :"
+            "value" : "Jamf Pro indique que ce Mac n’est pas géré ou n’a jamais été inventorié, et qu’il ne s’est jamais signalé. Il nécessite une intervention manuelle. L’une de ces méthodes installe le binaire :"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro elenca questo Mac come non gestito e non ha mai eseguito il check-in. Richiede un intervento manuale. Uno qualsiasi di questi metodi installa il binary:"
+            "value" : "Jamf Pro elenca questo Mac come non gestito o mai inventariato e non ha mai eseguito il check-in. Richiede un intervento manuale. Uno qualsiasi di questi metodi installa il binary:"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf ProはこのMacを管理対象外として一覧表示しており、一度もチェックインしていません。手動での対応が必要です。次のいずれかの方法でバイナリを導入できます。"
+            "value" : "Jamf ProはこのMacを管理対象外、または一度もインベントリを受信していないものとして一覧表示しており、一度もチェックインしていません。手動での対応が必要です。次のいずれかの方法でバイナリを導入できます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Jamf Pro lista este Mac como não gerenciado e ele nunca fez check-in. Ele precisa de intervenção manual. Qualquer uma destas ações instala o binário:"
+            "value" : "O Jamf Pro lista este Mac como não gerenciado ou nunca inventariado e ele nunca fez check-in. Ele precisa de intervenção manual. Qualquer uma destas ações instala o binário:"
           }
         }
       }
@@ -84257,46 +84217,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não gerenciado"
-          }
-        }
-      }
-    },
-    "Not managed: Jamf binary missing" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht verwaltet: Jamf-Binary fehlt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No gestionado: falta el binario de Jamf"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non géré : binaire Jamf manquant"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non gestito: binario Jamf mancante"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理対象外: Jamfバイナリなし"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Não gerenciado: binário do Jamf ausente"
           }
         }
       }

@@ -537,6 +537,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     /// True when a source that dates every Mac (the `computers` snapshot) described this one,
     /// so a missing check-in or inventory date means it never had one.
     var carriesDates = false
+    /// `NeverInventoried` held for the `computers` item: no inventory date and no OS version.
+    var neverInventoried = false
 
     var displayName: String { name.isEmpty ? L("Unknown device") : name }
     var displaySerial: String { serial.isEmpty ? L("No serial") : serial }
@@ -581,6 +583,7 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         inventoryDate = [inventoryDate, other.inventoryDate].compactMap { $0 }.max()
         contactDate = [contactDate, other.contactDate].compactMap { $0 }.max()
         carriesDates = carriesDates || other.carriesDates
+        neverInventoried = neverInventoried || other.neverInventoried
         name = firstNonEmpty(name, other.name)
         serial = firstNonEmpty(serial, other.serial)
         osVersion = firstNonEmpty(osVersion, other.osVersion)
