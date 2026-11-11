@@ -26,7 +26,7 @@ struct EnvironmentCardState: Equatable, Sendable {
         case .jamfSchool: ["school-devices"]
         case .platform: ReportEngine.platformOnlyKinds.sorted()
         case .protect: DataFreshnessHealth.protectKinds
-        case .securityCloud: ["security"]
+        case .securityCloud: [ReportEngine.securityRiskKind]
         }
     }
 
@@ -34,6 +34,13 @@ struct EnvironmentCardState: Equatable, Sendable {
     /// False: the slots were derived from the old keys, no `profiles:` block exists.
     let fromBlock: Bool
     let rows: [Row]
+
+    /// The environment has an MDM profile and an empty Security Cloud slot, so an unassigned
+    /// Security Cloud login can be attached (a Protect-only environment has no MDM row).
+    var acceptsSecurityCloud: Bool {
+        rows.contains { ($0.slot == .jamfPro || $0.slot == .jamfSchool) && $0.profile != nil }
+            && rows.contains { $0.slot == .securityCloud && $0.profile == nil }
+    }
 
     static func build(
         workspace: String, environment: EnvironmentProfiles,
@@ -66,6 +73,8 @@ struct EnvironmentCardState: Equatable, Sendable {
         }
         // protectWithoutProfile: Protect is on but names no login, so the row stays empty.
         rows.append(row(.protect, L("Jamf Protect"), environment.protect, pin: .protectProfile))
+        rows.append(row(.securityCloud, L("Jamf Security Cloud"), environment.securityCloud,
+                        pin: .securityCloudProfile))
         return EnvironmentCardState(
             workspace: workspace, fromBlock: environment.source == .profilesBlock, rows: rows)
     }

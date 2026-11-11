@@ -57,6 +57,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var timestampAuthorityHash: String = ""
     /// `profiles.platform` as the decoder reads it; "" without a `profiles:` block.
     var platformProfile: String = ""
+    /// `profiles.security_cloud` as the decoder reads it; "" without a `profiles:` block.
+    var securityCloudProfile: String = ""
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -71,6 +73,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case historicalDir = "charts.historical_csv_dir"
         case protectProfile = "protect.profile"
         case platformProfile = "profiles.platform"
+        case securityCloudProfile = "profiles.security_cloud"
         case notifyDetail = "notify.detail"
         case notifyURL = "notify.url"
         case notifyHeartbeat = "notify.heartbeat"
@@ -115,6 +118,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .historicalDir: pin.historicalDir
             case .protectProfile: pin.protectProfile
             case .platformProfile: pin.platformProfile
+            case .securityCloudProfile: pin.securityCloudProfile
             case .notifyDetail: pin.notifyDetail
             case .notifyHeartbeat: String(pin.notifyHeartbeat)
             case .htmlHistoryFile: pin.htmlHistoryFile
@@ -144,6 +148,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .historicalDir: pin.historicalDir = source.historicalDir
             case .protectProfile: pin.protectProfile = source.protectProfile
             case .platformProfile: pin.platformProfile = source.platformProfile
+            case .securityCloudProfile:
+                pin.securityCloudProfile = source.securityCloudProfile
             case .notifyDetail: pin.notifyDetail = source.notifyDetail
             case .notifyHeartbeat: pin.notifyHeartbeat = source.notifyHeartbeat
             case .htmlHistoryFile: pin.htmlHistoryFile = source.htmlHistoryFile
@@ -303,6 +309,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             ? raw("profiles", "protect") : raw("protect", "profile")
         let platformProfile = ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
             ? raw("profiles", "platform") : nil
+        let securityCloudProfile =
+            ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
+            ? raw("profiles", "security_cloud") : nil
         return SharedConfigPin(
             allowAbsolutePaths: WorkspacePaths.optIn(raw("output", "allow_absolute_paths")) == true,
             outputDir: path("output", "output_dir"),
@@ -328,6 +337,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             timestampAuthorityHost: webhookHost(authority),
             timestampAuthorityHash: authority.isEmpty ? "" : SharedConfigPin.sha256Hex(authority),
             platformProfile: (ConfigLoader.textValue(platformProfile) ?? "")
+                .trimmingCharacters(in: .whitespaces),
+            securityCloudProfile: (ConfigLoader.textValue(securityCloudProfile) ?? "")
                 .trimmingCharacters(in: .whitespaces)
         )
     }
@@ -782,6 +793,15 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
     }
 
+    /// The same for the Security Cloud login (`profiles.security_cloud`).
+    static func securityCloudAllowed(
+        profile: String, name: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        pinAllows(.securityCloudProfile, name: name, profile: profile, appSupport: appSupport) {
+            $0.securityCloudProfile
+        }
+    }
+
     private static func pinAllows(
         _ key: Key, name: String, profile: String, appSupport: URL,
         pinnedValue: (SharedConfigPin) -> String
@@ -1051,6 +1071,8 @@ extension SharedConfigPin {
         historicalDir = try c.decodeIfPresent(String.self, forKey: .historicalDir) ?? ""
         protectProfile = try c.decodeIfPresent(String.self, forKey: .protectProfile) ?? ""
         platformProfile = try c.decodeIfPresent(String.self, forKey: .platformProfile) ?? ""
+        securityCloudProfile = try c.decodeIfPresent(
+            String.self, forKey: .securityCloudProfile) ?? ""
         notifyDetail = try c.decodeIfPresent(String.self, forKey: .notifyDetail) ?? "full"
         unconfirmed = try c.decodeIfPresent([String].self, forKey: .unconfirmed) ?? []
         // A pin from before `pinnedKeys` held the keys whose fields it has.

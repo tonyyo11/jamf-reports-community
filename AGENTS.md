@@ -194,7 +194,8 @@ the workspace with their old JSON keys and names, so a 2.11 file decodes to the 
 queries known to stall on-prem Jamf Pro. It also accepts `dashboard` (2.9), which
 sweeps the whole inventory again for the HTML report's dashboard section, and
 `sofa` (2.9), the one fetch from the SOFA host (`sofafeed.macadmins.io`), for a
-network that must not reach a third-party host. Underscores and hyphens are
+network that must not reach a third-party host, and `security-risk` (P12), the Jamf
+Security Cloud device list. Underscores and hyphens are
 interchangeable. Core inventory commands always run.
 `ReportEngine.collectSkipKinds` normalizes the list (trimmed, lowercased, anything
 outside `ReportEngine.skippableKinds` dropped); `collect` skips a listed kind even
@@ -285,7 +286,7 @@ profiles:
   platform: "Example-API"    # runs the Platform-only kinds (P3)
   jamf_school: ""            # never with jamf_pro
   protect: "Example-Protect" # collected after the MDM collect, as protect.profile was
-  security_cloud: ""         # recorded, not read yet (P12)
+  security_cloud: ""         # collected after the MDM collect (P12, slice 1)
 ```
 
 Decoded by `ProfilesConfig` (`ConfigSchema` from its `CodingKeys`; a slot decodes like
@@ -493,6 +494,8 @@ once-a-day guard and the shared claim (`ReportEngine.environmentGate`) before an
 and Protect alike (a School `jamf-cli-full` run still forces its collect past the guard). `Product.displayName` is English only: HTML
 reports add a "Products: Jamf Pro (Example), ..." header line with profile names, and success and
 heartbeat webhook cards add a `Products` fact (product names, never profile names) in `full` detail.
+
+**Jamf Security Cloud (2.12, environment model P12, slice 1).** An operator who ran `jamf-cli security setup` in Terminal attaches that login to a Jamf Pro or Jamf School environment: Data Sources' "Profiles not in an environment" card offers **Add to this environment** for a `.securityCloud` login (`UnassignedProfilesCard`, enabled by `EnvironmentCardState.acceptsSecurityCloud`, off in demo mode), which writes `profiles.security_cloud` through `ProfilesConfigWriter.save(.securityCloud, ...)` and confirms it in `SharedConfigPin` (`Key.securityCloudProfile`, `SharedConfigPin.securityCloudAllowed`; pinned at first sight, a later change is a Config Doctor confirm row and the collect is skipped with one `[warn]` until Confirm). The login is still never a workspace (`isNeverAWorkspace`; `ExistingCLISetupFlow.securityCloudReason` says where to add it), and the app has no in-app `security setup`. `CollectRouter` runs `ReportEngine.securityCollect` after the MDM collect under Protect's rules (after `.collected` or a collect verdict failure, never after a stand-down or `.alreadyCollected`, never in a Protect-only environment; a failure is a `[partial] … did not land` line or `securityCollectFailedMarker` and never replaces the MDM error): `-p <slot> --no-input security risk list --output json` with `collectKindTimeout`, the only Security Cloud command the app runs (never `risk override`, `device-lifecycle purge`, `stream`, `verification trigger` or any write). A login `securityCloudRefusal` knows to be another product gets one `[warn] Jamf Security Cloud not collected: …`; an unresolved or unknown one runs. The rows are reduced before they reach disk (`reducingSecurityRisk`): only `guid`, `externalId`, `riskCategory`, `status`, `connectorState`, `deploymentState`, `lastDnsTraffic` and `hardwareSpec.osType` are saved, never the user, phone number, location, device or app objects; an empty array lands an empty `security-risk` snapshot. `security-risk` is in `ReportEngine.skippableKinds`, `DataFreshnessHealth.securityCloudKinds` (refresh tier), `expectedKinds` (only where the collect would run) and `CollectSourcesPlan` ("Jamf Security Cloud" group). Not yet: correlation to Jamf Pro or Jamf School devices (`externalId` is the UDID, compared case-insensitively), daily-summary fields, a Security Cloud screen, workbook and HTML sections, the score factor.
 
 ### output config
 

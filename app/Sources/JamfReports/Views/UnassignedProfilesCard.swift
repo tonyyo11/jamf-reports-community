@@ -17,6 +17,22 @@ enum UnassignedProfilesCardText {
         if case .unavailable(let reason) = row.use { return reason }
         return nil
     }
+
+    /// A Security Cloud login can be added to an environment whose slot is empty, never in demo.
+    static func offersAttach(
+        _ row: AddSheetPlan.UnassignedProfile, acceptsSecurityCloud: Bool, demo: Bool
+    ) -> Bool {
+        row.product == .securityCloud && acceptsSecurityCloud && !demo
+    }
+
+    /// Writes `profiles.security_cloud` (the writer confirms the pin on this Mac).
+    @discardableResult
+    static func attachSecurityCloud(
+        _ profile: String, workspace: String, appSupport: URL = AppSupport.directory()
+    ) throws -> ConfigSaveReport {
+        try ProfilesConfigWriter.save(
+            .securityCloud, to: profile, workspace: workspace, appSupport: appSupport)
+    }
 }
 
 /// Data Sources' list of jamf-cli profiles no workspace uses (spec 6, P5). It adopts nothing:
@@ -24,6 +40,11 @@ enum UnassignedProfilesCardText {
 struct UnassignedProfilesCard: View {
     @Environment(\.colorSchemeContrast) private var contrast
     let rows: [AddSheetPlan.UnassignedProfile]
+    var workspace = ""
+    var acceptsSecurityCloud = false
+    var demo = false
+    var onChanged: () -> Void = {}
+    @State private var attachError: String?
 
     var body: some View {
         Card(padding: 18) {
@@ -39,6 +60,10 @@ struct UnassignedProfilesCard: View {
                     .font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(rows) { row in rowView(row) }
+                if let attachError {
+                    Text(attachError).font(.caption).foregroundStyle(Theme.Colors.warn)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 WrappingRow {
                     PNPButton(
                         title: L("Add or set up…"), icon: "plus", style: .ghost, size: .sm
@@ -50,6 +75,7 @@ struct UnassignedProfilesCard: View {
         }
     }
 
+    @ViewBuilder
     private func rowView(_ row: AddSheetPlan.UnassignedProfile) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(ConfigSchema.displayText(row.name)).font(.subheadline.weight(.semibold))
@@ -65,6 +91,28 @@ struct UnassignedProfilesCard: View {
             }
         }
         .accessibilityElement(children: .combine)
+        if UnassignedProfilesCardText.offersAttach(
+            row, acceptsSecurityCloud: acceptsSecurityCloud, demo: demo) {
+            PNPButton(title: L("Add to this environment"), icon: "plus", style: .ghost, size: .sm) {
+                attach(row.name)
+            }
+            .accessibilityLabel("Add \(row.name) to \(workspace)")
+        }
+    }
+
+    private func attach(_ name: String) {
+        attachError = nil
+        let target = workspace
+        Task {
+            do {
+                try await Task.detached {
+                    try UnassignedProfilesCardText.attachSecurityCloud(name, workspace: target)
+                }.value
+                onChanged()
+            } catch {
+                attachError = L("Could not add \(name): \(error.localizedDescription)")
+            }
+        }
     }
 }
 
