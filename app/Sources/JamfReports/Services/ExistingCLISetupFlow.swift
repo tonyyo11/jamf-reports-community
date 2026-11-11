@@ -204,7 +204,7 @@ final class ExistingCLISetupFlow {
         proposal = next
     }
 
-    nonisolated static let securityCloudReason = L("Jamf Security Cloud is not supported yet.")
+    nonisolated static let securityCloudReason = L("A Jamf Security Cloud login holds no device inventory, so it is not a workspace. Add it from the Jamf Pro or Jamf School workspace's Data Sources.")
 
     /// Why a profile cannot be adopted whatever its product, or nil: the retired gateway and an
     /// organization-level integration, which choosing a different product does not fix.

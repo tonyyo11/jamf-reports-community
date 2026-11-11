@@ -44,8 +44,8 @@ struct EAParseHealthService {
     ///   - `.boolean` / `.text`: no parse-failure mode — `parseable == nonEmpty`.
     ///   - `.percentage`: numeric after trimming whitespace and an optional trailing
     ///     "%", constrained to `0...100`. This is a STRICTER accuracy lens than the
-    ///     engine sheet, which renders any value via `NSString.doubleValue` (0 on
-    ///     non-numeric) without range-checking.
+    ///     engine sheet, which grades any finite number and lists a non-number with no
+    ///     status, without range-checking.
     ///   - `.version`: `^\d+(\.\d+)*([\w.-]*)$` — dotted-numeric-ish tokens of at most 256
     ///     bytes. The engine buckets any value as a version, so this is a STRICTER accuracy lens.
     ///   - `.date`: parses under the same formats as the engine's date-EA path

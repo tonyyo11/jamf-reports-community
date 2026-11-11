@@ -626,8 +626,14 @@ extension WorkspaceStore {
     nonisolated static func expectedKinds(
         profile: String, jamfCLIVersion: String?, auth: ProfileAuthMethod.Resolved?,
         protectResolved: (String) -> ProfileAuthMethod.Resolved? = { ProfileAuthMethod.resolve(profile: $0) },
+        securityCloudResolved: (String) -> ProfileAuthMethod.Resolved? = {
+            ProfileAuthMethod.resolve(profile: $0)
+        },
         protectPinAllows: (_ profile: String, _ name: String) -> Bool = {
             SharedConfigPin.protectAllowed(profile: $0, name: $1)
+        },
+        securityCloudPinAllows: (_ profile: String, _ name: String) -> Bool = {
+            SharedConfigPin.securityCloudAllowed(profile: $0, name: $1)
         }
     ) -> [String] {
         let config = ProfileService.workspaceURL(for: profile).flatMap {
@@ -639,6 +645,15 @@ extension WorkspaceStore {
         } ?? false
         // A Protect-only environment collects Protect alone (P8).
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        let collectSkip = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
+        // Security Cloud follows an MDM collect where `CollectRouter` would run it.
+        let securityCloudCollected = environment.securityCloud.map {
+            securityCloudPinAllows(profile, $0)
+                && securityCloudResolved($0)?.securityCloudRefusal(profile: $0) == nil
+        } ?? false
+        let securityKinds = securityCloudCollected
+            && !collectSkip.contains(ReportEngine.securityRiskKind)
+            ? DataFreshnessHealth.securityCloudKinds : []
         // Unconfirmed (a peer's edit), it is judged as before, so failing kinds stay visible.
         if environment.isProtectOnly {
             // Unconfirmed, this Mac still shows the workspace as it was and expects nothing.
@@ -653,10 +668,9 @@ extension WorkspaceStore {
         // School collect fetches as a Pro one does unless `collect_skip` lists it. Its own kinds count
         // too (#207), less `school-blueprints`, which needs Platform fields.
         if ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool {
-            let skipped = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
             return DataFreshnessHealth.schoolKinds
-                + (skipped.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
-                + (protectCollected ? DataFreshnessHealth.protectKinds : [])
+                + (collectSkip.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
+                + (protectCollected ? DataFreshnessHealth.protectKinds : []) + securityKinds
         }
         // The Platform kinds follow the same route `collect` takes, so the strip never expects
         // what collect will not run, nor judges them by the workspace login's auth method.
@@ -670,9 +684,10 @@ extension WorkspaceStore {
             skipExpensive: UserDefaults.standard.bool(forKey: "skipExpensiveCollections"),
             authMethod: platform.auth?.authMethod,
             tenantLevel: platform.auth?.isTenantLevel == true,
-            collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+            collectSkip: collectSkip,
             dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
             protectConnected: protectCollected,
+            securityCloudConnected: !securityKinds.isEmpty,
             platformUnavailable: platform.unavailable != nil
         )
     }

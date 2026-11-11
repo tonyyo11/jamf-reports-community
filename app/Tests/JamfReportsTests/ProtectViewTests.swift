@@ -143,19 +143,20 @@ final class ProtectViewTests: XCTestCase {
 
     func testMatchTextPlural() throws {
         let match = ProtectProCorrelation(
-            protectCount: 10, matched: 3, ambiguous: 2, noIdentifier: 2,
+            protectCount: 10, matched: 3, ambiguous: 2, noIdentifier: 2, duplicates: 2,
             notInPro: try protectRows(3), proWithoutProtect: [proMac("A"), proMac("B")])
         XCTAssertEqual(ProtectView.matchNotes(match), [
             "3 Protect computers have no Jamf Pro record.",
             "2 Jamf Pro Macs have no Protect record.",
             "2 Protect computers match more than one Jamf Pro computer and are not counted.",
+            "2 Protect computers repeat a matched Jamf Pro computer and are counted once.",
             "2 Protect computers report no UUID or serial.",
         ])
     }
 
     func testMatchTextSingular() throws {
         let match = ProtectProCorrelation(
-            protectCount: 1, matched: 0, ambiguous: 1, noIdentifier: 1,
+            protectCount: 1, matched: 0, ambiguous: 1, noIdentifier: 1, duplicates: 1,
             notInPro: try protectRows(1), proWithoutProtect: [proMac("A")])
         XCTAssertEqual(ProtectView.matchSummary(match),
                        "0 of 1 Protect computer matches a Jamf Pro computer.")
@@ -163,6 +164,7 @@ final class ProtectViewTests: XCTestCase {
             "1 Protect computer has no Jamf Pro record.",
             "1 Jamf Pro Mac has no Protect record.",
             "1 Protect computer matches more than one Jamf Pro computer and is not counted.",
+            "1 Protect computer repeats a matched Jamf Pro computer and is counted once.",
             "1 Protect computer reports no UUID or serial.",
         ])
     }

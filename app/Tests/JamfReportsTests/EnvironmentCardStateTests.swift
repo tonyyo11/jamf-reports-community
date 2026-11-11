@@ -23,8 +23,8 @@ final class EnvironmentCardStateTests: XCTestCase {
     func testAnOldShapeWorkspaceShowsItsDerivedSlots() throws {
         let card = try state("protect:\n  enabled: true\n  profile: ws-P\n")
         XCTAssertFalse(card.fromBlock)
-        XCTAssertEqual(card.rows.map(\.slot), [.jamfPro, .platform, .protect])
-        XCTAssertEqual(card.rows.map(\.profile), ["ws", nil, "ws-P"])
+        XCTAssertEqual(card.rows.map(\.slot), [.jamfPro, .platform, .protect, .securityCloud])
+        XCTAssertEqual(card.rows.map(\.profile), ["ws", nil, "ws-P", nil])
     }
 
     func testABlockMarksAHeldPlatformSlot() throws {
@@ -36,7 +36,7 @@ final class EnvironmentCardStateTests: XCTestCase {
 
     func testASchoolEnvironmentHasNoPlatformRow() throws {
         let card = try state("school_cli:\n  enabled: true\n")
-        XCTAssertEqual(card.rows.map(\.slot), [.jamfSchool, .protect])
+        XCTAssertEqual(card.rows.map(\.slot), [.jamfSchool, .protect, .securityCloud])
     }
 
     func testTheMDMRowCannotBeRemoved() throws {
@@ -89,7 +89,7 @@ final class EnvironmentCardStateTests: XCTestCase {
     func testProtectDriftMarksOnlyTheProtectRow() throws {
         let yaml = "profiles:\n  jamf_pro: ws\n  protect: ws-P\n"
         let card = try build(yaml, drifted: [.protectProfile])
-        XCTAssertEqual(card.rows.map(\.pinNeedsConfirming), [false, false, true])
+        XCTAssertEqual(card.rows.map(\.pinNeedsConfirming), [false, false, true, false])
     }
 
     func testProtectWithoutAProfileHasAnEmptyRow() throws {

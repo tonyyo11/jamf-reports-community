@@ -188,9 +188,9 @@ final class PatchStatusServiceTests: XCTestCase {
 
         // Edge cases
         XCTAssertEqual(PatchStatusService.parseCompliancePct(" 75% "), 75.0)
-        XCTAssertEqual(PatchStatusService.parseCompliancePct(""), 0.0)
-        XCTAssertEqual(PatchStatusService.parseCompliancePct("invalid"), 0.0)
-        XCTAssertEqual(PatchStatusService.parseCompliancePct("N/A"), 0.0)
+        XCTAssertNil(PatchStatusService.parseCompliancePct(""))
+        XCTAssertNil(PatchStatusService.parseCompliancePct("invalid"))
+        XCTAssertNil(PatchStatusService.parseCompliancePct("N/A"))
     }
 
     // MARK: - Compliance CSV export
@@ -325,5 +325,21 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.devicesWithFailures, 0)
         XCTAssertTrue(snapshot.failuresByTitle.isEmpty)
         XCTAssertEqual(snapshot.fleetCompliancePct, 50.0)
+    }
+
+    func testNotApplicableTitleIsNotZeroPercent() {
+        XCTAssertNil(PatchStatusService.parseCompliancePct("N/A"))
+        XCTAssertEqual(PatchStatusService.parseCompliancePct("0%"), 0.0)
+    }
+
+    func testSortPutsUnmeasuredTitlesLast() {
+        func row(_ pct: String) -> PatchStatusRow {
+            PatchStatusRow(title: pct, id: pct, onLatest: 0, onOther: 0, total: 0,
+                           latest: "", compliancePct: pct)
+        }
+        let sorted = [row("N/A"), row("90%"), row(""), row("10%")]
+            .sorted(by: PatchStatusService.sortsBefore).map(\.title)
+        XCTAssertEqual(Array(sorted.prefix(2)), ["10%", "90%"])
+        XCTAssertEqual(Set(sorted.suffix(2)), ["N/A", ""])
     }
 }

@@ -472,6 +472,7 @@ extension DeviceInventoryService {
         record.inventoryDate = dates.inventory
         record.contactDate = dates.contact
         record.carriesDates = true
+        record.neverInventoried = NeverInventoried.isNeverInventoried(computer: item)
         record.daysSinceContact = daysSince(label: record.lastContact)
         record.stale = (record.daysSinceContact ?? 0) > staleThresholdDays
         record.fileVault = first(flat, ["diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State", "operatingSystem.fileVault2Status", "diskEncryption.fileVault2Enabled"])
@@ -767,10 +768,11 @@ private extension DeviceInventoryService {
     }
 
     static func managedLabel(_ value: String) -> String {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["true", "yes", "1", "managed"].contains(text) { return "Managed" }
-        if ["false", "no", "0", "unmanaged"].contains(text) { return "Unmanaged" }
-        return value
+        switch BinaryMissing.managed(value) {
+        case true?: "Managed"
+        case false?: "Unmanaged"
+        case nil: value
+        }
     }
 
 }

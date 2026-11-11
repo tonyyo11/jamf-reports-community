@@ -59,10 +59,10 @@ final class DDMDeviceStatusServiceTests: XCTestCase {
         XCTAssertEqual(b.mixed, 1); XCTAssertEqual(b.active, 0); XCTAssertEqual(b.inactive, 0)
         let c = try XCTUnwrap(s.byIdentifier.first { $0.identifier == "C" })
         XCTAssertEqual(c.invalid, 1)
-        // failing = invalid + inactive + mixed device-declarations
-        XCTAssertEqual(s.failingDeclarationCount, 3)
-        XCTAssertEqual(s.byIdentifier.map(\.identifier), ["A", "B", "C"],
-                       "one issue each: A is on two devices, then B and C by name")
+        // failing = invalid device-declarations only; inactive and mixed are states
+        XCTAssertEqual(s.failingDeclarationCount, 1)
+        XCTAssertEqual(s.byIdentifier.map(\.identifier), ["C", "A", "B"],
+                       "the failure first, then A on two devices, then B by name")
     }
 
     func testIdentifierOrderIsAffectedDevicesThenTotalDevicesThenName() throws {
@@ -76,20 +76,22 @@ final class DDMDeviceStatusServiceTests: XCTestCase {
         let s = DDMDeviceStatusService.load(url: url)
         XCTAssertEqual(s.byIdentifier.map(\.identifier), ["X", "Y", "Z", "W"])
         XCTAssertEqual(s.byIdentifier.map(\.deviceCount), [2, 3, 1, 3])
-        XCTAssertEqual(s.failingDeclarationCount, 4, "counts device-declaration pairs")
+        XCTAssertEqual(s.failingDeclarationCount, 2, "counts invalid device-declaration pairs")
     }
 
     func testIdentifierOverviewCollapsesOnlyHealthySingleDeviceIdentifiers() throws {
         let url = try write([
             rec("1", decl: [("shared", true, true), ("bad-single", true, false),
-                            ("q-b", true, true)]),
+                            ("q-b", true, true), ("off-single", false, nil)]),
             rec("2", decl: [("shared", true, true), ("q-a", true, true)]),
         ])
         let o = DDMDeviceStatusService.load(url: url).identifierOverview
-        XCTAssertEqual(o.notable.map(\.identifier), ["bad-single", "shared"])
+        XCTAssertEqual(o.notable.map(\.identifier), ["bad-single", "off-single", "shared"],
+                       "an inactive single-device identifier stays visible, after the failure")
         XCTAssertEqual(o.quietSingles.map(\.identifier), ["q-a", "q-b"])
-        XCTAssertEqual(o.totalCount, 4)
-        XCTAssertEqual(o.withIssuesCount, 1)
+        XCTAssertEqual(o.totalCount, 5)
+        XCTAssertEqual(o.withFailuresCount, 1)
+        XCTAssertEqual(o.notable.first { $0.identifier == "off-single" }?.failures, 0)
     }
 
     func testPluralisedCountText() {
@@ -97,8 +99,8 @@ final class DDMDeviceStatusServiceTests: XCTestCase {
                        "1 identifier appears on one device and is healthy")
         XCTAssertEqual(DDMBlueprintView.quietSinglesText(2204),
                        "2204 identifiers appear on one device each and are healthy")
-        XCTAssertEqual(DDMBlueprintView.identifiersSummary(total: 1, withIssues: 0),
-                       "1 identifier, 0 with issues")
+        XCTAssertEqual(DDMBlueprintView.identifiersSummary(total: 1, withFailures: 0),
+                       "1 identifier, 0 with invalid declarations")
     }
 
     func testSoftwareUpdateAggregation() throws {

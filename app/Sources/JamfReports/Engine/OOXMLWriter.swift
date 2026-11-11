@@ -150,8 +150,21 @@ final class Worksheet: @unchecked Sendable {
     private(set) var freezePane: FreezePane? = nil
     private(set) var imageEmbeds: [ImageEmbed] = []
 
+    /// The report's site-scope sentence, written once into the header's blank row by
+    /// `writeSheetHeader` (set from `Workbook.siteScopeNote`; nil leaves the row blank).
+    var siteScopeNote: String?
+
     init(name: String) {
         self.name = name
+    }
+
+    /// Writes the scope sentence at (`row`, 0), followed by `extra` in the same cell, replacing
+    /// a cell already there. Nothing happens when there is neither.
+    func writeSiteScopeNote(row: Int, extra: String? = nil) {
+        let text = [siteScopeNote, extra].compactMap { $0 }.joined(separator: " ")
+        guard !text.isEmpty else { return }
+        cells.removeAll { $0.row == row && $0.col == 0 }
+        write(text, row: row, col: 0, format: .yellow)
     }
 
     func write(_ value: Any?, row: Int, col: Int, format: CellFormat? = nil) {
@@ -249,6 +262,9 @@ final class Workbook: @unchecked Sendable {
     /// `display.percent_decimals`: the `0.0%` or `0%` number format of percentage cells. The
     /// stored value keeps full precision either way.
     let percentFormat: PercentFormat
+    /// Set once by `ReportEngine.generate` when the login is site-limited; every tab added
+    /// afterwards carries it in its header.
+    var siteScopeNote: String?
 
     init(accentColor: String = "#2D5EA2", percentFormat: PercentFormat = .standard) {
         self.accentColor = accentColor
@@ -260,6 +276,7 @@ final class Workbook: @unchecked Sendable {
         let sanitized = sanitizeSheetName(name)
         let unique = uniqueSheetName(sanitized)
         let ws = Worksheet(name: unique)
+        ws.siteScopeNote = siteScopeNote
         sheets.append(ws)
         return ws
     }
@@ -922,6 +939,7 @@ extension Worksheet {
                    value: title, format: .title)
         mergeRange(firstRow: 1, firstCol: 0, lastRow: 1, lastCol: ncols - 1,
                    value: subtitle, format: .subtitle)
+        writeSiteScopeNote(row: 2)
         return 3
     }
 }

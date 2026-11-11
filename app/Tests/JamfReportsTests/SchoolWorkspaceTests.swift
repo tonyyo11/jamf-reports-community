@@ -58,6 +58,8 @@ final class SchoolWorkspaceTests: XCTestCase {
     func testASchoolWorkspaceShowsProtectOnlyWhenConnected() {
         let connected = TabVisibility().limited(to: Self.env(.jamfSchool, .protect))
         XCTAssertTrue(connected.isVisible(.protectDashboard))
+        XCTAssertTrue(connected.isVisible(.backups), "Protect is backed up alone (2.12)")
+        XCTAssertFalse(TabVisibility().limited(to: Self.env(.jamfSchool)).isVisible(.backups))
         XCTAssertFalse(connected.isVisible(.patch))
         XCTAssertFalse(
             TabVisibility().limited(to: Self.env(.jamfSchool)).isVisible(.protectDashboard))

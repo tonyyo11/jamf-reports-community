@@ -357,6 +357,8 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     /// The Jamf Pro part was skipped: the workspace is on storage other Macs reach and the
     /// operator has not allowed Jamf Pro backups there.
     var proSkipped = false
+    /// A Jamf School workspace's backup: Jamf Protect alone, as there is no Jamf Pro part.
+    var noJamfPro = false
 
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
@@ -410,7 +412,7 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     var accessibilityLabel: String {
         let displayName = label.isEmpty ? name : label
         let failed = proFailed ? L(", Jamf Pro part failed")
-            : proSkipped ? L(", Jamf Pro part skipped") : ""
+            : proSkipped && !noJamfPro ? L(", Jamf Pro part skipped") : ""
         return L("\(displayName)\(failed), \(fileCount) files, \(sizeLabel), created \(createdLabel)")
     }
 
@@ -537,6 +539,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     /// True when a source that dates every Mac (the `computers` snapshot) described this one,
     /// so a missing check-in or inventory date means it never had one.
     var carriesDates = false
+    /// `NeverInventoried` held for the `computers` item: no inventory date and no OS version.
+    var neverInventoried = false
 
     var displayName: String { name.isEmpty ? L("Unknown device") : name }
     var displaySerial: String { serial.isEmpty ? L("No serial") : serial }
@@ -581,6 +585,7 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         inventoryDate = [inventoryDate, other.inventoryDate].compactMap { $0 }.max()
         contactDate = [contactDate, other.contactDate].compactMap { $0 }.max()
         carriesDates = carriesDates || other.carriesDates
+        neverInventoried = neverInventoried || other.neverInventoried
         name = firstNonEmpty(name, other.name)
         serial = firstNonEmpty(serial, other.serial)
         osVersion = firstNonEmpty(osVersion, other.osVersion)
@@ -1107,6 +1112,9 @@ struct TrendSeries: Identifiable, Sendable {
              mobileDataProtection, mobileStale, mobileJailbroken
         /// The summary's Jamf Protect figures (P9), offered only where the environment has Protect.
         case protectComputers, protectMatched, protectOpenAlerts
+        /// The summary's Jamf Security Cloud figures (P12), offered only where the environment
+        /// has Security Cloud.
+        case securityCloudDevices, securityCloudMatched, securityCloudHighRisk
 
         /// Every metric that does not depend on the workspace, in their original order. The
         /// agent metrics come from `security_agents`, so they are not listed here.
@@ -1137,8 +1145,13 @@ struct TrendSeries: Identifiable, Sendable {
             .protectComputers, .protectMatched, .protectOpenAlerts,
         ]
 
+        static let securityCloudMetrics: [Metric] = [
+            .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk,
+        ]
+
         var isMobile: Bool { Self.mobileMetrics.contains(self) }
         var isProtect: Bool { Self.protectMetrics.contains(self) }
+        var isSecurityCloud: Bool { Self.securityCloudMetrics.contains(self) }
 
         static let agentPrefix = "agent:"
 
@@ -1171,6 +1184,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .protectComputers: return "protectComputers"
             case .protectMatched: return "protectMatched"
             case .protectOpenAlerts: return "protectOpenAlerts"
+            case .securityCloudDevices: return "securityCloudDevices"
+            case .securityCloudMatched: return "securityCloudMatched"
+            case .securityCloudHighRisk: return "securityCloudHighRisk"
             }
         }
 
@@ -1183,7 +1199,8 @@ struct TrendSeries: Identifiable, Sendable {
                 self = .agent(name)
                 return
             }
-            guard let match = (Self.allCases + Self.mobileMetrics + Self.protectMetrics)
+            guard let match = (Self.allCases + Self.mobileMetrics + Self.protectMetrics
+                + Self.securityCloudMetrics)
                 .first(where: { $0.rawValue == rawValue }) else {
                 return nil
             }
@@ -1228,14 +1245,23 @@ struct TrendSeries: Identifiable, Sendable {
             case .protectComputers: return L("Jamf Protect computers")
             case .protectMatched: return L("Jamf Protect match with inventory")
             case .protectOpenAlerts: return L("Jamf Protect open alerts")
+            case .securityCloudDevices: return L("Security Cloud devices")
+            case .securityCloudMatched: return L("Security Cloud match with inventory")
+            case .securityCloudHighRisk: return L("Security Cloud high-risk devices")
             }
         }
 
         /// Returns the tenant-specific label when one is configured; otherwise
         /// the metric's static `displayLabel`. `.compliance` follows
-        /// `compliance.baseline_label`; `.edrAgent` follows the agent the score counts as EDR
-        /// (e.g. "CrowdStrike Falcon coverage").
-        func displayLabel(benchmarkLabel: String?, edrAgentName: String? = nil) -> String {
+        /// `compliance.baseline_label`, unless the figure is the four-control proxy
+        /// (`complianceIsProxy`), which is never named after a benchmark; `.edrAgent` follows
+        /// the agent the score counts as EDR (e.g. "CrowdStrike Falcon coverage").
+        func displayLabel(
+            benchmarkLabel: String?, edrAgentName: String? = nil, complianceIsProxy: Bool = false
+        ) -> String {
+            if case .compliance = self, complianceIsProxy {
+                return L("Compliance (4-control proxy)")
+            }
             if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
             if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) coverage" }
             return displayLabel
@@ -1244,7 +1270,8 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .stale, .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
                  .mobileStale, .mobileJailbroken, .protectComputers,
-                 .protectOpenAlerts: return ""
+                 .protectOpenAlerts, .securityCloudDevices,
+                 .securityCloudHighRisk: return ""
             default: return "%"
             }
         }
@@ -1254,12 +1281,14 @@ struct TrendSeries: Identifiable, Sendable {
         /// needs a decision here. Read by the Trends colours and the AI trend input alike.
         var polarity: FleetInsightInput.Polarity {
             switch self {
-            case .stale, .mobileStale, .mobileJailbroken, .protectOpenAlerts: .lowerIsBetter
+            case .stale, .mobileStale, .mobileJailbroken, .protectOpenAlerts,
+                 .securityCloudHighRisk: .lowerIsBetter
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
-                 .protectComputers: .neutral
+                 .protectComputers, .securityCloudDevices: .neutral
             case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
                  .securityScore, .sip, .firewall, .gatekeeper, .mobileOSCurrent, .mobilePasscode,
-                 .mobileSupervised, .mobileDataProtection, .protectMatched: .higherIsBetter
+                 .mobileSupervised, .mobileDataProtection, .protectMatched,
+                 .securityCloudMatched: .higherIsBetter
             }
         }
         /// A count of devices, not a share or score: the Trends axis fits its top to the data
@@ -1267,15 +1296,17 @@ struct TrendSeries: Identifiable, Sendable {
         var isDeviceCount: Bool {
             switch self {
             case .managedDevices, .activeDevices, .stale, .mobileManaged, .mobileStale,
-                 .mobileJailbroken, .protectComputers, .protectOpenAlerts: true
+                 .mobileJailbroken, .protectComputers, .protectOpenAlerts,
+                 .securityCloudDevices, .securityCloudHighRisk: true
             default: false
             }
         }
         var minY: Double {
             switch self {
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged, .mobileStale,
-                 .mobileJailbroken, .protectComputers, .protectOpenAlerts: return 0
-            case .protectMatched: return 50
+                 .mobileJailbroken, .protectComputers, .protectOpenAlerts,
+                 .securityCloudDevices, .securityCloudHighRisk: return 0
+            case .protectMatched, .securityCloudMatched: return 50
             case .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
                  .mobileDataProtection: return 50
             case .stability:     return 40
@@ -1291,8 +1322,9 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var maxY: Double {
             switch self {
-            case .activeDevices, .managedDevices, .mobileManaged, .protectComputers: return 1000
-            case .stale, .mobileStale, .protectOpenAlerts: return 60
+            case .activeDevices, .managedDevices, .mobileManaged, .protectComputers,
+                 .securityCloudDevices: return 1000
+            case .stale, .mobileStale, .protectOpenAlerts, .securityCloudHighRisk: return 60
             case .mobileJailbroken: return 10
             case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100

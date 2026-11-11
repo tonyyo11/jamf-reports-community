@@ -182,7 +182,7 @@ final class PercentFormatTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/JamfReports", isDirectory: true)
         let pattern = try NSRegularExpression(pattern:
-            #"%\.[0-9]f%%|%\.[0-9]f pp|"%\.[0-9]f", [^)]*\)\)(%|pp)|\.rounded\(\)\)\)%|Int\([^()]*\)\)%|"[0-9]+\.[0-9]+%""#)
+            #"%\.[0-9]f%%|%\.[0-9]f pp|"%\.[0-9]f", [^)]*\)\)(%|pp)|\.rounded\(\)\)\)%|Int\([^()]*\)\)%|"[0-9]+\.[0-9]+%"|\(Int\([^"]*\)\) percent"#)
         let allowed: [String: Int] = [
             "Models/PercentFormat.swift": 0,
             // The patch record's fallback label when jamf-cli sends none; no screen shows it.

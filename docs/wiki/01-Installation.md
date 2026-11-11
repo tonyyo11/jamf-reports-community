@@ -7,20 +7,22 @@ This page covers installing the macOS app and `jamf-cli`.
 | Component | Requirement |
 |---|---|
 | macOS | macOS Sequoia 15 or later — to run the app |
-| jamf-cli | v1.29.0 or later — optional; powers live collection (collect, backup and scheduled runs stop on an older one; the project tracks v1.34.0) |
+| jamf-cli | v1.29.0 or later — required for collection (collect, backup and scheduled runs stop on an older one) |
 | Xcode | 16 or later — only needed to build the app from source |
 | Architecture | Apple silicon (arm64) — the prebuilt `.pkg`/`.dmg` are arm64-only; Intel Macs build from source |
 
-`jamf-cli` is optional. Without it the app works only from cached snapshots — jamf-cli adds
-live collection and the API-driven dashboards.
+`jamf-cli` is required: every collect, backup and scheduled collect goes through it. Without
+it the app can only show demo mode, or build reports from snapshots already in a workspace.
 
 ## Install the macOS app
 
 The macOS app is the recommended way to use this project.
 
-**Download a build.** Get the latest `JamfReports.app` from the
+**Download a build.** Get the latest `JamfReports-<version>.pkg` or `.dmg` from the
 [Releases page](https://github.com/tonyyo11/jamf-reports-community/releases). Release
-builds are ad-hoc signed for local use.
+builds are signed with a Developer ID and notarized by Apple: the `.pkg` installs to
+`/Applications` and suits deployment through Jamf Pro, and the `.dmg` is for dragging the app in
+by hand.
 
 **Or build from source.** The app is a SwiftPM project (no `.xcodeproj`):
 
@@ -101,8 +103,8 @@ jamf-cli config validate -p <profile>
 ```
 
 A clean exit means the app and CLI can collect live data. If `jamf-cli` is missing or
-unauthenticated, both still run from cached snapshots — the live
-dashboards are simply skipped.
+unauthenticated, nothing new is collected: the app and CLI can only build reports from
+snapshots already in the workspace.
 
 ## Next
 

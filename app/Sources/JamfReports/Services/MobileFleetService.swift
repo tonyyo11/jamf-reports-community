@@ -184,8 +184,10 @@ struct MobileFleetService: Sendable {
         firstNonBlank(device.hardware?.model, listRow?.hardware?.model, listRow?.model)
     }
 
+    /// No passcode set is not compliant, whatever Jamf's own flag says. Nil stays nil.
     static func passcodeCompliant(of device: MobileDeviceInventoryItem) -> Bool? {
-        device.security?.passcodeCompliant ?? device.general?.passcodeCompliant
+        if device.security?.passcodePresent == false { return false }
+        return device.security?.passcodeCompliant ?? device.general?.passcodeCompliant
     }
 
     static func activationLockEnabled(of device: MobileDeviceInventoryItem) -> Bool? {
@@ -256,6 +258,9 @@ struct MobileFleetService: Sendable {
         /// The devices the update scan lists with errors (`MobileFinding`); nil when no scan
         /// has run.
         var updateErrors: MobileFinding.UpdateErrors?
+        /// The kind folder the device rows came from (`deviceKind` or `legacyInventoryKind`);
+        /// nil when none was read.
+        var inventoryKind: String?
 
         // MARK: - Computed properties
 
@@ -505,6 +510,7 @@ struct MobileFleetService: Sendable {
         var snapshot = assemble(
             listURL: listURL, inventoryURL: source?.url, inventoryRows: source?.devices,
             profilesURL: newest("classic-ios-profiles"))
+        snapshot.inventoryKind = source?.url.deletingLastPathComponent().lastPathComponent
         guard snapshot.isDetected else { return snapshot }
         snapshot.iOSLatestByMajor = SOFAFeedService.iOSLatestByMajor(
             SOFAFeedService.load(dataDir: dir).rows)

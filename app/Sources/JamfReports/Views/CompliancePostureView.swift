@@ -351,7 +351,7 @@ struct CompliancePostureView: View {
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(slice.label), \(slice.count) devices, \(Int(slice.pct.rounded())) percent")
+                .accessibilityLabel("\(slice.label), \(slice.count) devices, \(PercentFormat.whole.numberText(slice.pct)) percent")
             }
         }
     }
@@ -429,7 +429,7 @@ struct CompliancePostureView: View {
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(band.label), \(band.count) devices, \(Int(band.pct.rounded())) percent")
+                .accessibilityLabel("\(band.label), \(band.count) devices, \(PercentFormat.whole.numberText(band.pct)) percent")
             }
         }
     }

@@ -976,7 +976,7 @@ struct DevicesView: View {
         if device.isBinaryMissing {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: BinaryMissing.title)
-                Text("Jamf Pro lists this Mac as not managed and it has never checked in. It needs manual intervention. Any one of these gets the binary on:")
+                Text("Jamf Pro lists this Mac as not managed or as never inventoried, and it has never checked in. It needs manual intervention. Any one of these gets the binary on:")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(Array(BinaryMissing.remediation.enumerated()), id: \.offset) { step in

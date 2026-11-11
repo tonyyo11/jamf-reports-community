@@ -16,7 +16,13 @@ versions in this repository map to git tags.
   precision. A figure printed beside the threshold it missed keeps one more decimal, so 89.6%
   never reads "90% (below 90%)", and changes read in whole percentage points. The default stays
   one decimal, and the cross-workspace fleet reports keep one decimal.
-
+- A Jamf Security Cloud login you set up with `jamf-cli security setup` can be added to a Jamf Pro or Jamf School environment from Data Sources. Each collect then saves every device's risk category and a few status fields (never a user, phone number, location or device name); `jamf_cli.collect_skip: [security-risk]` leaves it out. The daily summary then records how many devices Security Cloud lists, how many match this environment's devices (by UDID) and the count per risk category; Trends and metric alerts (`security_cloud_device_count`, `security_cloud_matched_pct`, `security_cloud_high_risk_count`) use them.
+- Jamf Reports now notices when the jamf-cli login can see only some Jamf Pro sites. The collect log, Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, fleet workbook and period report note that they cover only the sites that login sees.
+- A Jamf School workspace with Jamf Protect connected now backs up Protect: the Backups screen,
+  `jamf-reports backup` and scheduled backups run `protect backup` alone, with the same
+  synced-storage choice, shared-config check and retention as a Jamf Pro workspace. Such a
+  backup reads as having no Jamf Pro part, not as a skipped one, and Diff stays off for it. A
+  School workspace without Protect is still refused. (#305)
 - The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
 - The daily summary records which products an environment holds and, with Jamf Protect, how many
   Protect computers it sees, how many of those match this environment's inventory, and how many
@@ -112,6 +118,26 @@ versions in this repository map to git tags.
   do, instead of "+0pp" or "+0". With `display.percent_decimals: 0`, workbook text cells that hold a percentage,
   and the CSV folder, hold whole numbers, and percentage number cells use the `0%` format with
   their stored values unchanged. If a tool reads these workbooks, check it against a new one.
+- **Workbook layout, for anything that reads the workbooks automatically.** When the jamf-cli login sees only some Jamf Pro sites, every Jamf Pro tab carries a sentence saying so in the header row just above its table (the row that was blank). No tab, column or table row moves, and a login that sees every site writes nothing new. Separately, rows that tie on a count (Mobile Fleet Summary, Hardware Models, text extension attribute tables) now sort by name, so their order no longer changes between runs. If a script or a tool such as Power BI reads these workbooks, check it against a new report.
+- Device Security State writes "No Data" in every control column for a Mac that never sent inventory, where it was blank.
+- The workbook's DDM Device Status tab counts only invalid declarations in its Failing column; an
+  inactive declaration no longer counts there. (#305)
+- Workbooks: when Jamf Pro reports no Managed Software Update data (no statuses, no plans), the
+  Update Status tab holds one sentence saying so instead of a "Total Devices 0" row, and Update
+  Failures says the same instead of "No update failures found." (#305)
+- Workbooks, Cover tab: the Sheet Manifest lists the tabs the workbook holds, in tab order
+  (after `sheets.order`, the custom EA tabs and Charts included), each with a description. It
+  used to list every tab the app can write, in the app's own order. The numbered "Sheets 9–12"
+  guide lines under "How to read this workbook" are replaced by one line. (#305)
+- Workbooks, custom EA tabs: a blank value is no value. The percentage and version tabs list
+  blanks in one last row, Unknown/Blank, with no status; a percentage value that is not a number
+  is listed after the numbers with no status. On a boolean tab the first row reads
+  `<true value> (pass)` instead of the value alone, and its Percent is of the Macs that reported
+  a value (blank when none did). (#305)
+- Workbooks: the Software Installs tab fills its Name and Count columns from jamf-cli's title
+  and device count (they were empty and 0), and EA Coverage fills Computer, plus Serial where
+  only one Mac has that name. A software row with no count leaves Count blank. No column moved.
+  (#305)
 - A new app icon in Apple's Liquid Glass style: the same four compliance bands on the dark
   background, now as glass shapes. On macOS Tahoe 26 and later it also follows the Mac's
   tinted and clear icon styles.
@@ -176,7 +202,49 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A Mac that never inventoried and never checked in now counts as "Jamf binary missing" even when Jamf marks it managed, so it gets the Computers filter and remediation steps and is listed apart in Offline Outreach, the HTML report and the Check-in Health sheet instead of as a stale Mac.
+- Workbook rows that tie on a count now come out in the same order every run. The Mobile Fleet Summary's distributions and Top Models list, the Hardware Models tab and each text extension attribute's value table ordered tied rows at random, so the top ten models could change between two runs on the same data.
+- A Mac that never sent inventory reads No Data for FileVault, SIP, Firewall and Gatekeeper on every screen and report, not Jamf's placeholder values (firewall off, FileVault unencrypted), so it no longer appears under Failing controls. A Mac with real inventory and the firewall off still reads off.
+- A Mac whose FileVault (or SIP, firewall or Gatekeeper) Jamf reports as not applicable now counts as not reported, not as off: it shows neutral and adds no risk.
+- A patch title Jamf reports as "N/A" shows a dash in muted grey, sorts last and no longer reads as 0% compliant.
+- A Mac with no known macOS version ("Unknown") is left out of the Overview's macOS distribution, the Security Posture table and donut, and the report's OS table and chart, instead of counting as a version.
+- The Protect screen showed "Unknown OS" for every computer because jamf-cli sends the version as three numbers; it now shows the version. The workbook's Protect tab is unchanged.
+- An iPhone or iPad with no passcode set no longer counts as passcode compliant, though Jamf calls it compliant when no profile requires one. This redefines the mobile passcode figure (`mobile_passcode_pct`): an alert rule on it may fire once, and Trends mixes the two definitions across the change.
+- The macOS-current share (`osCurrentPct`) in the daily summary now leaves Macs with no known version out of both its count and its total, so it changes on fleets that have such Macs.
+- The HTML report's patch chart no longer draws titles Jamf reports as \"N/A\" as 0%.
+- Jamf Protect alerts that are Resolved or AutoResolved no longer count as open: the Protect
+  screen's High Alerts tile and Open Alerts by Severity card, the HTML report's Protect alerts
+  section and the workbook's Protect Alerts and Threat Overview colours count New and InProgress
+  alerts only. The HTML list shows each alert's status and says how many closed alerts it left
+  out. An AutoResolved alert that reopens counts again from the next collect. (#305)
+- The DDM screen's Declaration failures tile counts invalid declarations only, so a fleet of
+  inactive declarations no longer reads as failures in red; inactive and mixed show neutral, and
+  the "DDM enabled" label is easier to read. (#305)
+- A backup's `manifest.json` records Jamf Pro's object counts per resource folder under
+  `products.pro.object_counts`, as it already did for Jamf Protect (#305).
+- The Cover tab listed tabs the workbook did not have (Environment Stats, the Platform tabs)
+  and showed "(Function)" in place of seven descriptions (#305).
+- A custom EA percentage tab counted a blank value as a row graded OK, and a value that is not a
+  number as 0 and OK; a version tab graded a blank Outdated; a boolean tab's share counted blanks
+  as failing, so three of three passing Macs read 75% (#305).
+- The Software Installs tab listed only versions, every count 0, and EA Coverage had no Mac
+  name on its rows: both read keys jamf-cli does not write (#305).
+- When the compliance figure is the estimate built from FileVault, SIP, the firewall and
+  Gatekeeper rather than a benchmark's results, the Overview card, its detail, Trends and the
+  Customize Overview list now call it "Compliance (4-control proxy)" instead of the benchmark's
+  name. Trends says "Not comparable" when there is only one figure to compare, or when the
+  newest figures were measured differently (the Security Score's factors, the proxy against a
+  benchmark, patch compliance's definition), where it used to say "No change". The Overview
+  cards and their detail now do the same for compliance and patch compliance, and the AI
+  insights no longer compare across those changes. (#305)
+- **Diff Selected** on the Backups screen is now off when one of the two backups has no Jamf Pro
+  part, instead of failing after the click. (#305)
+- The Jamf Protect screen showed "Unknown OS" for every computer: jamf-cli sends the macOS version
+  as separate numbers, which are now read. Its Jamf Pro match card counted a Mac twice when two
+  Protect records matched it; each Mac now counts once and the card says how many records repeat
+  one. The daily summary's Protect match share counts each Mac once too. (#305)
 - Setup's last step no longer strands you after a first report that worked. Once it finishes, the button reads **Open Overview** and the Skip card goes away; before, a workspace added from the Add sheet stayed on the step with only **Skip & finish setup** to leave by. A Jamf School setup is no longer told its profile did not validate: its Connect step is the check.
+- A new workspace starts close to empty. Setting one up from an existing jamf-cli profile, or with Initialize, copied the whole example configuration: seven example security agents, seven example extension attributes and mSCP compliance columns no tenant has, so the EDR card read "--" and the Overview named a benchmark that was not there. It now gets the same short config.yaml as onboarding, and agents, extension attributes and compliance are set up from the app.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
 - The Add sheet checks a Platform API profile's ID before adding one jamf-cli already holds, as
   Connect new does, so a profile it would have refused can no longer be added from the list.

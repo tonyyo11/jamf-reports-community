@@ -45,7 +45,9 @@ final class DeviceScanSheetsTests: XCTestCase {
             "deviceId": "1", "name": "Mac-1", "managementId": "m1", "osVersion": "27.0",
             "reportDate": "2026-09-04T07:00:00.000", "ddmReported": true,
             "declarations": [["identifier": "D-1", "active": true, "valid": true],
-                             ["identifier": "D-2", "active": false, "valid": false]],
+                             ["identifier": "D-2", "active": false, "valid": false],
+                             ["identifier": "D-3", "active": false, "valid": true],
+                             ["identifier": "D-4", "active": false]],
             "softwareUpdate": ["pendingOSVersion": "27.1", "installState": "pending",
                                "failureReason": "Insufficient space"],
         ], [
@@ -63,8 +65,9 @@ final class DeviceScanSheetsTests: XCTestCase {
         let ints = (workbook.sheet(named: "DDM Device Status")?.dedupedCells ?? []).compactMap {
             if case let .int(i) = $0.value { return i } else { return nil }
         }
-        XCTAssertTrue(ints.contains(2), "declaration count")
-        XCTAssertTrue(ints.contains(1), "failing declaration count (inactive or invalid)")
+        XCTAssertTrue(ints.contains(4), "declaration count")
+        XCTAssertTrue(ints.contains(1), "failing declaration count: D-2, the one invalid")
+        XCTAssertFalse(ints.contains(3), "the two inactive declarations do not fail")
     }
 
     func testMDMSheetListsFailedCommandNames() throws {

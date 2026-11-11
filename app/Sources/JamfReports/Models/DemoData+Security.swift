@@ -564,14 +564,21 @@ extension DemoData {
         return rows
     }
 
+    /// Major, minor and patch of "15.7.3" (a missing part is 0), as jamf-cli prints them.
+    private static func osNumbers(_ version: String) -> [Int] {
+        let parts = version.split(separator: ".").map { Int($0) ?? 0 }
+        return (parts + [0, 0, 0]).prefix(3).map { $0 }
+    }
+
     private static func protectComputerRows() -> [ProtectComputerRow] {
         var objects: [[String: Any]] = []
         for (mac, agent) in zip(protectPilotMacs, protectAgentStates) {
+            let osParts = osNumbers(mac.osVersion)
             var object: [String: Any] = [
                 "uuid": "meridian-protect-\(mac.jamfID)",
                 "hostname": mac.name,
                 "serial": mac.serial,
-                "osString": "macOS \(mac.osVersion)",
+                "osMajor": osParts[0], "osMinor": osParts[1], "osPatch": osParts[2],
                 "plan": agent.plan,
                 "webProtectionActive": agent.web,
                 "fullDiskAccess": agent.fullDisk ? "Authorized" : "Unauthorized",
@@ -620,7 +627,7 @@ extension DemoData {
         let computers = protectComputerRows()
         let alerts = protectAlertRows()
         let insights = protectInsightRows()
-        let severities = alerts.compactMap(\.severity)
+        let severity = ProtectDashboardService.alertSeverityCounts(alerts)
         let plans = [
             ProtectPlanRow(
                 name: "Standard", logLevel: "INFO", autoUpdate: true,
@@ -643,10 +650,10 @@ extension DemoData {
             connectedCount: computers.filter {
                 ProtectDashboardService.isConnected($0.connectionStatus)
             }.count,
-            highAlerts: severities.filter { $0 == "High" }.count,
-            mediumAlerts: severities.filter { $0 == "Medium" }.count,
-            lowAlerts: severities.filter { $0 == "Low" }.count,
-            informationalAlerts: severities.filter { $0 == "Informational" }.count,
+            highAlerts: severity.high,
+            mediumAlerts: severity.medium,
+            lowAlerts: severity.low,
+            informationalAlerts: severity.informational,
             failingInsights: insights.filter { ($0.totalFail ?? 0) > 0 }.count,
             sourceFile: nil,
             snapshotDate: referenceDate)

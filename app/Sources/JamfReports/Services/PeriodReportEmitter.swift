@@ -7,9 +7,10 @@ import Foundation
 enum PeriodReportEmitter {
 
     static func emit(
-        model: PeriodReportModel, to url: URL, percent: PercentFormat = .standard
+        model: PeriodReportModel, to url: URL, percent: PercentFormat = .standard,
+        siteScope: SiteScope = .unknown
     ) throws {
-        try workbook(for: model, percent: percent).write(to: url)
+        try workbook(for: model, percent: percent, siteScope: siteScope).write(to: url)
     }
 
     /// `ExportNaming` kind carrying the period, so two quarters' reports are
@@ -19,7 +20,8 @@ enum PeriodReportEmitter {
     }
 
     static func workbook(
-        for model: PeriodReportModel, percent: PercentFormat = .standard
+        for model: PeriodReportModel, percent: PercentFormat = .standard,
+        siteScope: SiteScope = .unknown
     ) -> Workbook {
         let wb = Workbook(percentFormat: percent)
         buildSummary(wb.addSheet("Summary"), model, percent)
@@ -28,7 +30,7 @@ enum PeriodReportEmitter {
         if !distributions.isEmpty {
             buildDistributions(wb.addSheet("Value distributions"), distributions)
         }
-        buildAbout(wb.addSheet("About"), model)
+        buildAbout(wb.addSheet("About"), model, siteScope: siteScope)
         return wb
     }
 
@@ -123,7 +125,9 @@ enum PeriodReportEmitter {
 
     /// Caveats live here, off the Summary sheet, precisely so Summary stays
     /// paste-ready.
-    private static func buildAbout(_ ws: Worksheet, _ m: PeriodReportModel) {
+    private static func buildAbout(
+        _ ws: Worksheet, _ m: PeriodReportModel, siteScope: SiteScope
+    ) {
         var r = 0
         func line(_ k: String, _ v: String) {
             ws.write(k, row: r, col: 0, format: .header)
@@ -170,6 +174,13 @@ enum PeriodReportEmitter {
             for note in notes {
                 ws.write(note, row: r, col: 0, format: .cell); r += 1
             }
+        }
+        if let summary = siteScope.summary {
+            r += 1
+            ws.write("Scope", row: r, col: 0, format: .title); r += 1
+            ws.write("The login is limited to some sites: this report covers \(summary) "
+                + "in Jamf Pro.", row: r, col: 0, format: .cell)
+            r += 1
         }
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 52)

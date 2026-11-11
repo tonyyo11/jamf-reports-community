@@ -60,6 +60,25 @@ extension ConfigDoctorService {
         )]
     }
 
+    /// The same `.warn` row for `profiles.security_cloud` naming a login of another known product.
+    static func securityCloudProfileProductRows(
+        config: ReportConfig,
+        workspace: String,
+        resolved: (String) -> ProfileAuthMethod.Resolved?
+    ) -> [DoctorRow] {
+        guard let named = EnvironmentProfiles.resolve(config: config, workspace: workspace)
+            .securityCloud,
+              let product = resolved(named)?.product,
+              resolved(named)?.securityCloudRefusal(profile: named) != nil else { return [] }
+        return [DoctorRow(
+            id: "security_cloud.profile_product",
+            severity: .warn,
+            title: L("profiles.security_cloud is not a Jamf Security Cloud login"),
+            detail: L("profiles.security_cloud names '\(ConfigSchema.displayText(named))', a \(product.displayName) profile. Security Cloud commands would go to the wrong API, so Jamf Security Cloud is not collected until it names a Jamf Security Cloud login."),
+            hint: L("Set profiles.security_cloud to the profile `jamf-cli security setup` created, or clear it.")
+        )]
+    }
+
     /// `protectProfileProductRows` for the live `config list`; it asks jamf-cli only for a
     /// workspace that has Protect on.
     static func protectProfileProductRows(config: ReportConfig, workspace: String) -> [DoctorRow] {

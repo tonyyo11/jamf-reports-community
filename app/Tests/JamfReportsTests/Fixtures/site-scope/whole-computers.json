@@ -1,0 +1,18 @@
+[
+  {
+    "id": "2",
+    "general": {
+      "remoteManagement": {
+        "managed": true
+      }
+    }
+  },
+  {
+    "id": "1",
+    "general": {
+      "remoteManagement": {
+        "managed": true
+      }
+    }
+  }
+]

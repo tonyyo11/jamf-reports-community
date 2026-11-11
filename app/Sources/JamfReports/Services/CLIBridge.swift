@@ -1961,7 +1961,8 @@ try await ReportEngine.inventoryCSV(
         // the file while the check asks jamf-cli cannot change the `-p` the backup runs as.
         let environment = await Task.detached { EnvironmentProfiles.read(workspace: profile) }
             .value
-        // A School environment is refused with backup's own sentence in `backupProfile`.
+        // A School environment is refused with backup's own sentence in `backupProfile`, or,
+        // with Protect, backs up Protect alone.
         if !environment.isSchool, let refusal = await Self.refusesProCommand(
             profile: profile, operation: "Backup", onLine: onLine, environment: environment,
             resolved: resolved
@@ -2035,12 +2036,16 @@ try await ReportEngine.inventoryCSV(
         }
 
         // On storage other Macs reach, the operator decides whether Jamf Pro is backed up here.
-        let proSkip = decideProBackup(
-            profile: profile, workspace: workspace, backupsRoot: backupsRoot,
-            isScheduled: trimmedLabel?.hasPrefix("scheduled-") == true, onLine: onLine)
+        // A Jamf School workspace has no Jamf Pro part to decide about.
+        let noJamfPro = jamfProProfile == nil
+        let proSkip = noJamfPro
+            ? ProSkip(reason: BackupProductResult.noJamfProReason, isPartial: false)
+            : decideProBackup(
+                profile: profile, workspace: workspace, backupsRoot: backupsRoot,
+                isScheduled: trimmedLabel?.hasPrefix("scheduled-") == true, onLine: onLine)
         let proSkipped = proSkip != nil
-        let exit: Int32
-        if proSkip == nil {
+        var exit: Int32
+        if proSkip == nil, let jamfProProfile {
             do {
                 exit = try await run(
                     executable: bin,
@@ -2109,6 +2114,16 @@ try await ReportEngine.inventoryCSV(
                     pinnedIsShared: true)
             },
             onLine: onLine)
+        // With no Jamf Pro, Protect is the whole backup, so its outcome is the run's. A partial
+        // part keeps its folder, so it reads as jamf-cli's partial exit, which is stamped and
+        // pruned like a partial Jamf Pro backup.
+        if noJamfPro, let protectResult {
+            if protectResult.state == .failed {
+                exit = protectResult.exitCode ?? ReportEngine.launchFailureExitCode
+            } else if protectResult.state == .partial, protectResult.exitCode != 0 {
+                exit = Self.exitCodePartialFailure
+            }
+        }
         // With Jamf Pro failed, the folder is kept only for Protect objects to restore from.
         if proFailed, (protectResult?.objectTotal ?? 0) == 0 {
             discardStaging(validatedTemp, protect: protectResult, onLine: onLine)
@@ -2120,11 +2135,9 @@ try await ReportEngine.inventoryCSV(
         // already say so. Not a failure.
         if proSkipped, (protectResult?.objectTotal ?? 0) == 0 {
             discardStaging(validatedTemp, protect: protectResult, onLine: onLine)
-            onLine(.init(
-                timestamp: Date(), level: proSkip?.isPartial == true ? .warn : .info,
-                text: (proSkip?.isPartial == true ? "[warn]" : "[info]")
-                    + " no backup written: Jamf Pro was skipped and Jamf Protect left nothing "
-                    + "to keep"))
+            onLine(Self.nothingKeptLine(
+                noJamfPro: noJamfPro, proSkipIsPartial: proSkip?.isPartial == true,
+                protectSkipped: protectResult?.state == .skipped))
             await tightenOnSuccess(exit, profile: profile)
             return BackupRun(exit: exit, folder: nil)
         }
@@ -2182,8 +2195,13 @@ try await ReportEngine.inventoryCSV(
             var products: [String: Any] = [
                 "pro": proSkip.map {
                     BackupProductResult(state: .skipped, reason: $0.reason).manifestValue
-                } ?? ["exit_code": Int(exit),
-                      "state": proFailed ? "failed" : isPartial ? "partial" : "ok"],
+                } ?? BackupProductResult(
+                    state: proFailed ? .failed : isPartial ? .partial : .ok, exitCode: exit,
+                    // Counted as Protect's are, before manifest.json exists; a failed part's
+                    // files are already gone.
+                    objectCounts: proFailed ? [:] : ProtectBackup.objectCounts(in: validatedFinal)
+                        .filter { $0.key != ProtectBackup.folderName }
+                ).manifestValue,
             ]
             products["protect"] = protectResult?.manifestValue
             manifest["products"] = products
@@ -2218,12 +2236,14 @@ try await ReportEngine.inventoryCSV(
         onLine(.init(
             timestamp: Date(),
             level: proSkip?.isPartial == true || isPartial || protectIncomplete ? .warn
-                : proSkipped ? .info : .ok,
+                : proSkipped && !noJamfPro ? .info : .ok,
             text: isPartial
                 ? "[warn] partial backup written: \(validatedFinal.lastPathComponent)"
                 : protectIncomplete
                 ? "[warn] backup written without a complete Jamf Protect part: "
                     + validatedFinal.lastPathComponent
+                : noJamfPro
+                ? "[ok] Jamf Protect backup written: \(validatedFinal.lastPathComponent)"
                 : proSkipped
                 ? (proSkip?.isPartial == true ? "[warn]" : "[info]")
                     + " backup written without a Jamf Pro part: "
@@ -2232,6 +2252,28 @@ try await ReportEngine.inventoryCSV(
         ))
         await tightenOnSuccess(exit, profile: profile)
         return BackupRun(exit: exit, folder: validatedFinal)
+    }
+
+    /// The line for a run that keeps no folder because Jamf Pro was left out and Protect left
+    /// nothing. On a Jamf School workspace a skipped Protect part means nothing was backed up,
+    /// so the run reads as Partial.
+    nonisolated static func nothingKeptLine(
+        noJamfPro: Bool, proSkipIsPartial: Bool, protectSkipped: Bool
+    ) -> LogLine {
+        if noJamfPro {
+            return protectSkipped
+                ? .init(timestamp: Date(), level: .warn,
+                        text: "[partial] no backup written: Jamf Protect was skipped and this "
+                            + "Jamf School workspace has no Jamf Pro to back up")
+                : .init(timestamp: Date(), level: .info,
+                        text: "[info] no backup written: this Jamf School workspace has no "
+                            + "Jamf Pro and Jamf Protect left nothing to keep")
+        }
+        return .init(
+            timestamp: Date(), level: proSkipIsPartial ? .warn : .info,
+            text: (proSkipIsPartial ? "[warn]" : "[info]")
+                + " no backup written: Jamf Pro was skipped and Jamf Protect left nothing "
+                + "to keep")
     }
 
     /// A Jamf Pro part this backup leaves out: `reason` goes in the manifest, `isPartial` is
@@ -2372,13 +2414,14 @@ try await ReportEngine.inventoryCSV(
     /// `CollectRouter.run` refuses it, judged by the folder's own name, never config.yaml. A
     /// `profiles:` block that cannot run is refused again here, so the launch never depends on
     /// a caller having checked; a workspace with no Jamf Pro slot (Jamf School) is refused too,
-    /// each with one `[error]`. An old-key `jamf_cli.profile` naming another profile is ignored
-    /// with one warning.
+    /// each with one `[error]`, unless it has a Protect profile: then nil, and the backup is
+    /// the Protect part alone (2.12). An old-key `jamf_cli.profile` naming another profile is
+    /// ignored with one warning.
     nonisolated static func backupProfile(
         for workspace: String,
         environment: EnvironmentProfiles,
         onLine: @Sendable (LogLine) -> Void
-    ) throws -> String {
+    ) throws -> String? {
         if let owner = ProfileService.caseVariantWorkspace(of: workspace) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: workspace, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
@@ -2401,6 +2444,7 @@ try await ReportEngine.inventoryCSV(
             ))
         }
         guard let jamfPro = environment.jamfPro else {
+            if environment.isSchoolWithProtect { return nil }
             let reason = CollectRouter.schoolBackupReason(profile: workspace)
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
             throw CLIBridgeError.wrongProduct(reason)
@@ -2610,7 +2654,6 @@ try await ReportEngine.inventoryCSV(
                 try ReportEngine.initializeWorkspace(
                     profile: profile,
                     workspacesRoot: ProfileService.workspacesRoot(),
-                    seedConfigURL: Self.bundledSeedConfig(),
                     onLine: onLine
                 )
             } catch {
@@ -2692,37 +2735,6 @@ try await ReportEngine.inventoryCSV(
                 + "set of top-level settings."
         }
         return .configWriteRefused(key: key, fix: fix)
-    }
-
-    nonisolated static var isDebugBuild: Bool {
-        #if DEBUG
-        return true
-        #else
-        return false
-        #endif
-    }
-
-    /// The `config.example.yaml` that seeds a new workspace's config.yaml: the app bundle's
-    /// copy. A debug build (`swift run`, no bundle) also reads the working directory and its
-    /// parent, the repo checkout; a release build never does, since a file planted where a
-    /// `jamf-reports` run starts would become the workspace's config.
-    nonisolated static func bundledSeedConfig(
-        workingDirectory: URL = URL(
-            fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
-        resourceURL: URL? = Bundle.main.resourceURL,
-        searchesWorkingDirectory: Bool = CLIBridge.isDebugBuild
-    ) -> URL? {
-        let name = "config.example.yaml"
-        var candidates: [URL?] = []
-        if searchesWorkingDirectory {
-            candidates += [
-                workingDirectory.appendingPathComponent(name),
-                workingDirectory.deletingLastPathComponent().appendingPathComponent(name),
-            ]
-        }
-        candidates.append(resourceURL?.appendingPathComponent(name))
-        return candidates.compactMap { $0 }
-            .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
 

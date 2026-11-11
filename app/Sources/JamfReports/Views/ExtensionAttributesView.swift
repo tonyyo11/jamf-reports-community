@@ -367,7 +367,7 @@ struct ExtensionAttributesView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(drift.eaName) coverage dropped from \(Int(drift.previousPct.rounded())) percent to \(Int(drift.currentPct.rounded())) percent"
+            "\(drift.eaName) coverage dropped from \(PercentFormat.whole.numberText(drift.previousPct)) percent to \(PercentFormat.whole.numberText(drift.currentPct)) percent"
         )
     }
 

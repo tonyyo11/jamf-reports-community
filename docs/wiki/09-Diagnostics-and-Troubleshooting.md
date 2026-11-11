@@ -20,6 +20,11 @@ workspace, which may be a shared folder), and reveals it in Finder. Credentials 
 (hostnames, serials, emails, phone numbers, device names) is redacted by default with stable hash
 placeholders.
 
+Only IPv4 addresses are removed. An IPv6 address, and the paths in the workspace tree listing,
+stay visible, so review a bundle before you share it outside your organization. The full list of
+what is removed is in
+[Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations#diagnostic-bundle-redaction-scope).
+
 The headless equivalent is `jamf-reports diagnostic-bundle --profile <profile>` (see
 [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line)) — same redaction, no GUI required.
 

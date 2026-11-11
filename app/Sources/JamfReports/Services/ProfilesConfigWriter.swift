@@ -117,6 +117,7 @@ enum ProfilesConfigWriter {
         let key: SharedConfigPin.Key? = switch slot {
         case .platform: .platformProfile
         case .protect: .protectProfile
+        case .securityCloud: .securityCloudProfile
         default: nil
         }
         if let key {

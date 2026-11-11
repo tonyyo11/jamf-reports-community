@@ -139,4 +139,20 @@ final class OSVersionNameTests: XCTestCase {
         XCTAssertTrue(html.contains("15.7.3: 30 devices"))
         XCTAssertFalse(html.contains("26.7.0"))
     }
+
+    func testUnmeasuredVersionsAreLeftOutOfEveryDistribution() {
+        XCTAssertFalse(OSVersionName.isMeasured("Unknown"))
+        XCTAssertFalse(OSVersionName.isMeasured(" unknown "))
+        XCTAssertFalse(OSVersionName.isMeasured(""))
+        XCTAssertTrue(OSVersionName.isMeasured("15.7.3"))
+        let merged = OSVersionName.merged([
+            .init(version: "Unknown", count: 4, pct: 4), .init(version: "", count: 1, pct: 1),
+            .init(version: "26.7.0", count: 5, pct: 5),
+        ])
+        XCTAssertEqual(merged.map(\.version), ["26.7"])
+        let built = OverviewLiveDataLoader.osDistribution(
+            counts: ["Unknown": 40, "26.7": 10], latestByMajor: [:], limit: 5)
+        XCTAssertEqual(built.total, 10)
+        XCTAssertEqual(built.rows.map(\.version), ["macOS 26.7"])
+    }
 }

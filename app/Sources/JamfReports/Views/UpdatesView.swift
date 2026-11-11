@@ -285,7 +285,7 @@ struct UpdatesView: View {
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(name), \(slice.count) plans, \(Int(pct.rounded())) percent")
+                .accessibilityLabel("\(name), \(slice.count) plans, \(PercentFormat.whole.numberText(pct)) percent")
             }
         }
     }

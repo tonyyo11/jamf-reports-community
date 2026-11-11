@@ -147,7 +147,7 @@ extension CoreDashboard {
                 + "was not a planned enrollment or retirement, check that the last collect "
                 + "finished; a partial collect can make Macs look departed."
             // Row 2 is the header's blank row, so the sections keep their rows.
-            ws.write(warning, row: row - 1, col: 0, format: .yellow)
+            ws.writeSiteScopeNote(row: row - 1, extra: warning)
             let line = "[warn] Fleet Drift: \(warning)"
             print("  " + line)
             onLine?(.init(timestamp: Date(), level: .warn, text: line))
