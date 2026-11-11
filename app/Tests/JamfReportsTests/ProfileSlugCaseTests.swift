@@ -337,18 +337,11 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: config), typed)
     }
 
-    /// A workspace seeded from the shipped example is written with the profile recorded, so
-    /// binding it writes nothing and no backup of a file the app just made is kept.
-    func testBindingASeededWorkspaceKeepsNoBackupOfTheSeed() async throws {
-        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        while !FileManager.default.fileExists(
-            atPath: dir.appendingPathComponent("config.example.yaml").path) {
-            guard dir.pathComponents.count > 1 else { throw XCTSkip("no config.example.yaml") }
-            dir = dir.deletingLastPathComponent()
-        }
+    /// A new workspace is written with the profile recorded, so binding it writes nothing and
+    /// no backup of a file the app just made is kept.
+    func testBindingANewWorkspaceKeepsNoBackupOfIt() async throws {
         try ReportEngine.initializeWorkspace(
-            profile: "Seeded", workspacesRoot: tempRoot,
-            seedConfigURL: dir.appendingPathComponent("config.example.yaml"), onLine: { _ in })
+            profile: "Seeded", workspacesRoot: tempRoot, onLine: { _ in })
         let lines = CaseTestBox<[String]>([])
 
         _ = try await CLIBridge().initializeWorkspace(profile: "Seeded") { line in
@@ -361,7 +354,7 @@ final class ProfileSlugCaseTests: XCTestCase {
         let loaded = try ConfigService.load(profile: "Seeded", workspaceRoot: tempRoot)
         XCTAssertEqual(loaded.document.root.mapping?.value(for: "jamf_cli")?.mapping?
             .value(for: "profile")?.stringValue, "Seeded")
-        XCTAssertTrue(text.contains("# jamf-reports community edition — example configuration"))
+        XCTAssertFalse(text.contains("example configuration"), "never the shipped example")
         let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
             .filter { $0.hasPrefix("config.yaml.bak-") }
         XCTAssertEqual(copies, [])

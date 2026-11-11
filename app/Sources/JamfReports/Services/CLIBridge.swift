@@ -2610,7 +2610,6 @@ try await ReportEngine.inventoryCSV(
                 try ReportEngine.initializeWorkspace(
                     profile: profile,
                     workspacesRoot: ProfileService.workspacesRoot(),
-                    seedConfigURL: Self.bundledSeedConfig(),
                     onLine: onLine
                 )
             } catch {
@@ -2692,37 +2691,6 @@ try await ReportEngine.inventoryCSV(
                 + "set of top-level settings."
         }
         return .configWriteRefused(key: key, fix: fix)
-    }
-
-    nonisolated static var isDebugBuild: Bool {
-        #if DEBUG
-        return true
-        #else
-        return false
-        #endif
-    }
-
-    /// The `config.example.yaml` that seeds a new workspace's config.yaml: the app bundle's
-    /// copy. A debug build (`swift run`, no bundle) also reads the working directory and its
-    /// parent, the repo checkout; a release build never does, since a file planted where a
-    /// `jamf-reports` run starts would become the workspace's config.
-    nonisolated static func bundledSeedConfig(
-        workingDirectory: URL = URL(
-            fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
-        resourceURL: URL? = Bundle.main.resourceURL,
-        searchesWorkingDirectory: Bool = CLIBridge.isDebugBuild
-    ) -> URL? {
-        let name = "config.example.yaml"
-        var candidates: [URL?] = []
-        if searchesWorkingDirectory {
-            candidates += [
-                workingDirectory.appendingPathComponent(name),
-                workingDirectory.deletingLastPathComponent().appendingPathComponent(name),
-            ]
-        }
-        candidates.append(resourceURL?.appendingPathComponent(name))
-        return candidates.compactMap { $0 }
-            .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
 

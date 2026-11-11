@@ -156,6 +156,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A new workspace starts close to empty. Setting one up from an existing jamf-cli profile, or with Initialize, copied the whole example configuration: seven example security agents, seven example extension attributes and mSCP compliance columns no tenant has, so the EDR card read "--" and the Overview named a benchmark that was not there. It now gets the same short config.yaml as onboarding, and agents, extension attributes and compliance are set up from the app.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
 - The Add sheet checks a Platform API profile's ID before adding one jamf-cli already holds, as
   Connect new does, so a profile it would have refused can no longer be added from the list.

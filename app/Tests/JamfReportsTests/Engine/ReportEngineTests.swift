@@ -854,11 +854,14 @@ final class ReportEngineTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
 
         try ReportEngine.initializeWorkspace(
-            profile: "init-default", workspacesRoot: root, seedConfigURL: nil, onLine: { _ in })
+            profile: "init-default", workspacesRoot: root, onLine: { _ in })
 
         let configURL = root.appendingPathComponent("init-default/config.yaml")
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertFalse(text.contains("columns:"), "columns is retired")
-        XCTAssertNoThrow(try ConfigLoader.load(from: configURL))
+        XCTAssertEqual(text, ScaffoldService.minimalConfigYAML(profile: "init-default", eas: []))
+        let config = try ConfigLoader.load(from: configURL)
+        XCTAssertEqual(config.securityAgents?.count ?? 0, 0, "no example agents")
+        XCTAssertEqual(config.customEas?.count ?? 0, 0, "no example EAs")
     }
 }
