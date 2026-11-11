@@ -160,6 +160,7 @@ versions in this repository map to git tags.
   as separate numbers, which are now read. Its Jamf Pro match card counted a Mac twice when two
   Protect records matched it; each Mac now counts once and the card says how many records repeat
   one. The daily summary's Protect match share counts each Mac once too. (#305)
+- Setup's last step no longer strands you after a first report that worked. Once it finishes, the button reads **Open Overview** and the Skip card goes away; before, a workspace added from the Add sheet stayed on the step with only **Skip & finish setup** to leave by. A Jamf School setup is no longer told its profile did not validate: its Connect step is the check.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
 - The Add sheet checks a Platform API profile's ID before adding one jamf-cli already holds, as
   Connect new does, so a profile it would have refused can no longer be added from the list.
