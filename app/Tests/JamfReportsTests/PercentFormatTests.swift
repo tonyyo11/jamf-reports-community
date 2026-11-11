@@ -182,22 +182,28 @@ final class PercentFormatTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/JamfReports", isDirectory: true)
         let pattern = try NSRegularExpression(pattern:
-            #"%\.[0-9]f%%|%\.[0-9]f pp|"%\.[0-9]f", [^)]*\)\)(%|pp)|\.rounded\(\)\)\)%|Int\([^()]*\)\)%"#)
+            #"%\.[0-9]f%%|%\.[0-9]f pp|"%\.[0-9]f", [^)]*\)\)(%|pp)|\.rounded\(\)\)\)%|Int\([^()]*\)\)%|"[0-9]+\.[0-9]+%""#)
         let allowed: [String: Int] = [
             "Models/PercentFormat.swift": 0,
-            // Demo labels drop ".0" on purpose and never read a workspace.
-            "Models/DemoData+Security.swift": 2,
             // The patch record's fallback label when jamf-cli sends none; no screen shows it.
             "Services/DeviceInventoryService.swift": 1,
             // Chart y-axis ticks (0, 25, 50, 75, 100).
             "Views/TrendsView.swift": 1,
             "Views/FleetOverviewView.swift": 1,
+            // The workbook's `0.0%` number format code.
+            "Engine/OOXMLWriter.swift": 1,
         ]
         let walker = try XCTUnwrap(FileManager.default.enumerator(atPath: sources.path))
         var counts: [String: Int] = [:]
-        for case let relative as String in walker where relative.hasSuffix(".swift") {
+        // Demo data is fixed labels standing in for tenant data; it never reads a workspace.
+        for case let relative as String in walker
+        where relative.hasSuffix(".swift") && !relative.hasPrefix("Models/DemoData") {
+            // Doc comments quote figures ("93.3%") and are not output.
             let text = try String(contentsOf: sources.appendingPathComponent(relative),
                                   encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .filter { !$0.drop { $0 == " " }.hasPrefix("//") }
+                .joined(separator: "\n")
             let hits = pattern.numberOfMatches(
                 in: text, range: NSRange(location: 0, length: text.utf16.count))
             if hits > 0, relative != "Models/PercentFormat.swift" { counts[relative] = hits }

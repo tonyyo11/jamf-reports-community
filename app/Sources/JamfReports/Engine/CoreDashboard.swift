@@ -2649,7 +2649,7 @@ struct CoreDashboard: Sendable {
         for (family, counts) in perFamily.sorted(by: { $0.key < $1.key }) {
             let pct = counts.total > 0
                 ? config.percentFormat.text(Double(counts.supervised) / Double(counts.total) * 100)
-                : "0.0%"
+                : config.percentFormat.text(0)
             ws.write(family, row: row, col: 0, format: .cell)
             ws.write(counts.total, row: row, col: 1, format: .cell)
             ws.write(counts.supervised, row: row, col: 2, format: .cell)
@@ -2760,7 +2760,7 @@ struct CoreDashboard: Sendable {
             for col in 3...6 { ws.write("\u{2014}", row: row, col: col, format: .cell) }
             ws.write(0, row: row, col: 7, format: .cell)
             ws.write(eolDevices, row: row, col: 8, format: .red)
-            ws.write("0.0%", row: row, col: 9, format: .cell)
+            ws.write(config.percentFormat.text(0), row: row, col: 9, format: .cell)
             row += 1
         }
     }
