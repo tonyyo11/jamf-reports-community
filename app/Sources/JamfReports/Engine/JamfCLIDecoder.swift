@@ -1099,6 +1099,15 @@ struct ProtectAlertRow: Decodable, Sendable {
         eventType = try? c.decodeIfPresent(String.self, forKey: .eventType)
         hostName = try? c.decodeIfPresent(String.self, forKey: .computer)
     }
+
+    var isOpen: Bool { Self.isOpen(status: status) }
+
+    /// Only Resolved and AutoResolved are closed; a missing status counts as open. AutoResolved can
+    /// reopen to InProgress, so callers read the status from each snapshot and never cache it.
+    static func isOpen(status: String?) -> Bool {
+        let s = (status ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        return s != "resolved" && s != "autoresolved"
+    }
 }
 
 // MARK: - Protect computer

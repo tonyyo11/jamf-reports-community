@@ -58,10 +58,7 @@ extension ReportEngine {
             figures.computers = .init(count: snapshot.computers.count, matched: matched)
         }
         if readable("protect-alerts"), !snapshot.unreadableKinds.contains("protect-alerts") {
-            // A missing status counts as open: only Resolved and AutoResolved are closed.
-            let open = snapshot.alerts.filter {
-                !["resolved", "autoresolved"].contains(($0.status ?? "").lowercased())
-            }
+            let open = snapshot.alerts.filter(\.isOpen)
             let bySeverity = Dictionary(
                 grouping: open.compactMap { $0.severity?.lowercased() }, by: { $0 }
             ).mapValues(\.count)

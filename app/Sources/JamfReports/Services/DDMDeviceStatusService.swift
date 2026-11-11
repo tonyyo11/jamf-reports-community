@@ -22,19 +22,22 @@ struct DDMDeviceStatusService: Sendable {
         /// Same identifier both active and inactive on ONE device.
         let mixed: Int
         let devices: [DeviceRef]
+        /// Devices on which the identifier is not plainly active (inactive, invalid or mixed).
         var issues: Int { inactive + invalid + mixed }
+        /// Only an invalid declaration is a failure; an inactive or mixed one is a state.
+        var failures: Int { invalid }
         /// Every device carrying the identifier; each is in exactly one of the four states.
         var deviceCount: Int { devices.count }
     }
 
     /// The identifier list split for display: `notable` is every identifier on more than one
-    /// device or with any issue (worst first); `quietSingles` is the long tail that sits on
+    /// device or not plainly active (failures first); `quietSingles` is the long tail that sits on
     /// one device and is healthy. A failing single-device identifier is never in the tail.
     struct IdentifierOverview: Sendable, Equatable {
         let notable: [IdentifierSummary]
         let quietSingles: [IdentifierSummary]
         var totalCount: Int { notable.count + quietSingles.count }
-        var withIssuesCount: Int { notable.filter { $0.issues > 0 }.count }
+        var withFailuresCount: Int { notable.filter { $0.failures > 0 }.count }
     }
 
     struct Snapshot: Sendable, Equatable {
@@ -86,6 +89,7 @@ struct DDMDeviceStatusService: Sendable {
         /// Field-by-field comparator (avoids a heterogeneous tuple comparison,
         /// which Swift 6.1's type-checker can time out on).
         private static func worstFirst(_ a: IdentifierSummary, _ b: IdentifierSummary) -> Bool {
+            if a.failures != b.failures { return a.failures > b.failures }
             if a.issues != b.issues { return a.issues > b.issues }
             if a.deviceCount != b.deviceCount { return a.deviceCount > b.deviceCount }
             return a.identifier < b.identifier
@@ -98,7 +102,7 @@ struct DDMDeviceStatusService: Sendable {
                                       quietSingles: all.filter(isQuiet))
         }
 
-        var failingDeclarationCount: Int { byIdentifier.reduce(0) { $0 + $1.issues } }
+        var failingDeclarationCount: Int { byIdentifier.reduce(0) { $0 + $1.failures } }
 
         var pendingVersions: [(version: String, devices: [DeviceRef])] {
             bucket(records, key: { $0.softwareUpdate.pendingOSVersion })

@@ -175,7 +175,7 @@ final class DemoDataSecurityTests: XCTestCase {
             devices.byIdentifier.map { ($0.identifier, $0) })
         XCTAssertEqual(byIdentifier["com.meridian.baseline.legacy-profile"]?.invalid, 12)
         XCTAssertEqual(byIdentifier["com.meridian.softwareupdate.enforcement"]?.inactive, 42)
-        XCTAssertEqual(devices.failingDeclarationCount, 54)
+        XCTAssertEqual(devices.failingDeclarationCount, 12, "invalid only; inactive is a state")
     }
 
     func testDDMUpdatesArePendingOnTheOlderSequoiaRelease() {
@@ -257,7 +257,8 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(snapshot.totalComputers, snapshot.computers.count)
         XCTAssertEqual(snapshot.alerts.count, 8)
         XCTAssertEqual(snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts
-            + snapshot.informationalAlerts, snapshot.alerts.count)
+            + snapshot.informationalAlerts, snapshot.openAlertCount)
+        XCTAssertEqual(snapshot.openAlertCount, 3, "five of the eight are Resolved or AutoResolved")
         XCTAssertEqual(snapshot.highAlerts, 2)
         XCTAssertEqual(snapshot.webProtectionActiveCount, 10)
         XCTAssertEqual(snapshot.fullDiskAccessCount, 9)

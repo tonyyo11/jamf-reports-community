@@ -99,6 +99,8 @@ versions in this repository map to git tags.
 
 - **Workbook layout, for anything that reads the workbooks automatically.** When the jamf-cli login sees only some Jamf Pro sites, every Jamf Pro tab carries a sentence saying so in the header row just above its table (the row that was blank). No tab, column or table row moves, and a login that sees every site writes nothing new. Separately, rows that tie on a count (Mobile Fleet Summary, Hardware Models, text extension attribute tables) now sort by name, so their order no longer changes between runs. If a script or a tool such as Power BI reads these workbooks, check it against a new report.
 - Device Security State writes "No Data" in every control column for a Mac that never sent inventory, where it was blank.
+- The workbook's DDM Device Status tab counts only invalid declarations in its Failing column; an
+  inactive declaration no longer counts there. (#305)
 - A new app icon in Apple's Liquid Glass style: the same four compliance bands on the dark
   background, now as glass shapes. On macOS Tahoe 26 and later it also follows the Mac's
   tinted and clear icon styles.
@@ -173,6 +175,14 @@ versions in this repository map to git tags.
 - An iPhone or iPad with no passcode set no longer counts as passcode compliant, though Jamf calls it compliant when no profile requires one. This redefines the mobile passcode figure (`mobile_passcode_pct`): an alert rule on it may fire once, and Trends mixes the two definitions across the change.
 - The macOS-current share (`osCurrentPct`) in the daily summary now leaves Macs with no known version out of both its count and its total, so it changes on fleets that have such Macs.
 - The HTML report's patch chart no longer draws titles Jamf reports as \"N/A\" as 0%.
+- Jamf Protect alerts that are Resolved or AutoResolved no longer count as open: the Protect
+  screen's High Alerts tile and Open Alerts by Severity card, the HTML report's Protect alerts
+  section and the workbook's Protect Alerts and Threat Overview colours count New and InProgress
+  alerts only. The HTML list shows each alert's status and says how many closed alerts it left
+  out. An AutoResolved alert that reopens counts again from the next collect. (#305)
+- The DDM screen's Declaration failures tile counts invalid declarations only, so a fleet of
+  inactive declarations no longer reads as failures in red; inactive and mixed show neutral, and
+  the "DDM enabled" label is easier to read. (#305)
 - Setup's last step no longer strands you after a first report that worked. Once it finishes, the button reads **Open Overview** and the Skip card goes away; before, a workspace added from the Add sheet stayed on the step with only **Skip & finish setup** to leave by. A Jamf School setup is no longer told its profile did not validate: its Connect step is the check.
 - A new workspace starts close to empty. Setting one up from an existing jamf-cli profile, or with Initialize, copied the whole example configuration: seven example security agents, seven example extension attributes and mSCP compliance columns no tenant has, so the EDR card read "--" and the Overview named a benchmark that was not there. It now gets the same short config.yaml as onboarding, and agents, extension attributes and compliance are set up from the app.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.

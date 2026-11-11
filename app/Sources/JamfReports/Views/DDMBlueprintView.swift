@@ -260,7 +260,7 @@ struct DDMBlueprintView: View {
             HStack(spacing: 10) {
                 DDMBlueprintView.declarationCounter(
                     label: L("DDM enabled"),
-                    value: fleetCounts?.enabled, color: Theme.Colors.teal)
+                    value: fleetCounts?.enabled, color: Theme.Colors.tealBright)
                 DDMBlueprintView.declarationCounter(
                     label: L("Macs in inventory"),
                     value: fleetCounts?.total, color: Theme.Colors.fgMuted)
@@ -290,7 +290,7 @@ struct DDMBlueprintView: View {
                 SectionHeader(
                     title: L("Declarations by identifier"),
                     trailing: Self.identifiersSummary(
-                        total: overview.totalCount, withIssues: overview.withIssuesCount))
+                        total: overview.totalCount, withFailures: overview.withFailuresCount))
                 if overview.totalCount == 0 {
                     Text("No declarations reported by any DDM-enabled Mac yet.")
                         .font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
@@ -326,9 +326,10 @@ struct DDMBlueprintView: View {
             Spacer()
             Pill(text: HtmlSectionFormatters.plural(entry.deviceCount, "device"), tone: .muted)
             if entry.active > 0 { Pill(text: L("\(entry.active) active"), tone: .teal) }
-            if entry.inactive > 0 { Pill(text: L("\(entry.inactive) inactive"), tone: .warn) }
+            // Inactive and mixed are states, not failures: only invalid is coloured.
+            if entry.inactive > 0 { Pill(text: L("\(entry.inactive) inactive"), tone: .muted) }
             if entry.invalid > 0 { Pill(text: L("\(entry.invalid) invalid"), tone: .danger) }
-            if entry.mixed > 0 { Pill(text: L("\(entry.mixed) mixed"), tone: .danger) }
+            if entry.mixed > 0 { Pill(text: L("\(entry.mixed) mixed"), tone: .muted) }
         }
     }
 
@@ -360,9 +361,11 @@ struct DDMBlueprintView: View {
         }
     }
 
-    /// "2,204 identifiers, 29 with issues" (the card's count, not the header tile's).
-    nonisolated static func identifiersSummary(total: Int, withIssues: Int) -> String {
-        L("\(HtmlSectionFormatters.plural(total, "identifier")), \(withIssues) with issues")
+    /// "2,204 identifiers, 3 with invalid declarations" (identifiers, not the header tile's
+    /// device-declaration pairs).
+    nonisolated static func identifiersSummary(total: Int, withFailures: Int) -> String {
+        let identifiers = HtmlSectionFormatters.plural(total, "identifier")
+        return L("\(identifiers), \(withFailures) with invalid declarations")
     }
 
     nonisolated static func quietSinglesText(_ count: Int) -> String {

@@ -524,9 +524,10 @@ extension HtmlReport {
 
     // MARK: - protectAlerts
 
-    /// Protect alerts grouped by severity, capped by `html.section_limits.protect_alerts`
-    /// (default 25, bounded [1, 200]). Reads jamf-cli's flattened alert rows from the
-    /// `protect-alerts` kind directory `ReportEngine.protectCollect` writes.
+    /// Open Protect alerts (not Resolved or AutoResolved) grouped by severity, capped by
+    /// `html.section_limits.protect_alerts` (default 25, bounded [1, 200]). Reads jamf-cli's
+    /// flattened alert rows from the `protect-alerts` kind directory `ReportEngine.protectCollect`
+    /// writes.
     func buildProtectAlerts(protectDataDir: URL?) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let cap = config.html?.sectionLimits?.resolvedProtectAlerts ?? 25
@@ -538,9 +539,14 @@ extension HtmlReport {
             return .omitted("the newest protect-alerts file could not be read")
         }
         guard !alerts.isEmpty else { return .omitted("no Protect alerts in the snapshot") }
+        let open = alerts.filter { ProtectAlertRow.isOpen(status: $0["status"] as? String) }
+        let closed = alerts.count - open.count
+        guard !open.isEmpty else {
+            return .omitted("no open Protect alerts (\(closed) Resolved or AutoResolved)")
+        }
 
         var bySeverity: [String: [[String: Any]]] = [:]
-        for alert in alerts {
+        for alert in open {
             let sev = (alert["severity"] as? String ?? "unknown").lowercased()
             bySeverity[sev, default: []].append(alert)
         }
@@ -567,6 +573,7 @@ extension HtmlReport {
                     ? eventType
                     : ((alert["analytics"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
                 let date = (alert["created"] as? String).map { String($0.prefix(10)) } ?? "—"
+                let status = (alert["status"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—"
 
                 // Wrap device cell in a link to its audit-evidence anchor when known.
                 let deviceCell: String
@@ -579,14 +586,14 @@ extension HtmlReport {
                 }
                 return "<tr>\(deviceCell)" +
                     "<td>\(f.escapeHTML(description))</td>" +
-                    "<td>\(f.escapeHTML(date))</td></tr>"
+                    "<td>\(f.escapeHTML(date))</td><td>\(f.escapeHTML(status))</td></tr>"
             }
             totalShown += take
             parts.append("""
             <div class="audit-severity-group">
               <h4>\(f.renderSeverityPill(sev)) (\(sevAlerts.count))</h4>
               \(f.renderCappedRows(
-                  headers: ["Computer", "Alert", "Date"], rowHTML: Array(alertRows),
+                  headers: ["Computer", "Alert", "Date", "Status"], rowHTML: Array(alertRows),
                   expanded: expandAll))
             </div>
             """)
@@ -594,7 +601,8 @@ extension HtmlReport {
 
         return .shown(f.block(
             id: "protect-alerts",
-            title: "Protect alerts (showing \(totalShown) of \(alerts.count))",
+            title: "Open Protect alerts (showing \(totalShown) of \(open.count))"
+                + (closed > 0 ? "; \(closed) Resolved or AutoResolved not listed" : ""),
             body: parts.joined(separator: "\n")))
     }
 
