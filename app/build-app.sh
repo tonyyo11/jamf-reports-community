@@ -132,11 +132,14 @@ if [[ -d "$BUNDLE" ]]; then
   done
 fi
 
-# Regenerate the AppIcon.icns if missing (first-run convenience).
-if [[ ! -f "Resources/AppIcon.icns" ]]; then
-  echo "→ AppIcon.icns missing — running iconset/build-icon.sh"
+# The icon is compiled from iconset/AppIcon.icon by iconset/build-icon.sh and committed:
+# Assets.car carries the Liquid Glass icon (macOS 26+) and flat images (macOS 15, via
+# CFBundleIconName); AppIcon.icns is the fallback for CFBundleIconFile.
+if [[ ! -f "Resources/Assets.car" || ! -f "Resources/AppIcon.icns" ]]; then
+  echo "→ app icon missing — running iconset/build-icon.sh"
   ./iconset/build-icon.sh
 fi
+cp "Resources/Assets.car" "$APP_OUT/Contents/Resources/Assets.car"
 cp "Resources/AppIcon.icns" "$APP_OUT/Contents/Resources/AppIcon.icns"
 
 if [[ -f "../config.example.yaml" ]]; then
@@ -163,6 +166,8 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key>
     <string>JamfReports</string>
     <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.tonyyo.jamfreports</string>
