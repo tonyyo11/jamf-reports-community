@@ -366,6 +366,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .protectComputers: return summary.protectComputerCount.map(Double.init)
         case .protectMatched: return summary.protectMatched?.pctOneDecimal
         case .protectOpenAlerts: return summary.protectOpenAlerts.map(Double.init)
+        case .securityCloudDevices: return summary.securityCloudDeviceCount.map(Double.init)
+        case .securityCloudMatched: return summary.securityCloudMatched?.pctOneDecimal
+        case .securityCloudHighRisk: return summary.securityCloudHighRiskCount.map(Double.init)
         }
     }
 
@@ -373,7 +376,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// mobile metric needs a day that carries it, a Mac metric a day with Macs. With no history
     /// loaded yet every Mac metric stays offered, so a load in flight keeps the selection.
     func offers(_ metric: TrendSeries.Metric) -> Bool {
-        if metric.isMobile || metric.isProtect { return allSummaries.contains { value(for: metric, in: $0) != nil } }
+        if metric.isMobile || metric.isProtect || metric.isSecurityCloud {
+            return allSummaries.contains { value(for: metric, in: $0) != nil }
+        }
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }
     }
 
@@ -424,25 +429,56 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             + "there is the definition, not the fleet."
     }
 
-    /// The Security Score's values in range since its definition last changed, so a change
-    /// over the range compares days scored the same way.
-    func comparableSecurityScores() -> [Double] {
-        Self.comparableSecurityScores(in: filteredSummaries)
+    /// The metric's values in range since its measurement basis last changed, so a change
+    /// over the range compares days measured the same way; every value for a metric with
+    /// one definition.
+    func comparableValues(metric: TrendSeries.Metric) -> [Double] {
+        comparablePoints(metric: metric).map(\.value)
     }
 
-    /// Whether the two newest scored days in range share a definition; true with fewer than
-    /// two scored days, which have no change to compare.
-    var latestSecurityScoresComparable: Bool {
-        let scored = filteredSummaries.filter { $0.securityScore != nil }.count
-        return scored < 2 || comparableSecurityScores().count >= 2
+    /// `comparableValues` with their dates, for the AI trend input.
+    func comparablePoints(metric: TrendSeries.Metric) -> [TrendPoint] {
+        Self.comparablePoints(of: metric, in: filteredSummaries) ?? points(metric: metric)
     }
 
-    /// The newest run of scored days that share `securityScoreBasis`, oldest first.
-    nonisolated static func comparableSecurityScores(in summaries: [DailySummary]) -> [Double] {
-        let scored = summaries.filter { $0.securityScore != nil }.sorted { $0.date < $1.date }
-        guard let newest = scored.last else { return [] }
-        return scored.reversed().prefix { $0.securityScoreBasis == newest.securityScoreBasis }
-            .reversed().compactMap(\.securityScore)
+    /// Whether the two newest measured days in range share a basis; true with fewer than
+    /// two measured days, which have no change to compare.
+    func latestValuesComparable(metric: TrendSeries.Metric) -> Bool {
+        values(metric: metric).count < 2 || comparableValues(metric: metric).count >= 2
+    }
+
+    /// Whether the newest compliance figure in range is the four-control proxy, which names
+    /// the figure on every screen instead of the configured benchmark.
+    var latestComplianceIsProxy: Bool {
+        filteredSummaries.filter { $0.compliancePct != nil }
+            .max { $0.date < $1.date }?.complianceIsProxy == true
+    }
+
+    /// The newest run of measured days that share the metric's basis, oldest first; nil for a
+    /// metric with one definition. The bases are the ones the alerts, the HTML report and the
+    /// period report compare: `securityScoreBasis`, `complianceIsProxy` and `patchPctBasis`.
+    nonisolated static func comparableValues(
+        of metric: TrendSeries.Metric, in summaries: [DailySummary]
+    ) -> [Double]? {
+        comparablePoints(of: metric, in: summaries)?.map(\.value)
+    }
+
+    nonisolated static func comparablePoints(
+        of metric: TrendSeries.Metric, in summaries: [DailySummary]
+    ) -> [TrendPoint]? {
+        let read: (DailySummary) -> (value: Double?, basis: String?)
+        switch metric {
+        case .securityScore: read = { ($0.securityScore, $0.securityScoreBasis) }
+        case .compliance: read = { ($0.compliancePct, $0.complianceIsProxy.map { "\($0)" }) }
+        case .patch: read = { ($0.patchPct, $0.patchPctBasis) }
+        default: return nil
+        }
+        let measured = summaries.sorted { $0.date < $1.date }.compactMap { day in
+            read(day).value.map { (point: TrendPoint(date: day.parsedDate, value: $0),
+                                   basis: read(day).basis) }
+        }
+        guard let newest = measured.last else { return [] }
+        return measured.reversed().prefix { $0.basis == newest.basis }.reversed().map(\.point)
     }
 
     var isEmpty: Bool {

@@ -1508,46 +1508,6 @@
         }
       }
     },
-    " as not managed. Mark each computer as managed in Jamf Pro, deploy the binary another way, or run sudo profiles renew -type enrollment on the Mac." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " als nicht verwaltet. Markieren Sie jeden Computer in Jamf Pro als verwaltet, verteilen Sie die Binärdatei auf anderem Weg oder führen Sie auf dem Mac sudo profiles renew -type enrollment aus."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " como no gestionados. Marque cada ordenador como gestionado en Jamf Pro, despliegue el binario de otra forma o ejecute sudo profiles renew -type enrollment en el Mac."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " comme non gérés. Marquez chaque ordinateur comme géré dans Jamf Pro, déployez le binaire autrement, ou exécutez sudo profiles renew -type enrollment sur le Mac."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " come non gestito. Contrassegnare ogni computer come gestito in Jamf Pro, distribuire il binario in altro modo oppure eseguire sudo profiles renew -type enrollment sul Mac."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " が管理対象外になっています。Jamf Proで各コンピュータを管理対象にするか、別の方法でバイナリを配布するか、Macでsudo profiles renew -type enrollmentを実行してください。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " como não gerenciado. Marque cada computador como gerenciado no Jamf Pro, implante o binário de outra forma ou execute sudo profiles renew -type enrollment no Mac."
-          }
-        }
-      }
-    },
     " at " : {
       "localizations" : {
         "de" : {
@@ -5242,42 +5202,42 @@
         }
       }
     },
-    "%@ enrolled but never received the Jamf binary: Jamf Pro lists " : {
+    "%@ enrolled but never received the Jamf binary: never checked in, and not managed or never inventoried. Mark each computer as managed in Jamf Pro, deploy the binary another way, or run sudo profiles renew -type enrollment on the Mac." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ registriert, aber nie die Jamf-Binary erhalten: Jamf Pro führt "
+            "value" : "%@ eingeschrieben, aber nie mit dem Jamf-Binary versorgt: nie eingecheckt und nicht verwaltet oder nie inventarisiert. Markieren Sie jeden Computer in Jamf Pro als verwaltet, verteilen Sie das Binary auf anderem Weg oder führen Sie auf dem Mac sudo profiles renew -type enrollment aus."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ se inscribieron pero nunca recibieron el binario de Jamf: Jamf Pro enumera "
+            "value" : "%@ inscritos pero que nunca recibieron el binario de Jamf: nunca han registrado actividad y no están gestionados o nunca se han inventariado. Marque cada ordenador como gestionado en Jamf Pro, despliegue el binario de otra forma o ejecute sudo profiles renew -type enrollment en el Mac."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inscription faite pour %@, mais le binaire Jamf n’a jamais été reçu : Jamf Pro répertorie "
+            "value" : "%@ inscrits mais n’ayant jamais reçu le binaire Jamf : jamais signalés, et non gérés ou jamais inventoriés. Marquez chaque ordinateur comme géré dans Jamf Pro, déployez le binaire autrement, ou exécutez sudo profiles renew -type enrollment sur le Mac."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ si sono registrati ma non hanno mai ricevuto il binario Jamf: Jamf Pro li elenca "
+            "value" : "%@ registrati ma che non hanno mai ricevuto il binary Jamf: mai eseguito il check-in, e non gestiti o mai inventariati. Contrassegnare ogni computer come gestito in Jamf Pro, distribuire il binary in altro modo oppure eseguire sudo profiles renew -type enrollment sul Mac."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@は登録されましたが、Jamfバイナリを受け取っていません。Jamf Proの一覧では "
+            "value" : "%@ が登録されましたが、Jamfバイナリを受け取っていません。一度もチェックインしておらず、管理対象外または一度もインベントリを送信していません。Jamf Proで各コンピュータを管理対象にするか、別の方法でバイナリを配布するか、Macでsudo profiles renew -type enrollmentを実行してください。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inscrição concluída para %@, mas o binário do Jamf nunca foi recebido: o Jamf Pro lista "
+            "value" : "%@ inscritos, mas que nunca receberam o binário do Jamf: nunca fizeram check-in e não são gerenciados ou nunca enviaram inventário. Marque cada computador como gerenciado no Jamf Pro, implante o binário de outra forma ou execute sudo profiles renew -type enrollment no Mac."
           }
         }
       }
@@ -9790,48 +9750,48 @@
         }
       }
     },
-    "%@, %lld with issues" : {
+    "%@, %lld with invalid declarations" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld mit Problemen"
+            "value" : "%@, %lld mit ungültigen Deklarationen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@, %2$lld with issues"
+            "value" : "%1$@, %2$lld with invalid declarations"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld con problemas"
+            "value" : "%@, %lld con declaraciones no válidas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld avec problèmes"
+            "value" : "%@, %lld avec déclarations invalides"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld con problemi"
+            "value" : "%@, %lld con dichiarazioni non valide"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@、問題あり%lld件"
+            "value" : "%@、無効な宣言あり%lld件"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld com problemas"
+            "value" : "%@, %lld com declarações inválidas"
           }
         }
       }
@@ -9992,6 +9952,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@, nenhum snapshot no intervalo"
+          }
+        }
+      }
+    },
+    "%@, not comparable" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, nicht vergleichbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, no comparable"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, non comparable"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, non confrontabile"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@、比較不可"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, não comparável"
           }
         }
       }
@@ -15978,6 +15978,86 @@
         }
       }
     },
+    "%lld of %lld managed computers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld verwalteten Computern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld ordenadores gestionados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur %2$lld ordinateurs gérés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld su %2$lld computer gestiti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理対象のコンピュータ %2$lld 台中 %1$lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld computadores gerenciados"
+          }
+        }
+      }
+    },
+    "%lld of %lld managed mobile devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld verwalteten mobilen Geräten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld dispositivos móviles gestionados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur %2$lld appareils mobiles gérés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld su %2$lld dispositivi mobili gestiti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理対象のモバイルデバイス %2$lld 台中 %1$lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld dispositivos móveis gerenciados"
+          }
+        }
+      }
+    },
     "%lld of %lld shown" : {
       "localizations" : {
         "de" : {
@@ -16020,6 +16100,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de %lld exibidos"
+          }
+        }
+      }
+    },
+    "%lld of 1 managed computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von 1 verwaltetem Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 ordenador gestionado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur 1 ordinateur géré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld su 1 computer gestito"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理対象のコンピュータ 1 台中 %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 computador gerenciado"
+          }
+        }
+      }
+    },
+    "%lld of 1 managed mobile device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von 1 verwaltetem mobilen Gerät"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 dispositivo móvil gestionado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur 1 appareil mobile géré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld su 1 dispositivo mobile gestito"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理対象のモバイルデバイス 1 台中 %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 dispositivo móvel gerenciado"
           }
         }
       }
@@ -22773,6 +22933,46 @@
         }
       }
     },
+    "A Jamf Security Cloud login holds no device inventory, so it is not a workspace. Add it from the Jamf Pro or Jamf School workspace's Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Jamf-Security-Cloud-Login enthält kein Geräteinventar und ist daher kein Arbeitsbereich. Fügen Sie ihn in den Datenquellen des Jamf-Pro- oder Jamf-School-Arbeitsbereichs hinzu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un inicio de sesión de Jamf Security Cloud no contiene inventario de dispositivos, así que no es un espacio de trabajo. Añádalo desde Fuentes de datos del espacio de trabajo de Jamf Pro o Jamf School."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une connexion Jamf Security Cloud ne contient aucun inventaire d’appareils ; ce n’est donc pas un espace de travail. Ajoutez-la depuis les Sources de données de l’espace de travail Jamf Pro ou Jamf School."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un accesso Jamf Security Cloud non contiene alcun inventario di dispositivi, quindi non è uno spazio di lavoro. Aggiungilo dalle Origini dati dello spazio di lavoro Jamf Pro o Jamf School."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Security Cloudのログインにはデバイスインベントリがないため、ワークスペースにはなりません。Jamf ProまたはJamf Schoolのワークスペースのデータソースから追加してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um login do Jamf Security Cloud não contém inventário de dispositivos, portanto não é um espaço de trabalho. Adicione-o em Fontes de dados do espaço de trabalho do Jamf Pro ou do Jamf School."
+          }
+        }
+      }
+    },
     "A Mac is stale when any date turned on is more than the stale threshold ago. Last contact counts MDM and declarative device management too; a Mac with none recorded is not judged by it." : {
       "localizations" : {
         "de" : {
@@ -22849,6 +23049,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Um Mac que compartilha este espaço de trabalho editou o config.yaml, ou ele foi editado aqui. Até você confirmar, todas as telas, relatórios e execuções neste Mac usam o valor seguro de cada chave (pasta Generated Reports do espaço de trabalho, arquivar em vez de excluir, nenhum envio de webhook, nenhuma coleta do Protect, nenhuma coleta da Platform API, nenhum logotipo, o arquivo de histórico ao lado do relatório, nenhum carimbo de data e hora no relatório)."
+          }
+        }
+      }
+    },
+    "A backup without Jamf Pro cannot be diffed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Sicherung ohne Jamf Pro kann nicht verglichen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede comparar una copia de seguridad sin Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une sauvegarde sans Jamf Pro ne peut pas être comparée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un backup senza Jamf Pro non può essere confrontato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Pro を含まないバックアップは比較できません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um backup sem Jamf Pro não pode ser comparado"
           }
         }
       }
@@ -26785,6 +27025,46 @@
         }
       }
     },
+    "Add to this environment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu dieser Umgebung hinzufügen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir a este entorno"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter à cet environnement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi a questo ambiente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境に追加"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adicionar a este ambiente"
+          }
+        }
+      }
+    },
     "Add workspace or product…" : {
       "localizations" : {
         "de" : {
@@ -27787,46 +28067,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alertas ativos"
-          }
-        }
-      }
-    },
-    "Alerts by Severity" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alarme nach Schweregrad"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas por gravedad"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertes par gravité"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avvisi per gravità"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重大度別のアラート"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas por gravidade"
           }
         }
       }
@@ -37273,6 +37513,46 @@
         }
       }
     },
+    "Collect with a Jamf Pro API client, which sees every site, or treat these reports as one site's." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfassen Sie mit einem Jamf Pro API-Client, der alle Sites sieht, oder behandeln Sie diese Berichte als Bericht einer einzelnen Site."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recopile con un cliente de API de Jamf Pro, que ve todos los sitios, o trate estos informes como los de un solo sitio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collectez avec un client API Jamf Pro, qui voit tous les sites, ou considérez ces rapports comme ceux d’un seul site."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccogli con un client API di Jamf Pro, che vede tutti i siti, oppure considera questi report come quelli di un solo sito."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのサイトを参照できる Jamf Pro API クライアントで収集するか、これらのレポートを 1 つのサイトのものとして扱ってください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colete com um cliente de API do Jamf Pro, que vê todos os sites, ou trate estes relatórios como os de um único site."
+          }
+        }
+      }
+    },
     "Collected data · Extension Attributes" : {
       "localizations" : {
         "de" : {
@@ -37989,6 +38269,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conformidade %"
+          }
+        }
+      }
+    },
+    "Compliance (4-control proxy)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compliance (Schätzung aus 4 Kontrollen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cumplimiento (estimación con 4 controles)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conformité (estimation sur 4 contrôles)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conformità (stima su 4 controlli)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンプライアンス（4項目による推定）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conformidade (estimativa de 4 controles)"
           }
         }
       }
@@ -50579,6 +50899,46 @@
         }
       }
     },
+    "Diff compares Jamf Pro backups; this backup holds Jamf Protect only." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Vergleich prüft Jamf Pro-Sicherungen; diese Sicherung enthält nur Jamf Protect."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La comparación revisa copias de seguridad de Jamf Pro; esta copia contiene solo Jamf Protect."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La comparaison porte sur les sauvegardes Jamf Pro ; cette sauvegarde ne contient que Jamf Protect."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il confronto riguarda i backup di Jamf Pro; questo backup contiene solo Jamf Protect."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "比較の対象は Jamf Pro のバックアップです。このバックアップには Jamf Protect のみが含まれます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A comparação abrange backups do Jamf Pro; este backup contém apenas o Jamf Protect."
+          }
+        }
+      }
+    },
     "Diffing..." : {
       "localizations" : {
         "de" : {
@@ -54597,42 +54957,42 @@
         }
       }
     },
-    "Experimental: Jamf Protect with Jamf School. Protect is collected and reported; it is not backed up, as a Jamf School workspace has no backups." : {
+    "Experimental: Jamf Protect with Jamf School. Protect is collected, reported and backed up; a backup holds Jamf Protect alone, as there is no Jamf Pro." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Experimentell: Jamf Protect mit Jamf School. Protect wird erfasst und berichtet, aber nicht gesichert, da ein Jamf School-Arbeitsbereich keine Backups hat."
+            "value" : "Experimentell: Jamf Protect mit Jamf School. Protect wird erfasst, ausgewertet und gesichert; eine Sicherung enthält nur Jamf Protect, da es kein Jamf Pro gibt."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Experimental: Jamf Protect con Jamf School. Protect se recopila y se incluye en los informes, pero no se incluye en las copias de seguridad, ya que un espacio de trabajo de Jamf School no tiene copias de seguridad."
+            "value" : "Experimental: Jamf Protect con Jamf School. Protect se recopila, se incluye en los informes y se copia; una copia de seguridad contiene solo Jamf Protect, ya que no hay Jamf Pro."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Expérimental : Jamf Protect avec Jamf School. Protect est collecté et rapporté, mais pas sauvegardé, car un espace de travail Jamf School n’a pas de sauvegardes."
+            "value" : "Expérimental : Jamf Protect avec Jamf School. Protect est collecté, présenté dans les rapports et sauvegardé ; une sauvegarde ne contient que Jamf Protect, car il n’y a pas de Jamf Pro."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sperimentale: Jamf Protect con Jamf School. Protect viene raccolto e incluso nei report, ma non ne viene eseguito il backup, perché uno spazio di lavoro Jamf School non prevede backup."
+            "value" : "Sperimentale: Jamf Protect con Jamf School. Protect viene raccolto, incluso nei report e sottoposto a backup; un backup contiene solo Jamf Protect, poiché non c’è Jamf Pro."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "実験的: Jamf School向けのJamf Protect。Protectは収集とレポートの対象ですが、Jamf Schoolワークスペースにはバックアップがないため、バックアップされません。"
+            "value" : "試験的: Jamf School での Jamf Protect。Protect は収集、レポート、バックアップされます。Jamf Pro がないため、バックアップには Jamf Protect のみが含まれます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Experimental: Jamf Protect com Jamf School. O Protect é coletado e relatado, mas não tem backup, pois um espaço de trabalho do Jamf School não tem backups."
+            "value" : "Experimental: Jamf Protect com Jamf School. O Protect é coletado, incluído nos relatórios e copiado; um backup contém apenas o Jamf Protect, pois não há Jamf Pro."
           }
         }
       }
@@ -67915,42 +68275,42 @@
         }
       }
     },
-    "Jamf Pro lists this Mac as not managed and it has never checked in. It needs manual intervention. Any one of these gets the binary on:" : {
+    "Jamf Pro lists this Mac as not managed or as never inventoried, and it has never checked in. It needs manual intervention. Any one of these gets the binary on:" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro führt diesen Mac als nicht verwaltet und er hat sich nie eingecheckt. Er erfordert ein manuelles Eingreifen. Jede dieser Möglichkeiten bringt das Binary darauf:"
+            "value" : "Jamf Pro führt diesen Mac als nicht verwaltet oder als nie inventarisiert, und er hat sich nie eingecheckt. Er erfordert ein manuelles Eingreifen. Jede dieser Möglichkeiten bringt das Binary darauf:"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro enumera este Mac como no gestionado y nunca ha registrado actividad. Requiere intervención manual. Cualquiera de estas opciones instala el binario:"
+            "value" : "Jamf Pro enumera este Mac como no gestionado o nunca inventariado, y nunca ha registrado actividad. Requiere intervención manual. Cualquiera de estas opciones instala el binario:"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro indique que ce Mac n’est pas géré et qu’il ne s’est jamais signalé. Il nécessite une intervention manuelle. L’une de ces méthodes installe le binaire :"
+            "value" : "Jamf Pro indique que ce Mac n’est pas géré ou n’a jamais été inventorié, et qu’il ne s’est jamais signalé. Il nécessite une intervention manuelle. L’une de ces méthodes installe le binaire :"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Pro elenca questo Mac come non gestito e non ha mai eseguito il check-in. Richiede un intervento manuale. Uno qualsiasi di questi metodi installa il binary:"
+            "value" : "Jamf Pro elenca questo Mac come non gestito o mai inventariato e non ha mai eseguito il check-in. Richiede un intervento manuale. Uno qualsiasi di questi metodi installa il binary:"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf ProはこのMacを管理対象外として一覧表示しており、一度もチェックインしていません。手動での対応が必要です。次のいずれかの方法でバイナリを導入できます。"
+            "value" : "Jamf ProはこのMacを管理対象外、または一度もインベントリを受信していないものとして一覧表示しており、一度もチェックインしていません。手動での対応が必要です。次のいずれかの方法でバイナリを導入できます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Jamf Pro lista este Mac como não gerenciado e ele nunca fez check-in. Ele precisa de intervenção manual. Qualquer uma destas ações instala o binário:"
+            "value" : "O Jamf Pro lista este Mac como não gerenciado ou nunca inventariado e ele nunca fez check-in. Ele precisa de intervenção manual. Qualquer uma destas ações instala o binário:"
           }
         }
       }
@@ -69363,46 +69723,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jamf Security Cloud"
-          }
-        }
-      }
-    },
-    "Jamf Security Cloud is not supported yet." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud wird noch nicht unterstützt."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud aún no es compatible."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud n’est pas encore pris en charge."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloud non è ancora supportato."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Security Cloudにはまだ対応していません。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O Jamf Security Cloud ainda não é compatível."
           }
         }
       }
@@ -76597,6 +76917,46 @@
         }
       }
     },
+    "Needs Jamf Security Cloud collected for this environment." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert die Erfassung von Jamf Security Cloud für diese Umgebung."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere que se recopile Jamf Security Cloud para este entorno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite la collecte de Jamf Security Cloud pour cet environnement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richiede la raccolta di Jamf Security Cloud per questo ambiente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境でJamf Security Cloudを収集する必要があります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requer a coleta do Jamf Security Cloud para este ambiente."
+          }
+        }
+      }
+    },
     "Needs a collected inventory." : {
       "localizations" : {
         "de" : {
@@ -81335,6 +81695,46 @@
         }
       }
     },
+    "No open alerts. Resolved and AutoResolved alerts are not counted." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine offenen Alarme. Alarme mit Resolved und AutoResolved werden nicht gezählt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay alertas abiertas. Las alertas Resolved y AutoResolved no se cuentan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune alerte ouverte. Les alertes Resolved et AutoResolved ne sont pas comptées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun avviso aperto. Gli avvisi Resolved e AutoResolved non vengono conteggiati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未解決のアラートはありません。Resolved と AutoResolved のアラートは数えません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum alerta aberto. Alertas Resolved e AutoResolved não são contados."
+          }
+        }
+      }
+    },
     "No other machine has recorded a run in this workspace. Coordination is armed and will engage as soon as one does." : {
       "localizations" : {
         "de" : {
@@ -83981,46 +84381,6 @@
         }
       }
     },
-    "Not managed: Jamf binary missing" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht verwaltet: Jamf-Binary fehlt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No gestionado: falta el binario de Jamf"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non géré : binaire Jamf manquant"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non gestito: binario Jamf mancante"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理対象外: Jamfバイナリなし"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Não gerenciado: binário do Jamf ausente"
-          }
-        }
-      }
-    },
     "Not now" : {
       "localizations" : {
         "de" : {
@@ -86587,6 +86947,46 @@
         }
       }
     },
+    "Open Alerts by Severity" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offene Alarme nach Schweregrad"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertas abiertas por gravedad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertes ouvertes par gravité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvisi aperti per gravità"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重大度別の未解決のアラート"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alertas abertos por gravidade"
+          }
+        }
+      }
+    },
     "Open Automation" : {
       "localizations" : {
         "de" : {
@@ -87063,6 +87463,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir Fontes de dados"
+          }
+        }
+      }
+    },
+    "Open Data Sources to see the Jamf Security Cloud collect." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen Sie Datenquellen, um die Erfassung von Jamf Security Cloud zu sehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Fuentes de datos para ver la recopilación de Jamf Security Cloud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez Sources de données pour voir la collecte de Jamf Security Cloud."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Origini dati per vedere la raccolta di Jamf Security Cloud."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Security Cloudの収集を確認するには、データソースを開いてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Fontes de dados para ver a coleta do Jamf Security Cloud."
           }
         }
       }
@@ -106147,6 +106587,126 @@
         }
       }
     },
+    "Security Cloud devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security-Cloud-Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de Security Cloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareils Security Cloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivi Security Cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Cloudのデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos do Security Cloud"
+          }
+        }
+      }
+    },
+    "Security Cloud high-risk devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security-Cloud-Geräte mit hohem Risiko"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de alto riesgo de Security Cloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareils à risque élevé Security Cloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivi ad alto rischio di Security Cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Cloudの高リスクデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de alto risco do Security Cloud"
+          }
+        }
+      }
+    },
+    "Security Cloud match with inventory" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security-Cloud-Abgleich mit dem Inventar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coincidencia de Security Cloud con el inventario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correspondance Security Cloud avec l’inventaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Corrispondenza di Security Cloud con l’inventario"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Cloudとインベントリの一致"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correspondência do Security Cloud com o inventário"
+          }
+        }
+      }
+    },
     "Security Policy" : {
       "localizations" : {
         "de" : {
@@ -108229,6 +108789,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Defina profiles.protect como o perfil criado por `jamf-cli protect setup` ou limpe o campo."
+          }
+        }
+      }
+    },
+    "Set profiles.security_cloud to the profile `jamf-cli security setup` created, or clear it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setzen Sie profiles.security_cloud auf das von `jamf-cli security setup` erstellte Profil oder leeren Sie den Wert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establezca profiles.security_cloud en el perfil que creó `jamf-cli security setup`, o bórrelo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez profiles.security_cloud sur le profil créé par `jamf-cli security setup`, ou videz-le."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imposta profiles.security_cloud sul profilo creato da `jamf-cli security setup`, oppure svuotalo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloudを`jamf-cli security setup`で作成したプロファイルに設定するか、空にしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina profiles.security_cloud como o perfil criado por `jamf-cli security setup` ou limpe o valor."
           }
         }
       }
@@ -120347,6 +120947,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este é o backup mais recente com arquivos."
+          }
+        }
+      }
+    },
+    "This login sees only part of Jamf Pro" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Anmeldung sieht nur einen Teil von Jamf Pro"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este inicio de sesión solo ve una parte de Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette connexion ne voit qu’une partie de Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo accesso vede solo una parte di Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このログインでは Jamf Pro の一部しか見えません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este login vê apenas parte do Jamf Pro"
           }
         }
       }
@@ -140772,6 +141412,92 @@
         }
       }
     },
+    "profiles.security_cloud is not a Jamf Security Cloud login" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud ist kein Jamf-Security-Cloud-Login"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud no es un inicio de sesión de Jamf Security Cloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud n’est pas une connexion Jamf Security Cloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud non è un accesso Jamf Security Cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloudはJamf Security Cloudのログインではありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud não é um login do Jamf Security Cloud"
+          }
+        }
+      }
+    },
+    "profiles.security_cloud names '%@', a %@ profile. Security Cloud commands would go to the wrong API, so Jamf Security Cloud is not collected until it names a Jamf Security Cloud login." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud nennt „%@“, ein %@-Profil. Security-Cloud-Befehle würden an die falsche API gehen, daher wird Jamf Security Cloud nicht erfasst, bis es einen Jamf-Security-Cloud-Login nennt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "profiles.security_cloud names '%1$@', a %2$@ profile. Security Cloud commands would go to the wrong API, so Jamf Security Cloud is not collected until it names a Jamf Security Cloud login."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud nombra “%@”, un perfil de %@. Los comandos de Security Cloud irían a la API equivocada, así que Jamf Security Cloud no se recopila hasta que nombre un inicio de sesión de Jamf Security Cloud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud désigne « %@ », un profil %@. Les commandes Security Cloud iraient vers la mauvaise API ; Jamf Security Cloud n’est donc pas collecté tant que cette valeur ne désigne pas une connexion Jamf Security Cloud."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud indica '%@', un profilo %@. I comandi Security Cloud andrebbero all’API sbagliata, quindi Jamf Security Cloud non viene raccolto finché non indica un accesso Jamf Security Cloud."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloudには%2$@プロファイルの'%1$@'が指定されています。Security Cloudのコマンドが誤ったAPIに送られるため、Jamf Security Cloudのログインを指定するまでJamf Security Cloudは収集されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "profiles.security_cloud indica '%@', um perfil %@. Os comandos do Security Cloud iriam para a API errada, então o Jamf Security Cloud não é coletado até que indique um login do Jamf Security Cloud."
+          }
+        }
+      }
+    },
     "project." : {
       "localizations" : {
         "de" : {
@@ -140928,6 +141654,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "recusado por política (exit 8) — o comando está fora do que a API deste perfil publica: em um perfil de gateway da Platform, um comando do Jamf Pro ou Classic que a Platform API não atende; em um perfil de instância, um comando exclusivo da Platform. Use um perfil oauth2 na instância do Jamf Pro para este comando. `jamf-cli commands -o json` lista as recusas do binário em uso (gateway == \"unserved\")."
+          }
+        }
+      }
+    },
+    "repeat a matched %@ computer and are counted once." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "wiederholen einen bereits zugeordneten %@-Computer und werden einmal gezählt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repiten un ordenador de %@ ya emparejado y se cuentan una vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "répètent un ordinateur %@ déjà associé et ne sont comptés qu’une fois."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ripetono un computer %@ già associato e vengono conteggiati una volta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一致済みの%@コンピュータと重複するため、1台として数えます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repetem um computador de %@ já correspondido e são contados uma vez."
+          }
+        }
+      }
+    },
+    "repeats a matched %@ computer and is counted once." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "wiederholt einen bereits zugeordneten %@-Computer und wird einmal gezählt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repite un ordenador de %@ ya emparejado y se cuenta una vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "répète un ordinateur %@ déjà associé et n’est compté qu’une fois."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ripete un computer %@ già associato e viene conteggiato una volta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一致済みの%@コンピュータと重複するため、1台として数えます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "repete um computador de %@ já correspondido e é contado uma vez."
           }
         }
       }

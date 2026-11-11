@@ -443,7 +443,9 @@ private func scheduledRunSingleBody(
             print(warning)
             recorder?.record(warning)
         }
-        guard backupDetected.type == .jamfPro, !protectOnly else {
+        // A Jamf School workspace with Protect backs up Protect alone (2.12).
+        guard backupDetected.type == .jamfPro || environment.isSchoolWithProtect, !protectOnly
+        else {
             let reason = protectOnly
                 ? "'\(profile)' holds only a Jamf Protect profile; there is no Jamf Pro in this "
                     + "environment"
@@ -487,8 +489,8 @@ private func scheduledRunSingleBody(
                     ? "[partial] scheduled backup for '\(profile)' is incomplete; the lines "
                         + "above say which product's part is missing"
                     : run.folder == nil
-                    ? "[ok] scheduled backup ran for '\(profile)' and kept nothing: Jamf Pro was "
-                        + "skipped and Jamf Protect left no objects"
+                    ? "[ok] scheduled backup ran for '\(profile)' and kept nothing: no Jamf Pro "
+                        + "part was written and Jamf Protect left no objects"
                     : "[ok] scheduled backup complete for '\(profile)'")
             if failureDetail == nil { print(message) } else { fputs(message + "\n", stderr) }
             recorder?.record(message)

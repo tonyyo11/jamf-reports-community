@@ -196,6 +196,19 @@ final class ProtectOnlyCollectTests: XCTestCase {
         try assertPlainExitZeroRecord(in: root.appendingPathComponent(ws))
     }
 
+    /// With a Protect profile the scheduled School backup is no longer skipped: it reaches the
+    /// bridge, which finds no jamf-cli in a test process and fails instead (2.12).
+    func testAScheduledSchoolBackupWithProtectRunsTheBackup() async throws {
+        let root = try makeRoot()
+        let yaml = "school_cli:\n  enabled: true\n  profile: \(ws)\n"
+            + "protect:\n  enabled: true\n  profile: p\n"
+        try yaml.write(
+            to: root.appendingPathComponent(ws).appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        let outcome = await runSchedule(backupSchedule(ws), verbose: false)
+        XCTAssertEqual(outcome.exitCode, 1, "the backup ran and found no jamf-cli")
+    }
+
     /// Same store, same empty snapshots: a Jamf Pro workspace runs the sweep, a Protect-only
     /// one does not, so the Protect-only check alone is what stops it.
     @MainActor

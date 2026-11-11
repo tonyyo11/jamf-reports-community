@@ -191,11 +191,18 @@ struct PatchStatusService: Sendable {
     // MARK: - Internals
 
     /// Parse "83%" into 83.0, "100%" into 100.0, etc.
-    /// Returns 0 on any parse failure since compliance percentage is decorative
-    /// (the actual device counts are the source of truth).
-    static func parseCompliancePct(_ raw: String) -> Double {
+    /// Nil for "N/A", blank or any other text: Jamf did not measure it, which is not 0%.
+    static func parseCompliancePct(_ raw: String) -> Double? {
         let stripped = raw.trimmingCharacters(in: CharacterSet(charactersIn: "% "))
-        return Double(stripped) ?? 0
+        guard let value = Double(stripped), value.isFinite else { return nil }
+        return value
+    }
+
+    /// Lowest share first; a title with no measured share sorts last.
+    static func sortsBefore(_ lhs: PatchStatusRow, _ rhs: PatchStatusRow) -> Bool {
+        guard let lhsPct = parseCompliancePct(lhs.compliancePct) else { return false }
+        guard let rhsPct = parseCompliancePct(rhs.compliancePct) else { return true }
+        return lhsPct < rhsPct
     }
 
     // MARK: - CSV export

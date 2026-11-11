@@ -98,12 +98,15 @@ enum ChartPalette {
         switch metric {
         case .stability:                          return hex(slot: 0, scheme: scheme)
         case .compliance, .mscpBandTrend:         return hex(slot: 1, scheme: scheme)
-        case .osCurrent, .mobileOSCurrent, .protectMatched: return hex(slot: 2, scheme: scheme)
+        case .osCurrent, .mobileOSCurrent, .protectMatched,
+             .securityCloudMatched: return hex(slot: 2, scheme: scheme)
         case .patch:                              return hex(slot: 3, scheme: scheme)
-        case .securityScore, .mobileJailbroken:   return hex(slot: 4, scheme: scheme)
+        case .securityScore, .mobileJailbroken,
+             .securityCloudHighRisk:              return hex(slot: 4, scheme: scheme)
         case .stale, .mobileStale, .protectOpenAlerts: return hex(slot: 5, scheme: scheme)
         case .fileVault, .mobilePasscode:         return hex(slot: 6, scheme: scheme)
-        case .managedDevices, .mobileManaged, .protectComputers: return hex(slot: 7, scheme: scheme)
+        case .managedDevices, .mobileManaged, .protectComputers,
+             .securityCloudDevices: return hex(slot: 7, scheme: scheme)
         case .edrAgent:                           return hex(slot: 8, scheme: scheme)
         case .sip, .mobileDataProtection:         return hex(slot: 9, scheme: scheme)
         case .gatekeeper:                         return hex(slot: 10, scheme: scheme)

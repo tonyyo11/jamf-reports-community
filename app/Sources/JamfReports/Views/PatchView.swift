@@ -247,12 +247,13 @@ struct PatchView: View {
                             Image(systemName: complianceIcon(for: pct))
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(complianceColor(for: pct))
-                            Text(title.compliancePct)
+                            Text(pct == nil ? "—" : title.compliancePct)
                                 .font(Theme.Fonts.mono(11, weight: .semibold))
                                 .foregroundStyle(complianceColor(for: pct))
                                 .monospacedDigit()
                         }
-                        .accessibilityLabel("\(title.compliancePct) compliance rate")
+                        .accessibilityLabel(pct == nil ? L("No data yet")
+                                            : L("\(title.compliancePct) compliance rate"))
                     }
                     .width(min: 80, ideal: 90)
 
@@ -286,11 +287,7 @@ struct PatchView: View {
     }
 
     private var sortedTitles: [PatchStatusRow] {
-        snapshot.titles.sorted { lhs, rhs in
-            let lhsPct = PatchStatusService.parseCompliancePct(lhs.compliancePct)
-            let rhsPct = PatchStatusService.parseCompliancePct(rhs.compliancePct)
-            return lhsPct < rhsPct
-        }
+        snapshot.titles.sorted(by: PatchStatusService.sortsBefore)
     }
 
     // MARK: - Patch Velocity
@@ -432,7 +429,8 @@ struct PatchView: View {
         .accessibilityLabel("Adoption velocity for the \(titles.count) slowest-adopting patch titles")
     }
 
-    private func complianceColor(for pct: Double) -> Color {
+    private func complianceColor(for pct: Double?) -> Color {
+        guard let pct else { return Theme.Colors.fgMuted }
         switch pct {
         case ..<50:  return Theme.Colors.danger
         case ..<80:  return Theme.Colors.warn
@@ -441,7 +439,8 @@ struct PatchView: View {
         }
     }
 
-    private func complianceIcon(for pct: Double) -> String {
+    private func complianceIcon(for pct: Double?) -> String {
+        guard let pct else { return "minus.circle" }
         switch pct {
         case ..<80:  return "exclamationmark.triangle"
         case ..<90:  return "exclamationmark.circle"

@@ -711,7 +711,7 @@ final class JamfCLIDecoderTests: XCTestCase {
         [{"connectionStatus":"Connected","fullDiskAccess":"Authorized",
           "hostname":"lab-mac-01.example","insightsStatsFail":4,
           "lastConnection":"2026-05-01T09:45:00.000Z","memorySize":32,"modelName":"Mac Studio",
-          "osMajor":15,"osMinor":7,"osPatch":3,"osString":"15.7.3","plan":"Engineering Lab",
+          "osMajor":15,"osMinor":7,"osPatch":3,"plan":"Engineering Lab",
           "serial":"SYNTH0000001","tags":"[lab dev]","uuid":"comp-1","version":"6.1.0.2",
           "webProtectionActive":true}]
         """
@@ -720,7 +720,15 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].hostName, "lab-mac-01.example")
         XCTAssertEqual(rows[0].serial, "SYNTH0000001")
         XCTAssertEqual(rows[0].modelName, "Mac Studio")
-        XCTAssertEqual(rows[0].osString, "15.7.3")
+        XCTAssertEqual(rows[0].osString, "macOS 15.7.3")
+        let bare = try JSONDecoder().decode(
+            [ProtectComputerRow].self,
+            from: Data(#"[{"osMajor":26,"osMinor":1,"osPatch":0},{"hostname":"x"}]"#.utf8))
+        XCTAssertEqual(bare[0].osString, "macOS 26.1")
+        XCTAssertNil(bare[1].osString)
+        let legacy = try JSONDecoder().decode(
+            [ProtectComputerRow].self, from: Data(#"[{"osString":"15.7.3"}]"#.utf8))
+        XCTAssertEqual(legacy[0].osString, "15.7.3")
         XCTAssertEqual(rows[0].planName, "Engineering Lab")
         XCTAssertEqual(rows[0].version, "6.1.0.2")
         XCTAssertEqual(rows[0].webProtectionActive, true)

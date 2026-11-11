@@ -44,25 +44,45 @@ struct EASheetWriter: Sendable {
             else if val.lowercased() == trueValue { trueCount += 1 }
             else { falseCount += 1 }
         }
-        let total = trueCount + falseCount + unknownCount
-        let pct = total > 0 ? Double(trueCount) / Double(total) : 0
+        // A blank is no value: the share is of the Macs that reported one.
+        let reported = trueCount + falseCount
 
         ws.write("Status", row: row, col: 0, format: .header)
         ws.write("Count", row: row, col: 1, format: .header)
         ws.write("Percent", row: row, col: 2, format: .header)
         row += 1
-        ws.write(ea.trueValue ?? "True", row: row, col: 0, format: .cell)
+        ws.write("\(ea.trueValue ?? "True") (pass)", row: row, col: 0, format: .cell)
         ws.write(trueCount, row: row, col: 1, format: .green)
-        let pctFormat: CellFormat = pct >= 0.95 ? .pctGreen : pct >= 0.80 ? .pctYellow : .pctRed
-        ws.write(pct, row: row, col: 2, format: pctFormat)
+        if reported > 0 {
+            let pct = Double(trueCount) / Double(reported)
+            let pctFormat: CellFormat = pct >= 0.95 ? .pctGreen : pct >= 0.80 ? .pctYellow : .pctRed
+            ws.write(pct, row: row, col: 2, format: pctFormat)
+        }
         row += 1
         ws.write("Other", row: row, col: 0, format: .cell)
         ws.write(falseCount, row: row, col: 1, format: falseCount > 0 ? .red : .cell)
         row += 1
-        if unknownCount > 0 {
-            ws.write("Unknown/Blank", row: row, col: 0, format: .cell)
-            ws.write(unknownCount, row: row, col: 1, format: .cell)
+        writeBlankRow(unknownCount, on: ws, row: row)
+    }
+
+    static let unknownLabel = "Unknown/Blank"
+
+    /// Blank values, counted apart: a blank is no value, so it gets no status.
+    private func distribution(_ entries: [EAEntry]) -> (values: [String: Int], blank: Int) {
+        var values: [String: Int] = [:]
+        var blank = 0
+        for entry in entries {
+            let val = entry.value.trimmingCharacters(in: .whitespaces)
+            if val.isEmpty { blank += 1 } else { values[val, default: 0] += 1 }
         }
+        return (values, blank)
+    }
+
+    /// The last row: how many Macs reported a blank value, when any did.
+    private func writeBlankRow(_ blank: Int, on ws: Worksheet, row: Int) {
+        guard blank > 0 else { return }
+        ws.write(Self.unknownLabel, row: row, col: 0, format: .cell)
+        ws.write(blank, row: row, col: 1, format: .cell)
     }
 
     private func writePercentage(_ ea: CustomEAConfig, _ entries: [EAEntry]) {
@@ -74,22 +94,34 @@ struct EASheetWriter: Sendable {
         let warn = ea.warningThreshold ?? config.thresholds?.resolvedWarningDisk ?? 80
         let crit = ea.criticalThreshold ?? config.thresholds?.resolvedCriticalDisk ?? 90
 
-        var distribution: [String: Int] = [:]
-        for entry in entries {
-            let val = entry.value.trimmingCharacters(in: .whitespaces)
-            distribution[val, default: 0] += 1
-        }
+        let (distribution, blank) = distribution(entries)
 
         ws.write("Value", row: row, col: 0, format: .header)
         ws.write("Count", row: row, col: 1, format: .header)
         ws.write("Status", row: row, col: 2, format: .header)
         row += 1
 
+        // A value that is not a number ("N/A") is listed with no status, after the numbers.
+        func number(_ val: String) -> Double? {
+            Double(val.hasSuffix("%") ? String(val.dropLast()) : val).flatMap {
+                $0.isFinite ? $0 : nil
+            }
+        }
         let byNumber = distribution.sorted {
-            ($0.key as NSString).doubleValue < ($1.key as NSString).doubleValue
+            switch (number($0.key), number($1.key)) {
+            case let (lhs?, rhs?): return lhs < rhs
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil): return $0.key < $1.key
+            }
         }
         for (val, count) in byNumber {
-            let num = (val as NSString).doubleValue
+            guard let num = number(val) else {
+                ws.write(val, row: row, col: 0, format: .cell)
+                ws.write(count, row: row, col: 1, format: .cell)
+                row += 1
+                continue
+            }
             let fmt: CellFormat = num >= Double(crit) ? .red : num >= Double(warn) ? .yellow : .cell
             let status = num >= Double(crit) ? "Critical" : num >= Double(warn) ? "Warning" : "OK"
             ws.write(val, row: row, col: 0, format: fmt)
@@ -97,6 +129,7 @@ struct EASheetWriter: Sendable {
             ws.write(status, row: row, col: 2, format: fmt)
             row += 1
         }
+        writeBlankRow(blank, on: ws, row: row)
     }
 
     private func writeVersion(_ ea: CustomEAConfig, _ entries: [EAEntry]) {
@@ -107,11 +140,7 @@ struct EASheetWriter: Sendable {
         ws.setColumnWidth(2, 2, 12)
 
         let currentVersions = ea.currentVersions?.map { $0.lowercased() } ?? []
-        var distribution: [String: Int] = [:]
-        for entry in entries {
-            let val = entry.value.trimmingCharacters(in: .whitespaces)
-            distribution[val, default: 0] += 1
-        }
+        let (distribution, blank) = distribution(entries)
 
         ws.write("Version", row: row, col: 0, format: .header)
         ws.write("Count", row: row, col: 1, format: .header)
@@ -129,6 +158,7 @@ struct EASheetWriter: Sendable {
             ws.write(status, row: row, col: 2, format: fmt)
             row += 1
         }
+        writeBlankRow(blank, on: ws, row: row)
     }
 
     private func writeText(_ ea: CustomEAConfig, _ entries: [EAEntry]) {
@@ -147,7 +177,11 @@ struct EASheetWriter: Sendable {
         ws.write("Count", row: row, col: 1, format: .header)
         row += 1
 
-        for (val, count) in frequency.sorted(by: { $0.value > $1.value }) {
+        // Ties by value text: a dictionary has no order, so tied rows moved run to run.
+        let ordered = frequency.sorted {
+            $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
+        }
+        for (val, count) in ordered {
             ws.write(val, row: row, col: 0, format: .cell)
             ws.write(count, row: row, col: 1, format: .cell)
             row += 1
@@ -333,7 +367,7 @@ struct EASheets: Sendable {
         }
     }
 
-    private static func key(_ text: String?) -> String {
+    static func key(_ text: String?) -> String {
         (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
@@ -372,7 +406,7 @@ struct EASheets: Sendable {
 
     /// Serial by computer name, only for a name one Mac has: two Macs can share a name, and a
     /// guess would put one Mac's serial on the other's row.
-    private static func serialsByName(_ data: Data) -> [String: String] {
+    static func serialsByName(_ data: Data) -> [String: String] {
         let object = try? JSONSerialization.jsonObject(with: data)
         let items = (object as? [[String: Any]])
             ?? (object as? [String: Any]).flatMap { $0["results"] as? [[String: Any]] } ?? []

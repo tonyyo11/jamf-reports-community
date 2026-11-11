@@ -455,7 +455,7 @@ struct ProtectView: View {
                 let totalAlerts = snapshot.highAlerts + snapshot.mediumAlerts
                     + snapshot.lowAlerts + snapshot.informationalAlerts
                 HStack {
-                    SectionHeader(title: L("Alerts by Severity"))
+                    SectionHeader(title: L("Open Alerts by Severity"))
                     if totalAlerts > 0 {
                         PNPButton(
                             title: L("Export PNG"),
@@ -467,6 +467,11 @@ struct ProtectView: View {
                         .accessibilityLabel("Export alerts by severity chart as PNG")
                         .help("Save the alerts by severity bar chart as a PNG image")
                     }
+                }
+                if totalAlerts == 0 {
+                    Text("No open alerts. Resolved and AutoResolved alerts are not counted.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 if totalAlerts > 0 {
                     VStack(spacing: 6) {
@@ -498,9 +503,10 @@ struct ProtectView: View {
         let informational = snapshot.informationalAlerts
         let total = high + medium + low + informational
         let result = DashboardChartExport.run(
-            title: "Alerts by Severity",
+            title: "Open Alerts by Severity",
             subtitle: "Jamf Protect",
-            footnote: "Source: jamf-cli protect alerts · \(total) alert\(total == 1 ? "" : "s")",
+            footnote: "Source: jamf-cli protect alerts · "
+                + "\(total) open alert\(total == 1 ? "" : "s")",
             suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile)
         ) {
             ProtectAlertsSeverityExport(
@@ -873,6 +879,9 @@ struct ProtectView: View {
             protectLine(match.ambiguous,
                         one: L("matches more than one \(product) computer and is not counted."),
                         many: L("match more than one \(product) computer and are not counted.")),
+            protectLine(match.duplicates,
+                        one: L("repeats a matched \(product) computer and is counted once."),
+                        many: L("repeat a matched \(product) computer and are counted once.")),
             protectLine(match.noIdentifier, one: L("reports no UUID or serial."),
                         many: L("report no UUID or serial.")),
         ].compactMap { $0 }
@@ -956,7 +965,7 @@ struct ProtectView: View {
                 HStack(spacing: 4) {
                     Text("Pass: \(pass)")
                         .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.Colors.teal)
+                        .foregroundStyle(Theme.Colors.tealBright)
 
                     Text("•")
                         .font(.caption2.monospaced())

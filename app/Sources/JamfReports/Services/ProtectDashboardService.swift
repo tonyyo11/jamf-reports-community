@@ -39,6 +39,9 @@ struct ProtectDashboardService: Sendable {
         /// pipe, an oversize file, bad JSON); never shown as "not detected" or as zero rows.
         var unreadableKinds: [String] = []
 
+        /// Alerts that are not Resolved or AutoResolved; the severity counts are over these.
+        var openAlertCount: Int { alerts.filter(\.isOpen).count }
+
         /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
         /// threshold as TrendStore to align with the standard daily-schedule cadence.
         var cacheSource: CacheSource {
@@ -325,14 +328,14 @@ struct ProtectDashboardService: Sendable {
         return matching.sorted { ($0.created ?? "") > ($1.created ?? "") }
     }
 
-    /// Count alerts by severity level (case-insensitive). Protect's SEVERITY
-    /// enum is High/Medium/Low/Informational — there is no Critical.
-    private static func alertSeverityCounts(
+    /// Count open alerts by severity level (case-insensitive); a Resolved or AutoResolved alert
+    /// is not counted. Protect's SEVERITY enum is High/Medium/Low/Informational — no Critical.
+    static func alertSeverityCounts(
         _ alerts: [ProtectAlertRow]
     ) -> (high: Int, medium: Int, low: Int, informational: Int) {
         var high = 0, medium = 0, low = 0, informational = 0
 
-        for alert in alerts {
+        for alert in alerts where alert.isOpen {
             guard let severity = alert.severity?.lowercased() else { continue }
             switch severity {
             case let s where s.contains("high"):

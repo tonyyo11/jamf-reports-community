@@ -15,6 +15,8 @@ struct OverviewCustomizeSheet: View {
     let unavailable: (OverviewSection) -> OverviewUnavailable?
     /// Whether a score card has a value in the loaded summaries.
     let metricHasData: (TrendSeries.Metric) -> Bool
+    /// The Overview's newest compliance figure is the four-control proxy, so its card is named so.
+    let complianceIsProxy: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -187,8 +189,7 @@ struct OverviewCustomizeSheet: View {
                 let rows = Self.scoreCardRows(
                     selected: workspace.selectedScoreCards,
                     policy: workspace.securityPolicy, agents: workspace.agentMetrics,
-                    mobile: workspace.demoMode ? [] : TrendSeries.Metric.mobileMetrics
-                        + (workspace.protectMetricsOffered ? TrendSeries.Metric.protectMetrics : []),
+                    mobile: workspace.scoreCardExtraMetrics,
                     composition: workspace.environmentComposition)
                 ForEach(Array(rows.enumerated()), id: \.element) { index, metric in
                     scoreCardRow(metric)
@@ -208,7 +209,8 @@ struct OverviewCustomizeSheet: View {
             metric, shown: shown, composition: workspace.environmentComposition)
         let label = metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,
-            edrAgentName: workspace.edrAgentName
+            edrAgentName: workspace.edrAgentName,
+            complianceIsProxy: complianceIsProxy
         )
         let isOn = Binding<Bool>(
             get: { shown.contains(metric) },

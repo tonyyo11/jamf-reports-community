@@ -297,6 +297,17 @@ final class RiskScoringServiceTests: XCTestCase {
                        "50 days since check-in or inventory update")
     }
 
+    func testFileVaultNotApplicableIsUnmeasuredNotOff() {
+        let record = statusRecord(
+            fileVault: "NOT_APPLICABLE", sip: "Enabled", firewall: "Enabled", gatekeeper: "Enabled")
+        let input = RiskScoringService.Input.from(
+            record: record, policy: .default, staleRule: Self.rule)
+        XCTAssertTrue(input.fileVaultEncrypted, "no FileVault risk factor for an unmeasured value")
+        XCTAssertNil(SecurityControlPolicy.default.reading("NOT_APPLICABLE", for: .fileVault))
+        XCTAssertEqual(SecurityControlPolicy.default.verdict(
+            for: .fileVault, value: "NOT_APPLICABLE", hardwareEncrypted: nil), .unknown)
+    }
+
     // MARK: - Status-string polarity
 
     private func statusRecord(

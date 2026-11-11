@@ -109,7 +109,8 @@ struct OverviewView: View {
         .sheet(isPresented: $showCustomize) {
             OverviewCustomizeSheet(
                 unavailable: { unavailableReason($0) },
-                metricHasData: { !metricValues($0).isEmpty }
+                metricHasData: { !metricValues($0).isEmpty },
+                complianceIsProxy: complianceIsProxy
             )
             .environment(workspace)
         }
@@ -1112,9 +1113,10 @@ struct OverviewView: View {
                         .drillDownChrome()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Open \(metric.displayLabel) details")
+                .accessibilityLabel("Open \(metricDetailTitle(metric)) details")
                 // With no value, the hover says what the card needs instead.
-                .help(hasData ? "Open \(metric.displayLabel) details" : metric.dataRequirement)
+                .help(hasData
+                      ? "Open \(metricDetailTitle(metric)) details" : metric.dataRequirement)
             }
         }
         .frame(maxWidth: .infinity)
@@ -1125,9 +1127,10 @@ struct OverviewView: View {
     /// selection is not edited, so a card returns with its control or its devices.
     private var offeredScoreCards: [TrendSeries.Metric] { workspace.shownScoreCards }
 
-    /// Two scores on different definitions (`securityScoreBasis`) have no change between them.
+    /// Two figures on different definitions (the score's basis, proxy against benchmark
+    /// compliance, the patch basis) have no change between them.
     private func scoreCardComparable(_ metric: TrendSeries.Metric) -> Bool {
-        metric != .securityScore || workspace.demoMode || trendStore.latestSecurityScoresComparable
+        workspace.demoMode || trendStore.latestValuesComparable(metric: metric)
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
@@ -1211,10 +1214,7 @@ struct OverviewView: View {
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
 
-        let title = metric.displayLabel(
-            benchmarkLabel: workspace.complianceBenchmarkLabel,
-            edrAgentName: workspace.edrAgentName
-        )
+        let title = metricDetailTitle(metric)
         return StatTile(
             label: title,
             value: valueStr,
@@ -1625,6 +1625,7 @@ struct OverviewView: View {
         let first = values.first ?? current
         let figures = MetricDetailFigures.make(
             values: values,
+            comparable: workspace.demoMode ? values : trendStore.comparableValues(metric: metric),
             value: { metricValueLabel($0, metric: metric) },
             delta: { metricDeltaLabel($0, metric: metric) })
         // Same reasoning as the Overview tiles: name the day rather than imply
@@ -1896,6 +1897,8 @@ struct OverviewView: View {
             L("Open Mobile Devices to inspect current records.")
         case .protectComputers, .protectMatched, .protectOpenAlerts:
             L("Open Jamf Protect to inspect current records.")
+        case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
+            L("Open Data Sources to see the Jamf Security Cloud collect.")
         case .sip, .firewall, .gatekeeper:
             L("Open Security Posture for the per-control breakdown.")
         }
@@ -1921,16 +1924,25 @@ struct OverviewView: View {
             return [.mobileFleet]
         case .protectComputers, .protectMatched, .protectOpenAlerts:
             return [.protectDashboard]
+        case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
+            return [.sources]
         case .sip, .firewall, .gatekeeper:
             return [.securityPosture, .devices]
         }
     }
 
-    /// The drill-down's title: the tenant's own label, as on the card it was opened from.
+    /// A score card's title, also its drill-down's and the Customize sheet's: the tenant's own
+    /// label, or the proxy's name when the newest compliance figure is the four-control proxy.
     private func metricDetailTitle(_ metric: TrendSeries.Metric) -> String {
         metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,
-            edrAgentName: workspace.edrAgentName)
+            edrAgentName: workspace.edrAgentName,
+            complianceIsProxy: complianceIsProxy)
+    }
+
+    /// The demo fleet's compliance is a benchmark's; a live one reads its newest summary.
+    private var complianceIsProxy: Bool {
+        !workspace.demoMode && trendStore.latestComplianceIsProxy
     }
 
     private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
@@ -2245,19 +2257,24 @@ struct MetricDetailFigures: Equatable {
 
     static let noData = L("No data yet")
 
+    /// `comparable` is the newest run of `values` measured one way (the whole series when
+    /// nil); the previous figure and the change come from it, never across a definition change.
     static func make(
-        values: [Double], value: (Double) -> String, delta: (Double) -> String
+        values: [Double], comparable: [Double]? = nil,
+        value: (Double) -> String, delta: (Double) -> String
     ) -> MetricDetailFigures {
-        guard let latest = values.last, let first = values.first else {
+        guard let latest = values.last else {
             return MetricDetailFigures(
                 current: noData, previous: noData, change: "—", hasChange: false)
         }
-        guard values.count > 1 else {
+        let run = comparable ?? values
+        guard run.count > 1, let first = run.first else {
             return MetricDetailFigures(
-                current: value(latest), previous: "—", change: "—", hasChange: false)
+                current: value(latest), previous: "—",
+                change: values.count > 1 ? L("Not comparable") : "—", hasChange: false)
         }
         return MetricDetailFigures(
-            current: value(latest), previous: value(values[values.count - 2]),
+            current: value(latest), previous: value(run[run.count - 2]),
             change: delta(latest - first), hasChange: true)
     }
 

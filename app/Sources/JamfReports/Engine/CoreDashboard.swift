@@ -354,7 +354,8 @@ struct CoreDashboard: Sendable {
                 // "Days Behind" is shown only for titles below 100% compliance,
                 // matching Python's pct_value < 1.0 / secondary > 0 logic.
                 let pct = PatchStatusService.parseCompliancePct(item.compliancePct)
-                let belowFull = pct < 100.0 || item.onOther > 0
+                // A title with no devices (no share) is not a failure.
+                let belowFull = (pct ?? 100.0) < 100.0 || item.onOther > 0
                 if belowFull, let days = PatchReleaseDateService.daysBehind(releaseDate: releaseDate) {
                     ws.write(days, row: row, col: 7, format: .cell)
                 } else {
@@ -541,6 +542,11 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 14)
 
+        if report.total == 0, (report.planTotal ?? 0) == 0, report.statusSummary.isEmpty,
+           (report.planStateSummary ?? []).isEmpty {
+            ws.write(Self.noUpdateDataText, row: row, col: 0, format: .cell)
+            return
+        }
         ws.write("Total Devices", row: row, col: 0, format: .cell)
         ws.write(report.total, row: row, col: 1, format: .cell)
         row += 2
@@ -629,9 +635,16 @@ struct CoreDashboard: Sendable {
         }
 
         if errorDevices.isEmpty && failedPlans.isEmpty {
-            ws.write("No update failures found.", row: row, col: 0, format: .cell)
+            let noData = asInt(envelope["total"]) == 0 && asInt(envelope["plan_total"]) == 0
+            ws.write(noData ? Self.noUpdateDataText : "No update failures found.",
+                     row: row, col: 0, format: .cell)
         }
     }
+
+    /// jamf-cli's "No managed software update data found." lands as a report with no
+    /// statuses and no plans (`ReportEngine.emptyUpdateReport`): no figure, not 0 devices.
+    static let noUpdateDataText =
+        "No Managed Software Update data: Jamf Pro reported no update statuses and no plans."
 
     // MARK: - Inventory Summary
     // Source: `jamf-cli pro report inventory-summary --output json`
@@ -934,10 +947,11 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
+        // jamf-cli's rows: `title`, `version`, `device_count`. A missing count stays blank.
         for item in items {
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["title"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["version"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(asInt(item["count"]) ?? 0, row: row, col: 2, format: .cell)
+            ws.write(asInt(item["device_count"]), row: row, col: 2, format: .cell)
             row += 1
         }
     }
@@ -978,7 +992,9 @@ struct CoreDashboard: Sendable {
     // Source: `jamf-cli pro report ea-results --all --output json`
 
     func writeEACoverage() throws {
-        let raw = try loadLatestJSON(names: ["ea-results", "ea_results"])
+        let names = ["ea-results", "ea_results"]
+        guard let items = EAResultRow.decodeSnapshot(try loadLatestJSONData(names: names)).rows
+        else { throw CoreDashboardError.noCachedData(names: names) }
         let ws = workbook.addSheet("EA Coverage")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("EA Coverage"),
@@ -989,26 +1005,24 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 12)
         ws.setColumnWidth(4, 4, 20)
 
-        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
+        // jamf-cli's rows name the Mac (`device`) and carry no serial: it comes from the
+        // `computers` snapshot, only for a name one Mac has.
+        let serials = (try? loadLatestJSONData(names: ["computers"]))
+            .map(EASheets.serialsByName) ?? [:]
 
         let hdrs = ["EA Name", "Computer", "Serial", "Value"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
         for item in items {
-            ws.write(item["ea_name"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["computer_name"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 2, format: .cell)
-            let val = item["value"]
-            let valStr: String
-            switch val {
-            case let s as String: valStr = s
-            case let n as Int: valStr = "\(n)"
-            case let b as Bool: valStr = b ? "true" : "false"
-            default: valStr = ""
-            }
-            ws.write(valStr, row: row, col: 3, format: .cell)
+            let device = (item.device ?? item.computerName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            ws.write(item.eaName ?? "", row: row, col: 0, format: .cell)
+            ws.write(device, row: row, col: 1, format: .cell)
+            ws.write(item.serial ?? serials[EASheets.key(device)] ?? "",
+                     row: row, col: 2, format: .cell)
+            ws.write(item.value?.stringValue ?? "", row: row, col: 3, format: .cell)
             row += 1
         }
     }
@@ -1098,7 +1112,7 @@ struct CoreDashboard: Sendable {
         }
         let computerRows = modelCounts
             .map { (model: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.model < $1.model }
 
         let ws = workbook.addSheet("Hardware Models")
         let ts = ISO8601Time.string(Date())
@@ -1848,7 +1862,8 @@ struct CoreDashboard: Sendable {
         ws.write(colHeader, row: row, col: 0, format: .header)
         ws.write("Count", row: row, col: 1, format: .header)
         row += 1
-        let sorted = counts.sorted { $0.value > $1.value }
+        // Ties by key: a dictionary has no order, so ties (and the top N) changed run to run.
+        let sorted = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
         for (key, count) in sorted.prefix(maxRows) {
             ws.write(key, row: row, col: 0, format: .cell)
             ws.write(count, row: row, col: 1, format: .cell)
@@ -2030,9 +2045,8 @@ struct CoreDashboard: Sendable {
         row += 1
         for item in items {
             let decls = (item["declarations"] as? [[String: Any]]) ?? []
-            let failing = decls.filter {
-                ($0["active"] as? Bool) == false || ($0["valid"] as? Bool) == false
-            }.count
+            // Only an invalid declaration fails; an inactive one is a state (as on the DDM screen).
+            let failing = decls.filter { ($0["valid"] as? Bool) == false }.count
             let reported = (item["ddmReported"] as? Bool) ?? false
             let su = (item["softwareUpdate"] as? [String: Any]) ?? [:]
             let failure = su["failureReason"] as? String ?? ""
@@ -2143,7 +2157,9 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
-            let severity = (item["severity"] as? String ?? "").lowercased()
+            // A Resolved or AutoResolved alert is listed with its status but not coloured as live.
+            let severity = ProtectAlertRow.isOpen(status: item["status"] as? String)
+                ? (item["severity"] as? String ?? "").lowercased() : ""
             let fmt: CellFormat = severity == "high" || severity == "critical" ? .red
                 : severity == "medium" ? .yellow : .cell
             ws.write(item["computer"] as? String ?? "", row: row, col: 0, format: .cell)
@@ -2179,12 +2195,10 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
-            let osMajor = asInt(item["osMajor"])
-            let osMinor = asInt(item["osMinor"])
-            let osPatch = asInt(item["osPatch"])
             let osStr: String
-            if let maj = osMajor, let min = osMinor, let pat = osPatch {
-                osStr = "\(maj).\(min).\(pat)"
+            if let maj = asInt(item["osMajor"]), let min = asInt(item["osMinor"]),
+               let pat = asInt(item["osPatch"]) {
+                osStr = "\(maj).\(min).\(pat)"  // workbook text is unchanged: keeps "x.y.0"
             } else {
                 osStr = item["osString"] as? String ?? ""
             }
@@ -2327,7 +2341,8 @@ struct CoreDashboard: Sendable {
         row += 1
 
         for r in rows {
-            let severity = (r["Severity"] ?? "").lowercased()
+            let severity = ProtectAlertRow.isOpen(status: r["Status"])
+                ? (r["Severity"] ?? "").lowercased() : ""
             let fmt: CellFormat = (severity == "critical" || severity == "high") ? .red
                 : severity == "medium" ? .yellow : .cell
             ws.write(r["Device"] ?? "", row: row, col: 0, format: .cell)
@@ -2500,6 +2515,7 @@ struct CoreDashboard: Sendable {
             let gatekeeper: String
             let bootstrapToken: String
             let hardwareEncrypted: Bool?
+            var neverInventoried = false
         }
 
         let rows: [DeviceSecurityRow] = items.compactMap { item in
@@ -2510,7 +2526,7 @@ struct CoreDashboard: Sendable {
             if NeverInventoried.isNeverInventoried(computer: item) {
                 return DeviceSecurityRow(name: name, serial: serial, fileVault: "", sip: "",
                                          firewall: "", gatekeeper: "", bootstrapToken: "",
-                                         hardwareEncrypted: nil)
+                                         hardwareEncrypted: nil, neverInventoried: true)
             }
 
             let diskEncryption = item["diskEncryption"] as? [String: Any]
@@ -2570,6 +2586,11 @@ struct CoreDashboard: Sendable {
         for r in sorted {
             ws.write(r.name, row: row, col: 0, format: .cell)
             ws.write(r.serial, row: row, col: 1, format: .cell)
+            if r.neverInventoried {
+                for col in 2...6 { ws.write("No Data", row: row, col: col, format: .cell) }
+                row += 1
+                continue
+            }
             ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
                      row: row, col: 2, format: securityVerdictFormat(
                         .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))
@@ -2766,14 +2787,14 @@ struct CoreDashboard: Sendable {
     }
 
     /// Returns {osVersion: count} for macOS from the cached security report.
-    private func macosOSCounts() -> [String: Int] {
+    func macosOSCounts() -> [String: Int] {
         guard let items = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
         else { return [:] }
         var counts: [String: Int] = [:]
         for item in items {
             if case .osVersion(let v) = item {
                 let ver = v.osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !ver.isEmpty else { continue }
+                guard OSVersionName.isMeasured(ver) else { continue }
                 counts[OSVersionName.normalized(ver), default: 0] += v.count
             }
         }
@@ -3104,6 +3125,7 @@ struct CoreDashboard: Sendable {
         ws.mergeRange(firstRow: 0, firstCol: 0, lastRow: 0, lastCol: 1,
                       value: "Jamf Reports \u{00B7} Fleet Posture Report", format: .title)
         ws.freezePane(row: 1, col: 0)
+        ws.writeSiteScopeNote(row: 1)
 
         var row = 2
 
@@ -3132,43 +3154,31 @@ struct CoreDashboard: Sendable {
         // How-to-read section
         ws.write("How to read this workbook", row: row, col: 0, format: .header)
         row += 1
-        let guidance: [String] = [
-            "Sheet 1 (Executive Summary) — Fleet-level KPIs at a glance: security score, "
-                + "patch compliance, stale device tiers, and key control coverage.",
-            "Sheet 2 (Cover) — This sheet — workbook guide and sheet manifest.",
-            "Sheet 3 (Compliance Posture) — Single-page executive summary: compliance %, "
-                + "security controls, patch coverage, and RAG status.",
-            "Sheet 4 (Fleet Overview) — Total enrolled devices, mobile counts, OS breakdown.",
-            "Sheet 5 (Security Posture) — FileVault, SIP, Gatekeeper, Firewall percentages.",
-            "Sheet 6 (Patch Compliance) — Per-title patch coverage, latest version vs. installed.",
-            "Sheet 7 (Device Compliance) — Per-device compliance and days since check-in.",
-            "Sheet 8 (Audit Summary) — jamf-cli health findings (critical, warning, info).",
-            "Sheets 9–12 — Inventory and hardware detail (computers and mobile).",
-            "Sheets 13–21 — Configuration health: policies, profiles, apps, software, EAs.",
-            "Sheets 22–28 — Device health, patch failures, update failures, smart groups.",
-            "Sheets 29–36 — Platform compliance, DDM, and Jamf Protect (optional; "
-                + "shown only when data is available).",
-        ]
-        for line in guidance {
-            ws.write(line, row: row, col: 0, format: .cell)
-            row += 1
-        }
-        row += 1
+        ws.write("Every tab of this workbook is listed below, in tab order.",
+                 row: row, col: 0, format: .cell)
+        row += 2
 
-        // Sheet manifest table
+        // Sheet manifest table: its rows are written by `writeCoverManifest` once the
+        // workbook's tabs are known and in order.
         ws.write("Sheet Manifest", row: row, col: 0, format: .header)
         ws.write("Description", row: row, col: 1, format: .header)
-        row += 1
-        let descriptions = sheetManifestDescriptions()
-        for (i, (name, desc)) in sheetPlan.enumerated() {
-            ws.write("\(i + 1). \(name)", row: row, col: 0, format: .cell)
-            ws.write(descriptions[name] ?? desc, row: row, col: 1, format: .cell)
+    }
+
+    /// Lists the workbook's tabs on the Cover, in tab order: run after every tab is written and
+    /// `Workbook.arrange(by:)`. `extra` describes tabs other writers add (custom EA tabs).
+    static func writeCoverManifest(in workbook: Workbook, extra: [String: String] = [:]) {
+        guard let ws = workbook.sheet(named: "Cover") else { return }
+        var row = (ws.cells.map(\.row).max() ?? 0) + 1
+        let descriptions = sheetManifestDescriptions().merging(extra) { own, _ in own }
+        for (i, tab) in workbook.worksheets.enumerated() {
+            ws.write("\(i + 1). \(tab.name)", row: row, col: 0, format: .cell)
+            ws.write(descriptions[tab.name] ?? "", row: row, col: 1, format: .cell)
             row += 1
         }
     }
 
-    /// One-line description for every sheet name in the plan.
-    private func sheetManifestDescriptions() -> [String: String] {
+    /// One-line description for every tab a report workbook can hold.
+    static func sheetManifestDescriptions() -> [String: String] {
         [
             "Executive Summary": "Fleet KPIs at a glance: security score + band, fleet size, "
                 + "patch compliance %, key control coverage, and stale device tiers.",
@@ -3239,6 +3249,23 @@ struct CoreDashboard: Sendable {
                 + "Med-Low / Medium / High with count and percent.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
                 + "primary configured baseline.",
+            "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
+                + "stale since the last collect on an earlier day.",
+            "Protect Plans": "Jamf Protect plans with log level, auto-update, and the "
+                + "configurations each plan uses.",
+            "Protect Threat Overview": "Jamf Protect alerts per Mac with type, severity, "
+                + "status and analytics.",
+            "Patch Summary Dashboard": "Fleet and patch overview from patch-status and "
+                + "device-compliance.",
+            "Patch Velocity": "How fast each patch title is adopted after its release.",
+            "Device Security State": "Per-Mac FileVault, SIP, Gatekeeper and Firewall state.",
+            "Mobile Supervision Status": "Supervised and unsupervised mobile devices per "
+                + "device family.",
+            "OS Currency": "Each Apple OS's latest release from SOFA, and how many devices "
+                + "run it.",
+            "EA Warnings": "Custom extension attributes that have no tab, and why.",
+            ReportEngine.chartsSheetName: "Trend and distribution charts from the daily "
+                + "summaries.",
         ]
     }
 

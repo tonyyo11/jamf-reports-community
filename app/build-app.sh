@@ -142,10 +142,6 @@ fi
 cp "Resources/Assets.car" "$APP_OUT/Contents/Resources/Assets.car"
 cp "Resources/AppIcon.icns" "$APP_OUT/Contents/Resources/AppIcon.icns"
 
-if [[ -f "../config.example.yaml" ]]; then
-  cp "../config.example.yaml" "$APP_OUT/Contents/Resources/config.example.yaml"
-fi
-
 cat > "$APP_OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

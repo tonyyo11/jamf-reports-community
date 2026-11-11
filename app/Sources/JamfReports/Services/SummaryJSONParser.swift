@@ -70,7 +70,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
              mobile,
              // Environment model P9: products that landed, Protect figures, aggregate maps.
              products, protectComputerCount, protectMatched, protectOpenAlerts,
-             protectAlertCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
+             protectAlertCounts, securityCloudDeviceCount, securityCloudMatched,
+             securityCloudRiskCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
              lastSeenBuckets
     }
 
@@ -167,6 +168,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
     private(set) var protectMatched: MobileSummary.Share?
     private(set) var protectOpenAlerts: Int?
     private(set) var protectAlertCounts: [String: Int]?
+    /// Jamf Security Cloud figures (P12); nil when it is absent or its risk list was not read.
+    /// `securityCloudMatched` is rows matched to this environment's inventory over rows with an
+    /// `externalId`; `securityCloudRiskCounts` is by lower-cased `riskCategory`.
+    private(set) var securityCloudDeviceCount: Int?
+    private(set) var securityCloudMatched: MobileSummary.Share?
+    private(set) var securityCloudRiskCounts: [String: Int]?
     /// Aggregate maps (P9-R3); a key with no devices is left out, no devices means nil.
     private(set) var osMajorCounts: [String: Int]?
     private(set) var modelFamilyCounts: [String: Int]?
@@ -231,8 +238,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
 
     /// This summary with `products` unioned in (nil leaves it) and the four Protect fields
     /// replaced by each group of `protect` that this run measured.
-    func withEnvironment(products added: [String]?, protect: ProtectSummaryFigures?)
-        -> DailySummary {
+    func withEnvironment(
+        products added: [String]?, protect: ProtectSummaryFigures?,
+        securityCloud: SecurityCloudSummaryFigures? = nil
+    ) -> DailySummary {
         var resolved = self
         if let added { resolved.products = Array(Set(products ?? []).union(added)).sorted() }
         if let computers = protect?.computers {
@@ -242,6 +251,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
         if let alerts = protect?.alerts {
             resolved.protectOpenAlerts = alerts.open
             resolved.protectAlertCounts = alerts.counts
+        }
+        if let securityCloud {
+            resolved.securityCloudDeviceCount = securityCloud.count
+            resolved.securityCloudMatched = securityCloud.matched
+            resolved.securityCloudRiskCounts = securityCloud.riskCounts
         }
         return resolved
     }
@@ -294,6 +308,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
             protectMatched: protectMatched ?? older.protectMatched,
             protectOpenAlerts: protectOpenAlerts ?? older.protectOpenAlerts,
             protectAlertCounts: protectAlertCounts ?? older.protectAlertCounts,
+            securityCloudDeviceCount: securityCloudDeviceCount ?? older.securityCloudDeviceCount,
+            securityCloudMatched: securityCloudMatched ?? older.securityCloudMatched,
+            securityCloudRiskCounts: securityCloudRiskCounts ?? older.securityCloudRiskCounts,
             osMajorCounts: mergedOSMajor(older.osMajorCounts),
             modelFamilyCounts: modelFamilyCounts ?? older.modelFamilyCounts,
             mobileFormFactorCounts: mobileFormFactorCounts ?? older.mobileFormFactorCounts,
@@ -362,6 +379,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         protectMatched: MobileSummary.Share? = nil,
         protectOpenAlerts: Int? = nil,
         protectAlertCounts: [String: Int]? = nil,
+        securityCloudDeviceCount: Int? = nil,
+        securityCloudMatched: MobileSummary.Share? = nil,
+        securityCloudRiskCounts: [String: Int]? = nil,
         osMajorCounts: [String: Int]? = nil,
         modelFamilyCounts: [String: Int]? = nil,
         mobileFormFactorCounts: [String: Int]? = nil,
@@ -406,6 +426,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.protectMatched = protectMatched
         self.protectOpenAlerts = protectOpenAlerts
         self.protectAlertCounts = protectAlertCounts
+        self.securityCloudDeviceCount = securityCloudDeviceCount
+        self.securityCloudMatched = securityCloudMatched
+        self.securityCloudRiskCounts = securityCloudRiskCounts
         self.osMajorCounts = osMajorCounts
         self.modelFamilyCounts = modelFamilyCounts
         self.mobileFormFactorCounts = mobileFormFactorCounts
@@ -461,6 +484,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
         protectOpenAlerts = try container.decodeIfPresent(Int.self, forKey: .protectOpenAlerts)
         protectAlertCounts = try container.decodeIfPresent(
             [String: Int].self, forKey: .protectAlertCounts)
+        securityCloudDeviceCount = try container.decodeIfPresent(
+            Int.self, forKey: .securityCloudDeviceCount)
+        securityCloudMatched = try container.decodeIfPresent(
+            MobileSummary.Share.self, forKey: .securityCloudMatched)
+        securityCloudRiskCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .securityCloudRiskCounts)
         osMajorCounts = try container.decodeIfPresent([String: Int].self, forKey: .osMajorCounts)
         modelFamilyCounts = try container.decodeIfPresent(
             [String: Int].self, forKey: .modelFamilyCounts)
@@ -510,6 +539,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(protectMatched, forKey: .protectMatched)
         try container.encodeIfPresent(protectOpenAlerts, forKey: .protectOpenAlerts)
         try container.encodeIfPresent(protectAlertCounts, forKey: .protectAlertCounts)
+        try container.encodeIfPresent(securityCloudDeviceCount, forKey: .securityCloudDeviceCount)
+        try container.encodeIfPresent(securityCloudMatched, forKey: .securityCloudMatched)
+        try container.encodeIfPresent(securityCloudRiskCounts, forKey: .securityCloudRiskCounts)
         try container.encodeIfPresent(osMajorCounts, forKey: .osMajorCounts)
         try container.encodeIfPresent(modelFamilyCounts, forKey: .modelFamilyCounts)
         try container.encodeIfPresent(mobileFormFactorCounts, forKey: .mobileFormFactorCounts)
@@ -542,9 +574,12 @@ extension DailySummary {
 
     /// Every P9 count, for the shared range check.
     private var environmentCounts: [Int] {
-        let maps = [protectAlertCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts]
-            .compactMap { $0 }.flatMap { $0.values }
-        return [protectComputerCount, protectOpenAlerts].compactMap { $0 } + maps
+        let maps = [
+            protectAlertCounts, securityCloudRiskCounts, osMajorCounts, modelFamilyCounts,
+            mobileFormFactorCounts,
+        ].compactMap { $0 }.flatMap { $0.values }
+        return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount]
+            .compactMap { $0 } + maps
             + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
     }
 
@@ -557,6 +592,14 @@ extension DailySummary {
         }
         if let protectOpenAlerts, let protectAlertCounts,
            protectAlertCounts.values.contains(where: { $0 > protectOpenAlerts }) { return false }
+        if let securityCloudMatched,
+           securityCloudMatched.met < 0 || securityCloudMatched.met > securityCloudMatched.of {
+            return false
+        }
+        if let securityCloudDeviceCount, let securityCloudRiskCounts,
+           securityCloudRiskCounts.values.contains(where: { $0 > securityCloudDeviceCount }) {
+            return false
+        }
         return true
     }
 }

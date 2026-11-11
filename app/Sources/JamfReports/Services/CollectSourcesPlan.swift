@@ -12,6 +12,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
         case platformAPI = "Platform API"
         case protect = "Jamf Protect"
         case school = "Jamf School"
+        case securityCloud = "Jamf Security Cloud"
         case other = "Other sources"
     }
 
@@ -35,6 +36,10 @@ struct CollectSourcesPlan: Equatable, Sendable {
         var protectOnly = false
         /// Why `protectProfile` is not collected (a login of another product), or nil.
         var protectRefusal: String?
+        /// The Jamf Security Cloud login the environment names, collected after the MDM.
+        var securityCloudProfile: String?
+        /// Why `securityCloudProfile` is not collected (a login of another product), or nil.
+        var securityCloudRefusal: String?
         var staleDays: Int = 30
         var installedVersion: String?
         var skipExpensive = false
@@ -76,11 +81,11 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 Source(product: $0.kind == ReportEngine.schoolBlueprintsKind
                         ? .platformAPI : .school,
                        kind: $0.kind, command: command($0.args), skipReason: $0.skip.map(text))
-            } + [sofa(inputs)] + protect(inputs))
+            } + [sofa(inputs)] + protect(inputs) + securityCloud(inputs))
         case .jamfPro:
             return CollectSourcesPlan(
                 sources: matrix(inputs) + deviceScan(inputs) + afterMatrix(inputs)
-                    + protect(inputs))
+                    + protect(inputs) + securityCloud(inputs))
         }
     }
 
@@ -148,12 +153,21 @@ struct CollectSourcesPlan: Equatable, Sendable {
         }
     }
 
+    private static func securityCloud(_ inputs: Inputs) -> [Source] {
+        guard let profile = inputs.securityCloudProfile else { return [] }
+        return ReportEngine.securityCommandMatrix(profile: profile).map {
+            Source(product: .securityCloud, kind: $0.kind, command: command($0.args),
+                   skipReason: inputs.securityCloudRefusal
+                       ?? (inputs.collectSkip.contains($0.kind) ? text(.collectSkip) : nil))
+        }
+    }
+
     /// A skip in the words of the run log's `[skip]` line, else its `[plan]` label.
     private static func text(_ reason: ReportEngine.CollectSkipReason) -> String {
         reason.skipDetail ?? reason.planLabel
     }
 
-    /// `args` as a person would type them: no `-p <profile>` and no `--output json`.
+    /// `args` as a person would type them: no `-p <profile>`, `--no-input` or `--output json`.
     static func command(_ args: [String]) -> String {
         var words: [String] = []
         var index = 0
@@ -161,6 +175,10 @@ struct CollectSourcesPlan: Equatable, Sendable {
             let word = args[index]
             if word == "-p" || word == "--output" {
                 index += 2
+                continue
+            }
+            if word == "--no-input" {
+                index += 1
                 continue
             }
             words.append(word)

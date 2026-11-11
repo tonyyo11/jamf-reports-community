@@ -91,6 +91,8 @@ struct ReportEngine: Sendable {
 
         let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let workbook = Workbook(accentColor: accent)
+        // Read from the collect's verdict, never re-derived: this run may be hours later.
+        workbook.siteScopeNote = SiteScope.persisted(dataDir: dataDir).reportSentence
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
         let prov = await Provenance.current(
@@ -155,6 +157,9 @@ struct ReportEngine: Sendable {
 
         // The tabs of every writer above, the Charts tab included, as one list.
         workbook.arrange(by: sheets)
+        CoreDashboard.writeCoverManifest(in: workbook, extra: Dictionary(
+            (config.customEas ?? []).map { ($0.name, "Custom extension attribute: \($0.column)") },
+            uniquingKeysWith: { first, _ in first }))
         if let logo = ReportLogo.load(from: config, profile: workspaceName) {
             workbook.firstSheet?.insertLogo(data: logo, filename: "logo.png")
         }
@@ -571,6 +576,9 @@ struct ReportEngine: Sendable {
             || (existing.protectMatched == nil && fresh.protectMatched != nil)
             || (existing.protectOpenAlerts == nil && fresh.protectOpenAlerts != nil)
             || (existing.protectAlertCounts == nil && fresh.protectAlertCounts != nil)
+            || (existing.securityCloudDeviceCount == nil && fresh.securityCloudDeviceCount != nil)
+            || (existing.securityCloudMatched == nil && fresh.securityCloudMatched != nil)
+            || (existing.securityCloudRiskCounts == nil && fresh.securityCloudRiskCounts != nil)
             || (existing.osMajorCounts == nil && fresh.osMajorCounts != nil)
             || (existing.modelFamilyCounts == nil && fresh.modelFamilyCounts != nil)
             || (existing.mobileFormFactorCounts == nil && fresh.mobileFormFactorCounts != nil)
@@ -1230,7 +1238,11 @@ struct ReportEngine: Sendable {
         osCounts: [String: Int],
         totalDevices: Int
     ) -> Double? {
-        guard !macOSRows.isEmpty, totalDevices > 0 else { return nil }
+        // A Mac with no measured version is in neither the numerator nor the denominator.
+        let unmeasured = osCounts.filter { !OSVersionName.isMeasured($0.key) }
+            .values.reduce(0, +)
+        let measuredDevices = totalDevices - unmeasured
+        guard !macOSRows.isEmpty, measuredDevices > 0 else { return nil }
         // Latest version per major, greatest version winning where two rows share
         // a major. Shared with the Overview's macOS Distribution card, so the card's
         // "on current" share and this percentage use one definition of current.
@@ -1247,7 +1259,7 @@ struct ReportEngine: Sendable {
             currentCount += onLatest
         }
         // A count above the fleet (mixed sources) must not read past 100%.
-        return Double(min(currentCount, totalDevices)) / Double(totalDevices) * 100.0
+        return Double(min(currentCount, measuredDevices)) / Double(measuredDevices) * 100.0
     }
 
     private func pct(of count: Int?, total: Int) -> Double? {
@@ -2486,6 +2498,9 @@ struct ReportEngine: Sendable {
             workspacePaths: workspacePaths, stateStore: stateStore,
             patchDefinitionLimits: patchDefinitionLimits, day: collectDay, onLine: onLine
         )
+        recordSiteScope(
+            workspacePaths: workspacePaths, profile: profile, auth: profileAuth?.method,
+            dataDir: dataDir, savedKinds: savedKinds, onLine: onLine)
 
         return .collected
     }
@@ -4217,12 +4232,13 @@ struct ReportEngine: Sendable {
 
     /// Initialize a workspace directory for `profile` under `workspacesRoot`.
     ///
-    /// Creates the standard subdirectory tree and a minimal `config.yaml` seeded
-    /// from `seedConfigURL` if provided. Mirrors `cmd_workspace_init` behavior.
+    /// Creates the standard subdirectory tree and, when none exists, the minimal `config.yaml`
+    /// onboarding writes (`ScaffoldService.writeMinimalConfig`), with the profile recorded, so
+    /// binding the new workspace writes nothing. No example agents, EAs or compliance columns:
+    /// setup and Config Doctor walk people through those.
     static func initializeWorkspace(
         profile: String,
         workspacesRoot: URL,
-        seedConfigURL: URL?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) throws {
         let workspace = WorkspacePaths.workspaceURL(
@@ -4250,28 +4266,10 @@ struct ReportEngine: Sendable {
 
         let configURL = workspace.appendingPathComponent("config.yaml")
         if !fm.fileExists(atPath: configURL.path) {
-            if let seed = seedConfigURL, fm.fileExists(atPath: seed.path) {
-                try seededConfigYAML(seed, profile: profile)
-                    .write(to: configURL, atomically: true, encoding: .utf8)
-            } else {
-                let minimal = defaultConfigYAML(profile: profile)
-                try minimal.write(to: configURL, atomically: true, encoding: .utf8)
-            }
+            try ScaffoldService.writeMinimalConfig(to: configURL, profile: profile)
         }
         onLine(.init(timestamp: Date(), level: .ok,
                      text: "[ok] workspace initialized at \(workspace.path)"))
-    }
-
-    /// The seed with `jamf_cli.profile` already set, so binding the new workspace finds it
-    /// recorded and writes nothing (a write there would keep a backup of the seed).
-    private static func seededConfigYAML(_ seed: URL, profile: String) throws -> String {
-        var document = try YAMLCodec.decode(String(contentsOf: seed, encoding: .utf8))
-        guard case .mapping(var root) = document.root else {
-            throw ConfigService.ConfigError.invalidTopLevel
-        }
-        ConfigService.setJamfCLIProfile(profile, in: &root)
-        document.root = .mapping(root)
-        return try YAMLCodec.encode(document, replacingTopLevelKeys: ["jamf_cli"])
     }
 
     // MARK: - Private helpers
@@ -4722,24 +4720,6 @@ struct ReportEngine: Sendable {
             }
             return merged
         }
-    }
-
-    // MARK: - Default config
-
-    /// Placeholder `config.yaml` written by `initializeWorkspace` when no seed config exists.
-    private static func defaultConfigYAML(profile: String) -> String {
-        [
-            "# config.yaml generated by Jamf Reports",
-            "jamf_cli:",
-            "  profile: \"\(ScaffoldService.yamlEscape(profile))\"",
-            "  data_dir: \"jamf-cli-data\"",
-            "  use_cached_data: true",
-            "",
-            "output:",
-            "  output_dir: \"Generated Reports\"",
-            "  timestamp_outputs: true",
-            "",
-        ].joined(separator: "\n")
     }
 
     // MARK: - SHA-256 manifest helpers (Finding #8)

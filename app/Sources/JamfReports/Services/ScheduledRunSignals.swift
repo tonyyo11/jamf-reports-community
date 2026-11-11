@@ -20,7 +20,8 @@ func successFacts(
     mode: Schedule.RunMode,
     artifact: String?,
     sheetFailures: Int,
-    products: String? = nil
+    products: String? = nil,
+    scope: String? = nil
 ) -> [WebhookNotifier.Fact] {
     let statusValue = sheetFailures > 0 ? "Partial" : "Success"
     var facts: [WebhookNotifier.Fact] = [
@@ -34,6 +35,7 @@ func successFacts(
     }
     if let artifact { facts.append(.init(label: "Report", value: artifact)) }
     if let products { facts.append(.init(label: "Products", value: products)) }
+    if let scope { facts.append(.init(label: "Scope", value: scope)) }
     return facts
 }
 
@@ -66,7 +68,8 @@ func failureFacts(
 func alertFacts(
     detail: NotifyConfig.Detail,
     profile: String,
-    hits: [MetricAlertHit]
+    hits: [MetricAlertHit],
+    scope: String? = nil
 ) -> [WebhookNotifier.Fact] {
     guard detail == .full else {
         let word = hits.count == 1 ? "rule" : "rules"
@@ -77,6 +80,7 @@ func alertFacts(
     }
     var facts: [WebhookNotifier.Fact] = [.init(label: "Profile", value: profile)]
     facts.append(contentsOf: hits.map { .init(label: $0.metricLabel, value: $0.message) })
+    if let scope { facts.append(.init(label: "Scope", value: scope)) }
     return facts
 }
 
@@ -141,7 +145,8 @@ enum ScheduledRunSignals {
         let facts = successFacts(
             detail: notify.resolvedDetail, profile: profile, mode: mode,
             artifact: artifact, sheetFailures: sheetFailures,
-            products: EnvironmentProducts.webhookValue(workspace: profile)
+            products: EnvironmentProducts.webhookValue(workspace: profile),
+            scope: SiteScope.persisted(profile: profile).summary
         )
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.send(
@@ -387,7 +392,9 @@ enum ScheduledRunSignals {
         ))
         let newHits = hits.filter { newKeys.contains(MetricAlertEvaluator.dedupKey(for: $0)) }
         guard !newHits.isEmpty else { return }
-        let facts = alertFacts(detail: notify.resolvedDetail, profile: profile, hits: newHits)
+        let facts = alertFacts(
+            detail: notify.resolvedDetail, profile: profile, hits: newHits,
+            scope: SiteScope.persisted(profile: profile).summary)
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.sendAlert(
             config: notify, title: "Metric alert — \(profile)", facts: facts,
@@ -550,6 +557,7 @@ final class CollectHonestyWatcher: Sendable {
         let summary = line.hasPrefix(ReportEngine.summaryNotWrittenMarker)
         let kinds = Self.unlandedKinds(in: line)
         let protectThrew = line.hasPrefix(ReportEngine.protectCollectFailedMarker)
+            || line.hasPrefix(ReportEngine.securityCollectFailedMarker)
         // Follows from the sources line before it, which names them.
         let noSourceLanded = [ReportEngine.noSourceLandedReason,
                               ReportEngine.noJamfProSourceLandedReason].contains {

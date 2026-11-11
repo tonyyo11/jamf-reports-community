@@ -79,6 +79,11 @@ enum DataFreshnessHealth {
     /// refresh tier here: `CollectRouter` runs Protect after a Pro refresh collect.
     static let protectKinds: [String] = ReportEngine.protectCommandMatrix(profile: "").map(\.kind)
 
+    /// The Jamf Security Cloud kinds `securityCollect` writes; judged on the refresh tier's
+    /// cadence like Protect's, since `CollectRouter` runs it after a refresh collect.
+    static let securityCloudKinds: [String] = ReportEngine.securityCommandMatrix(profile: "")
+        .map(\.kind)
+
     /// The Jamf School kinds `schoolCollect` records, less `school-blueprints` (it needs Platform
     /// fields, so a School profile without them is not failing). `planSchoolCollect` runs them
     /// at the refresh cadence.
@@ -87,7 +92,8 @@ enum DataFreshnessHealth {
 
     /// The tier whose cadence judges `kind` and whose collect remediates it.
     static func tier(forKind kind: String) -> CollectionTier? {
-        CollectionTier.tier(forReport: kind) ?? ((protectKinds + schoolKinds).contains(kind) ? .refresh : nil)
+        CollectionTier.tier(forReport: kind)
+            ?? ((protectKinds + securityCloudKinds + schoolKinds).contains(kind) ? .refresh : nil)
     }
 
     /// Evaluate one pass. `now` is injected for deterministic tests.

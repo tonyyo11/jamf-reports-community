@@ -196,4 +196,82 @@ final class NeverInventoriedTests: XCTestCase {
         XCTAssertEqual(summary.staleCount, 2, "never checked in counts as stale")
         XCTAssertEqual(summary.securityScore, 0, "only checked in is scored, and neither did")
     }
+
+    // MARK: - Every per-device reader (fix round 2)
+
+    private func computersItem(name: String, inventoried: Bool, firewall: Bool) -> [String: Any] {
+        let blank: Any = NSNull()
+        let reportDate: Any = inventoried ? "2026-11-10T10:00:00Z" : blank
+        let version: Any = inventoried ? "26.6.2" : blank
+        let general: [String: Any] = [
+            "name": name, "reportDate": reportDate, "remoteManagement": ["managed": true]]
+        let security: [String: Any] = [
+            "sipStatus": inventoried ? "ENABLED" : "NOT_COLLECTED", "firewallEnabled": firewall,
+            "gatekeeperStatus": inventoried ? "APP_STORE" : "NOT_COLLECTED",
+            "bootstrapTokenEscrowedStatus": "NOT_SUPPORTED"]
+        var item: [String: Any] = ["id": name, "udid": "U-\(name)", "general": general]
+        item["hardware"] = ["serialNumber": "S-\(name)", "modelIdentifier": "Mac15,3"]
+        item["operatingSystem"] = ["version": version]
+        item["security"] = security
+        item["diskEncryption"] = ["fileVault2Enabled": false]
+        return item
+    }
+
+    func testDeviceSecurityStateReadsNoDataForADeadMacAndOffForALiveOne() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-dss-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let kind = dir.appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: kind, withIntermediateDirectories: true)
+        let dead = computersItem(name: "dead", inventoried: false, firewall: false)
+        let live = computersItem(name: "live", inventoried: true, firewall: false)
+        let body: [[String: Any]] = [dead, live]
+        try JSONSerialization.data(withJSONObject: body).write(to: kind.appendingPathComponent("computers_20261110T100000.json"))
+        let dash = CoreDashboard(config: ReportConfig(), dataDir: dir, workbook: Workbook())
+        try dash.writeDeviceSecurityState()
+        let cells = try XCTUnwrap(dash.workbook.sheet(named: "Device Security State")).dedupedCells
+        func text(_ name: String) -> [String] {
+            var found: [String] = []
+            var nameRow = -1
+            for cell in cells where cell.col == 0 {
+                if case .string(let value) = cell.value, value == name { nameRow = cell.row }
+            }
+            for cell in cells where cell.row == nameRow && cell.col >= 2 {
+                found.append(String(describing: cell.value))
+            }
+            return found
+        }
+        XCTAssertFalse(text("dead").isEmpty)
+        XCTAssertTrue(text("dead").allSatisfy { $0.contains("No Data") }, "\(text("dead"))")
+        XCTAssertTrue(text("live").contains { $0.contains("DISABLED") }, "real false stays off")
+    }
+
+    func testComputersRecordWithFirewallFalseReadsOffOnlyWhenInventoried() {
+        let policy = SecurityControlPolicy()
+        let live = DeviceInventoryService.recordFromComputer(
+            computersItem(name: "live", inventoried: true, firewall: false), source: "computers")
+        let dead = DeviceInventoryService.recordFromComputer(
+            computersItem(name: "dead", inventoried: false, firewall: false), source: "computers")
+        XCTAssertEqual(policy.reading(live.firewall, for: .firewall), false)
+        XCTAssertNil(policy.reading(dead.firewall, for: .firewall))
+        XCTAssertEqual(dead.securityGapCount(policy: policy), 0)
+        XCTAssertNotEqual(live.securityGapCount(policy: policy), 0)
+    }
+
+    func testP0TableLeavesADeadMacOutAndKeepsALiveOne() throws {
+        let rows = [deadRow("A"), liveRow(firewall: false)]
+        let gaps = HtmlReport.P0Gaps.build(
+            items: try items(rows), hardware: [:], policy: SecurityControlPolicy())
+        XCTAssertEqual(gaps.macs.map(\.serial), ["LIVE1"])
+        XCTAssertTrue(gaps.macs.first?.controls.contains(.firewall) == true)
+    }
+
+    func testComplianceDeviceRowsOfADeadMacHaveNoReading() throws {
+        let device = try XCTUnwrap(items([deadRow("A")]).compactMap { item -> SecurityDevice? in
+            if case .device(let d) = item { return d } else { return nil }
+        }.first)
+        for control in SecurityControl.allCases {
+            XCTAssertNil(device.reading(of: control, policy: SecurityControlPolicy()), "\(control)")
+        }
+    }
 }

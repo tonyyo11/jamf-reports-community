@@ -61,7 +61,8 @@ final class EnvironmentProductsTests: XCTestCase {
     func testSchoolTabs() {
         XCTAssertEqual(tabs(env(.jamfSchool)), Tab.schoolTabs)
         XCTAssertEqual(
-            tabs(env(.jamfSchool, .protect)), Tab.schoolTabs.union([.protectDashboard]))
+            tabs(env(.jamfSchool, .protect)),
+            Tab.schoolTabs.union([.protectDashboard, .backups]), "Protect is backed up alone")
     }
 
     func testProtectOnlyTabs() {

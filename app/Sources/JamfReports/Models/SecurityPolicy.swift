@@ -383,8 +383,8 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     /// Jamf did not collect the value, the Mac cannot report it, or the value does not
     /// say whether the boot volume is encrypted ("Some Partitions Encrypted").
     private static let unknownMarkers = [
-        "not collected", "not available", "not supported", "unknown", "pending",
-        "some partitions",
+        "not collected", "not available", "not applicable", "not supported", "unknown",
+        "pending", "some partitions",
     ]
     /// Checked before the true forms, because most negatives contain their positive
     /// word: "UNENCRYPTED", "NOT_ENCRYPTED", "Not Enabled", "inactive", "Disconnected",
