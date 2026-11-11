@@ -11,6 +11,11 @@ versions in this repository map to git tags.
 
 - A Jamf Security Cloud login you set up with `jamf-cli security setup` can be added to a Jamf Pro or Jamf School environment from Data Sources. Each collect then saves every device's risk category and a few status fields (never a user, phone number, location or device name); `jamf_cli.collect_skip: [security-risk]` leaves it out. The daily summary then records how many devices Security Cloud lists, how many match this environment's devices (by UDID) and the count per risk category; Trends and metric alerts (`security_cloud_device_count`, `security_cloud_matched_pct`, `security_cloud_high_risk_count`) use them.
 - Jamf Reports now notices when the jamf-cli login can see only some Jamf Pro sites. The collect log, Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, fleet workbook and period report note that they cover only the sites that login sees.
+- A Jamf School workspace with Jamf Protect connected now backs up Protect: the Backups screen,
+  `jamf-reports backup` and scheduled backups run `protect backup` alone, with the same
+  synced-storage choice, shared-config check and retention as a Jamf Pro workspace. Such a
+  backup reads as having no Jamf Pro part, not as a skipped one, and Diff stays off for it. A
+  School workspace without Protect is still refused. (#305)
 - The first-launch setup screen for existing jamf-cli profiles now offers **Use demo data**, so you can look around before creating a workspace. Turning demo mode off brings the setup screen back.
 - The daily summary records which products an environment holds and, with Jamf Protect, how many
   Protect computers it sees, how many of those match this environment's inventory, and how many
@@ -216,6 +221,8 @@ versions in this repository map to git tags.
   benchmark, patch compliance's definition), where it used to say "No change". The Overview
   cards and their detail now do the same for compliance and patch compliance, and the AI
   insights no longer compare across those changes. (#305)
+- **Diff Selected** on the Backups screen is now off when one of the two backups has no Jamf Pro
+  part, instead of failing after the click. (#305)
 - The Jamf Protect screen showed "Unknown OS" for every computer: jamf-cli sends the macOS version
   as separate numbers, which are now read. Its Jamf Pro match card counted a Mac twice when two
   Protect records matched it; each Mac now counts once and the card says how many records repeat

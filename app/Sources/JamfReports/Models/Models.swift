@@ -357,6 +357,8 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     /// The Jamf Pro part was skipped: the workspace is on storage other Macs reach and the
     /// operator has not allowed Jamf Pro backups there.
     var proSkipped = false
+    /// A Jamf School workspace's backup: Jamf Protect alone, as there is no Jamf Pro part.
+    var noJamfPro = false
 
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
@@ -410,7 +412,7 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     var accessibilityLabel: String {
         let displayName = label.isEmpty ? name : label
         let failed = proFailed ? L(", Jamf Pro part failed")
-            : proSkipped ? L(", Jamf Pro part skipped") : ""
+            : proSkipped && !noJamfPro ? L(", Jamf Pro part skipped") : ""
         return L("\(displayName)\(failed), \(fileCount) files, \(sizeLabel), created \(createdLabel)")
     }
 

@@ -97,8 +97,9 @@ Jamf Protect can be connected to a School workspace from Data Sources or the **A
 Protect is then collected after every School collect, gets its own **Jamf Protect** screen
 and adds its tabs to the School workbook. Its **Jamf School match** card matches Protect
 computers to Jamf School Macs by hardware UUID, then serial number, never by name. A School
-workspace has no backups, so Protect is not backed up there. Please report how this works on
-your tenant on GitHub.
+workspace backs up Protect alone (2.12): the **Backups** screen, `jamf-reports backup` and
+scheduled backups run `jamf-cli protect backup` and no Jamf Pro backup, and Diff is not offered
+for these backups. Please report how this works on your tenant on GitHub.
 
 ## CSV export format
 

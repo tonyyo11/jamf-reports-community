@@ -37,6 +37,8 @@ struct EnvironmentProfiles: Equatable, Sendable {
     /// Jamf School is this environment's MDM.
     var isSchool: Bool { jamfPro == nil && jamfSchool != nil }
     var runsProtect: Bool { protect != nil || protectWithoutProfile }
+    /// Jamf School with a Protect profile: its backup is the Protect part alone (2.12).
+    var isSchoolWithProtect: Bool { isSchool && protect != nil }
     /// The key the Protect login was read from, for messages.
     var protectKey: String { source == .profilesBlock ? "profiles.protect" : "protect.profile" }
     /// The logins this workspace names besides its MDM; none of them is a workspace of its own.

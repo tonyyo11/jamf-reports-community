@@ -578,13 +578,19 @@ enum CollectRouter {
         L("`pro backup` is a Jamf Pro command and '\(profile)' is configured for Jamf School (school_cli.enabled in config.yaml)")
     }
 
-    /// Why a backup of `profile` must not run, or nil: a Jamf School workspace (decided from
-    /// config.yaml, so it holds without a readable jamf-cli) or any `runRefusal`.
+    /// Why a backup of `profile` must not run, or nil: a Jamf School workspace without a
+    /// Protect profile (decided from config.yaml, so it holds without a readable jamf-cli) or
+    /// any `runRefusal`. One with Protect backs up Protect alone (2.12).
     static func backupRefusal(profile: String, config: ReportConfig?) -> String? {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         // The School sentence is backup's own, so it comes before `proCommandRefusal`'s.
         if let refusal = environment.refusal(workspace: profile) { return refusal }
-        if environment.isSchool { return schoolBackupReason(profile: profile) }
+        if environment.isSchool {
+            guard environment.isSchoolWithProtect else {
+                return schoolBackupReason(profile: profile)
+            }
+            return runRefusal(profile: profile, operation: "Backup", config: config)
+        }
         if let refusal = environment.proCommandRefusal(workspace: profile, operation: "Backup") {
             return refusal
         }

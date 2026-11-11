@@ -44,6 +44,6 @@ final class SidebarVisibilityListTests: XCTestCase {
         let withProtect = SettingsView.toggleableGroups(
             environment: SchoolWorkspaceTests.env(.jamfSchool, .protect))
             .flatMap(\.tabs)
-        XCTAssertEqual(Set(withProtect), Set(school).union([.protectDashboard]))
+        XCTAssertEqual(Set(withProtect), Set(school).union([.protectDashboard, .backups]))
     }
 }

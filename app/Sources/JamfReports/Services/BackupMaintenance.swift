@@ -114,7 +114,8 @@ enum BackupMaintenance {
     /// Protect part is left out of the candidates until a newer candidate's Protect part is
     /// complete; from then on it is counted and pruned like any other. A backup whose Jamf
     /// Pro part failed or was skipped (2.12) is held by the same rule and then removed without
-    /// being counted. At
+    /// being counted, except one recording `BackupProductResult.noJamfProReason` (a Jamf School
+    /// workspace's), which is counted like any other. At
     /// most `keep` (and at least `maxHeldBackups`) are held; older ones are released the same
     /// way.
     static let maxHeldBackups = 10
@@ -207,8 +208,9 @@ enum BackupMaintenance {
             .map(\.url)
             .filter { url in
                 let protect = BackupProductResult.protect(inBackup: url)
-                let proMissing =
-                    BackupProductResult.pro(inBackup: url)?.leavesNoJamfProBackup == true
+                // A Jamf School backup is Protect alone and counts as an ordinary backup.
+                let pro = BackupProductResult.pro(inBackup: url)
+                let proMissing = pro?.leavesNoJamfProBackup == true && pro?.isNoJamfPro != true
                 defer { if protect?.isComplete == true { newerProtectComplete = true } }
                 if newerProtectComplete { return release(url, proMissing: proMissing) }
                 guard protect?.keepsBackupFromPruning == true || proMissing else { return true }
