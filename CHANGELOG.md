@@ -156,11 +156,13 @@ versions in this repository map to git tags.
 
 ### Fixed
 
-- A Mac whose FileVault Jamf reports as not applicable no longer reads as unencrypted: it shows neutral and adds no risk.
+- A Mac whose FileVault (or SIP, firewall or Gatekeeper) Jamf reports as not applicable now counts as not reported, not as off: it shows neutral and adds no risk.
 - A patch title Jamf reports as "N/A" shows a dash in muted grey, sorts last and no longer reads as 0% compliant.
 - A Mac with no known macOS version ("Unknown") is left out of the Overview's macOS distribution, the Security Posture table and donut, and the report's OS table and chart, instead of counting as a version.
-- Jamf Protect computers show their macOS version again (jamf-cli sends it as three numbers), in the Protect screen and the workbook.
-- An iPhone or iPad with no passcode set no longer counts as passcode compliant, though Jamf calls it compliant when no profile requires one.
+- The Protect screen showed "Unknown OS" for every computer because jamf-cli sends the version as three numbers; it now shows the version. The workbook's Protect tab is unchanged.
+- An iPhone or iPad with no passcode set no longer counts as passcode compliant, though Jamf calls it compliant when no profile requires one. This redefines the mobile passcode figure (`mobile_passcode_pct`): an alert rule on it may fire once, and Trends mixes the two definitions across the change.
+- The macOS-current share (`osCurrentPct`) in the daily summary now leaves Macs with no known version out of both its count and its total, so it changes on fleets that have such Macs.
+- The HTML report's patch chart no longer draws titles Jamf reports as \"N/A\" as 0%.
 - A Mac that enrolled but never sent Jamf Pro an inventory (no Jamf binary yet) no longer reads as FileVault, SIP and firewall off and Gatekeeper on. It still counts as a Mac, reports no security control, and is left out of the compliance figure and the stability index; its Device Security State row is blank. It now counts as stale (never checked in) in the daily summary, Active Computers and the Check-in Health sheet, as it already did on Computers. A control no Mac in the fleet has reported shows a dash instead of 0%, and an alert rule on that control does not fire until a Mac reports it.
 - The Add sheet checks a Platform API profile's ID before adding one jamf-cli already holds, as
   Connect new does, so a profile it would have refused can no longer be added from the list.

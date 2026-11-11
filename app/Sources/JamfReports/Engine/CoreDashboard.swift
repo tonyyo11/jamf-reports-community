@@ -354,6 +354,7 @@ struct CoreDashboard: Sendable {
                 // "Days Behind" is shown only for titles below 100% compliance,
                 // matching Python's pct_value < 1.0 / secondary > 0 logic.
                 let pct = PatchStatusService.parseCompliancePct(item.compliancePct)
+                // A title with no devices (no share) is not a failure.
                 let belowFull = (pct ?? 100.0) < 100.0 || item.onOther > 0
                 if belowFull, let days = PatchReleaseDateService.daysBehind(releaseDate: releaseDate) {
                     ws.write(days, row: row, col: 7, format: .cell)
@@ -2179,10 +2180,13 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
-            let osStr = ProtectComputerRow.osText(
-                major: asInt(item["osMajor"]), minor: asInt(item["osMinor"]),
-                patch: asInt(item["osPatch"]), fallback: item["osString"] as? String)?
-                .replacingOccurrences(of: "macOS ", with: "") ?? ""
+            let osStr: String
+            if let maj = asInt(item["osMajor"]), let min = asInt(item["osMinor"]),
+               let pat = asInt(item["osPatch"]) {
+                osStr = "\(maj).\(min).\(pat)"  // workbook text is unchanged: keeps "x.y.0"
+            } else {
+                osStr = item["osString"] as? String ?? ""
+            }
             ws.write(item["hostname"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: .cell)
             ws.write(item["plan"] as? String ?? "", row: row, col: 2, format: .cell)
@@ -2761,7 +2765,7 @@ struct CoreDashboard: Sendable {
     }
 
     /// Returns {osVersion: count} for macOS from the cached security report.
-    private func macosOSCounts() -> [String: Int] {
+    func macosOSCounts() -> [String: Int] {
         guard let items = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
         else { return [:] }
         var counts: [String: Int] = [:]

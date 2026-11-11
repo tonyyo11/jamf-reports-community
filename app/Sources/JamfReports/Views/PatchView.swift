@@ -252,7 +252,8 @@ struct PatchView: View {
                                 .foregroundStyle(complianceColor(for: pct))
                                 .monospacedDigit()
                         }
-                        .accessibilityLabel("\(title.compliancePct) compliance rate")
+                        .accessibilityLabel(pct == nil ? L("No data yet")
+                                            : "\(title.compliancePct) compliance rate")
                     }
                     .width(min: 80, ideal: 90)
 
@@ -286,13 +287,7 @@ struct PatchView: View {
     }
 
     private var sortedTitles: [PatchStatusRow] {
-        snapshot.titles.sorted { lhs, rhs in
-            let lhsPct = PatchStatusService.parseCompliancePct(lhs.compliancePct)
-            let rhsPct = PatchStatusService.parseCompliancePct(rhs.compliancePct)
-            guard let lhsPct else { return false }
-            guard let rhsPct else { return true }
-            return lhsPct < rhsPct
-        }
+        snapshot.titles.sorted(by: PatchStatusService.sortsBefore)
     }
 
     // MARK: - Patch Velocity

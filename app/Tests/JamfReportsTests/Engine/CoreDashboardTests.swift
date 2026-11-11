@@ -996,4 +996,61 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertNil(workbook.sheet(named: "Protect Computers"),
                      "Empty array must not produce a sheet; got a stray sheet in the workbook")
     }
+
+    // MARK: - Unmeasured values
+
+    private func seed(_ kind: String, _ json: String) throws -> URL {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        let dir = tmp.appendingPathComponent(kind, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        createdTempDirs.append(tmp)
+        try json.write(to: dir.appendingPathComponent("\(kind).json"),
+                       atomically: true, encoding: .utf8)
+        return tmp
+    }
+
+    /// The workbook's Protect OS text is its own composition, unchanged: "x.y.0" keeps its 0.
+    func testProtectWorkbookOSTextKeepsItsOriginalComposition() throws {
+        let dataDir = try seed("protect-computers", """
+        [{"hostname":"a","osMajor":15,"osMinor":7,"osPatch":0},
+         {"hostname":"b","osMajor":15,"osMinor":7,"osPatch":3},
+         {"hostname":"c","osString":"14.7.6"}, {"hostname":"d"}]
+        """)
+        let dash = makeDashboard(dataDir: dataDir)
+        try dash.writeProtectComputers()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Computers"))
+        let os = (4...7).map { rowText(ws, row: $0, columns: 4)[3] }
+        XCTAssertEqual(os, ["15.7.0", "15.7.3", "14.7.6", ""])
+    }
+
+    func testPostureOSCountsLeaveOutUnknownVersions() throws {
+        let dataDir = try seed("security", """
+        [{"section":"os_version","os_version":"Unknown","count":7,"pct":"7%"},
+         {"section":"os_version","os_version":"","count":2,"pct":"2%"},
+         {"section":"os_version","os_version":"26.7.0","count":3,"pct":"3%"}]
+        """)
+        XCTAssertEqual(makeDashboard(dataDir: dataDir).macosOSCounts(), ["26.7": 3])
+    }
+
+    /// A title with no share (N/A, no devices) is not below full, so it gets no Days Behind.
+    func testNoShareTitleGetsNoDaysBehind() throws {
+        let dataDir = try seed("patch-status", """
+        [{"title":"NoDevices","id":"1","on_latest":0,"on_other":0,"total":0,
+          "latest":"1.0","compliance_pct":"N/A"},
+         {"title":"Behind","id":"2","on_latest":5,"on_other":0,"total":10,
+          "latest":"1.0","compliance_pct":"50%"}]
+        """)
+        let releases = dataDir.appendingPathComponent("patch-release-dates")
+        try FileManager.default.createDirectory(at: releases, withIntermediateDirectories: true)
+        try """
+        [{"title_id":"1","title":"NoDevices","latest_version":"1.0","release_date":"2025-01-01"},
+         {"title_id":"2","title":"Behind","latest_version":"1.0","release_date":"2025-01-01"}]
+        """.write(to: releases.appendingPathComponent("r.json"), atomically: true, encoding: .utf8)
+        let dash = makeDashboard(dataDir: dataDir)
+        try dash.writePatch()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Patch Compliance"))
+        XCTAssertEqual(rowText(ws, row: 4, columns: 8)[7], "\u{2014}")
+        XCTAssertNotEqual(rowText(ws, row: 5, columns: 8)[7], "\u{2014}")
+    }
 }

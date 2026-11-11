@@ -601,8 +601,8 @@ final class HtmlReportTests: XCTestCase {
         let dir = try makeTempDir()
         let kind = dir.appendingPathComponent("patch-status", isDirectory: true)
         try FileManager.default.createDirectory(at: kind, withIntermediateDirectories: true)
-        let rows: [[String: Any]] = [["title": "Zoom", "on_latest": 5, "on_other": 1,
-                                      "total": 6, "compliance_pct": "83%", "latest": "6.0"]]
+        let rows: [[String: Any]] = [["title": "Zoom", "on_latest": 83, "on_other": 17,
+                                      "total": 100, "compliance_pct": "83%", "latest": "6.0"]]
         try JSONSerialization.data(withJSONObject: rows)
             .write(to: kind.appendingPathComponent("patch-status_20260401T000000.json"))
         return dir
@@ -632,6 +632,18 @@ final class HtmlReportTests: XCTestCase {
         let html = try String(contentsOf: outputURL, encoding: .utf8)
         XCTAssertFalse(html.contains("cdn.jsdelivr.net"), "the report loads nothing from a CDN")
         XCTAssertFalse(html.contains("<script src"), "and no script from anywhere")
+    }
+
+    func testPatchChartLeavesOutTitlesWithNoMeasuredShare() {
+        var rows: [[String: Any]] = (0..<10).map {
+            ["title": "NA\($0)", "compliance_pct": "N/A", "on_latest": 0, "total": 0]
+        }
+        rows.append(["title": "Measured", "compliance_pct": "80%", "on_latest": 8, "total": 10])
+        let html = makeReport().buildPatchChart(patchStatus: rows).html
+        XCTAssertTrue(html.contains("Measured"))
+        XCTAssertFalse(html.contains("NA0"))
+        XCTAssertFalse(makeReport().buildPatchChart(patchStatus: Array(rows.prefix(2)))
+            .html.contains("NA0"))
     }
 
     /// A chart label is page text: a title holding markup arrives escaped, so it cannot

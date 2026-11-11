@@ -198,6 +198,13 @@ struct PatchStatusService: Sendable {
         return value
     }
 
+    /// Lowest share first; a title with no measured share sorts last.
+    static func sortsBefore(_ lhs: PatchStatusRow, _ rhs: PatchStatusRow) -> Bool {
+        guard let lhsPct = parseCompliancePct(lhs.compliancePct) else { return false }
+        guard let rhsPct = parseCompliancePct(rhs.compliancePct) else { return true }
+        return lhsPct < rhsPct
+    }
+
     // MARK: - CSV export
 
     /// Column header for the standalone patch-compliance CSV. Matches the
