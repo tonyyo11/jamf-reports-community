@@ -52,8 +52,8 @@ enum BinaryMissing {
 }
 
 extension DeviceInventoryRecord {
-    /// The Mac has never checked in and is unmanaged or never inventoried. Needs a source that dates every Mac (the
-    /// `computers` snapshot): a CSV without that has a blank check-in for other reasons.
+    /// The Mac has never checked in and is unmanaged or never inventoried. Needs a source that
+    /// dates every Mac (the `computers` snapshot): a blank check-in elsewhere means other things.
     var isBinaryMissing: Bool {
         BinaryMissing.isMissing(
             managedState: managedState,

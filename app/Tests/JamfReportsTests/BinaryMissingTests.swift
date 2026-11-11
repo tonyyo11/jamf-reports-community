@@ -88,7 +88,8 @@ final class BinaryMissingTests: XCTestCase {
 
     func testAManagedNeverInventoriedMacIsListedApartAndTheSummaryStaleFigureStands() throws {
         let fleet = fleet + [uninventoried("Managed-DEP", managed: true)]
-        let html = try report(computers: fleet).buildInterventionList(computersInventory: fleet).html
+        let html = try report(computers: fleet)
+            .buildInterventionList(computersInventory: fleet).html
         XCTAssertEqual(try tableRows(html).first { $0[0] == "Managed-DEP" }?[5],
                        "Jamf binary missing")
         let inputs = try report(computers: fleet).loadInputs(for: Set(SectionID.allCases))
