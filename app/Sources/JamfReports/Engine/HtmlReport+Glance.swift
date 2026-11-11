@@ -66,9 +66,9 @@ extension HtmlReport {
     /// "Compliance Benchmark"; "Compliance (4-control proxy)" when the summary's figure is the
     /// proxy built from the four security controls, not a benchmark's failure count.
     func complianceLabel(isProxy: Bool?) -> String {
-        if isProxy == true { return "Compliance (4-control proxy)" }
-        let label = config.compliance?.baselineLabel?.trimmingCharacters(in: .whitespaces) ?? ""
-        return label.isEmpty ? TrendSeries.Metric.compliance.displayLabel : label
+        TrendSeries.Metric.compliance.displayLabel(
+            benchmarkLabel: config.compliance?.baselineLabel?.trimmingCharacters(in: .whitespaces),
+            complianceIsProxy: isProxy == true)
     }
 
     /// The six figures from the newest daily summary, each against the summary about seven

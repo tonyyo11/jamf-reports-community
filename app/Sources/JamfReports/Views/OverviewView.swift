@@ -109,7 +109,8 @@ struct OverviewView: View {
         .sheet(isPresented: $showCustomize) {
             OverviewCustomizeSheet(
                 unavailable: { unavailableReason($0) },
-                metricHasData: { !metricValues($0).isEmpty }
+                metricHasData: { !metricValues($0).isEmpty },
+                complianceIsProxy: complianceIsProxy
             )
             .environment(workspace)
         }
@@ -1112,9 +1113,10 @@ struct OverviewView: View {
                         .drillDownChrome()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Open \(metric.displayLabel) details")
+                .accessibilityLabel("Open \(metricDetailTitle(metric)) details")
                 // With no value, the hover says what the card needs instead.
-                .help(hasData ? "Open \(metric.displayLabel) details" : metric.dataRequirement)
+                .help(hasData
+                      ? "Open \(metricDetailTitle(metric)) details" : metric.dataRequirement)
             }
         }
         .frame(maxWidth: .infinity)
@@ -1125,9 +1127,10 @@ struct OverviewView: View {
     /// selection is not edited, so a card returns with its control or its devices.
     private var offeredScoreCards: [TrendSeries.Metric] { workspace.shownScoreCards }
 
-    /// Two scores on different definitions (`securityScoreBasis`) have no change between them.
+    /// Two figures on different definitions (the score's basis, proxy against benchmark
+    /// compliance, the patch basis) have no change between them.
     private func scoreCardComparable(_ metric: TrendSeries.Metric) -> Bool {
-        metric != .securityScore || workspace.demoMode || trendStore.latestSecurityScoresComparable
+        workspace.demoMode || trendStore.latestValuesComparable(metric: metric)
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
@@ -1211,10 +1214,7 @@ struct OverviewView: View {
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
 
-        let title = metric.displayLabel(
-            benchmarkLabel: workspace.complianceBenchmarkLabel,
-            edrAgentName: workspace.edrAgentName
-        )
+        let title = metricDetailTitle(metric)
         return StatTile(
             label: title,
             value: valueStr,
@@ -1926,11 +1926,18 @@ struct OverviewView: View {
         }
     }
 
-    /// The drill-down's title: the tenant's own label, as on the card it was opened from.
+    /// A score card's title, also its drill-down's and the Customize sheet's: the tenant's own
+    /// label, or the proxy's name when the newest compliance figure is the four-control proxy.
     private func metricDetailTitle(_ metric: TrendSeries.Metric) -> String {
         metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,
-            edrAgentName: workspace.edrAgentName)
+            edrAgentName: workspace.edrAgentName,
+            complianceIsProxy: complianceIsProxy)
+    }
+
+    /// The demo fleet's compliance is a benchmark's; a live one reads its newest summary.
+    private var complianceIsProxy: Bool {
+        !workspace.demoMode && trendStore.latestComplianceIsProxy
     }
 
     private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {

@@ -40,7 +40,16 @@ final class TrendsViewNoDataTests: XCTestCase {
         XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [90, 87]), "-3.0 pp")
         XCTAssertEqual(TrendsView.pillDeltaText(metric: .stale, series: [40, 30]), "-10")
         XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50, 50.04]), "±0")
-        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50]), "±0")
+    }
+
+    /// One point has nothing to compare against, which "±0" or "No change" would hide.
+    func testOneComparablePointIsNotComparable() {
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50]), "Not comparable")
+        XCTAssertEqual(TrendsView.heroChangeText(metric: .securityScore, series: [79]),
+                       "Not comparable")
+        XCTAssertEqual(TrendsView.heroChangeText(metric: .patch, series: []), "—")
+        XCTAssertEqual(TrendsView.heroChangeText(metric: .stale, series: [40, 30]), "10 (-25.0%)")
+        XCTAssertEqual(TrendsView.heroChangeText(metric: .patch, series: [70, 70]), "No change")
     }
 
     func testPillWithNoPointsTellsVoiceOverSo() {
@@ -62,6 +71,7 @@ final class TrendsViewNoDataTests: XCTestCase {
         XCTAssertEqual(label(.stale, [11, 20]), "X, declining, +9 change")
         XCTAssertEqual(label(.activeDevices, [80, 99]), "X, up, +19 change")
         XCTAssertEqual(label(.activeDevices, [99, 80]), "X, down, -19 change")
-        XCTAssertEqual(label(.fileVault, [70]), "X, unchanged")
+        XCTAssertEqual(label(.fileVault, [70, 70.04]), "X, unchanged")
+        XCTAssertEqual(label(.fileVault, [70]), "X, not comparable")
     }
 }

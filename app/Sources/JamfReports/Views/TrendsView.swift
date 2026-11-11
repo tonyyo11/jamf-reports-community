@@ -62,8 +62,20 @@ struct TrendsView: View {
     private func metricLabel(_ m: TrendSeries.Metric) -> String {
         return m.displayLabel(
             benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
-            edrAgentName: workspaceStore.edrAgentName
+            edrAgentName: workspaceStore.edrAgentName,
+            complianceIsProxy: complianceIsProxy
         )
+    }
+
+    /// The demo history is a benchmark's; a live one names the proxy when its newest figure is.
+    private var complianceIsProxy: Bool {
+        !workspaceStore.demoMode && trendStore.latestComplianceIsProxy
+    }
+
+    /// The compliance line's short name in the comparison chart, its legend and its descriptor.
+    private var complianceSeriesName: String {
+        complianceIsProxy ? metricLabel(.compliance)
+            : workspaceStore.complianceBenchmarkLabel ?? L("Compliance")
     }
 
     private static func archivedSummaries(_ count: Int) -> String {
@@ -131,13 +143,15 @@ struct TrendsView: View {
     private var startVal: Double { changeValues.first ?? 0 }
     private var endVal: Double { changeValues.last ?? 0 }
 
-    /// The values the hero's change compares: for the Security Score only the days since its
-    /// definition last changed.
+    /// The values the hero's change compares: for a metric whose definition can change (the
+    /// Security Score, compliance, patch) only the days since it last changed.
     private var changeValues: [Double] { changeSeries(for: metric, values) }
 
     private func changeSeries(for m: TrendSeries.Metric, _ series: [Double]) -> [Double] {
-        guard m == .securityScore, !workspaceStore.demoMode else { return series }
-        return trendStore.comparableSecurityScores()
+        guard !workspaceStore.demoMode,
+              let run = TrendStore.comparableValues(of: m, in: trendStore.filteredSummaries)
+        else { return series }
+        return run
     }
     private var delta: Double { endVal - startVal }
 
@@ -213,30 +227,45 @@ struct TrendsView: View {
         return (low, high, values.reduce(0, +) / Double(values.count))
     }
 
-    /// The change over the range for one metric, nil when it has no points.
+    /// The change over the range for one metric, nil with fewer than two comparable points.
     nonisolated static func trendChange(
         metric: TrendSeries.Metric, series: [Double]
     ) -> TrendChange? {
-        guard let first = series.first, let last = series.last else { return nil }
+        guard series.count >= 2, let first = series.first, let last = series.last else {
+            return nil
+        }
         return TrendChange(metric: metric, first: first, last: last)
     }
 
-    /// A pill's change over the range, in percentage points for a share; a metric with no
-    /// points shows a dash, not "±0".
+    /// Why there is no change to show: a dash with no points, "Not comparable" with one, so a
+    /// single point never reads as "No change".
+    nonisolated static func noChangeText(series: [Double]) -> String {
+        series.isEmpty ? "—" : L("Not comparable")
+    }
+
+    /// A pill's change over the range, in percentage points for a share.
     nonisolated static func pillDeltaText(metric: TrendSeries.Metric, series: [Double]) -> String {
-        trendChange(metric: metric, series: series)?.pillText ?? "—"
+        trendChange(metric: metric, series: series)?.pillText ?? noChangeText(series: series)
     }
 
     /// The hero's change: a relative percentage only for a count, whose baseline can be a
     /// different size from its change. A share's change is already in percentage points.
-    private var heroChange: TrendChange {
-        TrendChange(metric: metric, first: startVal, last: endVal)
+    nonisolated static func heroChangeText(metric: TrendSeries.Metric, series: [Double]) -> String {
+        guard let change = trendChange(metric: metric, series: series),
+              let first = series.first, let last = series.last else {
+            return noChangeText(series: series)
+        }
+        let relative = metric.unit == "%" ? nil
+            : relativeChangePercent(delta: last - first, baseline: first)
+        return change.heroText(relativeChange: relative)
+    }
+
+    private var heroChange: TrendChange? {
+        Self.trendChange(metric: metric, series: changeValues)
     }
 
     private var heroChangeText: String {
-        let relative = metric.unit == "%" ? nil
-            : Self.relativeChangePercent(delta: delta, baseline: startVal)
-        return heroChange.heroText(relativeChange: relative)
+        Self.heroChangeText(metric: metric, series: changeValues)
     }
 
     private func verdictColor(_ verdict: TrendChange.Verdict) -> Color {
@@ -544,13 +573,13 @@ struct TrendsView: View {
         // With no points there is no change to report; the range pill says "No snapshots".
         if !values.isEmpty {
             HStack(spacing: 4) {
-                Image(systemName: heroChange.symbol)
+                Image(systemName: heroChange?.symbol ?? "minus")
                     .font(.system(size: 11, weight: .bold))
                 Text(heroChangeText)
                     .lineLimit(1)
             }
             .font(Theme.Fonts.mono(14, weight: .semibold))
-            .foregroundStyle(verdictColor(heroChange.verdict))
+            .foregroundStyle(verdictColor(heroChange?.verdict ?? .neutral))
             .fixedSize(horizontal: true, vertical: false)
         }
         if showsRange {
@@ -666,8 +695,8 @@ struct TrendsView: View {
                             ForEach(Array(trendPoints.enumerated()), id: \.offset) { idx, point in
                                 let segment = segments[safe: idx] ?? 0
                                 AreaMark(x: .value("Date", point.date),
-                                         yStart: .value(metric.displayLabel, areaFloor),
-                                         yEnd: .value(metric.displayLabel, point.value),
+                                         yStart: .value(metricLabel(metric), areaFloor),
+                                         yEnd: .value(metricLabel(metric), point.value),
                                          series: .value("Segment", segment))
                                     .foregroundStyle(LinearGradient(
                                         colors: [Color(hex: metric.colorHex).opacity(0.14),
@@ -676,7 +705,7 @@ struct TrendsView: View {
                                     ))
                                     .interpolationMethod(.monotone)
                                 LineMark(x: .value("Date", point.date),
-                                         y: .value(metric.displayLabel, point.value),
+                                         y: .value(metricLabel(metric), point.value),
                                          series: .value("Segment", segment))
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
@@ -684,7 +713,7 @@ struct TrendsView: View {
 
                                 // Always-visible data point dots
                                 PointMark(x: .value("Date", point.date),
-                                          y: .value(metric.displayLabel, point.value))
+                                          y: .value(metricLabel(metric), point.value))
                                     .foregroundStyle(Color.white)
                                     .symbolSize(36)
                                     .annotation(position: .overlay) {
@@ -706,7 +735,7 @@ struct TrendsView: View {
                                     .zIndex(-1)
 
                                 PointMark(x: .value("Selected", selectedPoint.date),
-                                          y: .value(metric.displayLabel, selectedPoint.value))
+                                          y: .value(metricLabel(metric), selectedPoint.value))
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .symbolSize(100)
                                     .annotation(position: .top, spacing: 8) {
@@ -720,7 +749,7 @@ struct TrendsView: View {
                                     }
                             } else if let lastPoint = trendPoints.last {
                                 PointMark(x: .value("Date", lastPoint.date),
-                                          y: .value(metric.displayLabel, lastPoint.value))
+                                          y: .value(metricLabel(metric), lastPoint.value))
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .symbolSize(60)
                             }
@@ -935,7 +964,7 @@ struct TrendsView: View {
                     legendDot(color: Theme.ChartColors.color(forMetric: .fileVault),
                               label: L("FileVault"))
                     legendDot(color: Theme.ChartColors.color(forMetric: .compliance),
-                              label: workspaceStore.complianceBenchmarkLabel ?? L("Compliance"))
+                              label: complianceSeriesName)
                     legendDot(color: Theme.ChartColors.color(forMetric: .osCurrent), label: "macOS")
                 }
             }
@@ -1153,7 +1182,7 @@ struct TrendsView: View {
                 Chart {
                     series(L("FileVault"), color: Theme.ChartColors.color(forMetric: .fileVault),
                            points: points(for: .fileVault))
-                    series(workspaceStore.complianceBenchmarkLabel ?? L("Compliance"),
+                    series(complianceSeriesName,
                            color: Theme.ChartColors.color(forMetric: .compliance),
                            points: points(for: .compliance))
                     series(L("macOS Current"), color: Theme.ChartColors.color(forMetric: .osCurrent),
@@ -1180,7 +1209,7 @@ struct TrendsView: View {
                         .init(name: L("FileVault"),
                               dates: points(for: .fileVault).map(\.date),
                               values: points(for: .fileVault).map(\.value)),
-                        .init(name: workspaceStore.complianceBenchmarkLabel ?? L("Compliance"),
+                        .init(name: complianceSeriesName,
                               dates: points(for: .compliance).map(\.date),
                               values: points(for: .compliance).map(\.value)),
                         .init(name: L("macOS Current"),
@@ -1203,7 +1232,8 @@ struct TrendsView: View {
         series: [Double]
     ) -> String {
         guard let change = trendChange(metric: metric, series: series) else {
-            return L("\(label), no snapshots in range")
+            return series.isEmpty
+                ? L("\(label), no snapshots in range") : L("\(label), not comparable")
         }
         if change.direction == .flat { return L("\(label), unchanged") }
         let direction = switch (change.verdict, change.direction) {
@@ -1704,7 +1734,7 @@ private struct ChartExportView: View {
             ForEach(points) { point in
                 AreaMark(
                     x: .value("Date", point.date),
-                    y: .value(metric.displayLabel, point.value)
+                    y: .value(axisLabel, point.value)
                 )
                 .foregroundStyle(LinearGradient(
                     colors: [Color(hex: metric.colorHex).opacity(0.12),
@@ -1715,7 +1745,7 @@ private struct ChartExportView: View {
 
                 LineMark(
                     x: .value("Date", point.date),
-                    y: .value(metric.displayLabel, point.value)
+                    y: .value(axisLabel, point.value)
                 )
                 .foregroundStyle(Color(hex: metric.colorHex))
                 .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
@@ -1723,7 +1753,7 @@ private struct ChartExportView: View {
 
                 PointMark(
                     x: .value("Date", point.date),
-                    y: .value(metric.displayLabel, point.value)
+                    y: .value(axisLabel, point.value)
                 )
                 .foregroundStyle(Color.white)
                 .symbolSize(point.index == points.indices.last ? 82 : 46)
@@ -1742,7 +1772,7 @@ private struct ChartExportView: View {
 
                 PointMark(
                     x: .value("Latest", lastPoint.date),
-                    y: .value(metric.displayLabel, lastPoint.value)
+                    y: .value(axisLabel, lastPoint.value)
                 )
                 .foregroundStyle(Color(hex: metric.colorHex))
                 .symbolSize(130)
@@ -1831,12 +1861,14 @@ private struct TrendsAIInsightCard: View {
             provenanceText: L("AI-generated from the snapshots in this range — verify against the chart above.")
         ) {
             // `trends` leaves out the band metric and any metric with fewer than two
-            // points, which is what the screen's picker hides on a live profile.
+            // points, which is what the screen's picker hides on a live profile; a metric
+            // whose definition changed in range is read from that change on.
             Localization.english { FleetInsightInput.trends(
                 metrics: metrics,
-                points: { trendStore.points(metric: $0) },
+                points: { trendStore.comparablePoints(metric: $0) },
                 label: { $0.displayLabel(
-                    benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) }) }
+                    benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName,
+                    complianceIsProxy: trendStore.latestComplianceIsProxy) }) }
         }
     }
 }

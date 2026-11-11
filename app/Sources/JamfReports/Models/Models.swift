@@ -1233,9 +1233,15 @@ struct TrendSeries: Identifiable, Sendable {
 
         /// Returns the tenant-specific label when one is configured; otherwise
         /// the metric's static `displayLabel`. `.compliance` follows
-        /// `compliance.baseline_label`; `.edrAgent` follows the agent the score counts as EDR
-        /// (e.g. "CrowdStrike Falcon coverage").
-        func displayLabel(benchmarkLabel: String?, edrAgentName: String? = nil) -> String {
+        /// `compliance.baseline_label`, unless the figure is the four-control proxy
+        /// (`complianceIsProxy`), which is never named after a benchmark; `.edrAgent` follows
+        /// the agent the score counts as EDR (e.g. "CrowdStrike Falcon coverage").
+        func displayLabel(
+            benchmarkLabel: String?, edrAgentName: String? = nil, complianceIsProxy: Bool = false
+        ) -> String {
+            if case .compliance = self, complianceIsProxy {
+                return L("Compliance (4-control proxy)")
+            }
             if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
             if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) coverage" }
             return displayLabel
