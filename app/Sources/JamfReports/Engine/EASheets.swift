@@ -147,7 +147,11 @@ struct EASheetWriter: Sendable {
         ws.write("Count", row: row, col: 1, format: .header)
         row += 1
 
-        for (val, count) in frequency.sorted(by: { $0.value > $1.value }) {
+        // Ties by value text: a dictionary has no order, so tied rows moved run to run.
+        let ordered = frequency.sorted {
+            $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
+        }
+        for (val, count) in ordered {
             ws.write(val, row: row, col: 0, format: .cell)
             ws.write(count, row: row, col: 1, format: .cell)
             row += 1

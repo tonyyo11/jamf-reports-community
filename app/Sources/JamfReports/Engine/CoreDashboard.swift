@@ -1098,7 +1098,7 @@ struct CoreDashboard: Sendable {
         }
         let computerRows = modelCounts
             .map { (model: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.model < $1.model }
 
         let ws = workbook.addSheet("Hardware Models")
         let ts = ISO8601Time.string(Date())
@@ -1848,7 +1848,8 @@ struct CoreDashboard: Sendable {
         ws.write(colHeader, row: row, col: 0, format: .header)
         ws.write("Count", row: row, col: 1, format: .header)
         row += 1
-        let sorted = counts.sorted { $0.value > $1.value }
+        // Ties by key: a dictionary has no order, so ties (and the top N) changed run to run.
+        let sorted = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
         for (key, count) in sorted.prefix(maxRows) {
             ws.write(key, row: row, col: 0, format: .cell)
             ws.write(count, row: row, col: 1, format: .cell)

@@ -88,10 +88,8 @@ final class SiteScopeReportTests: XCTestCase {
         return (try XLSXReader.tabs(of: out), ReportEngine.csvFolderURL(besideWorkbook: out))
     }
 
-    /// Tabs whose body varies run to run: the Cover holds a run ID and timestamps (compared as a
-    /// set without them); Mobile Fleet Summary lists model rows that tie on count in a
-    /// different order and members, so only its row count is compared.
-    private let unstableTabs: Set<String> = ["Cover", "Mobile Fleet Summary"]
+    /// The Cover holds a run ID and timestamps, so it is compared as a set without them.
+    private let unstableTabs: Set<String> = ["Cover"]
 
     func testALimitedLoginPutsTheSentenceInTheHeaderOfEveryTabAndMovesNothing() async throws {
         let plain = try await tabs(limited: nil).tabs
@@ -112,9 +110,7 @@ final class SiteScopeReportTests: XCTestCase {
                 tab.rows.enumerated().filter { $0.offset != noteRow }.map { "\($0.element)" }
                     .filter { !$0.contains("Run ID") && !$0.contains("Generated") }
             }
-            if before.name == "Mobile Fleet Summary" {
-                continue  // only its row count is stable
-            } else if unstableTabs.contains(before.name) {
+            if unstableTabs.contains(before.name) {
                 XCTAssertEqual(body(before).sorted(), body(after).sorted(), before.name)
             } else {
                 // Row 2 holds a timestamp, so skip it; every other row stays where it was.
