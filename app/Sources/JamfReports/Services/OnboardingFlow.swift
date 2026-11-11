@@ -227,6 +227,15 @@ final class OnboardingFlow {
     var connectionValidated = false
     var firstReportExitCode: Int32?
 
+    /// The connection was checked: a Jamf Pro or Platform profile that validated, or a School
+    /// profile whose Connect step confirmed it (School has no Validate step).
+    var connectionConfirmed: Bool {
+        productPath == .school ? schoolConnected : connectionValidated
+    }
+
+    /// The first report ran to the end, so setup is finished and only leaving the screen is left.
+    var firstReportSucceeded: Bool { firstReportExitCode == 0 && !isRunningFirstReport }
+
     var isRegisteringProfile = false
     var isValidatingConnection = false
     var isRunningFirstReport = false

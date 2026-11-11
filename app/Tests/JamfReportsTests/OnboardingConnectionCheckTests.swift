@@ -13,6 +13,31 @@ final class OnboardingConnectionCheckTests: XCTestCase {
         XCTAssertTrue(unvalidated.contains("did not validate"))
     }
 
+    /// School has no Validate step: its Connect step is the check, so a connected School
+    /// setup is never told its profile did not validate.
+    func testASchoolSetupCountsItsConnectStepAsTheCheck() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        XCTAssertFalse(flow.connectionConfirmed)
+        flow.schoolConnected = true
+        XCTAssertTrue(flow.connectionConfirmed)
+        flow.productPath = .pro
+        XCTAssertFalse(flow.connectionConfirmed, "Jamf Pro still needs Validate")
+        flow.connectionValidated = true
+        XCTAssertTrue(flow.connectionConfirmed)
+    }
+
+    func testOnlyAFirstReportThatExitedZeroFinishesSetup() {
+        let flow = OnboardingFlow()
+        XCTAssertFalse(flow.firstReportSucceeded)
+        flow.firstReportExitCode = 1
+        XCTAssertFalse(flow.firstReportSucceeded)
+        flow.firstReportExitCode = -1
+        XCTAssertFalse(flow.firstReportSucceeded)
+        flow.firstReportExitCode = 0
+        XCTAssertTrue(flow.firstReportSucceeded)
+    }
+
 
     private func flowAtValidate(
         _ type: OnboardingFlow.ProConnectionType, exit: Int32
