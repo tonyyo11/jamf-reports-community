@@ -1,0 +1,15 @@
+{
+  "fill" : { "linear-gradient" : [ "srgb:0.14118,0.16471,0.20000,1.00000", "srgb:0.05882,0.07059,0.08627,1.00000" ] },
+  "groups" : [
+    { "name" : "Bands",
+      "layers" : [
+        { "name" : "Verified",  "image-name" : "band-1-verified.svg",  "glass" : true },
+        { "name" : "Compliant", "image-name" : "band-2-compliant.svg", "glass" : true },
+        { "name" : "At risk",   "image-name" : "band-3-atrisk.svg",    "glass" : true },
+        { "name" : "Critical",  "image-name" : "band-4-critical.svg",  "glass" : true }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "translucency" : { "enabled" : true, "value" : 0.2 } }
+  ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}

@@ -111,6 +111,9 @@ versions in this repository map to git tags.
   and device count (they were empty and 0), and EA Coverage fills Computer, plus Serial where
   only one Mac has that name. A software row with no count leaves Count blank. No column moved.
   (#305)
+- A new app icon in Apple's Liquid Glass style: the same four compliance bands on the dark
+  background, now as glass shapes. On macOS Tahoe 26 and later it also follows the Mac's
+  tinted and clear icon styles.
 - Jamf Pro commands are refused for a Jamf School environment, and a Protect-only environment
   whose `profiles.protect` change you have not confirmed on this Mac is refused as a run that
   does not start, with the reason, instead of failing partway. Until you confirm it, this Mac
