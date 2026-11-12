@@ -48,9 +48,26 @@ struct PatchStatusService: Sendable {
             PatchStatusService.fleetCompliancePct(titles)
         }
 
-        /// Number of devices with patch failures, grouped by policy name.
-        var failuresByTitle: [String: Int] {
-            Dictionary(failures.map { ($0.policy, 1) }, uniquingKeysWith: +)
+        /// True when a failure scan was read, so a title with none shows 0, not a dash.
+        var failuresScanned = false
+
+        /// Distinct failing devices per patch title; nil when no failure scan was read. A
+        /// failure row names its patch policy, not the title, and no snapshot links the two by
+        /// ID, so a policy counts for the title it is named after: exactly, or "<title> …"
+        /// with the longest such title winning ("Firefox 130.0" is Firefox's).
+        // shortcut: a policy named unlike its title counts for none; join on the policy's
+        // softwareTitleConfigurationId once a collect kind carries patch policies.
+        var failingDevicesByTitle: [String: Int]? {
+            guard failuresScanned else { return nil }
+            let names = Set(titles.map(\.title)).sorted { $0.count > $1.count }
+            var devices: [String: Set<String>] = [:]
+            for row in failures {
+                guard let title = names.first(where: {
+                    row.policy == $0 || row.policy.hasPrefix($0 + " ")
+                }) else { continue }
+                devices[title, default: []].insert(row.deviceId.isEmpty ? row.device : row.deviceId)
+            }
+            return devices.mapValues(\.count)
         }
 
         /// Total unique devices that have at least one patch failure.
@@ -76,7 +93,8 @@ struct PatchStatusService: Sendable {
             lhs.failures == rhs.failures &&
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate &&
-            lhs.sourceDates == rhs.sourceDates
+            lhs.sourceDates == rhs.sourceDates &&
+            lhs.failuresScanned == rhs.failuresScanned
         }
     }
 
@@ -119,12 +137,14 @@ struct PatchStatusService: Sendable {
         }
 
         var failures: [PatchFailureRow] = []
+        var failuresScanned = false
         if let failuresURL, FileManager.default.fileExists(atPath: failuresURL.path) {
             if let failuresData = BoundedFile.readLogged(failuresURL) {
                 if let decodedFailures = try? JSONDecoder().decode(
                     [PatchFailureRow].self, from: failuresData
                 ) {
                     failures = decodedFailures
+                    failuresScanned = true
                 } else {
                     AppLogger.collect.warning(
                         "PatchStatusService: failed to decode patch-device-failures file \(failuresURL.lastPathComponent, privacy: .private)"
@@ -146,13 +166,15 @@ struct PatchStatusService: Sendable {
             sourceDates["patch-device-failures"] = fmtime
         }
 
-        return Snapshot(
+        var snapshot = Snapshot(
             titles: titles,
             failures: failures,
             sourceFile: titlesURL,
             snapshotDate: mtime,
             sourceDates: sourceDates
         )
+        snapshot.failuresScanned = failuresScanned
+        return snapshot
     }
 
     // MARK: - Fleet compliance

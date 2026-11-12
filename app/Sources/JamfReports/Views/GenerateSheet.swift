@@ -517,9 +517,9 @@ struct GenerateSheet: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
-            // A Jamf School collect writes no daily summary yet (environment-model spec P8).
-            if state.collectFresh && !state.schoolMode {
-                Text("• summary.json (Trends snapshot)")
+            // Jamf Pro and Jamf School collects both write the day's summary (School since 2.11).
+            if state.collectFresh {
+                Text("• summary_<date>.json (Trends snapshot)")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }

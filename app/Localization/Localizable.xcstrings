@@ -81419,6 +81419,46 @@
         }
       }
     },
+    "No failure scan collected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Fehler-Scan erfasst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha recopilado ningún análisis de fallos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune analyse des échecs collectée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna scansione degli errori raccolta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗スキャンは収集されていません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhuma verificação de falhas coletada"
+          }
+        }
+      }
+    },
     "No group data detected" : {
       "localizations" : {
         "de" : {
@@ -87117,42 +87157,42 @@
         }
       }
     },
-    "Only Jamf Protect or Jamf Security Cloud? Jamf Reports reports on a Jamf Pro or Jamf School fleet. Jamf Protect is added to a Jamf Pro or Jamf School workspace, and Jamf Security Cloud is not supported yet." : {
+    "Only Jamf Protect or Jamf Security Cloud? Jamf Protect can be its own environment, or be added to a Jamf Pro or Jamf School one. Jamf Security Cloud is not supported yet." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nur Jamf Protect oder Jamf Security Cloud? Jamf Reports erstellt Berichte für eine Jamf-Pro- oder Jamf-School-Flotte. Jamf Protect wird einem Jamf-Pro- oder Jamf-School-Arbeitsbereich hinzugefügt, und Jamf Security Cloud wird noch nicht unterstützt."
+            "value" : "Nur Jamf Protect oder Jamf Security Cloud? Jamf Protect kann eine eigene Umgebung sein oder einer Jamf-Pro- oder Jamf-School-Umgebung hinzugefügt werden. Jamf Security Cloud wird noch nicht unterstützt."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Solo Jamf Protect o Jamf Security Cloud? Jamf Reports informa sobre una flota de Jamf Pro o Jamf School. Jamf Protect se añade a un espacio de trabajo de Jamf Pro o Jamf School, y Jamf Security Cloud aún no es compatible."
+            "value" : "¿Solo Jamf Protect o Jamf Security Cloud? Jamf Protect puede ser un entorno propio o añadirse a uno de Jamf Pro o Jamf School. Jamf Security Cloud aún no es compatible."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uniquement Jamf Protect ou Jamf Security Cloud ? Jamf Reports établit des rapports sur un parc Jamf Pro ou Jamf School. Jamf Protect s’ajoute à un espace de travail Jamf Pro ou Jamf School, et Jamf Security Cloud n’est pas encore pris en charge."
+            "value" : "Uniquement Jamf Protect ou Jamf Security Cloud ? Jamf Protect peut être un environnement à part entière, ou s’ajouter à un environnement Jamf Pro ou Jamf School. Jamf Security Cloud n’est pas encore pris en charge."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solo Jamf Protect o Jamf Security Cloud? Jamf Reports crea report su un parco dispositivi Jamf Pro o Jamf School. Jamf Protect si aggiunge a uno spazio di lavoro Jamf Pro o Jamf School, mentre Jamf Security Cloud non è ancora supportato."
+            "value" : "Solo Jamf Protect o Jamf Security Cloud? Jamf Protect può essere un ambiente a sé oppure essere aggiunto a un ambiente Jamf Pro o Jamf School. Jamf Security Cloud non è ancora supportato."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf ProtectまたはJamf Security Cloudのみをお使いですか? Jamf ReportsはJamf ProまたはJamf Schoolのフリートを対象にレポートします。Jamf ProtectはJamf ProまたはJamf Schoolのワークスペースに追加でき、Jamf Security Cloudはまだサポートされていません。"
+            "value" : "Jamf ProtectまたはJamf Security Cloudのみをお使いですか? Jamf Protectは単独の環境にすることも、Jamf ProまたはJamf Schoolの環境に追加することもできます。Jamf Security Cloudはまだサポートされていません。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Só Jamf Protect ou Jamf Security Cloud? O Jamf Reports gera relatórios de uma frota Jamf Pro ou Jamf School. O Jamf Protect é adicionado a um espaço de trabalho Jamf Pro ou Jamf School, e o Jamf Security Cloud ainda não é compatível."
+            "value" : "Só Jamf Protect ou Jamf Security Cloud? O Jamf Protect pode ser um ambiente próprio ou ser adicionado a um ambiente Jamf Pro ou Jamf School. O Jamf Security Cloud ainda não é compatível."
           }
         }
       }
@@ -145439,42 +145479,42 @@
     "•" : {
       "shouldTranslate" : false
     },
-    "• summary.json (Trends snapshot)" : {
+    "• summary_<date>.json (Trends snapshot)" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• summary.json (Trends-Snapshot)"
+            "value" : "• summary_<date>.json (Trends-Snapshot)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• summary.json (instantánea de Tendencias)"
+            "value" : "• summary_<date>.json (instantánea de Tendencias)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• summary.json (instantané Tendances)"
+            "value" : "• summary_<date>.json (instantané Tendances)"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• summary.json (snapshot di Tendenze)"
+            "value" : "• summary_<date>.json (snapshot di Tendenze)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• summary.json（トレンドのスナップショット）"
+            "value" : "• summary_<date>.json（トレンドのスナップショット）"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• summary.json (snapshot de Tendências)"
+            "value" : "• summary_<date>.json (snapshot de Tendências)"
           }
         }
       }
