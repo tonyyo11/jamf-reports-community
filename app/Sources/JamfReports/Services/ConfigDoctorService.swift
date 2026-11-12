@@ -73,14 +73,16 @@ enum ConfigDoctorService {
             parseError = error.localizedDescription
         }
 
-        let eaSnapshot = ExtensionAttributeService.load(profile: profile)
-        let eaNames = eaSnapshot.coverage.map(\.eaName)
+        // `includeProbes: false` is the headless run, which keeps only `.fail` rows: it skips the
+        // rows that ask jamf-cli or decode the big snapshots, none of which can fail.
+        let eaSnapshot = includeProbes ? ExtensionAttributeService.load(profile: profile) : nil
+        let eaNames = eaSnapshot?.coverage.map(\.eaName) ?? []
 
         var rows = evaluate(
             config: config,
             parseError: parseError,
             eaCoverageNames: eaNames,
-            eaDefinitionNames: eaSnapshot.definitions.compactMap(\.name)
+            eaDefinitionNames: eaSnapshot?.definitions.compactMap(\.name) ?? []
         )
         rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
         rows += readerRows(profile: profile, workspaceRoot: workspaceRoot)
@@ -93,22 +95,24 @@ enum ConfigDoctorService {
             rows += profileSharedRows(profile: profile, config: config)
             rows += platformHostRows(
                 profile: profile, config: config, includeProbes: includeProbes)
-            rows += protectProfileFolderRows(profile: profile, config: config)
-            rows += protectProfileProductRows(config: config, workspace: profile)
-            rows += securityCloudProfileProductRows(
-                config: config, workspace: profile,
-                resolved: { ProfileAuthMethod.resolve(profile: $0) })
+            if includeProbes {
+                rows += protectProfileFolderRows(profile: profile, config: config)
+                rows += protectProfileProductRows(config: config, workspace: profile)
+                rows += securityCloudProfileProductRows(
+                    config: config, workspace: profile,
+                    resolved: { ProfileAuthMethod.resolve(profile: $0) })
+            }
             rows += protectMatchRows(profile: profile, config: config)
             rows += protectSyncedBackupRows(
                 ProtectBackup.syncedStorageChoice(profile: profile, config: config))
             rows += proSyncedBackupRows(
                 ProBackup.syncedStorageChoice(profile: profile, config: config))
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
-            rows += accuracyRows(config: config, profile: profile)
+            if includeProbes { rows += accuracyRows(config: config, profile: profile) }
             rows += securityPolicyRows(profile: profile, config: config)
         }
         rows += organizationLevelRows(profile: profile)
-        rows += platformTwinRows(profile: profile)
+        if includeProbes { rows += platformTwinRows(profile: profile) }
         rows += sharedConfigRows(profile: profile)
         rows += siteScopeRows(profile: profile)
         let workspace = (try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot))?

@@ -44,9 +44,9 @@ extension ConfigDoctorService {
         resolved: (String) -> ProfileAuthMethod.Resolved?
     ) -> [DoctorRow] {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: workspace)
-        guard let named = environment.protect,
-              let product = resolved(named)?.product,
-              resolved(named)?.protectRefusal(profile: named) != nil else { return [] }
+        guard let named = environment.protect, let auth = resolved(named),
+              auth.protectRefusal(profile: named) != nil else { return [] }
+        let product = auth.product
         let shown = ConfigSchema.displayText(named)
         let key = environment.protectKey
         return [DoctorRow(
@@ -68,8 +68,9 @@ extension ConfigDoctorService {
     ) -> [DoctorRow] {
         guard let named = EnvironmentProfiles.resolve(config: config, workspace: workspace)
             .securityCloud,
-              let product = resolved(named)?.product,
-              resolved(named)?.securityCloudRefusal(profile: named) != nil else { return [] }
+              let auth = resolved(named),
+              auth.securityCloudRefusal(profile: named) != nil else { return [] }
+        let product = auth.product
         return [DoctorRow(
             id: "security_cloud.profile_product",
             severity: .warn,
