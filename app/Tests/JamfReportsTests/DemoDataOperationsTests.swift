@@ -333,7 +333,7 @@ final class DemoDataOperationsTests: XCTestCase {
     func testDemoReportsAreNamedLikeEngineReports() {
         let reports = DemoData.generatedReports
         let prefix = "report_\(DemoData.org.profile)_"
-        let pattern = "^\(prefix)\\d{4}-\\d{2}-\\d{2}_\\d{6}\\.(xlsx|html)$"
+        let pattern = "^\(prefix)\\d{4}-\\d{2}-\\d{2}_\\d{6}(\\.xlsx|\\.html|_csv)$"
         let stamps = reports.map { String($0.name.dropFirst(prefix.count).prefix(17)) }
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
@@ -363,7 +363,9 @@ final class DemoDataOperationsTests: XCTestCase {
             uniquingKeysWith: { first, _ in first })
 
         for report in DemoData.generatedReports {
-            let ext = URL(fileURLWithPath: report.name).pathExtension
+            // A CSV folder has no extension; its schedule writes the csv artifact.
+            let ext = ReportEngine.isCSVFolderName(report.name)
+                ? "csv" : URL(fileURLWithPath: report.name).pathExtension
             // The Type column reads "<kind> · <schedule>" where a schedule is known.
             let schedule = report.source.components(separatedBy: " \u{00B7} ").last ?? ""
             XCTAssertTrue(report.source.contains(" \u{00B7} "), report.name)
