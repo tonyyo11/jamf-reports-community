@@ -26,8 +26,10 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Internal planning docs / Claude Code session state (project skills are tracked)
+# Internal planning docs / Claude Code session state (project skills, workflows and the
+# review agents they use are tracked)
 .claude/*
+!.claude/agents/
 !.claude/skills/
 !.claude/workflows/
 .superpowers/
