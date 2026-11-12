@@ -370,7 +370,8 @@ extension HtmlReport {
             let showsAffected = items.contains { $0["affected"] != nil }
             let tableRows = items.map { item -> [String] in
                 let check = item["check"] as? String
-                    ?? item["rule_id"] as? String ?? item["name"] as? String ?? ""
+                    ?? item["rule_id"] as? String
+                    ?? AuditFinding.label(forAuditName: item["name"] as? String ?? "")
                 let detail = item["detail"] as? String
                     ?? item["message"] as? String ?? item["recommendation"] as? String ?? ""
                 let resource = item["policy"] as? String

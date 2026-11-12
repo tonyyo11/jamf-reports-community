@@ -19,6 +19,15 @@ struct AuditFinding: Identifiable, Codable {
     /// How the count moved since the previous daily summary ("3 fewer than on 2026-10-18").
     var change: String?
 
+    /// The name to show. `pro audit` names a count of commands across every device type
+    /// "Failed MDM commands", which reads as Macs; the raw name still keys matching and drift.
+    var label: String { Self.label(forAuditName: name) }
+
+    static func label(forAuditName name: String) -> String {
+        name.trimmingCharacters(in: .whitespaces).lowercased() == "failed mdm commands"
+            ? L("Failed MDM commands (commands, all device types)") : name
+    }
+
     var driftKey: String {
         [
             category.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
@@ -52,7 +61,7 @@ struct AuditFinding: Identifiable, Codable {
     static func csv(_ findings: [AuditFinding]) -> String {
         let header = "Severity,Name,Category,Affected,Recommendation\n"
         let body = findings.map { f in
-            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
+            [f.severity, f.label, f.category, f.affectedDisplay, f.recommendation]
                 .map(StaleDeviceService.csvField)
                 .joined(separator: ",")
         }.joined(separator: "\n")
@@ -141,7 +150,7 @@ struct AuditView: View {
 
     private var filteredFindings: [AuditFinding] {
         findings.filter { finding in
-            query.isEmpty || finding.name.lowercased().contains(query.lowercased()) || finding.category.lowercased().contains(query.lowercased())
+            query.isEmpty || finding.label.lowercased().contains(query.lowercased()) || finding.category.lowercased().contains(query.lowercased())
         }.sorted(using: sortOrderAudit)
     }
 
@@ -490,7 +499,7 @@ struct AuditView: View {
                                     .frame(width: 3)
                                     .frame(maxHeight: .infinity)
                                 severityIcon(f.severity)
-                                Text(f.name).font(.callout.weight(.semibold))
+                                Text(f.label).font(.callout.weight(.semibold))
                                 if newFindingKeys.contains(f.driftKey) {
                                     Pill(text: L("New"), tone: .gold, icon: "sparkle")
                                         .transition(.scale.combined(with: .opacity))
@@ -663,7 +672,7 @@ struct AuditView: View {
                         HStack(spacing: 10) {
                             Pill(text: finding.severity, tone: pillTone(finding.severity))
                                 .frame(width: 86, alignment: .leading)
-                            Text(finding.name)
+                            Text(finding.label)
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                             Spacer()
@@ -724,7 +733,7 @@ struct AuditView: View {
                                     .font(.callout.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.ok)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(finding.name)
+                                    Text(finding.label)
                                         .font(.footnote.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                         .strikethrough(true, color: Theme.Colors.fgMuted)
@@ -1330,7 +1339,7 @@ struct FindingDetailPopover: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(finding.name)
+                    Text(finding.label)
                         .font(.headline)
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 6) {
@@ -1389,7 +1398,7 @@ struct FindingDetailPopover: View {
             HStack {
                 Spacer()
                 PNPButton(title: L("Copy"), icon: "doc.on.doc", size: .sm) {
-                    let text = "[\(finding.severity)] \(finding.name)\n\(finding.category)\n\(finding.recommendation)"
+                    let text = "[\(finding.severity)] \(finding.label)\n\(finding.category)\n\(finding.recommendation)"
                     SystemActions.copyToClipboard(text)
                 }
             }
@@ -1583,7 +1592,7 @@ extension FleetInsightInput {
     /// that is not passing a 0 is "not reported", never "nothing affected".
     private static func auditFindingFact(_ finding: AuditFinding, isNew: Bool) -> Fact {
         let marker = isNew ? L(", this finding is new since the previous audit") : ""
-        let label = "\(finding.name) (\(finding.insightCategory), "
+        let label = "\(finding.label) (\(finding.insightCategory), "
             + "\(AuditSeverity(finding.severity).word)\(marker))"
         return Fact(label: label,
                     value: finding.affected > 0 ? .count(finding.affected)

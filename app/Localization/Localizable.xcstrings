@@ -57105,6 +57105,46 @@
         }
       }
     },
+    "Failed MDM commands (commands, all device types)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehlgeschlagene MDM-Befehle (Befehle, alle Gerätetypen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comandos MDM fallidos (comandos, todos los tipos de dispositivo)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commandes MDM en échec (commandes, tous types d’appareils)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comandi MDM non riusciti (comandi, tutti i tipi di dispositivo)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗したMDMコマンド（コマンド数、すべてのデバイスタイプ）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comandos MDM com falha (comandos, todos os tipos de dispositivo)"
+          }
+        }
+      }
+    },
     "Failed Plans" : {
       "localizations" : {
         "de" : {
