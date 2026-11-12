@@ -127,10 +127,14 @@ final class WorkspaceStoreMobileCompositionTests: XCTestCase {
         XCTAssertTrue(mobile.isOffered(.mobilePasscode))
     }
 
-    func testDemoModeOffersNoMobileCardBecauseTheDemoHistoryHasNone() {
+    /// The demo history has mobile series for meridian-prod's 25 devices and none for a
+    /// workspace that holds Macs only.
+    func testDemoModeOffersAMobileCardWhereTheDemoHistoryHasOne() {
         let demo = store(demo: true)
-        XCTAssertFalse(demo.isOffered(.mobilePasscode))
+        XCTAssertTrue(demo.isOffered(.mobilePasscode))
         XCTAssertTrue(demo.isOffered(.fileVault))
+        demo.setProfile("meridian-sandbox")
+        XCTAssertFalse(demo.isOffered(.mobilePasscode))
     }
 
     // MARK: - Editing the selection
