@@ -1,7 +1,8 @@
 # Mobile devices as first-class devices — design
 
-Status: M1 to M5 shipped in 2.12. M6 (Fleet Overview device tiles and product cards) is not
-built and waits on the environment spec's P10. This builds on the environment model
+Status: M1 to M5 shipped in 2.12. Of M6, the Fleet Overview device tiles that need no P10 data
+shipped in 2.12 (Mac models, mobile device types, operating systems, last seen); storage and App
+Installers wait on P10 (2.13), and the encryption tile and the product cards are not built. This builds on the environment model
 ([2026-10-19-environment-model-design.md](2026-10-19-environment-model-design.md), D1–D14
 accepted). It replaces that spec's section 10, the multi-environment view, as section 6 here
 explains. Epic #207 L5 (carried into #284) is the backlog item.
@@ -183,7 +184,8 @@ the main actor, after the first paint.
   `AgentBackfillCache` is). Older days stay absent.
 - `osCurrent` is never backfilled: the cached SOFA feed is today's, and judging an old version
   list against today's releases would mark devices behind that were current then.
-  `updateErrors` is backfilled only from a scan stamped that day.
+  `updateErrors` is not backfilled either (M-D14): the scan runs on its own cadence, so most
+  past days have none, and the figure reads absent, never 0.
 - Nothing is written back to disk. Backfill is read-time, as today.
 
 ## 5. Health Audit
@@ -232,7 +234,9 @@ healthy the environment is. Fleet Overview answers what is in it.
   encryption (FileVault / data protection), last seen (under 1 day, under 7 days, 7 days or
   more: D8's fixed buckets), OS (share per major against SOFA's macOS and iOS feeds), storage
   (after P10), and App Installers status (after P10, macOS only). A tile with one device type
-  shows that type alone. A tile with no data source is left out.
+  shows that type alone. A tile with no data source is left out. Built in 2.12
+  (`FleetDeviceMapTile`): one tile per map and device type, with counts per OS major rather
+  than a share against SOFA; encryption, storage and App Installers are not built.
 - Product cards: Jamf Pro or Jamf School (device counts, newest collect, failing sources),
   Jamf Protect (computers, the `DeviceCorrelation` match counts, alerts by severity), and later
   Security Cloud (risk counts, coverage). Each card names its profile and snapshot date and opens
@@ -260,7 +264,7 @@ the environment spec's P1. Each phase is one PR with its caller.
 | M3 | Trends mobile metrics and the two-line Managed Devices hero. Same-day backfill with the 21-day cap and per-session cache | Backfill takes the same-day snapshot only, never `osCurrent`, conflict copies skipped. `isOffered` by composition |
 | M4 | Overview `mobileDevices` section, `availability(in:)`, left-out sections in Customize, score card filtering with the mobile default set, insight facts | Mixed, mobile-only and Mac-only layouts. Selection never rewritten. Needs visual verification |
 | M5 | Audit Mobile Devices section, HTML "Needs attention" mobile rules, Mobile Devices filters for each finding | Each finding from fixtures. Hidden with no mobile devices. Change against the previous summary |
-| M6 | Fleet Overview device tiles and product cards (after the environment spec's P9 and P10 for storage, App Installers and the aggregate maps) | No cross-product totals. A one-type tile. Left-out tiles. Needs visual verification |
+| M6 | Fleet Overview device tiles and product cards (after the environment spec's P9 and P10 for storage, App Installers and the aggregate maps). The map tiles shipped in 2.12; storage and App Installers wait on P10, encryption and the product cards are not built | No cross-product totals. A one-type tile. Left-out tiles. Needs visual verification |
 
 ### Changes to the environment spec's phases
 
@@ -292,6 +296,7 @@ All 13 recommendations were accepted on 2026-10-19.
 | M-D11 | Where cross-environment figures live | Report-group exports only (fleet CSV and workbook, on demand and scheduled). No on-screen cross-environment view |
 | M-D12 | When Fleet Overview stops mixing workspaces | Now (M1), before the environment phases. It needs nothing from them |
 | M-D13 | Lost-mode text in the saved `mobile-devices-list` snapshot (section 9) | Drop `lostModePhoneNumber`, `lostModeLocation`, `lostModeMessage` and `lostModeFootnote` at collect and keep `lostModeEnabled`. No reader uses them, and the snapshot can sync to a shared folder |
+| M-D14 | `updateErrors` backfill (accepted by Tony on 2026-11-12) | None. A past day's figure stays absent: the scan's own cadence leaves most days without one |
 
 ## 9. Checked against a test tenant (2026-10-19)
 
