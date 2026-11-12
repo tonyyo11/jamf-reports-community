@@ -162,7 +162,7 @@ extension ReportEngine {
             stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[fail] \(kind): snapshot could not be written — "
-                            + error.localizedDescription))
+                            + error.englishDescription))
             throw error
         }
         stateStore?.record(.landed, report: kind, at: collectStart)

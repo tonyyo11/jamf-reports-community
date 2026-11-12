@@ -815,7 +815,7 @@ enum DiagnosticBundleService {
                 ofItemAtPath: zipURL.path
             )
         } catch {
-            let msg = error.localizedDescription
+            let msg = error.englishDescription
             AppLogger.collect.warning(
                 "DiagnosticBundle: chmod zip failed: \(msg, privacy: .private)"
             )

@@ -1635,7 +1635,7 @@ private final class PTYOutputCollector: Sendable {
 
     func byteCount() -> Int { buffer.withLock { $0.count } }
 
-    func snapshot() -> String { String(data: buffer.withLock { $0 }, encoding: .utf8) ?? "" }
+    func snapshot() -> String { String(decoding: buffer.withLock { $0 }, as: UTF8.self) }
 }
 
 private extension String {

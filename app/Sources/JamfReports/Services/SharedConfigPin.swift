@@ -454,7 +454,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                 if persist { try save(first, profile: profile, appSupport: appSupport) }
             } catch {
                 notes.append("[warn] shared config could not be pinned on this Mac: "
-                    + error.localizedDescription)
+                    + error.englishDescription)
             }
             return Check(workspace: workspace, pinned: first,
                          drifts: unconfirmedDrifts(pin: first, current: current, among: []),
@@ -478,7 +478,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                     if persist { try save(pinned, profile: profile, appSupport: appSupport) }
                 } catch {
                     notes.append("[warn] shared config could not be pinned on this Mac: "
-                        + error.localizedDescription)
+                        + error.englishDescription)
                 }
             }
             let changed = diff(pinned: pinned, current: current)
@@ -710,7 +710,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         do {
             try confirm(profile: profile, drifts: [drift], appSupport: appSupport)
         } catch {
-            let reason = error.localizedDescription
+            let reason = error.englishDescription
             AppLogger.collect.warning(
                 "SharedConfigPin: did not confirm \(key.rawValue): \(reason, privacy: .private)")
         }
@@ -722,7 +722,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         do {
             try confirm(profile: profile, keys: keys, appSupport: appSupport)
         } catch {
-            let reason = error.localizedDescription
+            let reason = error.englishDescription
             AppLogger.collect.warning(
                 "SharedConfigPin: could not confirm the written config: \(reason, privacy: .private)")
         }

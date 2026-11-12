@@ -400,7 +400,7 @@ extension CLIBridge {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             let path = dir.path
-            let desc = error.localizedDescription
+            let desc = error.englishDescription
             AppLogger.cli.warning("""
                 reportFileURL: could not create \(path, privacy: .private): \
                 \(desc, privacy: .private)

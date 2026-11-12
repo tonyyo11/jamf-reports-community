@@ -21,10 +21,6 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         /// retired here; only Start over, which moves the two files aside.
         case foreign(String)
 
-        var isUnreadable: Bool {
-            if case .unreadable = self { return true }
-            return false
-        }
         var isForeign: Bool {
             if case .foreign = self { return true }
             return false

@@ -315,7 +315,7 @@ struct ReportEngine: Sendable {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
             let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): "
-                + error.localizedDescription
+                + error.englishDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -419,7 +419,7 @@ struct ReportEngine: Sendable {
             return true
         } catch {
             let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): "
-                + error.localizedDescription
+                + error.englishDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             if label.isEmpty { print(msg) }
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -3268,7 +3268,7 @@ struct ReportEngine: Sendable {
             stateStore?.record(.failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
             onLine(.init(timestamp: Date(), level: .fail,
                 text: "[fail] \(kind): snapshot could not be written — "
-                    + error.localizedDescription))
+                    + error.englishDescription))
             throw error
         }
         // T-8: advances the cadence boundary and clears the failure
@@ -3893,7 +3893,9 @@ struct ReportEngine: Sendable {
                     stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
                     continue
                 }
-                try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                try saveRecordingFailure(
+                    data, kind: kind, dataDir: dataDir, exitCode: exitCode,
+                    stateStore: stateStore, at: collectStart, onLine: onLine)
                 schoolSaved.insert(kind)
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -4081,7 +4083,9 @@ struct ReportEngine: Sendable {
                     stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
                     continue
                 }
-                try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                try saveRecordingFailure(
+                    data, kind: kind, dataDir: dataDir, exitCode: exitCode,
+                    stateStore: stateStore, at: collectStart, onLine: onLine)
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
@@ -4631,6 +4635,25 @@ struct ReportEngine: Sendable {
     /// path passes a non-zero `maxCacheAgeHours`. Report sheets pass 0 and render
     /// whatever cache exists, carrying their own "data as of" subtitles — a stale
     /// but complete report is more useful than an empty one.
+    /// `saveSnapshot` for the School, Protect and Security Cloud loops, which the Jamf Pro
+    /// loop's rule covers too: the throw aborts the collect, so the kind is recorded failed
+    /// first, or it would be the one kind with no record of having failed.
+    static func saveRecordingFailure(
+        _ data: Data, kind: String, dataDir: URL, exitCode: Int32,
+        stateStore: StateFileStore?, at collectStart: Date,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) throws {
+        do {
+            try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+        } catch {
+            stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+            onLine(.init(timestamp: Date(), level: .fail,
+                text: "[fail] \(kind): snapshot could not be written — "
+                    + error.englishDescription))
+            throw error
+        }
+    }
+
     static func loadLatestSnapshotData(
         kind: String,
         dataDir: URL,

@@ -806,7 +806,7 @@ struct CLIRunSignals: Sendable {
     /// finished (as the scheduled path does) so webhook latency never blocks the
     /// exit. Does not swallow the error — the caller still rethrows it.
     func finishFailure(_ error: Error) async {
-        let desc = error.localizedDescription
+        let desc = error.englishDescription
         // Redaction boundary: the local Run History log gets the raw error
         // (operator's own workspace, matching HeadlessRun.swift's scheduled path);
         // only the webhook egress below is LogRedactor/DiagnosticRedactor-

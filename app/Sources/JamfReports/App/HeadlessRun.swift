@@ -63,7 +63,7 @@ private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in
             // LogRedactor masks credentials, not paths or hosts; redact once for all three sinks.
             let message = LogRedactor.redact(
                 "[warn] consolidated report for '\(group.name)' failed: "
-                    + error.localizedDescription)
+                    + error.englishDescription)
             fputs(message + "\n", stderr)
             appendFleetLog(message)
             record(message)
@@ -1024,7 +1024,9 @@ func runIncludedCLI(_ arguments: [String]) async {
     // A host driven only by the CLI has no GUI launch to import legacy plists
     // or register the background item, so every `jamf-reports` invocation does
     // both. Both steps are idempotent.
-    WorkspaceStore.bootstrapTickerHeadless()
+    // `verify` and help are read-only: they register nothing.
+    let readOnly = ["verify", "help", "--help", "-h"].contains(arguments.first ?? "--help")
+    if !readOnly { WorkspaceStore.bootstrapTickerHeadless() }
     await JamfReportsCLI.main(arguments)
 }
 

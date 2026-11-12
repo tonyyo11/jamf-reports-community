@@ -1264,8 +1264,8 @@ final class JamfCLIInstaller {
             }
             return CommandResult(
                 exitCode: process.terminationStatus,
-                stdout: String(data: stdoutDrainer.finish(), encoding: .utf8) ?? "",
-                stderr: String(data: stderrDrainer.finish(), encoding: .utf8) ?? ""
+                stdout: String(decoding: stdoutDrainer.finish(), as: UTF8.self),
+                stderr: String(decoding: stderrDrainer.finish(), as: UTF8.self)
             )
         }
     }

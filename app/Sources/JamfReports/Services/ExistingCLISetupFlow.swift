@@ -331,7 +331,7 @@ final class ExistingCLISetupFlow {
             do {
                 try store.recordJamfProURL(profile: profile, url: url)
             } catch {
-                let reason = error.localizedDescription
+                let reason = error.englishDescription
                 AppLogger.auth.warning(
                     "could not keep a learned Jamf Pro URL: \(reason, privacy: .private)")
             }

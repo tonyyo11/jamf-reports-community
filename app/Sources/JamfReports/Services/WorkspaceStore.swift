@@ -893,7 +893,7 @@ final class WorkspaceStore {
         do {
             try SharedConfigPin.confirm(profile: profile, keys: keys)
         } catch {
-            let reason = error.localizedDescription
+            let reason = error.englishDescription
             AppLogger.collect.warning(
                 "SharedConfigPin: could not confirm after save: \(reason, privacy: .private)")
         }

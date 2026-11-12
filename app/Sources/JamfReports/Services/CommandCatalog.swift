@@ -36,7 +36,8 @@ struct CommandCatalog: Sendable {
         case notAnArray(reason: String)
     }
 
-    private let byPath: [String: Entry]
+    /// Internal for the test target's accessors (`isCanonical`).
+    let byPath: [String: Entry]
 
     init(data: Data) throws {
         let rows: [Lossy]
@@ -77,11 +78,6 @@ struct CommandCatalog: Sendable {
         return viaAlias.count == 1 ? viaAlias[0] : nil
     }
 
-    func exists(path: [String]) -> Bool { entry(for: path) != nil }
-
-    /// True when `path` is the row's own name, not an alias of it.
-    func isCanonical(path: [String]) -> Bool { byPath[path.joined(separator: " ")] != nil }
-
     /// The command's own long flags (global flags excluded); empty for an unknown path.
     func flags(for path: [String]) -> [String] { entry(for: path)?.flags ?? [] }
 
@@ -90,19 +86,6 @@ struct CommandCatalog: Sendable {
     /// a command that needs none.
     func privilegesListed(for path: [String]) -> [String]? { entry(for: path)?.privileges }
 
-    /// nil when the path is unknown or the row has no `scopes` key.
-    func scopes(for path: [String]) -> [String]? { entry(for: path)?.scopes }
-
-    func product(for path: [String]) -> String? { entry(for: path)?.product }
-
-    /// `pro` and `pro-classic` for Jamf Pro commands, `platform-gateway` for the Platform API.
-    func api(for path: [String]) -> String? { entry(for: path)?.api }
-
-    /// nil when the path is unknown or the row's `destructive` is absent or not a boolean:
-    /// callers treat nil as not known to be safe.
-    func isDestructive(path: [String]) -> Bool? { entry(for: path)?.destructive }
-
-    func isPreview(path: [String]) -> Bool { entry(for: path)?.preview ?? false }
 
     // MARK: - Reading an argv
 

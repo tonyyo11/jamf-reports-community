@@ -568,7 +568,7 @@ enum ConfigService {
             do {
                 try manager.removeItem(at: directory.appendingPathComponent(old))
             } catch {
-                let reason = error.localizedDescription
+                let reason = error.englishDescription
                 AppLogger.collect.warning(
                     "ConfigService: kept an old config backup: \(reason, privacy: .private)")
             }

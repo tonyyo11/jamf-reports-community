@@ -632,7 +632,7 @@ struct BackupsView: View {
     /// isn't the expected JSON array falls back to Raw rather than rendering an
     /// empty summary, which would read as "no differences".
     private func applyDiffPayload(_ payload: Data) {
-        diffRawText = String(data: payload, encoding: .utf8) ?? ""
+        diffRawText = String(decoding: payload, as: UTF8.self)
         guard let items = BackupDiffModel.parse(payload) else {
             diffParseFailed = true
             diffGroups = []

@@ -41,7 +41,6 @@ final class DeviceLookupIndex {
         let osVersion: String?
 
         var identifier: String { "\(kind.rawValue)-\(id)" }
-        var id_: String { identifier } // satisfy Identifiable
     }
 
     private(set) var candidates: [Candidate] = []
