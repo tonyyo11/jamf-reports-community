@@ -851,8 +851,8 @@ final class DiagnosticBundleServiceTests: XCTestCase {
     }
 
     /// `signed_off_by`, `description`, `id` and `linked_finding` are typed by an admin: a
-    /// person's name, a justification and two labels, which no pattern can find. Everything else
-    /// in the entry, and every line outside the `exceptions:` block, stays as written.
+    /// person's name, a justification and two labels, which no pattern can find. Dates and
+    /// numbers stay as written.
     func testStagedConfigReplacesTheFreeTextOfAnException() throws {
         let config = try stagedConfig("""
         jamf_cli:
@@ -874,13 +874,9 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertFalse(config.contains("Kiosk app"), config)
         XCTAssertFalse(config.contains("EX-1"), config)
         XCTAssertFalse(config.contains("acme-kiosk-waiver"), config)
-        XCTAssertTrue(config.contains("description: org-"), config)
-        XCTAssertTrue(config.contains("signed_off_by: user-"), config)
-        XCTAssertTrue(config.contains("id: org-"), config)
-        XCTAssertTrue(config.contains("linked_finding: org-"), config)
-        for kept in ["  profile: harbor",
-                     "signed_off_date: 2026-03-01", "expires_date: 2026-12-31",
-                     "control_id: AC-2", "thresholds:", "  stale_device_days: 30"] {
+        XCTAssertFalse(config.contains("harbor"), config)
+        for kept in ["signed_off_date: 2026-03-01", "expires_date: 2026-12-31",
+                     "thresholds:", "  stale_device_days: 30"] {
             XCTAssertTrue(config.contains(kept), "\(kept) missing from: \(config)")
         }
     }
@@ -948,7 +944,7 @@ final class DiagnosticBundleServiceTests: XCTestCase {
             XCTAssertFalse(config.contains(leaked), "\(leaked) leaked into: \(config)")
         }
         XCTAssertEqual(config.components(separatedBy: "exceptions:").count - 1, 2, config)
-        for kept in ["  profile: harbor", "thresholds:", "  stale_device_days: 30"] {
+        for kept in ["thresholds:", "  stale_device_days: 30"] {
             XCTAssertTrue(config.contains(kept), "\(kept) missing from: \(config)")
         }
     }
@@ -979,18 +975,20 @@ final class DiagnosticBundleServiceTests: XCTestCase {
             XCTAssertFalse(config.contains(leaked), "\(leaked) leaked into: \(config)")
         }
         XCTAssertFalse(config.contains(" # ") || config.contains("\n#"), config)
-        for kept in ["jamf_cli:", "  profile: harbor", "Fleet report #1", "'#2D5EA2'", "control_id: AC-2",
-                     "  stale_device_days: 30"] {
+        for kept in ["jamf_cli:", "html:", "branding:", "  stale_device_days: 30"] {
             XCTAssertTrue(config.contains(kept), "\(kept) missing from: \(config)")
         }
     }
 
-    func testAConfigWithNoExceptionsIsStagedAsBefore() throws {
-        let config = try stagedConfig("client_secret: topsecret123\nfoo: bar\n\n\n")
-        XCTAssertEqual(config, "client_secret: REDACTED_CLIENT_SECRET\nfoo: bar\n\n\n")
+    func testAConfigWithNoExceptionsKeepsItsShape() throws {
+        let config = try stagedConfig("client_secret: topsecret123\nfoo: bar\nlimit: 5\n\n\n")
+        XCTAssertFalse(config.contains("topsecret123"), config)
+        XCTAssertTrue(config.contains("foo: \"<string 3 chars>\""), config)
+        XCTAssertTrue(config.contains("limit: 5"), config)
     }
 
-    func testKeepUsernamesKeepsTheSignerButNotTheDescription() throws {
+    /// Keep usernames is for logs; config.yaml text is reduced whatever the option says.
+    func testKeepUsernamesDoesNotKeepConfigText() throws {
         let redactor = DiagnosticRedactor(redactUsernames: false)
         let config = try stagedConfig("""
         exceptions:
@@ -999,8 +997,83 @@ final class DiagnosticBundleServiceTests: XCTestCase {
             signed_off_by: Jane Q. Admin
         """, redactor: redactor)
 
-        XCTAssertTrue(config.contains("Jane Q. Admin"), config)
+        XCTAssertFalse(config.contains("Jane Q. Admin"), config)
         XCTAssertFalse(config.contains("Kiosk app"), config)
+    }
+
+    /// Sheet, EA, agent, profile and folder names are free text no pattern finds; the values a
+    /// support reader needs (booleans, numbers, the fixed vocabularies) stay readable.
+    func testStagedConfigReducesFreeTextAndKeepsVocabulary() throws {
+        let config = try stagedConfig("""
+        jamf_cli:
+          profile: AcmeHarborProd
+          data_dir: /Users/jane/acme-data
+          use_cached_data: true
+          collect_skip: [sofa, dashboard]
+        sheets:
+          only: ["Lab Macs Inventory"]
+        custom_eas:
+          - name: Acme Kiosk Mode
+            column: Acme Kiosk Mode
+            type: boolean
+            true_value: Enabled
+        security_agents:
+          - name: Falcon Sensor Acme
+            column: Falcon Sensor Acme Status
+            connected_value: Running
+        notify:
+          enabled: true
+          provider: teams
+          detail: minimal
+        retention:
+          mode: archive
+          snapshot_keep_days: 365
+        ai:
+          tier: on_device
+        security_policy:
+          controls:
+            filevault: fail
+            sip: not counted
+          filevault_off_hardware_encrypted: warning
+          score_factors:
+            - factor: os_current
+              weight: 15
+        thresholds:
+          stale_basis: [check_in, contact]
+          stale_device_days: 30
+        alerts:
+          rules:
+            - metric: filevault_pct
+              when: below
+              threshold: 90.5
+        display:
+          percent_decimals: 1
+        """)
+
+        for leaked in ["AcmeHarborProd", "jane", "acme-data", "Lab Macs", "Acme Kiosk",
+                       "Falcon", "Running", "Enabled"] {
+            XCTAssertFalse(config.contains(leaked), "\(leaked) leaked into: \(config)")
+        }
+        for kept in ["use_cached_data: true", "- sofa", "- dashboard", "type: boolean",
+                     "enabled: true", "provider: teams", "detail: minimal", "mode: archive",
+                     "snapshot_keep_days: 365", "tier: on_device", "filevault: fail",
+                     "sip: not counted", "filevault_off_hardware_encrypted: warning",
+                     "factor: os_current", "weight: 15", "- check_in", "- contact",
+                     "stale_device_days: 30", "metric: filevault_pct", "when: below",
+                     "threshold: 90.5", "percent_decimals: 1",
+                     "profile: \"<string 14 chars>\"", "name: \"<string 15 chars>\""] {
+            XCTAssertTrue(config.contains(kept), "\(kept) missing from: \(config)")
+        }
+    }
+
+    /// A free-text value under a vocabulary key is still reduced.
+    func testFreeTextUnderAVocabularyKeyIsReduced() throws {
+        let config = try stagedConfig("""
+        notify:
+          provider: "Ask Jane Q. Admin about this one, she set it up last spring"
+        """)
+        XCTAssertFalse(config.contains("Jane"), config)
+        XCTAssertTrue(config.contains("provider: \"<string "), config)
     }
 
     // MARK: - Fixtures
