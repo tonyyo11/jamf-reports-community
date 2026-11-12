@@ -262,15 +262,29 @@ struct StaleDeviceService: Sendable {
 
     /// Neutralizes spreadsheet formula injection: a value that starts with `=`, `+`, `-`, `@`,
     /// tab or carriage return gets a tab prefix. The one guard every spreadsheet and CSV sink
-    /// uses (`CellValue.safe` and `csvField`).
+    /// uses (`CellValue.safe` and `csvField`). A whole plain negative number (`-5`, `-2.5`)
+    /// is left as written: a spreadsheet reads it as a number, never a formula, and Jamf uses
+    /// them for unresolved IDs and "no baseline" counts.
     ///
     /// Tests unicode scalars, not `Character`s: Swift reads "\r\n" as one Character equal
     /// to neither "\r" nor "\n", and a sign plus a combining mark as one Character that is
     /// not the sign.
     static func formulaGuarded(_ value: String) -> String {
         guard let first = value.unicodeScalars.first,
-              "=+-@\t\r".unicodeScalars.contains(first) else { return value }
+              "=+-@\t\r".unicodeScalars.contains(first),
+              !isPlainNegativeNumber(value) else { return value }
         return "\t" + value
+    }
+
+    /// `-`, one or more ASCII digits, then at most one `.` followed by one or more digits.
+    /// Nothing else: no exponent, space, grouping or second sign, so `-1+1` stays guarded.
+    static func isPlainNegativeNumber(_ value: String) -> Bool {
+        let scalars = Array(value.unicodeScalars)
+        guard scalars.first == "-", scalars.count > 1 else { return false }
+        let isDigit = { (s: Unicode.Scalar) in ("0"..."9").contains(s) }
+        let parts = scalars.dropFirst().split(separator: ".", omittingEmptySubsequences: false)
+        return (1...2).contains(parts.count)
+            && parts.allSatisfy { !$0.isEmpty && $0.allSatisfy(isDigit) }
     }
 
     /// RFC 4180 quoting for a field that is already guarded.

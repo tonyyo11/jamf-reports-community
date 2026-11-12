@@ -120,12 +120,13 @@ final class CSVFolderTests: XCTestCase {
     func testEveryCellStartingWithAFormulaCharacterGetsOneTabPrefix() throws {
         let workbook = Workbook()
         let sheet = workbook.addSheet("Guard")
-        let hostile = ["=SUM(A1)", "+1", "-1", "@x", "\tx", "\rx", "\r\nx"]
+        let hostile = ["=SUM(A1)", "+1", "-1+1", "-1e9", "@x", "\tx", "\rx", "\r\nx"]
         for (index, value) in hostile.enumerated() { sheet.write(value, row: index, col: 0) }
-        sheet.write("plain", row: 7, col: 0)
-        sheet.write("a,b", row: 8, col: 0)
-        sheet.write("say \"hi\"", row: 9, col: 0)
-        sheet.write("two\nlines", row: 10, col: 0)
+        sheet.write("plain", row: 8, col: 0)
+        sheet.write("a,b", row: 9, col: 0)
+        sheet.write("say \"hi\"", row: 10, col: 0)
+        sheet.write("two\nlines", row: 11, col: 0)
+        sheet.write("-5", row: 12, col: 0)
         let folder = scratchURL("guard_csv")
         defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
         try workbook.writeCSVFolder(to: folder)
@@ -133,11 +134,11 @@ final class CSVFolderTests: XCTestCase {
         let rows = Self.parseCSV(try String(
             contentsOf: folder.appendingPathComponent("Guard.csv"), encoding: .utf8))
         XCTAssertEqual(rows.map { $0[0] }, hostile.map { "\t" + $0 } + [
-            "plain", "a,b", "say \"hi\"", "two\nlines"])
+            "plain", "a,b", "say \"hi\"", "two\nlines", "-5"])
     }
 
     func testTheCSVAndTheCSVExportsShareOneGuard() {
-        for value in ["=1", "+1", "-1", "@a", "\ta", "\ra", "\r\na", "plain", ""] {
+        for value in ["=1", "+1", "-1", "-1+1", "@a", "\ta", "\ra", "\r\na", "plain", ""] {
             XCTAssertEqual(StaleDeviceService.formulaGuarded(value),
                            StaleDeviceService.csvField(value).replacingOccurrences(
                                of: "\"", with: ""),

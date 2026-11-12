@@ -109,6 +109,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A cell that is only a plain negative number, such as an unresolved app ID of -5 or an mSCP
+  "no baseline" count of -1, now reads exactly as Jamf reported it in workbooks and CSV files,
+  without the hidden tab the formula guard used to put in front of it. Anything else that starts
+  with a minus sign, `-1+1` for example, is still guarded.
 - A share just below 100% or just above 0% no longer prints as 100% or 0%, on screens and in
   reports: 99.96% reads 99.9%, 0.04% reads 0.1%, and where a figure was already whole (the
   workbook's Executive Summary compliance and patch cells, chart labels, the Trends headline)
