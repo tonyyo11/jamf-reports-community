@@ -157,12 +157,12 @@ final class RefreshCoordinator {
             // nothing counts toward backoff.
             lastAttempts[key] = previousAttempt
             AppLogger.event(.collect, .info,
-                            "Background refresh deferred: \(refusal.localizedDescription)")
+                            "Background refresh deferred: \(refusal.englishDescription)")
             return
         } catch {
             failureCounts[key, default: 0] += 1
             AppLogger.cli.warning(
-                "Background refresh threw for \(profile)/\(tier.rawValue): \(error.localizedDescription, privacy: .private)"
+                "Background refresh threw for \(profile)/\(tier.rawValue): \(error.englishDescription, privacy: .private)"
             )
             return
         }

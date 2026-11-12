@@ -130,7 +130,7 @@ enum WorkspacePermissionHardener {
                 failed += 1
                 let name = url.lastPathComponent
                 AppLogger.collect.warning(
-                    "WorkspacePermissionHardener: chmod failed on \(name): \(error.localizedDescription)"
+                    "WorkspacePermissionHardener: chmod failed on \(name): \(error.englishDescription)"
                 )
             }
         }

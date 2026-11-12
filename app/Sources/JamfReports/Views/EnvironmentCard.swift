@@ -251,9 +251,9 @@ struct EnvironmentCard: View {
         let service = CLIDoctorService(executor: DefaultCLIExecutor(bridge: CLIBridge()))
         Task {
             let outcome = await service.run(profile: profile)
+            checking.remove(profile)
             // A switch to another workspace rebuilt this view's state; its result is not ours.
             guard started == state.workspace else { return }
-            checking.remove(profile)
             switch outcome {
             case .notInstalled: checks[profile] = L("jamf-cli is not installed.")
             case .failed(let reason): checks[profile] = ConfigSchema.displayText(reason)

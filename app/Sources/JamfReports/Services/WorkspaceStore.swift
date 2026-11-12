@@ -676,13 +676,10 @@ final class WorkspaceStore {
         }
         configError = nil
         reloadFromDisk()
-        let rebuildHint = priorSummary.isEmpty
-            ? ""
-            : L(" Previous config (\(priorSummary)) saved as \(backupName); re-run the CSV → EA guide and Columns scaffold to rebuild from your CSV.")
         toast = Toast(
-            message: rebuildHint.isEmpty
+            message: priorSummary.isEmpty
                 ? L("Default config restored — old file kept as \(backupName)")
-                : L("Default config restored.\(rebuildHint)"),
+                : L("Default config restored. Previous config (\(priorSummary)) saved as \(backupName); re-run the CSV → EA guide and Columns scaffold to rebuild from your CSV."),
             style: .success
         )
         return nil
@@ -893,7 +890,7 @@ final class WorkspaceStore {
         do {
             try SharedConfigPin.confirm(profile: profile, keys: keys)
         } catch {
-            let reason = error.localizedDescription
+            let reason = error.englishDescription
             AppLogger.collect.warning(
                 "SharedConfigPin: could not confirm after save: \(reason, privacy: .private)")
         }
@@ -1484,23 +1481,25 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     /// Canonical sidebar navigation groups. `Sidebar` renders these directly;
     /// `sidebarOrder` is derived from them so the two cannot diverge.
     /// `.onboarding` is intentionally absent: the sidebar never lists it.
-    static let navGroups: [NavGroup] = [
-        .init(label: L("REPORTS"),
-              items: [.overview, .fleet, .trends, .audit, .reports]),
-        .init(label: L("FLEET"),
-              items: [.devices, .schoolDevices, .mobileFleet, .deviceLookup, .protectDashboard,
-                      .groupInventory]),
-        .init(label: L("POSTURE"),
-              items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        .init(label: L("OPERATIONS"),
-              items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
-        .init(label: L("AUTOMATION"),
-              items: [.schedules, .runs]),
-        .init(label: L("CONFIGURATION"),
-              items: [.config, .customize, .sources, .backups]),
-        .init(label: L("SYSTEM"),
-              items: [.settings]),
-    ]
+    static var navGroups: [NavGroup] {
+        [
+            .init(label: L("REPORTS"),
+                  items: [.overview, .fleet, .trends, .audit, .reports]),
+            .init(label: L("FLEET"),
+                  items: [.devices, .schoolDevices, .mobileFleet, .deviceLookup, .protectDashboard,
+                          .groupInventory]),
+            .init(label: L("POSTURE"),
+                  items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
+            .init(label: L("OPERATIONS"),
+                  items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
+            .init(label: L("AUTOMATION"),
+                  items: [.schedules, .runs]),
+            .init(label: L("CONFIGURATION"),
+                  items: [.config, .customize, .sources, .backups]),
+            .init(label: L("SYSTEM"),
+                  items: [.settings]),
+        ]
+    }
 
     /// Flat ordered list of tabs for Cmd-[ / Cmd-] navigation.
     /// Derived from `navGroups` so sidebar rendering and nav order stay in sync.

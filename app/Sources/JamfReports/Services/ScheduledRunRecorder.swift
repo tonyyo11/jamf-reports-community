@@ -142,7 +142,7 @@ final class ScheduledRunRecorder: Sendable {
             AppLogger.schedule.warning(
                 """
                 ScheduledRunRecorder: log write failed for \(label, privacy: .private) \
-                — further lines dropped: \(error.localizedDescription, privacy: .private)
+                — further lines dropped: \(error.englishDescription, privacy: .private)
                 """
             )
         }
@@ -194,7 +194,7 @@ final class ScheduledRunRecorder: Sendable {
             AppLogger.schedule.warning(
                 """
                 ScheduledRunRecorder: could not discard \(self.label, privacy: .private): \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """
             )
         }
@@ -242,12 +242,12 @@ final class ScheduledRunRecorder: Sendable {
                     try fm.removeItem(at: statusURL)
                 } catch let removeError {
                     AppLogger.schedule.error(
-                        "ScheduledRunRecorder: failed to remove stale status JSON for \(self.label, privacy: .private): \(removeError.localizedDescription, privacy: .private)"
+                        "ScheduledRunRecorder: failed to remove stale status JSON for \(self.label, privacy: .private): \(removeError.englishDescription, privacy: .private)"
                     )
                 }
             }
             AppLogger.schedule.error(
-                "ScheduledRunRecorder: writeStatusJSON failed for \(self.label, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "ScheduledRunRecorder: writeStatusJSON failed for \(self.label, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
         }
     }

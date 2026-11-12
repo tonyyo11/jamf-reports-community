@@ -109,6 +109,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Jamf Security Cloud match counts each device once: a second risk row for a device that
+  already matched leaves the share's denominator, as the Jamf Protect match does.
 - A cell that is only a plain negative number, such as an unresolved app ID of -5 or an mSCP
   "no baseline" count of -1, now reads exactly as Jamf reported it in workbooks and CSV files,
   without the hidden tab the formula guard used to put in front of it. Anything else that starts
@@ -211,6 +213,32 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- With the app in a language other than English, reports, run logs, stored failure hints and
+  the Offline Outreach clipboard copy stay in English, and a translated label no longer stays in
+  whichever language read it first until the app is relaunched. The Health Audit's jump links
+  and open-finding count also work in every language.
+- After a workspace merge, a day's summary no longer pairs one workspace's open Jamf Protect
+  alert total with the other's severity counts, which made Trends drop that day.
+- Switching workspaces on the Health Audit no longer leaves the previous workspace's findings
+  on screen.
+- Adding profiles jamf-cli already holds no longer offers a second workspace for a fleet that
+  has one: a Platform API profile joins the existing Jamf Pro workspace before a profile that
+  has none. Setup also checks all Platform API profiles at once instead of one after another.
+- A scheduled collect no longer runs jamf-cli when it checks the configuration, and no longer
+  reads the full inventory and Extension Attribute snapshots for checks whose result it
+  discards.
+- A Jamf School, Jamf Protect or Jamf Security Cloud snapshot that cannot be saved is recorded
+  as failed, so the health strip names it.
+- Large workspaces do less file work: a report reads each inventory snapshot once, a backup on
+  shared storage no longer freezes the window, and a workspace merge renews its shared-workspace
+  claim every five minutes instead of on every step. A merge also refuses a workspace folder
+  that is a link, and leaves hidden staging files behind.
+- `jamf-reports verify` and `--help` no longer register the background item, and setup no
+  longer drops all of jamf-cli's output when it holds one invalid byte.
+- In a language other than English, the health banner, the Overview mobile tiles, the Data Sources
+  run counts, the schedule summary and the stale-date wording in tables and tooltips read as whole
+  translated sentences, with plural forms, instead of English fragments joined to translated words.
+  Demo-mode and button tooltips are translated too.
 - A Mac that never inventoried and never checked in now counts as "Jamf binary missing" even when Jamf marks it managed, so it gets the Computers filter and remediation steps and is listed apart in Offline Outreach, the HTML report and the Check-in Health sheet instead of as a stale Mac.
 - Workbook rows that tie on a count now come out in the same order every run. The Mobile Fleet Summary's distributions and Top Models list, the Hardware Models tab and each text extension attribute's value table ordered tied rows at random, so the top ten models could change between two runs on the same data.
 - A Mac that never sent inventory reads No Data for FileVault, SIP, Firewall and Gatekeeper on every screen and report, not Jamf's placeholder values (firewall off, FileVault unencrypted), so it no longer appears under Failing controls. A Mac with real inventory and the firewall off still reads off.

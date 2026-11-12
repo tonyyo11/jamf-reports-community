@@ -65,8 +65,9 @@ esac
 }
 
 sha="$(git rev-parse --short "${ref}")"
-test_cmd="swift test"
-[[ -z "${filter}" ]] || test_cmd="swift test --filter ${filter}"
+test_args=(swift test)
+[[ -z "${filter}" ]] || test_args+=(--filter "${filter}")
+test_cmd="${test_args[*]}"
 if ((dry_run)); then
   print "dry run: would add a detached worktree at ${dir} on ${ref} (${sha}),"
   print "  run 'swift build --build-tests' then '${test_cmd}' in ${dir}/app,"
@@ -86,8 +87,7 @@ print "== swift build --build-tests (${ref} @ ${sha})"
 (cd "${dir}/app" && swift build --build-tests) >"${log}" 2>&1 || build_rc=$?
 if ((build_rc == 0)); then
   print "== ${test_cmd}"
-  # shellcheck disable=SC2086 # the command string is deliberately word-split
-  (cd "${dir}/app" && ${=test_cmd}) >>"${log}" 2>&1 || test_rc=$?
+  (cd "${dir}/app" && "${test_args[@]}") >>"${log}" 2>&1 || test_rc=$?
 else
   print -u2 "tip-test: build failed; last errors:"
   grep -E 'error:' "${log}" | tail -n 15 || true

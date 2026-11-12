@@ -480,7 +480,7 @@ struct ReauthenticateSheet: View {
             }
             .disabled(!canVerify)
             .keyboardShortcut(.defaultAction)
-            .accessibilityLabel(isBusy ? "Verifying" : "Verify and save credentials")
+            .accessibilityLabel(isBusy ? L("Verifying") : L("Verify and save credentials"))
         }
         .padding(14)
     }

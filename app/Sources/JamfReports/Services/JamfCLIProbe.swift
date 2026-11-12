@@ -146,7 +146,7 @@ enum JamfCLIProbe {
             } catch {
                 stdoutDrainer.cancel()
                 stderrDrainer.cancel()
-                let reason = error.localizedDescription
+                let reason = error.englishDescription
                 AppLogger.cli.error("JamfCLIProbe: launch failed: \(reason, privacy: .private)")
                 return .launchFailed
             }

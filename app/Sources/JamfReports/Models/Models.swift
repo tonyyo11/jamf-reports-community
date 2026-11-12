@@ -1378,21 +1378,27 @@ struct TrendSeries: Identifiable, Sendable {
         complianceIsProxy: Bool? = nil,
         staleMeasured: Bool = true
     ) -> String? {
-        let proxyNote: String = compliancePct != nil && complianceIsProxy == true
-            ? L(" Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data.")
-            : ""
-        let staleNote = staleMeasured
-            ? "" : L(" Stale-device pressure not measured (no device-compliance snapshot).")
+        // Each note is a whole sentence; the sentences are joined, never spliced into one.
+        let proxyNote: [String] = compliancePct != nil && complianceIsProxy == true
+            ? [L("Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data.")]
+            : []
+        let staleNote: [String] = staleMeasured
+            ? [] : [L("Stale-device pressure not measured (no device-compliance snapshot).")]
+        let sentences: [String]
         switch (compliancePct != nil, patchPct != nil) {
         case (true, true):
-            return L("Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)\(staleNote)")
+            sentences = [L("Composite of compliance, patch posture, and stale-device pressure.")]
+                + proxyNote + staleNote
         case (false, true):
-            return L("Composite of patch posture and stale-device pressure (compliance not collected).\(staleNote)")
+            sentences = [L("Composite of patch posture and stale-device pressure (compliance not collected).")]
+                + staleNote
         case (true, false):
-            return L("Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)\(staleNote)")
+            sentences = [L("Composite of compliance and stale-device pressure (patch data not collected).")]
+                + proxyNote + staleNote
         case (false, false):
             return nil
         }
+        return sentences.joined(separator: " ")
     }
 
     var id: String { metric.rawValue }
@@ -1438,66 +1444,68 @@ struct CustomSheetGroup: Sendable {
     /// All sheet groups organized by functional area.
     /// Order matches the sidebar grouping in the main app for consistency. Together they
     /// list every `SheetID` once; a test holds that when a sheet is added.
-    static let allGroups: [CustomSheetGroup] = [
-        CustomSheetGroup(name: L("Executive"), sheets: [
-            .executiveSummary,
-            .cover,
-            .fleetOverview,
-            .auditSummary,
-        ]),
-        CustomSheetGroup(name: L("Posture"), sheets: [
-            .securityPosture,
-            .compliancePosture,
-            .deviceCompliance,
-            .mscpCompliance,
-            .complianceTrend,
-        ]),
-        CustomSheetGroup(name: L("Operations"), sheets: [
-            .patchCompliance,
-            .patchFailures,
-            .patchSummaryDashboard,
-            .patchVelocity,
-            .updateStatus,
-            .updateFailures,
-            .policyHealth,
-            .profileStatus,
-            .mobileConfigProfiles,
-            .eaCoverage,
-            .eaDefinitions,
-            .ddmStatus,
-            .ddmDeviceStatus,
-            .mdmCommandHealth,
-            .blueprintStatus,
-        ]),
-        CustomSheetGroup(name: L("Fleet"), sheets: [
-            .inventorySummary,
-            .hardwareModels,
-            .mobileFleetSummary,
-            .mobileInventory,
-            .mobileSupervisionStatus,
-            .checkinHealth,
-            .activeDevices,
-            .fleetDrift,
-            .groupHygiene,
-            .smartGroups,
-            .environmentStats,
-        ]),
-        CustomSheetGroup(name: L("Security"), sheets: [
-            .deviceSecurityState,
-            .protectOverview,
-            .protectAlerts,
-            .protectComputers,
-            .protectInsights,
-            .protectPlans,
-            .protectThreatOverview,
-        ]),
-        CustomSheetGroup(name: L("System"), sheets: [
-            .osCurrency,
-            .appStatus,
-            .softwareInstalls,
-            .packageLifecycle,
-            .complianceDevices,
-            .complianceRules,
-        ]),
-    ]
+    static var allGroups: [CustomSheetGroup] {
+        [
+            CustomSheetGroup(name: L("Executive"), sheets: [
+                .executiveSummary,
+                .cover,
+                .fleetOverview,
+                .auditSummary,
+            ]),
+            CustomSheetGroup(name: L("Posture"), sheets: [
+                .securityPosture,
+                .compliancePosture,
+                .deviceCompliance,
+                .mscpCompliance,
+                .complianceTrend,
+            ]),
+            CustomSheetGroup(name: L("Operations"), sheets: [
+                .patchCompliance,
+                .patchFailures,
+                .patchSummaryDashboard,
+                .patchVelocity,
+                .updateStatus,
+                .updateFailures,
+                .policyHealth,
+                .profileStatus,
+                .mobileConfigProfiles,
+                .eaCoverage,
+                .eaDefinitions,
+                .ddmStatus,
+                .ddmDeviceStatus,
+                .mdmCommandHealth,
+                .blueprintStatus,
+            ]),
+            CustomSheetGroup(name: L("Fleet"), sheets: [
+                .inventorySummary,
+                .hardwareModels,
+                .mobileFleetSummary,
+                .mobileInventory,
+                .mobileSupervisionStatus,
+                .checkinHealth,
+                .activeDevices,
+                .fleetDrift,
+                .groupHygiene,
+                .smartGroups,
+                .environmentStats,
+            ]),
+            CustomSheetGroup(name: L("Security"), sheets: [
+                .deviceSecurityState,
+                .protectOverview,
+                .protectAlerts,
+                .protectComputers,
+                .protectInsights,
+                .protectPlans,
+                .protectThreatOverview,
+            ]),
+            CustomSheetGroup(name: L("System"), sheets: [
+                .osCurrency,
+                .appStatus,
+                .softwareInstalls,
+                .packageLifecycle,
+                .complianceDevices,
+                .complianceRules,
+            ]),
+        ]
+    }
 }

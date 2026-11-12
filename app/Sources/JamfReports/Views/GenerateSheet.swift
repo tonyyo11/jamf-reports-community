@@ -177,8 +177,8 @@ final class GenerateSheetState {
 
     /// The "What will be written" line for the HTML report that goes with the workbook.
     nonisolated static func htmlWithWorkbookLine(profile: String) -> String {
-        ExportNaming.stem(for: .xlsx, profile: profile, schoolMode: false)
-            + L("_<date>.html (the HTML report, written with every workbook)")
+        let stem = ExportNaming.stem(for: .xlsx, profile: profile, schoolMode: false)
+        return L("\(stem)_<date>.html (the HTML report, written with every workbook)")
     }
 
     /// What one format writes, as "What will be written" lists it: the stem the generators
@@ -187,12 +187,12 @@ final class GenerateSheetState {
         for type: GenerateOutputType, profile: String, schoolMode: Bool
     ) -> String {
         let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: schoolMode)
-        let name = stem + L("_<date>.\(type.rawValue.lowercased())")
+        let name = "\(stem)_<date>.\(type.rawValue.lowercased())"
         switch type {
-        case .csvFolder: return stem + L("_<date>_csv/ (one .csv per workbook tab, with the workbook)")
-        case .xlsx where schoolMode: return name + L(" + integrity sidecar (.sha256)")
-        case .xlsx: return name + L(" + integrity sidecar (.sha256, manifest)")
-        case .html, .pdf: return name + L(" + integrity manifest")
+        case .csvFolder: return L("\(stem)_<date>_csv/ (one .csv per workbook tab, with the workbook)")
+        case .xlsx where schoolMode: return L("\(name) + integrity sidecar (.sha256)")
+        case .xlsx: return L("\(name) + integrity sidecar (.sha256, manifest)")
+        case .html, .pdf: return L("\(name) + integrity manifest")
         case .csv: return name
         }
     }
@@ -232,17 +232,18 @@ final class GenerateSheetState {
                 }
             )
             if let result { return summarize(result) }
-            return (0, CLIBridge.explainExit(exit, operation: L("Collect")) + Self.cachedSnapshotsHint)
+            return (0, Self.withCachedSnapshotsHint(CLIBridge.explainExit(exit, operation: L("Collect"))))
         } catch {
             let reason = CLIBridge.explainOperationError(error, operation: L("Collect"))
             // A refusal never started a collect; the cached-snapshot hint applies to failures.
             guard !CLIBridgeError.isCollectRefusal(error) else { return (0, reason) }
-            return (0, reason + Self.cachedSnapshotsHint)
+            return (0, Self.withCachedSnapshotsHint(reason))
         }
     }
 
-    private static let cachedSnapshotsHint =
-        L(" Uncheck Collect fresh data first to generate from cached snapshots.")
+    private static func withCachedSnapshotsHint(_ text: String) -> String {
+        L("\(text) Uncheck Collect fresh data first to generate from cached snapshots.")
+    }
 
     /// Resolved output directory for display: the chosen folder, else the configured one,
     /// else the profile default.
@@ -556,8 +557,8 @@ struct GenerateSheet: View {
             ? SchoolDashboard.sheetNames : template.includedSheets.map(\.rawValue)
         let sheetPreview: String = {
             let names = sheets.prefix(3)
-            let suffix = sheets.count > 3 ? L(" + \(sheets.count - 3) more") : ""
-            return names.joined(separator: ", ") + suffix
+            let listed = names.joined(separator: ", ")
+            return sheets.count > 3 ? L("\(listed) + \(sheets.count - 3) more") : listed
         }()
 
         return VStack(alignment: .leading, spacing: 4) {
@@ -621,7 +622,7 @@ struct GenerateSheet: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Theme.Colors.ok)
                         .font(Theme.Fonts.caption)
-                    Text(state.customSelectedSheets.count == 1 ? "\(state.customSelectedSheets.count) sheet selected" : "\(state.customSelectedSheets.count) sheets selected")
+                    Text(state.customSelectedSheets.count == 1 ? L("\(state.customSelectedSheets.count) sheet selected") : L("\(state.customSelectedSheets.count) sheets selected"))
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(Theme.Text.secondary)
                 }
@@ -759,7 +760,7 @@ struct GenerateSheet: View {
             }
             .buttonStyle(.plain)
             .disabled(state.isRunning)
-            .accessibilityLabel("Collect fresh data first. \(state.collectFresh ? "Enabled" : "Disabled")")
+            .accessibilityLabel("Collect fresh data first. \(state.collectFresh ? L("Enabled") : L("Disabled"))")
         }
     }
 
@@ -784,7 +785,7 @@ struct GenerateSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(state.isRunning)
-        .accessibilityLabel("Include Health Audit. \(state.includeAudit ? "Enabled" : "Disabled")")
+        .accessibilityLabel("Include Health Audit. \(state.includeAudit ? L("Enabled") : L("Disabled"))")
     }
 
     private var outputFolderRow: some View {
@@ -880,8 +881,8 @@ struct GenerateSheet: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(keychainLocked
-            ? "Warning: the login keychain is locked. Unlock it or disable collect fresh data."
-            : "Warning: auth may be expired for profile '\(profile)'. Re-authenticate or disable collect fresh data.")
+            ? L("Warning: the login keychain is locked. Unlock it or disable collect fresh data.")
+            : L("Warning: auth may be expired for profile '\(profile)'. Re-authenticate or disable collect fresh data."))
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -897,7 +898,7 @@ struct GenerateSheet: View {
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.Colors.ok)
-                Text(state.completedCount == 1 ? "Done — \(state.completedCount) file generated" : "Done — \(state.completedCount) files generated")
+                Text(state.completedCount == 1 ? L("Done — \(state.completedCount) file generated") : L("Done — \(state.completedCount) files generated"))
                     .font(Theme.Fonts.bodyText.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 Spacer()
@@ -992,7 +993,7 @@ struct GenerateSheet: View {
             }
             .disabled(!state.canGenerate || waiting != nil)
             .keyboardShortcut(.defaultAction)
-            .accessibilityLabel(state.isRunning ? "Running" : "Generate selected report formats")
+            .accessibilityLabel(state.isRunning ? L("Running") : L("Generate selected report formats"))
         }
         .padding(14)
     }
@@ -1077,7 +1078,7 @@ struct GenerateSheet: View {
             } catch {
                 state.appendLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] audit failed; continuing with cached audit data: \(error.localizedDescription)"
+                    text: "[warn] audit failed; continuing with cached audit data: \(error.englishDescription)"
                 ))
             }
         }
@@ -1133,7 +1134,7 @@ private struct RunLogConsoleEmbed: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     if lines.isEmpty {
                         HStack(spacing: 0) {
-                            Text(isRunning ? "Starting\u{2026}" : "No output yet")
+                            Text(isRunning ? L("Starting\u{2026}") : L("No output yet"))
                                 .font(Theme.Fonts.mono(11.5))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .accessibilityAddTraits(.updatesFrequently)

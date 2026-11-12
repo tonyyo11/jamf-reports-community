@@ -203,7 +203,7 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
             throw error
         } catch {
             AppLogger.platform.error(
-                "Report narrative generation failed: \(error.localizedDescription, privacy: .private)")
+                "Report narrative generation failed: \(error.englishDescription, privacy: .private)")
             throw FleetInsightError.generationFailed(
                 FoundationModelsInsightGenerator.userMessage(for: error))
         }

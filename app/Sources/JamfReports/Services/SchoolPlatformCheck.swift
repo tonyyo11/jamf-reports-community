@@ -20,7 +20,9 @@ enum SchoolPlatformCheck {
     static let permission = "blueprints:read"
 
     /// Shown on the switch and the Data Sources row.
-    static let experimentalNote = L("Experimental: Jamf School blueprints through the Platform API; report results on GitHub.")
+    static var experimentalNote: String {
+        L("Experimental: Jamf School blueprints through the Platform API; report results on GitHub.")
+    }
 
     static func arguments(profile: String) -> [String] {
         ["-p", profile, "--no-input", "school", "blueprints", "list", "--output", "json"]
@@ -65,9 +67,10 @@ extension SchoolPlatformCheck.Verdict {
     var message: String {
         switch self {
         case .accepted(let count):
-            return L("The Platform API answered: ")
-                + (count.map { ($0 == 1 ? L("\($0) blueprint") : L("\($0) blueprints")) } ?? "blueprints")
-                + L(" listed.")
+            guard let count else { return L("The Platform API answered: blueprints listed.") }
+            return count == 1
+                ? L("The Platform API answered: \(count) blueprint listed.")
+                : L("The Platform API answered: \(count) blueprints listed.")
         case .missingPermission:
             return L("The gateway accepted the tenant ID, but the integration lacks \(SchoolPlatformCheck.permission). Grant it on the integration in Jamf Account.")
         case .rejectedTenant:

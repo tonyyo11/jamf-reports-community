@@ -1347,7 +1347,7 @@ enum ConfigLoader {
                 if let detail = ConfigLoader.describeDecodingFailure(e) {
                     return "Config decode failed (\(ctx)): \(detail)"
                 }
-                return "Config decode failed (\(ctx)): \(e.localizedDescription)"
+                return "Config decode failed (\(ctx)): \(e.englishDescription)"
             }
         }
 

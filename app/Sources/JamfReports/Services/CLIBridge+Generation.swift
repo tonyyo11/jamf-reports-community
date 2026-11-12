@@ -306,7 +306,7 @@ extension CLIBridge {
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] generate failed: \(error.localizedDescription)"))
+                    text: "[fatal] generate failed: \(error.englishDescription)"))
                 // -1: no process exit code (pre-spawn failure)
                 result.failed.append(contentsOf: workbookTypes.map { ($0, -1) })
                 // Continue to next format — do not return.
@@ -324,7 +324,7 @@ extension CLIBridge {
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] html generate failed: \(error.localizedDescription)"))
+                    text: "[fatal] html generate failed: \(error.englishDescription)"))
                 result.failed.append((.html, -1)) // -1: no process exit code (pre-spawn failure)
             }
         }
@@ -340,7 +340,7 @@ extension CLIBridge {
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] pdf generate failed: \(error.localizedDescription)"))
+                    text: "[fatal] pdf generate failed: \(error.englishDescription)"))
                 result.failed.append((.pdf, -1)) // -1: no process exit code (pre-spawn failure)
             }
         }
@@ -356,7 +356,7 @@ extension CLIBridge {
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] csv export failed: \(error.localizedDescription)"))
+                    text: "[fatal] csv export failed: \(error.englishDescription)"))
                 result.failed.append((.csv, -1)) // -1: no process exit code (pre-spawn failure)
             }
         }
@@ -400,7 +400,7 @@ extension CLIBridge {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             let path = dir.path
-            let desc = error.localizedDescription
+            let desc = error.englishDescription
             AppLogger.cli.warning("""
                 reportFileURL: could not create \(path, privacy: .private): \
                 \(desc, privacy: .private)

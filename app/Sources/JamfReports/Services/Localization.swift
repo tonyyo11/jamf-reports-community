@@ -58,6 +58,11 @@ private let shownKeys = [
     LK("Custom reporting requirements"),
 ]
 
+extension Error {
+    /// `localizedDescription` in English, for a log line, a stored file or a webhook card.
+    var englishDescription: String { Localization.english { localizedDescription } }
+}
+
 enum Localization {
     static let englishTable = "EnglishSource"
 

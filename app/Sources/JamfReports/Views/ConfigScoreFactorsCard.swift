@@ -176,7 +176,9 @@ struct ScoreFactorsCard: View {
 
     // MARK: Pure helpers
 
-    static let intro = L("The Security Score is the weighted share of Macs that pass each factor, on Security Posture, the Overview, Trends, alerts and reports. Weights need not add up to 100: a factor with no data drops out and the rest are rescaled. The list is saved to this workspace's config.yaml (security_policy.score_factors).")
+    static var intro: String {
+        L("The Security Score is the weighted share of Macs that pass each factor, on Security Posture, the Overview, Trends, alerts and reports. Weights need not add up to 100: a factor with no data drops out and the rest are rescaled. The list is saved to this workspace's config.yaml (security_policy.score_factors).")
+    }
 
     /// The factors that score today: counted, with data and a weight above 0.
     static func scoringWeight(
@@ -278,7 +280,7 @@ private struct ScoreFactorsHeader: View {
             PNPButton(title: L("Use defaults"), size: .sm, action: onDefaults)
                 .disabled(demo || isDefault)
                 .help(demo ? DemoData.liveOnlyHelp
-                      : "Remove the list from config.yaml and score the default factors.")
+                      : L("Remove the list from config.yaml and score the default factors."))
         }
     }
 }
@@ -336,7 +338,7 @@ private struct ScoreFactorAddMenu: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(options.isEmpty)
-        .help(options.isEmpty ? "Every factor is already listed." : "Add a factor to the score.")
+        .help(options.isEmpty ? L("Every factor is already listed.") : L("Add a factor to the score."))
     }
 }
 

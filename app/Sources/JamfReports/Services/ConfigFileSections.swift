@@ -4,7 +4,9 @@ import Foundation
 /// "From config.yaml" tab. Nothing here writes the file. A value under a key that looks like
 /// a secret is reduced to `(set)` or `(empty)` when a row is built, so it is never carried.
 struct ConfigFileSections: Equatable, Sendable {
-    static let nothingToShow = L("Everything in config.yaml is editable on the other tabs.")
+    static var nothingToShow: String {
+        L("Everything in config.yaml is editable on the other tabs.")
+    }
     /// Rows listed per section; the rest are counted.
     static let settingCap = 200
     static let noteCap = 50

@@ -8,7 +8,7 @@ extension DemoData {
 
     /// The tooltip on a control demo mode disables because it would read or
     /// write the real workspace, run jamf-cli or open a real path.
-    static let liveOnlyHelp = "Available with a live profile"
+    static var liveOnlyHelp: String { L("Available with a live profile") }
 
     // MARK: - Workspace paths
 

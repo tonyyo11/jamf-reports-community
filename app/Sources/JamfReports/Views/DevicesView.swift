@@ -270,7 +270,7 @@ struct DevicesView: View {
         .onAppear {
             guard !didSeedStaleDays else { return }
             didSeedStaleDays = true
-            let configured = Int(workspace.configState.staleDeviceDays) ?? 30
+            let configured = workspace.configState.staleRule.days
             staleDays = min(max(configured, AppConstants.staleDaysMin), AppConstants.staleDaysMax)
         }
         .onChange(of: workspace.pendingDevicesFilter, initial: true) { applyPendingFilter() }
@@ -351,7 +351,7 @@ struct DevicesView: View {
                 .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Export the currently filtered computer list to a CSV file")
+                      : L("Export the currently filtered computer list to a CSV file"))
             }
         }
     }
@@ -476,7 +476,7 @@ struct DevicesView: View {
     private var staleTileSub: String {
         let rule = L(">\(staleDays) days since \(staleRule.basisPhrase)")
         let missing = figures.binaryMissingCount
-        return missing == 0 ? rule : rule + L(" · \(missing) without the Jamf binary not counted")
+        return missing == 0 ? rule : L("\(rule) · \(missing) without the Jamf binary not counted")
     }
 
     /// "—" when no Mac's FileVault value reads as on or off.
@@ -738,7 +738,7 @@ struct DevicesView: View {
             }
 
             if workspace.demoMode {
-                Text(DemoData.liveOnlyHelp + ".")
+                Text(L("Available with a live profile."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             } else {
@@ -1112,7 +1112,7 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let date {
                 let caption = Mono(
-                    text: L("snapshot ") + date.formatted(date: .abbreviated, time: .shortened),
+                    text: L("snapshot \(date.formatted(date: .abbreviated, time: .shortened))"),
                     size: 10.5)
                     .fixedSize()
                 // The detail panel is too narrow at the minimum width for both on one

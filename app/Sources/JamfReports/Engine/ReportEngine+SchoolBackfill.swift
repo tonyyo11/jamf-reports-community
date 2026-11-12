@@ -29,7 +29,7 @@ extension ReportEngine {
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] School history backfill marker not written: "
-                    + "\(error.localizedDescription)"))
+                    + "\(error.englishDescription)"))
         }
         if result.written > 0 {
             onLine(.init(timestamp: Date(), level: .info,

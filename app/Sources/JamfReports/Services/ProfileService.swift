@@ -95,7 +95,7 @@ enum ProfileService {
         var explanation: String {
             switch self {
             case .unsupportedName(let problem):
-                return problem.explanation + L(" jamf-cli can't rename a profile, so add this connection again under a new name.")
+                return L("\(problem.explanation) jamf-cli can't rename a profile, so add this connection again under a new name.")
             case .sharesFolder(let owner):
                 return "Matches \(owner) except for letter case, so both would use one workspace "
                     + "folder, which belongs to \(owner). To use this profile, add it again in "
@@ -174,7 +174,7 @@ enum ProfileService {
             AppLogger.collect.error(
                 """
                 workspaceFolders: enumeration failed at \(root.path, privacy: .private): \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """
             )
             return []

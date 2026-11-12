@@ -33,7 +33,7 @@ extension ReportEngine {
                 artifacts: artifacts, in: primary.deletingLastPathComponent(), now: now).encoded()
             try RunManifest.install(data, at: manifestURL)
         } catch {
-            warn(runManifestFailureMarker + error.localizedDescription, onLine: onLine)
+            warn(runManifestFailureMarker + error.englishDescription, onLine: onLine)
             return nil
         }
         onLine?(.init(timestamp: Date(), level: .ok,
@@ -74,7 +74,7 @@ extension ReportEngine {
             warn(timestampFailureMarker + failure.text, onLine: onLine)
             return false
         } catch {
-            warn(timestampFailureMarker + error.localizedDescription, onLine: onLine)
+            warn(timestampFailureMarker + error.englishDescription, onLine: onLine)
             return false
         }
         onLine?(.init(timestamp: Date(), level: .ok,

@@ -225,7 +225,7 @@ enum CollectRouter {
         if let owner = ProfileService.caseVariantWorkspace(of: profile) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(conflict.localizedDescription)"))
+                         text: "[error] \(conflict.englishDescription)"))
             throw conflict
         }
         if let refusal = environment.refusal(workspace: profile) {
@@ -485,7 +485,7 @@ enum CollectRouter {
             return try await protectCollect(protectProfile, dataDir, onLine)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
-                text: "\(ReportEngine.protectCollectFailedMarker)\(error.localizedDescription)"))
+                text: "\(ReportEngine.protectCollectFailedMarker)\(error.englishDescription)"))
             return []
         }
     }
@@ -536,7 +536,7 @@ enum CollectRouter {
             return try await securityCollect(login, dataDir, collectSkip, onLine)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
-                text: "\(ReportEngine.securityCollectFailedMarker)\(error.localizedDescription)"))
+                text: "\(ReportEngine.securityCollectFailedMarker)\(error.englishDescription)"))
             return []
         }
     }
@@ -575,7 +575,8 @@ enum CollectRouter {
     /// Why `pro backup` has nothing to do for a Jamf School workspace; the scheduled skip, the
     /// CLI `backup` and `schedules add --mode backup` all say this.
     static func schoolBackupReason(profile: String) -> String {
-        L("`pro backup` is a Jamf Pro command and '\(profile)' is configured for Jamf School (school_cli.enabled in config.yaml)")
+        "`pro backup` is a Jamf Pro command and '\(profile)' is configured for Jamf School "
+            + "(school_cli.enabled in config.yaml)"
     }
 
     /// Why a backup of `profile` must not run, or nil: a Jamf School workspace without a

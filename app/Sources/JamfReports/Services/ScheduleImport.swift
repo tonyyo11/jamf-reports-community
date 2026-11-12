@@ -78,7 +78,7 @@ enum ScheduleImport {
                 AppLogger.schedule.error(
                     """
                     import of \(record.label, privacy: .private) failed: \
-                    \(error.localizedDescription, privacy: .private)
+                    \(error.englishDescription, privacy: .private)
                     """
                 )
             }

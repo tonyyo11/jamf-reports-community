@@ -79,10 +79,12 @@ extension ConfigDoctorService {
         }
         guard let typed = output?.timestampAuthority?.trimmingCharacters(in: .whitespaces),
               !typed.isEmpty, output?.timestampAuthorityURL == nil else { return [] }
-        let host = URL(string: typed)?.host.map { L(" (host \(shown($0)))") } ?? ""
+        let detail = URL(string: typed)?.host.map {
+            L("output.timestamp_authority (host \(shown($0))) is not an https:// address. Run manifests are written but not timestamped.")
+        } ?? L("output.timestamp_authority is not an https:// address. Run manifests are written but not timestamped.")
         return [valueRow(
             "output.timestamp_authority",
-            L("output.timestamp_authority\(host) is not an https:// address. Run manifests are written but not timestamped."),
+            detail,
             L("Set it to the https:// address of an RFC 3161 time-stamp authority, or remove it."))]
     }
 
@@ -225,10 +227,9 @@ extension ConfigDoctorService {
         return (config.exceptions ?? []).enumerated().compactMap { index, exception in
             guard let typed = exception.expiresDate, !typed.isEmpty,
                   day.date(from: typed) == nil else { return nil }
-            return valueRow(L("exceptions[\(index)].expires_date"),
-                            "\(shown(typed)) is not a yyyy-MM-dd date. The report never marks "
-                                + L("this exception expired."),
-                            "Write it as yyyy-MM-dd, for example 2027-03-31.")
+            return valueRow("exceptions[\(index)].expires_date",
+                            L("\(shown(typed)) is not a yyyy-MM-dd date. The report never marks this exception expired."),
+                            L("Write it as yyyy-MM-dd, for example 2027-03-31."))
         }
     }
 
@@ -265,7 +266,7 @@ extension ConfigDoctorService {
             let (eaWarn, eaCrit) = (ea.warningThreshold ?? warn, ea.criticalThreshold ?? crit)
             guard eaWarn > eaCrit else { continue }
             rows.append(valueRow(
-                L("custom_eas[\(index)].warning_threshold"),
+                "custom_eas[\(index)].warning_threshold",
                 L("warning_threshold (\(eaWarn)) is above critical_threshold (\(eaCrit)), so the warning band never applies."), L("Set the warning below the critical one."),
                 tag: ".order"))
         }
@@ -350,7 +351,7 @@ extension ConfigDoctorService {
             ]
             for (key, applies, set) in typed where set && ea.type != applies {
                 rows.append(valueRow(
-                    L("custom_eas[\(index)].\(key)"),
+                    "custom_eas[\(index)].\(key)",
                     L("\(key) applies to \(applies.rawValue) extension attributes, and this one is \(ea.type.rawValue). The app ignores it."),
                     L("Move it to a \(applies.rawValue) entry, or remove it.")))
             }
@@ -376,7 +377,7 @@ extension ConfigDoctorService {
             guard index < typedRules.count, let item = typedRules[index] as? [String: Any],
                   let typed = item["lookback_days"], !(typed is NSNull) else { continue }
             rows.append(valueRow(
-                L("alerts.rules[\(index)].lookback_days"),
+                "alerts.rules[\(index)].lookback_days",
                 L("\(shown("\(typed)")) is not a whole number of days. The app uses \(rule.resolvedLookbackDays)."),
                 L("Set lookback_days to a whole number, or remove it.")))
         }
@@ -418,7 +419,7 @@ extension ConfigDoctorService {
 
     private static func listed(_ names: [String]) -> String {
         let head = names.prefix(5).map(shown).joined(separator: ", ")
-        return names.count > 5 ? head + L(", and \(names.count - 5) more") : head
+        return names.count > 5 ? L("\(head), and \(names.count - 5) more") : head
     }
 
     /// A text value that is not one of the enum's cases, read case-insensitively as the app does.

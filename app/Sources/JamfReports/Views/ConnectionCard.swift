@@ -105,7 +105,7 @@ struct ConnectionCard: View {
             .disabled(workspace.demoMode)
             .help(workspace.demoMode
                 ? DemoData.liveOnlyHelp
-                : "Remove from this connection. The profile and workspace stay.")
+                : L("Remove from this connection. The profile and workspace stay."))
         }
     }
 

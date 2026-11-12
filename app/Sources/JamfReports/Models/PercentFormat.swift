@@ -76,6 +76,8 @@ struct PercentFormat: Hashable, Sendable {
 
     private func keptApart(_ value: Double, from threshold: Double) -> PercentFormat {
         var format = self
+        // shortcut: stops at 2 decimals, so 89.999 beside 90 still reads "90.00%"; needs a
+        // denominator over 10,000 to happen, upgrade if a fleet that size reports it.
         while format.decimals < 2 {
             let shown = format.rounded(value)
             let crosses = (value < threshold && shown >= threshold)

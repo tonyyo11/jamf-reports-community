@@ -280,9 +280,10 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         let full = try journal()
         try await WorkspaceMergeExecutor.run(full, deps: deps(claims: claims))
         XCTAssertEqual(claims.all.prefix(2), ["acquire \(src)", "acquire \(tgt)"])
-        // Renewed before every step; the moved source is not released at its old name.
-        let steps = full.plan.steps.count
-        XCTAssertEqual(claims.all.filter { $0 == "acquire \(tgt)" }.count, steps + 1)
+        // Renewed every `claimRenewal`, not every step (each renewal is a synced write); the
+        // moved source is not released at its old name.
+        XCTAssertGreaterThan(full.plan.steps.count, 1)
+        XCTAssertEqual(claims.all.filter { $0 == "acquire \(tgt)" }.count, 1)
         XCTAssertEqual(claims.all.filter { $0.hasPrefix("release") }, ["release \(tgt)"])
         XCTAssertFalse(fm.fileExists(atPath: merged(full).appendingPathComponent(
             "workspace/automation/\(SharedWorkspace.claimFilename)").path))
@@ -578,10 +579,10 @@ extension WorkspaceMergeExecutorTests {
             appVersion: "x")
         // 2 initial claims, then 2 renewals per step: the 9th call is step 3's first renewal.
         let blockAt = 9
+        var renewing = deps(claim: { _ in calls.next() >= blockAt ? .blocked(peer) : .acquire })
+        renewing.claimRenewal = 0
         do {
-            try await WorkspaceMergeExecutor.run(j, deps: deps(claim: { _ in
-                calls.next() >= blockAt ? .blocked(peer) : .acquire
-            }))
+            try await WorkspaceMergeExecutor.run(j, deps: renewing)
             XCTFail("a peer taking the claim must stop the run")
         } catch {
             XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,

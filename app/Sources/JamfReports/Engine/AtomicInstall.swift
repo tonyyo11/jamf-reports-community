@@ -178,10 +178,13 @@ enum AtomicInstall {
         else { return }
         var read = 0
         for case let url as URL in entries {
+            let name = url.lastPathComponent
+            // The cap counts hidden names only: a snapshot folder of thousands of files must
+            // not hide its staging leftovers past the cap.
+            guard name.hasPrefix(".") else { continue }
             read += 1
             if read > maxStagingEntriesRead { return }
-            let name = url.lastPathComponent
-            guard name.hasPrefix("."),
+            guard
                   let marker = name.range(of: stagingMarker, options: .backwards),
                   UUID(uuidString: String(name[marker.upperBound...])) != nil else { continue }
             var info = stat()

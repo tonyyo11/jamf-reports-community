@@ -22,12 +22,13 @@ extension CLIBridge {
         /// collect, report or tick may run under it.
         case merge
 
+        /// English: it is read only by log lines.
         var label: String {
             switch self {
-            case .collect: L("Collect")
-            case .generate: L("Report")
+            case .collect: "Collect"
+            case .generate: "Report"
             case .toolUpdate: "jamf-cli update"
-            case .merge: L("Workspace merge")
+            case .merge: "Workspace merge"
             }
         }
     }
@@ -105,7 +106,7 @@ extension CLIBridge {
     ) throws -> Hold {
         if let running = runningHoldRefusal {
             AppLogger.event(
-                .collect, .notice, "\(purpose.label) refused: \(running.localizedDescription)")
+                .collect, .notice, "\(purpose.label) refused: \(running.englishDescription)")
             throw running
         }
         let lock = tickLock()

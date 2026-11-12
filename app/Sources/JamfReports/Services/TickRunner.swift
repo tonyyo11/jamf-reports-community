@@ -94,7 +94,7 @@ enum TickRunner {
     }
 
     private static func logLaunchFailure(label: String, error: any Error) {
-        let reason = error.localizedDescription
+        let reason = error.englishDescription
         AppLogger.schedule.error(
             "Run now \(label, privacy: .private) did not start: \(reason, privacy: .private)")
     }

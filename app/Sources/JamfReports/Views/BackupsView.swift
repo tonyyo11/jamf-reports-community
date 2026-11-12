@@ -44,8 +44,9 @@ struct BackupsView: View {
             : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "backups") + "/"
     }
 
-    private static let demoRevealHelp =
+    private static var demoRevealHelp: String {
         L("Demo backups are not on disk. Revealing them needs a live profile.")
+    }
 
     // Demo backups are not on disk, and the demo profile's folder could be a
     // real workspace's: nothing below opens, runs or deletes in demo mode.
@@ -109,7 +110,7 @@ struct BackupsView: View {
         PageScaffold(spacing: 16) {
             header
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "backups")
+                ScreenLoadingCard(what: L("backups"))
             } else {
                 summary
             }
@@ -177,7 +178,7 @@ struct BackupsView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? Self.demoRevealHelp
-                      : "Open the backups directory for this workspace in Finder.")
+                      : L("Open the backups directory for this workspace in Finder."))
                 Mono(
                     text: diffSelectionHint,
                     size: 10.5,
@@ -438,7 +439,7 @@ struct BackupsView: View {
                                 showDeleteConfirm = true
                             }
                             .disabled(workspace.demoMode || isRunningBackup)
-                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "Delete this backup")
+                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : L("Delete this backup"))
                             .accessibilityHint("Shows a confirmation dialog to delete this backup")
                         }
                         .contextMenu {
@@ -631,7 +632,7 @@ struct BackupsView: View {
     /// isn't the expected JSON array falls back to Raw rather than rendering an
     /// empty summary, which would read as "no differences".
     private func applyDiffPayload(_ payload: Data) {
-        diffRawText = String(data: payload, encoding: .utf8) ?? ""
+        diffRawText = String(decoding: payload, as: UTF8.self)
         guard let items = BackupDiffModel.parse(payload) else {
             diffParseFailed = true
             diffGroups = []
@@ -984,7 +985,7 @@ private struct DiffGroupView: View {
                 Text(group.change)
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(group.names.count == 1 ? "1 object" : "\(group.names.count) objects")
+                Text(group.names.count == 1 ? L("1 object") : L("\(group.names.count) objects"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.secondary)
             }
@@ -1027,7 +1028,7 @@ private struct DiffGroupView: View {
                 HStack(spacing: 4) {
                     Image(systemName: showNames ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .semibold))
-                    Text(showNames ? "Hide objects" : "Show objects")
+                    Text(showNames ? L("Hide objects") : L("Show objects"))
                         .font(Theme.Fonts.mono(10.5))
                 }
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -1035,8 +1036,8 @@ private struct DiffGroupView: View {
             .buttonStyle(.plain)
             .padding(.leading, 12)
             .accessibilityLabel(showNames
-                ? "Hide the objects changed in \(group.resource)"
-                : "Show the objects changed in \(group.resource)")
+                ? L("Hide the objects changed in \(group.resource)")
+                : L("Show the objects changed in \(group.resource)"))
 
             if showNames {
                 Text(group.names.joined(separator: ", "))

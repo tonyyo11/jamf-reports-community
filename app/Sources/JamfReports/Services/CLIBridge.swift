@@ -288,9 +288,9 @@ final class CLIBridge {
                     // C-11: mirror to OSLog so post-mortem forensics see launch
                     // failures even when the in-app stream is gone.
                     AppLogger.cli.error(
-                        "CLIBridge.run: process launch failed: \(error.localizedDescription, privacy: .private)"
+                        "CLIBridge.run: process launch failed: \(error.englishDescription, privacy: .private)"
                     )
-                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
+                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.englishDescription)"))
                     stdout.fileHandleForReading.readabilityHandler = nil
                     stderr.fileHandleForReading.readabilityHandler = nil
                     completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
@@ -418,9 +418,9 @@ final class CLIBridge {
                 } catch {
                     // C-11: mirror to OSLog — see `run()` above.
                     AppLogger.cli.error(
-                        "CLIBridge.runAndCapture: process launch failed: \(error.localizedDescription, privacy: .private)"
+                        "CLIBridge.runAndCapture: process launch failed: \(error.englishDescription, privacy: .private)"
                     )
-                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
+                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.englishDescription)"))
                     stdout.fileHandleForReading.readabilityHandler = nil
                     stderr.fileHandleForReading.readabilityHandler = nil
                     completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
@@ -510,7 +510,7 @@ final class CLIBridge {
                     "generate: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
@@ -549,7 +549,7 @@ await engine.writeHTMLWithWorkbook(
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] generate failed: \(error.localizedDescription)"))
+                         text: "[error] generate failed: \(error.englishDescription)"))
             // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
             await tightenOnSuccess(1, profile: profile)
             return 1
@@ -581,7 +581,7 @@ await engine.writeHTMLWithWorkbook(
         do {
             return try ConfigLoader.load(from: url)
         } catch {
-            let msg = "[error] config.yaml parse failed — aborting: \(error.localizedDescription)"
+            let msg = "[error] config.yaml parse failed — aborting: \(error.englishDescription)"
             AppLogger.cli.error("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             throw CLIBridgeError.configLoadFailed(
@@ -663,7 +663,7 @@ await engine.writeHTMLWithWorkbook(
                     "schoolGenerate: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
@@ -699,7 +699,7 @@ try await ReportEngine.schoolGenerateReport(
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] school-generate failed: \(error.localizedDescription)"))
+                         text: "[error] school-generate failed: \(error.englishDescription)"))
             // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
             await tightenOnSuccess(1, profile: profile)
             return 1
@@ -785,7 +785,7 @@ try await ReportEngine.schoolGenerateReport(
             throw CLIBridgeError.executableNotFound
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] collect failed: \(error.localizedDescription)"))
+                         text: "[error] collect failed: \(error.englishDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
             await tightenOnSuccess(1, profile: profile)
             return 1
@@ -901,7 +901,9 @@ try await ReportEngine.schoolGenerateReport(
     }
 
     /// The sentence for a locked login keychain, shared by `explainExit` and the auth probe.
-    nonisolated static let keychainLockedDetail = L("the login keychain is locked, so jamf-cli could not read this profile's stored credentials. \(FailureCause.keychainLockedHint).")
+    nonisolated static var keychainLockedDetail: String {
+        L("the login keychain is locked, so jamf-cli could not read this profile's stored credentials. \(FailureCause.keychainLockedHint).")
+    }
 
     /// `cause` (from `FailureCause.classify`) names a failure the exit code alone cannot: a
     /// locked keychain exits 1, like a network error.
@@ -1007,7 +1009,7 @@ try await ReportEngine.schoolGenerateReport(
             return true
         case .keychainLocked:
             let msg = "[error] auth check failed for profile '\(profile)': "
-                + Self.keychainLockedDetail
+                + Localization.english { Self.keychainLockedDetail }
             AppLogger.auth.error("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             return false
@@ -1195,7 +1197,7 @@ try await ReportEngine.schoolGenerateReport(
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
             AppLogger.auth.warning(
-                "tokenStatus: runAndCapture threw for \(profile, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "tokenStatus: runAndCapture threw for \(profile, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
             return .status(TokenStatus.make(profile: profile, token: nil, expiresAt: nil))
         }
@@ -1463,7 +1465,7 @@ try await ReportEngine.schoolGenerateReport(
             try data.write(to: sidecar, options: .atomic)
         } catch {
             AppLogger.cli.warning(
-                "freshnessSidecar: write failed for \(sidecar.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "freshnessSidecar: write failed for \(sidecar.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
         }
     }
@@ -1489,7 +1491,7 @@ try await ReportEngine.schoolGenerateReport(
         where BackupProductResult.pro(inBackup: backup)?.leavesNoJamfProBackup == true {
             let error = CLIBridgeError.backupWithoutPro(backup.lastPathComponent)
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(error.localizedDescription)"))
+                         text: "[error] \(error.englishDescription)"))
             throw error
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
@@ -1577,7 +1579,7 @@ try await ReportEngine.schoolGenerateReport(
                     "generateHTML: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
@@ -1601,7 +1603,7 @@ try await ReportEngine.generateHTML(
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] html generation failed: \(error.localizedDescription)"))
+                         text: "[error] html generation failed: \(error.englishDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
             await tightenOnSuccess(1, profile: profile)
             return 1
@@ -1651,7 +1653,7 @@ try await ReportEngine.generateHTML(
                     "generatePDF: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
@@ -1674,7 +1676,7 @@ try await ReportEngine.generatePDF(
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] pdf generation failed: \(error.localizedDescription)"))
+                         text: "[error] pdf generation failed: \(error.englishDescription)"))
             await tightenOnSuccess(1, profile: profile)
             return 1
         }
@@ -1730,7 +1732,7 @@ try await ReportEngine.inventoryCSV(
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] inventory-csv failed: \(error.localizedDescription)"))
+                         text: "[error] inventory-csv failed: \(error.englishDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
             await tightenOnSuccess(1, profile: profile)
             return 1
@@ -1889,14 +1891,14 @@ try await ReportEngine.inventoryCSV(
             // C-07/MFS-4: route to unified logging instead of stdout.
             // %{public} for type (taxonomy), %{private} for the error chain.
             AppLogger.cli.warning(
-                "saveJSONSnapshot failed for \(type, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "saveJSONSnapshot failed for \(type, privacy: .public): \(error.englishDescription, privacy: .private)"
             )
             // C-12: also surface to the in-app log feed so the user can see
             // their refresh just used stale data.
             onLine?(.init(
                 timestamp: Date(),
                 level: .warn,
-                text: "[warn] snapshot write failed (\(type)) — refresh will use stale data: \(error.localizedDescription)"
+                text: "[warn] snapshot write failed (\(type)) — refresh will use stale data: \(error.englishDescription)"
             ))
         }
     }
@@ -2024,7 +2026,7 @@ try await ReportEngine.inventoryCSV(
                 "backup: could not create backups dir: \(backupsRoot.path, privacy: .private) — \(error, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] could not create backups directory: \(error.localizedDescription)"))
+                         text: "[error] could not create backups directory: \(error.englishDescription)"))
             throw CLIBridgeError.directoryOperationFailed(path: backupsRoot.path)
         }
 
@@ -2042,7 +2044,7 @@ try await ReportEngine.inventoryCSV(
                 "backup: could not create temp dir: \(validatedTemp.path, privacy: .private) — \(error, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] could not create backup temp dir: \(error.localizedDescription)"))
+                         text: "[error] could not create backup temp dir: \(error.englishDescription)"))
             throw CLIBridgeError.directoryOperationFailed(path: validatedTemp.path)
         }
 
@@ -2051,7 +2053,7 @@ try await ReportEngine.inventoryCSV(
         let noJamfPro = jamfProProfile == nil
         let proSkip = noJamfPro
             ? ProSkip(reason: BackupProductResult.noJamfProReason, isPartial: false)
-            : decideProBackup(
+            : await decideProBackup(
                 profile: profile, workspace: workspace, backupsRoot: backupsRoot,
                 isScheduled: trimmedLabel?.hasPrefix("scheduled-") == true, onLine: onLine)
         let proSkipped = proSkip != nil
@@ -2091,7 +2093,8 @@ try await ReportEngine.inventoryCSV(
             // Every other failure branch names its cause; this one used to return a
             // bare exit code with no log line at all.
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] " + Self.explainExit(exit, operation: "Backup")))
+                         text: "[error] " + Localization.english {
+                             Self.explainExit(exit, operation: "Backup") }))
             // The unfinished Jamf Pro files are never kept; an empty staging folder lets
             // Protect still back up below. Not intermediate, so a name planted after the
             // removal fails the create and goes to the discard below.
@@ -2186,12 +2189,16 @@ try await ReportEngine.inventoryCSV(
                 "backup: move failed \(validatedTemp.path, privacy: .private) → \(validatedFinal.path, privacy: .private) — \(error, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] could not finalize backup directory: \(error.localizedDescription)"))
+                         text: "[error] could not finalize backup directory: \(error.englishDescription)"))
             throw CLIBridgeError.directoryOperationFailed(path: validatedFinal.path)
         }
 
         // Write manifest.json so BackupLibrary can read label, date, and counts.
-        let stats = directoryStats(validatedFinal)
+        // A backup is thousands of files: walk and count them off the main actor.
+        let (stats, proCounts) = await Task.detached(priority: .userInitiated) {
+            (Self.directoryStats(validatedFinal),
+             proFailed ? [:] : ProtectBackup.objectCounts(in: validatedFinal))
+        }.value
         let effectiveLabel = trimmedLabel ?? ""
         var manifest: [String: Any] = [
             "label": effectiveLabel,
@@ -2210,8 +2217,7 @@ try await ReportEngine.inventoryCSV(
                     state: proFailed ? .failed : isPartial ? .partial : .ok, exitCode: exit,
                     // Counted as Protect's are, before manifest.json exists; a failed part's
                     // files are already gone.
-                    objectCounts: proFailed ? [:] : ProtectBackup.objectCounts(in: validatedFinal)
-                        .filter { $0.key != ProtectBackup.folderName }
+                    objectCounts: proCounts.filter { $0.key != ProtectBackup.folderName }
                 ).manifestValue,
             ]
             products["protect"] = protectResult?.manifestValue
@@ -2227,7 +2233,7 @@ try await ReportEngine.inventoryCSV(
             )
         } catch {
             AppLogger.cli.warning(
-                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] backup manifest write failed — backup was created but BackupsView may show no label or stats"))
@@ -2298,10 +2304,11 @@ try await ReportEngine.inventoryCSV(
     /// and keeps the Needs-attention item in step. Returns the skip when it is skipped. A skip
     /// is never a failure (no `[error]`); it is Partial only when nobody has decided yet or the
     /// decision waits for a Confirm.
-    private func decideProBackup(
-        profile: String, workspace: URL, backupsRoot: URL, isScheduled: Bool,
-        onLine: @Sendable (LogLine) -> Void
-    ) -> ProSkip? {
+    /// The Jamf Pro synced-storage decision and what the caller logs with it: the plan, where
+    /// the workspace is shared, and why config.yaml did not decode.
+    private nonisolated static func proBackupPlan(
+        profile: String, backupsRoot: URL
+    ) -> (ProBackup.Plan, String?, String?) {
         let read = ProBackup.readConfig(profile: profile)
         let config = read.config
         let decodeFailure = read.failure
@@ -2321,6 +2328,18 @@ try await ReportEngine.inventoryCSV(
             setting: setting, place: place, decodeFailure: decodeFailure,
             hasScheduledHistory: { BackupMaintenance.hasScheduledJamfProBackup(profile: profile) },
             graceRunsUsed: { ProBackupGrace.used(profile: profile) })
+        return (plan, place, decodeFailure)
+    }
+
+    private func decideProBackup(
+        profile: String, workspace: URL, backupsRoot: URL, isScheduled: Bool,
+        onLine: @Sendable (LogLine) -> Void
+    ) async -> ProSkip? {
+        // config.yaml, the sync-provider walk, the pin and the backup manifests are file work,
+        // so they run off the main actor; the log lines and attention items stay in this task.
+        let (plan, place, decodeFailure) = await Task.detached(priority: .userInitiated) {
+            Self.proBackupPlan(profile: profile, backupsRoot: backupsRoot)
+        }.value
         func skip(
             _ reason: String, _ kind: ProBackup.SkipKind, place: String, detail: String? = nil
         ) -> ProSkip {
@@ -2436,7 +2455,7 @@ try await ReportEngine.inventoryCSV(
         if let owner = ProfileService.caseVariantWorkspace(of: workspace) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: workspace, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(conflict.localizedDescription)"))
+                         text: "[error] \(conflict.englishDescription)"))
             throw conflict
         }
         // A School environment gets the later guard's backup-specific sentence.
@@ -2488,7 +2507,7 @@ try await ReportEngine.inventoryCSV(
         return candidate
     }
 
-    private func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
+    private nonisolated static func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
         guard let enumerator = FileManager.default.enumerator(
             at: url,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
@@ -2663,7 +2682,7 @@ try await ReportEngine.inventoryCSV(
         if let owner = ProfileService.caseVariantWorkspace(of: profile) {
             let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(conflict.localizedDescription)"))
+                         text: "[error] \(conflict.englishDescription)"))
             throw conflict
         }
         let config = workspace.appendingPathComponent("config.yaml")
@@ -2722,7 +2741,7 @@ try await ReportEngine.inventoryCSV(
             onLine(.init(
                 timestamp: Date(),
                 level: .fail,
-                text: "[error] could not update jamf_cli.profile in \(config.path): \(error.localizedDescription)"
+                text: "[error] could not update jamf_cli.profile in \(config.path): \(error.englishDescription)"
             ))
             // The workspace exists; what failed is reading or writing its config.
             if error is YAMLCodec.CodecError {
@@ -2826,7 +2845,7 @@ func runDeviceDetailProcess(
             }
         } catch {
             AppLogger.cli.error(
-                "runDeviceDetailProcess launch failed: \(error.localizedDescription, privacy: .private)"
+                "runDeviceDetailProcess launch failed: \(error.englishDescription, privacy: .private)"
             )
             onLine?(deviceLaunchFailureLine())
             // Launch failure: -1 is used for the same reason as above (Int32 signature, fire-and-forget).

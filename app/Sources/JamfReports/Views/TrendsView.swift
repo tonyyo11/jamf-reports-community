@@ -1445,8 +1445,9 @@ struct TrendsView: View {
 
     // MARK: Archive
 
-    private static let demoSummariesFolderHelp =
+    private static var demoSummariesFolderHelp: String {
         L("Demo summaries are not on disk. Opening their folder needs a live profile.")
+    }
 
     /// Opens the archived summaries folder. Never in demo mode: the demo's
     /// summaries are not on disk, and its profile's name could match a real
@@ -1544,12 +1545,13 @@ struct TrendsView: View {
     }
 
     /// VoiceOver container label for the stacked compliance-band chart.
-    nonisolated static let complianceTrendChartLabel = L("Compliance trend")
+    nonisolated static var complianceTrendChartLabel: String { L("Compliance trend") }
 
     /// VoiceOver container label for the multi-metric comparison chart.
     /// Static — cannot read workspace config; uses generic label.
-    nonisolated static let multilineComparisonChartLabel =
+    nonisolated static var multilineComparisonChartLabel: String {
         L("Multi-metric comparison: FileVault, Compliance, macOS currency")
+    }
 }
 
 

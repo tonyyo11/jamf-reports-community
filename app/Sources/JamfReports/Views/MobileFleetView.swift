@@ -338,7 +338,7 @@ struct MobileFleetView: View {
     }
 
     /// Caption for a tile whose field no device in the snapshot carries.
-    private static let notCollectedCaption = L("Not in the collected inventory")
+    private static var notCollectedCaption: String { L("Not in the collected inventory") }
 
     /// A count as a share of the fleet, or a dash when the count is unknown.
     private func fleetPercentText(_ count: Int?) -> String {
@@ -613,7 +613,7 @@ struct MobileFleetView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                Text(count == 1 ? "\(count) device" : "\(count) devices")
+                Text(count == 1 ? L("\(count) device") : L("\(count) devices"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(percentFormat.text(percentage))
@@ -693,7 +693,7 @@ struct MobileFleetView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                Text(count == 1 ? "\(count) device" : "\(count) devices")
+                Text(count == 1 ? L("\(count) device") : L("\(count) devices"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(percentFormat.text(percentage))

@@ -19,7 +19,7 @@ struct SchoolDevicesView: View {
         var id: String { rawValue }
     }
 
-    private var staleDays: Int { Int(workspace.configState.staleDeviceDays) ?? 30 }
+    private var staleDays: Int { workspace.configState.staleRule.days }
 
     var body: some View {
         PageScaffold {
@@ -30,7 +30,7 @@ struct SchoolDevicesView: View {
                 lastModified: snapshot.collectedAt
             )
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "devices")
+                ScreenLoadingCard(what: L("devices"))
             } else {
                 if snapshot.devicesDate == nil {
                     emptyState

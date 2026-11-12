@@ -269,7 +269,7 @@ struct FleetOverviewView: View {
 
     /// VoiceOver container label for the fleet stability trend chart.
     /// `nonisolated` so unit tests can assert it without View `@MainActor` isolation.
-    nonisolated static let stabilityChartLabel = L("Fleet stability trend over time")
+    nonisolated static var stabilityChartLabel: String { L("Fleet stability trend over time") }
 
     private func profileMetricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
         HStack(spacing: 10) {

@@ -255,6 +255,21 @@ struct LocalizationCatalogTests {
         #expect(missing.isEmpty, "run scripts/sync-strings.zsh; \(missing.count): \(missing.prefix(40))")
     }
 
+    /// `.help(demo ? DemoData.liveOnlyHelp : "…")` types the literal as a `String`, which SwiftUI
+    /// shows verbatim: the live branch needs `L("…")` like the demo one. An empty branch is fine. An empty branch is fine.
+    @Test func demoTooltipsTranslateTheirLiveBranch() throws {
+        let root = Self.appDirectory.appendingPathComponent("Sources/JamfReports")
+        let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+        let bare = /liveOnlyHelp\s*:\s*"[^"]/
+        var found: [String] = []
+        while let url = enumerator?.nextObject() as? URL {
+            guard url.pathExtension == "swift" else { continue }
+            let source = try String(contentsOf: url, encoding: .utf8)
+            if source.contains(bare) { found.append(url.lastPathComponent) }
+        }
+        #expect(found.isEmpty, "wrap the live branch in L(\"…\"): \(found)")
+    }
+
     /// A Swift literal's text as the compiler sees it, with its escapes decoded.
     private static func unescaped(_ literal: String) -> String {
         var text = literal.replacing(/\\u\{([0-9A-Fa-f]+)\}/) { match in

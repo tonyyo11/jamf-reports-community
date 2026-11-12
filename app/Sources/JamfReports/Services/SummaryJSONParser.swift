@@ -266,6 +266,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
             && (compliancePct == nil || olderIsReal)
         let patchFromOlder = patchPct == nil
         let scoreFromOlder = securityScore == nil
+        // A breakdown comes with its total, never beside the other day's: the range check
+        // rejects counts above the total. A `{met, of}` share stands alone.
+        let protectAlertsFromOlder = protectOpenAlerts == nil && protectAlertCounts == nil
+        let securityCloudFromOlder = securityCloudDeviceCount == nil
+            && securityCloudRiskCounts == nil
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
@@ -306,11 +311,14 @@ struct DailySummary: Codable, Identifiable, Sendable {
                 ?? older.products,
             protectComputerCount: protectComputerCount ?? older.protectComputerCount,
             protectMatched: protectMatched ?? older.protectMatched,
-            protectOpenAlerts: protectOpenAlerts ?? older.protectOpenAlerts,
-            protectAlertCounts: protectAlertCounts ?? older.protectAlertCounts,
-            securityCloudDeviceCount: securityCloudDeviceCount ?? older.securityCloudDeviceCount,
+            protectOpenAlerts: protectAlertsFromOlder ? older.protectOpenAlerts : protectOpenAlerts,
+            protectAlertCounts: protectAlertsFromOlder
+                ? older.protectAlertCounts : protectAlertCounts,
+            securityCloudDeviceCount: securityCloudFromOlder
+                ? older.securityCloudDeviceCount : securityCloudDeviceCount,
             securityCloudMatched: securityCloudMatched ?? older.securityCloudMatched,
-            securityCloudRiskCounts: securityCloudRiskCounts ?? older.securityCloudRiskCounts,
+            securityCloudRiskCounts: securityCloudFromOlder
+                ? older.securityCloudRiskCounts : securityCloudRiskCounts,
             osMajorCounts: mergedOSMajor(older.osMajorCounts),
             modelFamilyCounts: modelFamilyCounts ?? older.modelFamilyCounts,
             mobileFormFactorCounts: mobileFormFactorCounts ?? older.mobileFormFactorCounts,
@@ -680,7 +688,7 @@ struct SummaryJSONParser {
                     return try parse(url)
                 } catch {
                     AppLogger.collect.warning(
-                        "SummaryJSONParser: skipping corrupt summary \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                        "SummaryJSONParser: skipping corrupt summary \(url.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
                     )
                     return nil
                 }

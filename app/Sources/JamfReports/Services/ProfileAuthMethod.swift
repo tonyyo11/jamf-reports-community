@@ -40,7 +40,7 @@ enum ProfileAuthMethod {
             if !product.canBeProWorkspace { return prefix + "a \(product.displayName) profile" }
             if isOrganizationLevel {
                 return prefix + "an organization-level profile. "
-                    + PlatformScopeLevel.organizationLevelReason
+                    + Localization.english { PlatformScopeLevel.organizationLevelReason }
             }
             return nil
         }

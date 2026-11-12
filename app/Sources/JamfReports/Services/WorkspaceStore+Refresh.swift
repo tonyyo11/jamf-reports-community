@@ -295,7 +295,7 @@ extension WorkspaceStore {
             ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
         guard let refusal else { return false }
         AppLogger.collect.notice(
-            "Manual collect refused: \(refusal.localizedDescription, privacy: .private)")
+            "Manual collect refused: \(refusal.englishDescription, privacy: .private)")
         toast = Self.collectFailureToast(refusal, operation: L("Refresh"))
         return true
     }
@@ -314,7 +314,7 @@ extension WorkspaceStore {
     nonisolated static func generateRefusalMessage(_ refusal: CLIBridgeError) -> String {
         let reason = CLIBridge.explainOperationError(refusal, operation: L("Generate"))
         guard refusal != .generateInProgress else { return reason }
-        return reason + L(". A report made while data is collected would mix old and new figures.")
+        return L("\(reason). A report made while data is collected would mix old and new figures.")
     }
 
     /// True, after posting why as information, when a report must not start now
@@ -459,7 +459,7 @@ extension WorkspaceStore {
                 if CLIBridgeError.isCollectRefusal(error) {
                     recorder?.discard()
                 } else {
-                    recorder?.record("[error] \(error.localizedDescription)")
+                    recorder?.record("[error] \(error.englishDescription)")
                     recorder?.finish(exitCode: 1)
                 }
                 throw error
@@ -554,7 +554,7 @@ extension WorkspaceStore {
             _ = try await audit(activeProfile)
         } catch {
             AppLogger.cli.warning(
-                "Launch audit refresh failed: \(error.localizedDescription, privacy: .private)"
+                "Launch audit refresh failed: \(error.englishDescription, privacy: .private)"
             )
         }
     }
@@ -639,12 +639,10 @@ extension WorkspaceStore {
         let config = ProfileService.workspaceURL(for: profile).flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
-        let protectProfile = EnvironmentProfiles.resolve(config: config, workspace: profile).protect
-        let protectCollected = protectProfile.map {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        let protectCollected = environment.protect.map {
             protectPinAllows(profile, $0) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false
-        // A Protect-only environment collects Protect alone (P8).
-        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         let collectSkip = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
         // Security Cloud follows an MDM collect where `CollectRouter` would run it.
         let securityCloudCollected = environment.securityCloud.map {
@@ -654,11 +652,10 @@ extension WorkspaceStore {
         let securityKinds = securityCloudCollected
             && !collectSkip.contains(ReportEngine.securityRiskKind)
             ? DataFreshnessHealth.securityCloudKinds : []
-        // Unconfirmed (a peer's edit), it is judged as before, so failing kinds stay visible.
+        // A Protect-only environment collects Protect alone (P8); unconfirmed on this Mac (a
+        // peer's edit, which `protectCollected` checks), it expects nothing.
         if environment.isProtectOnly {
-            // Unconfirmed, this Mac still shows the workspace as it was and expects nothing.
-            return protectPinAllows(profile, protectProfile ?? "") && protectCollected
-                ? DataFreshnessHealth.protectKinds : []
+            return protectCollected ? DataFreshnessHealth.protectKinds : []
         }
         // config.yaml unreadable and the login known to be School or Protect: no Jamf Pro kinds.
         if config == nil, let product = auth?.product, !product.canBeProWorkspace { return [] }

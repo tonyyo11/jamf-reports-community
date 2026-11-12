@@ -359,7 +359,7 @@ enum SnapshotRetentionService {
             do { try fm.removeItem(at: url); return true }
             catch {
                 let name = url.lastPathComponent
-                let desc = error.localizedDescription
+                let desc = error.englishDescription
                 AppLogger.collect.warning(
                     "SnapshotRetentionService: delete failed for \(name, privacy: .private): \(desc, privacy: .private)"
                 )
@@ -379,7 +379,7 @@ enum SnapshotRetentionService {
                 return true
             } catch {
                 let name = url.lastPathComponent
-                let desc = error.localizedDescription
+                let desc = error.englishDescription
                 AppLogger.collect.warning(
                     "SnapshotRetentionService: archive failed for \(name, privacy: .private): \(desc, privacy: .private)"
                 )

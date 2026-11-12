@@ -72,15 +72,23 @@ struct CustomizeView: View {
     /// the chart options were never loaded or saved at all. Demo mode has no config.yaml to
     /// read, so it shows the defaults.
     private func loadOptions() {
-        let charts = workspace.demoMode
-            ? ChartsOptions.defaults : ChartsConfigLoader.load(profile: workspace.profile)
-        chartSavePNGs = charts.savePNGs
-        chartPerMajor = charts.perMajorCharts
-        htmlWithWorkbook = !workspace.demoMode
-            && HTMLReportConfigLoader.withWorkbook(profile: workspace.profile)
-        percentDecimals = workspace.demoMode
-            ? 1 : DisplayConfigLoader.percentFormat(profile: workspace.profile).decimals
         saveNote = nil
+        let profile = workspace.profile
+        let demo = workspace.demoMode
+        // Three reads of config.yaml, which can sit on a synced share: off the main actor.
+        Task {
+            let (charts, html, decimals) = await Task.detached(priority: .userInitiated) {
+                demo ? (ChartsOptions.defaults, false, 1)
+                    : (ChartsConfigLoader.load(profile: profile),
+                       HTMLReportConfigLoader.withWorkbook(profile: profile),
+                       DisplayConfigLoader.percentFormat(profile: profile).decimals)
+            }.value
+            guard profile == workspace.profile, demo == workspace.demoMode else { return }
+            chartSavePNGs = charts.savePNGs
+            chartPerMajor = charts.perMajorCharts
+            htmlWithWorkbook = html
+            percentDecimals = decimals
+        }
     }
 
     /// A failed Apply, and what a saved one did not keep.
@@ -358,7 +366,7 @@ private struct HTMLWithWorkbookCard: View {
 
     @Environment(\.colorSchemeContrast) private var contrast
 
-    private static let title = L("Write the HTML report with every workbook")
+    private static var title: String { L("Write the HTML report with every workbook") }
 
     var body: some View {
         Card(padding: 16) {

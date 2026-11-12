@@ -165,13 +165,17 @@ struct SecurityCloudCorrelation: Sendable {
     var matched = 0
     var ambiguous = 0
     var noIdentifier = 0
+    /// Rows that matched a device an earlier row already claimed, as Protect counts them.
+    var duplicates = 0
 
     /// Rows that carry an `externalId`: the denominator of the match.
     var identified: Int { securityCount - noIdentifier }
 
-    /// matched of identified; nil with no inventory or no identified row.
+    /// matched of the identified rows less duplicates, so each device counts once; nil with no
+    /// inventory or no identified row.
     var matchedShare: MobileSummary.Share? {
-        inventorySize > 0 && identified > 0 ? .init(met: matched, of: identified) : nil
+        let of = identified - duplicates
+        return inventorySize > 0 && of > 0 ? .init(met: matched, of: of) : nil
     }
 
     static func build(
@@ -182,11 +186,15 @@ struct SecurityCloudCorrelation: Sendable {
         var result = SecurityCloudCorrelation(
             securityCount: rows.count,
             inventorySize: records.filter { $0.identifier(.udid) != nil }.count)
+        var claimed = Set<Int>()
         for row in rows {
-            var probe = DeviceInventoryRecord.empty(id: "security-cloud", source: "security-cloud")
-            probe.udid = row.externalId ?? ""
-            switch correlation.match(probe) {
-            case .matched: result.matched += 1
+            switch correlation.match(udidRecord(row.externalId, source: "security-cloud")) {
+            case .matched(let position, _):
+                if claimed.insert(position).inserted {
+                    result.matched += 1
+                } else {
+                    result.duplicates += 1
+                }
             case .unmatched: break
             case .ambiguous: result.ambiguous += 1
             case .noIdentifier: result.noIdentifier += 1

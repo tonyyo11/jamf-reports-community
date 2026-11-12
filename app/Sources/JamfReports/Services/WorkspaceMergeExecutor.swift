@@ -18,6 +18,8 @@ enum WorkspaceMergeExecutor {
         var rewritePolicy: @Sendable (_ from: String, _ to: String, _ keepTargetExcluded: Bool)
             async -> Void
         var appSupport: URL
+        /// How often the run renews its claims; a test renews before every step.
+        var claimRenewal: TimeInterval = WorkspaceMergeExecutor.claimRenewal
 
         /// `holdingTickLock(purpose: .merge)`, the shared-workspace claim, the real writers.
         /// `rewritePolicy` is supplied by the caller (the GUI owns the policy).
@@ -42,6 +44,8 @@ enum WorkspaceMergeExecutor {
     /// Long enough for a large merge; a crashed one stops blocking peers after this, and this
     /// Mac's own resume takes its claim back at once.
     static let claimTTL: TimeInterval = 2 * 3600
+    /// Well inside `claimTTL`, so a renewal is never late.
+    static let claimRenewal: TimeInterval = 5 * 60
 
     enum RunError: Error, LocalizedError, Equatable {
         case peerClaim(workspace: String, host: String)
@@ -111,11 +115,16 @@ enum WorkspaceMergeExecutor {
             .collect, .notice,
             "workspace merge started: \(total - journal.done) of \(total) steps to run")
         var ran = 0
+        var renewed = Date()
         while journal.done < total {
             let index = journal.done
-            // The claim has no heartbeat: renewing it before each step pushes its expiry, so a
-            // merge longer than `claimTTL` is never taken over by a peer mid-run.
-            for workspace in held { try claim(workspace, deps: deps) }
+            // The claim has no heartbeat: renewing it pushes its expiry, so a merge longer than
+            // `claimTTL` is never taken over by a peer mid-run. Each renewal is a write a sync
+            // provider uploads, so it happens every `claimRenewal`, not every step.
+            if Date().timeIntervalSince(renewed) >= deps.claimRenewal {
+                for workspace in held { try claim(workspace, deps: deps) }
+                renewed = Date()
+            }
             let step = plan.steps[index]
             do {
                 try await perform(step, plan: plan, deps: deps)
@@ -136,7 +145,7 @@ enum WorkspaceMergeExecutor {
                 } catch {
                     // The next Resume reruns the last step, then retires.
                     AppLogger.event(.collect, .error,
-                                    "merge journal not retired: \(error.localizedDescription)")
+                                    "merge journal not retired: \(error.englishDescription)")
                 }
             } else {
                 try WorkspaceMergeJournal.write(
@@ -267,7 +276,7 @@ enum WorkspaceMergeExecutor {
             // The plan file alone would read as unreadable; it is this run's own, just written.
             do { try FileManager.default.removeItem(at: planURL) } catch {
                 AppLogger.event(.collect, .error,
-                                "merge plan not removed: \(error.localizedDescription)")
+                                "merge plan not removed: \(error.englishDescription)")
             }
             throw RunError.notStarted(reason: error.localizedDescription)
         }
@@ -383,7 +392,7 @@ enum WorkspaceMergeExecutor {
             if isRegular(claimFile) {
                 do { try FileManager.default.removeItem(at: claimFile) } catch {
                     AppLogger.event(.collect, .error,
-                                    "merge claim not removed: \(error.localizedDescription)")
+                                    "merge claim not removed: \(error.englishDescription)")
                 }
             }
         }
@@ -603,7 +612,7 @@ enum WorkspaceMergeExecutor {
             guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { continue }
             do { try FileManager.default.removeItem(at: url) } catch {
                 AppLogger.event(.collect, .error,
-                                "merge staging not removed: \(error.localizedDescription)")
+                                "merge staging not removed: \(error.englishDescription)")
             }
         }
     }

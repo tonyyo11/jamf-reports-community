@@ -26,6 +26,8 @@ struct CoreDashboard: Sendable {
     private let hardwareIndex = OnceCache<[String: Bool]>()
     /// The `computers` snapshot's dates, read once for every sheet that grades by the stale rule.
     private let computerDateIndex = OnceCache<ComputerDateIndex?>()
+    /// Each snapshot read once per report: the sheets read `computers` about seven times.
+    private let snapshotData = SnapshotDataCache()
 
     init(
         config: ReportConfig,
@@ -3524,6 +3526,13 @@ struct CoreDashboard: Sendable {
     /// enforced strict mode through the Python CLI's `--strict-manifest`
     /// flag).
     private func loadLatestJSONData(names: [String]) throws -> Data {
+        if let cached = snapshotData.stored.withLock({ $0[names] }) { return cached }
+        let data = try readLatestJSONData(names: names)
+        snapshotData.stored.withLock { $0[names] = data }
+        return data
+    }
+
+    private func readLatestJSONData(names: [String]) throws -> Data {
         // One ordering rule for every reader: filename stamp first, manifest and
         // sync-conflict copies excluded.
         guard let newest = FileManager.newestSnapshot(among: snapshotCandidates(names: names))
@@ -3846,6 +3855,10 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
 
 /// The hardware index and the computers' dates read and parse the `computers` snapshot, so a
 /// dashboard builds each once however many sheets grade by it.
+private final class SnapshotDataCache: Sendable {
+    let stored = Mutex<[[String]: Data]>([:])
+}
+
 private final class OnceCache<Value: Sendable>: Sendable {
     private let stored = Mutex<Value?>(nil)
 

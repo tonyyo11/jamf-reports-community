@@ -85,9 +85,13 @@ struct EnvironmentProposal: Equatable, Sendable {
                 }
                 continue
             }
+            // A workspace that already exists wins, so its Platform profile extends it instead
+            // of pairing with a free profile and becoming a second workspace for the fleet.
+            let byName: (JamfCLIProfile, JamfCLIProfile) -> Bool = { $0.name < $1.name }
             guard let platform = group.first,
-                  let twin = PlatformTwin.twins(reaching: host, among: others + existingMDM)
-                    .min(by: { $0.name < $1.name }) else { continue }
+                  let twin = PlatformTwin.twins(reaching: host, among: existingMDM).min(by: byName)
+                    ?? PlatformTwin.twins(reaching: host, among: others).min(by: byName)
+            else { continue }
             claimed.insert(platform.name)
             let url = learnedJamfProURLs[platform.name]
             guard let existing = existingKeys[ProfileName.folderKey(twin.name)] else {
