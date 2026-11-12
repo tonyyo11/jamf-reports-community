@@ -42,6 +42,8 @@ enum WorkspaceMergeExecutor {
     /// Long enough for a large merge; a crashed one stops blocking peers after this, and this
     /// Mac's own resume takes its claim back at once.
     static let claimTTL: TimeInterval = 2 * 3600
+    /// Well inside `claimTTL`, so a renewal is never late.
+    static let claimRenewal: TimeInterval = 5 * 60
 
     enum RunError: Error, LocalizedError, Equatable {
         case peerClaim(workspace: String, host: String)
@@ -111,11 +113,16 @@ enum WorkspaceMergeExecutor {
             .collect, .notice,
             "workspace merge started: \(total - journal.done) of \(total) steps to run")
         var ran = 0
+        var renewed = Date()
         while journal.done < total {
             let index = journal.done
-            // The claim has no heartbeat: renewing it before each step pushes its expiry, so a
-            // merge longer than `claimTTL` is never taken over by a peer mid-run.
-            for workspace in held { try claim(workspace, deps: deps) }
+            // The claim has no heartbeat: renewing it pushes its expiry, so a merge longer than
+            // `claimTTL` is never taken over by a peer mid-run. Each renewal is a write a sync
+            // provider uploads, so it happens every `claimRenewal`, not every step.
+            if Date().timeIntervalSince(renewed) >= claimRenewal {
+                for workspace in held { try claim(workspace, deps: deps) }
+                renewed = Date()
+            }
             let step = plan.steps[index]
             do {
                 try await perform(step, plan: plan, deps: deps)

@@ -34,6 +34,23 @@ final class WorkspaceMergePlanTests: XCTestCase {
     private func steps(_ p: WorkspaceMergePlan, _ area: WorkspaceMergePlan.Area)
         -> [WorkspaceMergePlan.Step] { p.steps.filter { $0.area == area } }
 
+    func testHiddenLeftoversAreNotCopied() throws {
+        let d = "jamf-cli-data/computers/"
+        try write("a", src, d + "computers_2026-01-01_000000.json")
+        try write("staged", src, d + ".computers_2026-01-02_000000.json.tmp-1234")
+        let copied = steps(try plan(), .snapshots).map(\.source)
+        XCTAssertEqual(copied.count, 1)
+        XCTAssertFalse(copied.contains { $0.contains(".tmp-") })
+    }
+
+    /// A linked source folder would be moved as a link, leaving the data live where it was.
+    func testLinkedWorkspaceFolderIsRefused() throws {
+        let real = root.appendingPathComponent("elsewhere", isDirectory: true)
+        try fm.moveItem(at: root.appendingPathComponent(src), to: real)
+        try fm.createSymbolicLink(at: root.appendingPathComponent(src), withDestinationURL: real)
+        XCTAssertThrowsError(try plan())
+    }
+
     func testSnapshotRules() throws {
         let d = "jamf-cli-data/computers/"
         try write("a", src, d + "computers_2026-01-01_000000.json")

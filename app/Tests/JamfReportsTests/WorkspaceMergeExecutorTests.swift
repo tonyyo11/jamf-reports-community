@@ -280,9 +280,10 @@ final class WorkspaceMergeExecutorTests: XCTestCase {
         let full = try journal()
         try await WorkspaceMergeExecutor.run(full, deps: deps(claims: claims))
         XCTAssertEqual(claims.all.prefix(2), ["acquire \(src)", "acquire \(tgt)"])
-        // Renewed before every step; the moved source is not released at its old name.
-        let steps = full.plan.steps.count
-        XCTAssertEqual(claims.all.filter { $0 == "acquire \(tgt)" }.count, steps + 1)
+        // Renewed every `claimRenewal`, not every step (each renewal is a synced write); the
+        // moved source is not released at its old name.
+        XCTAssertGreaterThan(full.plan.steps.count, 1)
+        XCTAssertEqual(claims.all.filter { $0 == "acquire \(tgt)" }.count, 1)
         XCTAssertEqual(claims.all.filter { $0.hasPrefix("release") }, ["release \(tgt)"])
         XCTAssertFalse(fm.fileExists(atPath: merged(full).appendingPathComponent(
             "workspace/automation/\(SharedWorkspace.claimFilename)").path))
