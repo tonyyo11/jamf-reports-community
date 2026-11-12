@@ -155,13 +155,9 @@ final class DeviceLookupIndex {
 
     private struct Reader {
         let dataRoot: URL?
-        /// Find the newest `.json` file under any `<dataDir>/<name>/` subdirectory,
-        /// or `<dataDir>/<name>_*.json` flat files, for the supplied list of
-        /// candidate names. Returns nil if no candidate exists.
+        /// The newest `.json` snapshot in any `<dataDir>/<name>/` kind folder, for the supplied
+        /// candidate names; nil if none exists. Collect writes only kind folders.
         func newestJSON(in dataDir: URL, named names: [String]) -> URL? {
-            // The data root is listed once for every name, not once per name.
-            let flatEntries = (try? FileManager.default.contentsOfDirectory(
-                at: dataDir, includingPropertiesForKeys: nil, options: [])) ?? []
             var candidates: [URL] = []
             for name in names {
                 let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
@@ -172,12 +168,6 @@ final class DeviceLookupIndex {
                         && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
                     })
                 }
-                candidates.append(contentsOf: flatEntries.filter { url in
-                    let n = url.lastPathComponent
-                    return url.pathExtension.lowercased() == "json"
-                        && (n == "\(name).json" || n.hasPrefix("\(name)_"))
-                        && !n.contains(".partial")
-                })
             }
             return FileManager.newestSnapshot(among: candidates)
         }

@@ -143,8 +143,8 @@ A few behaviors worth knowing:
   `openssl ts -verify -data <stem>.manifest.json -in <stem>.tsr -CAfile <authority CA>.pem`.
 - A full `collect` runs at most once per profile per day, Jamf Pro and Jamf School alike; a
   second run the same day exits successfully without re-collecting. Pass `--force` to
-  override it. (Inside a forced or partial run, a Jamf School source is still fetched at most
-  every 12 hours.)
+  override it. `--force` also fetches every source whether or not it is due; without it, a
+  partial run (`--tiers`) still fetches a Jamf School source at most every 12 hours.
 - `generate` on a Jamf School workspace (`school_cli.enabled: true`, or `profiles.jamf_school` in a config with a `profiles:` block) writes the School
   workbook and ignores `--template`; `html.with_workbook` writes no HTML beside it, since
   there is no School HTML report. `html` refuses a School workspace with a message that points

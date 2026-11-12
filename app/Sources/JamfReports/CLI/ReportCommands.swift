@@ -119,8 +119,8 @@ struct Collect: AsyncParsableCommand {
     @Option(help: "Workspace profile slug.") var profile: String
     @Option(help: "Comma-separated collection tiers (refresh,inventory,scan). Default: all.") var tiers: String?
     @Flag(help: ArgumentHelp(
-        "Collect even if the profile was collected recently (Jamf Pro: today; Jamf School: "
-            + "within 12 hours).")) var force = false
+        "Collect even if the profile was collected today, and fetch every source whether or "
+            + "not it is due (Jamf Pro and Jamf School alike).")) var force = false
 
     static func refusal(profile: String, config: ReportConfig?) -> String? {
         CollectRouter.runRefusal(profile: profile, operation: "Collect", config: config)
