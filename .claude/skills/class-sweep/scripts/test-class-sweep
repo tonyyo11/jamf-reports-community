@@ -4,7 +4,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-tmp="$(mktemp -d -t class-sweep-test)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/class-sweep-test.XXXXXX")"
 trap 'trash "${tmp}" 2>/dev/null || true' EXIT
 cd "${tmp}"
 git init -q .
