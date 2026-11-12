@@ -109,6 +109,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Health Audit's "Failed MDM commands" finding now reads "Failed MDM commands (commands,
+  all device types)" on the Health Audit screen, in its CSV export, on the workbook's Audit
+  Summary tab and in the HTML report, because its count is every failed command in Jamf Pro's
+  history on computers and mobile devices, not a count of Macs. It still gives way to "Devices
+  with failed MDM commands" once the per-device scan has run.
 - A share just below 100% or just above 0% no longer prints as 100% or 0%, on screens and in
   reports: 99.96% reads 99.9%, 0.04% reads 0.1%, and where a figure was already whole (the
   workbook's Executive Summary compliance and patch cells, chart labels, the Trends headline)
