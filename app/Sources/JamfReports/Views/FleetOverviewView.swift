@@ -80,26 +80,31 @@ struct FleetOverviewView: View {
             profileIssuesCard(for: row)
         }
 
-        HStack(spacing: 12) {
+        // The Overview's grid: a tile whose caption wraps sets the row's height for all four.
+        EqualHeightTileGrid(minTileWidth: 120) {
             StatTile(
                 label: L("Macs"),
                 value: row.summary.map { "\($0.totalDevices)" } ?? "--",
-                sub: L("Latest successful summary")
+                sub: L("Latest successful summary"),
+                fillsHeight: true
             )
             StatTile(
                 label: L("Stability"),
                 value: stabilityLabel(row.summary?.stabilityIndex, format: percentFormat),
-                sub: L("Composite index")
+                sub: L("Composite index"),
+                fillsHeight: true
             )
             StatTile(
                 label: L("Stale"),
                 value: row.summary?.staleCount.map { "\($0)" } ?? "--",
-                sub: L("Stale after \(staleDays) days")
+                sub: L("Stale after \(staleDays) days"),
+                fillsHeight: true
             )
             StatTile(
                 label: L("Patch"),
                 value: percentFormat.text(row.summary?.patchPct, missing: "--"),
-                sub: L("Devices on latest")
+                sub: L("Devices on latest"),
+                fillsHeight: true
             )
         }
 
@@ -191,6 +196,9 @@ struct FleetOverviewView: View {
                 }
                 if points.isEmpty {
                     stabilityEmptyState
+                } else if points.count == 1 {
+                    // One point draws axes and no line.
+                    stabilityOnePointState
                 } else {
                     stabilityChart(points: points)
                 }
@@ -203,6 +211,17 @@ struct FleetOverviewView: View {
             systemImage: "chart.line.uptrend.xyaxis",
             title: L("No trend summaries yet"),
             message: L("Stability history is built from daily summary snapshots written by each collect run.")
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+        .padding(.horizontal, 4)
+    }
+
+    private var stabilityOnePointState: some View {
+        EmptyStateView(
+            systemImage: "chart.line.uptrend.xyaxis",
+            title: L("One daily summary so far"),
+            message: L("The trend line starts once a second day's summary is written.")
         )
         .frame(maxWidth: .infinity)
         .frame(height: 200)
