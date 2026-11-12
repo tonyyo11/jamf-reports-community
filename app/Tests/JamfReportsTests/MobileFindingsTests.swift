@@ -132,6 +132,16 @@ final class MobileFindingsTests: XCTestCase {
         XCTAssertEqual(list.map(\.deviceNoun), Array(repeating: "Devices", count: 7))
     }
 
+    func testACappedListKeepsTheOverflowOutOfTheDeviceNames() throws {
+        let (snapshot, context) = try loaded()
+        let passcode = try XCTUnwrap(
+            finding(.passcode, in: mobileDevicesFindings(snapshot, context: context, deviceCap: 1)))
+        XCTAssertEqual(passcode.affected, 2)
+        XCTAssertEqual(passcode.devices.count, 1, "the overflow line is not a device")
+        XCTAssertEqual(passcode.moreDevices, 1)
+        XCTAssertEqual(passcode.devices.count + passcode.moreDevices, passcode.affected)
+    }
+
     /// One calculator: the card's count, the number of devices the filter lists and the figure
     /// the daily summary writes are the same number for every finding.
     func testTheCardTheFilterAndTheSummaryCountTheSameDevices() throws {

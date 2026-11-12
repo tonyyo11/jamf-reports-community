@@ -84,10 +84,10 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.failures.count, 3)
         XCTAssertEqual(snapshot.devicesWithFailures, 3, "3 unique device IDs")
 
-        let failuresByTitle = snapshot.failuresByTitle
-        XCTAssertEqual(failuresByTitle["Firefox"], 2, "2 Firefox failures")
-        XCTAssertEqual(failuresByTitle["Chrome"], 1, "1 Chrome failure")
-        XCTAssertEqual(failuresByTitle["Office"], nil, "No Office failures")
+        let failing = try XCTUnwrap(snapshot.failingDevicesByTitle)
+        XCTAssertEqual(failing["Firefox"], 2, "2 Firefox failures")
+        XCTAssertEqual(failing["Chrome"], 1, "1 Chrome failure")
+        XCTAssertEqual(failing["Office"], nil, "No Office failures")
     }
 
     /// Prod shape: jamf-cli 1.28 and 1.29 write `attempt` as text. A strict Int
@@ -176,7 +176,32 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.failingTitleCount, 0)
         XCTAssertNil(snapshot.fleetCompliancePct, "no title has devices: no figure, not 0%")
         XCTAssertEqual(snapshot.devicesWithFailures, 0)
-        XCTAssertTrue(snapshot.failuresByTitle.isEmpty)
+        XCTAssertEqual(snapshot.failingDevicesByTitle, [:], "a scan with no rows: 0, not a dash")
+    }
+
+    func testFailingDevicesJoinPolicyNamesToTitlesAndCountDevicesOnce() {
+        func failure(_ policy: String, device: String) -> PatchFailureRow {
+            PatchFailureRow(
+                policy: policy, policyId: policy, device: device, deviceId: device,
+                statusDate: "2026-11-01", attempt: 1, lastAction: "Failed", serial: "",
+                osVersion: "", username: "")
+        }
+        var snapshot = PatchStatusService.Snapshot(
+            titles: [sampleRow(title: "Google Chrome"), sampleRow(title: "Google Chrome Canary"),
+                     sampleRow(title: "Firefox")],
+            failures: [
+                failure("Firefox 130.0", device: "1"), failure("Firefox 131.0", device: "1"),
+                failure("Firefox", device: "2"),
+                failure("Google Chrome Canary 140", device: "3"),
+                failure("Google Chrome 139", device: "4"),
+                failure("Zoom 6.1", device: "5"),
+            ],
+            sourceFile: nil, snapshotDate: nil)
+        XCTAssertNil(snapshot.failingDevicesByTitle, "no scan read")
+        snapshot.failuresScanned = true
+        XCTAssertEqual(snapshot.failingDevicesByTitle, [
+            "Firefox": 2, "Google Chrome": 1, "Google Chrome Canary": 1,
+        ], "devices, not rows; the longest title wins; a policy named like no title counts for none")
     }
 
     func testCompliancePctParsing() throws {
@@ -323,7 +348,7 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.totalTitles, 1)
         XCTAssertEqual(snapshot.failures.count, 0)
         XCTAssertEqual(snapshot.devicesWithFailures, 0)
-        XCTAssertTrue(snapshot.failuresByTitle.isEmpty)
+        XCTAssertNil(snapshot.failingDevicesByTitle, "no scan read: a dash, not 0")
         XCTAssertEqual(snapshot.fleetCompliancePct, 50.0)
     }
 

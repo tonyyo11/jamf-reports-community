@@ -83,7 +83,8 @@ struct SourcesView: View {
             }
             doctorCard
             if isSchoolWorkspace { schoolPlatformCard }
-            ConnectionCard()
+            // A new identity per workspace, so one workspace's error or sheet does not stay.
+            ConnectionCard().id(workspace.profile)
             // The matrix lists `pro` commands, which a School workspace never runs.
             if workspace.environmentProducts.has(.jamfPro) { capabilityCard }
             familiesCard

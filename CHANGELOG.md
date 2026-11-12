@@ -239,6 +239,20 @@ versions in this repository map to git tags.
   run counts, the schedule summary and the stale-date wording in tables and tooltips read as whole
   translated sentences, with plural forms, instead of English fragments joined to translated words.
   Demo-mode and button tooltips are translated too.
+- The Health Audit's mobile finding details count the devices behind the finding. A list cut at 200 names counted its "and N more" line as a device, and two unnamed devices with no serial no longer clash.
+- The Overview's mobile Needs attention count opens the Health Audit on its Mobile Devices card instead of the top of the screen.
+- The Overview header shows no device count until a daily summary exists, instead of "0 Macs", and on a fleet with only mobile devices it shows their count without a compliance baseline.
+- Jamf School's Managed and Supervised tiles show a dash and "Not reported" when no device reports the field, instead of 0. Supervised is now a share of managed devices that report it, as the daily summary counts it.
+- Fleet Overview's Stale tile and issue name the workspace's own stale setting instead of a fixed 30 days.
+- On Data Sources, removing Jamf Security Cloud from an environment asks about Jamf Security Cloud, not the Platform API.
+- In the Add sheet, a profile added while the first check was still running now leaves its Add row, and making a Jamf Protect login its own environment can no longer run twice from a double click or be closed while it runs. The Platform API card's text now describes Connect new and the list below it.
+- The Patch titles table's Failures column counts failing devices for each title, joining a patch policy to the title it is named after, and shows a dash when no failure scan was collected. It used to count failure rows and read 0 for any title whose policies carried a version in their name.
+- The Generate sheet lists the day's summary file for a Jamf School collect too, under its real name.
+- The first-launch screen says Jamf Protect can be its own environment.
+- The Mobile Devices table lists every matching device instead of the first 50.
+- Deleting a backup no longer freezes the window on a large or synced folder, and the Generate sheet and Data Sources no longer check files on every redraw.
+- Resuming an interrupted workspace merge that is refused no longer offers a new merge.
+- The Connection card on Data Sources no longer keeps an error from the previous workspace.
 - A Mac that never inventoried and never checked in now counts as "Jamf binary missing" even when Jamf marks it managed, so it gets the Computers filter and remediation steps and is listed apart in Offline Outreach, the HTML report and the Check-in Health sheet instead of as a stale Mac.
 - Workbook rows that tie on a count now come out in the same order every run. The Mobile Fleet Summary's distributions and Top Models list, the Hardware Models tab and each text extension attribute's value table ordered tied rows at random, so the top ten models could change between two runs on the same data.
 - A Mac that never sent inventory reads No Data for FileVault, SIP, Firewall and Gatekeeper on every screen and report, not Jamf's placeholder values (firewall off, FileVault unencrypted), so it no longer appears under Failing controls. A Mac with real inventory and the firewall off still reads off.

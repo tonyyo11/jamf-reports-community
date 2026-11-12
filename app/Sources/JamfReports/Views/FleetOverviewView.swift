@@ -7,6 +7,8 @@ import SwiftUI
 struct FleetOverviewView: View {
     @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
+    /// `thresholds.stale_device_days`, the cut-off the summary's stale count uses.
+    private var staleDays: Int { workspace.configState.staleRule.days }
     @Environment(\.colorSchemeContrast) private var contrast
 
     @State private var overview: FleetWorkspaceOverview?
@@ -74,7 +76,7 @@ struct FleetOverviewView: View {
     private func workspaceDetail(_ row: FleetWorkspaceOverview) -> some View {
         // #184: each flagged condition gets its explanation and a route to the
         // screen where the operator can act on it.
-        if !row.issues(format: percentFormat).isEmpty {
+        if !row.issues(format: percentFormat, staleDays: staleDays).isEmpty {
             profileIssuesCard(for: row)
         }
 
@@ -92,7 +94,7 @@ struct FleetOverviewView: View {
             StatTile(
                 label: L("Stale"),
                 value: row.summary?.staleCount.map { "\($0)" } ?? "--",
-                sub: L(">30d since contact")
+                sub: L("Stale after \(staleDays) days")
             )
             StatTile(
                 label: L("Patch"),
@@ -310,7 +312,7 @@ struct FleetOverviewView: View {
                         .accessibilityHidden(true)
                     SectionHeader(title: L("Issues on This Workspace"))
                 }
-                ForEach(row.issues(format: percentFormat)) { issue in
+                ForEach(row.issues(format: percentFormat, staleDays: staleDays)) { issue in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(issue.reason)
                             .font(.callout.weight(.semibold))
@@ -403,7 +405,9 @@ struct FleetProfileIssue: Identifiable {
 }
 
 /// Why a workspace is flagged (#184), for Fleet Overview's issues card.
-func fleetProfileIssues(_ summary: DailySummary?, format: PercentFormat) -> [FleetProfileIssue] {
+func fleetProfileIssues(
+    _ summary: DailySummary?, format: PercentFormat, staleDays: Int
+) -> [FleetProfileIssue] {
     guard let summary else {
         return [FleetProfileIssue(
             reason: L("No summary collected yet"),
@@ -424,7 +428,7 @@ func fleetProfileIssues(_ summary: DailySummary?, format: PercentFormat) -> [Fle
     if let staleCount = summary.staleCount, staleCount > 0 {
         issues.append(FleetProfileIssue(
             reason: (staleCount == 1 ? L("\(staleCount) stale computer") : L("\(staleCount) stale computers")),
-            explanation: L("Computers that have not checked in for more than 30 days. Offline Outreach buckets them by how long they have been quiet."),
+            explanation: L("Computers past this workspace's stale setting: more than \(staleDays) days by the dates Config › Thresholds counts. Offline Outreach buckets them by how long they have been quiet."),
             actionLabel: L("Open Offline Outreach"),
             tab: .outreach
         ))

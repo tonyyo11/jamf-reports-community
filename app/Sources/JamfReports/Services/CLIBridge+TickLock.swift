@@ -67,6 +67,15 @@ extension CLIBridge {
         runningHoldRefusal ?? (tickLockHeldElsewhere() ? .tickLockHeld : nil)
     }
 
+    /// `collectRefusal` with the lock probe (a file read, a sysctl, an xattr) off the main
+    /// actor, for a screen that asks on a timer.
+    static func collectRefusalOffMain() async -> CLIBridgeError? {
+        if let running = runningHoldRefusal { return running }
+        let lock = tickLock()
+        let held = await Task.detached { lock.isHeldByAnotherLiveProcess() }.value
+        return held ? .tickLockHeld : nil
+    }
+
     /// The refusal for the hold running in this process, nil when none runs.
     private static var runningHoldRefusal: CLIBridgeError? {
         switch holdPurpose {

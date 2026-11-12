@@ -1367,9 +1367,10 @@ final class OnboardingFlow {
             profileSlug: profileSlug, protectProfileName: protectProfileName)
     }
 
-    /// The same write for a Protect profile jamf-cli already has (the Add sheet).
+    /// The same write for a Protect profile jamf-cli already has (the Add sheet, off the main
+    /// actor).
     @discardableResult
-    static func writeProtectConfig(
+    nonisolated static func writeProtectConfig(
         profileSlug: String, protectProfileName: String,
         appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
@@ -1395,7 +1396,7 @@ final class OnboardingFlow {
         try Self.writeProductBlock("school_cli", profile: schoolProfileName, for: profileSlug)
     }
 
-    static func writeProductBlock(
+    nonisolated static func writeProductBlock(
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
         let slot = key == "school_cli" ? "jamf_school" : key

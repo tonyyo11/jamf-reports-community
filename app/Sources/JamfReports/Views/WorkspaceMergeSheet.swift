@@ -59,7 +59,8 @@ struct WorkspaceMergeSheet: View {
     private var content: some View {
         switch model.phase {
         case .choose, .refused:
-            chooser
+            // A refused resume offers no new merge: the journal it left would refuse that too.
+            if !resumes { chooser }
             if case .refused(let text) = model.phase { banner(text, .danger) }
         case .checking:
             HStack(spacing: 8) {

@@ -83,6 +83,8 @@ final class WorkspaceStore {
     var pendingDevicesFilter: String? = nil
     /// The same for Mobile Devices (`MobileFinding` raw value), from a Health Audit count.
     var pendingMobileFilter: String? = nil
+    /// An Audit section to scroll to (`MobileDevicesSection.anchorID`), held the same way.
+    var pendingAuditSection: String? = nil
     /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
     /// which any screen sets and clears for its own work, so another screen finishing cannot
     /// wipe the line a collect still owns.

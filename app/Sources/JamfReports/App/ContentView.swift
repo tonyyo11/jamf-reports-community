@@ -185,6 +185,8 @@ struct ContentView: View {
                     from: note.userInfo, destination: newTab)
                 workspace.pendingMobileFilter = MobileFinding.pending(
                     from: note.userInfo, destination: newTab)
+                workspace.pendingAuditSection = newTab == .audit
+                    ? note.userInfo?[MobileDevicesSection.userInfoKey] as? String : nil
                 tab = newTab
             }
         }

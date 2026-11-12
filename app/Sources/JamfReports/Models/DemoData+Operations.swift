@@ -87,7 +87,8 @@ extension DemoData {
         },
         failures: patchFailures,
         sourceFile: nil,
-        snapshotDate: referenceDate
+        snapshotDate: referenceDate,
+        failuresScanned: true
     )
 
     // MARK: - OS Updates

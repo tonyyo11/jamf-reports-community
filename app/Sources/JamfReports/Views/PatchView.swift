@@ -202,6 +202,7 @@ struct PatchView: View {
                     .accessibilityLabel("Export patch titles table as PNG")
                     .help("Save the patch titles table as a PNG image")
                 }
+                let failingDevices = snapshot.failingDevicesByTitle
                 Table(Array(sortedTitles.prefix(Self.titlesDisplayCap))) {
                     TableColumn("Title") { title in
                         Text(title.title)
@@ -267,12 +268,16 @@ struct PatchView: View {
                     .width(min: 120, ideal: 140)
 
                     TableColumn("Failures") { title in
-                        let failureCount = snapshot.failuresByTitle[title.title] ?? 0
-                        Text("\(failureCount)")
+                        // No failure scan read: a dash, not 0 failing devices.
+                        let failureCount = failingDevices.map { $0[title.title] ?? 0 }
+                        Text(failureCount.map { "\($0)" } ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(failureCount > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
+                            .foregroundStyle((failureCount ?? 0) > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel(failureCount == 1 ? L("\(failureCount) device with patch failures") : L("\(failureCount) devices with patch failures"))
+                            .accessibilityLabel(failureCount.map {
+                                $0 == 1 ? L("\($0) device with patch failures")
+                                    : L("\($0) devices with patch failures")
+                            } ?? L("No failure scan collected"))
                     }
                     .width(min: 80, ideal: 90)
                 }

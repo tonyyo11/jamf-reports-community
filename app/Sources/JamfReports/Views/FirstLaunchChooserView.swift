@@ -193,7 +193,7 @@ struct FirstLaunchChooserView: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "questionmark.circle")
                 .foregroundStyle(Theme.Colors.fgMuted)
-            Text("Only Jamf Protect or Jamf Security Cloud? Jamf Reports reports on a Jamf Pro or Jamf School fleet. Jamf Protect is added to a Jamf Pro or Jamf School workspace, and Jamf Security Cloud is not supported yet.")
+            Text("Only Jamf Protect or Jamf Security Cloud? Jamf Protect can be its own environment, or be added to a Jamf Pro or Jamf School one. Jamf Security Cloud is not supported yet.")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)

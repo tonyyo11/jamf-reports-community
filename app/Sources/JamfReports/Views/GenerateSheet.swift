@@ -363,6 +363,8 @@ struct GenerateSheet: View {
     let onGenerated: @MainActor () -> Void
 
     @State private var state: GenerateSheetState
+    /// The footer's last read of `generateRefusalOffMain`; Generate re-checks on click.
+    @State private var footerRefusal: CLIBridgeError?
 
     /// `freshness`, read by the presenter before the sheet opens, sets Collect fresh from the
     /// first frame; nil (demo mode) leaves it on.
@@ -518,9 +520,9 @@ struct GenerateSheet: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
-            // A Jamf School collect writes no daily summary yet (environment-model spec P8).
-            if state.collectFresh && !state.schoolMode {
-                Text("• summary.json (Trends snapshot)")
+            // Jamf Pro and Jamf School collects both write the day's summary (School since 2.11).
+            if state.collectFresh {
+                Text("• summary_<date>.json (Trends snapshot)")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -956,16 +958,21 @@ struct GenerateSheet: View {
         }
     }
 
-    /// Re-read on a timer: a hold in this process and a scheduled run's lock are not observable,
-    /// so nothing else redraws the footer when they end.
+    /// Re-read on a timer, off the main actor: a hold in this process and a scheduled run's lock
+    /// are not observable, so nothing else redraws the footer when they end.
     private var footer: some View {
-        TimelineView(.periodic(from: .now, by: 2)) { _ in footerRow }
+        footerRow.task {
+            while !Task.isCancelled {
+                footerRefusal = await workspace.generateRefusalOffMain()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 
     private var footerRow: some View {
         let waiting = GenerateSheetState.waitingMessage(
             isRunning: state.isRunning,
-            refusal: state.isRunning ? nil : workspace.generateRefusal(),
+            refusal: state.isRunning ? nil : footerRefusal,
             status: workspace.collectStatus)
         return HStack {
             if let waiting {

@@ -759,11 +759,17 @@ struct BackupsView: View {
     @MainActor
     private func deleteBackup(_ backup: BackupRecord) async {
         guard !workspace.demoMode else { return }
-        do {
-            try FileManager.default.removeItem(at: backup.url)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        // A backup folder can hold thousands of files on synced or SMB storage.
+        let url = backup.url
+        let failure: String? = await Task.detached {
+            do {
+                try FileManager.default.removeItem(at: url)
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
+        if let failure { errorMessage = failure }
         await reload()
     }
 
