@@ -12,13 +12,13 @@ and [JSON](agent-loop-eval/2026-10-28-waves-0-6.json).
 
 - [x] Verdicts written (agent-loop.md, "The audit").
 - [x] Eval defined and baseline measured (`loop-eval`, waves 0 to 6).
-- [ ] Verdicts agreed after the first wave scored with the eval.
+- [ ] Verdicts agreed after the first wave scored with the eval. As of 2026-11-12 no wave after the 2026-10-28 baseline has been scored: the 2.12 NFR wave and the environment-model stack ran without a `loop-eval` comparison, so every "Pending" below still stands.
 
 ## Changes
 
 | # | Change | Verdict it applies | Status | Measured result |
 |---|---|---|---|---|
-| 1 | Skills `review-package`, `class-sweep`, `changelog-union`, `bundle-wave`, `stack-adopt`, `tip-test` replace retyped shell | `fold` | Landed with this plan | Pending: next wave. Expect no change in rounds or findings; the check is that no step was typed by hand and no flag error recurs. |
+| 1 | Skills `review-package`, `class-sweep`, `changelog-union`, `bundle-wave`, `stack-adopt`, `tip-test` replace retyped shell | `fold` | Landed with this plan | Pending: next wave. Expect no change Expect no change in rounds or findings; the check is that no step was typed by hand and no flag error recurs. |
 | 2 | `loop-eval` and the committed baseline | `fold` (eval) | Landed | Baseline taken; first comparison is the next wave. |
 | 3 | Scoped re-review of a small, plain fix round (under about 150 changed source lines, no new seam, file write path or product gate) becomes a controller read | `fold` | Rule written; the baseline already has 8 rounds confirmed handled this way (11 by ledger phrase) | Pending: re-review seats should stay at or below the baseline's 7 while rounds, MUST-FIX and SHOULD-FIX do not rise. |
 | 4 | Ledger line format (one line per event) so the eval parses cleanly | n/a | Written in the plan's SDD section | Pending: next ledger reports no unreadable task lines. |

@@ -1,5 +1,7 @@
 # SMAppService Ticker Implementation Plan
 
+Status: shipped in 2.8.0. As built, the entry point is `app/Sources/JamfReportsMain/main.swift` (the plan names `App/main.swift`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace every `~/Library/LaunchAgents` plist the app writes with one bundled `SMAppService` agent that wakes every 5 minutes and runs whatever schedule is due, with hand-built schedules stored as per-machine app state.
