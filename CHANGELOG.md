@@ -109,6 +109,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A Jamf School environment with Jamf Security Cloud no longer records a Security Cloud match
+  share. School devices reach Security Cloud by management ID, not UDID, so the match read close
+  to 0 of every device; the device count and risk counts are still recorded, and Trends and the
+  `security_cloud_matched_pct` alert get no figure for School instead of a wrong one.
 - A cell that is only a plain negative number, such as an unresolved app ID of -5 or an mSCP
   "no baseline" count of -1, now reads exactly as Jamf reported it in workbooks and CSV files,
   without the hidden tab the formula guard used to put in front of it. Anything else that starts

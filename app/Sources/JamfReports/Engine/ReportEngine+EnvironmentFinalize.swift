@@ -95,9 +95,11 @@ extension ReportEngine {
 
     /// The Security Cloud figures (P12), read only when `landed` has `security-risk` and its
     /// newest snapshot reads; nil otherwise. The match uses `SecurityCloudCorrelation`, the one
-    /// calculator, against the environment's inventory, and is left out when any inventory
-    /// snapshot it would read (computers and mobile devices, or School's devices) is past
-    /// `max_cache_age_hours`.
+    /// calculator, against the Jamf Pro computers and mobile devices, and is left out when
+    /// either snapshot is past `max_cache_age_hours`. A Jamf School environment gets no match:
+    /// School devices reach Security Cloud by management ID, not UDID (Security Cloud spec,
+    /// "Identity keys"), and the reduced rows keep no management ID, so a UDID match would read
+    /// near 0 of N.
     static func securityCloudSummaryFigures(
         dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
         hasInventory: Bool = true, maxCacheAgeHours: Int = 168,
@@ -105,21 +107,18 @@ extension ReportEngine {
     ) -> SecurityCloudSummaryFigures? {
         guard landed.contains(securityRiskKind),
               let rows = SecurityRiskRow.load(dataDir: dataDir) else { return nil }
-        // The mobile rows come from whichever kind the reader picks (it can be the legacy one).
-        let mobile = school ? nil : MobileFleetService.load(dataDir: dataDir)
-        let kinds = school ? ["school-devices"]
-            : ["computers"] + [mobile?.inventoryKind].compactMap { $0 }
-        let stale = hasInventory ? staleInventoryKind(
-            dataDir: dataDir, kinds: kinds, maxCacheAgeHours: maxCacheAgeHours) : nil
-        if let stale {
-            logMatchLeftOut("Security Cloud", kind: stale, hours: maxCacheAgeHours, onLine)
-        }
-        let correlation: SecurityCloudCorrelation? = if !hasInventory || stale != nil {
-            nil
-        } else if let mobile {
-            SecurityCloudCorrelation.load(rows: rows, profile: workspace.name, mobile: mobile)
-        } else {
-            SecurityCloudCorrelation.load(rows: rows, schoolProfile: workspace.name)
+        var correlation: SecurityCloudCorrelation?
+        if hasInventory, !school {
+            // The mobile rows come from whichever kind the reader picks (it can be the legacy one).
+            let mobile = MobileFleetService.load(dataDir: dataDir)
+            let kinds = ["computers"] + [mobile.inventoryKind].compactMap { $0 }
+            if let stale = staleInventoryKind(
+                dataDir: dataDir, kinds: kinds, maxCacheAgeHours: maxCacheAgeHours) {
+                logMatchLeftOut("Security Cloud", kind: stale, hours: maxCacheAgeHours, onLine)
+            } else {
+                correlation = SecurityCloudCorrelation.load(
+                    rows: rows, profile: workspace.name, mobile: mobile)
+            }
         }
         return .init(
             count: rows.count, matched: correlation?.matchedShare,

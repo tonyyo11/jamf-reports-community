@@ -155,11 +155,10 @@ struct ProtectProCorrelation: Sendable {
 
 /// Which Security Cloud risk rows are devices of this environment's inventory, by `externalId`
 /// (the device UDID; Security Cloud writes it lowercased, Jamf Pro uppercase, so identifiers
-/// compare lowercased). The inventory is the Jamf Pro computers and mobile devices, or the Jamf
-/// School devices (their `udid` is assumed the same, unverified against a tenant). A name never
-/// joins and a row with no `externalId` is counted apart.
+/// compare lowercased). The inventory is the Jamf Pro computers and mobile devices; Jamf School
+/// devices are never matched, since they reach Security Cloud by management ID, which the reduced
+/// rows do not keep. A name never joins and a row with no `externalId` is counted apart.
 struct SecurityCloudCorrelation: Sendable {
-    var inventory = ProtectProCorrelation.Inventory.jamfPro
     var securityCount = 0
     var inventorySize = 0
     var matched = 0
@@ -211,16 +210,5 @@ struct SecurityCloudCorrelation: Sendable {
         guard computers != nil || mobile.isDetected else { return nil }
         let devices = mobile.richDevices.map { udidRecord($0.general?.udid, source: "mobile") }
         return build(rows: rows, inventory: (computers ?? []) + devices)
-    }
-
-    /// Against the Jamf School devices by `udid`; nil when there is no `school-devices`
-    /// snapshot.
-    static func load(rows: [SecurityRiskRow], schoolProfile: String) -> SecurityCloudCorrelation? {
-        let snapshot = SchoolFleetService.load(profile: schoolProfile)
-        guard snapshot.devicesDate != nil else { return nil }
-        var result = build(
-            rows: rows, inventory: snapshot.devices.map { udidRecord($0.udid, source: "school") })
-        result.inventory = .jamfSchool
-        return result
     }
 }
