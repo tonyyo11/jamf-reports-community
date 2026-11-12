@@ -62,6 +62,19 @@ final class SummaryEnvironmentFieldsTests: XCTestCase {
         XCTAssertEqual(merged.osMajorCounts, ["macOS 26": 5])
     }
 
+    /// A merge must not pair the target's open total with the source's severity counts.
+    func testFillingTakesPairedFiguresAsOneGroup() {
+        let target = base(open: 0)
+        let source = base(matched: .init(met: 3, of: 4), open: 3, alerts: ["high": 3], count: 4)
+        let merged = target.filling(from: source)
+        XCTAssertEqual(merged.protectOpenAlerts, 0)
+        XCTAssertNil(merged.protectAlertCounts)
+        XCTAssertTrue(merged.numbersAreInRange)
+        let countOnly = base(count: 9).filling(from: source)
+        XCTAssertEqual(countOnly.protectComputerCount, 9)
+        XCTAssertEqual(countOnly.protectMatched, .init(met: 3, of: 4), "a share stands alone")
+    }
+
     func testRangeCheckRejectsBadValues() {
         XCTAssertTrue(base(matched: .init(met: 5, of: 5), open: 2, alerts: ["high": 2]).numbersAreInRange)
         XCTAssertFalse(base(count: -1).numbersAreInRange)

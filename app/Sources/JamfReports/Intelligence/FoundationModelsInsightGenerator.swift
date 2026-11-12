@@ -78,7 +78,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         } catch let error as FleetInsightError {
             throw error
         } catch {
-            AppLogger.platform.error("Fleet insight generation failed: \(error.localizedDescription, privacy: .private)")
+            AppLogger.platform.error("Fleet insight generation failed: \(error.englishDescription, privacy: .private)")
             throw FleetInsightError.generationFailed(Self.userMessage(for: error))
         }
     }
@@ -136,7 +136,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
                 } catch let error as FleetInsightError {
                     continuation.finish(throwing: error)
                 } catch {
-                    AppLogger.platform.error("Fleet insight stream failed: \(error.localizedDescription, privacy: .private)")
+                    AppLogger.platform.error("Fleet insight stream failed: \(error.englishDescription, privacy: .private)")
                     continuation.finish(
                         throwing: FleetInsightError.generationFailed(Self.userMessage(for: error))
                     )

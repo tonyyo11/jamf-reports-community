@@ -18,6 +18,15 @@ final class JamfCLIConfigLocationTests: XCTestCase {
         }
     }
 
+    func testAMissingTMPDIRGetsThisAccountsTemporaryFolderNotTmp() {
+        let temp = CLIBridge.environmentForJamfCLI(parent: [:])["TMPDIR"]
+        XCTAssertNotEqual(temp, "/tmp")
+        XCTAssertEqual(temp, CLIBridge.perUserTemporaryDirectory)
+        XCTAssertTrue(temp?.hasPrefix("/var/folders/") ?? false
+                      || temp?.hasPrefix("/private/var/folders/") ?? false, temp ?? "nil")
+        XCTAssertEqual(CLIBridge.environmentForJamfCLI(parent: ["TMPDIR": "/x/"])["TMPDIR"], "/x/")
+    }
+
     func testConfigPathPrefersAbsoluteXDGConfigHome() {
         let url = ProfileService.jamfCLIConfigFileURL(
             environment: ["XDG_CONFIG_HOME": "/Volumes/Cfg/xdg"], home: home)

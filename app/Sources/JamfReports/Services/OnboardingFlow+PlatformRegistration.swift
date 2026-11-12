@@ -63,8 +63,8 @@ extension OnboardingFlow {
         }
         let config = workspace.appendingPathComponent("config.yaml")
         guard !FileManager.default.fileExists(atPath: config.path) else { return false }
-        try ScaffoldService.writeMinimalConfig(to: config, profile: profile)
-        SharedConfigPin.confirmWrittenConfig(at: config, profile: profile)
+        let written = try ScaffoldService.writeMinimalConfig(to: config, profile: profile)
+        SharedConfigPin.confirmWrittenConfig(written, at: config, profile: profile)
         return true
     }
 
@@ -80,12 +80,14 @@ extension OnboardingFlow {
             throw FlowError.invalidProfile
         }
         let config = workspace.appendingPathComponent("config.yaml")
+        let written: String
         do {
-            try ScaffoldService.createProtectOnlyConfig(at: config, profile: login)
+            written = try ScaffoldService.createProtectOnlyConfig(at: config, profile: login)
         } catch CocoaError.fileWriteFileExists {
             throw FlowError.workspaceHasConfig(login)
         }
-        SharedConfigPin.confirmWrittenConfig(at: config, profile: login, appSupport: appSupport)
+        SharedConfigPin.confirmWrittenConfig(
+            written, at: config, profile: login, appSupport: appSupport)
         SharedConfigPin.confirmWritten(
             login, key: .protectProfile, profile: login, appSupport: appSupport)
     }

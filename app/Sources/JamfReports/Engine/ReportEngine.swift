@@ -181,7 +181,7 @@ struct ReportEngine: Sendable {
         } catch {
             AppLogger.report.warning("""
                 generate: could not create \(folder.path, privacy: .private) for chart PNGs: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
         }
     }
@@ -315,7 +315,7 @@ struct ReportEngine: Sendable {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
             let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): "
-                + error.localizedDescription
+                + error.englishDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -419,7 +419,7 @@ struct ReportEngine: Sendable {
             return true
         } catch {
             let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): "
-                + error.localizedDescription
+                + error.englishDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
             if label.isEmpty { print(msg) }
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -460,7 +460,7 @@ struct ReportEngine: Sendable {
         do {
             try fm.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "[warn] Could not create summaries dir: \(error.localizedDescription)"
+            let msg = "[warn] Could not create summaries dir: \(error.englishDescription)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -628,7 +628,7 @@ struct ReportEngine: Sendable {
             onLine?(.init(timestamp: Date(), level: .ok, text: msg))
             return true
         } catch {
-            let msg = "\(Self.summaryNotWrittenMarker) \(error.localizedDescription)"
+            let msg = "\(Self.summaryNotWrittenMarker) \(error.englishDescription)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
@@ -1526,7 +1526,7 @@ struct ReportEngine: Sendable {
             try png.write(to: url, options: .atomic)
         } catch {
             AppLogger.report.warning(
-                "[warn] PNG export failed for \(kind, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "[warn] PNG export failed for \(kind, privacy: .public): \(error.englishDescription, privacy: .private)"
             )
         }
     }
@@ -1548,7 +1548,7 @@ struct ReportEngine: Sendable {
             return try WorkspacePaths.historicalDir(for: profile)
         } catch {
             let msg = "[warn] could not resolve historical_csv_dir for '\(profile)': " +
-                      "\(error.localizedDescription) — summary skipped"
+                      "\(error.englishDescription) — summary skipped"
             AppLogger.report.warning("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return nil
@@ -1577,7 +1577,7 @@ struct ReportEngine: Sendable {
             return try WorkspacePaths.archiveDir(for: profile)
         } catch {
             let msg = "[warn] could not resolve archive_dir for '\(profile)': " +
-                      "\(error.localizedDescription) — run rotation skipped"
+                      "\(error.englishDescription) — run rotation skipped"
             AppLogger.report.warning("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return nil
@@ -3146,7 +3146,7 @@ struct ReportEngine: Sendable {
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                    text: "[warn] \(kind): launch failed — \(error.englishDescription)"))
                 return nil
             }
         }
@@ -3268,7 +3268,7 @@ struct ReportEngine: Sendable {
             stateStore?.record(.failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
             onLine(.init(timestamp: Date(), level: .fail,
                 text: "[fail] \(kind): snapshot could not be written — "
-                    + error.localizedDescription))
+                    + error.englishDescription))
             throw error
         }
         // T-8: advances the cadence boundary and clears the failure
@@ -3547,7 +3547,7 @@ struct ReportEngine: Sendable {
         do {
             raw = try JSONSerialization.jsonObject(with: data)
         } catch {
-            throw ReportEngineError.snapshotParseError("computers: \(error.localizedDescription)")
+            throw ReportEngineError.snapshotParseError("computers: \(error.englishDescription)")
         }
         guard var rows = raw as? [[String: Any]] else {
             throw ReportEngineError.snapshotParseError("computers: unexpected JSON shape")
@@ -3871,7 +3871,7 @@ struct ReportEngine: Sendable {
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                    text: "[warn] \(kind): launch failed — \(error.englishDescription)"))
                 schoolResult = nil
             }
             guard let (exitCode, data) = schoolResult else {
@@ -3893,7 +3893,9 @@ struct ReportEngine: Sendable {
                     stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
                     continue
                 }
-                try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                try saveRecordingFailure(
+                    data, kind: kind, dataDir: dataDir, exitCode: exitCode,
+                    stateStore: stateStore, at: collectStart, onLine: onLine)
                 schoolSaved.insert(kind)
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -3967,7 +3969,7 @@ struct ReportEngine: Sendable {
                 } catch {
                     onLine(.init(timestamp: Date(), level: .warn,
                         text: "[warn] School summary: config.yaml did not load "
-                            + "(\(error.localizedDescription)); stale cut-off is 30 days"))
+                            + "(\(error.englishDescription)); stale cut-off is 30 days"))
                 }
             }
         }
@@ -4061,7 +4063,7 @@ struct ReportEngine: Sendable {
                 )
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                    text: "[warn] \(kind): launch failed — \(error.englishDescription)"))
                 protectResult = nil
             }
             guard let (exitCode, data) = protectResult else {
@@ -4081,7 +4083,9 @@ struct ReportEngine: Sendable {
                     stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
                     continue
                 }
-                try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                try saveRecordingFailure(
+                    data, kind: kind, dataDir: dataDir, exitCode: exitCode,
+                    stateStore: stateStore, at: collectStart, onLine: onLine)
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
@@ -4259,7 +4263,7 @@ struct ReportEngine: Sendable {
                 try fm.setAttributes(attrs, ofItemAtPath: url.path)
             } catch {
                 AppLogger.collect.warning(
-                    "initializeWorkspace: setAttributes failed for \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                    "initializeWorkspace: setAttributes failed for \(url.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
                 )
             }
         }
@@ -4590,7 +4594,7 @@ struct ReportEngine: Sendable {
             )
         } catch {
             AppLogger.collect.warning(
-                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
         }
         // 2.6 accuracy track: stamp the sibling manifest.json so strict-mode
@@ -4607,7 +4611,7 @@ struct ReportEngine: Sendable {
                 // the "no unverified data" promise. Also surfaced on the collect
                 // stream (onLine) so it lands in Run History, not just Console.app.
                 AppLogger.collect.error(
-                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
                 )
                 onLine(.init(
                     timestamp: Date(), level: .warn,
@@ -4631,11 +4635,43 @@ struct ReportEngine: Sendable {
     /// path passes a non-zero `maxCacheAgeHours`. Report sheets pass 0 and render
     /// whatever cache exists, carrying their own "data as of" subtitles — a stale
     /// but complete report is more useful than an empty one.
+    /// `saveSnapshot` for the School, Protect and Security Cloud loops, which the Jamf Pro
+    /// loop's rule covers too: the throw aborts the collect, so the kind is recorded failed
+    /// first, or it would be the one kind with no record of having failed.
+    static func saveRecordingFailure(
+        _ data: Data, kind: String, dataDir: URL, exitCode: Int32,
+        stateStore: StateFileStore?, at collectStart: Date,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) throws {
+        do {
+            try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+        } catch {
+            stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+            onLine(.init(timestamp: Date(), level: .fail,
+                text: "[fail] \(kind): snapshot could not be written — "
+                    + error.englishDescription))
+            throw error
+        }
+    }
+
     static func loadLatestSnapshotData(
         kind: String,
         dataDir: URL,
         maxCacheAgeHours: Int = 0
     ) throws -> Data {
+        let url = try latestSnapshotURL(
+            kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours)
+        return try BoundedFile.read(
+            url, limit: BoundedFile.limit(for: url), followSymlinks: false, inside: dataDir)
+    }
+
+    /// The newest snapshot `loadLatestSnapshotData` would read, with its age check, without
+    /// reading it: an age test on a 13 MB `computers` file needs only the name.
+    static func latestSnapshotURL(
+        kind: String,
+        dataDir: URL,
+        maxCacheAgeHours: Int = 0
+    ) throws -> URL {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
         guard let files = FileManager.snapshotFolderEntries(in: dir), !files.isEmpty else {
@@ -4669,8 +4705,7 @@ struct ReportEngine: Sendable {
                 throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
             }
         }
-        return try BoundedFile.read(
-            url, limit: BoundedFile.limit(for: url), followSymlinks: false, inside: dataDir)
+        return url
     }
 
     /// Merge `ea-results` snapshot into computer rows.
@@ -4756,7 +4791,7 @@ struct ReportEngine: Sendable {
             return hex
         } catch {
             fputs("[warn] sha256 sidecar: could not write \(sidecarURL.lastPathComponent): "
-                + "\(error.localizedDescription)\n", stderr)
+                + "\(error.englishDescription)\n", stderr)
             return nil
         }
     }
@@ -4808,7 +4843,7 @@ struct ReportEngine: Sendable {
             try manifest.write(to: manifestURL, atomically: true, encoding: .utf8)
         } catch {
             fputs("[warn] manifest: could not write \(manifestURL.lastPathComponent): "
-                + "\(error.localizedDescription)\n", stderr)
+                + "\(error.englishDescription)\n", stderr)
         }
         return hex
     }

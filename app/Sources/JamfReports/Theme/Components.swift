@@ -398,8 +398,8 @@ struct PNPToggle: View {
         // adding 2pt top+bottom padding lifts the interactive area to 36×26pt.
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .accessibilityLabel(label.isEmpty ? "Toggle" : label)
-        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityLabel(label.isEmpty ? L("Toggle") : label)
+        .accessibilityValue(isOn ? L("On") : L("Off"))
         .accessibilityAddTraits(.isButton)
     }
 }

@@ -278,7 +278,7 @@ extension WorkspaceStore {
         } catch {
             fputs(
                 "[warn] could not register the background item: "
-                    + "\(error.localizedDescription)\n",
+                    + "\(error.englishDescription)\n",
                 stderr)
         }
     }
@@ -319,7 +319,7 @@ extension WorkspaceStore {
                 AppLogger.schedule.error(
                     """
                     ticker \(wantsTicker ? "register" : "unregister", privacy: .public) failed: \
-                    \(error.localizedDescription, privacy: .private)
+                    \(error.englishDescription, privacy: .private)
                     """
                 )
             }
@@ -762,7 +762,7 @@ extension WorkspaceStore {
                     AppLogger.collect.info(
                         """
                         Auto-remediation stood down for \(profile, privacy: .private): \
-                        \(error.localizedDescription, privacy: .private)
+                        \(error.englishDescription, privacy: .private)
                         """
                     )
                     return true
@@ -774,7 +774,7 @@ extension WorkspaceStore {
                     """
                     Auto-remediation collect failed for \(profile, privacy: .private) \
                     tier \(tier.rawValue, privacy: .public): \
-                    \(error.localizedDescription, privacy: .private)
+                    \(error.englishDescription, privacy: .private)
                     """
                 )
             }
@@ -1099,13 +1099,13 @@ extension WorkspaceStore {
                 AppLogger.collect.info(
                     """
                     Catch-up stood down for \(profile, privacy: .private): \
-                    \(error.localizedDescription, privacy: .private)
+                    \(error.englishDescription, privacy: .private)
                     """
                 )
                 return true
             }
             AppLogger.cli.warning(
-                "Catch-up collect failed for \(profile, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "Catch-up collect failed for \(profile, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
         }
         return false

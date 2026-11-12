@@ -178,7 +178,7 @@ from `protect overview / alerts / computers / insights`.
 
 ### Jamf School
 Jamf's education-focused MDM (a separate product from Jamf Pro, not just a
-mode). Uses named-key envelope JSON shapes, API key auth (not OAuth2), and
+mode). Collected rows are flat lowerCamelCase arrays, API key auth (not OAuth2), and
 its own resource model. JamfReports' school reports cover devices, groups,
 users, classes, apps, profiles, and locations.
 
@@ -325,8 +325,9 @@ JamfReports composes for every API call.
 A saved set of tenant connection settings (URL, client ID, and a reference to
 the secret) keyed by slug. Lives in jamf-cli's own configuration file; the
 secret itself is in the keychain, an environment variable or a file, as the
-reference says. JamfReports' "profile" maps
-1:1 to a jamf-cli profile. *see also: Profile slug.*
+reference says. A jamf-cli profile is not a workspace: a workspace is named for one
+Jamf Pro or Jamf School profile and can also hold a Platform API, a Jamf Protect and a Jamf
+Security Cloud profile. *see also: Environment, Profile slug.*
 
 ### Namespaces
 jamf-cli's subcommand groups: `pro` (Jamf Pro), `protect` (Jamf Protect),
@@ -361,6 +362,12 @@ five minutes (`JamfReports --tick`) and runs whatever managed or hand-built sche
 due, catching up a missed fire on the next wake. Replaces the legacy per-schedule
 *LaunchAgent (historical)* mechanism. *see also: LaunchAgent (historical), Dead-man
 switch.*
+
+### Binary missing
+A Mac that has never checked in and that Jamf lists as unmanaged or has never inventoried
+(an enrolled Mac, such as a "DEP - <serial>" record, with no Jamf binary). It is not stale and
+not a contact gap; Computers, Offline Outreach and the HTML report list it apart. *see also:
+Contact gap, Stale device.*
 
 ### Claim
 A short lease a run publishes to a shared workspace
@@ -412,6 +419,14 @@ a failed one. A schedule that should have fired (past its expected time plus a 6
 grace window) with no recorded run is flagged overdue; a schedule that ran but reported
 failure is flagged failing. Surfaces on the Overview banner and the Automation screen's
 Automation Health section.
+
+### Environment
+What one workspace is: a Jamf Pro or Jamf School profile plus the add-on profiles named in the
+`profiles:` block of `config.yaml` — a Platform API profile for the same Jamf Pro, a Jamf
+Protect login and a Jamf Security Cloud login. A workspace with only a Protect login is a
+Protect-only environment. The Data Sources **Environment card** shows and edits the slots, and
+**Merge another workspace into this one** folds a Platform API workspace for the same server
+into the Jamf Pro one. *see also: Workspace.*
 
 ### Freshness chip
 A per-kind indicator (Patch Compliance, Security Posture, OS Updates, Computers) showing
@@ -465,11 +480,21 @@ independently — one compliance-band series per baseline, never summed across
 frameworks. The Trends screen shows a baseline picker only when more than one baseline
 is configured. *see also: mSCP, Compliance Band.*
 
+### Needs attention
+An item in the health strip for a warning a run logged that you have to act on, such as a
+rejected webhook or a skipped Protect backup. It clears itself when the next run's check
+passes; **Dismiss** hides it on this Mac until it happens again.
+
 ### Notify detail
 The `notify.detail` config setting (`full` | `minimal`) controlling how much a webhook
 card reveals. `full` (default) includes metric names/values, error text, and schedule
 names; `minimal` reduces every card to event facts — counts and statuses only — for
 headless or high-security deployments.
+
+### Percent decimals
+`display.percent_decimals`: whether every percentage prints with one decimal (the default,
+`56.7%`) or as a whole number (`57%`). Only the display rounds; stored figures, thresholds and
+alerts keep full precision. Set under Customize › Percentages.
 
 ### Patch velocity
 Per-title patch-adoption speed, built from every dated `patch-status` snapshot on disk:
@@ -485,17 +510,21 @@ from, percentage changes are in percentage points, and extension attributes are
 opt-in. *see also: summary.json, TrendStore.*
 
 ### Profile (workspace profile)
-A logical tenant within JamfReports. Each profile gets its own
-`~/Jamf-Reports/<slug>/` directory, its own jamf-cli profile, its own
-`config.yaml`, and its own cached snapshots. Switching profiles in the
-sidebar re-routes every screen.
+The name of a workspace: its Jamf Pro or Jamf School jamf-cli profile. The profile gets its
+own `~/Jamf-Reports/<slug>/` directory, its own `config.yaml` and its own cached snapshots.
+Switching workspaces in the sidebar re-routes every screen. *see also: Environment, Workspace.*
 
 ### Profile slug
-The string identifier for a profile: its jamf-cli profile name, used exactly as jamf-cli
+The string identifier for a workspace: its jamf-cli profile name, used exactly as jamf-cli
 spells it. Any name jamf-cli accepts works except one that is empty, has a control
 character, starts or ends with a space, or is very long. Folders, file names and schedule
 labels use an encoded form, so no name can reach outside the workspace root (security
 invariant). Examples: `prod`, `Dev`, `Acme Prod`.
+
+### Run manifest
+The `<name>.manifest.json` every generate run writes beside its files: each file's size and
+SHA-256. With `output.timestamp_authority` set, an RFC 3161 reply is saved beside it as
+`<name>.tsr`. `jamf-reports verify` rechecks both. *see also: Snapshot manifest.*
 
 ### Refresh tier
 The cheapest, most frequent collection tier — the `overview`, `security`,
@@ -515,6 +544,11 @@ also: Security Score, Stability Index, Compliance Band.*
 A snapshot recovered from a truncated jamf-cli JSON file by keeping only its last
 complete top-level array element. A salvaged day is excluded from EA coverage-drift
 comparisons in Config Doctor so a partial day is never misread as a real coverage change.
+
+### Security Cloud (Jamf Security Cloud)
+A Jamf product whose device risk list the app can collect (`security risk list`) once a
+`jamf-cli security setup` login is attached to an environment. Only a few status fields per
+device are kept; devices are matched to the environment's inventory by UDID.
 
 ### Security policy
 The `security_policy` block of a workspace's config.yaml: for each of FileVault,
@@ -541,6 +575,11 @@ config. Coordination turns itself on when the folder is synced. Everyone with
 folder access can read the raw device data it holds — that decision is the
 operator's, not the app's. *see also: Claim, Stand-down, Workspace.*
 
+### Site-limited login
+A jamf-cli login whose Jamf Pro user account is limited to some sites, so lists and reports
+cover only those sites while the server's totals stay server-wide. The app compares the two
+and warns that a report covers only what the login sees. *see also: Config Doctor.*
+
 ### Snapshot manifest
 The sibling `manifest.json` SHA-256 file written next to each collected snapshot when
 `jamf_cli.require_manifest: true`, used to detect tampering between collect and
@@ -565,16 +604,21 @@ Outreach dashboard tiers further bucket by that stale age into Recent (0–30d) 
 
 ### Stand-down
 A scheduled collect declining to run because another Mac collected the same
-shared workspace inside `shared_workspace.min_collect_interval_hours`. The run
-log names which machine and when, and the run is recorded as partial — it does
-not update Trends, send a success notification, or evaluate metric alerts,
-because nothing new landed. Pressing Refresh in the app always collects
+shared workspace inside `shared_workspace.min_collect_interval_hours`, or holds a
+live claim, or because today's collect already ran. It stops every product of the
+environment together. The run log names which machine and when. A stand-down for a
+live claim is recorded as partial; one for a recent collect is not, though the
+tick keeps retrying while the day has no summary. Either way it does not update
+Trends, send a success notification, or evaluate metric alerts, because nothing
+new landed. Pressing Refresh in the app always collects
 regardless. *see also: Claim, Shared workspace.*
 
 ### summary.json
-A per-day snapshot file under `~/Jamf-Reports/<profile>/snapshots/computers/summaries/`
-containing aggregate metrics (date, total devices, compliance %, FV %,
-patch %, etc.). `TrendStore` reads these to build historical trend charts.
+The per-day summary file, `summary_<date>.json`, under
+`~/Jamf-Reports/<profile>/snapshots/summaries/` (the `snapshots` part follows
+`charts.historical_csv_dir`), containing aggregate metrics (date, total devices, compliance %,
+FV %, patch %, etc., plus mobile, Protect and Security Cloud figures where the environment has
+them). `TrendStore` reads these to build historical trend charts.
 Each `generate`/`collect` run emits one.
 
 ### TrendStore
@@ -583,17 +627,16 @@ active profile and exposes the points the Trends and Overview dashboards
 chart against. Range defaults to 4 weeks (configurable in Settings).
 
 ### Scan tier
-The most expensive collection tier — full device inventory and the
-per-device failure scans (`ea-results --all`, `patch-status
---scan-failures`, `update-status --scan-failures`, `device-compliance`).
-Minutes on large fleets; schedule it overnight on rate-limited tenants.
+The most expensive collection tier — the per-device failure scans (`patch-status
+--scan-failures`, `update-status --scan-failures`) and the per-device DDM status and MDM
+command-health scan. Minutes on large fleets; schedule it overnight on rate-limited tenants.
 *see also: Collection tier.*
 
 ### Workspace
-The on-disk root for a profile at `~/Jamf-Reports/<slug>/`. Contains
-`config.yaml`, `jamf-cli-data/`, `snapshots/`, `Generated Reports/`,
-`automation/logs/`, `archive/`. Path construction goes through
-`WorkspacePaths.dataDir(for:)` — never raw string interpolation.
+One environment's on-disk root at `~/Jamf-Reports/<slug>/`, named for its Jamf Pro or Jamf
+School profile. Contains `config.yaml`, `jamf-cli-data/`, `snapshots/`, `Generated Reports/`
+(and its `archive/`), `backups/`, `automation/logs/`. Path construction goes through
+`WorkspacePaths.dataDir(for:)` — never raw string interpolation. *see also: Environment.*
 
 ---
 

@@ -11,8 +11,8 @@ struct FleetWorkspaceOverview: Sendable {
     var isSchool = false
 
     /// Taken when shown, so a Customize change reads without reloading the summaries.
-    func issues(format: PercentFormat) -> [FleetProfileIssue] {
-        isSchool ? [] : fleetProfileIssues(summary, format: format)
+    func issues(format: PercentFormat, staleDays: Int) -> [FleetProfileIssue] {
+        isSchool ? [] : fleetProfileIssues(summary, format: format, staleDays: staleDays)
     }
 
     /// This overview when it was loaded for `profile`, else nil: a load that finished after

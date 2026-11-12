@@ -64,7 +64,7 @@ struct DayMarker: Sendable {
                 claimed.append(url)
             } catch {
                 // A name that cannot hold a claim; sending anyway keeps the alert.
-                log("[warn] \(name) claim failed (\(error.localizedDescription)); "
+                log("[warn] \(name) claim failed (\(error.englishDescription)); "
                     + "sending without it", onLine)
             }
         }

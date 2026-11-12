@@ -20,6 +20,16 @@ final class SchoolFleetServiceTests: XCTestCase {
         try Data(json.utf8).write(to: dir.appendingPathComponent("\(kind)_\(stamp).json"))
     }
 
+    func test_managedAndSupervised_areNilWhenNoDeviceReportsThem() throws {
+        try write(SchoolRows.json([
+            SchoolRows.device(1, omitting: ["isManaged", "isSupervised"]),
+        ]), kind: SchoolFleetService.devicesKind)
+        let snapshot = SchoolFleetService.load(dataDir: dataDir)
+        XCTAssertEqual(snapshot.devices.count, 1)
+        XCTAssertNil(snapshot.managed, "absent, not 0")
+        XCTAssertNil(snapshot.supervised)
+    }
+
     func test_noSnapshots_isNotDetected() {
         let snapshot = SchoolFleetService.load(dataDir: dataDir)
         XCTAssertFalse(snapshot.isDetected)
@@ -46,9 +56,11 @@ final class SchoolFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.devices.map(\.serial),
                        ["SCHOOL-SERIAL-001", "SCHOOL-SERIAL-002", "SCHOOL-SERIAL-004"])
         XCTAssertEqual(snapshot.trashedCount, 1)
-        XCTAssertEqual(snapshot.managedCount, 1)
+        XCTAssertEqual(snapshot.managed, .init(met: 1, of: 2),
+                       "a non-boolean managed flag is unknown and leaves the denominator")
         XCTAssertEqual(snapshot.unmanagedCount, 1, "a non-boolean managed flag is unknown")
-        XCTAssertEqual(snapshot.supervisedCount, 1)
+        XCTAssertEqual(snapshot.supervised, .init(met: 1, of: 1),
+                       "over managed devices that report it, as the daily summary counts")
         XCTAssertEqual(snapshot.devices[0].id, "SCHOOL-UDID-001")
         XCTAssertEqual(snapshot.devices[1].id, "SCHOOL-SERIAL-002",
                        "the serial stands in for a missing udid")

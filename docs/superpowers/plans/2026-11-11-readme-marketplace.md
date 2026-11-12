@@ -1,6 +1,6 @@
 # README rewrite and feature bento (Jamf Marketplace listing)
 
-Status: approved 2026-11-11 and drafted on this branch. As built: four demo-mode screens rendered
+Status: shipped in 2.12 (#404); approved 2026-11-11. As built: four demo-mode screens rendered
 with the localization layout harness (English only, 1240 pt wide); the Protect tile is text with a
 drawn severity list, so no NFR image is used. Branch `docs/readme-marketplace`
 off `dev/2-12-0`.

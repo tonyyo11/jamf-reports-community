@@ -21,10 +21,13 @@ jr_team_id_from_subject() {
 # Prints the team ID from the named identity's certificate, else from a trailing "(TEAMID)" in
 # the name, or nothing when neither gives one (a SHA-1 hash identity with no keychain match).
 jr_identity_team_id() {
-  local pem subject team trailing='\(([A-Z0-9]{10})\)$'
-  pem="$(security find-certificate -c "${1-}" -p 2>/dev/null)"
+  local pem subject team="" trailing='\(([A-Z0-9]{10})\)$'
+  # `|| ...` keeps each step from ending the caller's `set -e` run: a missing certificate must
+  # fall through to the name and then to the caller's TEAM_ID fallback, not stop the build.
+  pem="$(security find-certificate -c "${1-}" -p 2>/dev/null)" || pem=""
   if [[ -n "$pem" ]]; then
-    subject="$(printf '%s\n' "$pem" | openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null)"
+    subject="$(printf '%s\n' "$pem" | openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null)" \
+      || subject=""
     team="$(jr_team_id_from_subject "$subject")"
   fi
   if [[ -z "$team" && "${1-}" =~ $trailing ]]; then

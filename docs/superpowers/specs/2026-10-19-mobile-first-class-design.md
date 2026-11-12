@@ -1,6 +1,7 @@
 # Mobile devices as first-class devices — design
 
-Status: design, not built. This builds on the environment model
+Status: M1 to M5 shipped in 2.12. M6 (Fleet Overview device tiles and product cards) is not
+built and waits on the environment spec's P10. This builds on the environment model
 ([2026-10-19-environment-model-design.md](2026-10-19-environment-model-design.md), D1–D14
 accepted). It replaces that spec's section 10, the multi-environment view, as section 6 here
 explains. Epic #207 L5 (carried into #284) is the backlog item.
@@ -56,11 +57,14 @@ Notes:
 
 ### 3.1 Mixed fleet (Macs and mobile devices)
 
-- Managed Devices (existing): already shows both counts. Its sparkline gets the mobile series
-  beside the Mac one (#207 L5 named the Mac-only sparkline).
+- Managed Devices (existing): already shows both counts. Its sparkline stays one series: the
+  Macs, or on a fleet with no Macs the `mobileManaged` series (the 2.11 decision that Managed
+  Computers is one series; mobile devices are their own metrics, 4.1).
 - **Mobile Devices**, a new half-width `OverviewSection` (`mobileDevices`; the raw value is
   persisted, never rename it). It has four lines and nothing more:
-  1. Devices: iPad / iPhone / Apple TV counts.
+  1. Devices: iPad / iPhone / Apple TV counts, from the summary's `mobileFormFactorCounts`
+     (every mobile device; a type with none is left out). A summary written before that map
+     shows the managed mobile device count instead.
   2. OS current: share and count, against SOFA's iOS feed.
   3. Passcode compliant: share and count.
   4. Needs attention: jailbreaks + unmanaged + update errors, as one number that links to the
@@ -125,8 +129,9 @@ A separate mobile Trends would duplicate all three. `TrendSeries.Metric` gains:
 | `mobileStale` | stale count | lower is better |
 | `mobileJailbroken` | jailbreak count | lower is better |
 
-The Managed Devices hero (`.managedDevices`) plots computers and mobile devices as two lines
-when both exist. Each metric is offered only when the environment has the device type, as in
+The Managed Devices hero (`.managedDevices`) plots one series, the Macs (labelled Managed
+Computers since 2.11); mobile devices are the `mobileManaged` metric beside it, not a second
+line. Each metric is offered only when the environment has the device type, as in
 3.2. `TrendChange` words changes as it does today: percentage points for shares, whole
 devices for counts.
 

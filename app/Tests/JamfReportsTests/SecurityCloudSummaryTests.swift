@@ -125,6 +125,15 @@ final class SecurityCloudSummaryTests: XCTestCase {
         XCTAssertEqual(result.matchedShare, .init(met: 0, of: 2))
     }
 
+    /// Two rows for one device count it once, as Protect's match does.
+    func testARepeatRowOnAClaimedDeviceIsADuplicate() {
+        let result = SecurityCloudCorrelation.build(
+            rows: [.init(externalId: "aaa"), .init(externalId: "AAA"), .init(externalId: "bbb")],
+            inventory: [record("AAA"), record("CCC")])
+        XCTAssertEqual([result.matched, result.duplicates], [1, 1])
+        XCTAssertEqual(result.matchedShare, .init(met: 1, of: 2))
+    }
+
     func testNoInventoryOrNoIdentifiedRowGivesNoShare() {
         XCTAssertNil(SecurityCloudCorrelation.build(
             rows: [.init(externalId: "a")], inventory: []).matchedShare)
@@ -157,17 +166,6 @@ final class SecurityCloudSummaryTests: XCTestCase {
         let serialOnly = ProtectProCorrelation.build(
             protect: protect, pro: [record(nil, serial: "C02")])
         XCTAssertEqual(serialOnly.matchedShare, .init(met: 0, of: 1))
-    }
-
-    func testAJamfSchoolDeviceMatchesByUDID() throws {
-        try makeRoot()
-        try SchoolRows.write(
-            [SchoolRows.device(1, ["udid": up1, "os": "iPadOS 26.1"])], kind: "school-devices",
-            into: dataDir(), stamp: "20261020T090000")
-        let match = try XCTUnwrap(SecurityCloudCorrelation.load(
-            rows: rows(), schoolProfile: ws))
-        XCTAssertEqual(match.inventory, .jamfSchool)
-        XCTAssertEqual(match.matchedShare, .init(met: 1, of: 3))
     }
 
     func testProtectsMatchIgnoresMobileRecords() throws {
@@ -336,7 +334,9 @@ final class SecurityCloudSummaryTests: XCTestCase {
         XCTAssertNil(s.securityCloudMatched)
     }
 
-    func testJamfSchoolMatchesAgainstSchoolDevices() throws {
+    /// School devices reach Security Cloud by management ID, not UDID (spec "Identity keys"),
+    /// so a UDID that happens to line up is not a match and the share is left out.
+    func testJamfSchoolGetsNoMatchEvenWhenAUDIDLinesUp() throws {
         try makeRoot()
         try writeMDMSummary()
         let stamp = DateFormatter()
@@ -350,7 +350,9 @@ final class SecurityCloudSummaryTests: XCTestCase {
                                           .securityCloud: ["security-risk"]])
         let s = try summary()
         XCTAssertEqual(s.products, ["jamf_school", "security_cloud"])
-        XCTAssertEqual(s.securityCloudMatched, .init(met: 1, of: 3))
+        XCTAssertEqual(s.securityCloudDeviceCount, 3)
+        XCTAssertNotNil(s.securityCloudRiskCounts)
+        XCTAssertNil(s.securityCloudMatched)
     }
 
     func testTheRouterRecordsWhatSecurityCloudLanded() async throws {
@@ -409,7 +411,11 @@ final class SecurityCloudSummaryTests: XCTestCase {
         let filled = day(count: 9).filling(from: full)
         XCTAssertEqual(filled.securityCloudDeviceCount, 9)
         XCTAssertEqual(filled.securityCloudMatched, .init(met: 6, of: 7))
-        XCTAssertEqual(filled.securityCloudRiskCounts, ["high": 2, "low": 6])
+        // The risk counts belong to the count they were measured with: filling the older ones
+        // beside a smaller count would leave a day the range check rejects.
+        XCTAssertNil(filled.securityCloudRiskCounts)
+        let smaller = day(count: 5).filling(from: full)
+        XCTAssertTrue(smaller.numbersAreInRange)
         XCTAssertTrue(full.numbersAreInRange)
         XCTAssertFalse(day(matched: .init(met: 6, of: 5)).numbersAreInRange)
         XCTAssertFalse(day(matched: .init(met: -1, of: 5)).numbersAreInRange)

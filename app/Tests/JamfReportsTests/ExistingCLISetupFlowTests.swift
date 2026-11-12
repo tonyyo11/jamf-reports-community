@@ -579,6 +579,33 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         XCTAssertEqual(flow.statuses["Example-API"], .pending)
     }
 
+    func testPlatformProbesRunTogetherAndOnlyWithAnOAuthCandidate() async {
+        actor InFlight {
+            var now = 0, peak = 0, calls = 0
+            func enter() { now += 1; calls += 1; peak = max(peak, now) }
+            func leave() { now -= 1 }
+        }
+        let gateways = (1...3).map {
+            JamfCLIProfile(name: "API-\($0)", url: "us.api.jamfcloud.com", schedules: 0,
+                           status: .idle, authMethod: "platform", platformLevel: .environment)
+        }
+        let probes = InFlight()
+        let learn: @Sendable (String) async -> String? = { _ in
+            await probes.enter()
+            try? await Task.sleep(for: .milliseconds(100))
+            await probes.leave()
+            return nil
+        }
+        await ExistingCLISetupFlow(profiles: gateways).resolveProposal(list: { nil }, learn: learn)
+        let unasked = await probes.calls
+        XCTAssertEqual(unasked, 0, "no oauth2 profile could be the twin")
+        await ExistingCLISetupFlow(profiles: [example] + gateways)
+            .resolveProposal(list: { nil }, learn: learn)
+        let (calls, peak) = await (probes.calls, probes.peak)
+        XCTAssertEqual(calls, 3)
+        XCTAssertEqual(peak, 3)
+    }
+
     func testRemovedPlatformIsNotWritten() async {
         let flow = ExistingCLISetupFlow(profiles: [example, exampleAPI])
         await flow.resolveProposal(learn: { _ in "https://example.jamfcloud.com" })

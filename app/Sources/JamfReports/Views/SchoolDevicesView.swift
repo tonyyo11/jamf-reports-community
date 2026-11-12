@@ -19,7 +19,7 @@ struct SchoolDevicesView: View {
         var id: String { rawValue }
     }
 
-    private var staleDays: Int { Int(workspace.configState.staleDeviceDays) ?? 30 }
+    private var staleDays: Int { workspace.configState.staleRule.days }
 
     var body: some View {
         PageScaffold {
@@ -30,7 +30,7 @@ struct SchoolDevicesView: View {
                 lastModified: snapshot.collectedAt
             )
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "devices")
+                ScreenLoadingCard(what: L("devices"))
             } else {
                 if snapshot.devicesDate == nil {
                     emptyState
@@ -223,10 +223,14 @@ struct SchoolDeviceTiles: View {
         let total = snapshot.devices.count
         EqualHeightTileGrid(minTileWidth: 200) {
             StatTile(label: L("Devices"), value: "\(total)", sub: platformLine, fillsHeight: true)
-            StatTile(label: L("Managed"), value: "\(snapshot.managedCount)",
-                     sub: share(snapshot.managedCount, of: total), fillsHeight: true)
-            StatTile(label: L("Supervised"), value: "\(snapshot.supervisedCount)",
-                     sub: share(snapshot.supervisedCount, of: total), fillsHeight: true)
+            StatTile(label: L("Managed"), value: snapshot.managed.map { "\($0.met)" } ?? "—",
+                     sub: snapshot.managed.map { L("\(percent($0)) of devices reporting") }
+                         ?? L("Not reported"),
+                     fillsHeight: true)
+            StatTile(label: L("Supervised"), value: snapshot.supervised.map { "\($0.met)" } ?? "—",
+                     sub: snapshot.supervised.map { L("\(percent($0)) of managed devices reporting") }
+                         ?? L("Not reported"),
+                     fillsHeight: true)
             StatTile(label: L("Stale"), value: "\(snapshot.staleCount(atDays: staleDays))",
                      sub: L("No check-in for more than \(staleDays) days"), fillsHeight: true)
         }
@@ -237,9 +241,8 @@ struct SchoolDeviceTiles: View {
         return parts.isEmpty ? L("None collected") : parts.joined(separator: " · ")
     }
 
-    private func share(_ count: Int, of total: Int) -> String {
-        guard total > 0 else { return "—" }
-        return L("\(PercentFormat.whole.text(count, of: total)) of devices")
+    private func percent(_ share: MobileSummary.Share) -> String {
+        PercentFormat.whole.text(share.met, of: share.of)
     }
 }
 

@@ -234,9 +234,12 @@ struct StaleDeviceService: Sendable {
 
         /// What the Outreach screen shows after the copy.
         var confirmation: String {
-            let copied = (count == 1 ? L("Copied \(count) email") : L("Copied \(count) emails"))
-            guard skipped > 0 else { return copied }
-            return copied + L(", skipped \(skipped) that are not a single address")
+            guard skipped > 0 else {
+                return count == 1 ? L("Copied \(count) email") : L("Copied \(count) emails")
+            }
+            return count == 1
+                ? L("Copied \(count) email, skipped \(skipped) that are not a single address")
+                : L("Copied \(count) emails, skipped \(skipped) that are not a single address")
         }
     }
 

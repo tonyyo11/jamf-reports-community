@@ -124,7 +124,15 @@ jobs:
             app/scripts/package-dmg.sh \
             app/scripts/notarize-release.sh \
             app/scripts/sign-release.sh \
-            scripts/build-release.sh
+            app/scripts/sync-strings.zsh \
+            app/scripts/capture-jamf-cli-catalog.zsh \
+            scripts/build-release.sh \
+            .claude/skills/bundle-wave/scripts/bundle-wave \
+            .claude/skills/class-sweep/scripts/class-sweep \
+            .claude/skills/class-sweep/scripts/test-class-sweep \
+            .claude/skills/review-package/scripts/review-package \
+            .claude/skills/stack-adopt/scripts/stack-adopt \
+            .claude/skills/tip-test/scripts/tip-test
 
       # The release channel, build number and .pkg/.dmg naming that build-app.sh,
       # build-pkg.sh and package-dmg.sh share live in app/scripts/lib/versioning.zsh.
@@ -144,3 +152,13 @@ jobs:
 
       - name: Check for symbols only tests reference
         run: zsh app/scripts/check-test-only-symbols.zsh
+
+      # The project skills' scripts move and delete files; their self-tests need only zsh, git
+      # and python3, so they run here too.
+      - name: Test the project skills' scripts
+        run: |
+          git config --global user.email ci@example.invalid
+          git config --global user.name CI
+          (cd .claude/skills/class-sweep/scripts && zsh test-class-sweep)
+          (cd .claude/skills/changelog-union/scripts && python3 test_changelog_union.py)
+          (cd .claude/skills/loop-eval/scripts && python3 test_loop_eval.py)

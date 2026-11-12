@@ -14,7 +14,8 @@ Install `jamf-cli` (v1.29.0 or later; see [Installation](https://github.com/tony
 Connect a Jamf School profile from the app by choosing the Jamf School product during
 onboarding. Jamf School gets its own workspace and is not added to a Jamf Pro workspace.
 The app runs `jamf-cli school setup` for you and wires `school_cli.enabled`/`profile` into
-`config.yaml`.
+`config.yaml`. (In a `config.yaml` with a `profiles:` block, the School profile is the
+`profiles.jamf_school` slot instead, which onboarding writes there.)
 
 The relevant `config.yaml` section (the app manages it):
 
@@ -65,8 +66,8 @@ again and the School profile is not used; Config Doctor warns about it. Set
 `school_cli.enabled: false` there and set Jamf School up as its own workspace.
 
 A Jamf School workspace shows only the screens that apply to it: Overview, Devices, Trends,
-Generated reports, Automation, Run History, Config, Data Sources and Settings, plus Jamf
-Protect while Protect is connected. The Jamf Pro screens, Fleet Overview included, leave the
+Generated, Automation, Run History, Config, Data Sources and Settings, plus Jamf
+Protect and Backups while Protect is connected (a School workspace backs up Protect alone). The Jamf Pro screens, Fleet Overview included, leave the
 sidebar while it is the active workspace (your own hidden-tab choices are kept for the
 others), and Settings › Sidebar Visibility lists only the screens the workspace has. The rest
 of the dashboards in [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards)
@@ -103,10 +104,8 @@ for these backups. Please report how this works on your tenant on GitHub.
 
 ## CSV export format
 
-Jamf School device exports use a semicolon (`;`) delimiter, not a comma. Export from
-**Devices > Export** in the Jamf School web interface — the app reads the file directly,
-no conversion needed. The School workbook does not build sheets from the export yet; its
-sheets come from collected School data.
+Jamf School CSV exports are not read. The School workbook is built from the data
+`jamf-cli school` collects.
 
 ## Using the app
 

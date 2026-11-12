@@ -45,7 +45,7 @@ enum PromptFit {
             if let schema { fixed += try await model.tokenCount(for: schema) }
         } catch {
             AppLogger.platform.notice(
-                "Token count failed, estimating: \(error.localizedDescription, privacy: .private)")
+                "Token count failed, estimating: \(error.englishDescription, privacy: .private)")
             fixed += instructions.count / FleetInsightInput.charsPerToken
                 + (schema == nil ? 0 : 400)
         }
@@ -64,7 +64,7 @@ enum PromptFit {
                 if try await model.tokenCount(for: prompt) <= room { break }
             } catch {
                 AppLogger.platform.notice(
-                    "Token count failed: \(error.localizedDescription, privacy: .private)")
+                    "Token count failed: \(error.englishDescription, privacy: .private)")
                 break
             }
             budget /= 2

@@ -171,7 +171,7 @@ final class JamfCLIInstaller {
     /// The `[error]` line that stops a scheduled run on a jamf-cli below the floor.
     nonisolated static func floorLine(installed: String, profile: String) -> String {
         "[error] jamf-cli \(installed) is below \(minimumSupportedVersion), the "
-            + L("oldest Jamf Reports can run — aborting '\(profile)' to avoid writing data from an unsupported binary. Update jamf-cli in Settings or with brew upgrade jamf-cli.")
+            + "oldest Jamf Reports can run — aborting '\(profile)' to avoid writing data from an unsupported binary. Update jamf-cli in Settings or with brew upgrade jamf-cli."
     }
 
     /// First release with the top-level `dashboard` command: one self-contained
@@ -399,26 +399,22 @@ final class JamfCLIInstaller {
         } catch {
             return UpdateResult(
                 succeeded: false,
-                message: "jamf-cli was not updated: \(error.localizedDescription)", refused: true)
+                message: "jamf-cli was not updated: \(error.englishDescription)", refused: true)
         }
     }
 
     static func refusalMessage(_ blocker: CLIBridgeError) -> String {
         switch blocker {
         case .toolUpdateInProgress:
-            return "jamf-cli is already being updated."
+            return L("jamf-cli is already being updated.")
         case .tickLockHeld:
-            return "jamf-cli was not updated: a scheduled run is in progress. "
-                + L("Update it again when the run finishes.")
+            return L("jamf-cli was not updated: a scheduled run is in progress. Update it again when the run finishes.")
         case .generateInProgress:
-            return "jamf-cli was not updated: a report is being generated. "
-                + L("Update it again when the report finishes.")
+            return L("jamf-cli was not updated: a report is being generated. Update it again when the report finishes.")
         case .mergeInProgress:
-            return "jamf-cli was not updated: a workspace merge is running. "
-                + L("Update it again when the merge finishes.")
+            return L("jamf-cli was not updated: a workspace merge is running. Update it again when the merge finishes.")
         default:
-            return "jamf-cli was not updated: a refresh is running. "
-                + L("Update it again when the refresh finishes.")
+            return L("jamf-cli was not updated: a refresh is running. Update it again when the refresh finishes.")
         }
     }
 
@@ -662,8 +658,7 @@ final class JamfCLIInstaller {
                         domain: "JamfCLIInstaller",
                         code: 5,
                         userInfo: [NSLocalizedDescriptionKey:
-                            "jamf-cli codesign verification failed: signature missing,"
-                            + L(" invalid, or not issued by team \(Self.expectedJamfTeamID).")]
+                            L("jamf-cli codesign verification failed: signature missing, invalid, or not issued by team \(Self.expectedJamfTeamID).")]
                     )
                 }
             } else {
@@ -1032,17 +1027,31 @@ final class JamfCLIInstaller {
         }
     }
 
-    private static func findExtractedJamfCLI(in directory: URL) throws -> URL {
+    /// The extracted `jamf-cli`, a regular file. The pre-check reads entry names only, so a link
+    /// entry (`jamf-cli -> /usr/bin/…`, or a folder link out of `directory`) is caught here, after
+    /// extraction: any link in the tree refuses the whole download.
+    static func findExtractedJamfCLI(in directory: URL) throws -> URL {
         let fm = FileManager.default
+        var found: URL?
         if let enumerator = fm.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
         ) {
-            for case let url as URL in enumerator where url.lastPathComponent == "jamf-cli" {
-                return url
+            for case let url as URL in enumerator {
+                var info = stat()
+                guard lstat(url.path, &info) == 0 else { continue }
+                if (info.st_mode & S_IFMT) == S_IFLNK {
+                    throw NSError(
+                        domain: "JamfCLIInstaller", code: 8,
+                        userInfo: [NSLocalizedDescriptionKey:
+                            L("Archive entry rejected (link): \(url.lastPathComponent)")])
+                }
+                if found == nil, url.lastPathComponent == "jamf-cli",
+                   (info.st_mode & S_IFMT) == S_IFREG {
+                    found = url
+                }
             }
         }
+        if let found { return found }
         throw NSError(
             domain: "JamfCLIInstaller",
             code: 1,
@@ -1148,7 +1157,7 @@ final class JamfCLIInstaller {
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
             "LANG": parent["LANG"] ?? "en_US.UTF-8",
-            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+            "TMPDIR": parent["TMPDIR"] ?? CLIBridge.perUserTemporaryDirectory,
         ]
         for (key, value) in parent where key.hasPrefix("HOMEBREW_") {
             env[key] = value
@@ -1164,7 +1173,7 @@ final class JamfCLIInstaller {
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
             "LANG": parent["LANG"] ?? "en_US.UTF-8",
-            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+            "TMPDIR": parent["TMPDIR"] ?? CLIBridge.perUserTemporaryDirectory,
         ]
     }
 
@@ -1264,8 +1273,8 @@ final class JamfCLIInstaller {
             }
             return CommandResult(
                 exitCode: process.terminationStatus,
-                stdout: String(data: stdoutDrainer.finish(), encoding: .utf8) ?? "",
-                stderr: String(data: stderrDrainer.finish(), encoding: .utf8) ?? ""
+                stdout: String(decoding: stdoutDrainer.finish(), as: UTF8.self),
+                stderr: String(decoding: stderrDrainer.finish(), as: UTF8.self)
             )
         }
     }

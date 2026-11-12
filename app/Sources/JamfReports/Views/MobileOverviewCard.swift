@@ -5,6 +5,8 @@ import SwiftUI
 struct MobileOverviewCard: View {
     @Environment(\.percentFormat) private var percentFormat
     let summary: MobileSummary
+    /// The same summary's `mobileFormFactorCounts`, for the Devices line.
+    let formFactors: [String: Int]?
     /// "Daily summary 2026-10-28": which snapshot the figures come from.
     let subtitle: String
     let onOpen: () -> Void
@@ -28,7 +30,7 @@ struct MobileOverviewCard: View {
                 }
                 // Two columns fit a half-width card at the minimum window width.
                 EqualHeightTileGrid(minTileWidth: 120, spacing: 10, idealColumns: 2) {
-                    ForEach(summary.overviewTiles(format: percentFormat)) { tile in
+                    ForEach(summary.overviewTiles(format: percentFormat, formFactors: formFactors)) { tile in
                         if tile.opensAudit {
                             MobileAttentionButton(tile: tile, action: onOpenAudit)
                         } else {
@@ -69,8 +71,8 @@ private struct MobileOverviewTileView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             tile.value == MobileOverviewTile.dash
-                ? "\(tile.label): \(tile.caption)"
-                : "\(tile.label): \(tile.value), \(tile.caption)")
+                ? L("\(tile.label): \(tile.caption)")
+                : L("\(tile.label): \(tile.value), \(tile.caption)"))
     }
 }
 

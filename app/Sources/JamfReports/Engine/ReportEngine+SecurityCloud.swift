@@ -90,7 +90,7 @@ extension ReportEngine {
                     timeout: collectKindTimeout, onLine: watcher.forwarding(to: onLine))
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                    text: "[warn] \(kind): launch failed — \(error.englishDescription)"))
                 result = nil
             }
             guard let (exitCode, data) = result else {
@@ -100,7 +100,9 @@ extension ReportEngine {
             }
             if exitCode == 0, let payload = jsonPayload(from: data),
                let reduced = reducingSecurityRisk(payload) {
-                try saveSnapshot(data: reduced, kind: kind, dataDir: dataDir)
+                try saveRecordingFailure(
+                    reduced, kind: kind, dataDir: dataDir, exitCode: exitCode,
+                    stateStore: stateStore, at: collectStart, onLine: onLine)
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(reduced.count) bytes"))

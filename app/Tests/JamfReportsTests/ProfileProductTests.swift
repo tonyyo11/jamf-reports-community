@@ -381,6 +381,19 @@ final class ProfileProductTests: XCTestCase {
             resolved: { _ in XCTFail("asked"); return nil }).isEmpty)
     }
 
+    /// One `config list` per row: an unknown answer is not cached, and each ask can take 60 s.
+    func testDoctorProductRowsAskJamfCLIOncePerRow() throws {
+        let config = try decodeConfig("protect:\n  enabled: true\n  profile: prot\n")
+        var asked = 0
+        let rows = ConfigDoctorService.protectProfileProductRows(config: config, workspace: "prod") {
+            _ in
+            asked += 1
+            return .init(authMethod: "oauth2", isTenantLevel: false, product: .pro)
+        }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(asked, 1)
+    }
+
     private func decodeConfig(_ yaml: String) throws -> ReportConfig {
         let url = root.appendingPathComponent("c-\(UUID().uuidString.prefix(6)).yaml")
         try Data(yaml.utf8).write(to: url)

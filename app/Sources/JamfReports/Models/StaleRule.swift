@@ -32,9 +32,18 @@ enum StaleBasis: String, CaseIterable, Sendable {
     /// What the date measures, after "since" or "no".
     fileprivate var noun: String {
         switch self {
-        case .checkIn: "check-in"
+        case .checkIn: L("check-in")
         case .inventory: L("inventory update")
-        case .contact: "contact"
+        case .contact: L("contact")
+        }
+    }
+
+    /// `noun` as a table heading.
+    fileprivate var headingNoun: String {
+        switch self {
+        case .checkIn: L("Check-in")
+        case .inventory: L("Inventory Update")
+        case .contact: L("Contact")
         }
     }
 
@@ -42,7 +51,7 @@ enum StaleBasis: String, CaseIterable, Sendable {
     fileprivate var currentPhrase: String {
         switch self {
         case .checkIn: L("checked in")
-        case .inventory: "inventoried"
+        case .inventory: L("inventoried")
         case .contact: L("in contact")
         }
     }
@@ -160,26 +169,39 @@ struct StaleRule: Sendable, Equatable {
     /// The counted dates after "since": "check-in", "check-in or inventory update",
     /// "check-in, inventory update or contact".
     var basisPhrase: String {
-        let nouns = basis.map(\.noun)
-        guard nouns.count > 1 else { return nouns.joined() }
-        return nouns.dropLast().joined(separator: ", ") + L(" or ") + (nouns.last ?? "")
+        Self.orList(basis.map(\.noun))
+    }
+
+    /// One whole phrase per count, so a translation orders and punctuates the list itself.
+    private static func orList(_ items: [String]) -> String {
+        switch items.count {
+        case 0: return ""
+        case 1: return items[0]
+        case 2: return L("\(items[0]) or \(items[1])")
+        default: return L("\(items.dropLast().joined(separator: ", ")) or \(items[items.count - 1])")
+        }
+    }
+
+    private static func andList(_ items: [String]) -> String {
+        switch items.count {
+        case 0: return ""
+        case 1: return items[0]
+        case 2: return L("\(items[0]) and \(items[1])")
+        default: return L("\(items.dropLast().joined(separator: ", ")) and \(items[items.count - 1])")
+        }
     }
 
     /// `basisPhrase` as a table heading: "Check-in", "Check-in or Inventory Update".
     var basisHeading: String {
-        basisPhrase.split(separator: " ").map { word in
-            word == "or" ? "or" : word.prefix(1).uppercased() + word.dropFirst()
-        }.joined(separator: " ")
+        Self.orList(basis.map(\.headingNoun))
     }
 
     /// The score factor's name: "Checked in within 30 days", "Checked in and inventoried
     /// within 30 days". `shortUnit` writes "30d" for a tile's sub-line.
     func checkedInLabel(shortUnit: Bool = false) -> String {
         let phrases = basis.map(\.currentPhrase)
-        let joined = phrases.count > 1
-            ? phrases.dropLast().joined(separator: ", ") + L(" and ") + (phrases.last ?? "")
-            : phrases.joined()
-        return joined.prefix(1).uppercased() + joined.dropFirst()
-            + L(" within \(days)") + (shortUnit ? "d" : L(" days"))
+        let joined = Self.andList(phrases)
+        let sentence = joined.prefix(1).uppercased() + joined.dropFirst()
+        return shortUnit ? L("\(sentence) within \(days)d") : L("\(sentence) within \(days) days")
     }
 }

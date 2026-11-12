@@ -155,23 +155,26 @@ struct ProtectProCorrelation: Sendable {
 
 /// Which Security Cloud risk rows are devices of this environment's inventory, by `externalId`
 /// (the device UDID; Security Cloud writes it lowercased, Jamf Pro uppercase, so identifiers
-/// compare lowercased). The inventory is the Jamf Pro computers and mobile devices, or the Jamf
-/// School devices (their `udid` is assumed the same, unverified against a tenant). A name never
-/// joins and a row with no `externalId` is counted apart.
+/// compare lowercased). The inventory is the Jamf Pro computers and mobile devices; Jamf School
+/// devices are never matched, since they reach Security Cloud by management ID, which the reduced
+/// rows do not keep. A name never joins and a row with no `externalId` is counted apart.
 struct SecurityCloudCorrelation: Sendable {
-    var inventory = ProtectProCorrelation.Inventory.jamfPro
     var securityCount = 0
     var inventorySize = 0
     var matched = 0
     var ambiguous = 0
     var noIdentifier = 0
+    /// Rows that matched a device an earlier row already claimed, as Protect counts them.
+    var duplicates = 0
 
     /// Rows that carry an `externalId`: the denominator of the match.
     var identified: Int { securityCount - noIdentifier }
 
-    /// matched of identified; nil with no inventory or no identified row.
+    /// matched of the identified rows less duplicates, so each device counts once; nil with no
+    /// inventory or no identified row.
     var matchedShare: MobileSummary.Share? {
-        inventorySize > 0 && identified > 0 ? .init(met: matched, of: identified) : nil
+        let of = identified - duplicates
+        return inventorySize > 0 && of > 0 ? .init(met: matched, of: of) : nil
     }
 
     static func build(
@@ -182,11 +185,15 @@ struct SecurityCloudCorrelation: Sendable {
         var result = SecurityCloudCorrelation(
             securityCount: rows.count,
             inventorySize: records.filter { $0.identifier(.udid) != nil }.count)
+        var claimed = Set<Int>()
         for row in rows {
-            var probe = DeviceInventoryRecord.empty(id: "security-cloud", source: "security-cloud")
-            probe.udid = row.externalId ?? ""
-            switch correlation.match(probe) {
-            case .matched: result.matched += 1
+            switch correlation.match(udidRecord(row.externalId, source: "security-cloud")) {
+            case .matched(let position, _):
+                if claimed.insert(position).inserted {
+                    result.matched += 1
+                } else {
+                    result.duplicates += 1
+                }
             case .unmatched: break
             case .ambiguous: result.ambiguous += 1
             case .noIdentifier: result.noIdentifier += 1
@@ -211,16 +218,5 @@ struct SecurityCloudCorrelation: Sendable {
         guard computers != nil || mobile.isDetected else { return nil }
         let devices = mobile.richDevices.map { udidRecord($0.general?.udid, source: "mobile") }
         return build(rows: rows, inventory: (computers ?? []) + devices)
-    }
-
-    /// Against the Jamf School devices by `udid`; nil when there is no `school-devices`
-    /// snapshot.
-    static func load(rows: [SecurityRiskRow], schoolProfile: String) -> SecurityCloudCorrelation? {
-        let snapshot = SchoolFleetService.load(profile: schoolProfile)
-        guard snapshot.devicesDate != nil else { return nil }
-        var result = build(
-            rows: rows, inventory: snapshot.devices.map { udidRecord($0.udid, source: "school") })
-        result.inventory = .jamfSchool
-        return result
     }
 }

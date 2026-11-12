@@ -20,35 +20,36 @@ enum ScaffoldService {
     ///   - url: Destination file URL. Parent directory must already exist.
     ///   - eas: Proposals from `proposeEAs`.
     ///   - profile: Profile slug written into `jamf_cli.profile`.
-    static func writeConfig(to url: URL, eas: [ProposedEA], profile: String) throws {
-        try write(minimalConfigYAML(profile: profile, eas: eas), to: url)
+    /// Returns the text written, which the caller confirms in `SharedConfigPin`.
+    @discardableResult
+    static func writeConfig(to url: URL, eas: [ProposedEA], profile: String) throws -> String {
+        let yaml = minimalConfigYAML(profile: profile, eas: eas)
+        try write(yaml, to: url)
+        return yaml
     }
 
     /// Write the minimal `config.yaml` (jamf-cli data needs no mapping) to `url`.
     /// - Parameters:
     ///   - url: Destination file URL. Parent directory must already exist.
     ///   - profile: Profile slug written into `jamf_cli.profile`.
-    static func writeMinimalConfig(to url: URL, profile: String) throws {
-        try write(minimalConfigYAML(profile: profile, eas: []), to: url)
+    @discardableResult
+    static func writeMinimalConfig(to url: URL, profile: String) throws -> String {
+        try writeConfig(to: url, eas: [], profile: profile)
     }
 
     /// The minimal config.yaml plus a Protect-only `profiles:` block, created exclusively: an
     /// existing file is never replaced and a failed create leaves no half-written config.
-    static func createProtectOnlyConfig(at url: URL, profile: String) throws {
+    @discardableResult
+    static func createProtectOnlyConfig(at url: URL, profile: String) throws -> String {
         let yaml = minimalConfigYAML(profile: profile, eas: [])
             + ProfilesConfigWriter.protectOnlyBlock(login: profile)
-        try Data(yaml.utf8).write(to: url, options: .withoutOverwriting)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: url.path)
+        try AtomicInstall.write(Data(yaml.utf8), to: url, mode: 0o600, exclusive: true)
+        return yaml
     }
 
     private static func write(_ yaml: String, to url: URL) throws {
-        try yaml.write(to: url, atomically: true, encoding: .utf8)
         // 0600: config.yaml may embed column names that reflect org EA naming.
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))],
-            ofItemAtPath: url.path
-        )
+        try AtomicInstall.write(Data(yaml.utf8), to: url, mode: 0o600)
     }
 
     // MARK: - Private helpers

@@ -83,7 +83,8 @@ struct SourcesView: View {
             }
             doctorCard
             if isSchoolWorkspace { schoolPlatformCard }
-            ConnectionCard()
+            // A new identity per workspace, so one workspace's error or sheet does not stay.
+            ConnectionCard().id(workspace.profile)
             // The matrix lists `pro` commands, which a School workspace never runs.
             if workspace.environmentProducts.has(.jamfPro) { capabilityCard }
             familiesCard
@@ -277,7 +278,7 @@ struct SourcesView: View {
         let running = sources.filter { $0.skipReason == nil }
         let cached = running.filter { cachedAt[$0.kind] != nil }.count
         let skipped = sources.count - running.count
-        var parts = [L("\(running.count) run")]
+        var parts = [running.count == 1 ? L("\(running.count) run") : L("\(running.count) runs")]
         if cached > 0 { parts.append(L("\(cached) cached")) }
         if skipped > 0 { parts.append(L("\(skipped) skipped")) }
         return parts.joined(separator: " · ")
@@ -353,7 +354,7 @@ struct SourcesView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Pick collected Extension Attributes (or import a CSV once) to track in config.yaml.")
+                      : L("Pick collected Extension Attributes (or import a CSV once) to track in config.yaml."))
                 TipView(SourcesTips.eaTracking)
                     .frame(maxWidth: 460, alignment: .leading)
             }
@@ -392,7 +393,7 @@ struct SourcesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app.")
+                          : L("Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app."))
                     Button(doctorOutcome == nil ? "Check connection" : "Re-check") {
                         runDoctor()
                     }
@@ -469,8 +470,9 @@ struct SourcesView: View {
         }
     }
 
-    static let environmentReferenceNote =
+    static var environmentReferenceNote: String {
         L("Credential is an environment-variable reference; the app starts jamf-cli with a cleaned environment, so it cannot sign in from here. Use a keychain or file reference (jamf-cli config add-profile).")
+    }
 
     /// Health verdicts where re-registering credentials is the likely remedy.
     static func healthNeedsCredentials(_ health: CLIDoctorReport.Health) -> Bool {
@@ -623,7 +625,7 @@ struct SourcesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Open the snapshots directory where dated archives live.")
+                          : L("Open the snapshots directory where dated archives live."))
                 }
                 if families.isEmpty {
                     emptyFamiliesState
@@ -773,15 +775,13 @@ struct SourcesView: View {
                     workspaceAuth: workspaceAuth,
                     resolve: { ProfileAuthMethod.resolve(profile: $0) })
                 let auth = routed.auth
-                let protectProfile = EnvironmentProfiles.resolve(
-                    config: config, workspace: profile).protect
-                let securityCloudProfile = EnvironmentProfiles.resolve(
-                    config: config, workspace: profile).securityCloud
+                let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+                let protectProfile = environment.protect
+                let securityCloudProfile = environment.securityCloud
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
-                    protectOnly: EnvironmentProfiles.resolve(
-                        config: config, workspace: profile).isConfirmedProtectOnly(workspace: profile),
+                    protectOnly: environment.isConfirmedProtectOnly(workspace: profile),
                     protectRefusal: protectProfile.flatMap { name in
                         ProfileAuthMethod.resolve(profile: name)?.protectRefusal(profile: name)
                     },
@@ -797,7 +797,6 @@ struct SourcesView: View {
                     collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
                     platformUnavailable: routed.unavailable))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
-                let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
                 // The derived Platform slot can equal the MDM profile: resolve each name once.
                 var resolved: [String: ProfileAuthMethod.Resolved?] = [:]
                 let card = EnvironmentCardState.build(
@@ -903,7 +902,7 @@ struct SourcesView: View {
 
     private func scopeHelp(_ scope: APIScope) -> String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
-        return Self.scopeExplanation(scope) + L(" Click to change.")
+        return L("\(Self.scopeExplanation(scope)) Click to change.")
     }
 
     /// Older builds wrote these kinds under other folder names; their snapshots still count.
@@ -1036,8 +1035,9 @@ struct SourcesView: View {
 
     /// Jamf Protect on a Jamf School workspace (2.11): collected and reported as on Jamf Pro,
     /// and from 2.12 backed up on its own, since there is no Jamf Pro part.
-    nonisolated static let schoolProtectNote =
+    nonisolated static var schoolProtectNote: String {
         L("Experimental: Jamf Protect with Jamf School. Protect is collected, reported and backed up; a backup holds Jamf Protect alone, as there is no Jamf Pro.")
+    }
 
     /// JSON snapshots, and the jamf-cli dashboard's page, the one kind saved as HTML.
     private nonisolated static func cacheDates(

@@ -21,10 +21,6 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         /// retired here; only Start over, which moves the two files aside.
         case foreign(String)
 
-        var isUnreadable: Bool {
-            if case .unreadable = self { return true }
-            return false
-        }
         var isForeign: Bool {
             if case .foreign = self { return true }
             return false
@@ -118,7 +114,7 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         }
         do { try FileManager.default.removeItem(at: url) } catch {
             AppLogger.event(.collect, .error,
-                            "merge start note not removed: \(error.localizedDescription)")
+                            "merge start note not removed: \(error.englishDescription)")
         }
     }
 

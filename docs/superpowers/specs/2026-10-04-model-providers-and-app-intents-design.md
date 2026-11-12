@@ -1,7 +1,10 @@
 # Model providers and App Intents — design
 
-Status: approved by the owner on 2026-10-05; the decisions are recorded at the end. Nothing here
-is built yet.
+Status: not built, and superseded by the on-device-only decision: 2.9 removed `ai.external`,
+and the app carries no remote or Private Cloud Compute model (CLAUDE.md "Intelligence layer").
+Approved by the owner on 2026-10-05; kept for the provider and App Intents reasoning, so the
+"Decisions (settled)" list below is not a plan. `ProfileService.runnableProfiles` is now
+`runnableWorkspaces`.
 
 Two features:
 

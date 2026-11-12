@@ -181,9 +181,10 @@ struct ConfigSaveReport: Equatable, Sendable {
             let named = removedRetiredKeys.map { key in
                 ConfigSchema.retiredKeys[key].map { L("\(key) (since \($0))") } ?? key
             }
-            lines.append(L("Settings the app no longer reads were removed from config.yaml: ")
-                + named.joined(separator: ", ") + "."
-                + (backupName.map { L(" A copy of the file as it was is at \($0).") } ?? ""))
+            let list = named.joined(separator: ", ")
+            lines.append(backupName.map {
+                L("Settings the app no longer reads were removed from config.yaml: \(list). A copy of the file as it was is at \($0).")
+            } ?? L("Settings the app no longer reads were removed from config.yaml: \(list)."))
         }
         guard let copy = backupName else { return lines }
         if droppedComments {
@@ -568,7 +569,7 @@ enum ConfigService {
             do {
                 try manager.removeItem(at: directory.appendingPathComponent(old))
             } catch {
-                let reason = error.localizedDescription
+                let reason = error.englishDescription
                 AppLogger.collect.warning(
                     "ConfigService: kept an old config backup: \(reason, privacy: .private)")
             }

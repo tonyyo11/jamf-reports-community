@@ -11,10 +11,17 @@ enum AtomicInstall {
     /// On a volume without swap support (some network shares) the old entry is renamed aside,
     /// the staged one renamed in, and the old one removed, which leaves a short gap with no
     /// entry at the final name but still never follows a link.
-    /// A file never replaces a real folder: the swap would hand the folder to `discard`, which
-    /// removes it and its contents with no Trash.
-    static func install(_ staged: URL, at final: URL) throws {
-        if isRealFolder(final), !isRealFolder(staged) { throw POSIXError(.EISDIR) }
+    /// A real folder at `final` is replaced only by a folder, and only when `replacingFolderIf`
+    /// says it is one the caller wrote: the swap hands it to `discard`, which removes it and its
+    /// contents with no Trash. By default no real folder is ever replaced.
+    static func install(
+        _ staged: URL, at final: URL, replacingFolderIf replaceable: (URL) -> Bool = { _ in false }
+    ) throws {
+        if isRealFolder(final) {
+            guard isRealFolder(staged) else { throw POSIXError(.EISDIR) }
+            // shortcut: checked, then swapped; a peer adding a file in between loses it.
+            guard replaceable(final) else { throw POSIXError(.ENOTEMPTY) }
+        }
         var lastError: Int32 = EEXIST
         for _ in 0..<2 {
             let exists = isEntry(final)
@@ -55,9 +62,11 @@ enum AtomicInstall {
     /// Writes `data` to `final` through a hidden sibling opened exclusively (`O_EXCL|O_NOFOLLOW`),
     /// then `install`s it, so a link planted at `final` is replaced and a crash leaves the old
     /// file or the new one. `mode` is the file's permission bits; nil keeps those of a regular
-    /// file already at `final` (as `replaceItemAt` did), else the process default.
+    /// file already at `final` (as `replaceItemAt` did), else the process default. `exclusive`
+    /// never replaces anything at `final` and throws `CocoaError(.fileWriteFileExists)` instead.
     static func write(
-        _ data: Data, to final: URL, mode: mode_t? = nil, now: Date = Date()
+        _ data: Data, to final: URL, mode: mode_t? = nil, exclusive: Bool = false,
+        now: Date = Date()
     ) throws {
         let folder = final.deletingLastPathComponent()
         if sweptFolders.withLock({ $0.insert(folder.path).inserted }) {
@@ -75,7 +84,12 @@ enum AtomicInstall {
             if let exact, fchmod(fd, exact) != 0 { throw posixError() }
             try handle.write(contentsOf: data)
             try handle.close()
-            try install(staged, at: final)
+            if exclusive {
+                do { try installExclusive(staged, at: final) } catch let error as POSIXError
+                    where error.code == .EEXIST { throw CocoaError(.fileWriteFileExists) }
+            } else {
+                try install(staged, at: final)
+            }
         } catch {
             discard(staged)
             throw error
@@ -93,10 +107,23 @@ enum AtomicInstall {
         lutimes(aside.path, nil)
         guard rename(staged.path, final.path) == 0 else {
             let failure = posixError()
-            _ = rename(aside.path, final.path)
+            if rename(aside.path, final.path) != 0 { recover(aside, of: final) }
             throw failure
         }
         discard(aside)
+    }
+
+    /// The old entry renamed aside could not go back: give it a name the staging sweep never
+    /// matches, `<name>.recovered-<stamp>`, and log where it is, so it is not removed a day later.
+    @discardableResult
+    static func recover(_ aside: URL, of final: URL, now: Date = Date()) -> URL {
+        let stamp = Int(now.timeIntervalSince1970)
+        let recovered = final.deletingLastPathComponent().appendingPathComponent(
+            "\(final.lastPathComponent).recovered-\(stamp)")
+        let kept = rename(aside.path, recovered.path) == 0 ? recovered : aside
+        AppLogger.collect.error(
+            "AtomicInstall: \(final.lastPathComponent, privacy: .private) could not be put back; the earlier copy is at \(kept.path, privacy: .private)")
+        return kept
     }
 
     /// True when something, a dangling link included, is at `url`.
@@ -151,10 +178,13 @@ enum AtomicInstall {
         else { return }
         var read = 0
         for case let url as URL in entries {
+            let name = url.lastPathComponent
+            // The cap counts hidden names only: a snapshot folder of thousands of files must
+            // not hide its staging leftovers past the cap.
+            guard name.hasPrefix(".") else { continue }
             read += 1
             if read > maxStagingEntriesRead { return }
-            let name = url.lastPathComponent
-            guard name.hasPrefix("."),
+            guard
                   let marker = name.range(of: stagingMarker, options: .backwards),
                   UUID(uuidString: String(name[marker.upperBound...])) != nil else { continue }
             var info = stat()

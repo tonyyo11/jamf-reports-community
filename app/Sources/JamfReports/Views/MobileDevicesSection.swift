@@ -9,22 +9,24 @@ import SwiftUI
 /// Internal for tests.
 func mobileDevicesFindings(
     _ snapshot: MobileFleetService.Snapshot, context: MobileFinding.Context,
-    previous: (date: String, mobile: MobileSummary)? = nil
+    previous: (date: String, mobile: MobileSummary)? = nil,
+    deviceCap: Int = mobileFindingDeviceCap
 ) -> [AuditFinding] {
     guard snapshot.totalDevices > 0 else { return [] }
     let counts = snapshot.findingCounts(context)
     return MobileFinding.allCases.compactMap { finding -> AuditFinding? in
         guard let count = counts[finding] else { return nil }
         let names = count == 0 ? [] : deviceNames(snapshot, affectedBy: finding, context: context)
-        let shown = Array(names.prefix(mobileFindingDeviceCap))
+        let shown = Array(names.prefix(deviceCap))
         let more = names.count - shown.count
         return AuditFinding(
             name: finding.name(staleDays: context.staleDays),
             affected: count,
             category: MobileFinding.category,
             recommendation: finding.recommendation(staleDays: context.staleDays),
-            severity: count == 0 ? L("OK") : finding.severity,
-            devices: shown + (more > 0 ? [L("and \(more) more, in Mobile Devices")] : []),
+            severity: count == 0 ? "OK" : finding.severity,
+            devices: shown,
+            moreDevices: more,
             deviceNoun: L("Devices"),
             mobileFilter: finding.rawValue,
             change: previous.flatMap { earlier in
@@ -51,7 +53,7 @@ private func deviceNames(
 }
 
 /// Devices a finding's popover lists before it says how many more the Mobile Devices list holds.
-private let mobileFindingDeviceCap = 200
+let mobileFindingDeviceCap = 200
 
 extension MobileFinding {
     /// The newest summary dated before `day` (yyyy-MM-dd) that carries mobile figures, from
@@ -82,6 +84,11 @@ func mobileDevicesFindings(
 /// previous summary, and a popover with the recommendation and the devices. Draws nothing
 /// without findings.
 struct MobileDevicesSection: View {
+    /// The card's scroll id, and the `.navigateToTab` value of `userInfoKey` that asks the
+    /// Audit screen to scroll to it.
+    static let anchorID = "mobileDevices"
+    static let userInfoKey = "auditSection"
+
     let findings: [AuditFinding]
 
     @Environment(\.colorSchemeContrast) private var contrast

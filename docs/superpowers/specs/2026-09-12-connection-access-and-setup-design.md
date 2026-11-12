@@ -1,6 +1,7 @@
 # Connection access and setup: design
 
-Status: design approved section by section on 2026-09-11/12; written autonomously on Tony's
+Status: partly shipped in 2.8.1 (the failure causes and the connection check); the rest is
+non-binding. Design approved section by section on 2026-09-11/12; written autonomously on Tony's
 instruction to take the recommendations. Not yet reviewed as a whole document.
 
 This is spec 1 of 2. Spec 2, source-aware reporting, is outlined in the handoff section at the

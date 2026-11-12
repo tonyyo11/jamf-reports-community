@@ -204,7 +204,9 @@ final class ExistingCLISetupFlow {
         proposal = next
     }
 
-    nonisolated static let securityCloudReason = L("A Jamf Security Cloud login holds no device inventory, so it is not a workspace. Add it from the Jamf Pro or Jamf School workspace's Data Sources.")
+    nonisolated static var securityCloudReason: String {
+        L("A Jamf Security Cloud login holds no device inventory, so it is not a workspace. Add it from the Jamf Pro or Jamf School workspace's Data Sources.")
+    }
 
     /// Why a profile cannot be adopted whatever its product, or nil: the retired gateway and an
     /// organization-level integration, which choosing a different product does not fix.
@@ -302,10 +304,17 @@ final class ExistingCLISetupFlow {
         let platforms = profiles.filter {
             unusable[$0.name] == nil && refusals[$0.name] == nil && $0.auth?.isPlatform == true
         }
-        guard !platforms.isEmpty else { return }
-        var learned: [String: String] = [:]
-        for platform in platforms {
-            if let url = await learn(platform.name) { learned[platform.name] = url }
+        // Jamf Pro is asked only when an oauth2 profile could be the twin, and every Platform
+        // profile at once, so a hung gateway costs one 60 s limit, not one per profile.
+        guard !platforms.isEmpty, profiles.contains(where: PlatformTwin.isCandidate) else { return }
+        let learned = await withTaskGroup(of: (String, String?).self) { group in
+            for platform in platforms {
+                let name = platform.name
+                group.addTask { (name, await learn(name)) }
+            }
+            var found: [String: String] = [:]
+            for await (name, url) in group { if let url { found[name] = url } }
+            return found
         }
         guard !isRunning, !didComplete, !learned.isEmpty else { return }
         apply(EnvironmentProposal.propose(
@@ -322,7 +331,7 @@ final class ExistingCLISetupFlow {
             do {
                 try store.recordJamfProURL(profile: profile, url: url)
             } catch {
-                let reason = error.localizedDescription
+                let reason = error.englishDescription
                 AppLogger.auth.warning(
                     "could not keep a learned Jamf Pro URL: \(reason, privacy: .private)")
             }
@@ -415,7 +424,7 @@ final class ExistingCLISetupFlow {
                 recorder?.finish(exitCode: exit)
                 return exit
             } catch {
-                recorder?.record("[error] \(error.localizedDescription)")
+                recorder?.record("[error] \(error.englishDescription)")
                 recorder?.finish(exitCode: 1)
                 throw error
             }
@@ -550,15 +559,16 @@ final class ExistingCLISetupFlow {
             failures: profileNames.filter(selected.contains).compactMap { failureStages[$0] }
         )
         guard !canContinue else { return summary }
-        return summary + L(" No workspace exists yet, so there is no dashboard to open. Fix the cause above and try again, or skip for now.")
+        return L("\(summary) No workspace exists yet, so there is no dashboard to open. Fix the cause above and try again, or skip for now.")
     }
 
     /// Names the cause each failure had. Sign-in is blamed only for a collect that
     /// failed on credentials; a profile with no workspace never got as far as signing in.
     nonisolated static func summaryText(succeeded: Int, failures: [FailureStage]) -> String {
         if failures.isEmpty {
-            return L("All \(succeeded) profile") + (succeeded == 1 ? "" : "s")
-                + L(" collected — dashboards are populated and the first trend point is saved.")
+            return succeeded == 1
+                ? L("All \(succeeded) profile collected — dashboards are populated and the first trend point is saved.")
+                : L("All \(succeeded) profiles collected — dashboards are populated and the first trend point is saved.")
         }
         var parts = [L("\(succeeded) succeeded, \(failures.count) failed.")]
         let noWorkspace = failures.filter { $0 == .workspace }.count

@@ -109,6 +109,15 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Jamf Security Cloud match counts each device once: a second risk row for a device that
+  already matched leaves the share's denominator, as the Jamf Protect match does.
+- The Overview's Mobile Devices section now counts every mobile device by type on its Devices
+  line ("12 iPads, 1 iPhone"), from the day's summary. A summary written before 2.12 recorded
+  device types still shows the managed mobile device count.
+- A Jamf School environment with Jamf Security Cloud no longer records a Security Cloud match
+  share. School devices reach Security Cloud by management ID, not UDID, so the match read close
+  to 0 of every device; the device count and risk counts are still recorded, and Trends and the
+  `security_cloud_matched_pct` alert get no figure for School instead of a wrong one.
 - A cell that is only a plain negative number, such as an unresolved app ID of -5 or an mSCP
   "no baseline" count of -1, now reads exactly as Jamf reported it in workbooks and CSV files,
   without the hidden tab the formula guard used to put in front of it. Anything else that starts
@@ -211,6 +220,50 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- With the app in a language other than English, reports, run logs, stored failure hints and
+  the Offline Outreach clipboard copy stay in English, and a translated label no longer stays in
+  whichever language read it first until the app is relaunched. The Health Audit's jump links
+  and open-finding count also work in every language.
+- After a workspace merge, a day's summary no longer pairs one workspace's open Jamf Protect
+  alert total with the other's severity counts, which made Trends drop that day.
+- Switching workspaces on the Health Audit no longer leaves the previous workspace's findings
+  on screen.
+- Adding profiles jamf-cli already holds no longer offers a second workspace for a fleet that
+  has one: a Platform API profile joins the existing Jamf Pro workspace before a profile that
+  has none. Setup also checks all Platform API profiles at once instead of one after another.
+- A scheduled collect no longer runs jamf-cli when it checks the configuration, and no longer
+  reads the full inventory and Extension Attribute snapshots for checks whose result it
+  discards.
+- A Jamf School, Jamf Protect or Jamf Security Cloud snapshot that cannot be saved is recorded
+  as failed, so the health strip names it.
+- Large workspaces do less file work: a report reads each inventory snapshot once, a backup on
+  shared storage no longer freezes the window, and a workspace merge renews its shared-workspace
+  claim every five minutes instead of on every step. A merge also refuses a workspace folder
+  that is a link, and leaves hidden staging files behind.
+- `jamf-reports verify` and `--help` no longer register the background item, and setup no
+  longer drops all of jamf-cli's output when it holds one invalid byte.
+- In a language other than English, the health banner, the Overview mobile tiles, the Data Sources
+  run counts, the schedule summary and the stale-date wording in tables and tooltips read as whole
+  translated sentences, with plural forms, instead of English fragments joined to translated words.
+  Demo-mode and button tooltips are translated too.
+- The Health Audit's mobile finding details count the devices behind the finding. A list cut at 200 names counted its "and N more" line as a device, and two unnamed devices with no serial no longer clash.
+- The Overview's mobile Needs attention count opens the Health Audit on its Mobile Devices card instead of the top of the screen.
+- The Overview header shows no device count until a daily summary exists, instead of "0 Macs", and on a fleet with only mobile devices it shows their count without a compliance baseline.
+- Jamf School's Managed and Supervised tiles show a dash and "Not reported" when no device reports the field, instead of 0. Supervised is now a share of managed devices that report it, as the daily summary counts it.
+- Fleet Overview's Stale tile and issue name the workspace's own stale setting instead of a fixed 30 days.
+- On Data Sources, removing Jamf Security Cloud from an environment asks about Jamf Security Cloud, not the Platform API.
+- In the Add sheet, a profile added while the first check was still running now leaves its Add row, and making a Jamf Protect login its own environment can no longer run twice from a double click or be closed while it runs. The Platform API card's text now describes Connect new and the list below it.
+- The Patch titles table's Failures column counts failing devices for each title, joining a patch policy to the title it is named after, and shows a dash when no failure scan was collected. It used to count failure rows and read 0 for any title whose policies carried a version in their name.
+- The Generate sheet lists the day's summary file for a Jamf School collect too, under its real name.
+- The first-launch screen says Jamf Protect can be its own environment.
+- The Mobile Devices table lists every matching device instead of the first 50.
+- Deleting a backup no longer freezes the window on a large or synced folder, and the Generate sheet and Data Sources no longer check files on every redraw.
+- Resuming an interrupted workspace merge that is refused no longer offers a new merge.
+- The Connection card on Data Sources no longer keeps an error from the previous workspace.
+- Mobile device OS versions are counted as one release however Jamf spells them, so `17.5` and
+  `17.5.0` are one row on Mobile Devices, in its PNG export, in the HTML report and on the
+  workbook's Mobile Fleet Summary and OS Currency sheets, and an `Unknown` version is left out.
+  The Mobile Devices version list says how many versions it holds when it shows only the top 10.
 - A Mac that never inventoried and never checked in now counts as "Jamf binary missing" even when Jamf marks it managed, so it gets the Computers filter and remediation steps and is listed apart in Offline Outreach, the HTML report and the Check-in Health sheet instead of as a stale Mac.
 - Workbook rows that tie on a count now come out in the same order every run. The Mobile Fleet Summary's distributions and Top Models list, the Hardware Models tab and each text extension attribute's value table ordered tied rows at random, so the top ten models could change between two runs on the same data.
 - A Mac that never sent inventory reads No Data for FileVault, SIP, Firewall and Gatekeeper on every screen and report, not Jamf's placeholder values (firewall off, FileVault unencrypted), so it no longer appears under Failing controls. A Mac with real inventory and the firewall off still reads off.
@@ -388,6 +441,27 @@ versions in this repository map to git tags.
     slip an unconfirmed "yes" past the check.
   - A timestamp server address in config.yaml is hidden in shared logs only when it is a real
     host name, so it can no longer hide a word such as "partial" and its `[partial]` marker.
+  - Setting up a workspace, or `jamf-reports scaffold --out`, confirms on this Mac only the
+    values it wrote. A config.yaml another Mac put in its place straight after is not confirmed.
+- A CSV folder run no longer deletes a folder of yours that has the same name as the CSV folder
+  (`Q3_csv` beside `Q3.xlsx`). It replaces only a folder that holds nothing but CSV files;
+  otherwise it leaves the folder alone and logs `CSV folder not written`.
+- `jamf-reports verify` no longer accepts a timestamp whose signing time has an exponent in its
+  fraction of a second, which could print a date years off.
+- If a file cannot be put back after a failed save on a network share, the earlier copy is kept
+  as `<name>.recovered-<time>` and logged, instead of under a hidden name the next day's cleanup
+  deletes.
+- Copying a Backups diff now also masks passwords, secrets and tokens in plain-text values, such
+  as a configuration profile's payload or a `key: value` setting, not only in JSON.
+- The SOFA feed is read up to 8 MB; a bigger answer counts as a failed fetch and the cached feed
+  stays in use.
+- Saving an HTML report, or choosing a folder on the Generate sheet, refuses system and
+  credential folders, as the PDF and CSV exports already did.
+- Settings offers the `sudo` command for the command-line tool only when the app is in
+  /Applications; otherwise it asks you to move the app there first, so the shared link never
+  points at a copy your account can change.
+- A jamf-cli update refuses a download whose archive holds a link, and jamf-cli, Homebrew and
+  the archive tools started without `TMPDIR` use your own temporary folder, not `/tmp`.
 - `jamf-reports verify` says only what it can show:
   - A manifest that lists no files fails.
   - A file named after the run that the manifest leaves out is reported as `EXTRA`.

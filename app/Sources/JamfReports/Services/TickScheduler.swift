@@ -572,7 +572,7 @@ struct TickLock: Sendable {
             try protect(fd)
         } catch {
             AppLogger.schedule.warning(
-                "tick lock permissions not set: \(error.localizedDescription, privacy: .private)")
+                "tick lock permissions not set: \(error.englishDescription, privacy: .private)")
         }
         return .acquired(TickLockHold(fd: fd))
     }
@@ -730,7 +730,7 @@ struct TickLock: Sendable {
             return nil
         } catch {
             warn("tick refusal stamp \(url.lastPathComponent) could not be read "
-                + "(\(error.localizedDescription)); read as absent")
+                + "(\(error.englishDescription)); read as absent")
             removeUnreadable(url)
             return nil
         }
@@ -764,7 +764,7 @@ struct TickLock: Sendable {
             try Data("\(text)\n".utf8).write(to: url, options: .atomic)
         } catch {
             warn("tick refusal stamp \(url.lastPathComponent) could not be written "
-                + "(\(error.localizedDescription)); the next run cannot tell it was queued")
+                + "(\(error.englishDescription)); the next run cannot tell it was queued")
         }
     }
 

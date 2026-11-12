@@ -22,12 +22,13 @@ extension CLIBridge {
         /// collect, report or tick may run under it.
         case merge
 
+        /// English: it is read only by log lines.
         var label: String {
             switch self {
-            case .collect: L("Collect")
-            case .generate: L("Report")
+            case .collect: "Collect"
+            case .generate: "Report"
             case .toolUpdate: "jamf-cli update"
-            case .merge: L("Workspace merge")
+            case .merge: "Workspace merge"
             }
         }
     }
@@ -64,6 +65,15 @@ extension CLIBridge {
     /// caller that must not record a run for a refusal.
     static func collectRefusal() -> CLIBridgeError? {
         runningHoldRefusal ?? (tickLockHeldElsewhere() ? .tickLockHeld : nil)
+    }
+
+    /// `collectRefusal` with the lock probe (a file read, a sysctl, an xattr) off the main
+    /// actor, for a screen that asks on a timer.
+    static func collectRefusalOffMain() async -> CLIBridgeError? {
+        if let running = runningHoldRefusal { return running }
+        let lock = tickLock()
+        let held = await Task.detached { lock.isHeldByAnotherLiveProcess() }.value
+        return held ? .tickLockHeld : nil
     }
 
     /// The refusal for the hold running in this process, nil when none runs.
@@ -105,7 +115,7 @@ extension CLIBridge {
     ) throws -> Hold {
         if let running = runningHoldRefusal {
             AppLogger.event(
-                .collect, .notice, "\(purpose.label) refused: \(running.localizedDescription)")
+                .collect, .notice, "\(purpose.label) refused: \(running.englishDescription)")
             throw running
         }
         let lock = tickLock()

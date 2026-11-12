@@ -108,7 +108,7 @@ final class CapabilityService {
             return CLICapabilitySnapshot(version: version, availability: availability)
         }
 
-        let text = String(data: helpData, encoding: .utf8) ?? ""
+        let text = String(decoding: helpData, as: UTF8.self)
         let available = parseAvailableCommands(from: text)
         let availability = Dictionary(
             uniqueKeysWithValues: trackedCommands.map { cmd in

@@ -445,15 +445,16 @@ struct MobileFleetService: Sendable {
             return reported.filter { $0 }.count
         }
 
+        /// Every measured version, most devices first; a screen that caps it says "N of M".
         var osDistribution: [(osVersion: String, count: Int)] {
             let osVersions: [String] = richDevices.compactMap { device in
-                device.general?.osVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
-            }.filter { !$0.isEmpty }
+                device.general?.osVersion
+            }.filter(OSVersionName.isMeasured).map(OSVersionName.normalized)
 
             let grouped = Dictionary(grouping: osVersions) { $0 }
             let sorted = grouped.map { (osVersion: $0.key, count: $0.value.count) }
                 .sorted { MobileFleetService.osDistributionOrder($0, $1) }
-            return Array(sorted.prefix(10))
+            return sorted
         }
 
         /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour

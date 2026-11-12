@@ -188,7 +188,7 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
             finish(.success(try Data(contentsOf: printURL)))
         } catch {
             finish(.failure(PDFExporter.PDFExportError.renderFailed(
-                "no PDF at \(printURL.lastPathComponent): \(error.localizedDescription)")))
+                "no PDF at \(printURL.lastPathComponent): \(error.englishDescription)")))
         }
     }
 

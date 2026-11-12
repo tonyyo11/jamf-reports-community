@@ -161,7 +161,9 @@ final class OnboardingFlow {
         }
 
         /// Shown under the scope picker in onboarding and Update credentials.
-        static let caption = L("Environment is the level to use: it reaches Jamf Pro, Blueprints, Compliance Benchmarks and DDM. Tenant is legacy: direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints.")
+        static var caption: String {
+            L("Environment is the level to use: it reaches Jamf Pro, Blueprints, Compliance Benchmarks and DDM. Tenant is legacy: direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints.")
+        }
 
         var idFieldLabel: String {
             switch self {
@@ -523,7 +525,7 @@ final class OnboardingFlow {
                 )
             } catch {
                 AppLogger.auth.warning(
-                    "OnboardingFlow: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
+                    "OnboardingFlow: failed to write .metadata_never_index: \(error.englishDescription, privacy: .private)"
                 )
             }
         }
@@ -713,7 +715,7 @@ final class OnboardingFlow {
             protectConfigNote = ProductSetupChecks.joined(protectConfigNote, checkNote, defaultNote)
         } catch {
             protectConnectionError = ProductSetupChecks.joined(
-                "Connected, but config update failed: \(error.localizedDescription)",
+                "Connected, but config update failed: \(error.englishDescription)",
                 checkNote, defaultNote)
         }
     }
@@ -815,7 +817,7 @@ final class OnboardingFlow {
             schoolConfigNote = ProductSetupChecks.joined(schoolConfigNote, checkNote, defaultNote)
         } catch {
             schoolConnectionError = ProductSetupChecks.joined(
-                "Connected, but config update failed: \(error.localizedDescription)",
+                "Connected, but config update failed: \(error.englishDescription)",
                 checkNote, defaultNote)
         }
         // A rejected answer keeps the profile: the School API key works without the gateway.
@@ -995,8 +997,7 @@ final class OnboardingFlow {
 
         validationExitCode = exit
         guard exit == 0 else {
-            lastError = "jamf-cli config validate failed for \(profile). Review the URL, "
-                + L("client ID, secret, and API role privileges, then retry.")
+            lastError = L("jamf-cli config validate failed for \(profile). Review the URL, client ID, secret, and API role privileges, then retry.")
             return
         }
         guard proConnectionType == .platformGateway else {
@@ -1044,7 +1045,7 @@ final class OnboardingFlow {
             AppLogger.auth.warning(
                 """
                 OnboardingFlow: could not record the connection: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """
             )
         }
@@ -1242,7 +1243,9 @@ final class OnboardingFlow {
     /// environments applies to each ID.
     var isPlatformScopeIDValid: Bool { ConnectionEnvironments.isUsableID(platformScopeID.trimmed) }
 
-    nonisolated static let scopeIDProblemText = L("Use only letters, digits, dots, hyphens and underscores, and don't start with a hyphen. Copy the ID from Jamf Account without spaces.")
+    nonisolated static var scopeIDProblemText: String {
+        L("Use only letters, digits, dots, hyphens and underscores, and don't start with a hyphen. Copy the ID from Jamf Account without spaces.")
+    }
 
     /// Shown under the ID field once something is typed that the check refuses.
     var platformScopeIDProblem: String? {
@@ -1364,9 +1367,10 @@ final class OnboardingFlow {
             profileSlug: profileSlug, protectProfileName: protectProfileName)
     }
 
-    /// The same write for a Protect profile jamf-cli already has (the Add sheet).
+    /// The same write for a Protect profile jamf-cli already has (the Add sheet, off the main
+    /// actor).
     @discardableResult
-    static func writeProtectConfig(
+    nonisolated static func writeProtectConfig(
         profileSlug: String, protectProfileName: String,
         appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
@@ -1392,7 +1396,7 @@ final class OnboardingFlow {
         try Self.writeProductBlock("school_cli", profile: schoolProfileName, for: profileSlug)
     }
 
-    static func writeProductBlock(
+    nonisolated static func writeProductBlock(
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
         let slot = key == "school_cli" ? "jamf_school" : key
@@ -1631,7 +1635,7 @@ private final class PTYOutputCollector: Sendable {
 
     func byteCount() -> Int { buffer.withLock { $0.count } }
 
-    func snapshot() -> String { String(data: buffer.withLock { $0 }, encoding: .utf8) ?? "" }
+    func snapshot() -> String { String(decoding: buffer.withLock { $0 }, as: UTF8.self) }
 }
 
 private extension String {

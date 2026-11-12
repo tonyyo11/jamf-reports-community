@@ -57,14 +57,16 @@ final class CLIInstallerTests: XCTestCase {
                        source.resolvingSymlinksInPath().path)
     }
 
-    func testMissingTargetDirReturnsManualCommand() {
+    func testMissingTargetDirOffersTheSudoCommandOnlyForAnAppInApplications() {
         let missing = tmp.appendingPathComponent("does-not-exist", isDirectory: true)
-        let outcome = CLIInstaller.install(source: source, targetDir: missing)
-        guard case let .manual(command) = outcome else {
-            return XCTFail("expected .manual, got \(outcome)")
-        }
-        XCTAssertTrue(command.contains("ln -sf"))
-        XCTAssertTrue(command.contains("sudo"))
+        // The test binary sits in a temp folder this account can change: no sudo link to it.
+        guard case let .failed(reason) = CLIInstaller.install(source: source, targetDir: missing)
+        else { return XCTFail("a sudo link to a user-writable app must not be offered") }
+        XCTAssertTrue(reason.contains("/Applications"), reason)
+        XCTAssertNil(CLIInstaller.sudoRefusal(source: URL(
+            fileURLWithPath: "/Applications/JamfReports.app/Contents/MacOS/JamfReports")))
+        XCTAssertNotNil(CLIInstaller.sudoRefusal(source: URL(
+            fileURLWithPath: "/Users/someone/Downloads/JamfReports.app/Contents/MacOS/JamfReports")))
     }
 
     func testNeverClobbersARealFile() throws {

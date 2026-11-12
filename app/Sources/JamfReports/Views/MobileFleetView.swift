@@ -338,7 +338,7 @@ struct MobileFleetView: View {
     }
 
     /// Caption for a tile whose field no device in the snapshot carries.
-    private static let notCollectedCaption = L("Not in the collected inventory")
+    private static var notCollectedCaption: String { L("Not in the collected inventory") }
 
     /// A count as a share of the fleet, or a dash when the count is unknown.
     private func fleetPercentText(_ count: Int?) -> String {
@@ -613,7 +613,7 @@ struct MobileFleetView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                Text(count == 1 ? "\(count) device" : "\(count) devices")
+                Text(count == 1 ? L("\(count) device") : L("\(count) devices"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(percentFormat.text(percentage))
@@ -654,25 +654,36 @@ struct MobileFleetView: View {
                         .accessibilityLabel("Export iOS/iPadOS version distribution chart as PNG")
                         .help("Save the iOS/iPadOS version distribution bar chart as a PNG image")
                     }
-                    let colors = Theme.ChartColors.colors(
-                        forVersions: snapshot.osDistribution.map(\.osVersion))
-                    ForEach(Array(snapshot.osDistribution.enumerated()), id: \.element.osVersion) {
+                    let all = snapshot.osDistribution
+                    let shown = Array(all.prefix(Self.osVersionsShown))
+                    let colors = Theme.ChartColors.colors(forVersions: shown.map(\.osVersion))
+                    ForEach(Array(shown.enumerated()), id: \.element.osVersion) {
                         index, item in
                         osVersionBar(osVersion: item.osVersion, count: item.count,
                                      color: colors[index])
+                    }
+                    if all.count > shown.count {
+                        Text(L("\(shown.count) of \(all.count) shown"))
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             }
         }
     }
 
+    /// The most common versions the card draws; the rest are counted, not dropped silently.
+    private static let osVersionsShown = 10
+
     private func exportOSDistribution() {
         let rows = snapshot.osDistribution
         let total = snapshot.totalDevices
+        let cap = MobileFleetOSDistributionExport.displayCap
+        let capped = rows.count > cap ? " · \(cap) of \(rows.count) versions shown" : ""
         let result = DashboardChartExport.run(
             title: "iOS / iPadOS Version Distribution",
             subtitle: "Mobile Devices",
-            footnote: "Source: pro mobile-devices · \(total) mobile devices",
+            footnote: "Source: pro mobile-devices · \(total) mobile devices\(capped)",
             suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile),
             percentFormat: percentFormat
         ) {
@@ -693,7 +704,7 @@ struct MobileFleetView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                Text(count == 1 ? "\(count) device" : "\(count) devices")
+                Text(count == 1 ? L("\(count) device") : L("\(count) devices"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(percentFormat.text(percentage))
@@ -725,17 +736,15 @@ struct MobileFleetView: View {
 
     private var devicesTable: some View {
         let listRowsByID = snapshot.lightDevicesByID
-        let matching = tableRows
-        let rows = Array(matching.prefix(50))
+        let rows = tableRows
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     SectionHeader(
                         title: L("Mobile Devices"),
-                        // The denominator is the matching count, so a filter reads "50 of 80".
+                        // Every matching device is listed; a filter says how many of the fleet.
                         trailing: supervisionFilter != nil || findingFilter != nil
-                            || matching.count > rows.count
-                            ? L("\(rows.count) of \(matching.count) shown")
+                            ? L("\(rows.count) of \(totalMobileDevices) shown")
                             : nil
                     )
                     if let supervisionFilter {
@@ -799,16 +808,9 @@ struct MobileFleetView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .font(.callout)
-                // A Table has no height of its own inside the page's ScrollView; without this
-                // it collapses under the header and shows no rows. Sized to its rows, so a
-                // filtered list does not trail blank striped rows, up to Devices' 430 pt.
-                .frame(height: Self.tableHeight(
-                    rows: rows.count, rowHeight: Self.deviceRowHeight, cap: 430))
-                if matching.count > rows.count {
-                    Text("Generated reports include every mobile device.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
+                // Every matching row, so an Audit count above a screenful can all be seen: the
+                // table takes its rows' height up to the page's and scrolls inside after that.
+                .pageTableHeight(rows: rows.count, rowHeight: Self.deviceRowHeight)
             }
         }
     }
@@ -1159,7 +1161,7 @@ private struct MobileFleetOSDistributionExport: View {
     let rows: [(osVersion: String, count: Int)]
     let totalDevices: Int
 
-    private static let displayCap = 12
+    static let displayCap = 12
 
     private var displayRows: [(osVersion: String, count: Int)] {
         Array(rows.prefix(Self.displayCap))

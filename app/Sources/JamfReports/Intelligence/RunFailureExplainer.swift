@@ -188,7 +188,7 @@ struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
             throw error
         } catch {
             AppLogger.platform.error(
-                "Run failure explanation failed: \(error.localizedDescription, privacy: .private)")
+                "Run failure explanation failed: \(error.englishDescription, privacy: .private)")
             throw FleetInsightError.generationFailed(
                 FoundationModelsInsightGenerator.userMessage(for: error))
         }

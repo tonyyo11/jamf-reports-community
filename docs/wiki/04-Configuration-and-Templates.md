@@ -24,7 +24,10 @@ The result is a starting point, not a final answer. Always review it.
 
 ![config.yaml editor](images/config-editor.png)
 
-In the app, the **Config** screen edits `config.yaml` through seven tabs:
+In the app, the **Config** screen edits `config.yaml` through up to seven tabs. The tabs
+offered follow the workspace's products: the Platform API tab appears only when the
+environment has a Platform API profile, and a Jamf School or Protect-only environment gets
+only Thresholds, Output & Branding and From config.yaml:
 
 | Tab | What it covers |
 |---|---|
@@ -310,6 +313,44 @@ file — either one keeps it; `include_summaries` (default false) leaves the dur
 trend summaries alone unless explicitly set true; `archive_dir` defaults to
 `<workspace>/_archive`. `retention` has no in-app editor.
 
+### The environment's profiles (`profiles`)
+
+A workspace is one environment: a Jamf Pro or Jamf School profile plus the add-on profiles
+that belong with it. The optional `profiles:` block names them:
+
+```yaml
+profiles:
+  jamf_pro: "Example"        # the Jamf Pro profile; always this workspace's own
+  platform: "Example-API"    # runs the Platform-only reports
+  jamf_school: ""            # never together with jamf_pro
+  protect: "Example-Protect"
+  security_cloud: ""         # a `jamf-cli security setup` login
+```
+
+With the block, `jamf_cli.profile`, `protect.*` and `school_cli.*` are no longer read for
+profiles; a blank slot is a product the environment does not have. The Jamf Pro or Jamf
+School slot must name the workspace itself, so every command runs as the profile the
+workspace folder is named for; `jamf_cli.profile` never chooses one. A block with only
+`protect` is a Protect-only environment: it collects Jamf Protect alone and refuses every
+Jamf Pro command. Jamf Security Cloud is collected after each Jamf Pro or Jamf School
+collect and saves only each device's risk category and a few status fields. Without the
+block the old keys work as before. On a shared workspace, `profiles.platform`,
+`profiles.protect` and `profiles.security_cloud` are held until you **Confirm** them on each
+Mac (see
+[Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)).
+The Data Sources **Environment card** edits the slots; Config Doctor checks them
+(two MDMs, an unknown profile, a profile shared by two workspaces).
+
+### Backups (`backup`, `protect.backup_on_synced_storage`)
+
+A Jamf Pro backup holds configuration that can contain secrets. On storage other Macs
+reach, `backup.pro_on_synced_storage` records your per-workspace choice: `true` backs Jamf Pro
+up there, `false` keeps it out, and leaving the key out asks (a workspace that already ran
+scheduled backups keeps backing up for three more runs, then skips Jamf Pro until you choose).
+`protect.backup_on_synced_storage` is the same choice for Jamf Protect. On a shared workspace
+each Mac confirms a `true` once. Local storage needs neither key. The Backups screen
+writes both. A Jamf School workspace with Jamf Protect backs up Protect alone.
+
 ### Where reports go (`output`, `branding`)
 
 Reports are written to `output.output_dir`, with `~` expanded. A folder outside the
@@ -320,6 +361,16 @@ the report goes to `Generated Reports` in the workspace. The Reports screen list
 folder in use (and its archive), its header names it, and Reveal in Finder, Open and the
 save panels start there. `retention.archive_dir` follows the same rule. `output.keep_latest_runs` below 1 is read as 1. `branding.accent_color`
 takes `#RRGGBB` or `#RGB`; anything else uses the default.
+
+`output.csv_folder: true` (default off) also writes one CSV per workbook tab into a
+`<workbook name>_csv` folder beside every workbook, including a scheduled run's; the Generate
+sheet's **CSV folder** format and `jamf-reports generate --csv-folder` do it for one run.
+Every run also writes `<name>.manifest.json`, the size and SHA-256 of each file it made, and
+`jamf-reports verify` checks it. `output.timestamp_authority` (default empty) is an `https://`
+address of an RFC 3161 time-stamp authority: when set, each manifest's SHA-256 is sent there
+and the signed reply is saved as `<name>.tsr`. Nothing else leaves the Mac, a failure is a
+warning, and on a shared workspace the address is not used on a Mac until you confirm it
+there. See [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line).
 
 ### AI insights (`ai`)
 
@@ -335,8 +386,9 @@ panel.
 - **`collect_skip`** (default empty) — report types a collect never runs, a stall guard
   for on-premise Jamf Pro: any of `patch-device-failures`, `profile-status`,
   `update-status`, `update-device-failures` (the per-device-heavy queries known to
-  stall a server), `dashboard`, and `sofa` (the one fetch from `sofafeed.macadmins.io`,
-  for networks that must not reach third-party hosts). Underscores work in place of
+  stall a server), `dashboard`, `sofa` (the one fetch from `sofafeed.macadmins.io`,
+  for networks that must not reach third-party hosts) and `security-risk` (the Jamf
+  Security Cloud device list). Underscores work in place of
   hyphens. Anything else in the list is ignored, so core inventory always runs. A listed
   source is skipped even by a manual collect, the run log says so, and the data
   freshness strip does not wait for it. Skipping SOFA leaves the cached feed in use;
@@ -398,7 +450,7 @@ column name and detected type, and any column missing from the cached data is fl
 The **Customize** screen holds the report options that are not in Config:
 
 - Two chart switches, saved per profile when you press Apply:
-  **Save PNGs alongside xlsx** (`charts.save_png`) and **Per-major-version charts**
+  **Save PNGs alongside xlsx** (`charts.save_png`) and **Per-major macOS charts**
   (`charts.os_adoption.per_major_charts`).
 - **Percentages** (`display.percent_decimals`, saved with Apply): `56.7%` (one decimal, the
   default) or `57%` (whole numbers). Every screen, workbook, CSV folder, HTML report, period
@@ -504,7 +556,7 @@ All formats — XLSX, HTML, PDF — are produced by the native Swift engine.
 
 **Generate…** opens a sheet where you choose a template (Full Instance, Executive,
 Operational, Compliance, Asset, Security Posture, School) or **Custom**, any sheets you
-tick (your choice is remembered), the formats (XLSX, HTML, PDF, CSV), whether to collect
+tick (your choice is remembered), the formats (XLSX, HTML, PDF, CSV, CSV folder), whether to collect
 fresh data first (off by default when your data is under an hour old) and whether to run a
 Health Audit first. It replaces the old Generate HTML button, and it has no schedule form:
 use Automation for that.
@@ -579,13 +631,17 @@ The template decides how much of that you get and what starts open:
 
 ## Platform API
 
-Blueprint status, DDM status and the Compliance Benchmarks sheets come from reports only
-the Jamf Platform API serves. Collect runs them when the active `jamf-cli` profile's auth
-method is `platform`; a tenant-level profile (`--tenant-id`) skips Compliance Benchmarks
-and blueprint status, which Jamf Account does not grant at that level. The workbook adds
-the sheets whenever those snapshots exist.
+Blueprint status, DDM status reports and the Compliance Benchmarks sheets come from reports
+only the Jamf Platform API serves. Collect runs them as the workspace's Platform API profile:
+the profile named in `profiles.platform` when the config has a `profiles:` block (no slot
+means they are skipped), otherwise the workspace's own profile when its auth method is
+`platform`. A tenant-level profile (`--tenant-id`) skips Compliance Benchmarks and blueprint
+status, which Jamf Account does not grant at that level. The workbook adds the sheets
+whenever those snapshots exist.
 
-The Compliance Benchmarks and DDM Blueprints screens unlock on the same profile test. The
+The Compliance Benchmarks and DDM Blueprints screens do not share one test. Compliance
+Benchmarks and the blueprint sections need a Platform API profile; the DDM screen works on
+any profile, from the per-device scan or from inventory saying DDM is enabled. The
 Platform API left Settings → Experimental Features when it became a supported connection;
 a leftover stored opt-in is ignored.
 

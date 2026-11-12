@@ -52,7 +52,7 @@ func runTick(
         do {
             try TickRunner.requestRunNow(label: arguments[idx + 1], dir: environment.markerDir)
         } catch {
-            fputs("[error] could not queue run-now: \(error.localizedDescription)\n", stderr)
+            fputs("[error] could not queue run-now: \(error.englishDescription)\n", stderr)
             return 1
         }
     }
@@ -242,7 +242,7 @@ func workspaces(
 private func saveLastTick(_ state: TickState, to url: URL) {
     do { try state.save(url: url) } catch {
         AppLogger.schedule.warning(
-            "tick: wake time not recorded: \(error.localizedDescription, privacy: .private)")
+            "tick: wake time not recorded: \(error.englishDescription, privacy: .private)")
     }
 }
 
@@ -320,7 +320,7 @@ enum TickLoop {
                 state = before
                 failed = true
                 let message = "skipped \(label): its start could not be recorded — "
-                    + "could not write tick-state.json: \(error.localizedDescription)"
+                    + "could not write tick-state.json: \(error.englishDescription)"
                 reportTickError(message)
                 recordFailure(run.schedule, message)
                 continue
@@ -346,7 +346,7 @@ enum TickLoop {
                 } catch {
                     failed = true
                     let message = "\(label) succeeded, but the success could not be recorded — "
-                        + "could not write tick-state.json: \(error.localizedDescription)"
+                        + "could not write tick-state.json: \(error.englishDescription)"
                     reportTickError(message)
                     recordFailure(run.schedule, message)
                 }

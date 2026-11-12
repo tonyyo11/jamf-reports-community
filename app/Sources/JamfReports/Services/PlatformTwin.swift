@@ -21,7 +21,7 @@ enum PlatformTwin {
     }
 
     /// A profile that could be the oauth2 side of a pair.
-    private static func isCandidate(_ profile: JamfCLIProfile) -> Bool {
+    static func isCandidate(_ profile: JamfCLIProfile) -> Bool {
         let method = profile.auth
         return profile.status != .error && profile.product.canBeProWorkspace
             && (method == .oauth2 || method == .other("token"))

@@ -17,6 +17,8 @@ struct EnvironmentCard: View {
     @State private var pendingMerge: WorkspaceMergeJournal.Pending = .none
     @State private var mergeSession: MergeSession?
     @State private var confirmStartOver = false
+    /// `WorkspaceMergeCandidates.list`, read in a task: it checks a folder per profile.
+    @State private var mergeCandidates: [String] = []
 
     private struct MergeSession: Identifiable {
         let id = UUID()
@@ -44,15 +46,14 @@ struct EnvironmentCard: View {
             }
         }
         .task(id: state.workspace) { await reloadPendingMerge() }
+        .task(id: mergeCandidatesKey) { await reloadMergeCandidates() }
         .sheet(item: $mergeSession, onDismiss: { Task { await reloadPendingMerge() } }) { session in
             WorkspaceMergeSheet(
                 model: session.model, candidates: mergeCandidates, resumes: session.resumes,
                 onFinished: mergeFinished, onFailed: { Task { await reloadPendingMerge() } })
         }
         .confirmationDialog(
-            pendingRemoval.map { $0.slot == .protect
-                ? L("Remove Jamf Protect from this environment?")
-                : L("Remove Platform API from this environment?") }
+            pendingRemoval.map { Self.removalTitle(for: $0.slot) }
                 ?? L("Remove from this environment?"),
             isPresented: removalBinding,
             presenting: pendingRemoval
@@ -120,7 +121,7 @@ struct EnvironmentCard: View {
             }
         }
         if let date = row.newestSnapshot {
-            Text(L("Newest snapshot \(Self.relative.localizedString(for: date, relativeTo: Date()))"))
+            Text(L("Newest snapshot \(Self.relative.localizedString(for: date, relativeTo: demo ? DemoData.referenceDate : Date()))"))
                 .font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
         }
         if row.pinNeedsConfirming {
@@ -153,13 +154,23 @@ struct EnvironmentCard: View {
         }
     }
 
-    private var mergeCandidates: [String] {
-        guard !demo else { return [] }
-        return WorkspaceMergeCandidates.list(
-            target: state.workspace,
-            targetPlatformSlot: state.rows.first { $0.slot == .platform }?.profile,
-            profiles: workspace.profiles,
-            hasWorkspace: { ProfileService.hasWorkspace($0) })
+    private var platformSlot: String? { state.rows.first { $0.slot == .platform }?.profile }
+
+    /// Everything the candidate list reads, so the task runs again when one changes.
+    private var mergeCandidatesKey: [String] {
+        [String(demo), state.workspace, platformSlot ?? ""] + workspace.profiles.map {
+            "\($0.name)|\(String(describing: $0.status))|\(String(describing: $0.auth))|\($0.product)"
+        }
+    }
+
+    private func reloadMergeCandidates() async {
+        guard !demo else { mergeCandidates = []; return }
+        let target = state.workspace, slot = platformSlot, profiles = workspace.profiles
+        mergeCandidates = await Task.detached {
+            WorkspaceMergeCandidates.list(
+                target: target, targetPlatformSlot: slot, profiles: profiles,
+                hasWorkspace: { ProfileService.hasWorkspace($0) })
+        }.value
     }
 
     @ViewBuilder
@@ -198,9 +209,10 @@ struct EnvironmentCard: View {
             }
             await store.applyAutomationPolicy()
         }
-        mergeSession = MergeSession(
-            model: WorkspaceMergeModel(target: state.workspace, deps: deps),
-            resumes: resumes)
+        let model = WorkspaceMergeModel(target: state.workspace, deps: deps)
+        // A resume opens on its progress, not on the chooser for a new merge.
+        if resumes { model.phase = .checking }
+        mergeSession = MergeSession(model: model, resumes: resumes)
     }
 
     private func startOver() {
@@ -251,9 +263,9 @@ struct EnvironmentCard: View {
         let service = CLIDoctorService(executor: DefaultCLIExecutor(bridge: CLIBridge()))
         Task {
             let outcome = await service.run(profile: profile)
+            checking.remove(profile)
             // A switch to another workspace rebuilt this view's state; its result is not ours.
             guard started == state.workspace else { return }
-            checking.remove(profile)
             switch outcome {
             case .notInstalled: checks[profile] = L("jamf-cli is not installed.")
             case .failed(let reason): checks[profile] = ConfigSchema.displayText(reason)
@@ -381,3 +393,15 @@ private let previewState = EnvironmentCardState(
         .preferredColorScheme(.dark)
 }
 #endif
+
+extension EnvironmentCard {
+    /// One title per product a row can disconnect. Internal for tests.
+    nonisolated static func removalTitle(for slot: ProfilesConfigWriter.Slot) -> String {
+        switch slot {
+        case .protect: L("Remove Jamf Protect from this environment?")
+        case .platform: L("Remove Platform API from this environment?")
+        case .securityCloud: L("Remove Jamf Security Cloud from this environment?")
+        case .jamfPro, .jamfSchool: L("Remove from this environment?")
+        }
+    }
+}

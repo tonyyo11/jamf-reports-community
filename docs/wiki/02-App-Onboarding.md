@@ -38,7 +38,10 @@ switcher** at the bottom of the sidebar and choose **Add workspace or product…
 - **New workspace**: Jamf Pro (OAuth2), Platform API or Jamf School. **Connect new** starts
   that product's onboarding.
 - **Add to** the current workspace: Jamf Protect, on a Jamf Pro or (experimental) Jamf School
-  workspace.
+  workspace, or a Platform API profile on a Jamf Pro workspace. The Platform API add-on takes a
+  profile jamf-cli already has or **Connect new**; either way the app first checks that the
+  profile reaches the same Jamf Pro server as the workspace. Jamf Security Cloud is attached
+  from **Data Sources**, not here.
 - **Profiles jamf-cli already has**: the sheet reads jamf-cli's profiles when it opens and on
   **Re-check**, and lists the ones no workspace uses, including profiles made in Terminal since
   the app started. **Set up workspace** creates the workspace and runs its first collection; a
@@ -48,7 +51,8 @@ switcher** at the bottom of the sidebar and choose **Add workspace or product…
 
 If jamf-cli already has a profile and no profile has a workspace yet, first launch skips the
 Welcome chooser and opens **jamf-cli is already set up**. jamf-cli already holds the
-credentials, so this screen covers only what the app is missing.
+credentials, so this screen covers only what the app is missing. **Use demo data** on the
+same screen opens the app on sample data instead.
 
 **Already have a workspace folder?** When the workspace already exists, such as a synced team
 folder other Macs use or a folder from a previous install, click **Choose workspace
@@ -64,8 +68,10 @@ follow
 
 Otherwise, three steps set up new workspaces:
 
-1. **Profiles to set up** — every usable jamf-cli profile starts ticked. A profile the app
-   can't use is listed with the reason and can't be selected.
+1. **Environments to set up** — one card per environment, each ticked to start. A Platform
+   API profile that reaches the same Jamf Pro server is folded into that environment's card,
+   and each Jamf Protect login has a picker for the environment it belongs to. A profile the
+   app can't use is listed under **Not set up** with the reason and can't be selected.
 2. **Automated scans** — **Keep data fresh automatically** is on by default: a daily collect
    plus a weekly deep scan of the per-device queries. Choose the deep scan and report day,
    how often reports generate (Off, Daily, Weekly or Monthly; Weekly by default) and the
@@ -204,21 +210,22 @@ full workflow.
 
 ## Where data lives
 
-Each profile is a self-contained workspace under `~/Jamf-Reports/<profile>/` — or under
-whatever folder **Settings → Workspace location** points at, if you have moved it:
+Each workspace is one environment: a Jamf Pro or Jamf School profile and the add-on profiles
+(Platform API, Jamf Protect, Jamf Security Cloud) attached to it. Its folder is named for the
+Jamf Pro or Jamf School profile, `~/Jamf-Reports/<profile>/` — or under whatever folder
+**Settings → Workspace location** points at, if you have moved it:
 
 ```text
 ~/Jamf-Reports/<profile>/
-├── config.yaml          # thresholds, scoring weights, Extension Attributes
+├── config.yaml          # thresholds, security policy, Extension Attributes
 ├── jamf-cli-data/        # cached JSON snapshots from jamf-cli
 ├── snapshots/
-│   └── computers/
-│       ├── csv/          # archived CSV snapshots (optional)
-│       └── summaries/    # summary.json per run — feeds the Trends screen
+│   └── summaries/        # summary_<date>.json per day — feeds the Trends screen
 ├── Generated Reports/    # produced .xlsx / .html / .pdf artifacts
-├── automation/
-│   └── logs/             # per-run logs from scheduled runs
-└── archive/              # rotated older runs
+│   └── archive/          # rotated older runs
+├── backups/              # jamf-cli backups
+└── automation/
+    └── logs/             # per-run logs from scheduled runs
 ```
 
 Everything for one tenant is under one folder. To move a profile to another Mac, copy the

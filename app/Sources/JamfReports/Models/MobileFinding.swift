@@ -12,7 +12,8 @@ enum MobileFinding: String, CaseIterable, Sendable, Identifiable {
     var id: String { rawValue }
 
     /// The Health Audit category all seven share.
-    static let category = L("Mobile devices")
+    /// English: it is matched, and sent to the audit insight; views show it with `LShown`.
+    static var category: String { LK("Mobile devices") }
 
     /// What the rules judge devices against.
     struct Context: Sendable, Equatable {

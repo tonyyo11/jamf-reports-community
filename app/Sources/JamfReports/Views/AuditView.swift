@@ -12,6 +12,8 @@ struct AuditFinding: Identifiable, Codable {
     /// The Macs behind the finding, for a finding the app computes from the inventory
     /// (`contactGapFindings`). `pro audit` returns counts only, so its findings have none.
     var devices: [String] = []
+    /// Devices behind the finding that `devices` leaves out (a capped list).
+    var moreDevices = 0
     /// What `devices` lists, for the popover's heading.
     var deviceNoun = L("Macs")
     /// The `MobileFinding` raw value that opens the Mobile Devices list behind the finding.
@@ -177,6 +179,30 @@ struct AuditView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            page
+                // The Overview's Needs attention tile asks for the Mobile Devices card, which
+                // loads after the screen opens; scroll once it has findings to show.
+                .onChange(of: workspace.pendingAuditSection, initial: true) {
+                    scrollToPendingSection(proxy)
+                }
+                .onChange(of: mobileFindingList.count) { scrollToPendingSection(proxy) }
+                .onDisappear { workspace.pendingAuditSection = nil }
+        }
+    }
+
+    private func scrollToPendingSection(_ proxy: ScrollViewProxy) {
+        guard workspace.pendingAuditSection == MobileDevicesSection.anchorID,
+              !mobileFindingList.isEmpty else { return }
+        workspace.pendingAuditSection = nil
+        selectedTab = 0
+        Task { @MainActor in
+            await Task.yield()
+            withAnimation { proxy.scrollTo(MobileDevicesSection.anchorID, anchor: .top) }
+        }
+    }
+
+    private var page: some View {
         PageScaffold {
             header
 
@@ -229,7 +255,7 @@ struct AuditView: View {
             default: configSection
             }
         }
-        .task(id: workspace.profile) {
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             await loadCached()
         }
         .task(id: doctorTaskKey) {
@@ -512,7 +538,7 @@ struct AuditView: View {
                             Pill(text: f.severity, tone: pillTone(f.severity))
                         }
                         TableColumn("Category", value: \.category) { f in
-                            Text(f.category.capitalized).font(.footnote)
+                            Text(LShown(f.category).capitalized).font(.footnote)
                         }
                         TableColumn("Affected", value: \.affected) { f in
                             AffectedBar(
@@ -547,6 +573,7 @@ struct AuditView: View {
             commandHealthSection
             ContactGapSection(findings: contactGapList)
             MobileDevicesSection(findings: mobileFindingList)
+                .id(MobileDevicesSection.anchorID)
         }
     }
 
@@ -562,7 +589,9 @@ struct AuditView: View {
                 provenanceText: L("AI-generated from the audit findings on this screen — verify against the table below."),
                 input: Localization.english { FleetInsightInput.audit(
                     findings: findings,
-                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil) }
+                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil,
+                    mobile: FleetInsightInput.mobileAuditCounts(
+                        mobileFindingList, staleDays: workspace.configState.staleRule.days)) }
             )
         }
     }
@@ -935,8 +964,8 @@ struct AuditView: View {
                                 }
                                 .disabled(workspace.demoMode)
                                 .help(workspace.demoMode
-                                      ? "Opening a group in Jamf Pro needs a live profile."
-                                      : "Open this group in the Jamf Pro console.")
+                                      ? L("Opening a group in Jamf Pro needs a live profile.")
+                                      : L("Open this group in the Jamf Pro console."))
                             }
                         }
                         .frame(height: tableHeight(rowCount: sortedHygiene.count, maxHeight: 430))
@@ -1076,8 +1105,13 @@ struct AuditView: View {
         contactGapList = []
         mobileFindingList = []
         hasPreviousAudit = false
-        await loadIntegritySummary()
         let loadProfile = workspace.profile
+        // A switch cancels this task but not its awaits: drop what arrives for the old profile.
+        func superseded() -> Bool {
+            Task.isCancelled || loadProfile != workspace.profile || workspace.demoMode
+        }
+        await loadIntegritySummary()
+        guard !superseded() else { return }
         guard let integrity = await ScreenLoad.paint(
             stillCurrent: { loadProfile == workspace.profile && !workspace.demoMode },
             read: { (DuplicateSerialService.load(profile: loadProfile),
@@ -1087,7 +1121,8 @@ struct AuditView: View {
         commandHealth = integrity.1
 
         let decoder = JSONDecoder()
-        let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
+        let auditSnapshots = await bridge.cachedJSONSnapshots(profile: loadProfile, type: "audit", limit: 2)
+        guard !superseded() else { return }
         let scanned = commandHealth.isDetected
         var failedCommandTotal: Int?
         if let current = auditSnapshots.first,
@@ -1121,10 +1156,11 @@ struct AuditView: View {
 
         commandFindings = commandHealthFindings(
             commandHealth, failedCommandTotal: failedCommandTotal)
-        let profile = workspace.profile
+        let profile = loadProfile
         let inventory = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.load(profile: profile, demoMode: false)
         }.value
+        guard !superseded() else { return }
         contactGapList = contactGapFindings(inventory)
         let staleDays = workspace.configState.staleRule.days
         if let mobile = await ScreenLoad.paint(
@@ -1133,17 +1169,19 @@ struct AuditView: View {
         ) { mobileFindingList = mobile }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
-            profile: workspace.profile,
+            profile: loadProfile,
             type: "group-tools-analyze",
             limit: 1
         )
+        guard !superseded() else { return }
         if let latestHygiene = hygieneSnapshots.first,
            let decoded = try? decoder.decode([UnusedGroup].self, from: latestHygiene.data) {
             let groupsSnapshots = await bridge.cachedJSONSnapshots(
-                profile: workspace.profile,
+                profile: loadProfile,
                 type: "groups",
                 limit: 1
             )
+            guard !superseded() else { return }
             unusedGroups = UnusedGroup.merging(decoded, withGroupCounts: groupsSnapshots.first?.data)
             lastHygieneDate = latestHygiene.modified
         }
@@ -1181,6 +1219,7 @@ struct AuditView: View {
         }.value
         // Profile may have switched while the detached scan ran — gate.
         guard workspace.profile == profile else { return }
+        guard profile == workspace.profile, !Task.isCancelled else { return }
         integritySummary = summary
     }
 
@@ -1412,11 +1451,17 @@ struct FindingDetailPopover: View {
     /// not stretch the popover.
     private var deviceList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Kicker(text: "\(finding.deviceNoun) (\(finding.devices.count))")
+            Kicker(text: "\(finding.deviceNoun) (\(finding.devices.count + finding.moreDevices))")
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(finding.devices, id: \.self) { device in
+                    // Offsets, not names: two unnamed devices with no serial read the same.
+                    ForEach(Array(finding.devices.enumerated()), id: \.offset) { _, device in
                         Text(device)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                    if finding.moreDevices > 0 {
+                        Text(L("and \(finding.moreDevices) more, in Mobile Devices"))
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                     }
@@ -1498,11 +1543,19 @@ extension FleetInsightInput {
     /// `resource` text beside it, can name policies, computers or users and stays behind.
     /// Resolved findings are counted, not named: next to the open ones the on-device model
     /// read a named one as still open. Nil when there are no findings.
+    ///
+    /// `mobile` is the Audit's Mobile Devices card (mobile spec 5): each finding by name with
+    /// its device count; a finding no device shows is left out.
     static func audit(
         findings: [AuditFinding],
-        drift: (newKeys: Set<String>, resolved: [AuditFinding])?
+        drift: (newKeys: Set<String>, resolved: [AuditFinding])?,
+        mobile: [(name: String, devices: Int)]
     ) -> FleetInsightInput? {
-        guard !findings.isEmpty else { return nil }
+        let mobileFacts = mobile.filter { $0.devices > 0 }.map {
+            Fact(label: L("\($0.name) (mobile devices)"), value: .count($0.devices), prior: nil,
+                 polarity: .lowerIsBetter)
+        }
+        guard !findings.isEmpty || !mobileFacts.isEmpty else { return nil }
         let open = findings.filter { AuditSeverity($0.severity) != .passing }
         let isNew = { (finding: AuditFinding) in drift?.newKeys.contains(finding.driftKey) == true }
         var facts = auditSeverityFacts(findings)
@@ -1519,6 +1572,7 @@ extension FleetInsightInput {
         if let categories = auditCategoryFact(open) { facts.append(categories) }
         let listed = Array(open.sorted(by: auditIsMoreUrgent).prefix(maxListedAuditFindings))
         facts += listed.map { auditFindingFact($0, isNew: isNew($0)) }
+        facts += mobileFacts
         var notes = [L("A finding's count is the objects it affects, as its check name says (devices, policies, ...). Counts of different checks do not add up.")]
         if open.count > listed.count {
             notes.append(L("\(open.count - listed.count) lower-priority findings are not listed."))
@@ -1531,6 +1585,17 @@ extension FleetInsightInput {
             title: L("Audit insight"),
             focus: L("which categories to work first, and what changed since the previous audit."),
             facts: facts, notes: notes)
+    }
+
+    /// The Mobile Devices card's findings by name, re-read from `MobileFinding` so the name is
+    /// in the language of the caller (the insight's English scope), never the screen's.
+    static func mobileAuditCounts(
+        _ findings: [AuditFinding], staleDays: Int
+    ) -> [(name: String, devices: Int)] {
+        findings.compactMap { finding in
+            finding.mobileFilter.flatMap(MobileFinding.init(rawValue:))
+                .map { ($0.name(staleDays: staleDays), finding.affected) }
+        }
     }
 
     private static let maxListedAuditFindings = 10
@@ -1641,11 +1706,15 @@ private extension AuditFinding {
     }
 }
 
-/// Maps a finding to the screen that can show its underlying records — by
-/// finding name first, category as fallback. Internal (not private) for tests.
+/// Maps a finding to the screen that can show its underlying records. The app's own findings
+/// go by their English category, since their names are translated; jamf-cli's go by name
+/// first, category as fallback. Internal (not private) for tests.
 func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: Tab)? {
-    // The mobile names carry words ("update", "stale") the checks below send elsewhere.
-    if finding.category == MobileFinding.category { return (L("Mobile Devices"), .mobileFleet) }
+    switch finding.category {
+    case MobileFinding.category: return (L("Mobile Devices"), .mobileFleet)
+    case "Command health", "Contact gap": return (L("Computers"), .devices)
+    default: break
+    }
     let name = finding.name.lowercased()
     if name.contains("unencrypted") || name.contains("filevault")
         || name.contains("gatekeeper") || name.contains("sip")

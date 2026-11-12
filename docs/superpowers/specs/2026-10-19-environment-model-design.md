@@ -1,7 +1,10 @@
 # The workspace is the environment — design
 
-Status: design, not built. The direction was decided on 2026-10-19, so this document designs it and does
-not argue for it. It must land before any Security Cloud collect code (epic #283). It also
+Status: P1 to P9 shipped in 2.12, and P12 slices 1 and 2 (Security Cloud slot, collect, match
+and summary fields). P10 is not built; P11 was replaced by the mobile spec's M6; P13 (docs) is
+open. Where the text below differs from the code, a note says which ruling or phase changed it.
+The direction was decided on 2026-10-19, so this document designs it and does not argue for it.
+It landed before the Security Cloud collect code (epic #283). It also
 covers epic #284's "Several Platform connections; Jamf Pro vs Jamf School" and #207 L1, L3, L5
 and L6 (carried over into #284).
 
@@ -30,7 +33,7 @@ each one holds its OAuth profile and its Platform profile.
 | `jamf_cli.profile` | Must be blank or equal to the run's profile (`ReportEngine.runProfile`, `profileMismatch`) | Replaced by `profiles.jamf_pro`. Not read under a `profiles:` block; still read without one (3.3, D14) |
 | `protect.enabled/profile` | Protect runs after a Pro collect that returned `.collected` (`CollectRouter`) | `profiles.protect`. The follow rule is generalised (section 7) |
 | `school_cli.enabled/profile` | Makes the workspace a School one when the profile is blank or the workspace's own (`isPrimary`) | `profiles.jamf_school` |
-| `ProfileProductType` | `.jamfPro` / `.jamfSchool` | Replaced by `EnvironmentProducts`: the set of products present |
+| `ProfileProductType` | `.jamfPro` / `.jamfSchool` | Kept as the router's answer for which MDM collect runs (`ProfileProductType.detect`, read over `EnvironmentProfiles`, with `runsProtect`). `EnvironmentProducts` is the set of products present, which screens, tabs and reports read |
 | `ConnectedProducts` | Reads protect and foreign-school names | Replaced by the `EnvironmentProfiles` reader |
 | `PlatformTwin` | Learns a platform profile's Jamf Pro URL and unticks the matching OAuth profile | Pairs the two into one proposed environment (section 5) |
 | `droppingPairedProductProfiles` | Hides a Protect or Security Cloud login named by a workspace | Hides every profile named in any workspace's `profiles:` |
@@ -192,9 +195,9 @@ workspace together; it is advice, not a correctness requirement.
   workspace's own folder spelling (`ProfileService.caseVariantWorkspace`), which under D17 is
   also the MDM slot. Add-on slots name logins that are never workspaces, so they need no
   case-variant check.
-- Log lines name the product and its profile:
-  `[info] collecting computers for Example (Jamf Pro)`. Run History keeps one log per run, per
-  workspace.
+- Log lines name the profile a kind ran as: `[info] collecting computers for Example`. The
+  product is not added; the profile tells a Platform kind's login from the Jamf Pro one. Run
+  History keeps one log per run, per workspace.
 
 ### 4.1 Pins
 
@@ -217,15 +220,17 @@ covered once, with the existing pin mechanism (D18):
 The rule is today's: a change from a peer or a hand edit is ignored until the operator confirms
 it in Config Doctor. A held or drifted slot reads as blank, and that product is skipped with
 `[skip] <product>: profiles.<slot> changed in the shared config.yaml and is not confirmed on this Mac`,
-as `protectAllowed` skips Protect today. A Data Sources save re-pins only the slots it changed
-(`changedProfileKeys`).
+as `protectAllowed` skips Protect today. A Data Sources save re-pins only the slot it wrote:
+`ProfilesConfigWriter.save` confirms the written value through `SharedConfigPin.confirmWritten`,
+matched by its token, so a peer's edit in between is not confirmed.
 
 ### 4.2 Discovery and the sidebar
 
 - The sidebar lists workspaces (folders holding a `config.yaml`) only. A jamf-cli profile that
   no workspace names is no longer shown as a workspace waiting to be created. It appears in the
   adoption screen and in a Data Sources card, "Profiles not in an environment" (product, auth
-  method, host), with Add to this environment and New environment.
+  method, host). The card adopts nothing itself: its button opens the Add sheet, whose
+  "Profiles jamf-cli already has" section does the setup (P5 ruling R2).
 - `droppingPairedProductProfiles` generalises: a profile named in any workspace's slots is
   never a workspace candidate, and `runnableProfiles` becomes `runnableWorkspaces`.
 - `ProfileService.localOnlyWorkspaces` skips a folder whose `EnvironmentProfiles.namedOwner`
@@ -233,20 +238,22 @@ as `protectAllowed` skips Protect today. A Data Sources save re-pins only the sl
   under D17 a copied folder's MDM slot names the folder it was copied from, so the same test
   and the refusal both catch it. No second copy test is added.
 - `WorkspaceStore.activeProfile` becomes `activeWorkspace`. `activeCLIProfile` becomes
-  `profile(for product:)`.
+  `profile(for product:)`. Not done: P5 ruling R1 deferred both renames, so the code keeps
+  `activeProfile` and `activeCLIProfile`.
 
 ## 5. Adoption and onboarding propose environments
 
-`EnvironmentProposal.propose(profiles:learnedJamfProURLs:connections:existingWorkspaces:)` is a
-pure function. It replaces `twinOf` in `ExistingCLISetupFlow`:
+`EnvironmentProposal.propose(profiles:learnedJamfProURLs:existingWorkspaces:unusable:)` is a
+pure function. It replaces `twinOf` in `ExistingCLISetupFlow`. It takes no `Connection`: a
+proposed environment holds at most one Platform profile, so rule 2 needs no grouping.
 
 1. Platform profiles are paired with OAuth or token profiles whose host matches the platform
    profile's learned Jamf Pro URL (`PlatformTwin.twins`). Each pair is one proposed environment:
    `jamf_pro` = the OAuth profile, `platform` = the platform profile, and the folder named after
    the OAuth profile.
-2. Two platform profiles in one `Connection` are never in one environment, because each is a
-   different environment ID. Two platform profiles that reach the same Jamf Pro host are flagged
-   ("two Platform profiles reach one Jamf Pro") and both are left unpaired for the user.
+2. An environment holds one Platform profile, so two from one `Connection` never share one.
+   Two platform profiles that reach the same Jamf Pro host are both left unassigned, with that
+   reason, for the user.
 3. A platform profile with no twin is its own environment, with `jamf_pro` = `platform` = that
    profile (today's shape).
 4. A Jamf School login is its own environment with `jamf_school`. Its Platform access lives in
@@ -268,14 +275,16 @@ pure function. It replaces `twinOf` in `ExistingCLISetupFlow`:
    new environment.
 
 UI: the adoption screen shows one card per proposed environment. Each card shows its name (the
-MDM profile's, D17), one row per slot with its profile, and a row menu: Move to environment…, Remove from environment.
+MDM profile's, D17), one row per slot with its profile. D26 ships Remove for the Platform row
+and an environment picker for each Protect login; there is no "Move to environment…" menu.
 Unassigned profiles are listed under the cards. Accept creates each folder, writes
 `profiles:`, confirms the written slots in the pin (`confirmWrittenConfig`) and records the
 learned Jamf Pro URL on the `Connection` member, as 2.10 does.
 
 Onboarding (new connections): when a Platform profile validates (`ConnectionCheck.accepted`),
 onboarding asks Jamf Pro for its URL. If an existing workspace's `jamf_pro` host matches, it
-offers "Add to Example" ahead of "New environment". Protect onboarding asks which environment
+offers "Add to Example" ahead of "New environment". Not built: P6 ruling R1 left this to the Add
+sheet's Re-check suggestions (5.1). Protect onboarding asks which environment
 it belongs to (Protect-only allowed). Security Cloud setup is reachable only from an
 environment's Data Sources card.
 
@@ -301,8 +310,9 @@ added.
    names (`JamfCLIProfile.product`). Picking one fills the slot after that product's check
    (`ConnectionCheck` for Platform, the host check of 3.1 for a Platform profile beside
    `jamf_pro`). **Connect new** runs only that product's setup (the PTY `config add-profile`,
-   `school setup`, `protect setup` or `security setup`). It skips the workspace step when adding to
-   an existing environment.
+   `school setup` or `protect setup`). It skips the workspace step when adding to an existing
+   environment. It never runs `security setup`: a Security Cloud login made in Terminal is
+   attached from Data Sources (decision log 2026-11-11, P12 slice 1).
 3. **Re-check suggestions.** When discovery finds profiles that `EnvironmentProposal`
    (section 5) would place, the sheet shows them at the top, for example "Example-API reaches
    the same Jamf Pro as Example — add it?" It also shows a new MDM profile as a candidate new
@@ -342,9 +352,10 @@ test fixes) stays as the guard behind it.
 
 An **Environment** card replaces the profile header at the top of Data Sources:
 
-- The workspace name, then one row per slot: product, profile, auth method and level, host
-  (the learned Jamf Pro host for `platform`), the last connection check, the newest snapshot
-  of that product's kinds, and whether the slot's pin needs confirming.
+- The workspace name, then one row per slot: product, profile, auth method and level (for a
+  Platform profile: environment, tenant or organization), the newest snapshot of that slot's
+  kinds, and whether the slot's pin needs confirming. The P4 plan dropped the host and the last
+  connection check from the row; Check shows the connection result when run.
 - Row actions: Add (an empty slot runs that product's setup or picks an unassigned profile),
   Change profile, Remove from environment, and Check. Remove only clears the slot: it never
   removes the jamf-cli profile or any snapshot. A removed product's screens hide, and its data
@@ -353,11 +364,11 @@ An **Environment** card replaces the profile header at the top of Data Sources:
   ships today (5.1's first slice) until P5 and P6 give it the slot-aware steps. A removed
   product's screens hide once P8's `EnvironmentProducts` exists; until then they stay as they
   are and show the product's last data.
-- The `platform` row embeds today's Connection card: the connection name, its other members,
-  and Update credentials for all.
-- Security Cloud's row shows its two halves on two lines, Radar (the `security_cloud` slot)
-  and the gateway half (through `platform`), each with its own status, never one "connected"
-  switch (#283).
+- The Connection card stays its own card in Data Sources (`ConnectionCard`), beside the
+  Environment card, with the connection name, its other members and Update credentials for all.
+- Security Cloud is one row, for the `security_cloud` slot (Radar). The gateway half through
+  `platform` is not built (P12 slices 1 and 2 only); when it lands, the row shows the two
+  halves with their own status, never one "connected" switch (#283).
 - The "jamf-cli · live" source list (`CollectSourcesPlan`) is grouped by product as it is
   today, now with each product's profile in the group header. A kind skipped because a slot is
   empty uses the plan's skip wording.
@@ -387,8 +398,9 @@ stops every product. P9 adds one environment finalize, when the summary gains Pr
 (section 8); until then Protect adds nothing to the summary, so there is nothing to finalize
 twice.
 
-`[plan]` lines name each product's profile: `[plan] environment Example — Jamf Pro: Example,
-Platform API: Example-API, Protect: Example-Protect — collecting N sources: …`.
+`[plan]` lines name the profiles that run: `[plan] profile Example — collecting N sources: …`,
+then `[plan] Platform API kinds run as Example-API` when the `platform` slot names another
+profile. Protect and School log their own collecting line for their fixed lists.
 
 ### 7.2 Failure honesty
 
@@ -448,14 +460,16 @@ Config tab and webhook card reads it instead of `isSchoolWorkspace`, `activeCLIP
 `ConnectedProducts`.
 
 - Tabs: `TabVisibility.limited(toSchool:)` becomes `limited(to: EnvironmentProducts)`. Protect
-  shows only with `protect`, Security Cloud only with `security_cloud`, Compliance Benchmarks
-  and DDM Blueprints only with `platform`, the Jamf Pro tabs only with `jamf_pro`, and Mobile
-  Fleet only when mobile devices exist.
+  shows only with `protect`, Compliance Benchmarks only with `platform`, the Jamf Pro tabs only
+  with `jamf_pro`, and Mobile Fleet only when mobile devices exist. The DDM tab is not gated on
+  `platform`: since 2.8.0 it unlocks from the per-device scan, and only its Blueprints sections
+  need the Platform API. Security Cloud has no tab yet.
 - Overview: the sections an environment cannot fill are left out, not shown as zero.
   Computers and mobile devices sit side by side when both exist (L5). An environment with no
   MDM opens on Protect.
-- Config tabs: the Platform API tab is shown only with `platform`. School-irrelevant tabs carry
-  a note on a School environment (L6).
+- Config tabs: the Platform API tab is shown only with `platform`. On a School or Protect-only
+  environment the tabs that do not apply are left out (`ConfigTab.offered`), not shown with a
+  note, as the sidebar tabs are.
 - HTML report and workbook: product groups appear when the product is present. Each figure's
   source line names the product and profile it came from (#284 "reports name the connection").
 - Webhook cards name the environment and list the products that contributed.
@@ -467,11 +481,11 @@ absent, never 0:
 |---|---|
 | `products` (list: `jamf_pro`, `jamf_school`, `platform`, `protect`, `security_cloud`) | the slots that collected that day |
 | `protectComputerCount`, `protectMatched` (`{met, of}` over identified Protect computers), `protectAlertCounts` (by severity) | Protect snapshots, `DeviceCorrelation` |
-| `securityRiskCounts` (by category), `securityCoveredPct` | Security Cloud, once collected |
+| `securityCloudDeviceCount`, `securityCloudMatched` (`{met, of}` over rows with an `externalId`), `securityCloudRiskCounts` (by category) | `security-risk`, `SecurityCloudCorrelation` (P12 slice 2) |
 | The `mobile` object (replaces `mobileEncryptedPct`, `mobilePasscodePct`, `mobileSupervisedPct`; see the mobile spec, section 4.2) | `mobile-devices-list` |
 | `lastSeenBuckets` (computers and mobile: under 1 day, under 7 days, 7 days or more) | the stale-basis dates, mobile last inventory |
 | `modelFamilyCounts`, `mobileFormFactorCounts`, `osMajorCounts` (computers and mobile) | `computers`, `mobile-devices-list` |
-| `storageBuckets` (computers and mobile: under 80%, 80% or more, 90% or more, and the mean) | new collection (8.1) |
+| `storageBuckets` (computers and mobile: under 80%, 80% or more, 90% or more, and the mean) | new collection (8.1); not built (P10) |
 
 The existing Mac figures stay as they are. `mobileOnlySummary` and a Protect-only summary are
 produced by the same finalize step. School collect writes a summary from its device rows for the
@@ -500,10 +514,12 @@ one Jamf Account credential, for display and for Update credentials for all. Wha
   check and never assumed. It is shown on the platform row. It does not pick slots on its own.
 - Grouping in the sidebar and Fleet Overview moves from connection sections to report groups,
   plus a connection badge on each environment. A connection is about credentials, not
-  reporting.
+  reporting. Not built: the sidebar's workspace menu still has one section per connection
+  (`WorkspaceStore.connectionGrouping`), and Fleet Overview shows one environment (mobile spec 6).
 - #284's "two Pro workspaces under one environment ID are flagged" becomes a Doctor row across
   workspaces: two environments whose `platform` slots carry the same scope ID, or whose
-  `jamf_pro` hosts are equal.
+  `jamf_pro` hosts are equal. Not built: `environment.profile_shared` catches one add-on
+  profile named by two workspaces, not two profiles with one scope ID or one host.
 
 ## 10. Multi-environment view (Jamf Insights reference)
 
@@ -548,8 +564,8 @@ combine. Here, the unit is the environment and the selector is a report group.
 ## 11. Merging two existing workspaces
 
 Today's twin users have two workspaces, `Example` (OAuth) and `Example-API` (Platform). Merge
-makes them one environment with no data loss. It is offered from adoption (step 7 in section
-5) and from Data Sources › Environment › "Merge another workspace into this one".
+makes them one environment with no data loss. It is offered from Data Sources › Environment ›
+"Merge another workspace into this one" only, not from adoption (P7 ruling R1).
 
 **Target and source.** The target is the workspace whose profile goes into `jamf_pro` (the
 OAuth one). The source's profile goes into the target's matching slot (`platform`).
@@ -559,6 +575,13 @@ would copy, skip or archive, by area, and the sheet shows these counts before an
 The executor holds the tick lock (`HoldPurpose.merge`), so no collect, generate or tick runs
 during it. It writes a journal (`automation/.merge-journal.json` in the target) and resumes from
 it after a crash. It refuses while a peer holds the shared claim.
+
+The table is the design as written. The P7 plan changed three rules, and CLAUDE.md
+("Workspace merge") records what shipped: from `automation/` only `logs/` and `*_status.json`
+are copied, and only the run logs the recorder would keep (R6); the source moves to
+`_merged/<source>-<stamp>/workspace/` beside its `archive/` (R9); an exclusion of either
+workspace is dropped unless both were excluded (R14). Backups copy only the scheduled ones the
+target's prune would keep.
 
 | Area | Rule |
 |---|---|
@@ -607,9 +630,9 @@ golden command-line test from 3.3 runs in every phase from P1.
 | P7 | Merge: `WorkspaceMergePlan`, executor with journal, sheet | Fixture workspaces: overlapping summary days filled, same-name snapshots identical and different, schedules keep their labels, report groups de-duplicated, crash after N steps resumes, refused under the lock and under a peer claim, source moved and never deleted |
 | P8 | `EnvironmentProducts`, `TabVisibility.limited(to:)`, product-aware Overview, Config and report sections. Protect-only environment (L3), with the environment gate lifted out of `collect` into the router (7.1). School per-kind state and summary (L6) | Tab sets per product mix. A Protect-only collect writes a summary with Mac figures nil. A stand-down or the day guard stops every product, with and without an MDM. A School summary is written |
 | P9 | Daily summary product and composition fields, Trends and alert keys, `environment.protect_match` Doctor row, one environment finalize (7.1) | Nil when absent. Alert on an absent product never fires. Match-rate row thresholds |
-| P10 | New collection: `computer-storage` reduced kind, mobile storage and battery readers, the App Installers kind | Fixtures taken from real jamf-cli output, never written by hand from documentation. The reducer drops every field outside the allow-list |
+| P10 (not built) | New collection: `computer-storage` reduced kind, mobile storage and battery readers, the App Installers kind | Fixtures taken from real jamf-cli output, never written by hand from documentation. The reducer drops every field outside the allow-list |
 | P11 | Replaced by the mobile spec's M6: Fleet Overview for the active environment, no selector. `FleetRollup` gains the new fields for report-group exports only. P8 and P9 lose their mobile parts to M2 to M4 (mobile spec, section 7) | See M6 |
-| P12 | Security Cloud: `security_cloud` slot setup, Radar collect, gateway half on `platform` | Blocked on a tenant (#283). Plugs into P3, P4 and P9 |
+| P12 | Security Cloud: `security_cloud` slot setup, Radar collect, gateway half on `platform` | Slices 1 and 2 shipped (attach an existing login, `security risk list`, the UDID match and summary fields). The gateway half, screen, risk pill and score factor are not built (#283). Plugs into P3, P4 and P9 |
 | P13 | Docs: wiki (Data Sources, Getting Started, Automation, Security), README, CLAUDE.md/AGENTS.md, CHANGELOG | — |
 
 Order: P1 → P2 → P3. P4 needs P2. P5, P6 and P7 need P4. P8 needs P3. P9 needs P8. P10 can

@@ -321,7 +321,7 @@ struct UpdatesView: View {
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
-                Text(slice.count == 1 ? "\(slice.count) status" : "\(slice.count) statuses")
+                Text(slice.count == 1 ? L("\(slice.count) status") : L("\(slice.count) statuses"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(percentFormat.text(pct))

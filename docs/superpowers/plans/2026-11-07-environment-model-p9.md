@@ -1,5 +1,7 @@
 # Environment model P9: the daily summary names the products — implementation plan
 
+Status: shipped in 2.12 on `dev/2-12-0`. The boxes below are the original task list and were not ticked as the work landed; `CLAUDE.md` describes what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The daily summary records which products collected, the Protect figures and the aggregate device maps; Trends and alerts read the new figures; Config Doctor warns when a Protect pairing looks wrong; one environment finalize writes the environment-level fields for every product mix.
@@ -141,7 +143,7 @@ extension ReportEngine {
 
 **Files:**
 - Modify: `Services/ConfigDoctorService+Products.swift` (new `protectMatchRows`), `Services/ConfigDoctorService.swift` (register it beside `protectProfileProductRows`)
-- Test: `app/Tests/JamfReportsTests/ProtectMatchDoctorTests.swift`
+- Test: `app/Tests/JamfReportsTests/EnvironmentDoctorRowsTests.swift (as built; the row is in ConfigDoctorService+Environment.swift)`
 
 - [ ] Per P9-R7, with an injectable correlation input so tests need no snapshots on disk; the row text through `L()`.
 - [ ] Tests: threshold edges (49.9% warns, 50% passes), fewer than 5 identified computers → no row, no inventory → no row, Protect not connected → no row, School inventory counts as inventory. Commit.

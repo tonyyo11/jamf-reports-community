@@ -1,5 +1,7 @@
 # Environment model P8: screens follow the products, Protect-only environments — implementation plan
 
+Status: shipped in 2.12 on `dev/2-12-0`. The boxes below are the original task list and were not ticked as the work landed; `CLAUDE.md` describes what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** what an environment has decides what runs and what shows. The collect gate (the once-a-day guard and the shared-workspace claim) moves out of `ReportEngine.collect` into `CollectRouter`, so it stops every product. An environment with only a Jamf Protect profile (#207 L3) is a workspace that collects, writes a daily summary and opens on the Protect screen. `EnvironmentProducts` is the one answer the tabs, Overview, Config tabs, reports and webhook cards read. School kinds join the freshness strip (L6).

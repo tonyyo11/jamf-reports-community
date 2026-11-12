@@ -12,7 +12,7 @@ struct MobileOverviewTile: Identifiable, Equatable, Sendable {
 
     var id: String { label }
 
-    static let unreported = L("Not reported")
+    static var unreported: String { L("Not reported") }
     static let dash = "—"
 }
 
@@ -22,18 +22,17 @@ extension MobileSummary {
     var needsAttentionCount: Int { (jailbroken ?? 0) + unmanaged + (updateErrors ?? 0) }
 
     /// The section's lines in display order: Devices, the OS current and passcode shares, then
-    /// Needs attention, which is left out when it is 0.
-    ///
-    /// Devices is the managed mobile device count. It stands in for the spec's iPad, iPhone and
-    /// Apple TV counts until the summary carries a form-factor map (environment spec P9).
-    func overviewTiles(format: PercentFormat) -> [MobileOverviewTile] {
+    /// Needs attention, which is left out when it is 0. `formFactors` is the same summary's
+    /// `mobileFormFactorCounts`.
+    func overviewTiles(format: PercentFormat, formFactors: [String: Int]?) -> [MobileOverviewTile] {
         var tiles = [
-            MobileOverviewTile(
-                label: L("Devices"), value: "\(managed)", caption: L("managed mobile devices")),
-            Self.shareTile(
-                L("OS current"), osCurrent, of: "devices with a listed version", format: format),
-            Self.shareTile(L("Passcode compliant"), passcode, of: "devices reporting",
-                           format: format),
+            Self.devicesTile(formFactors, managed: managed),
+            Self.shareTile(L("OS current"), osCurrent, format: format) {
+                L("\($0.met) of \($0.of) devices with a listed version")
+            },
+            Self.shareTile(L("Passcode compliant"), passcode, format: format) {
+                L("\($0.met) of \($0.of) devices reporting")
+            },
         ]
         if let attention = needsAttentionTile { tiles.append(attention) }
         return tiles
@@ -41,16 +40,38 @@ extension MobileSummary {
 
     private var needsAttentionTile: MobileOverviewTile? {
         guard needsAttentionCount > 0 else { return nil }
-        let parts = [(unmanaged, "unmanaged"), (jailbroken ?? 0, "jailbroken"),
-                     (updateErrors ?? 0, L("update errors"))]
+        let parts = [(unmanaged, L("\(unmanaged) unmanaged")),
+                     (jailbroken ?? 0, L("\(jailbroken ?? 0) jailbroken")),
+                     (updateErrors ?? 0, L("\(updateErrors ?? 0) update errors"))]
         return MobileOverviewTile(
             label: L("Needs attention"), value: "\(needsAttentionCount)",
-            caption: parts.filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }.joined(separator: ", "),
+            caption: parts.filter { $0.0 > 0 }.map(\.1).joined(separator: ", "),
             opensAudit: true)
     }
 
+    /// Every mobile device by type ("12 iPads, 3 iPhones"), from the summary's form-factor map.
+    /// A summary written before the map existed shows the managed count instead; a type with
+    /// no devices is left out, never "0 iPads".
+    private static func devicesTile(_ forms: [String: Int]?, managed: Int) -> MobileOverviewTile {
+        let parts: [String] = [
+            ("iPad", { $0 == 1 ? L("\($0) iPad") : L("\($0) iPads") }),
+            ("iPhone", { $0 == 1 ? L("\($0) iPhone") : L("\($0) iPhones") }),
+            ("Apple TV", { $0 == 1 ? L("\($0) Apple TV") : L("\($0) Apple TVs") }),
+            ("Other", { $0 == 1 ? L("\($0) other device") : L("\($0) other devices") }),
+        ].compactMap { (key: String, text: (Int) -> String) in
+            (forms?[key]).flatMap { $0 > 0 ? text($0) : nil }
+        }
+        guard let forms, !parts.isEmpty else {
+            return MobileOverviewTile(
+                label: L("Devices"), value: "\(managed)", caption: L("managed mobile devices"))
+        }
+        return MobileOverviewTile(
+            label: L("Devices"), value: "\(forms.values.reduce(0, +))",
+            caption: parts.joined(separator: ", "))
+    }
+
     private static func shareTile(
-        _ label: String, _ share: Share?, of population: String, format: PercentFormat
+        _ label: String, _ share: Share?, format: PercentFormat, caption: (Share) -> String
     ) -> MobileOverviewTile {
         // A pair with no devices behind it has no share (`Share.pct`), whatever `met` says.
         guard let share, let pct = share.pct else {
@@ -60,6 +81,6 @@ extension MobileSummary {
         }
         return MobileOverviewTile(
             label: label, value: format.text(pct),
-            caption: L("\(share.met) of \(share.of) \(population)"))
+            caption: caption(share))
     }
 }

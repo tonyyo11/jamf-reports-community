@@ -701,7 +701,7 @@ extension ReportEngine {
             stateStore?.record(.failed(exitCode: nil), report: kind, at: collectStart)
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[warn] \(kind): could not write snapshot — \(error.localizedDescription)"
+                text: "[warn] \(kind): could not write snapshot — \(error.englishDescription)"
             ))
         }
     }

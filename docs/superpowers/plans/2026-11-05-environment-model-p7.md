@@ -1,5 +1,7 @@
 # Environment model P7: merging two workspaces into one environment — implementation plan
 
+Status: shipped in 2.12 on `dev/2-12-0`. The boxes below are the original task list and were not ticked as the work landed; `CLAUDE.md` describes what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** a user with two workspaces for one Jamf Pro (an OAuth one and a Platform API one, the 2.10 twin shape) can merge the Platform workspace into the OAuth one from Data Sources, with no data loss. The Platform profile becomes the target's `profiles.platform` slot. The source folder is moved aside, never deleted.

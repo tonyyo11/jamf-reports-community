@@ -50,7 +50,7 @@ review verdicts.
 | Scoped re-review of a small, plain fix round | The same | The same | Was 1 per fix round | `fold` | Under about 150 changed source lines, no new seam, file write path or product gate: the controller reads the diff and the report (8 rounds were confirmed by the controller as closed that way, 11 by ledger phrase; the controller's account is that none missed a defect). |
 | Research or comparison agent (web pages, another repository, a long log) | Far more than the loop needs | A compact findings file | 0 to 2 per wave | `as-tool` | Reads far more than the loop needs afterwards. |
 | Review packaging | `git log`, `git diff -U10` | One file per range | 1 per review | `fold` (skill `review-package`) | Deterministic; was retyped shell each time. |
-| Class-sibling grep | The twelve checklist classes plus a seam regex | Sites grouped by class | 1 per fix or review | `fold` (skill `class-sweep`) | Deterministic; the checklist's greps were retyped, and one used the wrong flag (`rg -E`). |
+| Class-sibling grep | The nineteen checklist classes plus a seam regex | Sites grouped by class | 1 per fix or review | `fold` (skill `class-sweep`) | Deterministic; the checklist's greps were retyped, and one used the wrong flag (`rg -E`). |
 | CHANGELOG conflict union | A conflicted CHANGELOG.md | Section-aware union and two checks | 1 per merge conflict (9 in one stack build) | `fold` (skill `changelog-union`) | Deterministic; orphan continuation lines and a duplicated bullet both survived a hand merge once. |
 | Wave bundling | Task branches, base ref | A bundle branch in a new worktree | 1 per wave bundle | `fold` (skill `bundle-wave`) | Deterministic merge loop. |
 | Stack adoption and cascade | Branches, local and origin heads | A `gh stack` | 1 per stack | `fold` (skill `stack-adopt`, person-started) | Deterministic; rewrites local branches, so only the operator starts it. |
@@ -69,7 +69,7 @@ Project skills live in `.claude/skills/` (tracked despite the ignored `.claude/`
 | Skill | Use |
 |---|---|
 | `review-package PLAN BASE HEAD` | One review file per range under `.superpowers/sdd/<plan>/`. |
-| `class-sweep [--changed BASE] SEAM_REGEX` | Sibling sites of a seam plus the twelve class greps, with the PR-body block. |
+| `class-sweep [--changed BASE] SEAM_REGEX` | Sibling sites of a seam plus the nineteen class greps, with the PR-body block. |
 | `changelog-union CHANGELOG.md` | Union-resolve a CHANGELOG conflict, then check orphans and duplicates. |
 | `bundle-wave BUNDLE BASE BRANCH...` | Merge task branches into a bundle in a new worktree; never pushes. |
 | `stack-adopt BRANCH...` | Adopt branches into a `gh stack`; person-started; never submits. |

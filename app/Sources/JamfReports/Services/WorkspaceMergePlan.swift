@@ -174,6 +174,10 @@ struct WorkspaceMergePlan: Codable, Equatable, Sendable {
             guard FileManager.default.fileExists(atPath: folder.path) else {
                 throw PlanError.noWorkspace(id.name)
             }
+            // A linked workspace folder would be moved as a link, leaving its data live.
+            if FileManager.isLink(folder) {
+                throw PlanError.unreadable(area: id.name, reason: "it is a symbolic link")
+            }
         }
         let stamp = Self.stampFormatter.string(from: now)
         let merged = root.appendingPathComponent("_merged", isDirectory: true)
@@ -546,7 +550,8 @@ private final class Builder {
         }
         try requireNotLink(dir)
         let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-        return names.filter { $0 != ".DS_Store" }.filter { name in
+        // Dot-files are staging leftovers and coordination files, never workspace data.
+        return names.filter { !$0.hasPrefix(".") }.filter { name in
             let url = dir.appendingPathComponent(name)
             var info = stat()
             guard lstat(url.path, &info) == 0 else { return false }

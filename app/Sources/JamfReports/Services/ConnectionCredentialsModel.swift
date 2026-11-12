@@ -249,7 +249,7 @@ final class ConnectionCredentialsModel {
                     : L("The ID recorded for this profile cannot be used.")
                 rows.append(Row(
                     label: member.label, profile: member.profile,
-                    outcome: .skipped(reason + L(" Use Update credentials on its own workspace.")),
+                    outcome: .skipped(L("\(reason) Use Update credentials on its own workspace.")),
                     isNew: false))
                 continue
             }
@@ -291,7 +291,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 AddEnvironments: could not record a registered profile: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
         }
     }
@@ -327,7 +327,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 AddEnvironments: could not record a member: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
             note = (note.map { $0 + " " } ?? "") + L("It could not be recorded in the connection.")
         }
@@ -359,7 +359,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 UpdateCredentials: could not refresh a member: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
         }
     }
@@ -370,6 +370,10 @@ extension ConnectionCredentialsModel.Row {
     /// connection does not use, with the command that removes it.
     var message: String { message(tenantLevel: false) }
 
+    private static func answered(_ version: String?) -> String {
+        version.map { L("Jamf Pro \($0) answered.") } ?? L("Jamf Pro answered.")
+    }
+
     func message(tenantLevel: Bool) -> String {
         switch outcome {
         case .refused(let refusal):
@@ -377,26 +381,30 @@ extension ConnectionCredentialsModel.Row {
         case .registrationFailed(let text):
             return L("jamf-cli could not register \(profile): \(text)")
         case .added(let version, let note):
-            let base = (reRegistered ? L("Added (registered the earlier jamf-cli profile again). ")
-                : L("Added. ")) + L("Jamf Pro ") + (version.map { "\($0) " } ?? "") + "answered."
+            let lead = reRegistered
+                ? L("Added (registered the earlier jamf-cli profile again).") : L("Added.")
+            let base = "\(lead) \(Self.answered(version))"
             return note.map { "\(base) \($0)" } ?? base
         case .updated(let version):
-            return L("Credentials updated. Jamf Pro ") + (version.map { "\($0) " } ?? "") + "answered."
+            return "\(L("Credentials updated.")) \(Self.answered(version))"
         case .notJamfPro:
             let reason = tenantLevel
                 ? ConnectionCheck.Verdict.notJamfProTenantText + " "
                 : L("No Jamf Pro answers for this ID, so its MDM is probably Jamf School: Jamf School is read with a School API key, in its own Jamf School workspace. ")
-            return (isNew ? L("Not added to the connection. ") : "") + reason + removalHint
+            return isNew
+                ? L("Not added to the connection. \(reason)\(removalHint)") : reason + removalHint
         case .rejected(let kind):
             return ConnectionCheck.Verdict.rejectedID(kind).message + " " + removalHint
         case .notConfirmed(let exitCode):
             let cause = exitCode == CLIBridge.exitCodeTimedOut
                 ? L("no answer within \(Int(ConnectionCheck.timeout)) seconds")
                 : exitCode.map { L("exit \($0)") } ?? L("jamf-cli did not run")
-            return (isNew ? L("Not added: ") : "") + L("the check could not confirm the ID (\(cause)). Check the client ID, secret and API privileges. \(removalHint)")
+            return isNew
+                ? L("Not added: the check could not confirm the ID (\(cause)). Check the client ID, secret and API privileges. \(removalHint)")
+                : L("the check could not confirm the ID (\(cause)). Check the client ID, secret and API privileges. \(removalHint)")
         case .missingPermission(let names):
-            return (isNew ? L("Not added: ") : "")
-                + ConnectionCheck.Verdict.missingPermissionText(names: names) + " " + removalHint
+            let text = ConnectionCheck.Verdict.missingPermissionText(names: names)
+            return isNew ? L("Not added: \(text) \(removalHint)") : "\(text) \(removalHint)"
         case .skipped(let reason):
             return reason
         }

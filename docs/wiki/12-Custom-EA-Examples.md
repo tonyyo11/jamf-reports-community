@@ -1,10 +1,7 @@
 # Bringing In Custom Extension Attributes — Worked Examples
 
-> **DRAFT outline — to be fleshed out with screenshots.** This page scaffolds
-> the end-to-end examples of adopting Extension Attributes (EAs) into
-> `config.yaml`. Replace each _(screenshot: …)_ placeholder with
-> a real capture, and expand the prose where noted. Everything here is
-> per-profile — every example operates on the **active profile's** `config.yaml`.
+> Everything on this page is per workspace: each example edits the **active workspace's**
+> `config.yaml`.
 
 ## Before you start
 
@@ -12,8 +9,6 @@ Custom EA sheets and the EA Warnings sheet are built from the extension attribut
 jamf-cli collects (`ea-results`), so run a collect first. No CSV export is needed (the CSV
 workbook tabs were retired in 2.11). An EA's `column:` in `config.yaml` is the EA's name
 as Jamf Pro shows it.
-
-_(screenshot: Extension Attributes screen after a collect, with the Adopt EAs button)_
 
 ## Path A — Adopt EAs (recommended)
 
@@ -23,8 +18,6 @@ ones you select to `config.yaml` when you choose **Add … to config**. Existing
 kept, and an EA already tracked is left out of the list. Each candidate has an
 **"Adopt as"** choice — **Custom EA** or **Security Agent** — so the same flow
 covers both reporting shapes.
-
-_(screenshot: Adopt EAs with collected candidates and the Adopt-as picker)_
 
 ### Example 1 — Boolean EA (compliance state)
 
@@ -38,7 +31,6 @@ _(screenshot: Adopt EAs with collected candidates and the Adopt-as picker)_
       type: boolean
       true_value: Encrypted
   ```
-- _(screenshot: the boolean EA row after adoption, in Config → Custom EAs)_
 - Validate: regenerate a report and confirm the "FileVault Status" sheet shows pass/fail counts.
 
 ### Example 2 — Security Agent (agent install/connection state)
@@ -52,20 +44,17 @@ _(screenshot: Adopt EAs with collected candidates and the Adopt-as picker)_
       column: "CrowdStrike Falcon - Status"
       connected_value: Installed
   ```
-- _(screenshot: the Adopt-as picker set to Security Agent with the connected-value field)_
 - Validate: the Security Posture screen / EDR card reflects the install rate.
 
 ### Example 3 — Version EA
 
 - EA: `SysTrack Agent Version`, sample value `5.7.6`
 - Adopt as: **Custom EA**, type **version**, current versions list (tune later)
-- _(screenshot: version EA row; note where Current versions is edited)_
 
 ### Example 4 — Date EA (certificate / expiry)
 
 - EA: `KerberosSSO - password_expires_date`
 - Adopt as: **Custom EA**, type **date**, warning days `30`
-- _(screenshot: date EA row with warning-days field)_
 
 ### Example 5 — Percentage EA
 
@@ -73,20 +62,15 @@ _(screenshot: Adopt EAs with collected candidates and the Adopt-as picker)_
 - Adopt as: **Custom EA**, type **percentage**, warning ≥ `80`, critical ≥ `90`
 - Note: leave thresholds set — an empty threshold is omitted from the file (the
   engine uses its default) rather than written as an invalid value.
-- _(screenshot: percentage EA row with thresholds)_
 
 After adopting, the EAs show in **Config → Custom EAs** and in reports after the next
 generate. Open **Health Audit → Config** (Config Doctor) to check them against the collected
 data.
 
-_(screenshot: Config → Custom EAs after adopting, with Config Doctor passing)_
-
 ## Path B — Hand-editing in Config → Custom EAs
 
 For EAs the list didn't offer, add rows manually with **+ Add EA
 sheet** / **+ Add agent**. Cover the same five types as above.
-
-_(screenshot: Custom EAs tab with the Add buttons)_
 
 ## Path C — Import a CSV export once
 

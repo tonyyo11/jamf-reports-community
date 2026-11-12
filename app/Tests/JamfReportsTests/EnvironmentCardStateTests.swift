@@ -107,4 +107,13 @@ final class EnvironmentCardStateTests: XCTestCase {
             EnvironmentCardState.kinds(for: .protect), DataFreshnessHealth.protectKinds)
         XCTAssertFalse(EnvironmentCardState.kinds(for: .protect).isEmpty)
     }
+
+    func testEachRemovableSlotNamesItsOwnProductInTheRemoveDialog() {
+        XCTAssertEqual(EnvironmentCard.removalTitle(for: .securityCloud),
+                       "Remove Jamf Security Cloud from this environment?")
+        XCTAssertEqual(EnvironmentCard.removalTitle(for: .platform),
+                       "Remove Platform API from this environment?")
+        XCTAssertEqual(EnvironmentCard.removalTitle(for: .protect),
+                       "Remove Jamf Protect from this environment?")
+    }
 }

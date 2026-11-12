@@ -249,7 +249,7 @@ enum BackupMaintenance {
             } catch {
                 onLine?(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] could not prune backup \(url.lastPathComponent): \(error.localizedDescription)"
+                    text: "[warn] could not prune backup \(url.lastPathComponent): \(error.englishDescription)"
                 ))
             }
         }
@@ -359,7 +359,7 @@ enum BackupMaintenance {
                 )
             } catch {
                 AppLogger.cli.warning(
-                    "BackupMaintenance: could not remove \(name, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                    "BackupMaintenance: could not remove \(name, privacy: .private): \(error.englishDescription, privacy: .private)"
                 )
             }
         }

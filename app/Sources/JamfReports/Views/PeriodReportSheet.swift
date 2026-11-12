@@ -54,11 +54,9 @@ struct PeriodReportSheet: View {
     /// Built from cached `syncedProvider` state — no disk access here, so
     /// this stays a plain computed property safe to read from `body`.
     private var eaSectionCaption: String {
-        var text = L("Not included unless you choose them. Values come from your own scripts and may identify individual devices.")
-        if let provider = syncedProvider {
-            text += L(" This report will be written to \(provider.displayName), a synced folder.")
-        }
-        return text
+        let text = L("Not included unless you choose them. Values come from your own scripts and may identify individual devices.")
+        guard let provider = syncedProvider else { return text }
+        return L("\(text) This report will be written to \(provider.displayName), a synced folder.")
     }
 
     var body: some View {
@@ -176,7 +174,7 @@ struct PeriodReportSheet: View {
                 style: .gold
             ) { generate() }
             .disabled(isGenerating || selected.isEmpty || workspace.demoMode)
-            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "Write the workbook")
+            .help(workspace.demoMode ? DemoData.liveOnlyHelp : L("Write the workbook"))
         }
     }
 

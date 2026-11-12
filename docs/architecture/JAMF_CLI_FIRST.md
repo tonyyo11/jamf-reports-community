@@ -1,7 +1,7 @@
 # jamf-cli First
 
 JamfReports is built on a single architectural decision: `jamf-cli` is the data
-source. It is the only thing that talks to Jamf. Everything else, the SwiftUI app and
+source. It is the only thing that talks to Jamf. (The app has a little other egress, listed under "Other network calls" below.) Everything else, the SwiftUI app and
 the cached JSON files on disk, is an orchestrator around it. Rendering is separate:
 the native Swift `ReportEngine` turns the cached JSON into workbooks and HTML, and the
 same binary also ships a `jamf-reports` command-line interface (see
@@ -43,27 +43,27 @@ same binary also ships a `jamf-reports` command-line interface (see
 
 Three on-disk surfaces glue the system together:
 
-- **`~/Jamf-Reports/<profile>/config.yaml`** — column mappings, thresholds, what to
-  collect. Edited by the wizard and by the operator.
+- **`~/Jamf-Reports/<workspace>/config.yaml`** — thresholds, security policy, the
+  environment's profiles, what to collect. Edited by the wizard and by the operator.
 - **`~/Jamf-Reports/<profile>/jamf-cli-data/`** — cached snapshots from every
   jamf-cli call, one folder per kind: `<kind>/<kind>_<yyyyMMdd'T'HHmmss>.json`, with a
   `manifest.json` beside them when `jamf_cli.require_manifest` is on and per-kind
   `state/` files. The source of truth for the rendering pipeline.
-- **`~/Jamf-Reports/<profile>/snapshots/`** — dated CSV snapshots and per-run
-  `summary.json` files for the Trends tab.
+- **`~/Jamf-Reports/<workspace>/snapshots/`** — the daily `summary_<date>.json` files
+  (in `summaries/`) and chart history for the Trends tab.
 
 ## Call composition
 
-When you click Generate in the Generated tab, the app does roughly this:
+When you click Generate in the Reports screen, the app does roughly this:
 
-1. Resolve the active profile via `WorkspaceStore` and `ProfileService`.
+1. Resolve the active workspace via `WorkspaceStore` and `ProfileService`.
 2. Determine which sheets the chosen template needs.
 3. For each sheet, look at `jamf-cli-data/` for fresh-enough JSON.
 4. For any stale or missing data, spawn `jamf-cli` with the right subcommand,
    stream stdout/stderr to the Run History tab, and write the JSON back to
    `jamf-cli-data/`.
 5. Hand the JSON tree to `ReportEngine`, which dispatches to `CoreDashboard`,
-   `CSVDashboard` (if a CSV is present), or `HtmlReport` for HTML output.
+   or `HtmlReport` for HTML output.
 6. Write the artifact to `Generated Reports/`.
 
 The same flow runs from scheduled runs (the bundled `--tick` background item,
@@ -74,10 +74,10 @@ tab streaming, artifact reveal) replaced by per-run log files.
 
 | Surface              | Owner       | Notes                                                |
 |----------------------|-------------|------------------------------------------------------|
-| Credentials, tokens  | jamf-cli    | Keychain, `env:` or `file:` ref; app never reads them |
+| Credentials, tokens  | jamf-cli    | Keychain or `file:` ref; app never reads them (`env:` refs do not reach jamf-cli, which the app starts with a cleaned environment) |
 | Tenant URL + client  | jamf-cli    | Stored in the jamf-cli profile                       |
 | Cached JSON          | App         | `~/Jamf-Reports/<profile>/jamf-cli-data/`            |
-| Column mappings      | App         | `config.yaml`                                        |
+| Thresholds, policy   | App         | `config.yaml`                                        |
 | Generated artifacts  | App         | `Generated Reports/`                                 |
 | Schedules            | App         | `ScheduleStore`: `~/Library/Application Support/JamfReports/schedules.json`; managed schedules are derived from the Automation policy, not stored |
 | Background item      | App+macOS   | One `SMAppService` agent inside the app bundle, runs `--tick` |
@@ -90,11 +90,20 @@ tab streaming, artifact reveal) replaced by per-run log files.
   fixed directories (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`,
   `/usr/sbin`, `/sbin`), not on `PATH`, and checks its code signature before every
   launch. Rendering from snapshots already on disk (the `jamf-cli-only` schedule mode,
-  generating from cache, a CSV-only profile) launches no jamf-cli.
+  generating from cache) launches no jamf-cli.
 - Not a daemon. The app starts no background process of its own. The one background
   item is a user `SMAppService` agent, declared inside the signed bundle, that runs
   `--tick` and only does work when a schedule is due. It exists only when something is
   scheduled, and macOS can require the operator to approve it.
+
+## Other network calls
+
+jamf-cli is the only thing that talks to Jamf, but the app makes a few other calls:
+`sofafeed.macadmins.io` (macOS release data, skippable with `jamf_cli.collect_skip: [sofa]`),
+`api.github.com` (an update check for the app, and for jamf-cli on request), the Teams or
+Slack webhook when `notify` is enabled, and an RFC 3161 time-stamp authority when
+`output.timestamp_authority` is set. None carries device data. See the
+[threat model](jamf-reports-community-threat-model.md) (T-26, T-28, T-33).
 
 ## Implications for contributors
 

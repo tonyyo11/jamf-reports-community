@@ -1,5 +1,7 @@
 # Environment model P5: discovery — implementation plan
 
+Status: shipped in 2.12 on `dev/2-12-0`. The boxes below are the original task list and were not ticked as the work landed; `CLAUDE.md` describes what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Only workspaces run and appear in the sidebar. A jamf-cli profile that no workspace uses is listed on Data Sources in a "Profiles not in an environment" card.

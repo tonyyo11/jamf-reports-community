@@ -101,8 +101,9 @@ struct ProtectProductControl: View {
         do {
             let report = try ProtectConnection.disconnect(workspace: workspace)
             errorText = nil
-            note = ProtectConnection.disconnectedNote(profile: profile, profileMissing: missing)
-                + (report.backupName.map { L(" A copy of config.yaml is in \($0).") } ?? "")
+            let disconnected = ProtectConnection.disconnectedNote(profile: profile, profileMissing: missing)
+            note = report.backupName.map { L("\(disconnected) A copy of config.yaml is in \($0).") }
+                ?? disconnected
             onDisconnected()
         } catch {
             errorText = L("Couldn't disconnect Jamf Protect: \(error.localizedDescription)")
