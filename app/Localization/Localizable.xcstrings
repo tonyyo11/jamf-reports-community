@@ -91569,46 +91569,6 @@
         }
       }
     },
-    "Past the %lld-day stale setting" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Über der Veraltet-Grenze von %lld Tagen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Más allá del límite de obsolescencia de %lld días"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Au-delà du seuil d’obsolescence de %lld jours"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Oltre la soglia di obsolescenza di %lld giorni"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "長期未接続の設定（%lld日）を超過"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Além do limite de desatualização de %lld dias"
-          }
-        }
-      }
-    },
     "Patch" : {
       "localizations" : {
         "de" : {
@@ -114223,6 +114183,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dispositivo desatualizado (offline)"
+          }
+        }
+      }
+    },
+    "Stale after %lld days" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veraltet nach %lld Tagen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obsoleto tras %lld días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obsolète après %lld jours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obsoleto dopo %lld giorni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld日で長期未接続"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desatualizado após %lld dias"
           }
         }
       }

@@ -94,7 +94,7 @@ struct FleetOverviewView: View {
             StatTile(
                 label: L("Stale"),
                 value: row.summary?.staleCount.map { "\($0)" } ?? "--",
-                sub: L("Past the \(staleDays)-day stale setting")
+                sub: L("Stale after \(staleDays) days")
             )
             StatTile(
                 label: L("Patch"),
