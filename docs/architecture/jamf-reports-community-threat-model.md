@@ -226,6 +226,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Path:** A6 / a device record or patch title with attacker-controlled metadata.
 - **Existing mitigations:**
   - Swift `OOXMLWriter.sanitizeString` prepends a tab to any cell beginning with `=+-@` — the documented XLSX invariant (CLAUDE.md), verified clean in the PR-26 security review.
+  - **2.12 exception:** `StaleDeviceService.formulaGuarded`, the one guard every workbook cell and CSV field now uses, leaves a whole plain negative number (`-`, digits, at most one `.` and digits: `-5`, `-2.5`) unprefixed, because every spreadsheet reads it as a number and Jamf uses such values for unresolved IDs and "no baseline" counts. Any other value starting with `-` (`-1+1`, `-1e9`, `-5 `) is still prefixed; `SafeWriteTests.testOnlyAWholePlainNegativeNumberSkipsTheGuard` pins both sets.
   - **PR-25 Patch Compliance CSV export:** `PatchStatusService.csvField` neutralizes the same formula-injection prefixes before RFC 4180 quoting; covered by `testComplianceCSVNeutralizesFormulaInjection`. This was a MUST-FIX caught in the PR-26 security review and folded into PR-25 before merge.
 - **Likelihood:** Low.
 - **Impact:** Medium.

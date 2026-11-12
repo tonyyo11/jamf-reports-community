@@ -24,10 +24,22 @@ final class SafeWriteTests: XCTestCase {
     }
 
     func testMinusPrefixGetsLeadingTab() {
-        guard case .string(let s) = CellValue.safe("-1234") else {
+        guard case .string(let s) = CellValue.safe("-1234+cmd") else {
             XCTFail("Expected .string"); return
         }
         XCTAssertTrue(s.hasPrefix("\t"))
+    }
+
+    /// A whole plain negative number is a number to every spreadsheet, so it is left as written.
+    func testOnlyAWholePlainNegativeNumberSkipsTheGuard() {
+        for value in ["-5", "-1", "-2.5", "-0"] {
+            XCTAssertEqual(StaleDeviceService.formulaGuarded(value), value, value)
+        }
+        for value in ["-", "-.5", "-5.", "-1.2.3", "-1e9", "-1+1", "-1,000", "- 5", "-5 ",
+                      "--5", "-٥", "-1\n=cmd", "-1\t"] {
+            XCTAssertEqual(StaleDeviceService.formulaGuarded(value), "\t" + value,
+                           value.debugDescription)
+        }
     }
 
     func testAtPrefixGetsLeadingTab() {

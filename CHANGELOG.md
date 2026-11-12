@@ -109,6 +109,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A cell that is only a plain negative number, such as an unresolved app ID of -5 or an mSCP
+  "no baseline" count of -1, now reads exactly as Jamf reported it in workbooks and CSV files,
+  without the hidden tab the formula guard used to put in front of it. Anything else that starts
+  with a minus sign, `-1+1` for example, is still guarded.
 - The Health Audit's "Failed MDM commands" finding now reads "Failed MDM commands (commands,
   all device types)" on the Health Audit screen, in its CSV export, on the workbook's Audit
   Summary tab and in the HTML report, because its count is every failed command in Jamf Pro's
