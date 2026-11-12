@@ -290,6 +290,12 @@ collect or report you start yourself in the app keeps reading `config.yaml` as t
 Doctor carries the warning. Setting `shared_workspace.enabled: false` in the shared file does not
 turn pinning off on a Mac that already pinned, and that setting is itself pinned.
 
+**Set `shared_workspace.enabled: true` on a share the app cannot detect.** The app recognises a
+sync provider's folder, a network volume and the marker files of Syncthing, Nextcloud, ownCloud
+and Resilio. A folder other people reach another way, such as File Sharing from this Mac or a
+sync tool that leaves no marker, looks local, so nothing is pinned there. Set the key in that
+workspace's `config.yaml` before a second Mac or person writes to it.
+
 The first time a Mac sees a shared workspace it pins what the file holds, but an absolute folder
 outside the workspace and `retention.mode: delete` already in the file count as unconfirmed:
 background runs use the safe values for them until you confirm once. The webhook, the Protect
