@@ -975,7 +975,9 @@ final class DiagnosticBundleServiceTests: XCTestCase {
             XCTAssertFalse(config.contains(leaked), "\(leaked) leaked into: \(config)")
         }
         XCTAssertFalse(config.contains(" # ") || config.contains("\n#"), config)
-        for kept in ["jamf_cli:", "html:", "branding:", "  stale_device_days: 30"] {
+        // "Fleet report #1" is 15 characters: a cut at the `#` would stage a shorter length.
+        for kept in ["jamf_cli:", "html:", "title: \"<string 15 chars>\"", "branding:",
+                     "  stale_device_days: 30"] {
             XCTAssertTrue(config.contains(kept), "\(kept) missing from: \(config)")
         }
     }
@@ -1005,6 +1007,8 @@ final class DiagnosticBundleServiceTests: XCTestCase {
     /// support reader needs (booleans, numbers, the fixed vocabularies) stay readable.
     func testStagedConfigReducesFreeTextAndKeepsVocabulary() throws {
         let config = try stagedConfig("""
+        output:
+          allow_absolute_paths: yes
         jamf_cli:
           profile: AcmeHarborProd
           data_dir: /Users/jane/acme-data
@@ -1054,7 +1058,7 @@ final class DiagnosticBundleServiceTests: XCTestCase {
                        "Falcon", "Running", "Enabled"] {
             XCTAssertFalse(config.contains(leaked), "\(leaked) leaked into: \(config)")
         }
-        for kept in ["use_cached_data: true", "- sofa", "- dashboard", "type: boolean",
+        for kept in ["allow_absolute_paths: yes", "use_cached_data: true", "- sofa", "- dashboard", "type: boolean",
                      "enabled: true", "provider: teams", "detail: minimal", "mode: archive",
                      "snapshot_keep_days: 365", "tier: on_device", "filevault: fail",
                      "sip: not counted", "filevault_off_hardware_encrypted: warning",

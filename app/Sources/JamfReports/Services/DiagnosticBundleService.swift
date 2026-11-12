@@ -1011,7 +1011,7 @@ enum DiagnosticBundleService {
     ]
 
     /// config.yaml as the app reads it, with every string replaced by `<string N chars>` except
-    /// numbers, `yyyy-MM-dd` dates and short vocabulary values (`vocabularyKeys`): sheet, EA,
+    /// numbers, `yyyy-MM-dd` dates, yes/no/on/off and short vocabulary values (`vocabularyKeys`): sheet, EA,
     /// agent, profile and folder names are free text no pattern can find. Keys, booleans and
     /// numbers stay. Written afresh from the parse, so every copy of a repeated key is covered
     /// and a line the reader skipped is not staged; a file that does not parse is not staged.
@@ -1049,7 +1049,8 @@ enum DiagnosticBundleService {
     }
 
     private static func keepsText(_ text: String, vocabulary: Bool) -> Bool {
-        if text.isEmpty { return true }
+        // `yes`, `on` and the rest reach here as text; `allow_absolute_paths` reads them as on.
+        if text.isEmpty || ["yes", "no", "on", "off"].contains(text.lowercased()) { return true }
         if text.range(of: #"^-?[0-9]+(\.[0-9]+)?$"#, options: .regularExpression) != nil
             || text.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) != nil {
             return true
