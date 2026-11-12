@@ -159,6 +159,9 @@ extension ReportEngine {
         }
     }
 
+    /// Each key as JSON writes it, quoted, so `lostModeEnabled` does not match.
+    private static let lostModeTextKeyBytes = lostModeTextKeys.map { Data("\"\($0)\"".utf8) }
+
     private static func rewriteLostModeFolder(
         _ dir: URL, label: String, limit: Int, tally: inout LostModeTally
     ) {
@@ -189,6 +192,10 @@ extension ReportEngine {
                 } else {
                     tally.unreadable.append(name)
                 }
+                continue
+            }
+            // Most files carry none of the four keys (`lostModeEnabled` stays, so test the names).
+            guard lostModeTextKeyBytes.contains(where: { data.range(of: $0) != nil }) else {
                 continue
             }
             guard let stripped = droppingLostModeText(data, sortedKeys: true) else {

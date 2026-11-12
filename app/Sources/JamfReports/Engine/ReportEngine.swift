@@ -4636,6 +4636,19 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         maxCacheAgeHours: Int = 0
     ) throws -> Data {
+        let url = try latestSnapshotURL(
+            kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours)
+        return try BoundedFile.read(
+            url, limit: BoundedFile.limit(for: url), followSymlinks: false, inside: dataDir)
+    }
+
+    /// The newest snapshot `loadLatestSnapshotData` would read, with its age check, without
+    /// reading it: an age test on a 13 MB `computers` file needs only the name.
+    static func latestSnapshotURL(
+        kind: String,
+        dataDir: URL,
+        maxCacheAgeHours: Int = 0
+    ) throws -> URL {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
         guard let files = FileManager.snapshotFolderEntries(in: dir), !files.isEmpty else {
@@ -4669,8 +4682,7 @@ struct ReportEngine: Sendable {
                 throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
             }
         }
-        return try BoundedFile.read(
-            url, limit: BoundedFile.limit(for: url), followSymlinks: false, inside: dataDir)
+        return url
     }
 
     /// Merge `ea-results` snapshot into computer rows.

@@ -98,6 +98,14 @@ final class LostModeRewriteTests: XCTestCase {
         XCTAssertTrue(markerExists)
     }
 
+    /// A file that names none of the four keys is skipped before it is parsed: it has nothing
+    /// to strip, so even one that is not JSON is not warned about.
+    func testFileWithoutTheKeyNamesIsNotParsed() throws {
+        _ = try write("{\"security\": {\"lostModeEnabled\": tru", "\(kind)_20260101T000000.json")
+        XCTAssertEqual(rewrite().all, [])
+        XCTAssertTrue(markerExists)
+    }
+
     func testConflictCopyIsRewrittenAndManifestJSONIsUntouched() throws {
         let copy = try write(Self.old, "\(kind)_20260101T000000 2.json")
         let manifest = try write("not a manifest", SnapshotManifest.fileName)

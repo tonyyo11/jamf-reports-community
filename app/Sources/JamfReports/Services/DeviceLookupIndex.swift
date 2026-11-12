@@ -160,7 +160,9 @@ final class DeviceLookupIndex {
         /// or `<dataDir>/<name>_*.json` flat files, for the supplied list of
         /// candidate names. Returns nil if no candidate exists.
         func newestJSON(in dataDir: URL, named names: [String]) -> URL? {
-            let fm = FileManager.default
+            // The data root is listed once for every name, not once per name.
+            let flatEntries = (try? FileManager.default.contentsOfDirectory(
+                at: dataDir, includingPropertiesForKeys: nil, options: [])) ?? []
             var candidates: [URL] = []
             for name in names {
                 let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
@@ -171,16 +173,12 @@ final class DeviceLookupIndex {
                         && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
                     })
                 }
-                if let flatEntries = try? fm.contentsOfDirectory(
-                    at: dataDir, includingPropertiesForKeys: [.contentModificationDateKey], options: []
-                ) {
-                    candidates.append(contentsOf: flatEntries.filter { url in
-                        let n = url.lastPathComponent
-                        return url.pathExtension.lowercased() == "json"
-                            && (n == "\(name).json" || n.hasPrefix("\(name)_"))
-                            && !n.contains(".partial")
-                    })
-                }
+                candidates.append(contentsOf: flatEntries.filter { url in
+                    let n = url.lastPathComponent
+                    return url.pathExtension.lowercased() == "json"
+                        && (n == "\(name).json" || n.hasPrefix("\(name)_"))
+                        && !n.contains(".partial")
+                })
             }
             return FileManager.newestSnapshot(among: candidates)
         }

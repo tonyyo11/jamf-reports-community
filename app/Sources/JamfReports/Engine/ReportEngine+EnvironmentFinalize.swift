@@ -75,7 +75,7 @@ extension ReportEngine {
     ) -> String? {
         for kind in kinds {
             do {
-                _ = try loadLatestSnapshotData(
+                _ = try latestSnapshotURL(
                     kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours)
             } catch is SnapshotCacheExpired {
                 return kind
