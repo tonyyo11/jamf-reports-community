@@ -589,7 +589,9 @@ struct AuditView: View {
                 provenanceText: L("AI-generated from the audit findings on this screen — verify against the table below."),
                 input: Localization.english { FleetInsightInput.audit(
                     findings: findings,
-                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil) }
+                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil,
+                    mobile: FleetInsightInput.mobileAuditCounts(
+                        mobileFindingList, staleDays: workspace.configState.staleRule.days)) }
             )
         }
     }
@@ -1541,11 +1543,19 @@ extension FleetInsightInput {
     /// `resource` text beside it, can name policies, computers or users and stays behind.
     /// Resolved findings are counted, not named: next to the open ones the on-device model
     /// read a named one as still open. Nil when there are no findings.
+    ///
+    /// `mobile` is the Audit's Mobile Devices card (mobile spec 5): each finding by name with
+    /// its device count; a finding no device shows is left out.
     static func audit(
         findings: [AuditFinding],
-        drift: (newKeys: Set<String>, resolved: [AuditFinding])?
+        drift: (newKeys: Set<String>, resolved: [AuditFinding])?,
+        mobile: [(name: String, devices: Int)]
     ) -> FleetInsightInput? {
-        guard !findings.isEmpty else { return nil }
+        let mobileFacts = mobile.filter { $0.devices > 0 }.map {
+            Fact(label: L("\($0.name) (mobile devices)"), value: .count($0.devices), prior: nil,
+                 polarity: .lowerIsBetter)
+        }
+        guard !findings.isEmpty || !mobileFacts.isEmpty else { return nil }
         let open = findings.filter { AuditSeverity($0.severity) != .passing }
         let isNew = { (finding: AuditFinding) in drift?.newKeys.contains(finding.driftKey) == true }
         var facts = auditSeverityFacts(findings)
@@ -1562,6 +1572,7 @@ extension FleetInsightInput {
         if let categories = auditCategoryFact(open) { facts.append(categories) }
         let listed = Array(open.sorted(by: auditIsMoreUrgent).prefix(maxListedAuditFindings))
         facts += listed.map { auditFindingFact($0, isNew: isNew($0)) }
+        facts += mobileFacts
         var notes = [L("A finding's count is the objects it affects, as its check name says (devices, policies, ...). Counts of different checks do not add up.")]
         if open.count > listed.count {
             notes.append(L("\(open.count - listed.count) lower-priority findings are not listed."))
@@ -1574,6 +1585,17 @@ extension FleetInsightInput {
             title: L("Audit insight"),
             focus: L("which categories to work first, and what changed since the previous audit."),
             facts: facts, notes: notes)
+    }
+
+    /// The Mobile Devices card's findings by name, re-read from `MobileFinding` so the name is
+    /// in the language of the caller (the insight's English scope), never the screen's.
+    static func mobileAuditCounts(
+        _ findings: [AuditFinding], staleDays: Int
+    ) -> [(name: String, devices: Int)] {
+        findings.compactMap { finding in
+            finding.mobileFilter.flatMap(MobileFinding.init(rawValue:))
+                .map { ($0.name(staleDays: staleDays), finding.affected) }
+        }
     }
 
     private static let maxListedAuditFindings = 10

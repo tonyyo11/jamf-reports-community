@@ -192,7 +192,7 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.osDistribution.map { $0.count }, [2, 1, 1, 1, 1, 1])
     }
 
-    func testOSDistributionSortedAndLimited() throws {
+    func testOSDistributionSortedAndComplete() throws {
         let inventoryJSON = """
         [
             {"mobileDeviceId": "1", "deviceType": "iPad", "general": {"osVersion": "18.2.1"}},
@@ -222,9 +222,9 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.isDetected)
         XCTAssertEqual(snapshot.totalDevices, 15)
 
-        // Check OS distribution is sorted by count (descending) and limited to 10
+        // Sorted by count (descending) with every version: the screen caps it and says "N of M"
         let osDistribution = snapshot.osDistribution
-        XCTAssertLessThanOrEqual(osDistribution.count, 10)
+        XCTAssertEqual(osDistribution.count, 12)
 
         // First should be most common (18.2.1 with 3 devices)
         XCTAssertEqual(osDistribution.first?.osVersion, "18.2.1")

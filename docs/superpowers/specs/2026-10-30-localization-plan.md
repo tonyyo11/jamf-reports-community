@@ -1,5 +1,7 @@
 # Localizing the app: French, Spanish, German, Brazilian Portuguese, Italian, Japanese
 
+Status: shipped in 2.12. CLAUDE.md "Localization (2.12)" is the current reference.
+
 Machine translated. Nobody fluent reviewed it. Automated checks prove completeness and format
 safety, not nuance.
 
@@ -39,7 +41,10 @@ rest go through house components and models that take `String`, which SwiftUI ne
 ## Proof
 
 - Catalog: every key has every language, state `translated`, specifiers match, protected terms
-  stay, no source literal is missing from the catalog.
+  stay, no source literal is missing from the catalog. The last check
+  (`everySourceLiteralIsInTheCatalog`) scans `L`, `LK` and `Text` literals outside the
+  `DemoData*` files. It cannot see a literal typed as `String` (a `.help(demo ? … : "…")`
+  ternary), and it does not check `Button`, `Label`, `.help` or `.accessibilityLabel` literals.
 - Leak check: the suite runs once with a pseudo-language; reports, logs and CLI must hold none.
 - Layout: demo mode tabs at `PageScaffold.minSupportedWidth` under each language.
 

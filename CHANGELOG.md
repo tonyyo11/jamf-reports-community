@@ -111,6 +111,13 @@ versions in this repository map to git tags.
 
 - The Jamf Security Cloud match counts each device once: a second risk row for a device that
   already matched leaves the share's denominator, as the Jamf Protect match does.
+- The Overview's Mobile Devices section now counts every mobile device by type on its Devices
+  line ("12 iPads, 1 iPhone"), from the day's summary. A summary written before 2.12 recorded
+  device types still shows the managed mobile device count.
+- A Jamf School environment with Jamf Security Cloud no longer records a Security Cloud match
+  share. School devices reach Security Cloud by management ID, not UDID, so the match read close
+  to 0 of every device; the device count and risk counts are still recorded, and Trends and the
+  `security_cloud_matched_pct` alert get no figure for School instead of a wrong one.
 - A cell that is only a plain negative number, such as an unresolved app ID of -5 or an mSCP
   "no baseline" count of -1, now reads exactly as Jamf reported it in workbooks and CSV files,
   without the hidden tab the formula guard used to put in front of it. Anything else that starts
@@ -253,6 +260,10 @@ versions in this repository map to git tags.
 - Deleting a backup no longer freezes the window on a large or synced folder, and the Generate sheet and Data Sources no longer check files on every redraw.
 - Resuming an interrupted workspace merge that is refused no longer offers a new merge.
 - The Connection card on Data Sources no longer keeps an error from the previous workspace.
+- Mobile device OS versions are counted as one release however Jamf spells them, so `17.5` and
+  `17.5.0` are one row on Mobile Devices, in its PNG export, in the HTML report and on the
+  workbook's Mobile Fleet Summary and OS Currency sheets, and an `Unknown` version is left out.
+  The Mobile Devices version list says how many versions it holds when it shows only the top 10.
 - A Mac that never inventoried and never checked in now counts as "Jamf binary missing" even when Jamf marks it managed, so it gets the Computers filter and remediation steps and is listed apart in Offline Outreach, the HTML report and the Check-in Health sheet instead of as a stale Mac.
 - Workbook rows that tie on a count now come out in the same order every run. The Mobile Fleet Summary's distributions and Top Models list, the Hardware Models tab and each text extension attribute's value table ordered tied rows at random, so the top ten models could change between two runs on the same data.
 - A Mac that never sent inventory reads No Data for FileVault, SIP, Firewall and Gatekeeper on every screen and report, not Jamf's placeholder values (firewall off, FileVault unencrypted), so it no longer appears under Failing controls. A Mac with real inventory and the firewall off still reads off.

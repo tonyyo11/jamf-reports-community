@@ -654,25 +654,36 @@ struct MobileFleetView: View {
                         .accessibilityLabel("Export iOS/iPadOS version distribution chart as PNG")
                         .help("Save the iOS/iPadOS version distribution bar chart as a PNG image")
                     }
-                    let colors = Theme.ChartColors.colors(
-                        forVersions: snapshot.osDistribution.map(\.osVersion))
-                    ForEach(Array(snapshot.osDistribution.enumerated()), id: \.element.osVersion) {
+                    let all = snapshot.osDistribution
+                    let shown = Array(all.prefix(Self.osVersionsShown))
+                    let colors = Theme.ChartColors.colors(forVersions: shown.map(\.osVersion))
+                    ForEach(Array(shown.enumerated()), id: \.element.osVersion) {
                         index, item in
                         osVersionBar(osVersion: item.osVersion, count: item.count,
                                      color: colors[index])
+                    }
+                    if all.count > shown.count {
+                        Text(L("\(shown.count) of \(all.count) shown"))
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             }
         }
     }
 
+    /// The most common versions the card draws; the rest are counted, not dropped silently.
+    private static let osVersionsShown = 10
+
     private func exportOSDistribution() {
         let rows = snapshot.osDistribution
         let total = snapshot.totalDevices
+        let cap = MobileFleetOSDistributionExport.displayCap
+        let capped = rows.count > cap ? " · \(cap) of \(rows.count) versions shown" : ""
         let result = DashboardChartExport.run(
             title: "iOS / iPadOS Version Distribution",
             subtitle: "Mobile Devices",
-            footnote: "Source: pro mobile-devices · \(total) mobile devices",
+            footnote: "Source: pro mobile-devices · \(total) mobile devices\(capped)",
             suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile),
             percentFormat: percentFormat
         ) {
@@ -1150,7 +1161,7 @@ private struct MobileFleetOSDistributionExport: View {
     let rows: [(osVersion: String, count: Int)]
     let totalDevices: Int
 
-    private static let displayCap = 12
+    static let displayCap = 12
 
     private var displayRows: [(osVersion: String, count: Int)] {
         Array(rows.prefix(Self.displayCap))

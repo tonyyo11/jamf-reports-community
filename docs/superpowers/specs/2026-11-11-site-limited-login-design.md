@@ -1,6 +1,6 @@
 # Site-limited login detection: design
 
-Status: approved by the owner on 2026-11-11, including the state file. Target: 2.12. It was
+Status: shipped in 2.12; approved by the owner on 2026-11-11, including the state file. It was
 reviewed once against the code (plan reviewer, 2026-11-11), and that review's findings are
 folded in.
 

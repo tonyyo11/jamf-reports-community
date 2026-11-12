@@ -1074,7 +1074,10 @@ struct OverviewView: View {
         return Group {
             if let summary = mobileSummary {
                 MobileOverviewCard(
-                    summary: summary, subtitle: subtitle,
+                    summary: summary,
+                    formFactors: workspace.demoMode
+                        ? DemoData.mobileFormFactorCounts : latest?.mobileFormFactorCounts,
+                    subtitle: subtitle,
                     onOpen: { navigate(to: .mobileFleet) },
                     onOpenAudit: {
                         navigate(to: .audit, userInfo: [

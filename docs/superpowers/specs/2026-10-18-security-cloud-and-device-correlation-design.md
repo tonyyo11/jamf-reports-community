@@ -1,8 +1,14 @@
 # Security Cloud and device correlation — design
 
-Status: the first slice shipped (epic #283): `DeviceCorrelation` and the Protect screen's
-"Jamf Pro match" card. Everything else here is blocked on a Security Cloud tenant to test
-against and is a plan, not a commitment.
+Status: shipped in three steps (epic #283). First `DeviceCorrelation` and the Protect screen's
+"Jamf Pro match" card. Then, as the environment spec's P12 slices 1 and 2 (2.12): an existing
+Security Cloud login attached as `profiles.security_cloud`, the `security-risk` collect with
+rows reduced to eight scalar keys before disk, and the summary's `securityCloudDeviceCount`,
+`securityCloudMatched` and `securityCloudRiskCounts`. The match is by UDID against Jamf Pro
+computers and mobile devices (`externalId` is the Jamf Pro UDID lowercased, seen on an NFR
+tenant); a Jamf School environment gets no match, because School devices reach Security Cloud
+by management ID (below) and the reduced rows keep none. Not built: the gateway kinds, the
+Security Cloud screen, the risk pill, the workbook and HTML sections and the score factor.
 
 ## What shipped
 
@@ -25,6 +31,10 @@ Macs have no Protect record.
   fields.
 
 ## To settle against a tenant
+
+Answered on the NFR tenant (2026-11-11, P12 slice 2): a risk row's fields (the eight
+`reducingSecurityRisk` keeps are listed in CLAUDE.md) and `externalId`, which is the Jamf Pro
+computer UDID lowercased. The rest of this list is still open.
 
 - The fields of a risk row.
 - What `externalId` and `guid` refer to (a Jamf Pro ID, a UDID, a serial, a Security Cloud ID).
@@ -145,11 +155,17 @@ fits one jamf-cli profile per environment.
 
 ## Planned config and collect
 
+The config is the environment spec's `profiles.security_cloud` slot (its section 3.1), pinned
+like `profiles.platform`. The `security:` block first planned here was never added:
+
 ```yaml
-security:
+security:        # not read; replaced by profiles.security_cloud
   enabled: false
   profile: ""
 ```
+
+`security-risk` shipped as planned (refresh tier, `security risk list`). The gateway kinds
+below are the P12 gateway half and are not built.
 
 Collect kinds: `security-risk` (refresh tier); `security-device-groups`, `security-dns`,
 `security-ztna-apps`, `security-ztna-gateways`, `security-uem-connectors` (inventory tier).
@@ -164,7 +180,7 @@ Each joins the same way and is added with its first caller, not before.
 | Source | First caller |
 |---|---|
 | `mobile-devices-list` | risk pill on Mobile Fleet |
-| School devices | none planned; join on management ID, not UDID or serial |
+| School devices | none: a UDID or serial join would read near 0 of N, and the management-ID join needs the `uem_` user field the reduced rows drop (a decision for Tony) |
 | `platform-devices` | none planned |
 
 ## Surfaces
