@@ -114,6 +114,17 @@ final class AuditConsistencyTests: XCTestCase {
             try XCTUnwrap(failures.first).recommendation.contains("6359 failed commands in total"))
     }
 
+    /// Without a scan the row stays, named for what it counts; matching still uses the raw name.
+    func testTheUnscannedCommandRowSaysItCountsCommandsOnEveryDeviceType() {
+        let row = finding(" Failed MDM commands", 6359, severity: "CRITICAL")
+        XCTAssertEqual(row.label, "Failed MDM commands (commands, all device types)")
+        XCTAssertEqual(finding("Policies with no scope", 3, severity: "WARNING").label,
+                       "Policies with no scope")
+        XCTAssertTrue(AuditFinding.csv([row]).contains("Failed MDM commands (commands, all device types)"))
+        XCTAssertEqual(auditActionDestination(for: row)?.tab, .devices)
+        XCTAssertEqual(withoutSupersededRows([row], commandHealthDetected: true).shown.count, 0)
+    }
+
     func testTheCommandNoteIsAbsentWithoutAnAuditRow() throws {
         let command = commandHealthFindings(scan(failedDevices: 2))
         XCTAssertFalse(try XCTUnwrap(command.first).recommendation.contains("in total"))

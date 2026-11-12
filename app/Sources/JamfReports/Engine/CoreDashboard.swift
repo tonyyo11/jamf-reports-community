@@ -1233,7 +1233,8 @@ struct CoreDashboard: Sendable {
             let severity = (item["severity"] as? String ?? "").uppercased()
             let fmt: CellFormat = severity == "CRITICAL" ? .red
                 : severity == "WARNING" ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: fmt)
+            ws.write(AuditFinding.label(forAuditName: item["name"] as? String ?? ""),
+                     row: row, col: 0, format: fmt)
             ws.write(item["category"] as? String ?? "", row: row, col: 1, format: fmt)
             ws.write(severity, row: row, col: 2, format: fmt)
             ws.write(item["recommendation"] as? String ?? "", row: row, col: 3, format: fmt)
