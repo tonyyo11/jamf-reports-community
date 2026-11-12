@@ -1,5 +1,7 @@
 # Environment model P6: adoption proposals and the slot-aware Add sheet — implementation plan
 
+Status: shipped in 2.12 on `dev/2-12-0`. The boxes below are the original task list and were not ticked as the work landed; `CLAUDE.md` describes what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** the first-launch adoption screen and the Add sheet propose environments, not one workspace per profile.

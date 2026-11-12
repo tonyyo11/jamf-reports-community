@@ -58,7 +58,7 @@ name as `%2C` and a percent sign as `%25`.
 | `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`); a Jamf School workspace gets the School workbook | `--profile`, `--output <path>`, `--template <id>`, `--csv-folder` |
 | `collect` | Collect fresh `jamf-cli` snapshots (Jamf Pro, Jamf School, and Jamf Protect when connected) | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
 | `html` | Generate the self-contained HTML report (the Full Instance layout: figures and attention list first, collapsed detail groups, audit appendix); refuses a Jamf School workspace | `--profile`, `--output <path>` |
-| `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`), and Jamf Protect's (`jamf-cli protect backup`) when the workspace has Protect connected and is not on shared storage; a Jamf School workspace with Protect backs up Protect alone | `--profile` |
+| `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`), and Jamf Protect's (`jamf-cli protect backup`) when the workspace has Protect connected and is not on shared storage; a Jamf School workspace with Protect backs up Protect alone. On storage other Macs reach, the Jamf Pro part runs only when `backup.pro_on_synced_storage: true` was chosen | `--profile` |
 | `scaffold` | Write a minimal jamf-cli-only `config.yaml`; with a Jamf Pro CSV export, also add its extra columns as `custom_eas` (read once) | `--csv <path>` (optional), `--out <path>` |
 | `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile`, `--json` |
 | `capabilities` | Report which `jamf-cli` commands are available | `--json` |
@@ -141,10 +141,11 @@ A few behaviors worth knowing:
   not a qualified authority. To check a reply without this app, macOS's own LibreSSL (3.3.6,
   macOS 15 and later) does it:
   `openssl ts -verify -data <stem>.manifest.json -in <stem>.tsr -CAfile <authority CA>.pem`.
-- A Jamf Pro `collect` runs at most once per profile per day; a second run the same day
-  exits successfully without re-collecting. A Jamf School workspace collects each source at
-  most every 12 hours instead. Pass `--force` to override either.
-- `generate` on a Jamf School workspace (`school_cli.enabled: true`) writes the School
+- A full `collect` runs at most once per profile per day, Jamf Pro and Jamf School alike; a
+  second run the same day exits successfully without re-collecting. Pass `--force` to
+  override it. (Inside a forced or partial run, a Jamf School source is still fetched at most
+  every 12 hours.)
+- `generate` on a Jamf School workspace (`school_cli.enabled: true`, or `profiles.jamf_school` in a config with a `profiles:` block) writes the School
   workbook and ignores `--template`; `html.with_workbook` writes no HTML beside it, since
   there is no School HTML report. `html` refuses a School workspace with a message that points
   at `generate`.
@@ -159,6 +160,11 @@ A few behaviors worth knowing:
   file is created. `school-check` refuses a workspace that is not a Jamf School one the same way.
   A scheduled run of such a profile (`--scheduled-run` or the background item) instead prints a
   `[skip]` line and exits `0`, so nothing retries it and no failure webhook is sent.
+- On storage other Macs reach (a sync provider, a network volume, a shared workspace), the
+  Jamf Pro part of `backup` runs only when `backup.pro_on_synced_storage: true`. Without it the
+  command prints `Jamf Pro not backed up: <reason>`, exits `0`, and writes no folder when
+  there is no Protect part either; see
+  [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 - `backup` also backs up Jamf Protect into the same backup folder when the workspace has
   Protect connected.
   When only the Protect part falls short, the Jamf Pro backup stands: the command prints
@@ -282,8 +288,8 @@ jamf-reports collect --profile prod && jamf-reports generate --profile prod
 ```
 
 `collect`, `generate`, `html`, `backup` and `--scheduled-run` take the lock and exit `75`
-when it is held; `schedules run` exits `75` when its run is queued for the background
-item's next wake. Read-only commands such as `check` and `device` take no lock.
+when it is held; `schedules run` instead prints a "queued" line and exits `0` when another run holds
+the lock, and the run happens at the background item's next wake. Read-only commands such as `check` and `device` take no lock.
 
 ## Scheduling
 

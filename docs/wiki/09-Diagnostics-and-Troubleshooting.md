@@ -3,9 +3,10 @@
 Most likely failure modes, what they mean, and the recovery path. Walk this list before
 opening an issue. The app's **Run History** screen streams full `jamf-cli` output for any
 run the app itself scheduled or ran — a schedule built in the Automation screen, or a
-manual Collect/Generate from the GUI. A run you triggered yourself through the
-`jamf-reports` CLI (your own cron/launchd job, or an interactive terminal run) does not
-appear there; use `log stream` (below) for those. Copy whichever output applies into an
+manual Collect/Generate from the GUI. A `jamf-reports collect` or `generate` run
+records there as a `cli-collect` or `cli-generate` run; the other CLI commands (`html`,
+`backup`, `check`, `device`) and your own cron/launchd wrapper around them do not appear
+there, so use `log stream` (below) for those. Copy whichever output applies into an
 issue if a failure is not listed here.
 
 ## Diagnostic bundle
@@ -164,9 +165,10 @@ would share one workspace folder on a
 case-insensitive volume, so the app uses only one of them: the one that already has a
 workspace, or else the lowercase spelling. The first-launch setup screen and Settings →
 Connections show which profile is skipped and why, and choosing it from the profile menu says
-so. If a workspace folder belongs to an older spelling of the same server (for example after
-re-adding `prod` as `Prod`), set `jamf_cli.profile` in that folder's `config.yaml` to the new
-spelling.
+so. The workspace folder's name is the identity (`jamf_cli.profile` never chooses the profile), so
+if a workspace folder belongs to an older spelling of the same server (for example after
+re-adding `prod` as `Prod`), use the profile spelling that matches the existing folder, or
+rename the folder to the new spelling while the app is closed.
 
 **`no space left on device` / workspace size warning.** Scan-tier inventory archives
 accumulate. Check usage and lower `output.keep_latest_runs` in `config.yaml`:
@@ -243,6 +245,28 @@ Pro or defined there with no values collected, and Config Doctor reports the sam
 a different `data_dir`, or the profile was switched without a refresh. Confirm the
 sidebar profile chip, check `jamf_cli.data_dir` in `config.yaml`, and regenerate.
 
+**"this login sees N of M managed computers".** The jamf-cli login belongs to a Jamf Pro user
+account limited to some sites, so lists and reports cover only those sites. Use an API client
+(a Platform API or OAuth2 profile) or an account with access to every site. Config Doctor
+lists it as `accuracy.site_scope`.
+
+**"Jamf Pro commands are refused" in a Protect-only workspace.** A workspace whose `profiles:`
+block has only `protect` collects Jamf Protect alone. Backups, audits and device lookups are
+Jamf Pro commands and refuse it. Add a Jamf Pro profile to a workspace that needs them.
+
+**A Platform API or Jamf Protect profile waits for Confirm.** On a shared workspace, a
+`profiles.platform` or `profiles.protect` another Mac wrote is not used on this Mac until you
+confirm it: Data Sources shows a pill on the Environment card, and Config Doctor has a row with
+a Confirm button.
+
+**A merge shows a Resume banner.** The app quit or a step failed part way through merging two
+workspaces. Data Sources › Environment card › **Resume** continues from where it stopped;
+**Start over** sets the unfinished merge aside. Nothing is deleted either way.
+
+**"Jamf Pro not backed up".** On storage other Macs reach, the Jamf Pro part of a backup is a
+per-workspace choice. Choose **Back up Jamf Pro in this folder** on the Backups screen, or set
+`backup.pro_on_synced_storage`.
+
 **A custom EA sheet is empty or missing.** Custom EA sheets are built from the extension
 attribute values jamf-cli collected, not from a CSV (retired in 2.11). Run a collect, then
 check the EA Warnings sheet and the Extension Attributes screen: the EA's name must match
@@ -304,6 +328,12 @@ was not altered after generation.
   footer; the footer documents how to recompute and check the digest.
 
 In the app, the fingerprint appears in the Reports screen's "report ready" notice.
+
+- **Run manifest** — every generate run also writes `<name>.manifest.json` beside its files:
+  the size and SHA-256 of each file it made. With `output.timestamp_authority` set to an
+  `https://` RFC 3161 address, the manifest's SHA-256 is timestamped and the reply saved as
+  `<name>.tsr`. `jamf-reports verify <manifest>` rechecks every file and the timestamp; see
+  [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line).
 
 **Cached snapshots.** Separately, when `jamf_cli.require_manifest: true`, each raw
 jamf-cli JSON snapshot the app collects gets a sibling SHA-256 `manifest.json` in its kind

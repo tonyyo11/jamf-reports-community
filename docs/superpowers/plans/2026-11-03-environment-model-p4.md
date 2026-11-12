@@ -1,5 +1,7 @@
 # Environment model P4: the Environment card, the block writer and its Doctor rows — Implementation Plan
 
+Status: shipped in 2.12 on `dev/2-12-0`. The boxes below are the original task list and were not ticked as the work landed; `CLAUDE.md` describes what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Data Sources shows the environment's product slots and can check or remove one; the app writes the `profiles:` block itself, without dropping the old keys; Config Doctor explains each way a block can be wrong; and the existing Protect writers keep working once a block exists.

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # List the sites a fix or review has to classify: every sibling of one seam, plus the greps for
-# the twelve classes in docs/superpowers/review-checklist.md. Read-only: it writes nothing.
+# the nineteen classes in docs/superpowers/review-checklist.md. Read-only: it writes nothing.
 #
 # Usage: class-sweep [--changed BASE] [--limit N] [SEAM_REGEX]
 #   SEAM_REGEX   ERE for the symbol the fix routes through (a reader, gate, redactor, ...).
@@ -138,6 +138,13 @@ else
   c "10: Demo mode touches the Mac" 'demoMode|liveOnlyHelp' "Demo-mode guards. A new control is disabled with liveOnlyHelp; a new read never runs under demoMode." "${limit}"
   c "11: Sink interprets text" 'sanitizeForTeams|WebhookNotifier\.sanitize|escapeHTML|csvEscape|neutraliz|xmlEscape|escapeXML' "Escape functions. One per sink, applied once at the sink." "${limit}"
   c "12: Caps and units" '\.prefix\((max[A-Za-z]*|[0-9_]+)\)' "Caps. A capped list says N of M and sorts by severity before the cap; every count names its unit." "${limit}"
+  c "13: Peer-writable value or file" 'SharedConfigPin|AtomicInstall|installExclusive|O_NOFOLLOW' "Peer-writable state on shared storage. A new key or file says what a peer's value does on this Mac and goes through the pin, a per-Mac record or an exclusive install." "${limit}"
+  c "14: A run's day is the day it started" 'Date\(\)|startOfDay\(for:' "Day arithmetic. One now captured at run start and passed down; a midnight-crossing run must not split its day." "${limit}"
+  c "15: Sentinel text read as a value" 'isMeasured|parseCompliancePct|NeverInventoried|"N/A"|"Unknown"|"not applicable"' "Placeholder text. It reads as unknown through the shared reader, never as a number or a failure." "${limit}"
+  c "16: Unreadable is not empty" 'readLogged|unreadableKinds|try\? +(Data|String)\(contentsOf' "Reads that can fail. An unreadable file says so; it is never an empty snapshot or not collected." "${limit}"
+  c "17: Localization leaks" 'LShown\(|LK\(|Localization\.english|[^A-Za-z]L\("' "Catalog wrapping. A string that is also a value is not wrapped; report, log, webhook and CLI paths stay English." "${limit}"
+  c "18: Work on the main actor" 'ScreenLoad\.paint|tightenOffMain|\.task\(id:|@MainActor' "Main-actor work. File reads, decodes and sorts run off the main actor." "${limit}"
+  c "19: Percentage outside PercentFormat" '"%\.[01]f%%"|format: *"%\.[01]f%%' "A hand-built percentage. Print through PercentFormat." "${limit}"
 fi
 
 print "## PR body block"

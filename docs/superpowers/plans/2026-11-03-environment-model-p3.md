@@ -1,5 +1,7 @@
 # Environment model P3: Platform kinds on their own profile — Implementation Plan
 
+Status: shipped in 2.12 on `dev/2-12-0`. The boxes below are the original task list and were not ticked as the work landed; `CLAUDE.md` describes what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Under a `profiles:` block, run the Platform-only kinds with the `platform` slot's profile, pin that slot, check it reaches the same Jamf Pro, and judge the collect's dead verdicts on the Jamf Pro profile alone. A workspace without the block collects exactly as today.

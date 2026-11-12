@@ -11,6 +11,7 @@ that.
 | Jamf Pro, direct | One Jamf Pro instance's Jamf Pro API and Classic API. The only choice for an on-premises server. | Jamf Pro: **Settings > System > API roles and clients** | The privileges on the client's API role |
 | Jamf Platform API (recommended for Jamf Cloud) | Through Jamf's gateway: the Jamf Pro and Classic APIs of the Jamf Pro tenant in the integration's environment, plus Compliance Benchmarks, blueprint status and DDM status | Jamf Account: **Integrations** | The integration's scope level and permissions |
 | Jamf Protect | Protect overview, alerts, computers, insights and plans | Jamf Protect console: **API Clients** | The role assigned to the API client |
+| Jamf Security Cloud | The device risk list only (`security risk list`); the app never runs a Security Cloud command that changes anything | `jamf-cli security setup` in Terminal, then **Add to this environment** on the Data Sources screen | The access of the credential you give `security setup`; read access to device risk is enough |
 | Jamf School | School overview, devices, device groups, users, classes, apps, profiles, locations, iBeacons and DEP devices | Jamf School console: **Organization > Settings > API** | The API methods allowed for the key |
 
 Create the Jamf Account integration at the **environment** level. A tenant-level integration
@@ -228,7 +229,7 @@ Jamf's current documentation and the app's form place the page at **Administrati
 Clients**, with the **Read Only** role or a custom role; jamf-cli's setup guide still says
 **Settings > API Clients**. Connect it with the Protect URL, client ID and client secret. It
 is not covered by your Jamf Account integration. **Data Sources > Additional Products >
-Disconnect** turns Protect off in the workspace and leaves the jamf-cli profile, which
+Disconnect**, or **Remove** on the Protect row of the Environment card, turns Protect off in the workspace and leaves the jamf-cli profile, which
 `jamf-cli config remove-profile <name>` removes. Protect can be connected to a Jamf Pro or,
 experimentally, a Jamf School workspace.
 
@@ -294,8 +295,9 @@ jamf-cli -p <profile> pro scripts list --output json | head -c 1500
 
 ## Shared workspaces
 
-Every Mac collecting into a shared workspace must have a jamf-cli profile with the name the
-workspace's `config.yaml` uses, connected the same way. See
+Every Mac collecting into a shared workspace must have a jamf-cli profile with the same name
+as the workspace folder (and, with a `profiles:` block, the Platform API and Jamf Protect
+profiles it names), connected the same way. See
 [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations#shared-workspace-several-macs-one-history).
 
 ## Moving an existing integration
