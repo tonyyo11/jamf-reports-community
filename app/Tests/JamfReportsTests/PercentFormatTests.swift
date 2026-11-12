@@ -156,7 +156,7 @@ final class PercentFormatTests: XCTestCase {
         let summary = DailySummary(
             date: "2026-11-11", totalDevices: 10, fileVaultPct: 89.6, compliancePct: nil,
             staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: 70.2)
-        let reasons = fleetProfileIssues(summary, format: whole).map(\.reason)
+        let reasons = fleetProfileIssues(summary, format: whole, staleDays: 30).map(\.reason)
         XCTAssertTrue(reasons.contains("FileVault 89.6% (below 90%)"), "\(reasons)")
         XCTAssertTrue(reasons.contains("Patch 70% (below 80%)"), "\(reasons)")
     }

@@ -50,9 +50,7 @@ struct EnvironmentCard: View {
                 onFinished: mergeFinished, onFailed: { Task { await reloadPendingMerge() } })
         }
         .confirmationDialog(
-            pendingRemoval.map { $0.slot == .protect
-                ? L("Remove Jamf Protect from this environment?")
-                : L("Remove Platform API from this environment?") }
+            pendingRemoval.map { Self.removalTitle(for: $0.slot) }
                 ?? L("Remove from this environment?"),
             isPresented: removalBinding,
             presenting: pendingRemoval
@@ -381,3 +379,15 @@ private let previewState = EnvironmentCardState(
         .preferredColorScheme(.dark)
 }
 #endif
+
+extension EnvironmentCard {
+    /// One title per product a row can disconnect. Internal for tests.
+    nonisolated static func removalTitle(for slot: ProfilesConfigWriter.Slot) -> String {
+        switch slot {
+        case .protect: L("Remove Jamf Protect from this environment?")
+        case .platform: L("Remove Platform API from this environment?")
+        case .securityCloud: L("Remove Jamf Security Cloud from this environment?")
+        case .jamfPro, .jamfSchool: L("Remove from this environment?")
+        }
+    }
+}

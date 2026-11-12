@@ -8038,6 +8038,46 @@
         }
       }
     },
+    "%@ of devices reporting" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ der meldenden Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de los dispositivos que lo informan"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ des appareils qui le signalent"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dei dispositivi che lo segnalano"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "報告しているデバイスの%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dos dispositivos que o informam"
+          }
+        }
+      }
+    },
     "%@ of fleet" : {
       "localizations" : {
         "de" : {
@@ -8074,6 +8114,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ da frota"
+          }
+        }
+      }
+    },
+    "%@ of managed devices reporting" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ der meldenden verwalteten Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de los dispositivos gestionados que lo informan"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ des appareils gérés qui le signalent"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dei dispositivi gestiti che lo segnalano"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "報告している管理対象デバイスの%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dos dispositivos gerenciados que o informam"
           }
         }
       }
@@ -11530,6 +11610,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld Mac"
+          }
+        }
+      }
+    },
+    "%lld Mac · %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac · %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac · %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac · %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac%lld台 · %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac · %@"
           }
         }
       }
@@ -15432,6 +15552,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld móveis"
+          }
+        }
+      }
+    },
+    "%lld mobile device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mobilgerät"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld dispositivo móvil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld appareil mobile"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld dispositivo mobile"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モバイルデバイス%lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld dispositivo móvel"
           }
         }
       }
@@ -22823,46 +22983,6 @@
         }
       }
     },
-    ">30d since contact" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ">30 T. seit Kontakt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ">30d desde el contacto"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ">30 j depuis le contact"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ">30 g dal contatto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接続から30日超"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ">30 d desde o contato"
-          }
-        }
-      }
-    },
     "@tonyyo11" : {
       "localizations" : {
         "de" : {
@@ -26511,46 +26631,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Adicionar Agendamento"
-          }
-        }
-      }
-    },
-    "Add a Platform profile jamf-cli already has. It must reach this workspace's Jamf Pro. The Platform reports are collected with this workspace." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fügen Sie ein Platform-Profil hinzu, das jamf-cli bereits hat. Es muss das Jamf Pro dieses Arbeitsbereichs erreichen. Die Platform-Berichte werden mit diesem Arbeitsbereich erfasst."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añada un perfil de Platform que jamf-cli ya tenga. Debe llegar al Jamf Pro de este espacio de trabajo. Los informes de Platform se recopilan con este espacio de trabajo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajoutez un profil Platform que jamf-cli possède déjà. Il doit atteindre le Jamf Pro de cet espace de travail. Les rapports Platform sont collectés avec cet espace de travail."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi un profilo Platform che jamf-cli ha già. Deve raggiungere il Jamf Pro di questo spazio di lavoro. I report Platform vengono raccolti con questo spazio di lavoro."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "jamf-cli にすでにある Platform プロファイルを追加します。このワークスペースの Jamf Pro に接続できる必要があります。Platform のレポートはこのワークスペースと一緒に収集されます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adicione um perfil da Platform que o jamf-cli já tem. Ele precisa alcançar o Jamf Pro deste espaço de trabalho. Os relatórios da Platform são coletados com este espaço de trabalho."
           }
         }
       }
@@ -39775,42 +39855,42 @@
         }
       }
     },
-    "Computers that have not checked in for more than 30 days. Offline Outreach buckets them by how long they have been quiet." : {
+    "Computers past this workspace's stale setting: more than %lld days by the dates Config › Thresholds counts. Offline Outreach buckets them by how long they have been quiet." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computer, die seit mehr als 30 Tagen nicht eingecheckt haben. Offline Outreach gruppiert sie danach, wie lange sie inaktiv sind."
+            "value" : "Computer über der Veraltet-Grenze dieses Arbeitsbereichs: mehr als %lld Tage nach den Daten, die Konfiguration › Schwellenwerte zählt. Offline Outreach gruppiert sie danach, wie lange sie inaktiv sind."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ordenadores que no han registrado actividad en más de 30 días. Offline Outreach los agrupa según el tiempo que llevan inactivos."
+            "value" : "Ordenadores que superan el límite de obsolescencia de este espacio de trabajo: más de %lld días según las fechas que cuenta Configuración › Umbrales. Offline Outreach los agrupa según el tiempo que llevan inactivos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ordinateurs qui ne se sont pas signalés depuis plus de 30 jours. Contact des appareils hors ligne les répartit selon la durée de leur silence."
+            "value" : "Ordinateurs au-delà du seuil d’obsolescence de cet espace de travail : plus de %lld jours selon les dates que compte Config › Seuils. Contact des appareils hors ligne les répartit selon la durée de leur silence."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computer che non effettuano il check-in da più di 30 giorni. Offline Outreach li suddivide in base al tempo di inattività."
+            "value" : "Computer oltre la soglia di obsolescenza di questo spazio di lavoro: più di %lld giorni secondo le date contate in Config › Soglie. Offline Outreach li suddivide in base al tempo di inattività."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "30日を超えてチェックインしていないコンピュータです。オフラインアウトリーチは、無通信の期間ごとに分類します。"
+            "value" : "このワークスペースの長期未接続の設定を超えたコンピュータです。構成 › しきい値で数える日付で%lld日を超えています。オフラインアウトリーチは、無通信の期間ごとに分類します。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computadores que não fazem check-in há mais de 30 dias. O Offline Outreach os agrupa pelo tempo de inatividade."
+            "value" : "Computadores além do limite de desatualização deste espaço de trabalho: mais de %lld dias pelas datas que Config › Limites conta. O Offline Outreach os agrupa pelo tempo de inatividade."
           }
         }
       }
@@ -41337,6 +41417,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conecte um tenant do Jamf Protect com um cliente de API. Os alertas, computadores e insights dele são coletados com este espaço de trabalho."
+          }
+        }
+      }
+    },
+    "Connect a new Platform API profile here, or add one jamf-cli already has from the list below. It must reach this workspace's Jamf Pro. The Platform reports are collected with this workspace." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinden Sie hier ein neues Platform API-Profil, oder fügen Sie aus der Liste unten eines hinzu, das jamf-cli bereits hat. Es muss das Jamf Pro dieses Arbeitsbereichs erreichen. Die Platform-Berichte werden mit diesem Arbeitsbereich erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conecte aquí un nuevo perfil de Platform API o añada de la lista de abajo uno que jamf-cli ya tenga. Debe llegar al Jamf Pro de este espacio de trabajo. Los informes de Platform se recopilan con este espacio de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez ici un nouveau profil Platform API, ou ajoutez depuis la liste ci-dessous un profil que jamf-cli possède déjà. Il doit atteindre le Jamf Pro de cet espace de travail. Les rapports Platform sont collectés avec cet espace de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connetti qui un nuovo profilo Platform API, oppure aggiungine uno che jamf-cli ha già dall'elenco qui sotto. Deve raggiungere il Jamf Pro di questo spazio di lavoro. I report Platform vengono raccolti con questo spazio di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここで新しい Platform API プロファイルを接続するか、下のリストから jamf-cli にすでにあるものを追加します。このワークスペースの Jamf Pro に接続できる必要があります。Platform のレポートはこのワークスペースと一緒に収集されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conecte aqui um novo perfil da Platform API ou adicione, da lista abaixo, um que o jamf-cli já tem. Ele precisa alcançar o Jamf Pro deste espaço de trabalho. Os relatórios da Platform são coletados com este espaço de trabalho."
           }
         }
       }
@@ -91449,6 +91569,46 @@
         }
       }
     },
+    "Past the %lld-day stale setting" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über der Veraltet-Grenze von %lld Tagen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más allá del límite de obsolescencia de %lld días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au-delà du seuil d’obsolescence de %lld jours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oltre la soglia di obsolescenza di %lld giorni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "長期未接続の設定（%lld日）を超過"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Além do limite de desatualização de %lld dias"
+          }
+        }
+      }
+    },
     "Patch" : {
       "localizations" : {
         "de" : {
@@ -98745,6 +98905,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remover Jamf Protect deste ambiente?"
+          }
+        }
+      }
+    },
+    "Remove Jamf Security Cloud from this environment?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Security Cloud aus dieser Umgebung entfernen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar Jamf Security Cloud de este entorno?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer Jamf Security Cloud de cet environnement ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovere Jamf Security Cloud da questo ambiente?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この環境から Jamf Security Cloud を削除しますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover Jamf Security Cloud deste ambiente?"
           }
         }
       }

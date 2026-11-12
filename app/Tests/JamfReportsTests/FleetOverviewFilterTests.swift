@@ -16,7 +16,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertTrue(fleetProfileIssues(summary, format: .standard).isEmpty)
+        XCTAssertTrue(fleetProfileIssues(summary, format: .standard, staleDays: 30).isEmpty)
     }
 
     func testStaleSummaryHasIssue() {
@@ -30,7 +30,11 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertFalse(fleetProfileIssues(summary, format: .standard).isEmpty)
+        XCTAssertFalse(fleetProfileIssues(summary, format: .standard, staleDays: 30).isEmpty)
+        let stale = fleetProfileIssues(summary, format: .standard, staleDays: 14)
+            .first { $0.tab == .outreach }
+        XCTAssertTrue(stale?.explanation.contains("14 days") == true,
+                      "names the workspace's stale setting, not a fixed 30")
     }
 
     func testLowFileVaultHasIssue() {
@@ -44,7 +48,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertFalse(fleetProfileIssues(summary, format: .standard).isEmpty)
+        XCTAssertFalse(fleetProfileIssues(summary, format: .standard, staleDays: 30).isEmpty)
     }
 
     func testLowPatchComplianceHasIssue() {
@@ -58,7 +62,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 72
         )
-        XCTAssertFalse(fleetProfileIssues(summary, format: .standard).isEmpty)
+        XCTAssertFalse(fleetProfileIssues(summary, format: .standard, staleDays: 30).isEmpty)
     }
 
     /// The daily summary's patch figure is a share of devices, not of titles; the
@@ -74,7 +78,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 72
         )
-        let patch = try XCTUnwrap(fleetProfileIssues(summary, format: .standard).first { $0.tab == .patch })
+        let patch = try XCTUnwrap(fleetProfileIssues(summary, format: .standard, staleDays: 30).first { $0.tab == .patch })
         XCTAssertTrue(patch.explanation.hasPrefix("Share of computers"), patch.explanation)
         XCTAssertFalse(patch.explanation.contains("Average"), patch.explanation)
     }
@@ -104,12 +108,12 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertFalse(fleetProfileIssues(summary2, format: .standard).isEmpty)
+        XCTAssertFalse(fleetProfileIssues(summary2, format: .standard, staleDays: 30).isEmpty)
         _ = summary  // silence unused warning
     }
 
     func testMissingSummaryHasIssue() {
-        XCTAssertFalse(fleetProfileIssues(nil, format: .standard).isEmpty)
+        XCTAssertFalse(fleetProfileIssues(nil, format: .standard, staleDays: 30).isEmpty)
     }
 
     // MARK: - Filter helper
@@ -144,8 +148,8 @@ final class FleetOverviewFilterTests: XCTestCase {
             ),
         ]
 
-        let issueCount = summaries.filter { !fleetProfileIssues($0, format: .standard).isEmpty }.count
-        let cleanCount = summaries.filter { fleetProfileIssues($0, format: .standard).isEmpty }.count
+        let issueCount = summaries.filter { !fleetProfileIssues($0, format: .standard, staleDays: 30).isEmpty }.count
+        let cleanCount = summaries.filter { fleetProfileIssues($0, format: .standard, staleDays: 30).isEmpty }.count
 
         XCTAssertEqual(issueCount, 3)
         XCTAssertEqual(cleanCount, 2)
@@ -164,7 +168,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 60
         )
-        let reasons = fleetProfileIssues(summary, format: .standard).map(\.reason)
+        let reasons = fleetProfileIssues(summary, format: .standard, staleDays: 30).map(\.reason)
         XCTAssertEqual(reasons.count, 3)
         XCTAssertTrue(reasons.contains { $0.contains("5 stale computers") })
         XCTAssertTrue(reasons.contains { $0.contains("FileVault 82.0%") })
@@ -182,11 +186,11 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 85
         )
-        XCTAssertTrue(fleetProfileIssues(summary, format: .standard).map(\.reason).isEmpty)
+        XCTAssertTrue(fleetProfileIssues(summary, format: .standard, staleDays: 30).map(\.reason).isEmpty)
     }
 
     func testIssueReasonsForMissingSummary() {
-        XCTAssertEqual(fleetProfileIssues(nil, format: .standard).map(\.reason), ["No summary collected yet"])
+        XCTAssertEqual(fleetProfileIssues(nil, format: .standard, staleDays: 30).map(\.reason), ["No summary collected yet"])
     }
 
     func testIssueDestinationsRouteToActionableTabs() {
@@ -200,9 +204,9 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 95,
             patchPct: 60
         )
-        XCTAssertEqual(fleetProfileIssues(summary, format: .standard).map(\.tab),
+        XCTAssertEqual(fleetProfileIssues(summary, format: .standard, staleDays: 30).map(\.tab),
                        [.outreach, .securityPosture, .patch])
-        XCTAssertEqual(fleetProfileIssues(nil, format: .standard).first?.tab, .overview)
+        XCTAssertEqual(fleetProfileIssues(nil, format: .standard, staleDays: 30).first?.tab, .overview)
     }
 
     // MARK: - Nil staleCount under-flag rule
@@ -221,7 +225,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 97,
             patchPct: 85
         )
-        XCTAssertTrue(fleetProfileIssues(summary, format: .standard).isEmpty,
+        XCTAssertTrue(fleetProfileIssues(summary, format: .standard, staleDays: 30).isEmpty,
                       "nil staleCount with healthy metrics must not trigger any issue")
     }
 
@@ -238,7 +242,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 97,
             patchPct: nil
         )
-        let issues = fleetProfileIssues(summary, format: .standard)
+        let issues = fleetProfileIssues(summary, format: .standard, staleDays: 30)
         XCTAssertFalse(issues.contains { $0.tab == .trends },
                        "nil stabilityIndex must not produce a Trends issue")
     }
@@ -260,7 +264,7 @@ final class FleetOverviewFilterTests: XCTestCase {
             crowdstrikePct: 90,
             patchPct: 85
         )
-        let issues = fleetProfileIssues(summary, format: .standard)
+        let issues = fleetProfileIssues(summary, format: .standard, staleDays: 30)
         XCTAssertEqual(issues.count, 1, "Only the stability issue should fire")
         let issue = try XCTUnwrap(issues.first)
         XCTAssertTrue(issue.reason.contains("Stability"),
