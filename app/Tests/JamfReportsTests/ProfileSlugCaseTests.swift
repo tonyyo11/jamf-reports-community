@@ -227,8 +227,8 @@ final class ProfileSlugCaseTests: XCTestCase {
 
         XCTAssertEqual(flow.statuses["Acme-Dev"], .done)
         let config = tempRoot.appendingPathComponent("Acme-Dev/config.yaml")
-        XCTAssertEqual(try ConfigLoader.load(from: config).jamfCli?.profile, "Acme-Dev",
-                       "jamf-cli is called with -p exactly as the profile is spelled")
+        XCTAssertEqual(EnvironmentProfiles.read(configURL: config, workspace: "Acme-Dev").jamfPro,
+                       "Acme-Dev", "jamf-cli is called with -p exactly as the profile is spelled")
     }
     #endif
 
@@ -350,8 +350,8 @@ final class ProfileSlugCaseTests: XCTestCase {
         let text = try String(
             contentsOf: workspace.appendingPathComponent("config.yaml"), encoding: .utf8)
         let loaded = try ConfigService.load(profile: "Seeded", workspaceRoot: tempRoot)
-        XCTAssertEqual(loaded.document.root.mapping?.value(for: "jamf_cli")?.mapping?
-            .value(for: "profile")?.stringValue, "Seeded")
+        XCTAssertEqual(loaded.document.root.mapping?.value(for: "profiles")?.mapping?
+            .value(for: "jamf_pro")?.stringValue, "Seeded")
         XCTAssertFalse(text.contains("example configuration"), "never the shipped example")
         let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
             .filter { $0.hasPrefix("config.yaml.bak-") }

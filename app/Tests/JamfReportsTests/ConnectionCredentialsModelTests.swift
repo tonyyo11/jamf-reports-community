@@ -431,10 +431,11 @@ final class ConnectionCredentialsModelTests: XCTestCase {
             unsetenv("JRC_TEST_WORKSPACES_ROOT")
             try? FileManager.default.removeItem(at: root)
         }
-        XCTAssertTrue(try OnboardingFlow.createJamfCLIOnlyWorkspace(for: "acme-prod"))
+        XCTAssertTrue(try OnboardingFlow.createJamfCLIOnlyWorkspace(
+            for: "acme-prod", as: .init(platform: true)))
         let config = root.appendingPathComponent("acme-prod/config.yaml")
         let before = try String(contentsOf: config, encoding: .utf8)
-        XCTAssertTrue(before.contains("profile: \"acme-prod\""))
+        XCTAssertTrue(before.contains("jamf_pro: \"acme-prod\"\n  platform: \"acme-prod\""))
 
         let h = try harness(mode: .addEnvironments)
         try h.store.removeMember(profile: "acme-prod")
@@ -442,7 +443,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         XCTAssertTrue(h.store.load().isEmpty)
         XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), before)
         // A config.yaml already there is kept, not rewritten.
-        XCTAssertFalse(try OnboardingFlow.createJamfCLIOnlyWorkspace(for: "acme-prod"))
+        XCTAssertFalse(try OnboardingFlow.createJamfCLIOnlyWorkspace(
+            for: "acme-prod", as: .init(platform: true)))
     }
 
     // MARK: Gateway host

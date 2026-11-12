@@ -52,6 +52,35 @@ enum ProfilesConfigWriter {
         root.set("profiles", value: .mapping(block))
     }
 
+    /// What a new workspace's own profile is, for the block it starts with (D3).
+    struct NewWorkspace: Equatable, Sendable {
+        var school = false
+        /// A Platform API profile also collects the Platform kinds, so it fills `platform` too.
+        var platform = false
+
+        /// From jamf-cli's record of the profile. One it cannot read is Jamf Pro with the
+        /// `platform` slot, as the block seed does, so a Platform workspace keeps its kinds.
+        static func of(
+            _ profile: String,
+            resolve: (String) -> ProfileAuthMethod.Resolved? = {
+                ProfileAuthMethod.resolve(profile: $0)
+            }
+        ) -> NewWorkspace {
+            guard let resolved = resolve(profile) else { return NewWorkspace(platform: true) }
+            if resolved.product == .school { return NewWorkspace(school: true) }
+            return NewWorkspace(platform: resolved.method?.isPlatform == true)
+        }
+    }
+
+    /// The `profiles:` block a new workspace starts with (D3): its own profile in the MDM slot,
+    /// and in `platform` too for a Platform API profile.
+    static func newWorkspaceBlock(workspace: String, _ kind: NewWorkspace) -> String {
+        let own = "\"\(ScaffoldService.yamlEscape(workspace))\""
+        var block = "\nprofiles:\n  \((kind.school ? Slot.jamfSchool : Slot.jamfPro).rawValue): \(own)\n"
+        if kind.platform, !kind.school { block += "  \(Slot.platform.rawValue): \(own)\n" }
+        return block
+    }
+
     /// The `profiles:` block of a Protect-only environment: the one slot, no MDM slot.
     static func protectOnlyBlock(login: String) -> String {
         "\nprofiles:\n  \(Slot.protect.rawValue): \"\(ScaffoldService.yamlEscape(login))\"\n"

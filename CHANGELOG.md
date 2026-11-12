@@ -109,6 +109,12 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A new workspace's config.yaml records its products in the `profiles:` block from the start:
+  setup, adopting jamf-cli's profiles, Add environments and `jamf-reports scaffold --out` into a
+  workspace folder all write it, in place of `jamf_cli.profile`. A workspace collects the same
+  sources as before. A Mac on 2.11 or older that shares the folder sees Jamf Pro only, so update
+  every Mac that shares a workspace together. `scaffold --out` to any other folder still writes
+  the old shape, since a block must name its workspace.
 - The Jamf Security Cloud match counts each device once: a second risk row for a device that
   already matched leaves the share's denominator, as the Jamf Protect match does.
 - The Overview's Mobile Devices section now counts every mobile device by type on its Devices

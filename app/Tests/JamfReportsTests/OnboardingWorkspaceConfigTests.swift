@@ -43,7 +43,10 @@ final class OnboardingWorkspaceConfigTests: XCTestCase {
             let workspace = tempRoot.appendingPathComponent(name)
             let text = try String(
                 contentsOf: workspace.appendingPathComponent("config.yaml"), encoding: .utf8)
-            XCTAssertTrue(text.contains("profile: \"\(name)\""))
+            // D3: the block names the workspace in its MDM slot; no jamf_cli.profile beside it.
+            let slot = path == .school ? "jamf_school" : "jamf_pro"
+            XCTAssertTrue(text.contains("profiles:\n  \(slot): \"\(name)\""), text)
+            XCTAssertFalse(text.contains("  profile:"), text)
             XCTAssertFalse(text.contains("columns"), "no column mapping is written")
             XCTAssertFalse(FileManager.default.fileExists(
                 atPath: workspace.appendingPathComponent("csv-inbox").path))
