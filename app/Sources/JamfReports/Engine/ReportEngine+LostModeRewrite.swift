@@ -115,10 +115,9 @@ extension ReportEngine {
             try FileManager.default.createDirectory(
                 at: stateDir, withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
-            try Data(SummaryJSONParser.dateFormatter.string(from: now).utf8)
-                .write(to: marker, options: .atomic)
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: marker.path)
+            try AtomicInstall.write(
+                Data(SummaryJSONParser.dateFormatter.string(from: now).utf8), to: marker,
+                mode: 0o600)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] lost-mode rewrite marker not written: "
@@ -206,10 +205,8 @@ extension ReportEngine {
                 continue
             }
             do {
-                // Atomic (temp file + rename), as saveSnapshot: a crash never tears a snapshot.
-                try stripped.write(to: file, options: .atomic)
-                try? FileManager.default.setAttributes(
-                    [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: file.path)
+                // A crash never tears a snapshot, and a link planted at the name is replaced.
+                try AtomicInstall.write(stripped, to: file, mode: 0o600)
                 tally.rewritten += 1
             } catch {
                 tally.writeFailed.append(name)

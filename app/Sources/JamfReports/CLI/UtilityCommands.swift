@@ -69,8 +69,8 @@ struct Scaffold: AsyncParsableCommand {
         // exists — it's an initial-setup command. The file it replaces is copied aside first.
         guard let csv else {
             try keepCopy(of: outURL)
-            try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
-            SharedConfigPin.confirmWrittenConfig(at: outURL)
+            let written = try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
+            SharedConfigPin.confirmWrittenConfig(written, at: outURL)
             print(outURL.path)
             return
         }
@@ -78,8 +78,8 @@ struct Scaffold: AsyncParsableCommand {
         let eas = ScaffoldService.proposeEAs(
             headers: sample.headers, sampleRows: sample.rows, mappedHeaders: [])
         try keepCopy(of: outURL)
-        try ScaffoldService.writeConfig(to: outURL, eas: eas, profile: "")
-        SharedConfigPin.confirmWrittenConfig(at: outURL)
+        let written = try ScaffoldService.writeConfig(to: outURL, eas: eas, profile: "")
+        SharedConfigPin.confirmWrittenConfig(written, at: outURL)
         print(outURL.path)
     }
 

@@ -156,6 +156,25 @@ final class SecurityHardeningTests: XCTestCase {
         )
     }
 
+    /// `tar -tzf` lists names only, so an archive whose `jamf-cli` is a link to an absolute
+    /// path passes the pre-check; the extracted tree is refused instead.
+    @MainActor
+    func test_extractedTreeWithALinkIsRefused() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("extract-\(UUID().uuidString)")
+        try fm.createDirectory(at: dir.appendingPathComponent("bin"), withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        try fm.createSymbolicLink(
+            at: dir.appendingPathComponent("bin/jamf-cli"), withDestinationURL: URL(fileURLWithPath: "/bin/ls"))
+        XCTAssertThrowsError(try JamfCLIInstaller.findExtractedJamfCLI(in: dir)) {
+            XCTAssertTrue($0.localizedDescription.contains("link"), "\($0)")
+        }
+
+        try fm.removeItem(at: dir.appendingPathComponent("bin/jamf-cli"))
+        try Data("bin".utf8).write(to: dir.appendingPathComponent("bin/jamf-cli"))
+        XCTAssertEqual(try JamfCLIInstaller.findExtractedJamfCLI(in: dir).lastPathComponent, "jamf-cli")
+    }
+
     @MainActor
     func test_rejectUnsafeArchiveEntry_rejectsControlChars() {
         XCTAssertThrowsError(

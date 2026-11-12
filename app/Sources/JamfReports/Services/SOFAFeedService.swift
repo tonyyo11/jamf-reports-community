@@ -109,6 +109,10 @@ struct SOFAFeedService: Sendable {
     ///   - timeout: Per-feed download timeout. Defaults to 30 seconds.
     ///   - referenceDate: "Today" for daysSinceRelease.
     /// - Returns: A `Snapshot` from the post-refresh state (mix of fresh and cached).
+    /// Most bytes one feed may be; the macOS feed was about 340 KB on 2026-11-12. A bigger
+    /// answer is a failed fetch and the cached feed stays in use.
+    static let maxFeedBytes = 8 * 1_048_576
+
     static func refresh(
         dataDir: URL,
         timeout: TimeInterval = 30,
@@ -138,12 +142,13 @@ struct SOFAFeedService: Sendable {
                 continue
             }
             do {
-                let (data, response) = try await session.data(
+                let (bytes, response) = try await session.bytes(
                     for: URLRequest(url: url),
                     delegate: HTTPSession.RedirectRule.sameHost(as: url))
                 if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                     throw URLError(.badServerResponse)
                 }
+                let data = try await AppUpdateCheck.collect(bytes, limit: maxFeedBytes)
                 // Validate the shape before caching.
                 let feed = try JSONDecoder().decode(SOFAFeed.self, from: data)
                 writeCacheAtomic(data: data, to: sofaDir

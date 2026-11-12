@@ -462,6 +462,22 @@ extension BackupDiffModelTests {
         XCTAssertEqual(entry["key"] as? String, "plain")
     }
 
+    func testRawRedactionMasksCredentialKeysInTextThatIsNotJSON() throws {
+        // A profile payload (plist) and a key: value setting inside a JSON diff value.
+        let plist = "<dict><key>Password</key><string>wifi-s3cret</string>"
+            + "<key>SSID_STR</key><string>Office</string></dict>"
+        let raw = #"[{"field":"payload","old_value":"x","new_value":"\#(plist)"}]"#
+        let out = BackupDiffModel.redactedRawText(raw, profile: nil)
+        XCTAssertFalse(out.contains("wifi-s3cret"), out)
+        XCTAssertTrue(out.contains("Office"), out)
+
+        let text = "smtp:\n  host: mail.example.test\n  password: hunter2-long\napi_token = tok-abc"
+        let masked = BackupDiffModel.redactedRawText(text, profile: nil)
+        XCTAssertFalse(masked.contains("hunter2-long"), masked)
+        XCTAssertFalse(masked.contains("tok-abc"), masked)
+        XCTAssertTrue(masked.contains("smtp:"), masked)
+    }
+
     func testRawRedactionFallsBackToTextRedactionForNonJSON() {
         let out = BackupDiffModel.redactedRawText(
             "jamf-cli failed: Authorization: Bearer abcdef1234567890abcdef1234567890",

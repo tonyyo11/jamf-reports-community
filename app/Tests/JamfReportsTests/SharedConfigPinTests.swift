@@ -556,12 +556,12 @@ final class SharedConfigPinTests: XCTestCase {
         // Onboarding on a Mac joining a shared folder: the written file sets the two folders.
         try writeConfig(outputDir: outside, allowAbsolute: true, retentionMode: "archive")
         _ = check()
-        try ScaffoldService.writeMinimalConfig(
+        let written = try ScaffoldService.writeMinimalConfig(
             to: workspace.appendingPathComponent("config.yaml"), profile: profile)
         let before = Set(check().drifts.map(\.key))
         XCTAssertTrue(before.contains(.outputDir))
         SharedConfigPin.confirmWrittenConfig(
-            at: workspace.appendingPathComponent("config.yaml"), profile: profile,
+            written, at: workspace.appendingPathComponent("config.yaml"), profile: profile,
             appSupport: appSupport)
         let after = Set(check().drifts.map(\.key))
         XCTAssertFalse(after.contains(.outputDir))
@@ -569,6 +569,19 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(after, before.subtracting([.outputDir, .dataDir]),
                        "keys the write did not set stay as they were")
         XCTAssertFalse(after.isEmpty, "retention, webhook and Protect are not accepted")
+    }
+
+    func testAWrittenConfigIsNotConfirmedWhenAPeerReplacedItAfterTheWrite() throws {
+        try writeConfig()
+        _ = check()
+        let url = workspace.appendingPathComponent("config.yaml")
+        let written = try ScaffoldService.writeMinimalConfig(to: url, profile: profile)
+        // A peer swaps in its own folder before the confirm runs.
+        try writeConfig(outputDir: outside, allowAbsolute: true)
+        SharedConfigPin.confirmWrittenConfig(
+            written, at: url, profile: profile, appSupport: appSupport)
+        XCTAssertTrue(check().drifts.map(\.key).contains(.outputDir),
+                      "the peer's folder is not confirmed by this Mac's write")
     }
 
     func testTheProfileOfAWorkspaceConfigPath() {

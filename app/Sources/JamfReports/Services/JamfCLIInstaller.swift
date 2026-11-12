@@ -1032,17 +1032,31 @@ final class JamfCLIInstaller {
         }
     }
 
-    private static func findExtractedJamfCLI(in directory: URL) throws -> URL {
+    /// The extracted `jamf-cli`, a regular file. The pre-check reads entry names only, so a link
+    /// entry (`jamf-cli -> /usr/bin/…`, or a folder link out of `directory`) is caught here, after
+    /// extraction: any link in the tree refuses the whole download.
+    static func findExtractedJamfCLI(in directory: URL) throws -> URL {
         let fm = FileManager.default
+        var found: URL?
         if let enumerator = fm.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
         ) {
-            for case let url as URL in enumerator where url.lastPathComponent == "jamf-cli" {
-                return url
+            for case let url as URL in enumerator {
+                var info = stat()
+                guard lstat(url.path, &info) == 0 else { continue }
+                if (info.st_mode & S_IFMT) == S_IFLNK {
+                    throw NSError(
+                        domain: "JamfCLIInstaller", code: 8,
+                        userInfo: [NSLocalizedDescriptionKey:
+                            L("Archive entry rejected (link): \(url.lastPathComponent)")])
+                }
+                if found == nil, url.lastPathComponent == "jamf-cli",
+                   (info.st_mode & S_IFMT) == S_IFREG {
+                    found = url
+                }
             }
         }
+        if let found { return found }
         throw NSError(
             domain: "JamfCLIInstaller",
             code: 1,
@@ -1148,7 +1162,7 @@ final class JamfCLIInstaller {
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
             "LANG": parent["LANG"] ?? "en_US.UTF-8",
-            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+            "TMPDIR": parent["TMPDIR"] ?? CLIBridge.perUserTemporaryDirectory,
         ]
         for (key, value) in parent where key.hasPrefix("HOMEBREW_") {
             env[key] = value
@@ -1164,7 +1178,7 @@ final class JamfCLIInstaller {
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
             "LANG": parent["LANG"] ?? "en_US.UTF-8",
-            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+            "TMPDIR": parent["TMPDIR"] ?? CLIBridge.perUserTemporaryDirectory,
         ]
     }
 

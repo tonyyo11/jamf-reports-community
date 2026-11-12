@@ -285,8 +285,11 @@ enum DER {
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyyMMddHHmmss"
         guard let date = formatter.date(from: whole) else { return nil }
+        // DER GeneralizedTime: no fraction, or "." and one or more ASCII digits (never an exponent).
         let fraction = text.dropFirst(14).dropLast()
-        guard fraction.isEmpty || fraction.hasPrefix("."),
+        let digits = fraction.dropFirst()
+        guard fraction.isEmpty || (fraction.hasPrefix(".") && !digits.isEmpty
+                && digits.allSatisfy({ ("0"..."9").contains($0) })),
               let seconds = Double("0" + fraction) else { return nil }
         return date.addingTimeInterval(seconds)
     }

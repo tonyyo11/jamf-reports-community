@@ -286,8 +286,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// `RetentionConfig` and `NotifyConfig` read them. Nil when the file is missing or unreadable.
     static func current(workspace: URL) -> SharedConfigPin? {
         let url = workspace.appendingPathComponent("config.yaml")
-        guard let text = try? ConfigLoader.readText(at: url),
-              let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return nil }
+        guard let text = try? ConfigLoader.readText(at: url) else { return nil }
+        return current(fromYAML: text)
+    }
+
+    /// The pinned values `text` holds, read as `current(workspace:)` reads the file.
+    static func current(fromYAML text: String) -> SharedConfigPin? {
+        guard let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return nil }
         func raw(_ section: String, _ key: String) -> Any? {
             ConfigLoader.rawValue(at: [section, key], in: root)
         }
@@ -683,21 +688,30 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return ProfileName.name(fromPathComponent: folder.lastPathComponent)
     }
 
-    /// After this Mac wrote `url` (onboarding or `scaffold --out`): confirm exactly the keys
-    /// that write set. Keys it left out stay as they are, so joining a peer's folder never
-    /// accepts the peer's retention, webhook or Protect profile. Best effort; a failure is logged.
+    /// After this Mac wrote `written` to `url` (onboarding or `scaffold --out`): confirm exactly
+    /// the keys that text sets, each only while the file still holds the value written, so a peer
+    /// that replaces the file in between is never confirmed. Keys it left out stay as they are,
+    /// so joining a peer's folder never accepts the peer's retention, webhook or Protect profile.
+    /// Best effort; a failure is logged.
     static func confirmWrittenConfig(
-        at url: URL, profile: String? = nil, appSupport: URL = AppSupport.directory()
+        _ written: String, at url: URL, profile: String? = nil,
+        appSupport: URL = AppSupport.directory()
     ) {
         guard let profile = profile ?? Self.profile(forConfigAt: url),
-              let text = try? ConfigLoader.readText(at: url) else { return }
-        let keys = keysSet(inYAML: text)
-        guard !keys.isEmpty else { return }
-        confirmBestEffort(profile: profile, keys: keys, appSupport: appSupport)
+              let values = current(fromYAML: written) else { return }
+        let drifts = keysSet(inYAML: written).map {
+            Drift(key: $0, pinned: "", current: "", currentToken: $0.token(of: values))
+        }
+        guard !drifts.isEmpty else { return }
+        do {
+            try confirm(profile: profile, drifts: drifts, appSupport: appSupport)
+        } catch {
+            let reason = error.localizedDescription
+            AppLogger.collect.warning(
+                "SharedConfigPin: could not confirm the written config: \(reason, privacy: .private)")
+        }
     }
 
-    /// `confirm(profile:keys:)` for a write this Mac just made; a failure is logged, since the
-    /// write itself succeeded and the Doctor row still offers the Confirm.
     /// Re-pins `key` to `written`, the value a save on this Mac just wrote, only while
     /// config.yaml still holds it (a peer's edit landing in between is not confirmed), and
     /// even when it equals the value before (it clears a peer's identical pending drift).
@@ -713,18 +727,6 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             let reason = error.localizedDescription
             AppLogger.collect.warning(
                 "SharedConfigPin: did not confirm \(key.rawValue): \(reason, privacy: .private)")
-        }
-    }
-
-    static func confirmBestEffort(
-        profile: String, keys: Set<Key>, appSupport: URL = AppSupport.directory()
-    ) {
-        do {
-            try confirm(profile: profile, keys: keys, appSupport: appSupport)
-        } catch {
-            let reason = error.localizedDescription
-            AppLogger.collect.warning(
-                "SharedConfigPin: could not confirm the written config: \(reason, privacy: .private)")
         }
     }
 

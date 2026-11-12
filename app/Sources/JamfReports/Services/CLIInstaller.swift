@@ -53,6 +53,14 @@ enum CLIInstaller {
             + " \(ProfileName.shellWord(dest.path))"
     }
 
+    /// Why the `sudo` command is not offered for `source`, nil when it may be: a link made with
+    /// `sudo` in a shared folder points every account on the Mac at the app, so the app must be
+    /// in /Applications, where this account cannot change it without an administrator.
+    static func sudoRefusal(source: URL) -> String? {
+        source.path.hasPrefix("/Applications/") ? nil
+            : "Move JamfReports.app to /Applications first, then install the command-line tool."
+    }
+
     /// Create (or verify) the symlink. `source`/`targetDir`/`fileManager` are
     /// injectable for tests; production calls use the defaults.
     static func install(
@@ -79,7 +87,9 @@ enum CLIInstaller {
         var isDir: ObjCBool = false
         let dirWritable = fm.fileExists(atPath: targetDir.path, isDirectory: &isDir)
             && isDir.boolValue && fm.isWritableFile(atPath: targetDir.path)
-        guard dirWritable else { return .manual(command: manual) }
+        guard dirWritable else {
+            return sudoRefusal(source: source).map { .failed(reason: $0) } ?? .manual(command: manual)
+        }
 
         do {
             if (try? fm.destinationOfSymbolicLink(atPath: dest.path)) != nil {
@@ -88,7 +98,7 @@ enum CLIInstaller {
             try fm.createSymbolicLink(at: dest, withDestinationURL: source)
             return .installed(path: dest.path)
         } catch {
-            return .manual(command: manual)
+            return sudoRefusal(source: source).map { .failed(reason: $0) } ?? .manual(command: manual)
         }
     }
 }

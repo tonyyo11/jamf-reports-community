@@ -240,6 +240,46 @@ final class CSVFolderTests: XCTestCase {
         }
     }
 
+    func testAPersonsOwnFolderAtTheNameIsNeverReplaced() throws {
+        let workbook = Workbook()
+        workbook.addSheet("Data").write("x", row: 0, col: 0)
+        let folder = scratchURL("Q3_csv")
+        defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let mine = folder.appendingPathComponent("notes.txt")
+        try "keep me".write(to: mine, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try workbook.writeCSVFolder(to: folder)) { error in
+            XCTAssertTrue("\(error.localizedDescription)".contains("move it aside"), "\(error)")
+        }
+        XCTAssertEqual(try String(contentsOf: mine, encoding: .utf8), "keep me")
+        let beside = try FileManager.default.contentsOfDirectory(
+            atPath: folder.deletingLastPathComponent().path)
+        XCTAssertFalse(beside.contains { $0.contains(".tmp-") }, "\(beside)")
+
+        // A subfolder or a link inside also marks it as not ours; only CSVs and .DS_Store pass.
+        try FileManager.default.removeItem(at: mine)
+        try FileManager.default.createDirectory(
+            at: folder.appendingPathComponent("sub.csv"), withIntermediateDirectories: false)
+        XCTAssertFalse(Workbook.holdsOnlyCSVFiles(folder))
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("sub.csv"))
+        try "a".write(to: folder.appendingPathComponent(".DS_Store"), atomically: true, encoding: .utf8)
+        try "a".write(to: folder.appendingPathComponent("Old.csv"), atomically: true, encoding: .utf8)
+        XCTAssertTrue(Workbook.holdsOnlyCSVFiles(folder))
+        XCTAssertEqual(try workbook.writeCSVFolder(to: folder), 1)
+        XCTAssertEqual(try names(in: folder), ["Data.csv"])
+    }
+
+    func testAFileInstallNeverReplacesARealFolder() throws {
+        let base = scratchURL("plain")
+        defer { try? FileManager.default.removeItem(at: base.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let staged = base.deletingLastPathComponent().appendingPathComponent("staged-dir")
+        try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
+        XCTAssertThrowsError(try AtomicInstall.install(staged, at: base), "no replace by default")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: base.path))
+    }
+
     func testALinkAtTheFoldersNameIsReplacedNotWrittenThrough() async throws {
         try await withScratch { scratch in
             let dataDir = try fixtureData(["overview"], in: scratch)

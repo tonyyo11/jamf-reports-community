@@ -474,6 +474,7 @@ final class CLIBridge {
         written: RunArtifacts?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
+        try Self.refuseSensitiveDestination(outputDir, writing: "the workbook", onLine: onLine)
         try await ensureWorkspace(profile: profile, onLine: onLine)
         // A Generate with no collect before it (the Overview, onboarding) still names a drift.
         SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
@@ -622,6 +623,7 @@ await engine.writeHTMLWithWorkbook(
         written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
+        try Self.refuseSensitiveDestination(outputDir, writing: "the workbook", onLine: onLine)
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
@@ -1510,6 +1512,23 @@ try await ReportEngine.schoolGenerateReport(
         return (exitCode, data)
     }
 
+    /// Refuses a system or credentials folder (`WorkspacePaths.isSensitiveAbsolutePath`) as the
+    /// place a person chose for a report, before any folder is created there: one rule for the
+    /// workbook, HTML, PDF and CSV. A deny-list, not a workspace allow-list, because the callers
+    /// are save panels and the Generate sheet's folder, where any user folder is allowed. A path
+    /// inside the workspaces root passes: `WorkspaceRootStore` already validated that root, and
+    /// the default report folder (`WorkspacePaths.reportsDir`) is there.
+    static func refuseSensitiveDestination(
+        _ url: URL?, writing what: String, onLine: @Sendable (LogLine) -> Void
+    ) throws {
+        guard let url, WorkspacePaths.isSensitiveAbsolutePath(url) else { return }
+        let root = ProfileService.workspacesRoot().resolvingSymlinksInPath().path + "/"
+        if url.resolvingSymlinksInPath().path.hasPrefix(root) { return }
+        onLine(.init(timestamp: Date(), level: .fail,
+            text: "[error] refusing to write \(what) into a sensitive path: \(url.path)"))
+        throw CLIBridgeError.directoryOperationFailed(path: url.path)
+    }
+
     func generateHTML(
         profile: String,
         outFile: String?,
@@ -1520,6 +1539,8 @@ try await ReportEngine.schoolGenerateReport(
     ) async throws -> Int32 {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
         // authGuard is intentionally omitted — stale/expired credentials do not prevent rendering.
+        try Self.refuseSensitiveDestination(
+            outFile.map { URL(fileURLWithPath: $0) }, writing: "HTML", onLine: onLine)
         try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
@@ -1616,11 +1637,7 @@ try await ReportEngine.generateHTML(
         // allow-list on purpose: the sole UI caller is an NSSavePanel, and a
         // strict allow-list would silently re-break user-chosen export
         // destinations (the B-04 regression PR #161 removed).
-        guard !WorkspacePaths.isSensitiveAbsolutePath(outputURL) else {
-            onLine(.init(timestamp: Date(), level: .fail,
-                text: "[error] refusing to write PDF into a sensitive path: \(outputURL.path)"))
-            throw CLIBridgeError.directoryOperationFailed(path: outputURL.path)
-        }
+        try Self.refuseSensitiveDestination(outputURL, writing: "PDF", onLine: onLine)
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -1671,14 +1688,8 @@ try await ReportEngine.generatePDF(
     ) async throws -> Int32 {
         // Epic #103 parity with generatePDF: the engine createDirectory()s at
         // this path, so refuse sensitive destinations before doing anything.
-        if let path = outFile {
-            let candidate = URL(fileURLWithPath: path)
-            guard !WorkspacePaths.isSensitiveAbsolutePath(candidate) else {
-                onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] refusing to write CSV into a sensitive path: \(candidate.path)"))
-                throw CLIBridgeError.directoryOperationFailed(path: candidate.path)
-            }
-        }
+        try Self.refuseSensitiveDestination(
+            outFile.map { URL(fileURLWithPath: $0) }, writing: "CSV", onLine: onLine)
         // No authGuard: this reads cached snapshots only, so a 401 must not block it.
         try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
@@ -2590,6 +2601,15 @@ try await ReportEngine.inventoryCSV(
         }
     }
 
+    /// This account's own temporary folder (`/var/folders/…/T/`, 0700), for a child started
+    /// with no `TMPDIR`; never the shared `/tmp`, where another account can plant a file.
+    nonisolated static var perUserTemporaryDirectory: String {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let length = confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, buffer.count)
+        guard length > 0, length <= buffer.count else { return NSTemporaryDirectory() }
+        return String(cString: buffer)
+    }
+
     /// The one environment every jamf-cli child gets; `parent` is the test seam. Add a variable
     /// jamf-cli must see to `jamfCLIAllowedEnvKeys` (verbatim) or here (when it needs a check).
     /// `proxy` and `noProxy` are the system proxy a background run installed (`SystemProxy`); a
@@ -2603,7 +2623,7 @@ try await ReportEngine.inventoryCSV(
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
             "LANG": parent["LANG"] ?? "en_US.UTF-8",
-            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+            "TMPDIR": parent["TMPDIR"] ?? perUserTemporaryDirectory,
         ]
         for key in jamfCLIAllowedEnvKeys {
             if let value = parent[key], !value.isEmpty {

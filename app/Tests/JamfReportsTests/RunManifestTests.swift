@@ -385,6 +385,17 @@ final class RunManifestTests: XCTestCase {
         XCTAssertEqual(refused.count, 2)
     }
 
+    func testGenTimeTakesOnlyDigitsAfterTheDecimalPoint() {
+        func parse(_ text: String) -> Date? { DER.generalizedTime(ArraySlice(text.utf8)) }
+        let whole = parse("20261112130000Z")
+        XCTAssertNotNil(whole)
+        XCTAssertEqual(parse("20261112130000.25Z")?.timeIntervalSince(whole!) ?? -1, 0.25, accuracy: 1e-6)
+        for bad in ["20261112130000.5e9Z", "20261112130000.Z", "20261112130000.-1Z",
+                    "20261112130000 Z", "20261112130000.1 Z"] {
+            XCTAssertNil(parse(bad), bad)
+        }
+    }
+
     // MARK: Writing through the real writers
 
     func testAManifestOverALinkedArtifactIsNotWrittenAndWarnsOnce() async throws {
@@ -394,7 +405,7 @@ final class RunManifestTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: workbook, withDestinationURL: target)
         let lines = ManifestLines()
         let written = await ReportEngine.sealRun(
-            artifacts: [workbook], config: ReportConfig(), profile: nil,
+            artifacts: [workbook], config: ReportConfig(), profile: "local-test",
             now: Date(timeIntervalSince1970: 1_793_264_400), onLine: lines.add)
         XCTAssertNil(written)
         XCTAssertEqual(lines.all.filter { $0.hasPrefix(ReportEngine.runManifestFailureMarker) }
@@ -485,12 +496,15 @@ final class RunManifestTests: XCTestCase {
             "output:\n  timestamp_authority: \"\(authority.absoluteString)\"\n")
         TSAStub.answer(.reply(503, Data()))
         let lines = ManifestLines()
+        // A local workspace with no pin: the authority it names is used.
+        setenv("JRC_TEST_WORKSPACES_ROOT", folder.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
         // The fixture run is a workbook, its HTML and its CSV folder: all three are sealed, so
         // verify finds no unlisted file of the run.
         let manifest = await ReportEngine.sealRun(
             artifacts: ["\(stem).xlsx", "\(stem).html", "\(stem)_csv"].map {
                 folder.appendingPathComponent($0)
-            }, config: config, profile: nil,
+            }, config: config, profile: "local-test",
             now: Date(timeIntervalSince1970: 1_793_264_400), session: TSAStub.session,
             onLine: lines.add)
         XCTAssertEqual(manifest?.lastPathComponent, manifestName)
