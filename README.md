@@ -56,7 +56,8 @@ The repository is `jamf-reports-community`. The app is featured in the
   [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli). jamf-cli stores the credentials in the
   macOS keychain; the app never saves a secret.
 - **Products:** Jamf Pro (Jamf Cloud or on-premises), the Jamf Platform API, Jamf School and Jamf
-  Protect. Jamf Security Cloud is planned.
+  Protect. Jamf Security Cloud can be added to a Jamf Pro or Jamf School environment for its
+  risk counts; it is not a workspace of its own.
 - **Your data stays on your Mac**, in a workspace folder you choose, unless you choose a shared
   team folder.
 - **Other connections** besides Jamf, each optional:

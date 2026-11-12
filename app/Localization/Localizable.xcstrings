@@ -88713,42 +88713,42 @@
         }
       }
     },
-    "Only Jamf Protect or Jamf Security Cloud? Jamf Protect can be its own environment, or be added to a Jamf Pro or Jamf School one. Jamf Security Cloud is not supported yet." : {
+    "Only Jamf Protect or Jamf Security Cloud? Jamf Protect can be its own environment, or be added to a Jamf Pro or Jamf School one. Jamf Security Cloud can be added to a Jamf Pro or Jamf School environment for its risk counts; it is not a workspace of its own." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nur Jamf Protect oder Jamf Security Cloud? Jamf Protect kann eine eigene Umgebung sein oder einer Jamf-Pro- oder Jamf-School-Umgebung hinzugefügt werden. Jamf Security Cloud wird noch nicht unterstützt."
+            "value" : "Nur Jamf Protect oder Jamf Security Cloud? Jamf Protect kann eine eigene Umgebung sein oder einer Jamf-Pro- oder Jamf-School-Umgebung hinzugefügt werden. Jamf Security Cloud kann einer Jamf-Pro- oder Jamf-School-Umgebung für ihre Risikozahlen hinzugefügt werden; es ist kein eigener Arbeitsbereich."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Solo Jamf Protect o Jamf Security Cloud? Jamf Protect puede ser un entorno propio o añadirse a uno de Jamf Pro o Jamf School. Jamf Security Cloud aún no es compatible."
+            "value" : "¿Solo Jamf Protect o Jamf Security Cloud? Jamf Protect puede ser un entorno propio o añadirse a uno de Jamf Pro o Jamf School. Jamf Security Cloud puede añadirse a un entorno de Jamf Pro o Jamf School para sus recuentos de riesgo; no es un espacio de trabajo propio."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uniquement Jamf Protect ou Jamf Security Cloud ? Jamf Protect peut être un environnement à part entière, ou s’ajouter à un environnement Jamf Pro ou Jamf School. Jamf Security Cloud n’est pas encore pris en charge."
+            "value" : "Uniquement Jamf Protect ou Jamf Security Cloud ? Jamf Protect peut être un environnement à part entière, ou s’ajouter à un environnement Jamf Pro ou Jamf School. Jamf Security Cloud peut s’ajouter à un environnement Jamf Pro ou Jamf School pour ses décomptes de risque ; ce n’est pas un espace de travail à part entière."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solo Jamf Protect o Jamf Security Cloud? Jamf Protect può essere un ambiente a sé oppure essere aggiunto a un ambiente Jamf Pro o Jamf School. Jamf Security Cloud non è ancora supportato."
+            "value" : "Solo Jamf Protect o Jamf Security Cloud? Jamf Protect può essere un ambiente a sé oppure essere aggiunto a un ambiente Jamf Pro o Jamf School. Jamf Security Cloud può essere aggiunto a un ambiente Jamf Pro o Jamf School per i conteggi del rischio; non è uno spazio di lavoro a sé."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf ProtectまたはJamf Security Cloudのみをお使いですか? Jamf Protectは単独の環境にすることも、Jamf ProまたはJamf Schoolの環境に追加することもできます。Jamf Security Cloudはまだサポートされていません。"
+            "value" : "Jamf ProtectまたはJamf Security Cloudのみをお使いですか? Jamf Protectは単独の環境にすることも、Jamf ProまたはJamf Schoolの環境に追加することもできます。Jamf Security Cloudは、リスク数を得るためにJamf ProまたはJamf Schoolの環境に追加できます。単独のワークスペースにはなりません。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Só Jamf Protect ou Jamf Security Cloud? O Jamf Protect pode ser um ambiente próprio ou ser adicionado a um ambiente Jamf Pro ou Jamf School. O Jamf Security Cloud ainda não é compatível."
+            "value" : "Só Jamf Protect ou Jamf Security Cloud? O Jamf Protect pode ser um ambiente próprio ou ser adicionado a um ambiente Jamf Pro ou Jamf School. O Jamf Security Cloud pode ser adicionado a um ambiente Jamf Pro ou Jamf School para suas contagens de risco; ele não é um espaço de trabalho próprio."
           }
         }
       }
@@ -121543,42 +121543,42 @@
         }
       }
     },
-    "The gateway recognises this tenant ID, but it is not a Jamf Pro tenant. If it is Jamf School, set it up as a Jamf School workspace (Settings › Add connection, then Jamf School). If it is Jamf Protect or Jamf Security Cloud, Jamf Reports cannot report from it on its own: Jamf Protect is added to a Jamf Pro or Jamf School workspace (Data Sources › Add Jamf Protect), and Jamf Security Cloud is not supported yet." : {
+    "The gateway recognises this tenant ID, but it is not a Jamf Pro tenant. If it is Jamf School, set it up as a Jamf School workspace (Settings › Add connection, then Jamf School). If it is Jamf Protect or Jamf Security Cloud, Jamf Reports cannot report from it on its own: Jamf Protect is added to a Jamf Pro or Jamf School workspace (Data Sources › Add Jamf Protect), and Jamf Security Cloud can be added to a Jamf Pro or Jamf School environment for its risk counts; it is not a workspace of its own." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das Gateway erkennt diese Mandanten-ID, aber sie gehört nicht zu einem Jamf Pro-Mandanten. Handelt es sich um Jamf School, richten Sie sie als Jamf School-Arbeitsbereich ein (Einstellungen › Verbindung hinzufügen, dann Jamf School). Handelt es sich um Jamf Protect oder Jamf Security Cloud, kann Jamf Reports daraus nicht allein berichten: Jamf Protect wird einem Jamf Pro- oder Jamf School-Arbeitsbereich hinzugefügt (Datenquellen › Jamf Protect hinzufügen), und Jamf Security Cloud wird noch nicht unterstützt."
+            "value" : "Das Gateway erkennt diese Mandanten-ID, aber sie gehört nicht zu einem Jamf Pro-Mandanten. Handelt es sich um Jamf School, richten Sie sie als Jamf School-Arbeitsbereich ein (Einstellungen › Verbindung hinzufügen, dann Jamf School). Handelt es sich um Jamf Protect oder Jamf Security Cloud, kann Jamf Reports daraus nicht allein berichten: Jamf Protect wird einem Jamf Pro- oder Jamf School-Arbeitsbereich hinzugefügt (Datenquellen › Jamf Protect hinzufügen), und Jamf Security Cloud kann einer Jamf-Pro- oder Jamf-School-Umgebung für ihre Risikozahlen hinzugefügt werden; es ist kein eigener Arbeitsbereich."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La pasarela reconoce este ID de tenant, pero no es un tenant de Jamf Pro. Si es Jamf School, configúrelo como un espacio de trabajo de Jamf School (Ajustes › Añadir conexión y, después, Jamf School). Si es Jamf Protect o Jamf Security Cloud, Jamf Reports no puede generar informes solo con él: Jamf Protect se añade a un espacio de trabajo de Jamf Pro o Jamf School (Fuentes de datos › Añadir Jamf Protect), y Jamf Security Cloud aún no es compatible."
+            "value" : "La pasarela reconoce este ID de tenant, pero no es un tenant de Jamf Pro. Si es Jamf School, configúrelo como un espacio de trabajo de Jamf School (Ajustes › Añadir conexión y, después, Jamf School). Si es Jamf Protect o Jamf Security Cloud, Jamf Reports no puede generar informes solo con él: Jamf Protect se añade a un espacio de trabajo de Jamf Pro o Jamf School (Fuentes de datos › Añadir Jamf Protect), y Jamf Security Cloud puede añadirse a un entorno de Jamf Pro o Jamf School para sus recuentos de riesgo; no es un espacio de trabajo propio."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La passerelle reconnaît cet ID de tenant, mais ce n’est pas un tenant Jamf Pro. S’il s’agit de Jamf School, configurez-le comme un espace de travail Jamf School (Réglages › Ajouter une connexion, puis Jamf School). S’il s’agit de Jamf Protect ou de Jamf Security Cloud, Jamf Reports ne peut pas générer de rapports à partir de celui-ci seul : Jamf Protect s’ajoute à un espace de travail Jamf Pro ou Jamf School (Sources de données › Ajouter Jamf Protect), et Jamf Security Cloud n’est pas encore pris en charge."
+            "value" : "La passerelle reconnaît cet ID de tenant, mais ce n’est pas un tenant Jamf Pro. S’il s’agit de Jamf School, configurez-le comme un espace de travail Jamf School (Réglages › Ajouter une connexion, puis Jamf School). S’il s’agit de Jamf Protect ou de Jamf Security Cloud, Jamf Reports ne peut pas générer de rapports à partir de celui-ci seul : Jamf Protect s’ajoute à un espace de travail Jamf Pro ou Jamf School (Sources de données › Ajouter Jamf Protect), et Jamf Security Cloud peut s’ajouter à un environnement Jamf Pro ou Jamf School pour ses décomptes de risque ; ce n’est pas un espace de travail à part entière."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il gateway riconosce questo ID tenant, ma non è un tenant Jamf Pro. Se è Jamf School, configurarlo come spazio di lavoro Jamf School (Impostazioni › Aggiungi connessione, poi Jamf School). Se è Jamf Protect o Jamf Security Cloud, Jamf Reports non può generare report da solo: Jamf Protect si aggiunge a uno spazio di lavoro Jamf Pro o Jamf School (Origini dati › Aggiungi Jamf Protect), mentre Jamf Security Cloud non è ancora supportato."
+            "value" : "Il gateway riconosce questo ID tenant, ma non è un tenant Jamf Pro. Se è Jamf School, configurarlo come spazio di lavoro Jamf School (Impostazioni › Aggiungi connessione, poi Jamf School). Se è Jamf Protect o Jamf Security Cloud, Jamf Reports non può generare report da solo: Jamf Protect si aggiunge a uno spazio di lavoro Jamf Pro o Jamf School (Origini dati › Aggiungi Jamf Protect), mentre Jamf Security Cloud può essere aggiunto a un ambiente Jamf Pro o Jamf School per i conteggi del rischio; non è uno spazio di lavoro a sé."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ゲートウェイはこのテナントIDを認識していますが、Jamf Proテナントではありません。Jamf Schoolの場合は、Jamf Schoolワークスペースとして設定してください（設定›接続を追加、Jamf Schoolの順に選択）。Jamf ProtectまたはJamf Security Cloudの場合、Jamf Reportsはそれ単体ではレポートを作成できません。Jamf ProtectはJamf ProまたはJamf Schoolワークスペースに追加し（データソース›Jamf Protectを追加）、Jamf Security Cloudにはまだ対応していません。"
+            "value" : "ゲートウェイはこのテナントIDを認識していますが、Jamf Proテナントではありません。Jamf Schoolの場合は、Jamf Schoolワークスペースとして設定してください（設定›接続を追加、Jamf Schoolの順に選択）。Jamf ProtectまたはJamf Security Cloudの場合、Jamf Reportsはそれ単体ではレポートを作成できません。Jamf ProtectはJamf ProまたはJamf Schoolワークスペースに追加し（データソース›Jamf Protectを追加）、Jamf Security Cloudは、リスク数を得るためにJamf ProまたはJamf Schoolの環境に追加できます。単独のワークスペースにはなりません。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O gateway reconhece este ID de tenant, mas ele não é um tenant do Jamf Pro. Se for do Jamf School, configure-o como um espaço de trabalho do Jamf School (Ajustes › Adicionar conexão, depois Jamf School). Se for do Jamf Protect ou do Jamf Security Cloud, o Jamf Reports não consegue gerar relatórios apenas com ele: o Jamf Protect é adicionado a um espaço de trabalho do Jamf Pro ou do Jamf School (Fontes de dados › Adicionar Jamf Protect), e o Jamf Security Cloud ainda não é compatível."
+            "value" : "O gateway reconhece este ID de tenant, mas ele não é um tenant do Jamf Pro. Se for do Jamf School, configure-o como um espaço de trabalho do Jamf School (Ajustes › Adicionar conexão, depois Jamf School). Se for do Jamf Protect ou do Jamf Security Cloud, o Jamf Reports não consegue gerar relatórios apenas com ele: o Jamf Protect é adicionado a um espaço de trabalho do Jamf Pro ou do Jamf School (Fontes de dados › Adicionar Jamf Protect), e o Jamf Security Cloud pode ser adicionado a um ambiente Jamf Pro ou Jamf School para suas contagens de risco; ele não é um espaço de trabalho próprio."
           }
         }
       }
