@@ -1175,7 +1175,7 @@ struct OverviewView: View {
         // against a different day than FileVault in the same render.
         let points: [TrendPoint] = workspace.demoMode ? [] : trendStore.points(metric: metric)
         let values: [Double] = workspace.demoMode ?
-            (DemoData.trends[metric] ?? []) :
+            (DemoData.trends(for: workspace.profile)[metric] ?? []) :
             points.map(\.value)
         let comparisonDate: Date? = points.count >= 2 ? points[points.count - 2].date : nil
 
@@ -1975,7 +1975,7 @@ struct OverviewView: View {
 
     private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
         if workspace.demoMode {
-            return DemoData.trends[metric] ?? []
+            return DemoData.trends(for: workspace.profile)[metric] ?? []
         }
         return trendStore.values(metric: metric)
     }

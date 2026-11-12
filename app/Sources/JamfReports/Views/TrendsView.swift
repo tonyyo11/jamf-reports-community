@@ -31,7 +31,7 @@ struct TrendsView: View {
 
     private var trendPoints: [TrendPoint] {
         workspaceStore.demoMode
-            ? TrendDemoSeries.points(for: metric, range: range)
+            ? TrendDemoSeries.points(for: metric, range: range, workspace: workspaceStore.profile)
             : trendStore.points(metric: metric)
     }
 
@@ -45,7 +45,8 @@ struct TrendsView: View {
 
     private var chartDomain: ClosedRange<Date>? {
         if workspaceStore.demoMode {
-            return TrendDemoSeries.chartDomain(for: metric, range: range)
+            return TrendDemoSeries.chartDomain(
+                for: metric, range: range, workspace: workspaceStore.profile)
         }
         return trendStore.chartDomain
     }
@@ -452,7 +453,7 @@ struct TrendsView: View {
     /// Get trend points for a specific metric.
     private func points(for m: TrendSeries.Metric) -> [TrendPoint] {
         workspaceStore.demoMode
-            ? TrendDemoSeries.points(for: m, range: range)
+            ? TrendDemoSeries.points(for: m, range: range, workspace: workspaceStore.profile)
             : trendStore.points(metric: m)
     }
 
@@ -473,9 +474,11 @@ struct TrendsView: View {
     /// the shared store holds no live history.
     private var availableMetrics: [TrendSeries.Metric] {
         workspaceStore.availableMetrics.filter { metric in
-            // The demo history has no mobile series; a live one offers by device type.
+            // Offered where a day carries the metric: the demo workspace's series, or a live
+            // history by device type.
             if metric.isMobile || metric.isProtect || metric.isSecurityCloud {
-                return !workspaceStore.demoMode && trendStore.offers(metric)
+                return workspaceStore.demoMode
+                    ? !points(for: metric).isEmpty : trendStore.offers(metric)
             }
             guard workspaceStore.demoMode || trendStore.offers(metric) else { return false }
             switch metric {
@@ -1566,12 +1569,18 @@ enum TrendDemoSeries {
     static let dates: [Date] =
         DemoData.trendDates.compactMap { SummaryJSONParser.dateFormatter.date(from: $0) }
 
-    static func values(for metric: TrendSeries.Metric) -> [Double] {
-        DemoData.trends[metric] ?? []
+    /// `workspace`'s demo series; meridian-prod's by default, which the band charts read.
+    static func values(
+        for metric: TrendSeries.Metric, workspace: String = DemoData.org.profile
+    ) -> [Double] {
+        DemoData.trends(for: workspace)[metric] ?? []
     }
 
-    static func points(for metric: TrendSeries.Metric, range: TrendRange) -> [TrendPoint] {
-        points(dates: dates, values: values(for: metric), range: range)
+    static func points(
+        for metric: TrendSeries.Metric, range: TrendRange,
+        workspace: String = DemoData.org.profile
+    ) -> [TrendPoint] {
+        points(dates: dates, values: values(for: metric, workspace: workspace), range: range)
     }
 
     static func points(dates: [Date], values: [Double], range: TrendRange) -> [TrendPoint] {
@@ -1635,8 +1644,11 @@ enum TrendDemoSeries {
             alpha: 1)
     }
 
-    static func chartDomain(for metric: TrendSeries.Metric, range: TrendRange) -> ClosedRange<Date>? {
-        let points = points(for: metric, range: range)
+    static func chartDomain(
+        for metric: TrendSeries.Metric, range: TrendRange,
+        workspace: String = DemoData.org.profile
+    ) -> ClosedRange<Date>? {
+        let points = points(for: metric, range: range, workspace: workspace)
         guard let latest = points.last?.date else { return nil }
         let start = startDate(for: range, latest: latest) ?? points.first?.date ?? latest
         return start...latest

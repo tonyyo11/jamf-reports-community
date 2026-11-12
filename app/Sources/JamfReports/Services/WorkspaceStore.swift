@@ -201,27 +201,27 @@ final class WorkspaceStore {
             + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
     }
 
-    /// The demo history carries no Protect series, so only a live environment with Protect.
-    var protectMetricsOffered: Bool { !demoMode && environmentProducts.has(.protect) }
+    /// An environment with Protect; each demo one has a Protect series.
+    var protectMetricsOffered: Bool { environmentProducts.has(.protect) }
 
-    /// The mobile, Protect and Security Cloud cards the Overview's picker adds to the Mac ones;
-    /// none in demo mode, whose history has no such series.
+    /// The mobile, Protect and Security Cloud cards the Overview's picker adds to the Mac ones.
     var scoreCardExtraMetrics: [TrendSeries.Metric] {
-        demoMode ? [] : TrendSeries.Metric.mobileMetrics
+        TrendSeries.Metric.mobileMetrics
             + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
             + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
     }
 
-    /// Likewise for Jamf Security Cloud.
-    var securityCloudMetricsOffered: Bool { !demoMode && environmentProducts.has(.securityCloud) }
+    /// Likewise for Jamf Security Cloud, which no demo environment has.
+    var securityCloudMetricsOffered: Bool { environmentProducts.has(.securityCloud) }
 
     /// Whether the Overview shows `metric` as a score card: an agent metric needs its agent
     /// configured (and not counted as EDR), a control card needs its control counted by the
     /// security policy. A stored selection naming one that is not offered is kept, and shows
     /// again when it is.
     func isOffered(_ metric: TrendSeries.Metric) -> Bool {
-        // The demo history has no mobile series, as Trends offers none in demo mode.
-        if metric.isMobile, demoMode { return false }
+        // A demo workspace offers a mobile or Protect card only where its history has a series.
+        if demoMode, metric.isMobile || metric.isProtect,
+           DemoData.trends(for: profile)[metric] == nil { return false }
         if metric.isProtect, !protectMetricsOffered { return false }
         if metric.isSecurityCloud, !securityCloudMetricsOffered { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
