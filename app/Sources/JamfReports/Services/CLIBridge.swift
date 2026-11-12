@@ -1515,11 +1515,15 @@ try await ReportEngine.schoolGenerateReport(
     /// Refuses a system or credentials folder (`WorkspacePaths.isSensitiveAbsolutePath`) as the
     /// place a person chose for a report, before any folder is created there: one rule for the
     /// workbook, HTML, PDF and CSV. A deny-list, not a workspace allow-list, because the callers
-    /// are save panels and the Generate sheet's folder, where any user folder is allowed.
+    /// are save panels and the Generate sheet's folder, where any user folder is allowed. A path
+    /// inside the workspaces root passes: `WorkspaceRootStore` already validated that root, and
+    /// the default report folder (`WorkspacePaths.reportsDir`) is there.
     static func refuseSensitiveDestination(
         _ url: URL?, writing what: String, onLine: @Sendable (LogLine) -> Void
     ) throws {
         guard let url, WorkspacePaths.isSensitiveAbsolutePath(url) else { return }
+        let root = ProfileService.workspacesRoot().resolvingSymlinksInPath().path + "/"
+        if url.resolvingSymlinksInPath().path.hasPrefix(root) { return }
         onLine(.init(timestamp: Date(), level: .fail,
             text: "[error] refusing to write \(what) into a sensitive path: \(url.path)"))
         throw CLIBridgeError.directoryOperationFailed(path: url.path)
