@@ -706,6 +706,9 @@ struct SourcesView: View {
             families = DemoData.snapshotFamilies(for: workspace.profile)
             environment = DemoData.environmentProfiles(for: workspace.profile)
             sourcesPlan = DemoData.sourcesPlan(for: workspace.profile)
+            schoolResolved = environment.jamfSchool.map {
+                DemoData.resolvedProfile($0, workspace: workspace.profile)
+            }
             cachedAt = Dictionary(uniqueKeysWithValues: (sourcesPlan?.sources ?? []).compactMap {
                 source in DemoData.cacheDate(for: [source.kind], profile: workspace.profile)
                     .map { (source.kind, $0) }

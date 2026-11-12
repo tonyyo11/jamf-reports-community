@@ -280,7 +280,8 @@ extension DemoData {
         let isProtect = DataFreshnessHealth.protectKinds.contains(name)
         // A workspace collects only its own products' kinds; SOFA is fetched by both MDMs.
         guard !isProtect || environment.protect != nil,
-              name == "sofa" || isProtect || name.hasPrefix("school-") == environment.isSchool
+              name == "sofa" || isProtect || name.hasPrefix("school-") == environment.isSchool,
+              !name.hasPrefix("school-") || schoolKinds.contains(name)
         else { return nil }
         let modes: Set<Schedule.RunMode>
         if inventoryCaches.contains(name) {

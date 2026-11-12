@@ -84,6 +84,14 @@ final class DemoDataEnvironmentTests: XCTestCase {
         let school = DemoData.sourcesPlan(for: edu)
         XCTAssertTrue(school.sources.contains { $0.product == .school })
         XCTAssertFalse(school.sources.contains { $0.product == .jamfPro })
+        // meridianedu's School profile has no Platform API fields: blueprints skip, never cached.
+        let blueprints = school.sources.first { $0.kind == ReportEngine.schoolBlueprintsKind }
+        XCTAssertNotNil(blueprints?.skipReason)
+        XCTAssertNil(DemoData.cacheDate(for: [ReportEngine.schoolBlueprintsKind], profile: edu))
+        XCTAssertEqual(
+            SchoolPlatformRow.state(
+                resolved: DemoData.resolvedProfile(edu, workspace: edu), lastCheck: nil),
+            .notConfigured)
         XCTAssertTrue(DemoData.sourcesPlan(for: msp).sources.contains { $0.product == .protect })
         XCTAssertFalse(DemoData.sourcesPlan(for: sandbox).sources.contains { $0.product == .protect })
         let platformSkipped = DemoData.sourcesPlan(for: sandbox).sources(for: .platformAPI)

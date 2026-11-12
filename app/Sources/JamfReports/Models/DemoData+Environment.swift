@@ -51,7 +51,7 @@ extension DemoData {
         let environment = environmentProfiles(for: workspace)
         return EnvironmentCardState.build(
             workspace: workspace, environment: environment,
-            resolve: { resolved($0, in: environment) },
+            resolve: { resolvedProfile($0, workspace: workspace) },
             newest: { slot in
                 cacheDate(for: EnvironmentCardState.kinds(for: slot), profile: workspace)
             },
@@ -63,27 +63,27 @@ extension DemoData {
     static func sourcesPlan(for workspace: String) -> CollectSourcesPlan {
         let environment = environmentProfiles(for: workspace)
         let product: ProfileProductType = environment.isSchool ? .jamfSchool : .jamfPro
-        let workspaceAuth = resolved(workspace, in: environment)
+        let workspaceAuth = resolvedProfile(workspace, workspace: workspace)
         let routed = CollectSourcesPlan.routedAuth(
             product: product,
             route: environment.platformRoute(workspace: workspace, platformPinAllows: true),
             workspace: workspace, workspaceAuth: workspaceAuth,
-            resolve: { resolved($0, in: environment) })
+            resolve: { resolvedProfile($0, workspace: workspace) })
         return CollectSourcesPlan.build(.init(
             product: product, profile: workspace, protectProfile: environment.protect,
-            authMethod: routed.auth?.authMethod, hasTenantID: environment.isSchool,
+            authMethod: routed.auth?.authMethod, hasTenantID: workspaceAuth.hasTenantID,
             platformUnavailable: routed.unavailable))
     }
 
-    /// What `config list` would say of a demo login: the Platform slot logs in with the
-    /// Platform API at environment level, Jamf School with an API key, the rest with OAuth.
-    private static func resolved(
-        _ name: String, in environment: EnvironmentProfiles
-    ) -> ProfileAuthMethod.Resolved {
+    /// What `config list` would say of a demo login in `workspace`: the Platform slot logs in
+    /// with the Platform API at environment level, Jamf School with an API key and no Platform
+    /// API fields, the rest with OAuth.
+    static func resolvedProfile(_ name: String, workspace: String) -> ProfileAuthMethod.Resolved {
+        let environment = environmentProfiles(for: workspace)
         let school = name == environment.jamfSchool
         return ProfileAuthMethod.Resolved(
             authMethod: name == environment.platform ? "platform" : school ? "apikey" : "oauth2",
-            isTenantLevel: false, hasTenantID: school,
+            isTenantLevel: false,
             product: school ? .school : name == environment.protect ? .protect : .pro)
     }
 }
