@@ -7,6 +7,19 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-11-13
+
+2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the
+Platform API, Jamf Protect and Jamf Security Cloud logins that belong to it, named in a new
+`profiles:` block. Jamf Protect can also be an environment of its own. Mobile devices are now
+first-class, with their own daily figures, an Overview card, Health Audit findings and Trends. The
+app runs in English, French, Spanish, German, Brazilian Portuguese, Italian and Japanese, and
+reports stay in English. A report run can write one CSV per workbook tab, and a manifest that
+`jamf-reports verify` checks, optionally timestamped by an RFC 3161 authority. Percentages can be
+whole numbers, and a jamf-cli login that sees only some Jamf Pro sites is noted in every report.
+A review of the whole release fixed what it found and hardened the app against files another Mac
+writes into a shared workspace.
+
 ### Added
 
 - Fleet Overview shows what the environment holds: tiles for Mac models, mobile device types,
