@@ -696,6 +696,16 @@ final class ProBackupTests: XCTestCase {
             "a School workspace has no Jamf Pro backup")
     }
 
+    /// A true the caller loaded before a peer flipped the file back to false is not a confirmed
+    /// true, so the Jamf Pro backup waits instead of writing to shared storage.
+    func testAStaleTrueFromTheCallerWaitsForAConfirm() throws {
+        let ctx = try makeContext(config: shared + "backup:\n  pro_on_synced_storage: false\n")
+        _ = SharedConfigPin.check(profile: ctx.profile)
+        XCTAssertEqual(try currentSetting(ctx), .declined)
+        XCTAssertEqual(SharedConfigPin.proBackupSetting(true, profile: ctx.profile),
+                       .awaitingConfirmation)
+    }
+
     // MARK: - Helpers
 
     private func currentSetting(_ ctx: Context) throws -> ProBackup.Setting {

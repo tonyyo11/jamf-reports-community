@@ -572,14 +572,16 @@ extension DailySummary {
             && environmentFieldsAreConsistent
     }
 
-    /// Every P9 count, for the shared range check.
+    /// Every P9 and P12 count, the matched pairs included, for the shared range check.
     private var environmentCounts: [Int] {
         let maps = [
             protectAlertCounts, securityCloudRiskCounts, osMajorCounts, modelFamilyCounts,
             mobileFormFactorCounts,
         ].compactMap { $0 }.flatMap { $0.values }
+        let pairs = [protectMatched, securityCloudMatched].compactMap { $0 }
+            .flatMap { [$0.met, $0.of] }
         return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount]
-            .compactMap { $0 } + maps
+            .compactMap { $0 } + maps + pairs
             + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
     }
 
@@ -626,8 +628,11 @@ struct SummaryJSONParser {
         guard let dir = try? WorkspacePaths.summariesDir(for: profile),
               let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
         else { return nil }
-        return names.filter(CloudStorage.isCanonicalSummaryFilename).max()
+        // A peer can write a future-dated name; it must not stay "newest" for years.
+        let tomorrow = dateFormatter.string(from: Date().addingTimeInterval(86_400))
+        return names.filter(CloudStorage.isCanonicalSummaryFilename)
             .map { String($0.dropFirst("summary_".count).prefix(10)) }
+            .filter { $0 <= tomorrow }.max()
     }
 
     /// Real summaries are a few KB; anything near this is corrupt or hostile.

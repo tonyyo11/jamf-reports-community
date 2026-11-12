@@ -240,4 +240,25 @@ final class ServerHostRedactionTests: XCTestCase {
         XCTAssertFalse(out.contains(".0.0.1"), "got: \(out)")
         XCTAssertFalse(out.contains("10.0"), "got: \(out)")
     }
+
+    /// config.yaml's timestamp authority is peer-writable: a bare word there ("partial") must
+    /// not mask that word, and the `[partial]` marker, in every shared log.
+    func testAPeerWrittenTimestampHostSeedsOnlyADottedHost() {
+        XCTAssertEqual(DiagnosticBundleService.seedableHostForms(ofURL: "https://partial"), [])
+        XCTAssertEqual(DiagnosticBundleService.seedableHostForms(ofURL: "https://warn:8443/x"), [])
+        XCTAssertEqual(
+            Set(DiagnosticBundleService.seedableHostForms(ofURL: "https://tsa.example.org:8443/tsr")),
+            ["tsa.example.org:8443", "tsa.example.org"])
+        XCTAssertFalse(DiagnosticBundleService.seedableHostForms(ofURL: "https://[2001:db8::1]/")
+            .isEmpty)
+    }
+
+    /// No host seed, whatever its source, is a word run logs are made of.
+    func testAHostSeedThatIsALogWordIsNotMasked() {
+        let r = DiagnosticRedactor()
+        r.seedServerHosts(["partial", "Error", "jss.example.org"])
+        let out = r.redactText("[partial] Error reaching jss.example.org")
+        XCTAssertTrue(out.hasPrefix("[partial] Error reaching "), "got: \(out)")
+        XCTAssertFalse(out.contains("jss.example.org"), "got: \(out)")
+    }
 }

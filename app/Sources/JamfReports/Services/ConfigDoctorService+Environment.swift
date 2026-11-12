@@ -123,7 +123,9 @@ extension ConfigDoctorService {
         environment: EnvironmentProfiles, matched: MobileSummary.Share?
     ) -> [DoctorRow] {
         guard let protect = environment.protect, let mdm = environment.mdm,
-              let matched, matched.of >= 5, matched.met * 2 < matched.of else { return [] }
+              // met < of - met, not met * 2 < of: no overflow for any 0 <= met <= of.
+              let matched, matched.of >= 5, matched.met < matched.of - matched.met
+        else { return [] }
         let name = ConfigSchema.displayText(protect)
         let product = environment.isSchool ? "Jamf School" : "Jamf Pro"
         return [DoctorRow(
@@ -153,7 +155,7 @@ extension ConfigDoctorService {
               let day = SummaryJSONParser.newestSummaryDay(profile: profile),
               // A workspace that stopped collecting must not keep warning on an old figure.
               let date = SummaryJSONParser.dateFormatter.date(from: day),
-              Date().timeIntervalSince(date) < 8 * 86_400,
+              (-86_400..<8 * 86_400).contains(Date().timeIntervalSince(date)),
               let dir = try? WorkspacePaths.summariesDir(for: profile),
               let summary = try? SummaryJSONParser.parse(
                 dir.appendingPathComponent("summary_\(day).json"))

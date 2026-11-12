@@ -231,8 +231,8 @@ enum LogRedactor {
         return redactor.redactText(redact(text))
     }
 
-    /// Words run logs and their markers are made of; a workspace named one is not masked.
-    private static let commonLogWords: Set<String> = [
+    /// Words run logs and their markers are made of; a workspace or host named one is not masked.
+    static let commonLogWords: Set<String> = [
         "test", "demo", "dummy", "prod", "partial", "warn", "error", "info", "skip", "plan",
         "fail", "ok",
     ]

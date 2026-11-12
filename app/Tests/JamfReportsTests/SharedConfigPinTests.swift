@@ -1231,6 +1231,16 @@ final class SharedConfigPinTests: XCTestCase {
         else { return XCTFail("a drifted opt-in must not run the Protect backup") }
     }
 
+    /// The caller's read of config.yaml can be stale (a peer flipped it back before `check`
+    /// read it again): its true counts only when the pin holds a confirmed true.
+    func testAStaleTrueFromTheCallerNeedsAConfirmedPin() throws {
+        try writeConfig(protectBackup: "false")
+        _ = check()
+        XCTAssertTrue(check().drifts.isEmpty)
+        XCTAssertFalse(SharedConfigPin.protectBackupOnSyncedStorage(
+            true, profile: profile, appSupport: appSupport))
+    }
+
     func testTurningAConfirmedOptInOffAppliesAtOnceAndBackOnNeedsAConfirm() throws {
         try writeConfig(protectBackup: "true")
         try confirmAll()

@@ -374,6 +374,22 @@ versions in this repository map to git tags.
 
 ### Security
 
+- On a shared workspace, another Mac's files can no longer stop this Mac's scheduled runs or
+  weaken what it reports:
+  - A daily summary with an impossible Jamf Protect or Security Cloud match count is refused,
+    rather than crashing Config Doctor and every scheduled run. A summary dated in the future
+    is no longer read as the newest.
+  - The switches that let a Jamf Pro or Jamf Protect backup go to synced storage now take effect
+    only once you have confirmed them on this Mac. Before, a quick change to config.yaml could
+    slip an unconfirmed "yes" past the check.
+  - A timestamp server address in config.yaml is hidden in shared logs only when it is a real
+    host name, so it can no longer hide a word such as "partial" and its `[partial]` marker.
+- `jamf-reports verify` says only what it can show:
+  - A manifest that lists no files fails.
+  - A file named after the run that the manifest leaves out is reported as `EXTRA`.
+  - A valid timestamp always comes with a note that it shows when the manifest existed, not who
+    wrote it.
+  - It warns when the timestamp is more than five minutes from the manifest's own time.
 - A merge resumes only when this Mac started it, and every path in a merge plan must lie inside
   the workspaces folder. A merge plan found in a shared folder that this Mac did not start offers
   Start over only, which moves the two files aside and runs nothing. The source's per-Mac pin is

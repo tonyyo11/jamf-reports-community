@@ -70,6 +70,10 @@ final class SummaryEnvironmentFieldsTests: XCTestCase {
         XCTAssertFalse(base(os: ["macOS 26": -3]).numbersAreInRange)
         XCTAssertFalse(base(open: 1, alerts: ["high": 2]).numbersAreInRange)
         XCTAssertFalse(base(count: SummaryJSONParser.maxSummaryNumber + 1).numbersAreInRange)
+        // A peer-written pair past the bound is refused, so no reader does arithmetic on it.
+        XCTAssertFalse(base(matched: .init(met: Int.max, of: Int.max)).numbersAreInRange)
+        let limit = SummaryJSONParser.maxSummaryNumber
+        XCTAssertTrue(base(matched: .init(met: limit, of: limit)).numbersAreInRange)
     }
 
     func testWithEnvironmentSetsOnlyTheGroupsThisRunMeasured() {
