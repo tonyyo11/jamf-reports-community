@@ -333,12 +333,8 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         // Now call the real writer (internal).
         try flow.writeProtectConfig(profileSlug: profile, protectProfileName: "my-protect")
 
-        let loaded = try ConfigService.load(profile: profile)
-        let protectMapping = loaded.document.root.mapping?.value(for: "protect")?.mapping
-        XCTAssertEqual(protectMapping?.value(for: "enabled")?.boolValue, true,
-                       "protect.enabled must be true")
-        XCTAssertEqual(protectMapping?.value(for: "profile")?.stringValue, "my-protect",
-                       "protect.profile must match the supplied name")
+        // D3: a new workspace has a profiles: block, so Protect goes into its slot.
+        XCTAssertEqual(EnvironmentProfiles.read(workspace: profile).protect, "my-protect")
     }
 
     func test_writeProtectConfig_preservesExistingConfigKeys() async throws {
@@ -369,9 +365,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
                 "writeProtectConfig must not remove existing jamf_cli block"
             )
         }
-        // protect keys must be present
-        let protectMapping = loaded.document.root.mapping?.value(for: "protect")?.mapping
-        XCTAssertEqual(protectMapping?.value(for: "enabled")?.boolValue, true)
+        XCTAssertEqual(EnvironmentProfiles.read(workspace: profile).protect, "protect")
     }
 
     /// The onboarding writes go through the scoped writer: a key the app does not read inside
@@ -449,17 +443,24 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
 
         let profile = "testschool\(Int.random(in: 1000...9999))"
         let flow = OnboardingFlow()
+        flow.productPath = .school
         flow.profileName = profile
         try flow.createWorkspace()
 
-        try flow.writeSchoolConfig(profileSlug: profile, schoolProfileName: "my-school")
-
-        let loaded = try ConfigService.load(profile: profile)
-        let schoolMapping = loaded.document.root.mapping?.value(for: "school_cli")?.mapping
-        XCTAssertEqual(schoolMapping?.value(for: "enabled")?.boolValue, true,
-                       "school_cli.enabled must be true")
-        XCTAssertEqual(schoolMapping?.value(for: "profile")?.stringValue, "my-school",
-                       "school_cli.profile must match the supplied name")
+        // D3: the School path's block already names the workspace, so the write changes nothing.
+        let before = try String(contentsOf: try ConfigService.configURL(for: profile),
+                                encoding: .utf8)
+        try flow.writeSchoolConfig(profileSlug: profile, schoolProfileName: profile)
+        XCTAssertEqual(try String(contentsOf: try ConfigService.configURL(for: profile),
+                                  encoding: .utf8), before)
+        XCTAssertEqual(EnvironmentProfiles.read(workspace: profile).jamfSchool, profile)
+        // A Jamf Pro workspace never takes another School login (one MDM per environment).
+        let pro = "testpro\(Int.random(in: 1000...9999))"
+        flow.productPath = .pro
+        flow.profileName = pro
+        try flow.createWorkspace()
+        XCTAssertThrowsError(try flow.writeSchoolConfig(
+            profileSlug: pro, schoolProfileName: "other-school"))
     }
 
     // MARK: - Jamf School product path: step sequence
@@ -667,6 +668,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
 
         let profile = "schoolonly\(Int.random(in: 1000...9999))"
         let flow = OnboardingFlow()
+        flow.productPath = .school
         flow.profileName = profile
         try flow.createWorkspace()
 
@@ -679,8 +681,8 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertEqual(detected.type, .jamfSchool,
                        "school_cli.enabled written by writeSchoolConfig must route detection to Jamf School")
         XCTAssertFalse(detected.runsProtect, "no protect block, no Protect")
-        XCTAssertEqual(config.schoolCli?.resolvedProfile, profile,
-                       "school_cli.profile must be the workspace profile on the School-only path")
+        XCTAssertEqual(EnvironmentProfiles.read(workspace: profile).jamfSchool, profile,
+                       "the School slot is the workspace profile on the School-only path")
 
         // Data Sources' Connect Jamf Protect writes into the School workspace (2.11).
         try flow.writeProtectConfig(profileSlug: profile, protectProfileName: "campus-protect")

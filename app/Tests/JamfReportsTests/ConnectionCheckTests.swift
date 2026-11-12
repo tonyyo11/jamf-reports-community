@@ -142,7 +142,7 @@ final class ConnectionCheckTests: XCTestCase {
         XCTAssertFalse(text.contains("probably Jamf School"))
         for phrase in ["Jamf School workspace",
                        "Jamf Protect is added to a Jamf Pro or Jamf School workspace",
-                       "Jamf Security Cloud is not supported yet"] {
+                       "Jamf Security Cloud can be added to a Jamf Pro or Jamf School environment"] {
             XCTAssertTrue(text.contains(phrase), phrase)
         }
         XCTAssertEqual(ConnectionCheck.Verdict.noJamfPro.message(tenantLevel: false),
@@ -161,7 +161,7 @@ final class ConnectionCheckTests: XCTestCase {
         XCTAssertTrue(row.message(tenantLevel: false).contains("probably Jamf School"))
         let tenant = row.message(tenantLevel: true)
         XCTAssertFalse(tenant.contains("probably Jamf School"))
-        XCTAssertTrue(tenant.contains("Jamf Security Cloud is not supported yet"))
+        XCTAssertTrue(tenant.contains("Jamf Security Cloud can be added to a Jamf Pro or Jamf School environment"))
         XCTAssertTrue(tenant.contains("acme-east"), "the removal hint still names the profile")
     }
 

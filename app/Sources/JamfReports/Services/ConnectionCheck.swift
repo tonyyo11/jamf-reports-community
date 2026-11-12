@@ -132,7 +132,7 @@ extension ConnectionCheck.Verdict {
     /// At tenant level (legacy) a tenant that is not Jamf Pro can be Jamf School, Jamf Protect
     /// or Jamf Security Cloud; an environment's MDM is Jamf Pro or Jamf School, so it is School.
     static var notJamfProTenantText: String {
-        L("The gateway recognises this tenant ID, but it is not a Jamf Pro tenant. If it is Jamf School, set it up as a Jamf School workspace (Settings › Add connection, then Jamf School). If it is Jamf Protect or Jamf Security Cloud, Jamf Reports cannot report from it on its own: Jamf Protect is added to a Jamf Pro or Jamf School workspace (Data Sources › Add Jamf Protect), and Jamf Security Cloud is not supported yet.")
+        L("The gateway recognises this tenant ID, but it is not a Jamf Pro tenant. If it is Jamf School, set it up as a Jamf School workspace (Settings › Add connection, then Jamf School). If it is Jamf Protect or Jamf Security Cloud, Jamf Reports cannot report from it on its own: Jamf Protect is added to a Jamf Pro or Jamf School workspace (Data Sources › Add Jamf Protect), and Jamf Security Cloud can be added to a Jamf Pro or Jamf School environment for its risk counts; it is not a workspace of its own.")
     }
 
     /// What the verdict says without its advice on continuing, for a list of results.

@@ -308,20 +308,24 @@ final class ProfileProductTests: XCTestCase {
         XCTAssertEqual(flow.selected, ["prod", "sch"])
         XCTAssertNotNil(flow.refusals["prot"])
         var initialized: [String] = []
+        var kinds: [String: ProfilesConfigWriter.NewWorkspace?] = [:]
         var schoolConfigured: [String] = []
         await flow.run(
-            initialize: { initialized.append($0); return 0 },
+            initialize: { name, kind in initialized.append(name); kinds[name] = kind; return 0 },
             configureSchool: { schoolConfigured.append($0) },
             collect: { _, _ in 0 })
         XCTAssertEqual(initialized, ["prod", "sch"])
         XCTAssertEqual(schoolConfigured, ["sch"])
+        // D3: the School workspace's block is written as School, never left to a probe.
+        XCTAssertEqual(kinds["sch"], .some(.init(school: true)))
+        XCTAssertEqual(kinds["prod"], .some(nil))
     }
 
     func testAProtectLoginTickedByHandIsStillNeverRun() async {
         let flow = ExistingCLISetupFlow(profiles: [profile("prot", .protect)])
         flow.selected.insert("prot")
         var initialized: [String] = []
-        await flow.run(initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { name, _ in initialized.append(name); return 0 }, collect: { _, _ in 0 })
         XCTAssertEqual(initialized, [])
     }
 
@@ -329,7 +333,7 @@ final class ProfileProductTests: XCTestCase {
         struct Boom: Error {}
         let flow = ExistingCLISetupFlow(profiles: [profile("sch", .school)])
         await flow.run(
-            initialize: { _ in 0 }, configureSchool: { _ in throw Boom() },
+            initialize: { _, _ in 0 }, configureSchool: { _ in throw Boom() },
             collect: { _, _ in 0 })
         XCTAssertFalse(flow.canContinue)
         XCTAssertEqual(flow.failureStages["sch"], .workspace)

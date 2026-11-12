@@ -9,6 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Fleet Overview shows what the environment holds: tiles for Mac models, mobile device types,
+  operating systems by major version, and when Macs and mobile devices were last seen (under a
+  day, 1 to 6 days, 7 days or more, never), from the latest daily summary. A figure the summary
+  does not carry is left out, never shown as 0.
 - Percentages can be whole numbers. `display.percent_decimals: 0` in `config.yaml`, or
   **Percentages** on the Customize screen, prints `57%` instead of `56.7%` on every screen and
   in the workbook, CSV folder, HTML report, PDF, period report, alert cards and on-device
@@ -109,6 +113,12 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A new workspace's config.yaml records its products in the `profiles:` block from the start:
+  setup, adopting jamf-cli's profiles, Add environments and `jamf-reports scaffold --out` into a
+  workspace folder all write it, in place of `jamf_cli.profile`. A workspace collects the same
+  sources as before. A Mac on 2.11 or older that shares the folder sees Jamf Pro only, so update
+  every Mac that shares a workspace together. `scaffold --out` to any other folder still writes
+  the old shape, since a block must name its workspace.
 - The Jamf Security Cloud match counts each device once: a second risk row for a device that
   already matched leaves the share's denominator, as the Jamf Protect match does.
 - The Overview's Mobile Devices section now counts every mobile device by type on its Devices
@@ -255,7 +265,7 @@ versions in this repository map to git tags.
 - In the Add sheet, a profile added while the first check was still running now leaves its Add row, and making a Jamf Protect login its own environment can no longer run twice from a double click or be closed while it runs. The Platform API card's text now describes Connect new and the list below it.
 - The Patch titles table's Failures column counts failing devices for each title, joining a patch policy to the title it is named after, and shows a dash when no failure scan was collected. It used to count failure rows and read 0 for any title whose policies carried a version in their name.
 - The Generate sheet lists the day's summary file for a Jamf School collect too, under its real name.
-- The first-launch screen says Jamf Protect can be its own environment.
+- The first-launch screen says Jamf Protect can be its own environment, and that Jamf Security Cloud is added to a Jamf Pro or Jamf School environment for its risk counts. The README and the setup message for a tenant that is not Jamf Pro now say the same instead of "not supported yet" or "planned".
 - The Mobile Devices table lists every matching device instead of the first 50.
 - Deleting a backup no longer freezes the window on a large or synced folder, and the Generate sheet and Data Sources no longer check files on every redraw.
 - Resuming an interrupted workspace merge that is refused no longer offers a new merge.
@@ -453,6 +463,10 @@ versions in this repository map to git tags.
   deletes.
 - Copying a Backups diff now also masks passwords, secrets and tokens in plain-text values, such
   as a configuration profile's payload or a `key: value` setting, not only in JSON.
+- A diagnostic bundle's `config.yaml` now keeps only keys, booleans, numbers, dates and fixed
+  settings such as the webhook provider, retention mode and control levels as written. Every other
+  text value, such as a sheet, extension attribute, agent, profile or folder name, is replaced by
+  its length (`<string 14 chars>`), whatever the Keep usernames option says.
 - The SOFA feed is read up to 8 MB; a bigger answer counts as a failed fetch and the cached feed
   stays in use.
 - Saving an HTML report, or choosing a folder on the Generate sheet, refuses system and

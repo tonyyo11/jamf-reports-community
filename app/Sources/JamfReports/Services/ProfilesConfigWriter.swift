@@ -52,6 +52,67 @@ enum ProfilesConfigWriter {
         root.set("profiles", value: .mapping(block))
     }
 
+    /// What a new workspace's own profile is, for the block it starts with (D3).
+    struct NewWorkspace: Equatable, Sendable {
+        var school = false
+        /// A Platform API profile also collects the Platform kinds, so it fills `platform` too.
+        var platform = false
+
+        /// From jamf-cli's record of the profile. One it cannot read is Jamf Pro with the
+        /// `platform` slot, as the block seed does, so a Platform workspace keeps its kinds.
+        static func of(
+            _ profile: String,
+            resolve: (String) -> ProfileAuthMethod.Resolved? = {
+                ProfileAuthMethod.resolve(profile: $0)
+            }
+        ) -> NewWorkspace {
+            guard let resolved = resolve(profile) else { return NewWorkspace(platform: true) }
+            if resolved.product == .school { return NewWorkspace(school: true) }
+            return NewWorkspace(platform: resolved.method?.isPlatform == true)
+        }
+    }
+
+    /// The `profiles:` block a new workspace starts with (D3): its own profile in the MDM slot,
+    /// and in `platform` too for a Platform API profile.
+    static func newWorkspaceBlock(workspace: String, _ kind: NewWorkspace) -> String {
+        let own = "\"\(ScaffoldService.yamlEscape(workspace))\""
+        var block = "\nprofiles:\n  \((kind.school ? Slot.jamfSchool : Slot.jamfPro).rawValue): \(own)\n"
+        if kind.platform, !kind.school { block += "  \(Slot.platform.rawValue): \(own)\n" }
+        return block
+    }
+
+    /// For setup only, on a config.yaml that same setup wrote: a block that names the workspace
+    /// as Jamf Pro (setup began on the Jamf Pro path, then the check found no Jamf Pro) moves its
+    /// MDM slot to `jamf_school`, and a `platform` slot naming the workspace itself goes with it.
+    /// Any other School write under a block is refused (`ConfigError.profilesBlock`). Nil when
+    /// the block does not name the workspace as Jamf Pro.
+    @discardableResult
+    static func schoolTakesTheMDMSlot(
+        workspace: String, appSupport: URL = AppSupport.directory()
+    ) throws -> ConfigSaveReport? {
+        guard hasProfilesBlock(workspace: workspace) else { return nil }
+        var droppedPlatform = false
+        var moved = false
+        let report = try ConfigService.saveBlock(key: "profiles", profile: workspace) { root in
+            guard var block = root.value(for: "profiles")?.mapping,
+                  block.value(for: Slot.jamfPro.rawValue)?.stringValue == workspace,
+                  block.value(for: Slot.jamfSchool.rawValue) == nil else { return }
+            droppedPlatform = block.value(for: Slot.platform.rawValue)?.stringValue == workspace
+            let drop: Set = droppedPlatform
+                ? [Slot.jamfPro.rawValue, Slot.platform.rawValue] : [Slot.jamfPro.rawValue]
+            block.entries.removeAll { drop.contains($0.key) }
+            block.set(Slot.jamfSchool.rawValue, value: .scalar(.string(workspace)))
+            root.set("profiles", value: .mapping(block))
+            moved = true
+        }.report
+        guard moved else { return nil }
+        if droppedPlatform {
+            SharedConfigPin.confirmWritten(
+                "", key: .platformProfile, profile: workspace, appSupport: appSupport)
+        }
+        return report
+    }
+
     /// The `profiles:` block of a Protect-only environment: the one slot, no MDM slot.
     static func protectOnlyBlock(login: String) -> String {
         "\nprofiles:\n  \(Slot.protect.rawValue): \"\(ScaffoldService.yamlEscape(login))\"\n"

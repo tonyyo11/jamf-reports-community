@@ -1,8 +1,8 @@
 # The workspace is the environment — design
 
 Status: P1 to P9 shipped in 2.12, and P12 slices 1 and 2 (Security Cloud slot, collect, match
-and summary fields). P10 is not built; P11 was replaced by the mobile spec's M6; P13 (docs) is
-open. Where the text below differs from the code, a note says which ruling or phase changed it.
+and summary fields). P10 is deferred to 2.13 (D27); P11 was replaced by the mobile spec's M6;
+P13 (docs) is open. Where the text below differs from the code, a note says which ruling or phase changed it.
 The direction was decided on 2026-10-19, so this document designs it and does not argue for it.
 It landed before the Security Cloud collect code (epic #283). It also
 covers epic #284's "Several Platform connections; Jamf Pro vs Jamf School" and #207 L1, L3, L5
@@ -472,6 +472,8 @@ Config tab and webhook card reads it instead of `isSchoolWorkspace`, `activeCLIP
   note, as the sidebar tabs are.
 - HTML report and workbook: product groups appear when the product is present. Each figure's
   source line names the product and profile it came from (#284 "reports name the connection").
+  Not built (D28): the HTML report's "Products:" header line names each product and its
+  profile, and per-figure lines would change every workbook layout.
 - Webhook cards name the environment and list the products that contributed.
 
 Daily summary (`DailySummary`) additions. Each is nil when its product or device type is
@@ -512,6 +514,8 @@ one Jamf Account credential, for display and for Update credentials for all. Wha
   OAuth twin exists), instead of a profile-named workspace.
 - `Member.product` becomes the products the check found behind that ID (#284), found by a
   check and never assumed. It is shown on the platform row. It does not pick slots on its own.
+  Not built (D29): `Member.product` stays `pro`, `school` or `unknown`; nothing reads more, and
+  the environment's slots already say which products it has.
 - Grouping in the sidebar and Fleet Overview moves from connection sections to report groups,
   plus a connection badge on each environment. A connection is about credentials, not
   reporting. Not built: the sidebar's workspace menu still has one section per connection
@@ -630,7 +634,7 @@ golden command-line test from 3.3 runs in every phase from P1.
 | P7 | Merge: `WorkspaceMergePlan`, executor with journal, sheet | Fixture workspaces: overlapping summary days filled, same-name snapshots identical and different, schedules keep their labels, report groups de-duplicated, crash after N steps resumes, refused under the lock and under a peer claim, source moved and never deleted |
 | P8 | `EnvironmentProducts`, `TabVisibility.limited(to:)`, product-aware Overview, Config and report sections. Protect-only environment (L3), with the environment gate lifted out of `collect` into the router (7.1). School per-kind state and summary (L6) | Tab sets per product mix. A Protect-only collect writes a summary with Mac figures nil. A stand-down or the day guard stops every product, with and without an MDM. A School summary is written |
 | P9 | Daily summary product and composition fields, Trends and alert keys, `environment.protect_match` Doctor row, one environment finalize (7.1) | Nil when absent. Alert on an absent product never fires. Match-rate row thresholds |
-| P10 (not built) | New collection: `computer-storage` reduced kind, mobile storage and battery readers, the App Installers kind | Fixtures taken from real jamf-cli output, never written by hand from documentation. The reducer drops every field outside the allow-list |
+| P10 (deferred to 2.13, D27) | New collection: `computer-storage` reduced kind, mobile storage and battery readers, the App Installers kind | Fixtures taken from real jamf-cli output, never written by hand from documentation. The reducer drops every field outside the allow-list |
 | P11 | Replaced by the mobile spec's M6: Fleet Overview for the active environment, no selector. `FleetRollup` gains the new fields for report-group exports only. P8 and P9 lose their mobile parts to M2 to M4 (mobile spec, section 7) | See M6 |
 | P12 | Security Cloud: `security_cloud` slot setup, Radar collect, gateway half on `platform` | Slices 1 and 2 shipped (attach an existing login, `security risk list`, the UDID match and summary fields). The gateway half, screen, risk pill and score factor are not built (#283). Plugs into P3, P4 and P9 |
 | P13 | Docs: wiki (Data Sources, Getting Started, Automation, Security), README, CLAUDE.md/AGENTS.md, CHANGELOG | — |
@@ -647,7 +651,7 @@ the spec review; the earlier text is in the history of this file.
 |---|---|---|
 | D1 | One `profiles:` block, or a `profile` key in each product's block | One block: one reader, one writer, one pin set, one migration target. Product settings stay in their own blocks |
 | D2 | Which profile runs Jamf Pro commands when OAuth and Platform both exist | OAuth. Platform runs only Platform-only kinds, the Platform reads and the Security Cloud gateway half |
-| D3 | Write both old and new keys for one release, for older builds on a shared workspace | No: a new file gets `profiles:` only. A migrated file keeps its old keys (D14), so an older peer still reads it; upgrading every Mac together is advised, not required. The pin and the unknown-key row make a mismatch visible |
+| D3 | Write both old and new keys for one release, for older builds on a shared workspace | No: a new file gets `profiles:` only. A migrated file keeps its old keys (D14), so an older peer still reads it; upgrading every Mac together is advised, not required. The pin and the unknown-key row make a mismatch visible. Applied on 2026-11-12: setup, adoption, Add environments and `scaffold --out` into a workspace folder write the block and no `jamf_cli.profile` (`ProfilesConfigWriter.newWorkspaceBlock`) |
 | D4 | A display name separate from the folder name | No. The folder name is the environment's name. Renaming is a later, separate feature |
 | D5 | Merge target, and same-day summaries | The OAuth workspace is the target. Same-day summaries become `target.filling(from: source)`, with both originals archived |
 | D6 | What happens to the source folder after a merge | It moves to `<root>/_merged/<name>-<stamp>/` and is never deleted by the app |
@@ -678,3 +682,12 @@ Added after the spec review, accepted on 2026-11-03:
 | D21 | The shipped `platform.twin` Doctor row, which tells a user with a Platform and an OAuth workspace on one Jamf Pro to keep the Platform one | Reword it now to D2 and D5: keep the OAuth workspace, add the Platform profile to it as `profiles.platform`, and exclude the Platform workspace. The guided merge is P7 |
 | D22 | Whether the binding (`reconcileConfigProfile`) stops writing `jamf_cli.profile` | No. Under a block it never writes (the MDM slot is the workspace, D17); on an old-shape file it writes the workspace's own name, which the copied-folder test reads. The key stays valid under D14 |
 | D23 | The Environment card's actions that need later phases | P4 ships rows, Check and Remove. Add and Change open today's Add sheet until P5 and P6; hiding a removed product's screens waits for P8 (section 6) |
+
+Added after the 2.12 drift review, accepted by Tony on 2026-11-12:
+
+| # | Decision | Recommendation |
+|---|---|---|
+| D27 | P10 new collection (computer storage, mobile storage and battery, App Installers) | Deferred to 2.13. D9 needs the STORAGE call measured on a large fleet first, and nothing in 2.12 reads the fields. 2.12 plan row 2.4 is dropped |
+| D28 | Per-figure source lines in the workbook and HTML report (#284) | Not built. The HTML report's "Products:" header line names each product and its profile; a line per figure would change every workbook layout |
+| D29 | `Connection.Member.product` listing every product found (#284) | Not built. It stays `pro`, `school` or `unknown`: nothing reads more, and the environment's slots say which products exist |
+| D30 | Security Cloud match on a Jamf School environment | Left absent until a School tenant shows which identifier Security Cloud carries; keeping part of the user field for a management-ID join would put it on disk |

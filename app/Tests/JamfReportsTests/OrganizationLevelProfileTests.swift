@@ -172,7 +172,7 @@ final class OrganizationLevelProfileTests: XCTestCase {
             "An organization-level integration reaches only Jamf Account"))
         flow.selected.insert("org")
         var initialized: [String] = []
-        await flow.run(initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { name, _ in initialized.append(name); return 0 }, collect: { _, _ in 0 })
         XCTAssertEqual(initialized.sorted(), ["env", "tenant"])
     }
 

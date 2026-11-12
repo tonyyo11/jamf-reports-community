@@ -87,7 +87,9 @@ Jamf Pro stores the Security Cloud device risk in a computer extension attribute
 available today from `ea-results`, with no Security Cloud credential.
 
 - Plan change: ship the risk pill and filter from this EA first. Adopt it through Adopt EAs
-  (custom EA, text tab); no new collect kind.
+  (custom EA, text tab); no new collect kind. Reversed by Tony on 2026-11-12: the pill waits
+  for `security-risk`, which is now collected and matched by UDID on Jamf Pro, so one source
+  defines risk. The EA stays adoptable as a plain custom EA.
 - The `security-risk` collect kind stays planned, but is no longer on the critical path.
 - The EA value is Security Cloud's own enum (Secured, Low, Medium, High were seen in Security
   Cloud). Show the text as written; do not map it to a number.
@@ -180,7 +182,7 @@ Each joins the same way and is added with its first caller, not before.
 | Source | First caller |
 |---|---|
 | `mobile-devices-list` | risk pill on Mobile Fleet |
-| School devices | none: a UDID or serial join would read near 0 of N, and the management-ID join needs the `uem_` user field the reduced rows drop (a decision for Tony) |
+| School devices | none: a UDID or serial join would read near 0 of N, and the management-ID join needs the `uem_` user field the reduced rows drop. Tony decided on 2026-11-12 to leave it absent until a School tenant shows which identifier Security Cloud carries |
 | `platform-devices` | none planned |
 
 ## Surfaces
