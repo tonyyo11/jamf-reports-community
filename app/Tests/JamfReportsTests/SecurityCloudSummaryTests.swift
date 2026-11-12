@@ -418,7 +418,11 @@ final class SecurityCloudSummaryTests: XCTestCase {
         let filled = day(count: 9).filling(from: full)
         XCTAssertEqual(filled.securityCloudDeviceCount, 9)
         XCTAssertEqual(filled.securityCloudMatched, .init(met: 6, of: 7))
-        XCTAssertEqual(filled.securityCloudRiskCounts, ["high": 2, "low": 6])
+        // The risk counts belong to the count they were measured with: filling the older ones
+        // beside a smaller count would leave a day the range check rejects.
+        XCTAssertNil(filled.securityCloudRiskCounts)
+        let smaller = day(count: 5).filling(from: full)
+        XCTAssertTrue(smaller.numbersAreInRange)
         XCTAssertTrue(full.numbersAreInRange)
         XCTAssertFalse(day(matched: .init(met: 6, of: 5)).numbersAreInRange)
         XCTAssertFalse(day(matched: .init(met: -1, of: 5)).numbersAreInRange)

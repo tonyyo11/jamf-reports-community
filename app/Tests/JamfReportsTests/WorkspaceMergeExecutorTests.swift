@@ -579,10 +579,10 @@ extension WorkspaceMergeExecutorTests {
             appVersion: "x")
         // 2 initial claims, then 2 renewals per step: the 9th call is step 3's first renewal.
         let blockAt = 9
+        var renewing = deps(claim: { _ in calls.next() >= blockAt ? .blocked(peer) : .acquire })
+        renewing.claimRenewal = 0
         do {
-            try await WorkspaceMergeExecutor.run(j, deps: deps(claim: { _ in
-                calls.next() >= blockAt ? .blocked(peer) : .acquire
-            }))
+            try await WorkspaceMergeExecutor.run(j, deps: renewing)
             XCTFail("a peer taking the claim must stop the run")
         } catch {
             XCTAssertEqual(error as? WorkspaceMergeExecutor.RunError,

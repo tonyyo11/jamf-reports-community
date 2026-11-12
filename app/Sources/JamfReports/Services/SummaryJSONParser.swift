@@ -266,10 +266,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
             && (compliancePct == nil || olderIsReal)
         let patchFromOlder = patchPct == nil
         let scoreFromOlder = securityScore == nil
-        let protectComputersFromOlder = protectComputerCount == nil && protectMatched == nil
+        // A breakdown comes with its total, never beside the other day's: the range check
+        // rejects counts above the total. A `{met, of}` share stands alone.
         let protectAlertsFromOlder = protectOpenAlerts == nil && protectAlertCounts == nil
         let securityCloudFromOlder = securityCloudDeviceCount == nil
-            && securityCloudMatched == nil && securityCloudRiskCounts == nil
+            && securityCloudRiskCounts == nil
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
@@ -308,18 +309,14 @@ struct DailySummary: Codable, Identifiable, Sendable {
             mobile: mobile.map { $0.filling(from: older.mobile) } ?? older.mobile,
             products: products.map { Array(Set($0).union(older.products ?? [])).sorted() }
                 ?? older.products,
-            // Paired figures come from one side as a group, so a day never pairs one side's total
-            // with the other's breakdown (the range check would then reject the day).
-            protectComputerCount: protectComputersFromOlder
-                ? older.protectComputerCount : protectComputerCount,
-            protectMatched: protectComputersFromOlder ? older.protectMatched : protectMatched,
+            protectComputerCount: protectComputerCount ?? older.protectComputerCount,
+            protectMatched: protectMatched ?? older.protectMatched,
             protectOpenAlerts: protectAlertsFromOlder ? older.protectOpenAlerts : protectOpenAlerts,
             protectAlertCounts: protectAlertsFromOlder
                 ? older.protectAlertCounts : protectAlertCounts,
             securityCloudDeviceCount: securityCloudFromOlder
                 ? older.securityCloudDeviceCount : securityCloudDeviceCount,
-            securityCloudMatched: securityCloudFromOlder
-                ? older.securityCloudMatched : securityCloudMatched,
+            securityCloudMatched: securityCloudMatched ?? older.securityCloudMatched,
             securityCloudRiskCounts: securityCloudFromOlder
                 ? older.securityCloudRiskCounts : securityCloudRiskCounts,
             osMajorCounts: mergedOSMajor(older.osMajorCounts),

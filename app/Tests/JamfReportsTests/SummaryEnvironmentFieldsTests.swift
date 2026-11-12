@@ -72,7 +72,7 @@ final class SummaryEnvironmentFieldsTests: XCTestCase {
         XCTAssertTrue(merged.numbersAreInRange)
         let countOnly = base(count: 9).filling(from: source)
         XCTAssertEqual(countOnly.protectComputerCount, 9)
-        XCTAssertNil(countOnly.protectMatched)
+        XCTAssertEqual(countOnly.protectMatched, .init(met: 3, of: 4), "a share stands alone")
     }
 
     func testRangeCheckRejectsBadValues() {

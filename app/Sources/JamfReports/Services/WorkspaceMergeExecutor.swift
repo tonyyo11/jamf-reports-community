@@ -18,6 +18,8 @@ enum WorkspaceMergeExecutor {
         var rewritePolicy: @Sendable (_ from: String, _ to: String, _ keepTargetExcluded: Bool)
             async -> Void
         var appSupport: URL
+        /// How often the run renews its claims; a test renews before every step.
+        var claimRenewal: TimeInterval = WorkspaceMergeExecutor.claimRenewal
 
         /// `holdingTickLock(purpose: .merge)`, the shared-workspace claim, the real writers.
         /// `rewritePolicy` is supplied by the caller (the GUI owns the policy).
@@ -119,7 +121,7 @@ enum WorkspaceMergeExecutor {
             // The claim has no heartbeat: renewing it pushes its expiry, so a merge longer than
             // `claimTTL` is never taken over by a peer mid-run. Each renewal is a write a sync
             // provider uploads, so it happens every `claimRenewal`, not every step.
-            if Date().timeIntervalSince(renewed) >= claimRenewal {
+            if Date().timeIntervalSince(renewed) >= deps.claimRenewal {
                 for workspace in held { try claim(workspace, deps: deps) }
                 renewed = Date()
             }
