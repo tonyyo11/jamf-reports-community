@@ -79,12 +79,11 @@ struct StateFileStore: Sendable {
         }
         let url = fileURL(for: report)
         try atomicWrite(data: data, to: url)
-        // PR-22 T-14: keep the state manifest in sync after every write so
-        // an attacker who tampers a .last file can't quietly defer fetches
-        // — the next audit catches the SHA-256 mismatch. The rewrite is
-        // try? to avoid undoing the .last write we just succeeded at; a
-        // manifest desync is recoverable (audit re-runs catch it), a
-        // dropped state write is not.
+        // Keep the state manifest in sync after every write, so the audit flags a .last file
+        // changed by something other than this writer (corruption, a sync conflict, an edit
+        // that left the manifest alone). The hash is unkeyed: a writer that rewrites both
+        // files is not detected (threat model T-21). try? so a manifest failure never undoes
+        // the .last write that succeeded; the audit re-runs catch a desync.
         try? rewriteManifest()
     }
 

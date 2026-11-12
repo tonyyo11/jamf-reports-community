@@ -398,6 +398,17 @@ versions in this repository map to git tags.
 - If a file cannot be put back after a failed save on a network share, the earlier copy is kept
   as `<name>.recovered-<time>` and logged, instead of under a hidden name the next day's cleanup
   deletes.
+- Copying a Backups diff now also masks passwords, secrets and tokens in plain-text values, such
+  as a configuration profile's payload or a `key: value` setting, not only in JSON.
+- The SOFA feed is read up to 8 MB; a bigger answer counts as a failed fetch and the cached feed
+  stays in use.
+- Saving an HTML report, or choosing a folder on the Generate sheet, refuses system and
+  credential folders, as the PDF and CSV exports already did.
+- Settings offers the `sudo` command for the command-line tool only when the app is in
+  /Applications; otherwise it asks you to move the app there first, so the shared link never
+  points at a copy your account can change.
+- A jamf-cli update refuses a download whose archive holds a link, and jamf-cli, Homebrew and
+  the archive tools started without `TMPDIR` use your own temporary folder, not `/tmp`.
 - `jamf-reports verify` says only what it can show:
   - A manifest that lists no files fails.
   - A file named after the run that the manifest leaves out is reported as `EXTRA`.
