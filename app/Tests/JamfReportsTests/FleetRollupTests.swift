@@ -218,7 +218,7 @@ final class FleetRollupTests: XCTestCase {
 
     /// A metric label is text, so the CSV guards it like every other CSV writer does.
     func testCSVGuardsAndQuotesAMetricLabel() {
-        for hostile in ["=cmd", "+1", "-1", "@SUM(A1)"] {
+        for hostile in ["=cmd", "+1", "-1+1", "@SUM(A1)"] {
             let rollup = FleetRollup(
                 groupName: "Fleet", profileCount: 1, totalDevices: 1,
                 metrics: [.init(key: "k", label: hostile, unit: .count, value: 3, previous: 2)])
