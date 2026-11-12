@@ -67,7 +67,7 @@ struct OutreachView: View {
     /// Configured `thresholds.stale_device_days` (default 30). Tier boundaries
     /// scale from it so this screen agrees with the Overview/Fleet tiles.
     private var configuredStaleDays: Int {
-        Int(workspace.configState.staleDeviceDays) ?? 30
+        workspace.configState.staleRule.days
     }
 
     // MARK: - Data loading

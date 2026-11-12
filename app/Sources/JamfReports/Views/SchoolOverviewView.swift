@@ -14,7 +14,7 @@ struct SchoolOverviewView: View {
     @State private var loadedSource: String?
     @State private var reloads = 0
 
-    private var staleDays: Int { Int(workspace.configState.staleDeviceDays) ?? 30 }
+    private var staleDays: Int { workspace.configState.staleRule.days }
 
     var body: some View {
         PageScaffold {

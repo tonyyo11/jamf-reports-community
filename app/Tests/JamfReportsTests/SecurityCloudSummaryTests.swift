@@ -125,6 +125,15 @@ final class SecurityCloudSummaryTests: XCTestCase {
         XCTAssertEqual(result.matchedShare, .init(met: 0, of: 2))
     }
 
+    /// Two rows for one device count it once, as Protect's match does.
+    func testARepeatRowOnAClaimedDeviceIsADuplicate() {
+        let result = SecurityCloudCorrelation.build(
+            rows: [.init(externalId: "aaa"), .init(externalId: "AAA"), .init(externalId: "bbb")],
+            inventory: [record("AAA"), record("CCC")])
+        XCTAssertEqual([result.matched, result.duplicates], [1, 1])
+        XCTAssertEqual(result.matchedShare, .init(met: 1, of: 2))
+    }
+
     func testNoInventoryOrNoIdentifiedRowGivesNoShare() {
         XCTAssertNil(SecurityCloudCorrelation.build(
             rows: [.init(externalId: "a")], inventory: []).matchedShare)

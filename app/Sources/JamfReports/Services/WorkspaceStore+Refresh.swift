@@ -639,12 +639,10 @@ extension WorkspaceStore {
         let config = ProfileService.workspaceURL(for: profile).flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
-        let protectProfile = EnvironmentProfiles.resolve(config: config, workspace: profile).protect
-        let protectCollected = protectProfile.map {
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        let protectCollected = environment.protect.map {
             protectPinAllows(profile, $0) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false
-        // A Protect-only environment collects Protect alone (P8).
-        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         let collectSkip = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
         // Security Cloud follows an MDM collect where `CollectRouter` would run it.
         let securityCloudCollected = environment.securityCloud.map {
@@ -654,11 +652,10 @@ extension WorkspaceStore {
         let securityKinds = securityCloudCollected
             && !collectSkip.contains(ReportEngine.securityRiskKind)
             ? DataFreshnessHealth.securityCloudKinds : []
-        // Unconfirmed (a peer's edit), it is judged as before, so failing kinds stay visible.
+        // A Protect-only environment collects Protect alone (P8); unconfirmed on this Mac (a
+        // peer's edit, which `protectCollected` checks), it expects nothing.
         if environment.isProtectOnly {
-            // Unconfirmed, this Mac still shows the workspace as it was and expects nothing.
-            return protectPinAllows(profile, protectProfile ?? "") && protectCollected
-                ? DataFreshnessHealth.protectKinds : []
+            return protectCollected ? DataFreshnessHealth.protectKinds : []
         }
         // config.yaml unreadable and the login known to be School or Protect: no Jamf Pro kinds.
         if config == nil, let product = auth?.product, !product.canBeProWorkspace { return [] }

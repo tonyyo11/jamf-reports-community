@@ -270,7 +270,7 @@ struct DevicesView: View {
         .onAppear {
             guard !didSeedStaleDays else { return }
             didSeedStaleDays = true
-            let configured = Int(workspace.configState.staleDeviceDays) ?? 30
+            let configured = workspace.configState.staleRule.days
             staleDays = min(max(configured, AppConstants.staleDaysMin), AppConstants.staleDaysMax)
         }
         .onChange(of: workspace.pendingDevicesFilter, initial: true) { applyPendingFilter() }
