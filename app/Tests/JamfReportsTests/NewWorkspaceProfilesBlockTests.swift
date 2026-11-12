@@ -77,10 +77,10 @@ final class NewWorkspaceProfilesBlockTests: XCTestCase {
         XCTAssertEqual(try config("district"), before)
     }
 
-    /// Setup that began on the Jamf Pro path (Set up Jamf School after "no Jamf Pro"), or an
-    /// adopted School login jamf-cli could not place, wrote a Jamf Pro block; the School write
-    /// for the workspace's own profile moves the MDM slot, as `school_cli` did on the old shape.
-    func testTheSchoolWriteMovesAJamfProBlockToSchool() throws {
+    /// Setup that began on the Jamf Pro path, then "Set up Jamf School" after the check found no
+    /// Jamf Pro: the School path moves the block that setup wrote to School. A School write on
+    /// any other block is still refused (P4).
+    func testSchoolSetupMovesTheBlockItsJamfProAttemptWrote() throws {
         let support = root.appendingPathComponent("support", isDirectory: true)
         let pro = OnboardingFlow()
         pro.profileName = "campus"
@@ -90,6 +90,7 @@ final class NewWorkspaceProfilesBlockTests: XCTestCase {
 
         let school = OnboardingFlow()
         school.productPath = .school
+        school.configsWritten = pro.configsWritten
         school.profileName = "campus"
         try school.createWorkspace()
         try school.writeSchoolConfig(profileSlug: "campus", schoolProfileName: "campus")
@@ -101,13 +102,16 @@ final class NewWorkspaceProfilesBlockTests: XCTestCase {
             config: try ConfigLoader.loadFromString(try config("campus")), workspace: "campus")
             .refusal(workspace: "campus"))
 
-        // The adoption path's own writer reaches the same seam.
+        // A Jamf Pro block this setup did not write stays Jamf Pro.
         try ReportEngine.initializeWorkspace(
             profile: "district", workspacesRoot: root, kind: .init(platform: true)) { _ in }
-        XCTAssertNoThrow(try OnboardingFlow.writeProductBlock(
+        let other = OnboardingFlow()
+        other.productPath = .school
+        other.profileName = "district"
+        try other.createWorkspace()
+        XCTAssertEqual(try environment("district").jamfPro, "district")
+        XCTAssertThrowsError(try OnboardingFlow.writeProductBlock(
             "school_cli", profile: "district", for: "district"))
-        XCTAssertEqual(try environment("district").jamfSchool, "district")
-        XCTAssertNil(try environment("district").jamfPro)
     }
 
     func testOnboardingAddsThePlatformSlotOnlyToAConfigItWrote() throws {

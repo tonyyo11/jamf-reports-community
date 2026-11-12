@@ -76,7 +76,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         var collected: [String] = []
 
         await flow.run(
-            initialize: { initialized.append($0); return 0 },
+            initialize: { name, _ in initialized.append(name); return 0 },
             collect: { name, _ in collected.append(name); return 0 }
         )
 
@@ -95,7 +95,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         var initialized: [String] = []
 
         await flow.run(
-            initialize: { initialized.append($0); return 0 },
+            initialize: { name, _ in initialized.append(name); return 0 },
             collect: { _, _ in 0 }
         )
 
@@ -109,7 +109,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         var collected: [String] = []
 
         await flow.run(
-            initialize: { $0 == "alpha" ? 1 : 0 },
+            initialize: { name, _ in name == "alpha" ? 1 : 0 },
             collect: { name, _ in collected.append(name); return 0 }
         )
 
@@ -122,7 +122,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
     func testCollectFailureCarriesActionableMessage() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
 
-        await flow.run(initialize: { _ in 0 }, collect: { _, _ in 3 })
+        await flow.run(initialize: { _, _ in 0 }, collect: { _, _ in 3 })
 
         guard case .failed(let reason)? = flow.statuses["alpha"] else {
             return XCTFail("expected .failed, got \(String(describing: flow.statuses["alpha"]))")
@@ -136,7 +136,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         struct Boom: LocalizedError { var errorDescription: String? { "boom" } }
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
 
-        await flow.run(initialize: { _ in throw Boom() }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in throw Boom() }, collect: { _, _ in 0 })
 
         XCTAssertEqual(flow.statuses["alpha"], .failed("boom"))
         XCTAssertTrue(flow.didComplete)
@@ -149,7 +149,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         let flow = ExistingCLISetupFlow(profileNames: ["a", "b", "c", "d", "e"])
 
         await flow.run(
-            initialize: { name in
+            initialize: { name, _ in
                 if name == "b" { throw Boom() }
                 return name == "a" ? 1 : 0
             },
@@ -213,7 +213,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
     func testCompletionTextIsWordedFromTheRunsFailures() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
 
-        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in 1 }, collect: { _, _ in 0 })
 
         XCTAssertFalse(flow.completionText.contains("auth"), flow.completionText)
         XCTAssertTrue(flow.completionText.contains("0 succeeded, 2 failed"))
@@ -224,7 +224,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
     func testCompletionTextOmitsTheNoWorkspaceNoteWhenOneExists() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
 
-        await flow.run(initialize: { _ in 0 }, collect: { _, _ in CLIBridge.exitCodeUnauthorized })
+        await flow.run(initialize: { _, _ in 0 }, collect: { _, _ in CLIBridge.exitCodeUnauthorized })
 
         XCTAssertTrue(flow.completionText.contains("auth"), flow.completionText)
         XCTAssertFalse(flow.completionText.contains("No workspace exists yet"))
@@ -236,7 +236,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
         XCTAssertFalse(flow.canContinue, "before a run there is nothing to continue from")
 
-        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in 1 }, collect: { _, _ in 0 })
 
         XCTAssertTrue(flow.didComplete)
         XCTAssertFalse(flow.canContinue)
@@ -245,7 +245,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
     func testCanContinueWhenAWorkspaceExistsEvenIfItsCollectFailed() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
 
-        await flow.run(initialize: { _ in 0 }, collect: { _, _ in CLIBridge.exitCodeUnauthorized })
+        await flow.run(initialize: { _, _ in 0 }, collect: { _, _ in CLIBridge.exitCodeUnauthorized })
 
         XCTAssertEqual(flow.statuses["alpha"].map { "\($0)" }?.hasPrefix("failed"), true)
         XCTAssertTrue(flow.canContinue, "the workspace exists, so ContentView will find it")
@@ -254,7 +254,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
     func testCanContinueWhenOneOfTwoWorkspacesWasCreated() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
 
-        await flow.run(initialize: { $0 == "alpha" ? 1 : 0 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { name, _ in name == "alpha" ? 1 : 0 }, collect: { _, _ in 0 })
 
         XCTAssertTrue(flow.canContinue)
     }
@@ -265,23 +265,23 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
         XCTAssertFalse(flow.canRetry, "nothing has run yet")
 
-        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in 1 }, collect: { _, _ in 0 })
         XCTAssertTrue(flow.canRetry)
         XCTAssertFalse(flow.canContinue)
 
-        await flow.run(initialize: { _ in 0 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in 0 }, collect: { _, _ in 0 })
         XCTAssertFalse(flow.canRetry)
         XCTAssertTrue(flow.canContinue)
     }
 
     func testRetryRerunsInPlaceAndClearsTheEarlierFailure() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
-        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in 1 }, collect: { _, _ in 0 })
         XCTAssertEqual(flow.failureStages["alpha"], .workspace)
 
         var completeDuringRetry: Bool?
         await flow.run(
-            initialize: { _ in completeDuringRetry = flow.didComplete; return 0 },
+            initialize: { _, _ in completeDuringRetry = flow.didComplete; return 0 },
             collect: { _, _ in 0 }
         )
 
@@ -294,10 +294,10 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
     func testRetryWordsTheSummaryFromTheSelectedProfilesOnly() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
-        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in 1 }, collect: { _, _ in 0 })
         flow.selected = ["alpha"]
 
-        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { _, _ in 1 }, collect: { _, _ in 0 })
 
         XCTAssertTrue(flow.completionText.contains("0 succeeded, 1 failed"), flow.completionText)
     }
@@ -335,7 +335,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
 
         await flow.run(
-            initialize: { _ in 0 },
+            initialize: { _, _ in 0 },
             collect: { _, onLine in
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .info,
                                text: "[info] collecting computers for alpha"))
@@ -421,7 +421,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         var initialized: [String] = []
         await flow.run(
             connectionRunner: runner,
-            initialize: { initialized.append($0); return 0 },
+            initialize: { name, _ in initialized.append(name); return 0 },
             collect: { _, _ in 0 })
         return initialized
     }
@@ -558,7 +558,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         var calls = Calls()
         await flow.run(
             connectionRunner: nil,
-            initialize: { calls.initialized.append($0); return 0 },
+            initialize: { name, _ in calls.initialized.append(name); return 0 },
             writePlatform: { ws, p in
                 calls.platform.append([ws, p])
                 if platformFails { throw Boom() }
@@ -646,7 +646,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         let flow = ExistingCLISetupFlow(profiles: [example, protect("Example-Protect")])
         await flow.run(
             connectionRunner: nil,
-            initialize: { _ in 0 },
+            initialize: { _, _ in 0 },
             writePlatform: { _, _ in },
             writeProtect: { _, _ in throw Boom() },
             collect: { _, _ in 0 })
@@ -708,7 +708,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
                     ? (args.contains("jamf-pro-version") ? (4, bare404) : (0, Data("[]".utf8)))
                     : nil
             },
-            initialize: { calls.initialized.append($0); return 0 },
+            initialize: { name, _ in calls.initialized.append(name); return 0 },
             writePlatform: { ws, p in calls.platform.append([ws, p]) },
             writeProtect: { _, _ in },
             collect: { _, _ in 0 })

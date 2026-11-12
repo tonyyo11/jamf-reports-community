@@ -386,8 +386,10 @@ final class ExistingCLISetupFlow {
     /// row, never a failed workspace: the workspace exists and collects its MDM.
     func run(
         connectionRunner: ConnectionCheck.Runner? = ConnectionCheck.liveRunner(),
-        initialize: @escaping (String) async throws -> Int32 = { profile in
-            try await CLIBridge().initializeWorkspace(profile: profile, onLine: CLIBridge.noOpOnLine)
+        initialize: @escaping (String, ProfilesConfigWriter.NewWorkspace?) async throws -> Int32 = {
+            profile, kind in
+            try await CLIBridge().initializeWorkspace(
+                profile: profile, kind: kind, onLine: CLIBridge.noOpOnLine)
         },
         configureSchool: @escaping (String) throws -> Void = { profile in
             try OnboardingFlow.writeProductBlock("school_cli", profile: profile, for: profile)
@@ -448,7 +450,8 @@ final class ExistingCLISetupFlow {
             }
             let platform = await platformSlot(of: env, runner: connectionRunner)
             do {
-                let initExit = try await initialize(name)
+                // School is known here; a Jamf Pro profile's Platform slot is asked of jamf-cli.
+                let initExit = try await initialize(name, env.isSchool ? .init(school: true) : nil)
                 guard initExit == 0 else {
                     fail(name, L("workspace init exited \(initExit)"), at: stage)
                     continue

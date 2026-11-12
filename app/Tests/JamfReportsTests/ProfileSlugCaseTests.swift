@@ -241,7 +241,7 @@ final class ProfileSlugCaseTests: XCTestCase {
         flow.selected.insert("Old Tenant ")
         var initialized: [String] = []
         await flow.run(
-            initialize: { initialized.append($0); return 0 },
+            initialize: { name, _ in initialized.append(name); return 0 },
             collect: { _, _ in 0 }
         )
         XCTAssertEqual(initialized, ["Acme"])

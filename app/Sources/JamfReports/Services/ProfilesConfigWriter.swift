@@ -81,11 +81,12 @@ enum ProfilesConfigWriter {
         return block
     }
 
-    /// The School setup's write for the workspace's own profile, on a block that names the
-    /// workspace as Jamf Pro (a setup that began on the Jamf Pro path, or a login jamf-cli could
-    /// not place): the MDM slot becomes `jamf_school`, as `school_cli` did on an old-shape file,
-    /// and a `platform` slot naming the workspace itself goes with it. Nil when the block does
-    /// not name the workspace as Jamf Pro.
+    /// For setup only, on a config.yaml that same setup wrote: a block that names the workspace
+    /// as Jamf Pro (setup began on the Jamf Pro path, then the check found no Jamf Pro) moves its
+    /// MDM slot to `jamf_school`, and a `platform` slot naming the workspace itself goes with it.
+    /// Any other School write under a block is refused (`ConfigError.profilesBlock`). Nil when
+    /// the block does not name the workspace as Jamf Pro.
+    @discardableResult
     static func schoolTakesTheMDMSlot(
         workspace: String, appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport? {

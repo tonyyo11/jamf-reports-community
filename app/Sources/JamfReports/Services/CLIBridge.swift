@@ -2526,9 +2526,10 @@ try await ReportEngine.inventoryCSV(
 
     func initializeWorkspace(
         profile: String,
+        kind: ProfilesConfigWriter.NewWorkspace? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
-        try await ensureWorkspace(profile: profile, onLine: onLine)
+        try await ensureWorkspace(profile: profile, kind: kind, onLine: onLine)
         return 0
     }
 
@@ -2671,6 +2672,7 @@ try await ReportEngine.inventoryCSV(
     /// guess one: a bare "not found" once hid a rejected profile name.
     private func ensureWorkspace(
         profile: String,
+        kind known: ProfilesConfigWriter.NewWorkspace? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
@@ -2690,7 +2692,10 @@ try await ReportEngine.inventoryCSV(
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] initializing workspace for \(profile)"))
             // Asking jamf-cli what the profile is runs `config list`, so never on the main actor.
-            let kind = await Task.detached { ProfilesConfigWriter.NewWorkspace.of(profile) }.value
+            let kind: ProfilesConfigWriter.NewWorkspace
+            if let known { kind = known } else {
+                kind = await Task.detached { ProfilesConfigWriter.NewWorkspace.of(profile) }.value
+            }
             do {
                 try ReportEngine.initializeWorkspace(
                     profile: profile,

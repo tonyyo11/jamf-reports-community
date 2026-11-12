@@ -436,7 +436,7 @@ final class AddSheetPlanTests: XCTestCase {
         var initialized: [String] = []
         await flow.run(
             connectionRunner: { _ in (4, rejected) },
-            initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
+            initialize: { name, _ in initialized.append(name); return 0 }, collect: { _, _ in 0 })
         XCTAssertTrue(initialized.isEmpty)
         XCTAssertFalse(flow.canContinue)
         XCTAssertEqual(
@@ -455,7 +455,7 @@ final class AddSheetPlanTests: XCTestCase {
         ])) ?? Data()
         await flow.run(
             connectionRunner: { _ in (5, forbidden) },
-            initialize: { _ in 0 }, collect: { _, _ in 0 })
+            initialize: { _, _ in 0 }, collect: { _, _ in 0 })
         let note = ConnectionCheck.Verdict.missingPermission(names: []).message
         XCTAssertEqual(flow.connectionNotes["prod"], note)
 

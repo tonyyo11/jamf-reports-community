@@ -476,6 +476,9 @@ final class OnboardingFlow {
         if try Self.createJamfCLIOnlyWorkspace(
             for: profile, as: .init(school: productPath == .school)) {
             configsWritten.insert(profile)
+        } else if productPath == .school, configsWritten.contains(profile) {
+            // Set up Jamf School after the check found no Jamf Pro: this setup's own file.
+            try ProfilesConfigWriter.schoolTakesTheMDMSlot(workspace: profile)
         }
         if !existed, !createdWorkspaces.contains(profile) { createdWorkspaces.append(profile) }
         workspaceCreated = true
@@ -1419,10 +1422,6 @@ final class OnboardingFlow {
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
         let slot = key == "school_cli" ? "jamf_school" : key
-        if key == "school_cli", name.trimmingCharacters(in: .whitespaces) == profileSlug,
-           let moved = try ProfilesConfigWriter.schoolTakesTheMDMSlot(workspace: profileSlug) {
-            return moved
-        }
         return try ConfigService.saveBlock(
             key: key, profile: profileSlug, profilesSlot: slot, slotValue: name
         ) { root in

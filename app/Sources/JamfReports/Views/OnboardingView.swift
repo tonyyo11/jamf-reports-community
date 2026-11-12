@@ -949,7 +949,10 @@ struct OnboardingView: View {
     private func startSchoolWorkspace() {
         flow.clearAllSecrets()
         OnboardingFlow.pendingProductPath = .school
+        let written = flow.configsWritten
         flow = OnboardingFlow()
+        // The Jamf Pro attempt's config.yaml is this setup's, so the School path may reuse it.
+        flow.configsWritten = written
         Task { await flow.refreshJamfCLIStatus() }
     }
 
