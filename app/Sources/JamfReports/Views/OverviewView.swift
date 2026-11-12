@@ -322,7 +322,7 @@ struct OverviewView: View {
             } ?? L("on schedule")
             let last = first.lastRunFinishedAt.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
-            } ?? "never"
+            } ?? L("never")
             let more = overdue.count > 1 ? L(" (+\(overdue.count - 1) more)") : ""
             if first.isMulti {
                 // Global all-profiles managed agent — label it fleet-wide so a
@@ -347,7 +347,7 @@ struct OverviewView: View {
         }
         let last = firstFailing.lastRunFinishedAt.map {
             formatter.localizedString(for: $0, relativeTo: Date())
-        } ?? "never"
+        } ?? L("never")
         // Name the cause when the run recorded an exit code, so the banner
         // says WHY (401 / 403 / 429 / network) rather than just "failed".
         if let reason = firstFailing.reason { return L("\(name) can't run\(more). \(reason)") }

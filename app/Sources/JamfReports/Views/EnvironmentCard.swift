@@ -17,6 +17,8 @@ struct EnvironmentCard: View {
     @State private var pendingMerge: WorkspaceMergeJournal.Pending = .none
     @State private var mergeSession: MergeSession?
     @State private var confirmStartOver = false
+    /// `WorkspaceMergeCandidates.list`, read in a task: it checks a folder per profile.
+    @State private var mergeCandidates: [String] = []
 
     private struct MergeSession: Identifiable {
         let id = UUID()
@@ -44,6 +46,7 @@ struct EnvironmentCard: View {
             }
         }
         .task(id: state.workspace) { await reloadPendingMerge() }
+        .task(id: mergeCandidatesKey) { await reloadMergeCandidates() }
         .sheet(item: $mergeSession, onDismiss: { Task { await reloadPendingMerge() } }) { session in
             WorkspaceMergeSheet(
                 model: session.model, candidates: mergeCandidates, resumes: session.resumes,
@@ -118,7 +121,7 @@ struct EnvironmentCard: View {
             }
         }
         if let date = row.newestSnapshot {
-            Text(L("Newest snapshot \(Self.relative.localizedString(for: date, relativeTo: Date()))"))
+            Text(L("Newest snapshot \(Self.relative.localizedString(for: date, relativeTo: demo ? DemoData.referenceDate : Date()))"))
                 .font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
         }
         if row.pinNeedsConfirming {
@@ -151,13 +154,23 @@ struct EnvironmentCard: View {
         }
     }
 
-    private var mergeCandidates: [String] {
-        guard !demo else { return [] }
-        return WorkspaceMergeCandidates.list(
-            target: state.workspace,
-            targetPlatformSlot: state.rows.first { $0.slot == .platform }?.profile,
-            profiles: workspace.profiles,
-            hasWorkspace: { ProfileService.hasWorkspace($0) })
+    private var platformSlot: String? { state.rows.first { $0.slot == .platform }?.profile }
+
+    /// Everything the candidate list reads, so the task runs again when one changes.
+    private var mergeCandidatesKey: [String] {
+        [String(demo), state.workspace, platformSlot ?? ""] + workspace.profiles.map {
+            "\($0.name)|\(String(describing: $0.status))|\(String(describing: $0.auth))|\($0.product)"
+        }
+    }
+
+    private func reloadMergeCandidates() async {
+        guard !demo else { mergeCandidates = []; return }
+        let target = state.workspace, slot = platformSlot, profiles = workspace.profiles
+        mergeCandidates = await Task.detached {
+            WorkspaceMergeCandidates.list(
+                target: target, targetPlatformSlot: slot, profiles: profiles,
+                hasWorkspace: { ProfileService.hasWorkspace($0) })
+        }.value
     }
 
     @ViewBuilder
@@ -196,9 +209,10 @@ struct EnvironmentCard: View {
             }
             await store.applyAutomationPolicy()
         }
-        mergeSession = MergeSession(
-            model: WorkspaceMergeModel(target: state.workspace, deps: deps),
-            resumes: resumes)
+        let model = WorkspaceMergeModel(target: state.workspace, deps: deps)
+        // A resume opens on its progress, not on the chooser for a new merge.
+        if resumes { model.phase = .checking }
+        mergeSession = MergeSession(model: model, resumes: resumes)
     }
 
     private func startOver() {

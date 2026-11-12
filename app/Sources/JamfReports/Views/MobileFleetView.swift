@@ -725,17 +725,15 @@ struct MobileFleetView: View {
 
     private var devicesTable: some View {
         let listRowsByID = snapshot.lightDevicesByID
-        let matching = tableRows
-        let rows = Array(matching.prefix(50))
+        let rows = tableRows
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     SectionHeader(
                         title: L("Mobile Devices"),
-                        // The denominator is the matching count, so a filter reads "50 of 80".
+                        // Every matching device is listed; a filter says how many of the fleet.
                         trailing: supervisionFilter != nil || findingFilter != nil
-                            || matching.count > rows.count
-                            ? L("\(rows.count) of \(matching.count) shown")
+                            ? L("\(rows.count) of \(totalMobileDevices) shown")
                             : nil
                     )
                     if let supervisionFilter {
@@ -799,16 +797,9 @@ struct MobileFleetView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .font(.callout)
-                // A Table has no height of its own inside the page's ScrollView; without this
-                // it collapses under the header and shows no rows. Sized to its rows, so a
-                // filtered list does not trail blank striped rows, up to Devices' 430 pt.
-                .frame(height: Self.tableHeight(
-                    rows: rows.count, rowHeight: Self.deviceRowHeight, cap: 430))
-                if matching.count > rows.count {
-                    Text("Generated reports include every mobile device.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
+                // Every matching row, so an Audit count above a screenful can all be seen: the
+                // table takes its rows' height up to the page's and scrolls inside after that.
+                .pageTableHeight(rows: rows.count, rowHeight: Self.deviceRowHeight)
             }
         }
     }

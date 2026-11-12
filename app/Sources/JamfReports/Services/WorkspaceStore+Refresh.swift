@@ -310,6 +310,12 @@ extension WorkspaceStore {
             ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
     }
 
+    /// `generateRefusal` with its lock probe off the main actor.
+    func generateRefusalOffMain() async -> CLIBridgeError? {
+        await CLIBridge.collectRefusalOffMain()
+            ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
+    }
+
     /// What Generate says when `generateRefusal` stops it.
     nonisolated static func generateRefusalMessage(_ refusal: CLIBridgeError) -> String {
         let reason = CLIBridge.explainOperationError(refusal, operation: L("Generate"))

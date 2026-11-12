@@ -118,6 +118,7 @@ final class WorkspaceMergeModel {
     }
 
     func resume() async {
+        phase = .checking
         let target = target, read = deps.pending
         guard let journal = await Task.detached(operation: { read(target) }).value else {
             phase = .failed(L("There is no unfinished merge to resume."))
