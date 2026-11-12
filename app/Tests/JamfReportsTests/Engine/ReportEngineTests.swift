@@ -859,7 +859,10 @@ final class ReportEngineTests: XCTestCase {
         let configURL = root.appendingPathComponent("init-default/config.yaml")
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertFalse(text.contains("columns:"), "columns is retired")
-        XCTAssertEqual(text, ScaffoldService.minimalConfigYAML(profile: "init-default", eas: []))
+        // No jamf-cli in a test, so the profile's auth is unknown: Jamf Pro plus the Platform
+        // slot, as the block seed writes it.
+        XCTAssertEqual(text, ScaffoldService.minimalConfigYAML(
+            profile: "init-default", eas: [], workspace: .init(platform: true)))
         let config = try ConfigLoader.load(from: configURL)
         XCTAssertEqual(config.securityAgents?.count ?? 0, 0, "no example agents")
         XCTAssertEqual(config.customEas?.count ?? 0, 0, "no example EAs")

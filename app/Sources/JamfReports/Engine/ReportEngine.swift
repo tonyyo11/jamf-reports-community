@@ -4237,12 +4237,14 @@ struct ReportEngine: Sendable {
     /// Initialize a workspace directory for `profile` under `workspacesRoot`.
     ///
     /// Creates the standard subdirectory tree and, when none exists, the minimal `config.yaml`
-    /// onboarding writes (`ScaffoldService.writeMinimalConfig`), with the profile recorded, so
-    /// binding the new workspace writes nothing. No example agents, EAs or compliance columns:
-    /// setup and Config Doctor walk people through those.
+    /// onboarding writes (`ScaffoldService.writeMinimalConfig`), with the `profiles:` block for
+    /// what jamf-cli says the profile is (D3), so binding the new workspace writes nothing. No
+    /// example agents, EAs or compliance columns: setup and Config Doctor walk people through
+    /// those.
     static func initializeWorkspace(
         profile: String,
         workspacesRoot: URL,
+        kind: ProfilesConfigWriter.NewWorkspace? = nil,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) throws {
         let workspace = WorkspacePaths.workspaceURL(
@@ -4270,7 +4272,8 @@ struct ReportEngine: Sendable {
 
         let configURL = workspace.appendingPathComponent("config.yaml")
         if !fm.fileExists(atPath: configURL.path) {
-            try ScaffoldService.writeMinimalConfig(to: configURL, profile: profile)
+            try ScaffoldService.writeMinimalConfig(
+                to: configURL, profile: profile, workspace: kind ?? .of(profile))
         }
         onLine(.init(timestamp: Date(), level: .ok,
                      text: "[ok] workspace initialized at \(workspace.path)"))

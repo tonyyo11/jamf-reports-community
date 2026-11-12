@@ -320,7 +320,7 @@ final class OneCollectAtATimeTests: XCTestCase {
         onboarding.profileName = profile
         let runsBefore = try recordedRuns()
         try await whileACollectRuns {
-            await setup.run(initialize: { _ in 0 })
+            await setup.run(initialize: { _, _ in 0 })
             await onboarding.runFirstReport(workspaceStore: store)
         }
         XCTAssertEqual(setup.statuses[profile], .failed(running))

@@ -21,9 +21,14 @@ enum ScaffoldService {
     ///   - eas: Proposals from `proposeEAs`.
     ///   - profile: Profile slug written into `jamf_cli.profile`.
     /// Returns the text written, which the caller confirms in `SharedConfigPin`.
+    ///   - workspace: With a value, `profile` is that workspace's and the file gets its
+    ///     `profiles:` block instead of `jamf_cli.profile` (D3).
     @discardableResult
-    static func writeConfig(to url: URL, eas: [ProposedEA], profile: String) throws -> String {
-        let yaml = minimalConfigYAML(profile: profile, eas: eas)
+    static func writeConfig(
+        to url: URL, eas: [ProposedEA], profile: String,
+        workspace: ProfilesConfigWriter.NewWorkspace? = nil
+    ) throws -> String {
+        let yaml = minimalConfigYAML(profile: profile, eas: eas, workspace: workspace)
         try write(yaml, to: url)
         return yaml
     }
@@ -31,10 +36,12 @@ enum ScaffoldService {
     /// Write the minimal `config.yaml` (jamf-cli data needs no mapping) to `url`.
     /// - Parameters:
     ///   - url: Destination file URL. Parent directory must already exist.
-    ///   - profile: Profile slug written into `jamf_cli.profile`.
+    ///   - profile: Profile slug written into `jamf_cli.profile`, or the block's slots.
     @discardableResult
-    static func writeMinimalConfig(to url: URL, profile: String) throws -> String {
-        try writeConfig(to: url, eas: [], profile: profile)
+    static func writeMinimalConfig(
+        to url: URL, profile: String, workspace: ProfilesConfigWriter.NewWorkspace? = nil
+    ) throws -> String {
+        try writeConfig(to: url, eas: [], profile: profile, workspace: workspace)
     }
 
     /// The minimal config.yaml plus a Protect-only `profiles:` block, created exclusively: an
@@ -124,13 +131,18 @@ enum ScaffoldService {
         return fields
     }
 
-    static func minimalConfigYAML(profile: String, eas: [ProposedEA]) -> String {
+    static func minimalConfigYAML(
+        profile: String, eas: [ProposedEA], workspace: ProfilesConfigWriter.NewWorkspace? = nil
+    ) -> String {
         var lines: [String] = [
             "# config.yaml — minimal workspace config",
             "",
             "jamf_cli:",
             "  data_dir: \"jamf-cli-data\"",
-            "  profile: \"\(yamlEscape(profile))\"",
+        ]
+        // Beside a block nothing reads `jamf_cli.profile`, and Config Doctor would flag it.
+        if workspace == nil { lines.append("  profile: \"\(yamlEscape(profile))\"") }
+        lines += [
             "  use_cached_data: true",
             "",
             "thresholds:",
@@ -163,7 +175,9 @@ enum ScaffoldService {
             }
         }
         lines.append("")
-        return lines.joined(separator: "\n")
+        let text = lines.joined(separator: "\n")
+        guard let workspace else { return text }
+        return text + ProfilesConfigWriter.newWorkspaceBlock(workspace: profile, workspace)
     }
 
     // MARK: - EA proposal (CSV → custom_eas walkthrough)

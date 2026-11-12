@@ -90,7 +90,7 @@ final class CollectKindStatusTests: XCTestCase {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
 
         await flow.run(
-            initialize: { _ in 0 },
+            initialize: { _, _ in 0 },
             collect: { name, onLine in
                 if name == "alpha" {
                     onLine(CLIBridge.LogLine(timestamp: Date(), level: .ok,

@@ -57,19 +57,26 @@ struct Scaffold: AsyncParsableCommand {
             + "once; no column mapping is written or read. Omit to write the minimal config "
             + "alone, the same starting point the GUI's workspace step writes."
     )) var csv: String?
-    @Option(help: "Output config.yaml path.") var out: String
+    @Option(help: "Output config.yaml path. A workspace's own config.yaml gets its profiles: block.") var out: String
 
     func run() async throws {
         CLIRun.requireSafeOutput(out)
         let outURL = URL(fileURLWithPath: out)
         try FileManager.default.createDirectory(
             at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // Profile-agnostic: empty slug → `jamf_cli.profile: ""` (the user sets the profile
-        // when they wire it up). Like Python's `scaffold`, this OVERWRITES `--out` if it
+        // A workspace's own config.yaml gets its `profiles:` block (D3). Anywhere else the
+        // file is profile-agnostic (`jamf_cli.profile: ""`), since a block must name the
+        // workspace it serves. Like Python's `scaffold`, this OVERWRITES `--out` if it
         // exists — it's an initial-setup command. The file it replaces is copied aside first.
+        let workspace = SharedConfigPin.profile(forConfigAt: outURL).flatMap {
+            ProfileService.isValid($0) ? $0 : nil
+        }
+        let profile = workspace ?? ""
+        let kind = workspace.map { ProfilesConfigWriter.NewWorkspace.of($0) }
         guard let csv else {
             try keepCopy(of: outURL)
-            let written = try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
+            let written = try ScaffoldService.writeMinimalConfig(
+                to: outURL, profile: profile, workspace: kind)
             SharedConfigPin.confirmWrittenConfig(written, at: outURL)
             print(outURL.path)
             return
@@ -78,7 +85,8 @@ struct Scaffold: AsyncParsableCommand {
         let eas = ScaffoldService.proposeEAs(
             headers: sample.headers, sampleRows: sample.rows, mappedHeaders: [])
         try keepCopy(of: outURL)
-        let written = try ScaffoldService.writeConfig(to: outURL, eas: eas, profile: "")
+        let written = try ScaffoldService.writeConfig(
+            to: outURL, eas: eas, profile: profile, workspace: kind)
         SharedConfigPin.confirmWrittenConfig(written, at: outURL)
         print(outURL.path)
     }

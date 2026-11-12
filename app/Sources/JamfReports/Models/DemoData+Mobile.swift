@@ -19,6 +19,21 @@ extension DemoData {
             devices, latestByMajor: demoLatestByMajor, staleDays: 30, now: referenceDate)
     }()
 
+    /// The 524 demo Macs and 25 mobile devices as `SummaryDeviceMaps` writes a live summary's
+    /// maps, for the Fleet Overview's device tiles. The demo Macs carry no model name, so there
+    /// is no model-family map, as a live summary has none when no Mac reports one.
+    static let summaryDeviceMaps: SummaryDeviceMaps.Fields = {
+        let macs = SummaryDeviceMaps.computers(
+            outreachRecords, rule: StaleRule(days: 30), now: referenceDate)
+        let mobile = SummaryDeviceMaps.mobile(
+            MobileFleetView.makeDemoSnapshot().richDevices, now: referenceDate)
+        return SummaryDeviceMaps.Fields(
+            osMajor: macs.osMajor.merging(mobile.osMajor, uniquingKeysWith: +),
+            modelFamily: macs.modelFamily.isEmpty ? nil : macs.modelFamily,
+            formFactor: mobile.formFactor,
+            lastSeen: LastSeenBuckets(computers: macs.lastSeen, mobile: mobile.lastSeen))
+    }()
+
     /// The same 25 devices by type, as `SummaryDeviceMaps` writes a live summary's map.
     static let mobileFormFactorCounts: [String: Int]? = SummaryDeviceMaps.mobile(
         MobileFleetView.makeDemoSnapshot().richDevices, now: referenceDate).formFactor

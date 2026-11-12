@@ -24,7 +24,10 @@ extension ConnectionCredentialsModel {
             },
             existingProfiles: { profiles().map(\.name) },
             workspaceConflict: { ProfileService.caseVariantWorkspace(of: $0) },
-            provisionWorkspace: { try OnboardingFlow.createJamfCLIOnlyWorkspace(for: $0) },
+            provisionWorkspace: {
+                // Add environments registers Platform API profiles.
+                try OnboardingFlow.createJamfCLIOnlyWorkspace(for: $0, as: .init(platform: true))
+            },
             store: store,
             canReRegister: { name in
                 guard let profile = profiles().first(where: { $0.name == name }) else {

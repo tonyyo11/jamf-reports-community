@@ -161,6 +161,33 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
         XCTAssertTrue(mismatches.isEmpty, mismatches.joined(separator: "\n"))
     }
 
+    /// D3: the `profiles:` block a new workspace is created with runs exactly what the old
+    /// shape it replaces ran, and a Platform API workspace still runs its Platform kinds itself.
+    func testANewWorkspaceBlockRunsWhatItsOldShapeRan() async throws {
+        let cases: [(old: String, kind: ProfilesConfigWriter.NewWorkspace, auth: String,
+                     product: JamfCLIProduct, platform: PlatformRoute?)] = [
+            ("pro-oauth", .init(), "oauth2", .pro,
+             .unavailable(EnvironmentProfiles.noPlatformReason)),
+            ("pro-platform", .init(platform: true), "platform", .pro, .profile(workspace)),
+            // A Jamf School environment never reads the platform slot.
+            ("school-primary", .init(school: true), "apikey", .school, nil),
+        ]
+        for c in cases {
+            let yaml = ScaffoldService.minimalConfigYAML(
+                profile: workspace, eas: [], workspace: c.kind)
+            XCTAssertFalse(yaml.contains("  profile:"), c.old)
+            let calls = try await run(Shape(
+                name: c.old, yaml: yaml, workspaceAuth: c.auth, workspaceProduct: c.product))
+            XCTAssertEqual(calls.transcript, golden[c.old]?.transcript, c.old)
+            XCTAssertEqual(calls.sha256, golden[c.old]?.sha256, c.old)
+            guard let route = c.platform else { continue }
+            let config = try ConfigLoader.loadFromString(yaml)
+            XCTAssertEqual(ReportEngine.platformRoute(
+                config: config, workspace: try WorkspaceID(validating: workspace)),
+                route, c.old)
+        }
+    }
+
     private func run(_ shape: Shape) async throws -> GoldenCalls {
         let config = try shape.yaml.map { try ConfigLoader.loadFromString($0) }
         // The dashboard row is the one command line built from config.yaml inside the collect.

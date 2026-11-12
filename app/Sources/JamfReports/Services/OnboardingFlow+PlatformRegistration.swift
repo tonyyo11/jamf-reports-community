@@ -52,18 +52,21 @@ extension OnboardingFlow {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    /// A workspace for a profile: the folders and the minimal config.yaml, confirmed on this Mac
-    /// as onboarding confirms it. A config.yaml already there is kept as it is. Returns whether
-    /// it wrote one.
+    /// A workspace for a profile: the folders and the minimal config.yaml with its `profiles:`
+    /// block (D3), confirmed on this Mac as onboarding confirms it. A config.yaml already there
+    /// is kept as it is. Returns whether it wrote one.
     @discardableResult
-    static func createJamfCLIOnlyWorkspace(for profile: String) throws -> Bool {
+    static func createJamfCLIOnlyWorkspace(
+        for profile: String, as kind: ProfilesConfigWriter.NewWorkspace
+    ) throws -> Bool {
         try createWorkspaceFolders(for: profile)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile
         }
         let config = workspace.appendingPathComponent("config.yaml")
         guard !FileManager.default.fileExists(atPath: config.path) else { return false }
-        let written = try ScaffoldService.writeMinimalConfig(to: config, profile: profile)
+        let written = try ScaffoldService.writeMinimalConfig(
+            to: config, profile: profile, workspace: kind)
         SharedConfigPin.confirmWrittenConfig(written, at: config, profile: profile)
         return true
     }

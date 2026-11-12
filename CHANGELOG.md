@@ -9,6 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Fleet Overview shows what the environment holds: tiles for Mac models, mobile device types,
+  operating systems by major version, and when Macs and mobile devices were last seen (under a
+  day, 1 to 6 days, 7 days or more, never), from the latest daily summary. A figure the summary
+  does not carry is left out, never shown as 0.
 - Percentages can be whole numbers. `display.percent_decimals: 0` in `config.yaml`, or
   **Percentages** on the Customize screen, prints `57%` instead of `56.7%` on every screen and
   in the workbook, CSV folder, HTML report, PDF, period report, alert cards and on-device
@@ -109,6 +113,12 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A new workspace's config.yaml records its products in the `profiles:` block from the start:
+  setup, adopting jamf-cli's profiles, Add environments and `jamf-reports scaffold --out` into a
+  workspace folder all write it, in place of `jamf_cli.profile`. A workspace collects the same
+  sources as before. A Mac on 2.11 or older that shares the folder sees Jamf Pro only, so update
+  every Mac that shares a workspace together. `scaffold --out` to any other folder still writes
+  the old shape, since a block must name its workspace.
 - The Jamf Security Cloud match counts each device once: a second risk row for a device that
   already matched leaves the share's denominator, as the Jamf Protect match does.
 - The Overview's Mobile Devices section now counts every mobile device by type on its Devices

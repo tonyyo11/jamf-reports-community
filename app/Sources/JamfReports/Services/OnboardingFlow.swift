@@ -247,6 +247,8 @@ final class OnboardingFlow {
     /// Start over removes exactly those: a folder or profile that existed before is never listed.
     var createdWorkspaces: [String] = []
     var createdProfiles: [String] = []
+    /// Workspaces whose config.yaml this run wrote, so only those get a `platform` slot.
+    var configsWritten: Set<String> = []
     var validationOutput: [CLIBridge.LogLine] = []
     var validationExitCode: Int32?
     /// The gateway's answer about a Platform API profile's scope ID; nil for OAuth2 profiles
@@ -470,7 +472,14 @@ final class OnboardingFlow {
         let profile = profileName.trimmed
         let existed = ProfileService.workspaceURL(for: profile)
             .map { FileManager.default.fileExists(atPath: $0.path) } ?? true
-        try Self.createJamfCLIOnlyWorkspace(for: profile)
+        // Platform or OAuth is chosen on a later step; a Platform registration adds its slot.
+        if try Self.createJamfCLIOnlyWorkspace(
+            for: profile, as: .init(school: productPath == .school)) {
+            configsWritten.insert(profile)
+        } else if productPath == .school, configsWritten.contains(profile) {
+            // Set up Jamf School after the check found no Jamf Pro: this setup's own file.
+            try ProfilesConfigWriter.schoolTakesTheMDMSlot(workspace: profile)
+        }
         if !existed, !createdWorkspaces.contains(profile) { createdWorkspaces.append(profile) }
         workspaceCreated = true
         lastError = nil
@@ -551,6 +560,9 @@ final class OnboardingFlow {
         // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
         ProfileAuthMethod.invalidateCache()
         PlatformTwin.invalidateCache()
+        if proConnectionType == .platformGateway, profileRegistered {
+            try recordOwnPlatformSlot(profileName.trimmed)
+        }
     }
 
     private func registerOAuth2Profile() async throws {
@@ -628,6 +640,16 @@ final class OnboardingFlow {
         validationOutput.removeAll()
         connectionCheck = nil
         lastError = nil
+    }
+
+    /// A Platform API workspace collects the Platform kinds as its own profile, so the block
+    /// this run wrote names it in `platform` too. A config.yaml that was already there is left.
+    func recordOwnPlatformSlot(
+        _ profile: String, appSupport: URL = AppSupport.directory()
+    ) throws {
+        guard configsWritten.contains(profile) else { return }
+        try ProfilesConfigWriter.save(
+            .platform, to: profile, workspace: profile, appSupport: appSupport)
     }
 
     // MARK: - Registration (Protect on the Pro path, School on the School path)

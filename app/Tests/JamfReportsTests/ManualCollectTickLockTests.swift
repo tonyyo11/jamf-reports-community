@@ -363,7 +363,7 @@ final class ManualCollectTickLockTests: XCTestCase {
         let (_, lock) = try makeStore()
         let flow = ExistingCLISetupFlow(profileNames: [profile])
         try await whileAnotherProcessHolds(lock) {
-            await flow.run(initialize: { _ in 0 })
+            await flow.run(initialize: { _, _ in 0 })
         }
         XCTAssertEqual(flow.statuses[profile], .failed(busy))
         let logs = try WorkspacePaths.runHistoryDir(for: profile)
