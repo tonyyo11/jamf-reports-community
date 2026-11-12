@@ -119,7 +119,7 @@ struct ConfigView: View {
             }
             tabContent
         }
-        .task(id: workspace.profile) {
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             changedOnDisk = false
             saveReport = nil
             do {

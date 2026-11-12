@@ -39,7 +39,7 @@ struct RunsView: View {
                 }
             }
         }
-        .task(id: workspace.profile) {
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             await reload()
             // A config.yaml under a demo profile's name is not the demo's.
             aiConfig = workspace.demoMode

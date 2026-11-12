@@ -229,7 +229,7 @@ struct AuditView: View {
             default: configSection
             }
         }
-        .task(id: workspace.profile) {
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             await loadCached()
         }
         .task(id: doctorTaskKey) {
@@ -1076,8 +1076,13 @@ struct AuditView: View {
         contactGapList = []
         mobileFindingList = []
         hasPreviousAudit = false
-        await loadIntegritySummary()
         let loadProfile = workspace.profile
+        // A switch cancels this task but not its awaits: drop what arrives for the old profile.
+        func superseded() -> Bool {
+            Task.isCancelled || loadProfile != workspace.profile || workspace.demoMode
+        }
+        await loadIntegritySummary()
+        guard !superseded() else { return }
         guard let integrity = await ScreenLoad.paint(
             stillCurrent: { loadProfile == workspace.profile && !workspace.demoMode },
             read: { (DuplicateSerialService.load(profile: loadProfile),
@@ -1087,7 +1092,8 @@ struct AuditView: View {
         commandHealth = integrity.1
 
         let decoder = JSONDecoder()
-        let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
+        let auditSnapshots = await bridge.cachedJSONSnapshots(profile: loadProfile, type: "audit", limit: 2)
+        guard !superseded() else { return }
         let scanned = commandHealth.isDetected
         var failedCommandTotal: Int?
         if let current = auditSnapshots.first,
@@ -1121,10 +1127,11 @@ struct AuditView: View {
 
         commandFindings = commandHealthFindings(
             commandHealth, failedCommandTotal: failedCommandTotal)
-        let profile = workspace.profile
+        let profile = loadProfile
         let inventory = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.load(profile: profile, demoMode: false)
         }.value
+        guard !superseded() else { return }
         contactGapList = contactGapFindings(inventory)
         let staleDays = workspace.configState.staleRule.days
         if let mobile = await ScreenLoad.paint(
@@ -1133,17 +1140,19 @@ struct AuditView: View {
         ) { mobileFindingList = mobile }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
-            profile: workspace.profile,
+            profile: loadProfile,
             type: "group-tools-analyze",
             limit: 1
         )
+        guard !superseded() else { return }
         if let latestHygiene = hygieneSnapshots.first,
            let decoded = try? decoder.decode([UnusedGroup].self, from: latestHygiene.data) {
             let groupsSnapshots = await bridge.cachedJSONSnapshots(
-                profile: workspace.profile,
+                profile: loadProfile,
                 type: "groups",
                 limit: 1
             )
+            guard !superseded() else { return }
             unusedGroups = UnusedGroup.merging(decoded, withGroupCounts: groupsSnapshots.first?.data)
             lastHygieneDate = latestHygiene.modified
         }
@@ -1181,6 +1190,7 @@ struct AuditView: View {
         }.value
         // Profile may have switched while the detached scan ran — gate.
         guard workspace.profile == profile else { return }
+        guard profile == workspace.profile, !Task.isCancelled else { return }
         integritySummary = summary
     }
 

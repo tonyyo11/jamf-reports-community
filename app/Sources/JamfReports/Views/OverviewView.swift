@@ -228,9 +228,11 @@ struct OverviewView: View {
     /// than none, so each pass replaces the text (nil clears it). One small file.
     private func pollPeerActivity(profile: String, demoMode: Bool) async {
         while !Task.isCancelled {
-            peerActivity = await Task.detached {
+            let text = await Task.detached {
                 Self.peerActivityText(profile: profile, demoMode: demoMode)
             }.value
+            guard !Task.isCancelled else { return }
+            peerActivity = text
             try? await Task.sleep(for: .seconds(60))
         }
     }

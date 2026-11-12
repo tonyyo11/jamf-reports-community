@@ -431,9 +431,11 @@ struct ReportsView: View {
     /// read lands on a large workspace.
     private func presentGenerate() async {
         let profile = workspace.profile
-        generateFreshness = await Task.detached(priority: .userInitiated) {
+        let freshness = await Task.detached(priority: .userInitiated) {
             SnapshotFreshness.evaluate(profile: profile)
         }.value
+        guard profile == workspace.profile, !Task.isCancelled else { return }
+        generateFreshness = freshness
         showGenerate = true
     }
 
