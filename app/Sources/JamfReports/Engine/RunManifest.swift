@@ -224,6 +224,7 @@ struct RunManifest: Codable, Equatable, Sendable {
         result.lines.append(
             "Written \(shown(manifest.generatedAt)) by \(shown(manifest.generator))")
         let folder = url.deletingLastPathComponent()
+        if manifest.artifacts.isEmpty { fail("FAIL  the manifest lists no artifacts") }
         var matched = 0
         for artifact in manifest.artifacts {
             let name = shown(artifact.name)
@@ -245,12 +246,37 @@ struct RunManifest: Codable, Equatable, Sendable {
                 fail("CHANGED  \(name)")
             }
         }
-        for extra in extras(of: manifest, in: folder) { fail("EXTRA    \(shown(extra))") }
+        let unlisted = extras(of: manifest, in: folder)
+            + runExtras(of: manifest, manifestURL: url)
+        for extra in unlisted { fail("EXTRA    \(shown(extra))") }
         result.lines.append("\(matched) of \(manifest.artifacts.count) artifacts match.")
         verifyTimestamp(
             at: timestampURL(forManifest: url), manifestSHA256: digest,
+            generatedAt: ISO8601Time.parse(manifest.generatedAt),
             expectedSigner: expectedSigner, into: &result)
         return result
+    }
+
+    /// Sidecars the report writers put beside a file (`<file>.sha256`, `<file>.manifest.txt`).
+    private static let sidecarSuffixes = [".sha256", ".manifest.txt"]
+
+    /// Top-level entries named for this run (`<stem>.<anything>`, `<stem>_csv`) that the manifest
+    /// does not list, so a swapped workbook cannot pass under a manifest that leaves it out. The
+    /// manifest and its `.tsr` are skipped, and so is a sidecar of a listed file.
+    static func runExtras(of manifest: RunManifest, manifestURL url: URL) -> [String] {
+        let name = url.lastPathComponent
+        guard name.hasSuffix(manifestSuffix) else { return [] }
+        let stem = String(name.dropLast(manifestSuffix.count))
+        let listed = Set(manifest.artifacts.map { String($0.name.split(separator: "/")[0]) })
+        let own: Set<String> = [name, timestampURL(forManifest: url).lastPathComponent]
+        return (entries(of: url.deletingLastPathComponent()) ?? []).prefix(maxExtraEntriesRead)
+            .map(\.lastPathComponent)
+            .filter { $0.hasPrefix(stem + ".") || $0 == stem + "_csv" }
+            .filter { entry in
+                !own.contains(entry) && !listed.contains(entry)
+                    && !sidecarSuffixes.contains { entry.hasSuffix($0)
+                        && listed.contains(String(entry.dropLast($0.count))) }
+            }
     }
 
     /// Most entries `extras` looks at, and how deep, in the folders a manifest lists.
@@ -307,8 +333,12 @@ struct RunManifest: Codable, Equatable, Sendable {
         return display.text + (display.truncated ? " (truncated)" : "")
     }
 
+    /// How far the authority's signing time may sit from the manifest's own `generated_at`: the
+    /// app asks for the token straight after writing the manifest, within a 15 s exchange.
+    static let maxSealGap: TimeInterval = 300
+
     private static func verifyTimestamp(
-        at url: URL, manifestSHA256: String, expectedSigner: String?,
+        at url: URL, manifestSHA256: String, generatedAt: Date?, expectedSigner: String?,
         into result: inout Verification
     ) {
         var info = stat()
@@ -347,6 +377,12 @@ struct RunManifest: Codable, Equatable, Sendable {
         let signer = inspection.signer.map { " by \"\(shown($0))\"" } ?? ""
         result.lines.append("Timestamp: manifest signed \(ISO8601Time.string(inspection.signedAt))"
             + signer)
+        result.lines.append(sealScopeNote)
+        if let generatedAt, abs(inspection.signedAt.timeIntervalSince(generatedAt)) > maxSealGap {
+            result.lines.append("Warning: the authority signed this manifest "
+                + "\(ISO8601Time.string(inspection.signedAt)), but it says it was written "
+                + "\(ISO8601Time.string(generatedAt)); the run may have been sealed again later.")
+        }
         if let fingerprint = inspection.signerSHA256 {
             result.lines.append("Timestamp signer certificate SHA-256: \(fingerprint) (compare "
                 + "it with the fingerprint the authority publishes)")
@@ -383,6 +419,10 @@ struct RunManifest: Codable, Equatable, Sendable {
         return hex
     }
 
+    /// What a valid token proves, printed whenever one verifies: a public authority signs any
+    /// hash for anyone, so a matching signer says nothing about who sealed the run.
+    static let sealScopeNote = "Note: the timestamp shows this manifest existed by the time "
+        + "above; it does not show who wrote the manifest or the files."
     /// Anyone who can write the folder can write a manifest that matches the files beside it.
     static let untimestampedNote = "Note: with no timestamp, a match shows only that the files "
         + "equal this manifest; it holds only if you trust where the manifest came from."

@@ -267,7 +267,12 @@ final class DiagnosticRedactor {
     /// Registers the profile's configured Jamf server (`host:port` and `host`) to remove
     /// wherever it appears, with or without a scheme. Applied only while hostname redaction is on.
     func seedServerHosts(_ hosts: [String]) {
-        serverHostRegex = Self.boundedLiteralRegex(hosts)
+        // A host spelled like a log word ("partial") would mask that word and its markers.
+        // A host spelled like a log word ("partial") would mask that word and its markers.
+        serverHostRegex = Self.boundedLiteralRegex(hosts.filter {
+            !LogRedactor.commonLogWords.contains(
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        })
     }
 
     /// Registers the workspace's profile name, as typed and as the app writes it in folder,
@@ -670,6 +675,8 @@ enum DiagnosticBundleService {
     }
 
     /// `hostForms` of `profile`'s `output.timestamp_authority`, read bounded from its config.yaml.
+    /// config.yaml is peer-writable, so only a dotted host or a bracketed IPv6 literal is used:
+    /// a bare word there would mask that word in every shared log.
     static func timestampAuthorityHosts(profile: String) -> [String] {
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let text = try? ConfigLoader.readText(
@@ -678,7 +685,15 @@ enum DiagnosticBundleService {
               let url = ConfigLoader.rawValue(
                 at: ["output", "timestamp_authority"], in: root) as? String
         else { return [] }
-        return hostForms(ofURL: url)
+        return seedableHostForms(ofURL: url)
+    }
+
+    /// Pure: the `hostForms` of a peer-writable URL that are a dotted host or a bracketed IPv6
+    /// literal, each with or without its port.
+    static func seedableHostForms(ofURL url: String) -> [String] {
+        hostForms(ofURL: url).filter {
+            $0.hasPrefix("[") || $0.split(separator: ":").first?.contains(".") == true
+        }
     }
 
     /// Pure: `host:port` and `host` of a configured server URL, scheme, credentials and path

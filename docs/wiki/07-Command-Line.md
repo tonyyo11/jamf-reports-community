@@ -118,12 +118,17 @@ A few behaviors worth knowing:
   are not listed; `jamf-reports html` and the Reports screen's PDF and CSV exports write a
   manifest for their one file. `jamf-reports verify <manifest>` prints `OK`, `CHANGED`, `MISSING` or
   `UNREADABLE` for each, `EXTRA` for a file added to a listed folder (Finder's `.DS_Store`
-  excepted), and exits `1` unless all match. With `output.timestamp_authority: "https://…"`
+  excepted) and for a file named after the run that the manifest leaves out (a workbook, an
+  HTML or PDF, a CSV folder), and exits `1` unless all match. A manifest that lists no files
+  fails. With `output.timestamp_authority: "https://…"`
   the manifest's SHA-256, a random nonce and fixed request headers (`User-Agent: JamfReports`)
   are sent to that RFC 3161 time-stamp authority, nothing else, and its signed reply saved as
   `<name>.tsr`; `verify` then checks the reply signs this manifest and prints the authority's
   time, its certificate's SHA-256 fingerprint and whether this Mac trusts its certificate
-  chain. Compare that fingerprint with the one the authority publishes: a self-signed
+  chain, then a note that the timestamp shows the manifest existed by that time, not who wrote
+  it: a public authority signs any file for anyone. It warns when the authority's time is more
+  than five minutes from the time the manifest says it was written, which points to a run
+  sealed again later. Compare that fingerprint with the one the authority publishes: a self-signed
   certificate can name itself anything. With no `.tsr`, or an untrusted chain, `verify` adds a
   note: anyone who can write the folder can write a matching manifest, so a match holds only if
   you trust where the manifest (and the signer fingerprint) came from. For a script or an

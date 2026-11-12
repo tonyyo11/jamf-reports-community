@@ -181,6 +181,8 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         XCTAssertEqual(try matchRows(pro, 2, of: 5).map(\.severity), [.warn])
         XCTAssertTrue(try matchRows(pro, 5, of: 10).isEmpty, "exactly half")
         XCTAssertEqual(try matchRows(pro, 999, of: 2000).count, 1, "49.95% is not 50%")
+        XCTAssertTrue(try matchRows(pro, Int.max, of: Int.max).isEmpty, "no overflow")
+        XCTAssertEqual(try matchRows(pro, 1, of: Int.max).count, 1, "no overflow")
         XCTAssertTrue(try matchRows("profiles:\n  protect: ws-P\n", 0, of: 10).isEmpty,
                       "Protect-only")
     }
@@ -227,6 +229,10 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
             ConfigDoctorService.protectMatchRows(profile: "ws", config: config).map(\.id),
             ["environment.protect_match"])
         try write(daysAgo: 30)
+        XCTAssertTrue(ConfigDoctorService.protectMatchRows(profile: "ws", config: config).isEmpty)
+        // A future-dated summary a peer wrote is neither newest nor read.
+        try write(daysAgo: -3_000)
+        XCTAssertNil(SummaryJSONParser.newestSummaryDay(profile: "ws"))
         XCTAssertTrue(ConfigDoctorService.protectMatchRows(profile: "ws", config: config).isEmpty)
     }
 }

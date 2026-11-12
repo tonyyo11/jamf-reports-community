@@ -818,11 +818,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// `protect.backup_on_synced_storage` as this Mac may use it: on only while config.yaml
     /// says true and that matches a confirmed pin. A change to false applies at once and is
     /// pinned (`check`); a change to true, or a true first seen, waits for a Confirm here.
+    /// Asks the pin for a confirmed true, never only "no drift": a peer could flip the file
+    /// back between the caller's read and `check`'s.
     static func protectBackupOnSyncedStorage(
         _ configured: Bool, profile: String, appSupport: URL = AppSupport.directory()
     ) -> Bool {
-        configured && !check(profile: profile, appSupport: appSupport)
-            .isDrifted(.protectBackupOnSyncedStorage)
+        configured && confirmedTrue(.protectBackupOnSyncedStorage, profile: profile,
+                                    appSupport: appSupport) { $0.protectBackupOnSyncedStorage }
     }
 
     /// `backup.pro_on_synced_storage` as this Mac may use it, by the same rule. An absent key is
@@ -832,8 +834,19 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     ) -> ProBackup.Setting {
         guard let configured else { return .notChosen }
         guard configured else { return .declined }
-        return check(profile: profile, appSupport: appSupport).isDrifted(.proBackupOnSyncedStorage)
-            ? .awaitingConfirmation : .allowed
+        return confirmedTrue(.proBackupOnSyncedStorage, profile: profile, appSupport: appSupport) {
+            $0.proBackupOnSyncedStorage
+        } ? .allowed : .awaitingConfirmation
+    }
+
+    /// The `pinAllows` shape for a boolean: the pin holds a confirmed true and the key has not
+    /// drifted; with no pin, only a local workspace.
+    private static func confirmedTrue(
+        _ key: Key, profile: String, appSupport: URL, pinned: (SharedConfigPin) -> Bool
+    ) -> Bool {
+        let result = check(profile: profile, appSupport: appSupport)
+        guard let pin = result.pinned else { return result.isLocal }
+        return !result.isDrifted(key) && pinned(pin)
     }
 
     /// Whether this Mac holds a pin for `profile`, which only a shared workspace ever gets: the

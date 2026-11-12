@@ -200,6 +200,38 @@ final class RunManifestTests: XCTestCase {
         XCTAssertTrue(result.lines.contains(RunManifest.untrustedChainNote))
         XCTAssertTrue(result.lines.contains { $0.hasPrefix(
             "Timestamp signer certificate SHA-256: 32e841a95cc1164101ffde41298ef2fc") })
+        XCTAssertTrue(result.lines.contains(RunManifest.sealScopeNote))
+        // The captured manifest says 09:00; FreeTSA signed it at 06:38, a gap the app never makes.
+        XCTAssertTrue(result.lines.contains { $0.hasPrefix("Warning: the authority signed this "
+            + "manifest 2026-10-29T06:38:24Z, but it says it was written 2026-10-29T09:00:00Z") },
+            "\(result.lines)")
+    }
+
+    /// A manifest that lists nothing proves nothing, so it fails, timestamp or not.
+    func testVerifyFailsAManifestThatListsNoArtifacts() throws {
+        let empty = RunManifest(generatedAt: "2026-10-29T09:00:00Z", generator: "x", artifacts: [])
+        let url = folder.appendingPathComponent("empty" + RunManifest.manifestSuffix)
+        try empty.encoded().write(to: url)
+        let result = RunManifest.verify(manifestAt: url)
+        XCTAssertFalse(result.passed)
+        XCTAssertTrue(result.lines.contains("FAIL  the manifest lists no artifacts"))
+    }
+
+    /// A file of the run the manifest leaves out (a swapped workbook under a manifest that names
+    /// only the HTML) is extra; a listed file's sidecar and another run's files are not.
+    func testVerifyNamesAnUnlistedFileOfTheRunAndFails() throws {
+        try layOutFixtureRun()
+        try Data("x".utf8).write(to: folder.appendingPathComponent("\(stem).xlsx.sha256"))
+        try Data("x".utf8).write(to: folder.appendingPathComponent("report_other.xlsx"))
+        var result = RunManifest.verify(manifestAt: folder.appendingPathComponent(manifestName))
+        XCTAssertTrue(result.passed, "\(result.lines)")
+
+        try Data("%PDF".utf8).write(to: folder.appendingPathComponent("\(stem).pdf"))
+        try Data("x".utf8).write(to: folder.appendingPathComponent("\(stem).pdf.sha256"))
+        result = RunManifest.verify(manifestAt: folder.appendingPathComponent(manifestName))
+        XCTAssertFalse(result.passed)
+        XCTAssertEqual(result.lines.filter { $0.hasPrefix("EXTRA") },
+                       ["EXTRA    \(stem).pdf", "EXTRA    \(stem).pdf.sha256"])
     }
 
     // MARK: --signer-sha256
@@ -220,6 +252,8 @@ final class RunManifestTests: XCTestCase {
         XCTAssertTrue(result.lines.contains(
             "OK    timestamp signer is the expected certificate (--signer-sha256)"))
         XCTAssertFalse(result.lines.contains(RunManifest.untrustedChainNote))
+        XCTAssertTrue(result.lines.contains(RunManifest.sealScopeNote),
+                      "a matching signer still says the token does not name the writer")
     }
 
     /// A token signed by any other certificate (a forged, self-signed one) fails.
@@ -451,9 +485,12 @@ final class RunManifestTests: XCTestCase {
             "output:\n  timestamp_authority: \"\(authority.absoluteString)\"\n")
         TSAStub.answer(.reply(503, Data()))
         let lines = ManifestLines()
-        let workbook = folder.appendingPathComponent("\(stem).xlsx")
+        // The fixture run is a workbook, its HTML and its CSV folder: all three are sealed, so
+        // verify finds no unlisted file of the run.
         let manifest = await ReportEngine.sealRun(
-            artifacts: [workbook], config: config, profile: nil,
+            artifacts: ["\(stem).xlsx", "\(stem).html", "\(stem)_csv"].map {
+                folder.appendingPathComponent($0)
+            }, config: config, profile: nil,
             now: Date(timeIntervalSince1970: 1_793_264_400), session: TSAStub.session,
             onLine: lines.add)
         XCTAssertEqual(manifest?.lastPathComponent, manifestName)
