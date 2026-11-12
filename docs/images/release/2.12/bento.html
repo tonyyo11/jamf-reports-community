@@ -1,0 +1,228 @@
+<!doctype html>
+<!-- Source of bento.png, built on the 2.11 release bento. Render at 1600x900, device scale 2:
+     chrome --headless --hide-scrollbars --window-size=1600,900 --force-device-scale-factor=2 \
+       --screenshot=bento.png bento.html
+     Figures in the small UI pieces are the app's demo data. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jamf Reports 2.12</title>
+<style>
+  :root {
+    --bg: #111113; --tile: #1D1D1F; --tile2: #232326; --line: #2E2E33;
+    --fg: #F2F2F7; --fg2: #C7C7CC; --muted: #8E8E93;
+    --teal: #4FAAAA; --tealDeep: #2A6B6B; --gold: #E8B614; --orange: #E0832A; --red: #E5484D;
+    --blue: #64A8FF;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1600px; height: 900px; background: var(--bg); overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+    color: var(--fg); padding: 36px;
+  }
+  .grid {
+    width: 100%; height: 100%; display: grid; gap: 16px;
+    grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(4, 1fr);
+    grid-template-areas:
+      "env    env    brand  brand  mobile mobile"
+      "env    env    brand  brand  csv    protect"
+      "langs  fleet  fleet  verify verify fixes"
+      "langs  pct    site   verify verify fixes";
+  }
+  .t {
+    background: var(--tile); border: 1px solid var(--line); border-radius: 22px;
+    padding: 22px 24px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .cap { font-size: 15px; color: var(--muted); line-height: 1.35; }
+  .h { font-size: 22px; font-weight: 650; letter-spacing: -0.2px; line-height: 1.2; }
+  .big { font-weight: 750; letter-spacing: -1px; line-height: 1.02; }
+  .push { margin-top: auto; }
+  .mono { font-family: "SF Mono", Menlo, monospace; }
+  .tag {
+    display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: .4px;
+    text-transform: uppercase; padding: 3px 8px; border-radius: 6px;
+    background: #2A2A2E; color: var(--fg2); align-self: flex-start;
+  }
+
+  /* Brand */
+  .brand {
+    grid-area: brand; align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(120% 90% at 50% 0%, #26262A 0%, #1A1A1C 70%);
+  }
+  .brand img { width: 150px; height: 150px; margin-bottom: 18px; }
+  .brand .name { font-size: 44px; font-weight: 700; letter-spacing: -1px; }
+  .brand .ver {
+    font-size: 96px; font-weight: 800; letter-spacing: -3px; line-height: 1;
+    background: linear-gradient(90deg, var(--teal), var(--gold) 55%, var(--orange));
+    -webkit-background-clip: text; color: transparent; margin-top: 4px;
+  }
+
+  /* Environment */
+  .env { grid-area: env; }
+  .env .big { font-size: 44px; margin: 10px 0 8px; }
+  .env .big span { color: var(--teal); }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 18px; }
+  .stat { background: var(--tile2); border-radius: 14px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 22px; font-weight: 700; }
+  .stat i { font-style: normal; font-size: 13px; color: var(--muted); }
+  .stat.new b { color: var(--teal); }
+
+  /* Mobile */
+  .mobile { grid-area: mobile; justify-content: center; gap: 8px; }
+  .mobile .banner { padding: 8px 14px; }
+  .mobile .banner .btn { padding: 3px 10px; }
+  .banner {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(232,182,20,.10); border: 1px solid rgba(232,182,20,.35);
+  }
+  .banner .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); flex: none; }
+  .banner .txt { font-size: 15px; color: var(--fg2); flex: 1; }
+  .banner .btn {
+    font-size: 13px; font-weight: 600; color: #111; background: var(--gold);
+    padding: 5px 10px; border-radius: 8px; font-variant-numeric: tabular-nums;
+  }
+
+  /* CSV folder */
+  .csv { grid-area: csv; justify-content: space-between; }
+  .csv .big { font-size: 38px; color: var(--gold); }
+
+  /* Protect-only */
+  .protect { grid-area: protect; justify-content: space-between; }
+  .protect svg { width: 44px; height: 44px; }
+
+  /* Languages */
+  .langs { grid-area: langs; }
+  .side { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; }
+  .side div {
+    font-size: 15px; color: var(--fg2); padding: 6px 10px; border-radius: 9px;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .side div.on { background: rgba(79,170,170,.16); color: var(--fg); }
+  .side span { width: 8px; height: 8px; border-radius: 2px; background: var(--muted); }
+  .side .on span { background: var(--teal); }
+
+  /* Fleet Overview */
+  .fleet { grid-area: fleet; }
+  .rows { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+  .row { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--fg2); }
+  .row .n { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--fg); font-weight: 600; }
+  .pill { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; }
+  .pill.mac { background: rgba(79,170,170,.18); color: var(--teal); }
+  .pill.mob { background: rgba(100,168,255,.18); color: var(--blue); }
+
+  /* Verify */
+  .verify { grid-area: verify; }
+  .card {
+    margin-top: 14px; border-radius: 14px; overflow: hidden; border: 1px solid var(--line);
+    background: var(--tile2);
+  }
+  .card .head { background: linear-gradient(90deg, #1F6F4A, #2A8A5C); padding: 10px 14px; font-size: 15px; font-weight: 650; }
+  .card .body { padding: 12px 14px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
+  .card .body i { font-style: normal; color: var(--muted); }
+  .verify code { font-family: "SF Mono", Menlo, monospace; font-size: 15px; color: var(--orange); }
+
+  /* Fixes */
+  .fixes { grid-area: fixes; justify-content: space-between; }
+  .fixes .big { font-size: 46px; color: var(--teal); }
+
+  /* Percentages */
+  .pct { grid-area: pct; justify-content: space-between; }
+  .pct .big { font-size: 38px; color: var(--fg); }
+  .pct s { font-size: 18px; color: var(--muted); font-weight: 500; letter-spacing: 0; margin-right: 6px; }
+
+  /* Site-limited */
+  .site { grid-area: site; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="grid">
+
+  <section class="t env">
+    <span class="tag">Environments</span>
+    <div class="big">One workspace,<br><span>every product</span></div>
+    <div class="cap">Jamf Pro or Jamf School with its Platform API, Jamf Protect and Jamf Security Cloud logins, set up and checked in one place.</div>
+    <div class="stats">
+      <div class="stat"><b>Jamf Pro</b><i>or Jamf School</i></div>
+      <div class="stat"><b>Platform API</b><i>benchmarks and DDM</i></div>
+      <div class="stat"><b>Jamf Protect</b><i>or Protect on its own</i></div>
+      <div class="stat new"><b>Security Cloud</b><i>device risk, matched to devices</i></div>
+    </div>
+  </section>
+
+  <section class="t brand">
+    <img src="../../readme/icon.png" alt="">
+    <div class="name">Jamf Reports</div>
+    <div class="ver">2.12</div>
+  </section>
+
+  <section class="t mobile">
+    <div class="h">iPads and iPhones</div>
+    <div class="banner"><span class="dot"></span><span class="txt">Passcode not compliant</span><span class="btn">3</span></div>
+    <div class="banner"><span class="dot"></span><span class="txt">OS behind the current release</span><span class="btn">9</span></div>
+    <div class="cap">On the Overview and in the Health Audit.</div>
+  </section>
+
+  <section class="t csv">
+    <div class="big">CSV<br>folder</div>
+    <div class="cap">One CSV per workbook tab.</div>
+  </section>
+
+  <section class="t protect">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#4FAAAA" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/>
+    </svg>
+    <div><div class="h">Protect on its own</div><div class="cap">Collects and keeps a daily history.</div></div>
+  </section>
+
+  <section class="t langs">
+    <div class="h">7 languages</div>
+    <div class="side">
+      <div><span></span>English</div>
+      <div class="on"><span></span>Français</div>
+      <div class="on"><span></span>Español</div>
+      <div class="on"><span></span>Deutsch</div>
+      <div class="on"><span></span>Português (Brasil)</div>
+      <div class="on"><span></span>Italiano</div>
+      <div class="on"><span></span>日本語</div>
+    </div>
+    <div class="cap push">Reports stay in English.</div>
+  </section>
+
+  <section class="t fleet">
+    <div class="h">What the fleet holds</div>
+    <div class="rows">
+      <div class="row">MacBook Pro <span class="pill mac">Model</span><span class="n">289</span></div>
+      <div class="row">macOS 15 <span class="pill mac">OS</span><span class="n">385</span></div>
+      <div class="row">iOS 18 <span class="pill mob">Mobile</span><span class="n">7</span></div>
+    </div>
+    <div class="cap push">Fleet Overview counts models, device types, OS versions and last seen.</div>
+  </section>
+
+  <section class="t verify">
+    <div class="h">Prove a report is unchanged</div>
+    <div class="cap">Every run writes a SHA&#8209;256 manifest. An RFC 3161 timestamp can show when.</div>
+    <div class="card">
+      <div class="head">Every file matches</div>
+      <div class="body"><i>Workbook</i><span>OK</span><i>HTML report</i><span>OK</span><i>CSV folder</i><span>OK</span><i>Timestamp</i><span>Signature verified</span></div>
+    </div>
+    <div class="cap push"><code>jamf-reports verify</code> checks a run against its manifest.</div>
+  </section>
+
+  <section class="t fixes">
+    <div class="big">100+<br>fixes</div>
+    <div class="cap">A figure no device reports shows a dash, never 0. Shared workspaces, logs and bundles hardened further.</div>
+  </section>
+
+  <section class="t pct">
+    <div class="big"><s>56.7%</s>57%</div>
+    <div class="cap">Whole-number percentages, if you prefer.</div>
+  </section>
+
+  <section class="t site">
+    <span class="tag">Site-limited logins</span>
+    <div class="cap" style="color: var(--fg2)">Every report says when a login sees only some Jamf Pro sites.</div>
+  </section>
+
+</div>
+</body>
+</html>
