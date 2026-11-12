@@ -69,8 +69,8 @@ the output.
 **Fix the class, not the site.** A bug that bypasses a seam the code already has (a
 shared reader, validator, timeout, product gate, redactor, escape, calculator) is fixed at
 every sibling site in the same PR, with the grep in the PR body; one site of a known class
-is an incomplete fix. `docs/superpowers/review-checklist.md` lists the twelve classes that
-recurred from 2.8.0 to 2.11.0 and the check for each; reviewers read it first.
+is an incomplete fix. `docs/superpowers/review-checklist.md` lists the nineteen classes that
+recurred from 2.8.0 to 2.12.0 and the check for each; reviewers read it first.
 
 **Agent loop.** `docs/superpowers/agent-loop.md` says which work gets a subagent (parallel fresh
 context, independent verification, or reading far more than the loop needs) and which stays in the
