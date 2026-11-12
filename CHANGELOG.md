@@ -255,7 +255,7 @@ versions in this repository map to git tags.
 - In the Add sheet, a profile added while the first check was still running now leaves its Add row, and making a Jamf Protect login its own environment can no longer run twice from a double click or be closed while it runs. The Platform API card's text now describes Connect new and the list below it.
 - The Patch titles table's Failures column counts failing devices for each title, joining a patch policy to the title it is named after, and shows a dash when no failure scan was collected. It used to count failure rows and read 0 for any title whose policies carried a version in their name.
 - The Generate sheet lists the day's summary file for a Jamf School collect too, under its real name.
-- The first-launch screen says Jamf Protect can be its own environment.
+- The first-launch screen says Jamf Protect can be its own environment, and that Jamf Security Cloud is added to a Jamf Pro or Jamf School environment for its risk counts. The README and the setup message for a tenant that is not Jamf Pro now say the same instead of "not supported yet" or "planned".
 - The Mobile Devices table lists every matching device instead of the first 50.
 - Deleting a backup no longer freezes the window on a large or synced folder, and the Generate sheet and Data Sources no longer check files on every redraw.
 - Resuming an interrupted workspace merge that is refused no longer offers a new merge.
