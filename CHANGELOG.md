@@ -227,6 +227,13 @@ versions in this repository map to git tags.
   after you have switched is dropped. Backups no longer offers the previous profile's backups
   for Delete or Diff while it loads, and Config › Scoring waits for the profile's own data
   before it lets you edit the factor list. (#305)
+- Demo mode shows each demo workspace as its own environment: meridian-prod has Jamf Pro, the
+  Platform API and Jamf Protect, meridianedu is a Jamf School district with its own devices on
+  the School Overview, School Devices, Trends and Fleet Overview, meridian-sandbox has Jamf Pro
+  only, and meridian-msp has Jamf Pro and Jamf Protect. The sidebar, the Environment card, Data
+  Sources and Run History follow the workspace you pick. Trends and the Overview's score cards
+  offer the mobile and Jamf Protect figures, Fleet Overview fills its device tiles (Mac models
+  included) for every demo workspace, and Reports lists the workbooks' CSV folders.
 
 ### Fixed
 
