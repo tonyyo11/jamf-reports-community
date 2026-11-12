@@ -122,13 +122,15 @@ ran is reflected immediately.
 
 On a Jamf Pro profile without Platform API access, four data sources — compliance devices,
 compliance rules, DDM status and blueprint status — are served only by the Platform API.
-They are now skipped rather than attempted, failed and reported every day, and the run log
+Which profile runs them follows the workspace: with a `profiles:` block it is the `platform`
+slot (no slot, an unconfirmed one, or one that reaches a different Jamf Pro skips them, with
+the reason in the run log); without one it is the workspace's own profile. They are skipped rather than attempted, failed and reported every day, and the run log
 says so. They never appear in the strip and the hourly repair never retries them. A
 profile whose authentication method cannot be determined is *not* skipped: "we could not
 ask" is never read as "not platform".
 
 Sources you list in `jamf_cli.collect_skip` — any of the four per-device-heavy reports that
-stall some on-premise servers — are handled the same way: never attempted, even by
+stall some on-premise servers, or `dashboard`, `sofa` or `security-risk` — are handled the same way: never attempted, even by
 **Collect now**, never counted as failures, and left out of the strip.
 
 ### Where the state lives
@@ -242,11 +244,16 @@ alerts:
   points for percentage metrics) versus a prior summary. `lookback_days` (default 7) sets
   how far back the prior is read; it is ignored by `below`/`above`.
 
-**Metric keys.** Thirteen are percentages or 0–100 scores; three are whole-number counts:
+**Metric keys.** Twenty-nine in all: eighteen are percentages or 0–100 scores and eleven are
+whole-number counts. The mobile, Jamf Protect and Jamf Security Cloud keys never fire for a
+workspace that has no such data.
 
-| Percentages / scores | Counts |
-|---|---|
-| `filevault_pct`, `compliance_pct`, `os_current_pct`, `patch_pct`, `sip_pct`, `firewall_pct`, `gatekeeper_pct`, `secure_boot_pct`, `bootstrap_pct`, `xprotect_pct`, `cve_pct`, `mscp_score_pct`, `security_score` | `stale_count`, `action_items_p0`, `total_devices` |
+| Group | Percentages / scores | Counts |
+|---|---|---|
+| Macs | `filevault_pct`, `compliance_pct`, `os_current_pct`, `patch_pct`, `sip_pct`, `firewall_pct`, `gatekeeper_pct`, `secure_boot_pct`, `bootstrap_pct`, `xprotect_pct`, `cve_pct`, `mscp_score_pct`, `security_score` | `stale_count`, `action_items_p0`, `total_devices` |
+| Mobile devices | `mobile_os_current_pct`, `mobile_passcode_pct`, `mobile_supervised_pct`, `mobile_data_protection_pct` | `mobile_stale_count`, `mobile_jailbroken_count` |
+| Jamf Protect | `protect_matched_pct` | `protect_computer_count`, `protect_open_alert_count`, `protect_high_alert_count` |
+| Jamf Security Cloud | `security_cloud_matched_pct` | `security_cloud_device_count`, `security_cloud_high_risk_count` |
 
 ### How and when alerts fire
 
@@ -286,14 +293,18 @@ notify:
   provider: "teams"   # teams | slack
   url: ""             # https:// incoming webhook URL
   detail: "full"      # full | minimal
+  heartbeat: false    # true: one "background item ran" card a day
 ```
 
-Four kinds of card are posted:
+Five kinds of card are posted:
 
 - **Run digest** — after a successful scheduled run (report name, status, profile).
 - **Failure** — a run that errored, in a red/attention style.
 - **Metric alert** — a tripped threshold, in an attention style with ⚠️.
 - **Overdue** — the dead-man digest when a schedule missed its run.
+- **Heartbeat** — with `notify.heartbeat: true` (off by default; the Notifications section's
+  **Send a daily heartbeat**), one short card a day from the background item saying it ran, so
+  a receiver can alert on a day with none. It carries no device counts or names.
 
 ### Egress discipline
 

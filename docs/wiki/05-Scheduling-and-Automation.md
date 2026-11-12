@@ -46,10 +46,10 @@ background item runs them one at a time, never in parallel:
 
 | Schedule | Cadence | What it does | Offset |
 |---|---|---|---|
-| Freshness | Daily | A light collect — the Refresh and Inventory tiers, everything except the two heavy per-device scans. Writes a daily `summary.json` per profile (one trend point/day). | +0 min |
-| Scan | Weekly (default Monday) | The two `--scan-failures` fan-outs (patch + update device failures) — the per-device-heavy queries kept off the daily path. | +10 min |
+| Freshness | Daily | A light collect — the Refresh and Inventory tiers, everything except the two heavy per-device scans. Writes a daily `summary_<date>.json` per workspace (one trend point/day). | +0 min |
+| Scan | Weekly (default Monday) | The two `--scan-failures` fan-outs (patch + update device failures) and the per-device DDM status and MDM command-health scan — the per-device-heavy queries kept off the daily path. | +10 min |
 | Reports | Off / Daily / Weekly / Monthly | Generates workbooks for every profile from the already-fresh cache. | +20 min |
-| Backup | Weekly (default Sunday) | A `jamf-cli pro backup` of your Jamf Pro configuration objects, plus a `jamf-cli protect backup` when Protect is connected (see Security and Operational Considerations). | +30 min |
+| Backup | Weekly (default Sunday) | A `jamf-cli pro backup` of your Jamf Pro configuration objects, plus a `jamf-cli protect backup` when Protect is connected (a Jamf School workspace with Protect backs up Protect alone). On storage other Macs reach, the Jamf Pro part is a per-workspace choice, `backup.pro_on_synced_storage` (see Security and Operational Considerations). | +30 min |
 
 Freshness and Scan collect data; Reports and Backup do not collect (Reports generates from
 cache, Backup exports config). Each schedule can be enabled independently — for example,
@@ -110,8 +110,9 @@ removed immediately — the policy already describes them, so there is nothing t
 A hand-built one stays loaded, and the Automation screen surfaces a **consolidation card**,
 "Schedules now run by JamfReports," listing it: it now runs from the background item, but
 its old legacy file is still loaded too, so it fires **twice per wake** until you retire it.
-Select it and confirm; the legacy file is archived to `_archived-launchagents` in the
-workspaces root before removal, so it can be restored, if you change your mind, by copying
+Select it and confirm; the legacy file is archived to `archived-launchagents` in the
+app's folder under `~/Library/Application Support/JamfReports` (per Mac, never in a shared
+workspaces root) before removal, so it can be restored, if you change your mind, by copying
 it back to the legacy location under `~/Library/LaunchAgents`.
 
 ## The per-schedule builder (unmanaged mode)
@@ -257,7 +258,7 @@ is no on-prem/cloud/custom preset picker (removed in 2.3.0):
 |---|---|---|
 | Refresh | Overview, security, policy-status summaries — seconds per run | Every 12 hours |
 | Inventory | Device lists, profiles, apps, EA data — tens of seconds | Every 2 days |
-| Scan | Full device inventory and patch/update failure scans — minutes on large fleets | Every 7 days |
+| Scan | The patch and update failure scans and the per-device DDM and MDM command scan — minutes on large fleets | Every 7 days |
 
 These cadences gate the app's own background refresh: opening a dashboard that already has
 data within its tier's window does not re-fetch. A tier counts as due up to an hour early, so a
@@ -288,12 +289,14 @@ When the workspace is a shared folder (**Settings → Workspace location**), sch
 collects coordinate rather than duplicating each other. A scheduled collect **stands
 down** when another Mac collected inside `shared_workspace.min_collect_interval_hours`,
 naming which machine and when, and each run publishes a short claim so a second machine
-can see one is already working. A run that stood down is recorded as a partial run — it
-does not update Trends, send a success notification, or evaluate metric alerts, because
+can see one is already working. A run that stood down because another Mac holds a live claim is recorded as a partial run;
+one that stood down because a peer collected recently is not, though the tick keeps retrying
+while the day has no summary. Either way it does not update Trends, send a success notification, or evaluate metric alerts, because
 nothing new landed.
 
-Pressing **Refresh** in the app always collects regardless. Coordination covers Jamf Pro
-collects only. Each Mac keeps its own background item and its own `schedules.json` — see
+Pressing **Refresh** in the app always collects regardless. Coordination covers every product of the
+environment: the once-a-day guard and the shared-workspace claim run before any product, so a
+stand-down stops Jamf Pro, Jamf School and Jamf Protect together. Each Mac keeps its own background item and its own `schedules.json` — see
 [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)
 for the layout choices and what a shared folder costs you, and
 [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates)

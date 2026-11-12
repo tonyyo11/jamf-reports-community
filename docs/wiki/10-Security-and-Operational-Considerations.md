@@ -87,20 +87,23 @@ when that happens: snapshots are written under unique timestamped names and read
 back in filename order, never by modification date. You simply get two collects
 where you wanted one.
 
-**Coordination covers Jamf Pro collects only.** A Jamf School profile on a
-shared workspace gets none of the stand-down or claim behavior above, by design
-— School collects on its own schedule with no cross-Mac awareness. Jamf Protect
-runs only after a Jamf Pro collect that actually collected: when the Pro collect
-stands down for another Mac, or skips because today's collect already ran,
-Protect is skipped with it and the run log says so. On a Jamf School workspace
-(experimental) Protect follows every School collect.
+**Coordination covers every product of the environment.** The once-a-day guard and
+the claim run before any product, so when a collect stands down for another Mac,
+or skips because today's collect already ran, Jamf Pro, Jamf School and Jamf
+Protect all stand down together and the run log says so. Protect has no claim or
+cadence of its own. The one exception: a Jamf Pro or Jamf School collect that
+fails as a whole (for example rejected credentials) still lets Protect run, since
+it has its own login.
 
-**Every Mac must reach Jamf the same way under the same profile name.** The
-workspace's `config.yaml` names the jamf-cli profile collects use
-(`jamf_cli.profile`), but each Mac looks that name up in its own jamf-cli
+**Every Mac must reach Jamf the same way under the same profile name.** A
+workspace is named for its Jamf Pro or Jamf School profile, and every command runs
+as the profile the workspace folder is named for (`jamf_cli.profile` in
+`config.yaml` never chooses one). With a `profiles:` block the workspace also names
+a Platform API, a Jamf Protect and a Jamf Security Cloud profile. Each Mac looks
+those names up in its own jamf-cli
 configuration and credential store (the keychain, or the files its profile points to),
 which never sync. Give every Mac a jamf-cli
-profile of that name that reaches the same Jamf Pro instance the same way:
+profile of the same name that reaches the same Jamf Pro instance the same way:
 all direct, or all through the Jamf Platform API with the same environment
 ID. If one Mac's profile points elsewhere, its collects either write another
 instance's data into the shared history or fail where the others succeed, and
@@ -112,7 +115,8 @@ on each Mac when you add it.
 Once one Mac has its workspace in the shared folder, do this on each Mac that joins it:
 
 1. Install the same app version the other Macs run.
-2. Install `jamf-cli` and create the profile `config.yaml` names in `jamf_cli.profile`,
+2. Install `jamf-cli` and create a profile with the same name as the workspace folder (and,
+   with a `profiles:` block, the Platform API and Jamf Protect profiles it names),
    reaching the same instance the same way (above), with this Mac's own credential (see
    [Multi-Tenant and Team Access](#multi-tenant-and-team-access)). Give its API client the
    same privileges as the others. Failure counts live in the workspace, so a privilege one
@@ -183,7 +187,8 @@ is your decision and the run is not Partial. A value that is not `true` or `fals
 now says it is not) all keep Jamf Pro off the shared folder. Local storage needs no key.
 
 **Jamf Protect backups hold credentials, so on shared storage your policy decides.** When a
-Jamf Pro workspace has Protect connected, each backup also holds a `protect/` folder from
+Jamf Pro workspace has Protect connected (a Jamf School workspace with Protect backs up
+Protect alone), each backup also holds a `protect/` folder from
 `jamf-cli protect backup`. jamf-cli writes the documents that can carry a third-party
 credential (HTTP action configs' request headers, data forwarding settings) with mode 0600,
 and the app keeps that mode. On a shared workspace (a sync provider, a network volume, a sync
@@ -276,24 +281,33 @@ pins what matters.** On a shared workspace (a sync-provider or `/Volumes` folder
 `shared_workspace.enabled: true`), every Mac reads the same `config.yaml`, and several things in
 it decide where data goes or what runs: the report, archive, data and chart-history folders with
 `output.allow_absolute_paths`, the retention switch, `retention.mode` (archive or delete) and
-`retention.archive_dir`, the `protect.profile` this Mac collects from, the `notify.detail` level,
-the `notify.heartbeat` switch, and the `notify.url` webhook. Each Mac records the values it was set up with in its own
+`retention.archive_dir`, the Jamf Protect, Platform API and Jamf Security Cloud profiles this Mac
+collects from (`protect.profile`, `profiles.platform`, `profiles.security_cloud`), the
+`notify.detail` level, the `notify.heartbeat` switch, the `notify.url` webhook, the
+`html.history_file` and `branding.logo_path` files, the `output.timestamp_authority` address
+and the two backup-on-synced-storage choices (`protect.backup_on_synced_storage`,
+`backup.pro_on_synced_storage`). Each Mac records the values it was set up with in its own
 Application Support folder (for the webhook only the host and port and a SHA-256 of the URL,
 never the URL) and compares them with `config.yaml` at the start of every collect and report.
 If a value changed, a scheduled run, the background item, an automatic collect in the app or the
 `jamf-reports` command on that Mac keeps to a safe value for that key: reports go to the
 `Generated Reports` folder in the workspace, a changed data or chart-history folder reads as its
-default, retention archives and never deletes, a changed Protect profile skips Protect, a changed
-detail level sends `minimal`, and a changed webhook sends nothing. The run log gets one
+default, retention archives and never deletes, a changed Protect, Platform API or Security Cloud profile skips that product, a changed
+detail level sends `minimal`, a changed webhook sends nothing, a changed history file or logo
+is not used, a changed timestamp authority is not contacted, and a changed backup choice
+keeps the safer answer (a change to `false` applies at once, a `true` waits). The run log gets one
 `[warn] shared config changed <key>` line per key, and the run still counts as successful. A
 collect or report you start yourself in the app keeps reading `config.yaml` as typed, and Config
 Doctor carries the warning. Setting `shared_workspace.enabled: false` in the shared file does not
 turn pinning off on a Mac that already pinned, and that setting is itself pinned.
 
-The first time a Mac sees a shared workspace it pins what the file holds, but an absolute folder
-outside the workspace and `retention.mode: delete` already in the file count as unconfirmed:
-background runs use the safe values for them until you confirm once. The webhook, the Protect
-profile and the other keys are trusted at first sight. If the Mac's own pin cannot be read, every
+The first time a Mac sees a shared workspace it pins what the file holds, but some values
+already in the file count as unconfirmed: an absolute folder outside the workspace, an absolute
+`html.history_file` outside it, `retention.mode: delete`, a `profiles.platform` other than the
+workspace's own profile, any `profiles.security_cloud`, a `protect.profile` naming the workspace
+itself, an `output.timestamp_authority` address, and a `true` for either backup-on-synced-storage
+key. Background runs use the safe values for them until you confirm once. The webhook, the
+`branding.logo_path` and the remaining keys are trusted at first sight. If the Mac's own pin cannot be read, every
 key reads as changed until you confirm.
 
 While anything waits for a confirmation, an amber strip above every screen says "Shared config
@@ -361,6 +375,22 @@ Logs include timestamps, profile name, command, exit status, and error details �
 credential/secret material. As of this version credentials are masked in the log file itself
 when each line is written, not only when Run History displays it.
 
+**The unified log hides values.** The app's entries in macOS's unified log (Console.app,
+`log show`) show dynamic values such as profile names, paths and hosts as `<private>`. The
+bundled logging profile deliberately does not turn private data on; the in-app log viewer and
+the redacted export carry the readable text.
+
+**A Jamf Security Cloud login keeps eight fields.** When a Security Cloud login is attached, the
+collect keeps only each device's id, external id, risk category, status, connector and
+deployment state, last DNS traffic time and OS type. The user, phone number, location, device
+name and app data never reach disk.
+
+**A site-limited login says so.** A Jamf Pro user account limited to some sites sees only those
+sites through jamf-cli. The app compares what it sees with the server-wide managed count and,
+when fewer, warns in the run log, adds a note to the HTML report, every workbook tab and the
+Config Doctor, and records the scope per workspace, so a report is never mistaken for the
+whole fleet.
+
 ## Diagnostic Bundle Redaction Scope
 
 **`diagnostic-bundle` and run history log export redact credentials, most PII and IPv4 addresses.**
@@ -422,6 +452,16 @@ file, not access-controlled.
   (owner read/write only, no group or world visibility).
 - Use `output.archive_enabled: true` to move older reports into an archive for retention
   governance (they are moved, not deleted, so you can audit/recover them).
+- **Every run writes a manifest, and a timestamp is optional.** Beside its files each
+  generate run writes `<name>.manifest.json`: the name, size and SHA-256 of the workbook, its
+  HTML report, each file of a CSV folder, and the HTML, PDF and CSV exports the run made. It
+  holds no device data. `jamf-reports verify <manifest>` rechecks every file and reports a
+  changed, missing or extra one. With `output.timestamp_authority` set to an `https://`
+  RFC 3161 address, the manifest's SHA-256 (nothing else) is sent there, and the authority's
+  signed reply is saved as `<name>.tsr` after its signature and imprint are checked; a failed
+  request is a warning and the reports stand. The address is treated like the webhook URL:
+  confirmed per Mac, masked in config copies and shared logs. See
+  [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line).
 - **The HTML report keeps device lists short because it is forwarded:** it lists at most
   100 stale Macs, 25 recent failures and 10 least-compliant Macs, and says how many more
   the workbook has. The workbook's sheets are not capped.
@@ -489,14 +529,16 @@ and the `JAMFSCHOOL_*` set) can also supply credentials directly. See the
 
 ## External Network Calls
 
-Apart from your Jamf servers, the app reaches three hosts. None of them receives anything
-about your fleet.
+By default, apart from your Jamf servers, the app reaches three hosts. None of them receives
+anything about your fleet. Two more hosts are contacted only when you turn the feature on.
 
 | Host | When | How to turn it off |
 |------|------|--------------------|
 | `sofafeed.macadmins.io` | Each collect, for macOS and XProtect release dates | `jamf_cli.collect_skip: [sofa]` (below) |
 | `api.github.com` (this project) | Once a day while the app is open: one GET for the latest stable release | Settings → App updates, or the profile below |
 | `api.github.com` (jamf-cli) and `github.com` | Only when you check for or install a jamf-cli update, or turn on Auto-update jamf-cli | Leave Auto-update jamf-cli off (the default) |
+| Your time-stamp authority | Only when `output.timestamp_authority` is set (and confirmed on this Mac): each run sends the manifest's SHA-256, a random number and fixed request headers | Leave `output.timestamp_authority` empty (the default) |
+| Your `notify.url` host (Teams or Slack) | Only when `notify` is enabled: digest, failure, alert and heartbeat cards (see Webhook Egress) | Leave `notify.enabled` off (the default) |
 
 **App update check.** The app reads only the latest stable release of this project, never a
 beta or release candidate, and shows a notice when it is newer than the installed version. It
@@ -550,8 +592,11 @@ omitted. Each workspace sends at most one digest a day.
 - **Failure-card error text is redacted before it leaves the Mac** — the same secret and
   PII redaction used elsewhere in the app (server hostnames included) is applied to a run's
   error description before it is placed in a card fact.
+- **Webhook redirects stay on one host.** A webhook request follows a redirect only to the same
+  host, so a hijacked endpoint cannot bounce a card elsewhere.
 - **Slack/Teams mention and link injection is escaped.** Every fact label and value is
-  HTML-entity-escaped (`&`, `<`, `>`) before it enters a payload, which structurally
+  HTML-entity-escaped (`&`, `<`, `>`) before it enters a payload, and Teams cards also escape
+  Markdown characters, which structurally
   destroys Slack's mention/directive syntax (`<!channel>`, `<@U123>`, `<https://…|…>`) —
   untrusted text in a fact value can never trigger a broadcast ping or a disguised link.
 

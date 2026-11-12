@@ -2,7 +2,11 @@
 
 The app organizes its screens into sidebar groups. This page is a tour of each group.
 Every non-core screen can be hidden from **Settings → Sidebar Visibility**; the core
-screens (Overview, Computers, Data Sources, Settings) cannot be hidden.
+screens (Overview, Computers, Data Sources, Settings) cannot be hidden. The sidebar also
+follows the workspace's products: Compliance Benchmarks appears only with a Platform API
+profile, Jamf Protect only with Jamf Protect connected, and Mobile Devices only where the
+environment has mobile devices. A Jamf School workspace and a Protect-only workspace show a
+shorter list.
 
 Most dashboards read cached `jamf-cli` snapshots already on disk — opening a dashboard
 does not issue new API calls. Data is refreshed by collection (see
@@ -32,7 +36,10 @@ Overview, Devices and Trends screens and a workbook of its own; see
 
 - **Overview** — the fleet home screen: headline KPIs and score cards (including SIP,
   Firewall and Gatekeeper, chosen with Customize), an OS-distribution donut, top
-  failing compliance rules, security-agent coverage, and recent activity. On a shared
+  failing compliance rules, security-agent coverage, and recent activity. Where the environment has mobile
+  devices, a **Mobile Devices** section shows the managed count, the OS-current and passcode
+  shares and a Needs attention count that opens the Health Audit; a workspace with no Macs
+  leaves the Mac sections out. On a shared
   workspace it also says when another Mac is mid-run, so Refresh appearing to do nothing
   reads as "someone else is working" rather than a bug. On a
   macOS 27+ host with AI insights enabled, an AI Fleet Insight card turns the same daily
@@ -45,17 +52,6 @@ Overview, Devices and Trends screens and a workbook of its own; see
   never averaged or listed together; switch the workspace in the sidebar to see another.
   Figures across workspaces are in the report-group fleet CSV and workbook.
   Data source: daily summary digest (tier 3).
-- **Computers** — the computer inventory table with search, sort, and a Priority Action
-  filter. The detail panel shows a per-device risk breakdown. Freshness chips show the
-  age of each underlying data source (a red "never" chip flags a kind that's never been
-  collected), and a "Collect now" banner appears when the cache is stale.
-  FileVault off on a hardware-encrypted Mac reads "Off (hardware-encrypted)" and, under a
-  policy that lowers it, adds no risk points. A value Jamf did not collect shows neutral,
-  not red.
-  Data source: per-device snapshots of computers and mobile-device inventory (tier 1).
-  The table shows what jamf-cli collected; a CSV export is no longer merged in.
-- **Device Lookup** — find one device by serial, hostname, asset tag, or ID.
-  Data source: per-device snapshot of computer detail from `pro device <id>` (tier 1).
 - **Trends** — historical charts over archived snapshots, including SIP, firewall and
   Gatekeeper lines and, on macOS 27, an AI Trend Insight card that summarises how the
   offered metrics moved over the selected range. See
@@ -68,17 +64,60 @@ Overview, Devices and Trends screens and a workbook of its own; see
   reconciliation, EA coverage drift) — see [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting).
   On macOS 27 an AI Audit Insight card suggests which findings to work first and what
   changed since the previous audit.
+  A **Mobile Devices** card lists seven mobile findings (jailbroken, unmanaged, passcode not
+  compliant, data protection off, OS behind, update errors, stale); each count opens Mobile
+  Devices filtered to those devices, and the table's **Needs attention** menu offers the same
+  filters.
   Data source: `pro audit` (instance-config checks, fetched by the Run Audit button)
   and group lists (tier 1).
 - **Generated** — the library of reports already produced, with **Generate…** (a sheet:
-  a template or your own sheets, the formats XLSX, HTML, PDF and CSV, whether to collect
+  a template or your own sheets, the formats XLSX, HTML, PDF, CSV and CSV folder (one CSV per workbook tab), whether to collect
   fresh data first, and whether to run a Health Audit first), Export PDF, an inventory CSV
   export, and a **Period report** button that builds a
   start/end/change workbook for a rolling or calendar window — see
   [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports).
   Data source: generated report catalog (no single tier; see [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) for report composition).
 
+## Fleet
+
 ![Computers](images/devices.png)
+
+- **Computers** — the computer inventory table with search, sort, and a Priority Action
+  filter. The detail panel shows a per-device risk breakdown. Freshness chips show the
+  age of each underlying data source (a red "never" chip flags a kind that's never been
+  collected), and a "Collect now" banner appears when the cache is stale.
+  FileVault off on a hardware-encrypted Mac reads "Off (hardware-encrypted)" and, under a
+  policy that lowers it, adds no risk points. A value Jamf did not collect shows neutral,
+  not red.
+  Data source: per-device snapshots of computers and mobile-device inventory (tier 1).
+  The table shows what jamf-cli collected; a CSV export is no longer merged in.
+- **School Devices** (labelled **Devices**) — a Jamf School workspace's devices with
+  Managed, Unmanaged and Stale filters and the DEP devices below. Shown only on a Jamf School
+  workspace.
+  Data source: `school-devices` and `school-dep-devices` (tier 1).
+
+![Mobile Devices](images/mobile-fleet.png)
+
+- **Mobile Devices** — iOS/iPadOS device counts, compliance signals, OS-version
+  distribution, and a device/profile inventory.
+  Data source: `mobile-devices-list` (one fetch with the General, Hardware, Security and
+  User and Location sections, tier 1) and profiles (tier 2).
+- **Device Lookup** — find one device by serial, hostname, asset tag, or ID.
+  Data source: per-device snapshot of computer detail from `pro device <id>` (tier 1).
+- **Jamf Protect** — Protect alerts, agent health, and insights. A **Jamf Pro match** card
+  shows which Protect computers match a Jamf Pro computer (by hardware UUID or serial
+  number, never by name), which have no Jamf Pro record, and which Jamf Pro Macs have no
+  Protect record. Shows an explicit
+  "Protect not detected" state for tenants that do not run Jamf Protect.
+  Data source: Jamf Protect GraphQL API (separate OAuth2 credentials, tier 2).
+- **Groups & Searches** — computer and mobile-device group inventory (smart vs. static)
+  with each group's member count and description. Empty groups are flagged, and so are
+  computer groups no policy or profile uses (from the Health Audit's **Analyze Groups**; mobile
+  groups are not analysed), and a summary row also counts policies with no scope. Saved advanced mobile-device searches spell out their
+  criteria, and the list is not cut off.
+  Data source: Classic API computer/mobile-device group lists (tier 1, same as the group
+  lists in Health Audit above), advanced mobile-device searches, and the latest Analyze
+  Groups result.
 
 ## Posture
 
@@ -106,8 +145,8 @@ Overview, Devices and Trends screens and a workbook of its own; see
   Data source: per-device EA results for mSCP/STIG baselines (tier 1) and device inventory
   (tier 1).
 - **Compliance Benchmarks** — per-benchmark compliance rates and device counts from the
-  Jamf Platform API. Needs a jamf-cli profile whose auth method is `platform`, at platform
-  environment level; shows a locked state on any other profile.
+  Jamf Platform API. Appears only when the environment has a Platform API profile; the screen shows a locked
+  state for a Platform profile at tenant level or one with no data yet.
   Data source: Jamf Platform API `compliance-devices` (tier 1) and device inventory (tier
   1).
 - **Offline Outreach** — stale devices bucketed into outreach tiers (31–90 / 91–180 /
@@ -154,33 +193,9 @@ Overview, Devices and Trends screens and a workbook of its own; see
   `config.yaml` as tracked EAs or security agents; it can also import a CSV export once.
   Data source: per-device EA results (tier 1) and device inventory (tier 1).
 
-## Fleet
-
-![Mobile Devices](images/mobile-fleet.png)
-
-- **Mobile Devices** — iOS/iPadOS device counts, compliance signals, OS-version
-  distribution, and a device/profile inventory.
-  Data source: `mobile-devices-list` (one fetch with the General, Hardware, Security and
-  User and Location sections, tier 1) and profiles (tier 2).
-- **Jamf Protect** — Protect alerts, agent health, and insights. A **Jamf Pro match** card
-  shows which Protect computers match a Jamf Pro computer (by hardware UUID or serial
-  number, never by name), which have no Jamf Pro record, and which Jamf Pro Macs have no
-  Protect record. Shows an explicit
-  "Protect not detected" state for tenants that do not run Jamf Protect.
-  Data source: Jamf Protect GraphQL API (separate OAuth2 credentials, tier 2).
-- **Groups & Searches** — computer and mobile-device group inventory (smart vs. static)
-  with each group's member count and description. Empty groups are flagged, and so are
-  computer groups no policy or profile uses (from the Health Audit's **Analyze Groups**; mobile
-  groups are not analysed), and a summary row also counts policies with no scope. Saved advanced mobile-device searches spell out their
-  criteria, and the list is not cut off.
-  Data source: Classic API computer/mobile-device group lists (tier 1, same as the group
-  lists in Health Audit above), advanced mobile-device searches, and the latest Analyze
-  Groups result.
-
 ## Automation
 
-- **Schedules** — when the managed automation policy is on, this tab is the Automation
-  screen: a single policy toggle that determines what the bundled background item runs for
+- **Automation** — when the managed automation policy is on, this tab shows a single policy toggle that determines what the bundled background item runs for
   unattended collection and reporting, an Automation Health section (overdue/failing
   schedules), a Notifications section (Teams/Slack webhook configuration), and
   report-group management for consolidated multi-profile reports. When managed
@@ -203,13 +218,21 @@ Overview, Devices and Trends screens and a workbook of its own; see
   Data source: no tier (configuration only).
 - **Customize** — the chart options generated workbooks use: whether to save chart images,
   and one OS chart per major macOS version, plus a switch to write the HTML report with every
-  workbook. The Overview's Generate makes the Full Instance
+  workbook, and **Percentages**, whether percentages print with one decimal (the default) or as
+  whole numbers. The Overview's Generate makes the Full Instance
   report; **Generate…** on Generated Reports, and `jamf-reports generate --template`, make
   the others. Overview score cards
   and sections are chosen on the Overview itself.
   Data source: no tier (user preferences).
 - **Data Sources** — the inputs surface: cached `jamf-cli` data, **Adopt EAs**, and
-  snapshot status.
+  snapshot status. The **Environment card** at the top lists the products the workspace holds
+  (Jamf Pro or Jamf School, Platform API, Jamf Protect) with each one's profile, sign-in
+  method and newest data, and a pill when a profile another Mac wrote needs **Confirm** on
+  this Mac. **Check**, **Remove** (Platform API and Protect, after a confirmation), **Add** and
+  **Change** work per row. **Profiles not in an environment** lists jamf-cli profiles no
+  workspace uses; a Jamf Security Cloud login set up in Terminal is attached from there with
+  **Add to this environment**. When the login can see only some sites, the card says it sees N
+  of M managed computers and reports cover only those.
   **Merging two workspaces:** when a Platform API workspace and a Jamf Pro workspace reach the
   same Jamf Pro server, open the Jamf Pro one and choose **Merge another workspace into this
   one** on the Environment card. The sheet lists what will be copied, what stays as it is and
@@ -240,6 +263,7 @@ Overview, Devices and Trends screens and a workbook of its own; see
   skips Jamf Pro without marking the run Partial. A backup whose Jamf Pro part was skipped is
   marked in the table and has no diff. Diff
   compares Jamf Pro objects only, and its sheet says Protect is not compared.
+  A Jamf School workspace with Jamf Protect shows Backups too and backs up Protect alone.
   Data source: `jamf-cli pro backup` and `jamf-cli protect backup` exports (tier 2).
 
 ## System
