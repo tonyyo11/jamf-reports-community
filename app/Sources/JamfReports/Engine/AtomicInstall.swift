@@ -62,9 +62,11 @@ enum AtomicInstall {
     /// Writes `data` to `final` through a hidden sibling opened exclusively (`O_EXCL|O_NOFOLLOW`),
     /// then `install`s it, so a link planted at `final` is replaced and a crash leaves the old
     /// file or the new one. `mode` is the file's permission bits; nil keeps those of a regular
-    /// file already at `final` (as `replaceItemAt` did), else the process default.
+    /// file already at `final` (as `replaceItemAt` did), else the process default. `exclusive`
+    /// never replaces anything at `final` and throws `CocoaError(.fileWriteFileExists)` instead.
     static func write(
-        _ data: Data, to final: URL, mode: mode_t? = nil, now: Date = Date()
+        _ data: Data, to final: URL, mode: mode_t? = nil, exclusive: Bool = false,
+        now: Date = Date()
     ) throws {
         let folder = final.deletingLastPathComponent()
         if sweptFolders.withLock({ $0.insert(folder.path).inserted }) {
@@ -82,7 +84,12 @@ enum AtomicInstall {
             if let exact, fchmod(fd, exact) != 0 { throw posixError() }
             try handle.write(contentsOf: data)
             try handle.close()
-            try install(staged, at: final)
+            if exclusive {
+                do { try installExclusive(staged, at: final) } catch let error as POSIXError
+                    where error.code == .EEXIST { throw CocoaError(.fileWriteFileExists) }
+            } else {
+                try install(staged, at: final)
+            }
         } catch {
             discard(staged)
             throw error
@@ -100,10 +107,23 @@ enum AtomicInstall {
         lutimes(aside.path, nil)
         guard rename(staged.path, final.path) == 0 else {
             let failure = posixError()
-            _ = rename(aside.path, final.path)
+            if rename(aside.path, final.path) != 0 { recover(aside, of: final) }
             throw failure
         }
         discard(aside)
+    }
+
+    /// The old entry renamed aside could not go back: give it a name the staging sweep never
+    /// matches, `<name>.recovered-<stamp>`, and log where it is, so it is not removed a day later.
+    @discardableResult
+    static func recover(_ aside: URL, of final: URL, now: Date = Date()) -> URL {
+        let stamp = Int(now.timeIntervalSince1970)
+        let recovered = final.deletingLastPathComponent().appendingPathComponent(
+            "\(final.lastPathComponent).recovered-\(stamp)")
+        let kept = rename(aside.path, recovered.path) == 0 ? recovered : aside
+        AppLogger.collect.error(
+            "AtomicInstall: \(final.lastPathComponent, privacy: .private) could not be put back; the earlier copy is at \(kept.path, privacy: .private)")
+        return kept
     }
 
     /// True when something, a dangling link included, is at `url`.

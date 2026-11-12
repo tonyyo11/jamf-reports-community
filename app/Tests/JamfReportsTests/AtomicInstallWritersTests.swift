@@ -171,6 +171,48 @@ final class AtomicInstallWritersTests: XCTestCase {
         XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is kept")
     }
 
+    func testAnExclusiveWriteNeverReplacesAFileOrALink() throws {
+        let file = root.appendingPathComponent("config.yaml")
+        try Data("mine".utf8).write(to: file)
+        XCTAssertThrowsError(try AtomicInstall.write(Data("x".utf8), to: file, exclusive: true)) {
+            XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteFileExists)
+        }
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "mine")
+        let link = root.appendingPathComponent("linked.yaml")
+        try plantLink(at: link)
+        XCTAssertThrowsError(try AtomicInstall.write(Data("x".utf8), to: link, exclusive: true))
+        XCTAssertEqual(try String(contentsOf: victim, encoding: .utf8), "keep")
+        let fresh = root.appendingPathComponent("new.yaml")
+        try AtomicInstall.write(Data("x".utf8), to: fresh, mode: 0o600, exclusive: true)
+        try assertReplaced(fresh, mode: 0o600)
+    }
+
+    /// The scaffold's config.yaml and the Protect-only one go through the seam.
+    func testTheScaffoldWritersReplaceALinkAndWriteMode0600() throws {
+        let config = root.appendingPathComponent("config.yaml")
+        try plantLink(at: config)
+        try ScaffoldService.writeMinimalConfig(to: config, profile: "p")
+        try assertReplaced(config, mode: 0o600)
+        let protect = root.appendingPathComponent("protect.yaml")
+        try plantLink(at: protect)
+        XCTAssertThrowsError(try ScaffoldService.createProtectOnlyConfig(at: protect, profile: "p")) {
+            XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteFileExists)
+        }
+    }
+
+    /// A rollback that fails on a volume with no swap leaves the old file under a name the
+    /// staging sweep never removes.
+    func testARecoveredAsideFileSurvivesTheStagingSweep() throws {
+        let final = root.appendingPathComponent("state.json")
+        let aside = AtomicInstall.stagedURL(for: final)
+        try Data("old".utf8).write(to: aside)
+        let kept = AtomicInstall.recover(aside, of: final, now: Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertEqual(kept.lastPathComponent, "state.json.recovered-1800000000")
+        AtomicInstall.removeStaleStaging(
+            in: root, now: Date().addingTimeInterval(10 * 86_400), scope: .workspace)
+        XCTAssertEqual(try String(contentsOf: kept, encoding: .utf8), "old")
+    }
+
     func testAFailedWriteLeavesNoStagingFile() throws {
         let dest = root.appendingPathComponent("locked.json")
         try Data("old".utf8).write(to: dest)

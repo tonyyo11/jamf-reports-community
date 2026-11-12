@@ -43,19 +43,13 @@ enum ScaffoldService {
     static func createProtectOnlyConfig(at url: URL, profile: String) throws -> String {
         let yaml = minimalConfigYAML(profile: profile, eas: [])
             + ProfilesConfigWriter.protectOnlyBlock(login: profile)
-        try Data(yaml.utf8).write(to: url, options: .withoutOverwriting)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: url.path)
+        try AtomicInstall.write(Data(yaml.utf8), to: url, mode: 0o600, exclusive: true)
         return yaml
     }
 
     private static func write(_ yaml: String, to url: URL) throws {
-        try yaml.write(to: url, atomically: true, encoding: .utf8)
         // 0600: config.yaml may embed column names that reflect org EA naming.
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))],
-            ofItemAtPath: url.path
-        )
+        try AtomicInstall.write(Data(yaml.utf8), to: url, mode: 0o600)
     }
 
     // MARK: - Private helpers

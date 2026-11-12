@@ -20,7 +20,7 @@ extension ReportEngine {
     /// manifest, nil when it was not written.
     @discardableResult
     static func sealRun(
-        artifacts: [URL], config: ReportConfig?, profile: String?,
+        artifacts: [URL], config: ReportConfig?, profile: String,
         now: Date = Date(), session: URLSessionConfiguration = .ephemeral,
         appSupport: URL = AppSupport.directory(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
@@ -86,10 +86,10 @@ extension ReportEngine {
     /// `output.timestamp_authority` as this Mac may use it: nil when unset, not https, or
     /// changed in a shared config.yaml since this Mac pinned it (`SharedConfigPin`).
     static func timestampAuthority(
-        _ config: ReportConfig, profile: String?, appSupport: URL = AppSupport.directory()
+        _ config: ReportConfig, profile: String, appSupport: URL = AppSupport.directory()
     ) -> URL? {
         guard let url = config.output?.timestampAuthorityURL else { return nil }
-        if let profile, !SharedConfigPin.timestampAuthorityAllowed(
+        if !SharedConfigPin.timestampAuthorityAllowed(
             config.output?.timestampAuthority ?? "", profile: profile, appSupport: appSupport) {
             return nil
         }

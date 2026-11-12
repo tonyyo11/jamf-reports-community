@@ -393,6 +393,11 @@ versions in this repository map to git tags.
 - A CSV folder run no longer deletes a folder of yours that has the same name as the CSV folder
   (`Q3_csv` beside `Q3.xlsx`). It replaces only a folder that holds nothing but CSV files;
   otherwise it leaves the folder alone and logs `CSV folder not written`.
+- `jamf-reports verify` no longer accepts a timestamp whose signing time has an exponent in its
+  fraction of a second, which could print a date years off.
+- If a file cannot be put back after a failed save on a network share, the earlier copy is kept
+  as `<name>.recovered-<time>` and logged, instead of under a hidden name the next day's cleanup
+  deletes.
 - `jamf-reports verify` says only what it can show:
   - A manifest that lists no files fails.
   - A file named after the run that the manifest leaves out is reported as `EXTRA`.
