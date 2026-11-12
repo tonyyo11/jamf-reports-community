@@ -260,7 +260,8 @@ final class OverviewMobileSectionTests: XCTestCase {
     // MARK: - Tiles
 
     func testTheSectionHasTheSpecsFourLinesWithWhatEachCounts() {
-        let tiles = mobileFigures(jailbroken: 1, updateErrors: 3).overviewTiles(format: .standard)
+        let tiles = mobileFigures(jailbroken: 1, updateErrors: 3)
+            .overviewTiles(format: .standard, formFactors: nil)
 
         XCTAssertEqual(tiles.map(\.label), [
             "Devices", "OS current", "Passcode compliant", "Needs attention",
@@ -276,20 +277,45 @@ final class OverviewMobileSectionTests: XCTestCase {
         XCTAssertEqual(tiles.map(\.opensAudit), [false, false, false, true])
     }
 
+    /// The spec's iPad / iPhone / Apple TV counts, from the summary's form-factor map: every
+    /// mobile device, a type with none left out. A summary without the map keeps the managed line.
+    func testDevicesLineCountsEachTypeFromTheFormFactorMap() {
+        let figures = mobileFigures(jailbroken: nil, updateErrors: nil)
+        let tile = figures.overviewTiles(
+            format: .standard, formFactors: ["iPad": 12, "iPhone": 1, "Apple TV": 0])[0]
+        XCTAssertEqual(tile.value, "13")
+        XCTAssertEqual(tile.caption, "12 iPads, 1 iPhone")
+
+        for absent in [nil, [:], ["iPad": 0]] as [[String: Int]?] {
+            let fallback = figures.overviewTiles(format: .standard, formFactors: absent)[0]
+            XCTAssertEqual(fallback.value, "118")
+            XCTAssertEqual(fallback.caption, "managed mobile devices")
+        }
+    }
+
+    func testTheDemoDevicesLineCountsTheSameDevicesAsMobileDevices() throws {
+        let forms = try XCTUnwrap(DemoData.mobileFormFactorCounts)
+        let snapshot = MobileFleetView.makeDemoSnapshot()
+        XCTAssertEqual(forms.values.reduce(0, +), snapshot.richDevices.count)
+        XCTAssertEqual(forms["iPad"], snapshot.iPadCount)
+        XCTAssertEqual(forms["iPhone"], snapshot.iPhoneCount)
+    }
+
     /// Each absent part contributes nothing, and a total of 0 hides the line.
     func testNeedsAttentionCountsOnlyWhatIsReportedAndHidesAtZero() {
         var figures = mobileFigures(jailbroken: nil, updateErrors: nil)
         XCTAssertEqual(figures.needsAttentionCount, 2, "Only the unmanaged devices are known")
-        XCTAssertEqual(figures.overviewTiles(format: .standard).last?.caption, "2 unmanaged")
+        XCTAssertEqual(figures.overviewTiles(format: .standard, formFactors: nil).last?.caption, "2 unmanaged")
 
         figures.unmanaged = 0
         XCTAssertEqual(figures.needsAttentionCount, 0)
-        XCTAssertEqual(figures.overviewTiles(format: .standard).map(\.label),
+        XCTAssertEqual(figures.overviewTiles(format: .standard, formFactors: nil).map(\.label),
                        ["Devices", "OS current", "Passcode compliant"])
     }
 
     func testAShareNoDeviceReportsIsADashNeverZero() {
-        let tiles = mobileFigures(passcode: .init(met: 0, of: 0), osCurrent: nil).overviewTiles(format: .standard)
+        let tiles = mobileFigures(passcode: .init(met: 0, of: 0), osCurrent: nil)
+            .overviewTiles(format: .standard, formFactors: nil)
 
         for index in [1, 2] {
             XCTAssertEqual(tiles[index].value, MobileOverviewTile.dash, tiles[index].label)
@@ -299,7 +325,7 @@ final class OverviewMobileSectionTests: XCTestCase {
     }
 
     func testAShareOfNothingMetIsZeroPercentNotADash() {
-        let tiles = mobileFigures(passcode: .init(met: 0, of: 9)).overviewTiles(format: .standard)
+        let tiles = mobileFigures(passcode: .init(met: 0, of: 9)).overviewTiles(format: .standard, formFactors: nil)
         XCTAssertEqual(tiles[2].value, "0.0%")
         XCTAssertEqual(tiles[2].caption, "0 of 9 devices reporting")
     }

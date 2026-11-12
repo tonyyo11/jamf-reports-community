@@ -109,6 +109,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Overview's Mobile Devices section now counts every mobile device by type on its Devices
+  line ("12 iPads, 1 iPhone"), from the day's summary. A summary written before 2.12 recorded
+  device types still shows the managed mobile device count.
 - A Jamf School environment with Jamf Security Cloud no longer records a Security Cloud match
   share. School devices reach Security Cloud by management ID, not UDID, so the match read close
   to 0 of every device; the device count and risk counts are still recorded, and Trends and the

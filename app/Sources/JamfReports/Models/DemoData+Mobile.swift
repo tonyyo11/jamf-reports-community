@@ -18,4 +18,8 @@ extension DemoData {
         return MobileSummary.build(
             devices, latestByMajor: demoLatestByMajor, staleDays: 30, now: referenceDate)
     }()
+
+    /// The same 25 devices by type, as `SummaryDeviceMaps` writes a live summary's map.
+    static let mobileFormFactorCounts: [String: Int]? = SummaryDeviceMaps.mobile(
+        MobileFleetView.makeDemoSnapshot().richDevices, now: referenceDate).formFactor
 }

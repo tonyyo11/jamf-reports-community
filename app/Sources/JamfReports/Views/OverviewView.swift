@@ -1064,7 +1064,10 @@ struct OverviewView: View {
         return Group {
             if let summary = mobileSummary {
                 MobileOverviewCard(
-                    summary: summary, subtitle: subtitle,
+                    summary: summary,
+                    formFactors: workspace.demoMode
+                        ? DemoData.mobileFormFactorCounts : latest?.mobileFormFactorCounts,
+                    subtitle: subtitle,
                     onOpen: { navigate(to: .mobileFleet) },
                     // M5's Audit mobile card gives this an anchor; until it lands this opens the screen.
                     onOpenAudit: { navigate(to: .audit) })
