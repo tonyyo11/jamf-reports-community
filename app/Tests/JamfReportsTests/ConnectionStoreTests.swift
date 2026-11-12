@@ -217,8 +217,8 @@ final class ConnectionStoreTests: XCTestCase {
         let grouping = workspace.connectionGrouping
         XCTAssertEqual(grouping.sections.count, 1)
         XCTAssertEqual(
-            grouping.sections[0].entries.map(\.profile.name), ["meridian-prod", "meridian-sandbox"])
-        XCTAssertEqual(grouping.ungrouped.count, DemoData.cliProfiles.count - 2)
+            grouping.sections[0].entries.map(\.profile.name), ["meridian-prod"])
+        XCTAssertEqual(grouping.ungrouped.count, DemoData.cliProfiles.count - 1)
     }
 
     // MARK: Diagnostic bundle

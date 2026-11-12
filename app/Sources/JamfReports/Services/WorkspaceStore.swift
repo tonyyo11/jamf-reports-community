@@ -234,7 +234,7 @@ final class WorkspaceStore {
     /// The device types the active environment holds, from its newest daily summary; the demo
     /// fleet has both. The Overview's sections and score cards follow it (mobile spec 3.2).
     var environmentComposition: EnvironmentComposition {
-        guard !demoMode else { return DemoData.composition }
+        guard !demoMode else { return DemoData.composition(for: profile) }
         let (newest, previous) = trendStore.newestTwoSummaries
         return EnvironmentComposition(summary: newest, previous: previous)
     }
@@ -1189,11 +1189,12 @@ final class WorkspaceStore {
         TabVisibility.parse(hiddenRaw).limited(to: environmentProducts)
     }
 
-    /// The products and device types of the active environment; `.demo` in demo mode. A School
+    /// The products and device types of the active environment; the demo workspace's own in demo
+    /// mode (`DemoData.environmentProducts(for:)`). A School
     /// profile whose config.yaml cannot be read is still School, and the Platform API login of a
     /// workspace without `profiles:` is read live from discovery, which fills `auth` late.
     var environmentProducts: EnvironmentProducts {
-        if demoMode { return .demo }
+        if demoMode { return DemoData.environmentProducts(for: profile) }
         var products = EnvironmentProducts.from(
             environmentProfiles, composition: environmentComposition,
             legacyPlatformAuth: activeCLIProfile?.auth?.isPlatform == true)

@@ -76,9 +76,15 @@ extension DemoData {
         planned("Mobile Inventory (iPad)", month: 4, day: 20, at: (7, 30, 1), seconds: 71),
         planned("Weekly Executive Report", month: 4, day: 20, at: (7, 0, 2), seconds: 124),
         planned("Daily Snapshot Collection", month: 4, day: 20, at: (6, 0, 3), seconds: 57),
-        // meridianedu's monthly brief and meridian-sandbox's quarterly pull.
-        planned("Monthly Compliance Brief", month: 4, day: 1, at: (6, 0, 5), seconds: 843),
-        planned("Monthly Compliance Brief", month: 3, day: 1, at: (6, 0, 4), seconds: 802),
+        // meridianedu's daily School snapshot and monthly report, and meridian-sandbox's
+        // quarterly pull.
+        planned("Daily School Snapshot", month: 4, day: 25, at: (5, 30, 2), seconds: 41),
+        planned("Daily School Snapshot", month: 4, day: 24, at: (5, 30, 3), seconds: 44),
+        planned("Daily School Snapshot", month: 4, day: 23, at: (5, 30, 2), seconds: 39),
+        planned("Daily School Snapshot", month: 4, day: 22, at: (5, 30, 4), seconds: 42),
+        planned("Daily School Snapshot", month: 4, day: 21, at: (5, 30, 2), seconds: 40),
+        planned("Monthly School Device Report", month: 4, day: 1, at: (6, 0, 5), seconds: 184),
+        planned("Monthly School Device Report", month: 3, day: 1, at: (6, 0, 4), seconds: 176),
         planned("Quarterly Audit Pull", month: 1, day: 1, at: (6, 0, 4), seconds: 671),
         planned("Quarterly Audit Pull", year: 2025, month: 10, day: 1, at: (6, 0, 3),
                 seconds: 655),
@@ -135,12 +141,21 @@ extension DemoData {
             lines.append(contentsOf: staleMobileCacheWarnings)
             return lines
         }
+        let environment = environmentProfiles(for: profile)
+        let protect = environment.protect == nil ? [] : protectKinds
         switch run.schedule.mode {
+        case .snapshotOnly where environment.isSchool, .jamfCLIFull where environment.isSchool:
+            lines.append(contentsOf: collectLines(schoolKinds, profile: profile))
+            lines.append(contentsOf: Array(feedLines(profile: profile).prefix(2)))
+            lines.append(summaryWritten(run.start))
+            lines.append(run.schedule.mode == .snapshotOnly
+                ? "[ok] scheduled snapshot complete for '\(profile)' — Trends updated"
+                : reportWritten(run))
         case .snapshotOnly:
             lines.append(contentsOf: collectLines(refreshKinds, profile: profile))
             lines.append(contentsOf: feedLines(profile: profile))
             lines.append(summaryWritten(run.start))
-            lines.append(contentsOf: collectLines(protectKinds, profile: profile))
+            lines.append(contentsOf: collectLines(protect, profile: profile))
             lines.append("[ok] scheduled snapshot complete for '\(profile)' — Trends updated")
         case .jamfCLIFull:
             lines.append(contentsOf: collectLines(refreshKinds, profile: profile))
@@ -171,6 +186,10 @@ extension DemoData {
         "computers", "mobile-devices-list", "ea-results", "app-status", "update-status",
     ]
     private static let scanKinds = ["patch-device-failures", "update-device-failures"]
+    /// What a Jamf School collect runs (`ReportEngine.schoolCommandMatrix`) less the
+    /// blueprints, which need the Platform API fields meridianedu does not have.
+    private static let schoolKinds = ReportEngine.schoolCommandMatrix(profile: schoolWorkspace)
+        .map(\.kind).filter { $0 != ReportEngine.schoolBlueprintsKind }
     private static let protectKinds = [
         "protect-overview", "protect-alerts", "protect-computers", "protect-insights",
         "protect-plans",
@@ -183,6 +202,7 @@ extension DemoData {
         "app-status": 88_120, "update-status": 14_632, "patch-device-failures": 18_872,
         "update-device-failures": 21_406, "protect-overview": 2_140, "protect-alerts": 36_518,
         "protect-computers": 128_774, "protect-insights": 44_203, "protect-plans": 6_912,
+        "school-overview": 1_204, "school-devices": 612_480, "school-users": 488_116,
     ]
 
     private static func collectLines(_ kinds: [String], profile: String) -> [String] {
@@ -212,7 +232,8 @@ extension DemoData {
     private static func reportWritten(_ run: PlannedRun) -> String {
         let written = stamp(run.finished.addingTimeInterval(-11), "yyyy-MM-dd_HHmmss")
         let profile = run.schedule.profile
-        return "[ok] scheduled run complete for '\(profile)': report_\(profile)_\(written).xlsx"
+        let prefix = environmentProfiles(for: profile).isSchool ? "school-report" : "report"
+        return "[ok] scheduled run complete for '\(profile)': \(prefix)_\(profile)_\(written).xlsx"
     }
 
     private static func stamp(_ date: Date, _ format: String) -> String {
@@ -255,10 +276,16 @@ extension DemoData {
     /// no run has written.
     static func cacheDate(for cacheNames: [String], profile: String) -> Date? {
         guard let name = cacheNames.first else { return nil }
+        let environment = environmentProfiles(for: profile)
+        let isProtect = DataFreshnessHealth.protectKinds.contains(name)
+        // A workspace collects only its own products' kinds; SOFA is fetched by both MDMs.
+        guard !isProtect || environment.protect != nil,
+              name == "sofa" || isProtect || name.hasPrefix("school-") == environment.isSchool
+        else { return nil }
         let modes: Set<Schedule.RunMode>
         if inventoryCaches.contains(name) {
             modes = [.jamfCLIFull]
-        } else if name == "protect-overview" {
+        } else if isProtect {
             modes = [.snapshotOnly]
         } else {
             modes = [.snapshotOnly, .jamfCLIFull]

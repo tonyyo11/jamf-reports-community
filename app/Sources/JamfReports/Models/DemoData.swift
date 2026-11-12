@@ -206,13 +206,16 @@ enum DemoData {
     static let scheduledRuns: [Schedule] = [
         .init(name: "Weekly Executive Report", profile: "meridian-prod", schedule: "Monday · 07:00",
               cadence: "weekly", mode: .jamfCLIFull, next: "Apr 27, 07:00", last: "Apr 20, 07:02",
-              lastStatus: .ok, artifacts: ["xlsx", "html"], enabled: true),
+              lastStatus: .ok, artifacts: ["xlsx", "html", "csv"], enabled: true),
         .init(name: "Daily Snapshot Collection", profile: "meridian-prod", schedule: "Daily · 06:00",
               cadence: "daily", mode: .snapshotOnly, next: "Apr 26, 06:00", last: "Apr 25, 06:01",
               lastStatus: .ok, artifacts: [], enabled: true),
-        .init(name: "Monthly Compliance Brief", profile: "meridianedu", schedule: "1st · 06:00",
-              cadence: "monthly", mode: .jamfCLIFull, next: "May 1, 06:00", last: "Apr 1, 06:14",
-              lastStatus: .ok, artifacts: ["xlsx", "html", "csv"], enabled: true),
+        .init(name: "Monthly School Device Report", profile: "meridianedu", schedule: "1st · 06:00",
+              cadence: "monthly", mode: .jamfCLIFull, next: "May 1, 06:00", last: "Apr 1, 06:03",
+              lastStatus: .ok, artifacts: ["xlsx"], enabled: true),
+        .init(name: "Daily School Snapshot", profile: "meridianedu", schedule: "Daily · 05:30",
+              cadence: "daily", mode: .snapshotOnly, next: "Apr 26, 05:30", last: "Apr 25, 05:30",
+              lastStatus: .ok, artifacts: [], enabled: true),
         .init(name: "Mobile Inventory (iPad)", profile: "meridian-prod", schedule: "Weekdays · 07:30",
               cadence: "weekdays", mode: .jamfCLIOnly, next: "Apr 27, 07:30", last: "Apr 24, 07:33",
               lastStatus: .warn, artifacts: ["xlsx"], enabled: true),
@@ -228,26 +231,25 @@ enum DemoData {
         // hosts that map to live Jamf infrastructure — security audit TA-03).
         // Every name is Meridian-prefixed: a demo profile named like a real one
         // ("dummy", "prod") would switch the demo onto that real workspace.
-        .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok),
-        .init(name: "meridianedu", url: "meridian-edu.jamfcloud.example", schedules: 1,
-              status: .ok),
+        .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok,
+              authMethod: "oauth2", product: .pro),
+        .init(name: "meridianedu", url: "meridian-edu.jamfschool.example", schedules: 2,
+              status: .ok, authMethod: "apikey", product: .school),
         .init(name: "meridian-sandbox", url: "sandbox.jamfcloud.example", schedules: 1,
-              status: .idle),
+              status: .idle, authMethod: "oauth2", product: .pro),
         .init(name: "meridian-msp", url: "prod-msp.jamfcloud.example", schedules: 0,
-              status: .idle),
+              status: .idle, authMethod: "oauth2", product: .pro),
     ]
 
-    /// One demo Platform API connection over two of `cliProfiles`, so the sidebar menu and Fleet
-    /// Overview show a grouped section in demo mode. The IDs are placeholders.
+    /// The demo Platform API connection: meridian-prod, the one demo workspace with a Platform
+    /// API slot, so the sidebar menu shows a grouped section in demo mode. The ID is a placeholder.
     static let connections: [Connection] = [
         Connection(
             id: UUID(uuidString: "00000000-0000-0000-0000-00000000DE01") ?? UUID(),
             name: "Meridian Platform", region: .us, level: .environment,
             members: [
-                .init(profile: "meridian-prod", scopeID: "demo-environment-prod",
+                .init(profile: org.profile, scopeID: "demo-environment-prod",
                       label: "Production", product: .pro),
-                .init(profile: "meridian-sandbox", scopeID: "demo-environment-sandbox",
-                      label: "Sandbox", product: .pro),
             ],
             createdAt: Date(timeIntervalSince1970: 0)),
     ]
