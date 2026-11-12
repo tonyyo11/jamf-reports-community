@@ -79,9 +79,18 @@ enum SchoolFleetService {
         /// The newest snapshot's date: when School data was last collected.
         var collectedAt: Date? { [devicesDate, depDate, overviewDate].compactMap { $0 }.max() }
 
-        var managedCount: Int { devices.filter { $0.isManaged == true }.count }
+        /// Managed over the devices that report the flag; nil when none does, never 0.
+        var managed: MobileSummary.Share? { Self.share(devices.map(\.isManaged)) }
         var unmanagedCount: Int { devices.filter { $0.isManaged == false }.count }
-        var supervisedCount: Int { devices.filter { $0.isSupervised == true }.count }
+        /// Supervised over the managed devices that report it, the daily summary's rule.
+        var supervised: MobileSummary.Share? {
+            Self.share(devices.filter { $0.isManaged == true }.map(\.isSupervised))
+        }
+
+        private static func share(_ values: [Bool?]) -> MobileSummary.Share? {
+            let reported = values.compactMap { $0 }
+            return reported.isEmpty ? nil : .init(met: reported.filter { $0 }.count, of: reported.count)
+        }
 
         func staleCount(atDays days: Int, now: Date = Date()) -> Int {
             devices.filter { $0.isStale(atDays: days, now: now) }.count

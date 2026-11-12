@@ -12,6 +12,8 @@ struct AuditFinding: Identifiable, Codable {
     /// The Macs behind the finding, for a finding the app computes from the inventory
     /// (`contactGapFindings`). `pro audit` returns counts only, so its findings have none.
     var devices: [String] = []
+    /// Devices behind the finding that `devices` leaves out (a capped list).
+    var moreDevices = 0
     /// What `devices` lists, for the popover's heading.
     var deviceNoun = L("Macs")
     /// The `MobileFinding` raw value that opens the Mobile Devices list behind the finding.
@@ -177,6 +179,30 @@ struct AuditView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            page
+                // The Overview's Needs attention tile asks for the Mobile Devices card, which
+                // loads after the screen opens; scroll once it has findings to show.
+                .onChange(of: workspace.pendingAuditSection, initial: true) {
+                    scrollToPendingSection(proxy)
+                }
+                .onChange(of: mobileFindingList.count) { scrollToPendingSection(proxy) }
+                .onDisappear { workspace.pendingAuditSection = nil }
+        }
+    }
+
+    private func scrollToPendingSection(_ proxy: ScrollViewProxy) {
+        guard workspace.pendingAuditSection == MobileDevicesSection.anchorID,
+              !mobileFindingList.isEmpty else { return }
+        workspace.pendingAuditSection = nil
+        selectedTab = 0
+        Task { @MainActor in
+            await Task.yield()
+            withAnimation { proxy.scrollTo(MobileDevicesSection.anchorID, anchor: .top) }
+        }
+    }
+
+    private var page: some View {
         PageScaffold {
             header
 
@@ -547,6 +573,7 @@ struct AuditView: View {
             commandHealthSection
             ContactGapSection(findings: contactGapList)
             MobileDevicesSection(findings: mobileFindingList)
+                .id(MobileDevicesSection.anchorID)
         }
     }
 
@@ -1412,11 +1439,17 @@ struct FindingDetailPopover: View {
     /// not stretch the popover.
     private var deviceList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Kicker(text: "\(finding.deviceNoun) (\(finding.devices.count))")
+            Kicker(text: "\(finding.deviceNoun) (\(finding.devices.count + finding.moreDevices))")
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(finding.devices, id: \.self) { device in
+                    // Offsets, not names: two unnamed devices with no serial read the same.
+                    ForEach(Array(finding.devices.enumerated()), id: \.offset) { _, device in
                         Text(device)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                    if finding.moreDevices > 0 {
+                        Text(L("and \(finding.moreDevices) more, in Mobile Devices"))
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                     }

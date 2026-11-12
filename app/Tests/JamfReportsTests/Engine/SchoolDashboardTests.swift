@@ -461,9 +461,9 @@ final class SchoolDashboardTests: XCTestCase {
             return n
         }
         XCTAssertEqual(count("Total Devices"), screen.devices.count)
-        XCTAssertEqual(count("Managed"), screen.managedCount)
+        XCTAssertEqual(count("Managed"), screen.managed?.met ?? 0)
         XCTAssertEqual(count("Unmanaged"), screen.unmanagedCount)
-        XCTAssertEqual(count("Supervised"), screen.supervisedCount)
+        XCTAssertEqual(count("Supervised"), screen.supervised?.met ?? 0)
         XCTAssertEqual(count("In Trash (not counted above)"), screen.trashedCount)
     }
 

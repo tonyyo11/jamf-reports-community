@@ -549,7 +549,17 @@ struct OverviewView: View {
         if workspace.demoMode {
             return L("\(DemoData.totalDevices) Macs across \(Self.demoDepartmentCount) departments · \(baseline)")
         }
-        return L("\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(baseline)")
+        // No summary yet: no count to give, rather than "0 Macs".
+        guard let latest = trendStore.filteredSummaries.last else { return baseline }
+        if workspace.environmentComposition == .mobileOnly {
+            // No Macs, so no compliance baseline either.
+            guard let mobile = latest.mobileDeviceCount ?? latest.mobile?.managed else {
+                return L("Mobile devices")
+            }
+            return mobile == 1 ? L("\(mobile) mobile device") : L("\(mobile) mobile devices")
+        }
+        let macs = latest.totalDevices
+        return macs == 1 ? L("\(macs) Mac · \(baseline)") : L("\(macs) Macs · \(baseline)")
     }
 
     private var header: some View {
@@ -1066,8 +1076,10 @@ struct OverviewView: View {
                 MobileOverviewCard(
                     summary: summary, subtitle: subtitle,
                     onOpen: { navigate(to: .mobileFleet) },
-                    // M5's Audit mobile card gives this an anchor; until it lands this opens the screen.
-                    onOpenAudit: { navigate(to: .audit) })
+                    onOpenAudit: {
+                        navigate(to: .audit, userInfo: [
+                            MobileDevicesSection.userInfoKey: MobileDevicesSection.anchorID])
+                    })
             }
         }
     }
@@ -1978,11 +1990,11 @@ struct OverviewView: View {
             : "\(prefix)\(Int(absValue.rounded()))"
     }
 
-    private func navigate(to tab: Tab) {
+    private func navigate(to tab: Tab, userInfo: [String: String] = [:]) {
         NotificationCenter.default.post(
             name: .navigateToTab,
             object: nil,
-            userInfo: ["tab": tab.rawValue]
+            userInfo: userInfo.merging(["tab": tab.rawValue]) { $1 }
         )
     }
 
