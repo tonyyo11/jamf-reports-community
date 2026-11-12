@@ -164,7 +164,7 @@ struct ExtensionAttributesView: View {
     /// `DemoData.securityControls`, the EDR agent reports on the Macs
     /// `DemoData.securityAgents` counts it on, and the rest scale the original
     /// 655-device demo to the fleet.
-    static let demoSnapshot: ExtensionAttributeService.Snapshot = {
+    static var demoSnapshot: ExtensionAttributeService.Snapshot {
         let fleet = DemoData.totalDevices
         let controls = DemoData.securityControls
         let edr = DemoData.securityAgents.first?.installed ?? 0
@@ -208,50 +208,52 @@ struct ExtensionAttributesView: View {
             sourceFile: nil,
             snapshotDate: DemoData.referenceDate
         )
-    }()
+    }
 
-    private static let demoDefinitions: [ExtensionAttribute] = [
-        ExtensionAttribute(
-            id: "1", name: L("FileVault Status"), dataType: L("STRING"),
-            description: L("Reports FileVault encryption status"),
-            inputType: L("SCRIPT"), enabled: true
-        ),
-        ExtensionAttribute(
-            id: "2", name: L("mSCP Version"), dataType: L("STRING"),
-            description: L("Installed mSCP compliance baseline version"),
-            inputType: L("SCRIPT"), enabled: true
-        ),
-        ExtensionAttribute(
-            id: "3", name: L("Last Patched"), dataType: "DATE",
-            description: L("Date of last software update"),
-            inputType: L("SCRIPT"), enabled: true
-        ),
-        ExtensionAttribute(
-            id: "4", name: L("Disk Usage"), dataType: "INTEGER",
-            description: L("Disk usage percentage"),
-            inputType: L("SCRIPT"), enabled: true
-        ),
-        ExtensionAttribute(
-            id: "5", name: L("CrowdStrike Status"), dataType: L("STRING"),
-            description: L("CrowdStrike Falcon sensor status"),
-            inputType: L("SCRIPT"), enabled: true
-        ),
-        ExtensionAttribute(
-            id: "6", name: L("Legacy Test EA"), dataType: L("BOOLEAN"),
-            description: L("Deprecated test attribute"),
-            inputType: L("TEXT"), enabled: false
-        ),
-        ExtensionAttribute(
-            id: "7", name: L("Office Version"), dataType: L("STRING"),
-            description: L("Microsoft Office version"),
-            inputType: L("SCRIPT"), enabled: true
-        ),
-        ExtensionAttribute(
-            id: "8", name: L("VPN Connection"), dataType: L("BOOLEAN"),
-            description: L("VPN connectivity status"),
-            inputType: L("SCRIPT"), enabled: true
-        ),
-    ]
+    private static var demoDefinitions: [ExtensionAttribute] {
+        [
+            ExtensionAttribute(
+                id: "1", name: L("FileVault Status"), dataType: L("STRING"),
+                description: L("Reports FileVault encryption status"),
+                inputType: L("SCRIPT"), enabled: true
+            ),
+            ExtensionAttribute(
+                id: "2", name: L("mSCP Version"), dataType: L("STRING"),
+                description: L("Installed mSCP compliance baseline version"),
+                inputType: L("SCRIPT"), enabled: true
+            ),
+            ExtensionAttribute(
+                id: "3", name: L("Last Patched"), dataType: "DATE",
+                description: L("Date of last software update"),
+                inputType: L("SCRIPT"), enabled: true
+            ),
+            ExtensionAttribute(
+                id: "4", name: L("Disk Usage"), dataType: "INTEGER",
+                description: L("Disk usage percentage"),
+                inputType: L("SCRIPT"), enabled: true
+            ),
+            ExtensionAttribute(
+                id: "5", name: L("CrowdStrike Status"), dataType: L("STRING"),
+                description: L("CrowdStrike Falcon sensor status"),
+                inputType: L("SCRIPT"), enabled: true
+            ),
+            ExtensionAttribute(
+                id: "6", name: L("Legacy Test EA"), dataType: L("BOOLEAN"),
+                description: L("Deprecated test attribute"),
+                inputType: L("TEXT"), enabled: false
+            ),
+            ExtensionAttribute(
+                id: "7", name: L("Office Version"), dataType: L("STRING"),
+                description: L("Microsoft Office version"),
+                inputType: L("SCRIPT"), enabled: true
+            ),
+            ExtensionAttribute(
+                id: "8", name: L("VPN Connection"), dataType: L("BOOLEAN"),
+                description: L("VPN connectivity status"),
+                inputType: L("SCRIPT"), enabled: true
+            ),
+        ]
+    }
 
     // MARK: - Computed values
 

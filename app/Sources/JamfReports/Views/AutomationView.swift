@@ -410,7 +410,9 @@ struct AutomationView: View {
 // MARK: - Shared card constants
 
 private enum AutomationCardShared {
-    static let weekdays = [L("Sun"), L("Mon"), L("Tue"), L("Wed"), L("Thu"), L("Fri"), L("Sat")]
+    static var weekdays: [String] {
+        [L("Sun"), L("Mon"), L("Tue"), L("Wed"), L("Thu"), L("Fri"), L("Sat")]
+    }
 
     static func sectionTitle(_ text: String) -> some View {
         Text(text).font(.headline)

@@ -17,7 +17,9 @@ struct OnboardingView: View {
 
     /// One profile holds one environment ID; an integration scoped to several needs one profile
     /// each, with the same client ID and secret.
-    static let platformProfileNote = L("A profile holds one environment. To report on more environments from the same integration, use Add environments in Data Sources after setup; they reuse this client ID and secret. jamf-cli's Jamf Pro and Classic commands that the gateway refuses need a separate Jamf Pro OAuth profile; Jamf Reports runs none of them.")
+    static var platformProfileNote: String {
+        L("A profile holds one environment. To report on more environments from the same integration, use Add environments in Data Sources after setup; they reuse this client ID and secret. jamf-cli's Jamf Pro and Classic commands that the gateway refuses need a separate Jamf Pro OAuth profile; Jamf Reports runs none of them.")
+    }
 
     /// The privileges for the commands a collect runs, each labelled with its source; the 1.31.1
     /// list until the installed jamf-cli's catalog has been read.

@@ -424,7 +424,7 @@ enum WebhookNotifier {
             let code = (error as NSError)
             failure?.record("could not reach the \(provider.rawValue) webhook (\(code.domain) \(code.code))")
             AppLogger.webhook.warning(
-                "WebhookNotifier: \(what, privacy: .public) post failed: \(error.localizedDescription, privacy: .private)"
+                "WebhookNotifier: \(what, privacy: .public) post failed: \(error.englishDescription, privacy: .private)"
             )
             return false
         }

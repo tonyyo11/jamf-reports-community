@@ -45,5 +45,7 @@ enum PlatformScopeLevel: String, Sendable, Equatable {
 extension PlatformScopeLevel {
     /// Why an organization-level profile cannot be a workspace, in the words every screen, log
     /// line and Config Doctor row uses.
-    static let organizationLevelReason = L("An organization-level integration reaches only Jamf Account. Create an environment-level integration in Jamf Account and add that profile instead.")
+    static var organizationLevelReason: String {
+        L("An organization-level integration reaches only Jamf Account. Create an environment-level integration in Jamf Account and add that profile instead.")
+    }
 }

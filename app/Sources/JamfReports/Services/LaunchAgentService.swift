@@ -137,7 +137,7 @@ enum LaunchAgentService {
             return true
         } catch {
             AppLogger.schedule.error(
-                "archivePlist failed for \(label, privacy: .private): \(error.localizedDescription, privacy: .private)")
+                "archivePlist failed for \(label, privacy: .private): \(error.englishDescription, privacy: .private)")
             return false
         }
     }

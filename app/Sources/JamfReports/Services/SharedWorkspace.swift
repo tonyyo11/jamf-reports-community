@@ -337,7 +337,7 @@ enum SharedWorkspace {
             try data.write(to: url, options: .atomic)
         } catch {
             AppLogger.collect.warning(
-                "workspace claim not written: \(error.localizedDescription, privacy: .private)"
+                "workspace claim not written: \(error.englishDescription, privacy: .private)"
             )
         }
     }
@@ -379,7 +379,7 @@ enum SharedWorkspace {
             try coder.encoder.encode(activity).write(to: url, options: .atomic)
         } catch {
             AppLogger.collect.warning(
-                "host activity not recorded: \(error.localizedDescription, privacy: .private)"
+                "host activity not recorded: \(error.englishDescription, privacy: .private)"
             )
         }
     }

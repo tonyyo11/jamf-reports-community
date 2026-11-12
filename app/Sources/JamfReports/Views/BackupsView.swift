@@ -44,8 +44,9 @@ struct BackupsView: View {
             : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "backups") + "/"
     }
 
-    private static let demoRevealHelp =
+    private static var demoRevealHelp: String {
         L("Demo backups are not on disk. Revealing them needs a live profile.")
+    }
 
     // Demo backups are not on disk, and the demo profile's folder could be a
     // real workspace's: nothing below opens, runs or deletes in demo mode.

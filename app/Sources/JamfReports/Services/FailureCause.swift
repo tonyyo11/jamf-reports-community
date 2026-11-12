@@ -77,11 +77,15 @@ struct FailureCause: Codable, Equatable, Sendable {
     /// jamf-cli's refusal of `apigw.jamf.com` (`refuseRetiredGatewayURL`, exit 2), which it makes
     /// before any request: "<url> is the retired Jamf Platform gateway and does not serve ...".
     static let retiredGatewayMarker = "is the retired Jamf Platform gateway"
-    static let retiredGatewayHint = L("Re-run setup with the us, eu or apac api.jamfcloud.com host (jamf-cli platform setup --profile-name <profile>), or set url: in the profile.")
+    static var retiredGatewayHint: String {
+        L("Re-run setup with the us, eu or apac api.jamfcloud.com host (jamf-cli platform setup --profile-name <profile>), or set url: in the profile.")
+    }
     /// The gateway's 400 when a command is sent at a scope level it does not accept; its message
     /// names both levels.
     static let invalidContextTypeMarker = "INVALID_REQUEST_CONTEXT_TYPE"
-    static let invalidContextTypeHint = L("This command accepts a different scope level than this profile's integration; the error names both. An environment-level integration is the level Jamf recommends, and a tenant-level one cannot reach every command.")
+    static var invalidContextTypeHint: String {
+        L("This command accepts a different scope level than this profile's integration; the error names both. An environment-level integration is the level Jamf recommends, and a tenant-level one cannot reach every command.")
+    }
 
     /// jamf-cli reports an unreadable `keychain:` credential as
     /// "reading keychain item <service>/<account>: <error>".
@@ -91,7 +95,9 @@ struct FailureCause: Codable, Equatable, Sendable {
     static let keychainInteractionMarkers = ["User interaction is not allowed", "exit status 36"]
     /// jamf-cli's own wording when the login keychain refuses a write.
     static let keychainRejectedWriteMarker = "login keychain rejected"
-    static let keychainLockedHint = L("Unlock the login keychain (open Keychain Access, or run `security unlock-keychain`), then try again")
+    static var keychainLockedHint: String {
+        L("Unlock the login keychain (open Keychain Access, or run `security unlock-keychain`), then try again")
+    }
 
     /// True for jamf-cli text that says it could not read credentials because the login
     /// keychain is locked. A missing item ("keychain item not found") is not a lock.

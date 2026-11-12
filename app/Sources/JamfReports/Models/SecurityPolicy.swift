@@ -364,9 +364,11 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
                 fileVaultReading: fileVaultReading, hardwareEncrypted: hardwareEncrypted)
     }
 
-    static let hardwareEncryptedFileVaultOffLabel = L("FileVault off (hardware-encrypted)")
+    static var hardwareEncryptedFileVaultOffLabel: String {
+        L("FileVault off (hardware-encrypted)")
+    }
     /// For a pill or cell that already sits under a "FileVault" label.
-    static let hardwareEncryptedFileVaultOffShortLabel = L("Off (hardware-encrypted)")
+    static var hardwareEncryptedFileVaultOffShortLabel: String { L("Off (hardware-encrypted)") }
 
     /// A FileVault value as the Devices screen shows it: a label above when the hardware
     /// rule lowers this Mac, so its amber or grey tone is explained; else the value itself.

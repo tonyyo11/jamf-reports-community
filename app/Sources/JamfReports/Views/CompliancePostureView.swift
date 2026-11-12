@@ -558,7 +558,9 @@ struct CompliancePostureView: View {
         }
     }
 
-    private static let perOSProxyHelp: String = L("Each Mac is banded by how many of FileVault, SIP, Firewall and Gatekeeper it fails, not by failed mSCP rules.")
+    private static var perOSProxyHelp: String {
+        L("Each Mac is banded by how many of FileVault, SIP, Firewall and Gatekeeper it fails, not by failed mSCP rules.")
+    }
 
     private var perOSGrid: some View {
         VStack(spacing: 8) {

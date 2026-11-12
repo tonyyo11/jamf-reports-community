@@ -469,8 +469,9 @@ struct SourcesView: View {
         }
     }
 
-    static let environmentReferenceNote =
+    static var environmentReferenceNote: String {
         L("Credential is an environment-variable reference; the app starts jamf-cli with a cleaned environment, so it cannot sign in from here. Use a keychain or file reference (jamf-cli config add-profile).")
+    }
 
     /// Health verdicts where re-registering credentials is the likely remedy.
     static func healthNeedsCredentials(_ health: CLIDoctorReport.Health) -> Bool {
@@ -1036,8 +1037,9 @@ struct SourcesView: View {
 
     /// Jamf Protect on a Jamf School workspace (2.11): collected and reported as on Jamf Pro,
     /// and from 2.12 backed up on its own, since there is no Jamf Pro part.
-    nonisolated static let schoolProtectNote =
+    nonisolated static var schoolProtectNote: String {
         L("Experimental: Jamf Protect with Jamf School. Protect is collected, reported and backed up; a backup holds Jamf Protect alone, as there is no Jamf Pro.")
+    }
 
     /// JSON snapshots, and the jamf-cli dashboard's page, the one kind saved as HTML.
     private nonisolated static func cacheDates(

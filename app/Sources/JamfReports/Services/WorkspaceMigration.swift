@@ -168,7 +168,7 @@ enum WorkspaceMigration {
             return true
         } catch {
             AppLogger.collect.warning(
-                "WorkspaceMigration: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
+                "WorkspaceMigration: failed to write .metadata_never_index: \(error.englishDescription, privacy: .private)"
             )
             return false
         }

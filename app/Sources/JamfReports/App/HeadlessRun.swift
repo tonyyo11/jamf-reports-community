@@ -80,7 +80,7 @@ private func appendFleetLog(_ message: String) {
         try FleetReportEmitter.appendLog(message, in: try FleetReportEmitter.consolidatedDir())
     } catch {
         AppLogger.schedule.warning(
-            "appendFleetLog: could not write fleet-reports.log: \(error.localizedDescription, privacy: .private)"
+            "appendFleetLog: could not write fleet-reports.log: \(error.englishDescription, privacy: .private)"
         )
     }
 }
@@ -392,7 +392,7 @@ private func scheduledRunSingleBody(
     if mode != .jamfCLIOnly, mode != .backup, let configError {
         let message = LogRedactor.redact(
             "[error] '\(profile)': config.yaml does not decode, so the product cannot be told "
-                + "and nothing ran: \(configError.localizedDescription)")
+                + "and nothing ran: \(configError.englishDescription)")
         fputs(message + "\n", stderr)
         recorder?.record(message)
         recorder?.finish(exitCode: 1)
@@ -899,7 +899,7 @@ func runCheck(profile: String) -> Int32 {
                 print("[ok] cached snapshots in data_dir: \(snapshotCount)")
             } catch {
                 fputs(LogRedactor.redact(
-                    "[warn] could not read data_dir: \(error.localizedDescription)") + "\n", stderr)
+                    "[warn] could not read data_dir: \(error.englishDescription)") + "\n", stderr)
             }
         }
 
@@ -910,7 +910,7 @@ func runCheck(profile: String) -> Int32 {
         // report, same rules, one implementation.
         return printDoctorReport(ConfigDoctorService.run(profile: profile))
     } catch {
-        fputs(LogRedactor.redact("[error] \(error.localizedDescription)") + "\n", stderr)
+        fputs(LogRedactor.redact("[error] \(error.englishDescription)") + "\n", stderr)
         return 1
     }
 }
@@ -1003,7 +1003,7 @@ func runSchoolCheck(profile: String) -> Int32 {
         }
         return 0
     } catch {
-        fputs(LogRedactor.redact("[error] \(error.localizedDescription)") + "\n", stderr)
+        fputs(LogRedactor.redact("[error] \(error.englishDescription)") + "\n", stderr)
         return 1
     }
 }

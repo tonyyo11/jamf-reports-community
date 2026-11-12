@@ -1484,23 +1484,25 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     /// Canonical sidebar navigation groups. `Sidebar` renders these directly;
     /// `sidebarOrder` is derived from them so the two cannot diverge.
     /// `.onboarding` is intentionally absent: the sidebar never lists it.
-    static let navGroups: [NavGroup] = [
-        .init(label: L("REPORTS"),
-              items: [.overview, .fleet, .trends, .audit, .reports]),
-        .init(label: L("FLEET"),
-              items: [.devices, .schoolDevices, .mobileFleet, .deviceLookup, .protectDashboard,
-                      .groupInventory]),
-        .init(label: L("POSTURE"),
-              items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        .init(label: L("OPERATIONS"),
-              items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
-        .init(label: L("AUTOMATION"),
-              items: [.schedules, .runs]),
-        .init(label: L("CONFIGURATION"),
-              items: [.config, .customize, .sources, .backups]),
-        .init(label: L("SYSTEM"),
-              items: [.settings]),
-    ]
+    static var navGroups: [NavGroup] {
+        [
+            .init(label: L("REPORTS"),
+                  items: [.overview, .fleet, .trends, .audit, .reports]),
+            .init(label: L("FLEET"),
+                  items: [.devices, .schoolDevices, .mobileFleet, .deviceLookup, .protectDashboard,
+                          .groupInventory]),
+            .init(label: L("POSTURE"),
+                  items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
+            .init(label: L("OPERATIONS"),
+                  items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
+            .init(label: L("AUTOMATION"),
+                  items: [.schedules, .runs]),
+            .init(label: L("CONFIGURATION"),
+                  items: [.config, .customize, .sources, .backups]),
+            .init(label: L("SYSTEM"),
+                  items: [.settings]),
+        ]
+    }
 
     /// Flat ordered list of tabs for Cmd-[ / Cmd-] navigation.
     /// Derived from `navGroups` so sidebar rendering and nav order stay in sync.

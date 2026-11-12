@@ -274,7 +274,7 @@ struct GroupInventoryService: Sendable {
 // MARK: - Search criteria text
 
 extension AdvancedMobileSearchRow {
-    static let noCriteriaText = L("No criteria (matches every device)")
+    static var noCriteriaText: String { L("No criteria (matches every device)") }
 
     /// The search as a sentence: `(Model like iPad OR Model like iPhone) AND Last Inventory
     /// Update more than x days ago 7`. A criterion's connector joins it to the one before.

@@ -62,43 +62,45 @@ private struct GuideRow: Identifiable {
     /// Destination tab, or nil when the surface is on the current screen.
     let destination: Tab?
 
-    static let all: [GuideRow] = [
-        GuideRow(
-            id: "templates",
-            icon: "doc.badge.plus",
-            title: L("Report templates"),
-            description: L("Generate\u{2026} on the Generated Reports screen makes the Executive, Operational, Compliance, Asset, Security Posture or School template, or your own choice of sheets. The Overview's Generate makes the Full Instance report, with every sheet; the command-line tool takes the same templates."),
-            destination: .reports
-        ),
-        GuideRow(
-            id: "charts",
-            icon: "chart.bar.xaxis",
-            title: L("Chart options"),
-            description: L("Per-major-version macOS charts, and whether chart images are saved beside the workbook."),
-            destination: nil
-        ),
-        GuideRow(
-            id: "score",
-            icon: "gauge.medium",
-            title: L("Score weights"),
-            description: L("Adjust the Security Score factor weights (FileVault, SIP, Firewall, EDR, mSCP, and more) on the Config → Scoring tab."),
-            destination: .config
-        ),
-        GuideRow(
-            id: "sidebar",
-            icon: "sidebar.left",
-            title: L("Sidebar & tab visibility"),
-            description: L("Show or hide tabs from the sidebar on the Settings screen."),
-            destination: .settings
-        ),
-        GuideRow(
-            id: "groups",
-            icon: "rectangle.3.group",
-            title: L("Report groups"),
-            description: L("Group profiles into consolidated fleet reports on the Automation screen."),
-            destination: .schedules
-        ),
-    ]
+    static var all: [GuideRow] {
+        [
+            GuideRow(
+                id: "templates",
+                icon: "doc.badge.plus",
+                title: L("Report templates"),
+                description: L("Generate\u{2026} on the Generated Reports screen makes the Executive, Operational, Compliance, Asset, Security Posture or School template, or your own choice of sheets. The Overview's Generate makes the Full Instance report, with every sheet; the command-line tool takes the same templates."),
+                destination: .reports
+            ),
+            GuideRow(
+                id: "charts",
+                icon: "chart.bar.xaxis",
+                title: L("Chart options"),
+                description: L("Per-major-version macOS charts, and whether chart images are saved beside the workbook."),
+                destination: nil
+            ),
+            GuideRow(
+                id: "score",
+                icon: "gauge.medium",
+                title: L("Score weights"),
+                description: L("Adjust the Security Score factor weights (FileVault, SIP, Firewall, EDR, mSCP, and more) on the Config → Scoring tab."),
+                destination: .config
+            ),
+            GuideRow(
+                id: "sidebar",
+                icon: "sidebar.left",
+                title: L("Sidebar & tab visibility"),
+                description: L("Show or hide tabs from the sidebar on the Settings screen."),
+                destination: .settings
+            ),
+            GuideRow(
+                id: "groups",
+                icon: "rectangle.3.group",
+                title: L("Report groups"),
+                description: L("Group profiles into consolidated fleet reports on the Automation screen."),
+                destination: .schedules
+            ),
+        ]
+    }
 }
 
 // MARK: - Row view

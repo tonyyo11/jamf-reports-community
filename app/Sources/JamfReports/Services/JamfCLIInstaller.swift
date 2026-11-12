@@ -399,7 +399,7 @@ final class JamfCLIInstaller {
         } catch {
             return UpdateResult(
                 succeeded: false,
-                message: "jamf-cli was not updated: \(error.localizedDescription)", refused: true)
+                message: "jamf-cli was not updated: \(error.englishDescription)", refused: true)
         }
     }
 

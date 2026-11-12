@@ -48,7 +48,7 @@ extension ReportEngine {
                 saved = true
             } catch {
                 onLine(.init(timestamp: now, level: .warn,
-                    text: "[warn] site scope not saved: \(error.localizedDescription)"))
+                    text: "[warn] site scope not saved: \(error.englishDescription)"))
             }
         }
         if let summary = scope.summary {

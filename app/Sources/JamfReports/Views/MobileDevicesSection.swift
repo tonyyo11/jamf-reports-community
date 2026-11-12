@@ -23,7 +23,7 @@ func mobileDevicesFindings(
             affected: count,
             category: MobileFinding.category,
             recommendation: finding.recommendation(staleDays: context.staleDays),
-            severity: count == 0 ? L("OK") : finding.severity,
+            severity: count == 0 ? "OK" : finding.severity,
             devices: shown + (more > 0 ? [L("and \(more) more, in Mobile Devices")] : []),
             deviceNoun: L("Devices"),
             mobileFilter: finding.rawValue,

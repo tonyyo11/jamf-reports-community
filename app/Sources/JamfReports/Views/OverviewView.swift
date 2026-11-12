@@ -1143,12 +1143,14 @@ struct OverviewView: View {
     /// "Aug 20" — short by design; the tile caption has little room and the
     /// year is only ambiguous for comparisons more than a year stale, which
     /// the freshness banner already flags.
-    private static let comparisonDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.setLocalizedDateFormatFromTemplate(L("MMMd"))
-        return f
-    }()
+    private static var comparisonDateFormatter: DateFormatter {
+        {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.setLocalizedDateFormatFromTemplate(L("MMMd"))
+            return f
+        }()
+    }
 
     private func scoreCard(for metric: TrendSeries.Metric) -> some View {
         // points(), not values(): the delta compares the two most recent
@@ -2271,7 +2273,7 @@ struct MetricDetailFigures: Equatable {
     /// Whether `change` is a figure rather than a dash.
     let hasChange: Bool
 
-    static let noData = L("No data yet")
+    static var noData: String { L("No data yet") }
 
     /// `comparable` is the newest run of `values` measured one way (the whole series when
     /// nil); the previous figure and the change come from it, never across a definition change.

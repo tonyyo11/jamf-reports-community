@@ -32,7 +32,7 @@ protocol SheetSkippable: Error {
 struct SheetFailure: Sendable {
     /// The sheet name as it appears in `sheetPlan`.
     let sheet: String
-    /// Serialized error: `"\(type(of: error)): \(error.localizedDescription)"`.
+    /// Serialized error: `"\(type(of: error)): \(error.englishDescription)"`.
     let error: String
 }
 
@@ -61,7 +61,7 @@ struct SheetRegistry: @unchecked Sendable {
         AppLogger.report.error(
             "sheet \(sheet, privacy: .public) failed: \(String(reflecting: error), privacy: .private)")
         return SheetFailure(
-            sheet: sheet, error: "\(type(of: error)): \(error.localizedDescription)")
+            sheet: sheet, error: "\(type(of: error)): \(error.englishDescription)")
     }
 
     /// `[skip] <sheet>: <reason>`, shared by the Jamf Pro and Jamf School sheet loops.

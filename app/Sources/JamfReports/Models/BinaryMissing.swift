@@ -9,16 +9,18 @@ import Foundation
 /// Detected from data, never from the name, which admins rename.
 enum BinaryMissing {
     /// What the app calls the state.
-    static let title = L("Jamf binary missing")
+    static var title: String { L("Jamf binary missing") }
     /// The cell value in a table.
-    static let shortLabel = L("Jamf binary missing")
+    static var shortLabel: String { L("Jamf binary missing") }
 
     /// The three ways to get the binary onto the Mac, in the order to try them.
-    static let remediation: [String] = [
-        L("Mark the computer as managed in Jamf Pro, so it tries to push the binary again."),
-        L("Deploy the Jamf binary through the API or another tool."),
-        L("Run sudo profiles renew -type enrollment on the Mac to restart enrollment."),
-    ]
+    static var remediation: [String] {
+        [
+            L("Mark the computer as managed in Jamf Pro, so it tries to push the binary again."),
+            L("Deploy the Jamf binary through the API or another tool."),
+            L("Run sudo profiles renew -type enrollment on the Mac to restart enrollment."),
+        ]
+    }
 
     /// The one rule: the Mac has never checked in and Jamf either reports it unmanaged or has
     /// never had an inventory from it (`NeverInventoried`: MDM reaches it, so it can read as

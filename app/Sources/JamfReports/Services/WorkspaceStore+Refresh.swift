@@ -295,7 +295,7 @@ extension WorkspaceStore {
             ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
         guard let refusal else { return false }
         AppLogger.collect.notice(
-            "Manual collect refused: \(refusal.localizedDescription, privacy: .private)")
+            "Manual collect refused: \(refusal.englishDescription, privacy: .private)")
         toast = Self.collectFailureToast(refusal, operation: L("Refresh"))
         return true
     }
@@ -459,7 +459,7 @@ extension WorkspaceStore {
                 if CLIBridgeError.isCollectRefusal(error) {
                     recorder?.discard()
                 } else {
-                    recorder?.record("[error] \(error.localizedDescription)")
+                    recorder?.record("[error] \(error.englishDescription)")
                     recorder?.finish(exitCode: 1)
                 }
                 throw error
@@ -554,7 +554,7 @@ extension WorkspaceStore {
             _ = try await audit(activeProfile)
         } catch {
             AppLogger.cli.warning(
-                "Launch audit refresh failed: \(error.localizedDescription, privacy: .private)"
+                "Launch audit refresh failed: \(error.englishDescription, privacy: .private)"
             )
         }
     }

@@ -90,7 +90,7 @@ extension ReportEngine {
                     timeout: collectKindTimeout, onLine: watcher.forwarding(to: onLine))
             } catch {
                 onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                    text: "[warn] \(kind): launch failed — \(error.englishDescription)"))
                 result = nil
             }
             guard let (exitCode, data) = result else {

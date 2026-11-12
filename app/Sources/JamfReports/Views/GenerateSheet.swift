@@ -241,8 +241,9 @@ final class GenerateSheetState {
         }
     }
 
-    private static let cachedSnapshotsHint =
+    private static var cachedSnapshotsHint: String {
         L(" Uncheck Collect fresh data first to generate from cached snapshots.")
+    }
 
     /// Resolved output directory for display: the chosen folder, else the configured one,
     /// else the profile default.
@@ -1077,7 +1078,7 @@ struct GenerateSheet: View {
             } catch {
                 state.appendLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] audit failed; continuing with cached audit data: \(error.localizedDescription)"
+                    text: "[warn] audit failed; continuing with cached audit data: \(error.englishDescription)"
                 ))
             }
         }

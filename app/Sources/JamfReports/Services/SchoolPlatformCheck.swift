@@ -20,7 +20,9 @@ enum SchoolPlatformCheck {
     static let permission = "blueprints:read"
 
     /// Shown on the switch and the Data Sources row.
-    static let experimentalNote = L("Experimental: Jamf School blueprints through the Platform API; report results on GitHub.")
+    static var experimentalNote: String {
+        L("Experimental: Jamf School blueprints through the Platform API; report results on GitHub.")
+    }
 
     static func arguments(profile: String) -> [String] {
         ["-p", profile, "--no-input", "school", "blueprints", "list", "--output", "json"]

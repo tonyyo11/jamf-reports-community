@@ -850,16 +850,18 @@ struct ProtectView: View {
         }
     }
 
-    nonisolated static let schoolMatchExperimentalText =
+    nonisolated static var schoolMatchExperimentalText: String {
         L("Experimental: Jamf Protect with Jamf School.")
+    }
 
     nonisolated static func noInventoryText(
         _ inventory: ProtectProCorrelation.Inventory
     ) -> String {
         L("Collect \(inventory.product) inventory to match Protect computers to \(inventory.product).")
     }
-    nonisolated static let matchFootnote =
+    nonisolated static var matchFootnote: String {
         L("Matched by hardware UUID or serial number, never by name.")
+    }
 
     nonisolated static func matchSummary(_ match: ProtectProCorrelation) -> String {
         let many = match.protectCount != 1

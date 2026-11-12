@@ -358,7 +358,7 @@ private struct HTMLWithWorkbookCard: View {
 
     @Environment(\.colorSchemeContrast) private var contrast
 
-    private static let title = L("Write the HTML report with every workbook")
+    private static var title: String { L("Write the HTML report with every workbook") }
 
     var body: some View {
         Card(padding: 16) {

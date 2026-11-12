@@ -6,7 +6,9 @@ struct AutomationChoiceFields: View {
     @Binding var choice: AutomationSetupChoice
     var isLocked = false
 
-    private static let weekdays = [L("Sun"), L("Mon"), L("Tue"), L("Wed"), L("Thu"), L("Fri"), L("Sat")]
+    private static var weekdays: [String] {
+        [L("Sun"), L("Mon"), L("Tue"), L("Wed"), L("Thu"), L("Fri"), L("Sat")]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

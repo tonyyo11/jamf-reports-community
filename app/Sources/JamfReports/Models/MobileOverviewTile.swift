@@ -12,7 +12,7 @@ struct MobileOverviewTile: Identifiable, Equatable, Sendable {
 
     var id: String { label }
 
-    static let unreported = L("Not reported")
+    static var unreported: String { L("Not reported") }
     static let dash = "—"
 }
 

@@ -338,7 +338,7 @@ struct MobileFleetView: View {
     }
 
     /// Caption for a tile whose field no device in the snapshot carries.
-    private static let notCollectedCaption = L("Not in the collected inventory")
+    private static var notCollectedCaption: String { L("Not in the collected inventory") }
 
     /// A count as a share of the fleet, or a dash when the count is unknown.
     private func fleetPercentText(_ count: Int?) -> String {

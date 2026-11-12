@@ -381,7 +381,7 @@ extension CLIBridge {
         } catch {
             exit = ReportEngine.launchFailureExitCode
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] could not run protect backup: \(error.localizedDescription)"))
+                         text: "[error] could not run protect backup: \(error.englishDescription)"))
         }
         let result = ProtectBackup.result(exit: exit, directory: validated)
         // It ran, so a skip is over; what it left decides the other code.
@@ -421,7 +421,8 @@ extension CLIBridge {
                              + "\(Int(timeout.rounded(.up))) s limit; the unfinished Protect files were discarded"))
         } else if exit != 0 {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] " + Self.explainExit(exit, operation: "Protect backup")))
+                         text: "[error] " + Localization.english {
+                             Self.explainExit(exit, operation: "Protect backup") }))
         }
         if result.state == .failed {
             // Nothing usable: the files that exist hold credentials for no benefit.

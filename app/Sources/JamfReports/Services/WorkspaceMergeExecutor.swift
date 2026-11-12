@@ -136,7 +136,7 @@ enum WorkspaceMergeExecutor {
                 } catch {
                     // The next Resume reruns the last step, then retires.
                     AppLogger.event(.collect, .error,
-                                    "merge journal not retired: \(error.localizedDescription)")
+                                    "merge journal not retired: \(error.englishDescription)")
                 }
             } else {
                 try WorkspaceMergeJournal.write(
@@ -267,7 +267,7 @@ enum WorkspaceMergeExecutor {
             // The plan file alone would read as unreadable; it is this run's own, just written.
             do { try FileManager.default.removeItem(at: planURL) } catch {
                 AppLogger.event(.collect, .error,
-                                "merge plan not removed: \(error.localizedDescription)")
+                                "merge plan not removed: \(error.englishDescription)")
             }
             throw RunError.notStarted(reason: error.localizedDescription)
         }
@@ -383,7 +383,7 @@ enum WorkspaceMergeExecutor {
             if isRegular(claimFile) {
                 do { try FileManager.default.removeItem(at: claimFile) } catch {
                     AppLogger.event(.collect, .error,
-                                    "merge claim not removed: \(error.localizedDescription)")
+                                    "merge claim not removed: \(error.englishDescription)")
                 }
             }
         }
@@ -603,7 +603,7 @@ enum WorkspaceMergeExecutor {
             guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { continue }
             do { try FileManager.default.removeItem(at: url) } catch {
                 AppLogger.event(.collect, .error,
-                                "merge staging not removed: \(error.localizedDescription)")
+                                "merge staging not removed: \(error.englishDescription)")
             }
         }
     }

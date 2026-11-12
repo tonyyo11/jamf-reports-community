@@ -291,7 +291,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 AddEnvironments: could not record a registered profile: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
         }
     }
@@ -327,7 +327,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 AddEnvironments: could not record a member: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
             note = (note.map { $0 + " " } ?? "") + L("It could not be recorded in the connection.")
         }
@@ -359,7 +359,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 UpdateCredentials: could not refresh a member: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
         }
     }

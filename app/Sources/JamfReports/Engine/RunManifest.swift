@@ -211,7 +211,7 @@ struct RunManifest: Codable, Equatable, Sendable {
         do {
             data = try BoundedFile.read(url, limit: maxManifestBytes, followSymlinks: false)
         } catch {
-            fail("FAIL  manifest not read: \(error.localizedDescription)")
+            fail("FAIL  manifest not read: \(error.englishDescription)")
             return result
         }
         guard let manifest = try? JSONDecoder().decode(RunManifest.self, from: data),

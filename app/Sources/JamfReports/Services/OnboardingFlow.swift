@@ -161,7 +161,9 @@ final class OnboardingFlow {
         }
 
         /// Shown under the scope picker in onboarding and Update credentials.
-        static let caption = L("Environment is the level to use: it reaches Jamf Pro, Blueprints, Compliance Benchmarks and DDM. Tenant is legacy: direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints.")
+        static var caption: String {
+            L("Environment is the level to use: it reaches Jamf Pro, Blueprints, Compliance Benchmarks and DDM. Tenant is legacy: direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints.")
+        }
 
         var idFieldLabel: String {
             switch self {
@@ -523,7 +525,7 @@ final class OnboardingFlow {
                 )
             } catch {
                 AppLogger.auth.warning(
-                    "OnboardingFlow: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
+                    "OnboardingFlow: failed to write .metadata_never_index: \(error.englishDescription, privacy: .private)"
                 )
             }
         }
@@ -713,7 +715,7 @@ final class OnboardingFlow {
             protectConfigNote = ProductSetupChecks.joined(protectConfigNote, checkNote, defaultNote)
         } catch {
             protectConnectionError = ProductSetupChecks.joined(
-                "Connected, but config update failed: \(error.localizedDescription)",
+                "Connected, but config update failed: \(error.englishDescription)",
                 checkNote, defaultNote)
         }
     }
@@ -815,7 +817,7 @@ final class OnboardingFlow {
             schoolConfigNote = ProductSetupChecks.joined(schoolConfigNote, checkNote, defaultNote)
         } catch {
             schoolConnectionError = ProductSetupChecks.joined(
-                "Connected, but config update failed: \(error.localizedDescription)",
+                "Connected, but config update failed: \(error.englishDescription)",
                 checkNote, defaultNote)
         }
         // A rejected answer keeps the profile: the School API key works without the gateway.
@@ -1044,7 +1046,7 @@ final class OnboardingFlow {
             AppLogger.auth.warning(
                 """
                 OnboardingFlow: could not record the connection: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """
             )
         }
@@ -1242,7 +1244,9 @@ final class OnboardingFlow {
     /// environments applies to each ID.
     var isPlatformScopeIDValid: Bool { ConnectionEnvironments.isUsableID(platformScopeID.trimmed) }
 
-    nonisolated static let scopeIDProblemText = L("Use only letters, digits, dots, hyphens and underscores, and don't start with a hyphen. Copy the ID from Jamf Account without spaces.")
+    nonisolated static var scopeIDProblemText: String {
+        L("Use only letters, digits, dots, hyphens and underscores, and don't start with a hyphen. Copy the ID from Jamf Account without spaces.")
+    }
 
     /// Shown under the ID field once something is typed that the check refuses.
     var platformScopeIDProblem: String? {

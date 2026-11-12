@@ -157,8 +157,9 @@ struct SettingsView: View {
 
     // MARK: - Included CLI install
 
-    private nonisolated static let workspaceLocationBlurb: String =
+    private nonisolated static var workspaceLocationBlurb: String {
         L("Where profiles, history, snapshots and reports are kept. Point this at a shared team folder — OneDrive/SharePoint, Box, Dropbox or a mounted share — so several Macs can report against the same tenants and build one history between them. Keep the default if this Mac is the only one reporting.")
+    }
 
     private nonisolated static func providerLabel(_ name: String) -> String {
         L("On \(name) — multi-Mac coordination turns on automatically. Run Check on the Config screen reports who else writes here.")
@@ -815,8 +816,9 @@ struct SettingsView: View {
 
     /// The app is also the `jamf-reports` command-line tool (one binary, installed from the
     /// Command-line tool card above); jamf-cli, which supplies the data, is separate.
-    nonisolated static let commandLineBlurb =
+    nonisolated static var commandLineBlurb: String {
         L("This app includes its own jamf-reports command-line tool, so reports, collection, backups and diagnostics can be scripted. Both use the same config.yaml and report engine. The fleet data comes from jamf-cli, which is installed separately.")
+    }
 
     private var skipExpensiveCollectionsSubtitle: String {
         Self.skipExpensiveSubtitle(skipping: skipExpensiveCollections)
@@ -1014,8 +1016,9 @@ struct SettingsView: View {
 
     // MARK: - AI Insights (macOS 27+, opt-in)
 
-    nonisolated static let aiInsightsBlurb: String =
+    nonisolated static var aiInsightsBlurb: String {
         L("Turn already-collected fleet data into plain-language insight cards on Overview, Trends, Audit, Security Posture and Compliance Posture, using the On-Device Foundation Model (Apple Intelligence). Off by default. The model runs on this Mac and nothing leaves it.")
+    }
 
     /// Turns already-collected fleet data into plain-language insight cards on
     /// five screens. Off by default; requires macOS 27, where Apple's on-device

@@ -70,8 +70,9 @@ extension GatewayRegion {
 
     /// Shown wherever a retired gateway is refused; the hint is the one `FailureCause` gives
     /// when jamf-cli refuses it after a failed collect.
-    static let retiredRefusal = "\(retiredHost) is the retired Jamf Platform gateway. "
-        + FailureCause.retiredGatewayHint
+    static var retiredRefusal: String {
+        "\(retiredHost) is the retired Jamf Platform gateway. " + FailureCause.retiredGatewayHint
+    }
 
     static let invalidHostText = "Enter a host such as gateway.example.org, with an optional "
         + "port. Use only letters, digits, dots and hyphens; https:// is optional."

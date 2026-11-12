@@ -260,7 +260,7 @@ enum WorkspacePaths {
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let p): ProfileName.invalidMessage(p)
-            case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.localizedDescription)"
+            case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.englishDescription)"
             case .resolutionEscaped(let val, let root): "Path '\(val)' escapes workspace root \(root.lastPathComponent)"
             case .disallowedAbsolutePath(let u): "Disallowed absolute path: \(u.path)"
             case .worldReadableFolder(let u): "World-readable folder: \(u.path)"
@@ -502,7 +502,7 @@ enum WorkspacePaths {
             // are legitimate "no value here" outcomes; surface a debug log
             // so an unparseable config doesn't masquerade as a missing key.
             AppLogger.collect.warning(
-                "WorkspacePaths: could not parse config.yaml: \(error.localizedDescription, privacy: .private)"
+                "WorkspacePaths: could not parse config.yaml: \(error.englishDescription, privacy: .private)"
             )
         }
         return nil

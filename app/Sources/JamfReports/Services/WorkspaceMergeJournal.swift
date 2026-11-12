@@ -118,7 +118,7 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         }
         do { try FileManager.default.removeItem(at: url) } catch {
             AppLogger.event(.collect, .error,
-                            "merge start note not removed: \(error.localizedDescription)")
+                            "merge start note not removed: \(error.englishDescription)")
         }
     }
 

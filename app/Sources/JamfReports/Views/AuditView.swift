@@ -512,7 +512,7 @@ struct AuditView: View {
                             Pill(text: f.severity, tone: pillTone(f.severity))
                         }
                         TableColumn("Category", value: \.category) { f in
-                            Text(f.category.capitalized).font(.footnote)
+                            Text(LShown(f.category).capitalized).font(.footnote)
                         }
                         TableColumn("Affected", value: \.affected) { f in
                             AffectedBar(
@@ -1641,11 +1641,15 @@ private extension AuditFinding {
     }
 }
 
-/// Maps a finding to the screen that can show its underlying records — by
-/// finding name first, category as fallback. Internal (not private) for tests.
+/// Maps a finding to the screen that can show its underlying records. The app's own findings
+/// go by their English category, since their names are translated; jamf-cli's go by name
+/// first, category as fallback. Internal (not private) for tests.
 func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: Tab)? {
-    // The mobile names carry words ("update", "stale") the checks below send elsewhere.
-    if finding.category == MobileFinding.category { return (L("Mobile Devices"), .mobileFleet) }
+    switch finding.category {
+    case MobileFinding.category: return (L("Mobile Devices"), .mobileFleet)
+    case "Command health", "Contact gap": return (L("Computers"), .devices)
+    default: break
+    }
     let name = finding.name.lowercased()
     if name.contains("unencrypted") || name.contains("filevault")
         || name.contains("gatekeeper") || name.contains("sip")

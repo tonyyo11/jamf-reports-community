@@ -122,7 +122,7 @@ extension ReportEngine {
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] lost-mode rewrite marker not written: "
-                    + "\(error.localizedDescription)"))
+                    + "\(error.englishDescription)"))
         }
     }
 

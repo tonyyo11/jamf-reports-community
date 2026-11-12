@@ -208,7 +208,7 @@ struct SecurityPostureView: View {
         }
     }
 
-    static let noScoreCaption = L("No factor had data")
+    static var noScoreCaption: String { L("No factor had data") }
 
     /// The ring's number: a dash when nothing was scored, never a 0.0 that reads as grade F.
     static func scoreText(_ score: SecurityScore, format: PercentFormat) -> String {

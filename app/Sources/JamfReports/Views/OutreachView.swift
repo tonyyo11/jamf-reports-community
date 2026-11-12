@@ -282,7 +282,9 @@ struct OutreachView: View {
 
     private func copyTableCSV() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
-        var csv = L("Name,Serial,Email,Department,Days Since \(staleRule.basisHeading)\n")
+        var csv = Localization.english {
+            "Name,Serial,Email,Department,Days Since \(staleRule.basisHeading)\n"
+        }
         for device in devices {
             let name = StaleDeviceService.csvField(device.displayName)
             let serial = StaleDeviceService.csvField(device.displaySerial)

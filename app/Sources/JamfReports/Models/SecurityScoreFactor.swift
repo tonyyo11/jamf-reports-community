@@ -139,10 +139,12 @@ struct SecurityScoreFactor: Sendable, Hashable {
         }
     }
 
-    private static let legacyBasisLabels: [String: String] = [
-        "fileVault": L("FileVault"), "crowdstrike": L("EDR agent"), "xprotect": L("XProtect"),
-        "cve": L("CVE"), "secureBoot": L("Secure Boot"),
-    ]
+    private static var legacyBasisLabels: [String: String] {
+        [
+            "fileVault": L("FileVault"), "crowdstrike": L("EDR agent"), "xprotect": L("XProtect"),
+            "cve": L("CVE"), "secureBoot": L("Secure Boot"),
+        ]
+    }
 
     static func weightText(_ weight: Double) -> String {
         weight == weight.rounded() ? String(Int(weight)) : String(format: "%g", weight)

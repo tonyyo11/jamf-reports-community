@@ -121,7 +121,7 @@ struct SOFAFeedService: Sendable {
             try FileManager.default.createDirectory(
                 at: sofaDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "SOFA: could not create cache dir — \(error.localizedDescription)"
+            let msg = "SOFA: could not create cache dir — \(error.englishDescription)"
             return (.empty, [msg])
         }
 
@@ -151,7 +151,7 @@ struct SOFAFeedService: Sendable {
                 rows.append(contentsOf: normalizeFeed(platform: platform, feed: feed,
                                                       referenceDate: referenceDate))
             } catch {
-                let msg = "SOFA \(platform): fetch failed (\(error.localizedDescription)); using cached feed"
+                let msg = "SOFA \(platform): fetch failed (\(error.englishDescription)); using cached feed"
                 warnings.append(msg)
                 // Fall back to existing cache.
                 let cacheURL = sofaDir.appendingPathComponent("\(platform)_data_feed.json")
