@@ -1,7 +1,6 @@
 # Percentage rounding — design
 
-Status: approved by Tony 2026-11-11 with the Customize picker. Branch `feat/percent-rounding`
-from `dev/2-12-0`.
+Status: shipped in 2.12 (#410), approved by Tony 2026-11-11 with the Customize picker.
 
 ## Problem
 
@@ -19,8 +18,9 @@ display:
 ```
 
 - New top-level block `display:`, decoded by a `DisplayConfig` in `ConfigDecoder`, so it joins
-  `ConfigSchema` through its `CodingKeys`. Documented in `config.example.yaml` (and its golden),
-  `README.md` and the wiki config page.
+  `ConfigSchema` through its `CodingKeys`. Documented in `config.example.yaml` (and its golden)
+  and the wiki config page. The README lists no config keys since its 2.12 rewrite, so it does
+  not name this one.
 - Workspace-level because it is an organization's choice for the reports it sends, and the
   scheduled runs on every Mac sharing the folder must agree. Not pinned in `SharedConfigPin`: it
   changes no path, host or retention and cannot point this Mac anywhere.
