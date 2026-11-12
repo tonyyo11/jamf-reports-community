@@ -2042,7 +2042,7 @@ try await ReportEngine.inventoryCSV(
         let noJamfPro = jamfProProfile == nil
         let proSkip = noJamfPro
             ? ProSkip(reason: BackupProductResult.noJamfProReason, isPartial: false)
-            : decideProBackup(
+            : await decideProBackup(
                 profile: profile, workspace: workspace, backupsRoot: backupsRoot,
                 isScheduled: trimmedLabel?.hasPrefix("scheduled-") == true, onLine: onLine)
         let proSkipped = proSkip != nil
@@ -2183,7 +2183,11 @@ try await ReportEngine.inventoryCSV(
         }
 
         // Write manifest.json so BackupLibrary can read label, date, and counts.
-        let stats = directoryStats(validatedFinal)
+        // A backup is thousands of files: walk and count them off the main actor.
+        let (stats, proCounts) = await Task.detached(priority: .userInitiated) {
+            (Self.directoryStats(validatedFinal),
+             proFailed ? [:] : ProtectBackup.objectCounts(in: validatedFinal))
+        }.value
         let effectiveLabel = trimmedLabel ?? ""
         var manifest: [String: Any] = [
             "label": effectiveLabel,
@@ -2202,8 +2206,7 @@ try await ReportEngine.inventoryCSV(
                     state: proFailed ? .failed : isPartial ? .partial : .ok, exitCode: exit,
                     // Counted as Protect's are, before manifest.json exists; a failed part's
                     // files are already gone.
-                    objectCounts: proFailed ? [:] : ProtectBackup.objectCounts(in: validatedFinal)
-                        .filter { $0.key != ProtectBackup.folderName }
+                    objectCounts: proCounts.filter { $0.key != ProtectBackup.folderName }
                 ).manifestValue,
             ]
             products["protect"] = protectResult?.manifestValue
@@ -2290,10 +2293,11 @@ try await ReportEngine.inventoryCSV(
     /// and keeps the Needs-attention item in step. Returns the skip when it is skipped. A skip
     /// is never a failure (no `[error]`); it is Partial only when nobody has decided yet or the
     /// decision waits for a Confirm.
-    private func decideProBackup(
-        profile: String, workspace: URL, backupsRoot: URL, isScheduled: Bool,
-        onLine: @Sendable (LogLine) -> Void
-    ) -> ProSkip? {
+    /// The Jamf Pro synced-storage decision and what the caller logs with it: the plan, where
+    /// the workspace is shared, and why config.yaml did not decode.
+    private nonisolated static func proBackupPlan(
+        profile: String, backupsRoot: URL
+    ) -> (ProBackup.Plan, String?, String?) {
         let read = ProBackup.readConfig(profile: profile)
         let config = read.config
         let decodeFailure = read.failure
@@ -2313,6 +2317,18 @@ try await ReportEngine.inventoryCSV(
             setting: setting, place: place, decodeFailure: decodeFailure,
             hasScheduledHistory: { BackupMaintenance.hasScheduledJamfProBackup(profile: profile) },
             graceRunsUsed: { ProBackupGrace.used(profile: profile) })
+        return (plan, place, decodeFailure)
+    }
+
+    private func decideProBackup(
+        profile: String, workspace: URL, backupsRoot: URL, isScheduled: Bool,
+        onLine: @Sendable (LogLine) -> Void
+    ) async -> ProSkip? {
+        // config.yaml, the sync-provider walk, the pin and the backup manifests are file work,
+        // so they run off the main actor; the log lines and attention items stay in this task.
+        let (plan, place, decodeFailure) = await Task.detached(priority: .userInitiated) {
+            Self.proBackupPlan(profile: profile, backupsRoot: backupsRoot)
+        }.value
         func skip(
             _ reason: String, _ kind: ProBackup.SkipKind, place: String, detail: String? = nil
         ) -> ProSkip {
@@ -2480,7 +2496,7 @@ try await ReportEngine.inventoryCSV(
         return candidate
     }
 
-    private func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
+    private nonisolated static func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
         guard let enumerator = FileManager.default.enumerator(
             at: url,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],

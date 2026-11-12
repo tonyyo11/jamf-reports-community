@@ -774,15 +774,13 @@ struct SourcesView: View {
                     workspaceAuth: workspaceAuth,
                     resolve: { ProfileAuthMethod.resolve(profile: $0) })
                 let auth = routed.auth
-                let protectProfile = EnvironmentProfiles.resolve(
-                    config: config, workspace: profile).protect
-                let securityCloudProfile = EnvironmentProfiles.resolve(
-                    config: config, workspace: profile).securityCloud
+                let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+                let protectProfile = environment.protect
+                let securityCloudProfile = environment.securityCloud
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
-                    protectOnly: EnvironmentProfiles.resolve(
-                        config: config, workspace: profile).isConfirmedProtectOnly(workspace: profile),
+                    protectOnly: environment.isConfirmedProtectOnly(workspace: profile),
                     protectRefusal: protectProfile.flatMap { name in
                         ProfileAuthMethod.resolve(profile: name)?.protectRefusal(profile: name)
                     },
@@ -798,7 +796,6 @@ struct SourcesView: View {
                     collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
                     platformUnavailable: routed.unavailable))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
-                let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
                 // The derived Platform slot can equal the MDM profile: resolve each name once.
                 var resolved: [String: ProfileAuthMethod.Resolved?] = [:]
                 let card = EnvironmentCardState.build(
