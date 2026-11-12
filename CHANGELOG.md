@@ -463,6 +463,10 @@ versions in this repository map to git tags.
   deletes.
 - Copying a Backups diff now also masks passwords, secrets and tokens in plain-text values, such
   as a configuration profile's payload or a `key: value` setting, not only in JSON.
+- A diagnostic bundle's `config.yaml` now keeps only keys, booleans, numbers, dates and fixed
+  settings such as the webhook provider, retention mode and control levels as written. Every other
+  text value, such as a sheet, extension attribute, agent, profile or folder name, is replaced by
+  its length (`<string 14 chars>`), whatever the Keep usernames option says.
 - The SOFA feed is read up to 8 MB; a bigger answer counts as a failed fetch and the cached feed
   stays in use.
 - Saving an HTML report, or choosing a folder on the Generate sheet, refuses system and

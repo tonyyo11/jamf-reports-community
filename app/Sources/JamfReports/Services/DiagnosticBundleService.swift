@@ -964,7 +964,8 @@ enum DiagnosticBundleService {
         if let redactor {
             // Comments are free text no pattern can find, so none are staged.
             content = YAMLCodec.removingComments(from: content)
-            content = redactor.redactText(try redactingExceptionText(in: content, with: redactor))
+            content = try redactingExceptionText(in: content, with: redactor)
+            content = redactor.redactText(reducingFreeText(in: content))
         }
         try writeText(content, to: staging.appendingPathComponent("config.yaml"))
         return [.file(path: "config.yaml", size: content.utf8.count, redacted: redactor != nil)]
@@ -1000,6 +1001,63 @@ enum DiagnosticBundleService {
             changed = true
         }
         return changed ? lines.joined(separator: "\n") : yaml
+    }
+
+    /// Keys whose text is a fixed vocabulary (a provider, a level, a mode, a kind), kept as
+    /// written; so are the values under `security_policy.controls`.
+    static let vocabularyKeys: Set<String> = [
+        "provider", "detail", "mode", "type", "tier", "level", "when", "metric", "factor",
+        "stale_basis", "collect_skip", "filevault_off_hardware_encrypted",
+    ]
+
+    /// config.yaml as the app reads it, with every string replaced by `<string N chars>` except
+    /// numbers, `yyyy-MM-dd` dates, yes/no/on/off and short vocabulary values (`vocabularyKeys`): sheet, EA,
+    /// agent, profile and folder names are free text no pattern can find. Keys, booleans and
+    /// numbers stay. Written afresh from the parse, so every copy of a repeated key is covered
+    /// and a line the reader skipped is not staged; a file that does not parse is not staged.
+    static func reducingFreeText(in yaml: String) -> String {
+        guard let document = try? YAMLCodec.decode(yaml),
+              case .mapping(let root) = document.root else {
+            return "# config.yaml could not be read as a mapping; not included\n"
+        }
+        let reduced = YAMLCodec.YAMLMapping(entries: root.entries.map {
+            .init(key: $0.key, value: reducing($0.value, key: $0.key, parent: nil))
+        })
+        var fresh = YAMLCodec.emptyDocument()
+        fresh.root = .mapping(reduced)
+        let keys = Set(reduced.entries.map(\.key))
+        return (try? YAMLCodec.encode(fresh, replacingTopLevelKeys: keys)) ?? ""
+    }
+
+    private static func reducing(
+        _ value: YAMLCodec.YAMLValue, key: String, parent: String?
+    ) -> YAMLCodec.YAMLValue {
+        switch value {
+        case .mapping(let mapping):
+            return .mapping(.init(entries: mapping.entries.map {
+                .init(key: $0.key, value: reducing($0.value, key: $0.key, parent: key))
+            }))
+        case .sequence(let items):
+            return .sequence(items.map { reducing($0, key: key, parent: parent) })
+        case .scalar(.string(let text)):
+            let vocabulary = vocabularyKeys.contains(key) || parent == "controls"
+            return .scalar(.string(keepsText(text, vocabulary: vocabulary)
+                ? text : "<string \(text.count) chars>"))
+        case .scalar:
+            return value
+        }
+    }
+
+    private static func keepsText(_ text: String, vocabulary: Bool) -> Bool {
+        // `yes`, `on` and the rest reach here as text; `allow_absolute_paths` reads them as on.
+        if text.isEmpty || ["yes", "no", "on", "off"].contains(text.lowercased()) { return true }
+        if text.range(of: #"^-?[0-9]+(\.[0-9]+)?$"#, options: .regularExpression) != nil
+            || text.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) != nil {
+            return true
+        }
+        return vocabulary
+            && text.range(of: #"^[A-Za-z0-9_.-][A-Za-z0-9 _.-]{0,31}$"#, options: .regularExpression)
+                != nil
     }
 
     /// The lines of one `exceptions:` block with its free text replaced, nil when it has none.

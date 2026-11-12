@@ -14,7 +14,8 @@ issue if a failure is not listed here.
 To share diagnostics safely, build a redacted bundle from the app:
 **Settings → Diagnostics → Generate diagnostic bundle now**.
 
-It collects recent logs, the last few `summary.json` snapshots, `config.yaml`, a
+It collects recent logs, the last few `summary.json` snapshots, `config.yaml` (its text
+values reduced to their length), a
 workspace tree listing, and version metadata into a zip under
 `~/Library/Logs/JamfReports/diagnostics/<profile>/` (on this Mac only, never in the
 workspace, which may be a shared folder), and reveals it in Finder. Credentials are always redacted; PII

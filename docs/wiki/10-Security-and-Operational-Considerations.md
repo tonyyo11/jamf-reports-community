@@ -403,8 +403,10 @@ whole fleet.
 
 The diagnostic bundle includes:
 
-- Redacted `config.yaml` (secrets and webhook URLs removed; exception approvers and
-  descriptions replaced with placeholders)
+- Redacted `config.yaml`: keys, booleans, numbers, dates and the fixed vocabularies
+  (`provider`, `detail`, `mode`, `type`, `tier`, levels and similar) as written; every other
+  text value, such as a sheet, EA, agent, profile or folder name, replaced by
+  `<string N chars>`. Comments are removed.
 - Recent logs (secrets, webhook URLs, phone numbers, the Jamf server address and the
   profile's tenant and environment IDs removed)
 - Recent daily summaries (`summary_<date>.json`), with PII redacted by stable hash

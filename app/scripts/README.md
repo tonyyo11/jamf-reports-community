@@ -143,9 +143,10 @@ post-install scripts.
 
 ## What CI does
 
-`.github/workflows/release.yml` runs on a `v*` tag and attaches a source zip and
-`SHA256SUMS` to the GitHub Release. It does not build, sign or notarize the app; the
-steps above run on the maintainer's Mac.
+`.github/workflows/release.yml` runs on a `v*` tag and creates the GitHub Release as a
+draft, with a source zip and `SHA256SUMS` attached and no generated notes. It does not
+build, sign or notarize the app; the steps above run on the maintainer's Mac, which then
+adds the written notes and the signed `.pkg` and `.dmg` and publishes the draft.
 
 ## Troubleshooting
 
