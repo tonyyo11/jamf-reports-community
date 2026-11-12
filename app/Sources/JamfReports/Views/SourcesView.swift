@@ -353,7 +353,7 @@ struct SourcesView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Pick collected Extension Attributes (or import a CSV once) to track in config.yaml.")
+                      : L("Pick collected Extension Attributes (or import a CSV once) to track in config.yaml."))
                 TipView(SourcesTips.eaTracking)
                     .frame(maxWidth: 460, alignment: .leading)
             }
@@ -392,7 +392,7 @@ struct SourcesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app.")
+                          : L("Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app."))
                     Button(doctorOutcome == nil ? "Check connection" : "Re-check") {
                         runDoctor()
                     }
@@ -623,7 +623,7 @@ struct SourcesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Open the snapshots directory where dated archives live.")
+                          : L("Open the snapshots directory where dated archives live."))
                 }
                 if families.isEmpty {
                     emptyFamiliesState

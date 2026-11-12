@@ -935,8 +935,8 @@ struct AuditView: View {
                                 }
                                 .disabled(workspace.demoMode)
                                 .help(workspace.demoMode
-                                      ? "Opening a group in Jamf Pro needs a live profile."
-                                      : "Open this group in the Jamf Pro console.")
+                                      ? L("Opening a group in Jamf Pro needs a live profile.")
+                                      : L("Open this group in the Jamf Pro console."))
                             }
                         }
                         .frame(height: tableHeight(rowCount: sortedHygiene.count, maxHeight: 430))

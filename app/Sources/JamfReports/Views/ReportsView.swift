@@ -222,8 +222,8 @@ struct ReportsView: View {
                     }
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
-                          ? "Demo reports are not on disk. Revealing their folder needs a live profile."
-                          : "Open the Generated Reports folder in Finder")
+                          ? L("Demo reports are not on disk. Revealing their folder needs a live profile.")
+                          : L("Open the Generated Reports folder in Finder"))
                     PNPButton(
                         title: L("Period report"),
                         icon: "calendar.badge.clock",
@@ -237,7 +237,7 @@ struct ReportsView: View {
                     .help(
                         workspace.demoMode
                         ? DemoData.liveOnlyHelp
-                        : "Fleet numbers for a period, with start, end and change"
+                        : L("Fleet numbers for a period, with start, end and change")
                     )
                     PNPButton(
                         title: L("Generate\u{2026}"),
@@ -252,7 +252,7 @@ struct ReportsView: View {
                     .help(
                         workspace.demoMode
                         ? DemoData.liveOnlyHelp
-                        : "Choose a template or sheets and the formats, then generate"
+                        : L("Choose a template or sheets and the formats, then generate")
                     )
                     // Both render Jamf Pro data; a Jamf School workspace has a workbook only.
                     if workspace.environmentProducts.has(.jamfPro) {
@@ -267,7 +267,7 @@ struct ReportsView: View {
                         .help(
                             workspace.demoMode
                             ? DemoData.liveOnlyHelp
-                            : "Render the HTML report to PDF via WKWebView"
+                            : L("Render the HTML report to PDF via WKWebView")
                         )
                         PNPButton(
                             title: isExportingCSV ? L("Exporting...") : L("Export Inventory CSV"),
@@ -280,7 +280,7 @@ struct ReportsView: View {
                         .help(
                             workspace.demoMode
                             ? DemoData.liveOnlyHelp
-                            : "Export a wide CSV of all computer inventory"
+                            : L("Export a wide CSV of all computer inventory")
                         )
                     }
                 }

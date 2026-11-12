@@ -61,7 +61,7 @@ struct ExtensionAttributesView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Pick collected Extension Attributes to track in config.yaml.")
+                      : L("Pick collected Extension Attributes to track in config.yaml."))
             }
             if loadedSource != dataSource {
                 ScreenLoadingCard(what: L("extension attributes"))

@@ -324,126 +324,6 @@
         }
       }
     },
-    " Private values (server names, paths, account names) are written to this Mac's unified log." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Private Werte (Servernamen, Pfade, Accountnamen) werden in das Unified Log dieses Mac geschrieben."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Los valores privados (nombres de servidor, rutas, nombres de cuenta) se escriben en el registro unificado de este Mac."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Les valeurs privées (noms de serveur, chemins, noms de compte) sont écrites dans le journal unifié de ce Mac."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " I valori privati (nomi di server, percorsi, nomi di account) vengono scritti nel log unificato di questo Mac."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " 非公開の値（サーバ名、パス、アカウント名）がこのMacの統合ログに書き込まれます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Valores privados (nomes de servidor, caminhos, nomes de conta) são gravados no log unificado deste Mac."
-          }
-        }
-      }
-    },
-    " Uncheck Collect fresh data first to generate from cached snapshots." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Deaktivieren Sie zuerst „Aktuelle Daten erfassen“, um aus zwischengespeicherten Snapshots zu erstellen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Desmarque primero Recopilar datos nuevos para generar a partir de instantáneas en caché."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Décochez d’abord Collecter de nouvelles données pour générer à partir des instantanés en cache."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Deselezionare prima Raccogli dati aggiornati per generare dagli snapshot nella cache."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " キャッシュされたスナップショットから生成するには、先に“最新データを収集”をオフにしてください。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Desmarque primeiro Coletar dados novos para gerar a partir de snapshots em cache."
-          }
-        }
-      }
-    },
-    " Use Run now here — a manual run from another screen won't clear this." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Verwenden Sie hier „Jetzt ausführen“ – ein manueller Lauf von einem anderen Bildschirm löscht dies nicht."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Use Ejecutar ahora aquí: una ejecución manual desde otra pantalla no lo resolverá."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Utilisez Exécuter maintenant ici — une exécution manuelle depuis un autre écran n’effacera pas ceci."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Usare Esegui ora qui: un’esecuzione manuale da un’altra schermata non azzera questa segnalazione."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " ここで“今すぐ実行”を使用してください — ほかの画面からの手動実行ではこれは解消されません。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Use Executar agora aqui — uma execução manual de outra tela não limpará isto."
-          }
-        }
-      }
-    },
     " and " : {
       "localizations" : {
         "de" : {
@@ -2128,6 +2008,46 @@
         }
       }
     },
+    "%@ Private values (server names, paths, account names) are written to this Mac's unified log." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Private Werte (Servernamen, Pfade, Accountnamen) werden in das Unified Log dieses Mac geschrieben."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Los valores privados (nombres de servidor, rutas, nombres de cuenta) se escriben en el registro unificado de este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Les valeurs privées (noms de serveur, chemins, noms de compte) sont écrites dans le journal unifié de ce Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ I valori privati (nomi di server, percorsi, nomi di account) vengono scritti nel log unificato di questo Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 非公開の値（サーバ名、パス、アカウント名）がこのMacの統合ログに書き込まれます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Valores privados (nomes de servidor, caminhos, nomes de conta) são gravados no log unificado deste Mac."
+          }
+        }
+      }
+    },
     "%@ This report will be written to %@, a synced folder." : {
       "localizations" : {
         "de" : {
@@ -2204,6 +2124,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tendência de %@"
+          }
+        }
+      }
+    },
+    "%@ Uncheck Collect fresh data first to generate from cached snapshots." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Deaktivieren Sie zuerst „Aktuelle Daten erfassen“, um aus zwischengespeicherten Snapshots zu erstellen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Desmarque primero Recopilar datos nuevos para generar a partir de instantáneas en caché."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Décochez d’abord Collecter de nouvelles données pour générer à partir des instantanés en cache."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Deselezionare prima Raccogli dati aggiornati per generare dagli snapshot nella cache."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ キャッシュされたスナップショットから生成するには、先に“最新データを収集”をオフにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Desmarque primeiro Coletar dados novos para gerar a partir de snapshots em cache."
+          }
+        }
+      }
+    },
+    "%@ Use Run now here — a manual run from another screen won't clear this." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Verwenden Sie hier „Jetzt ausführen“ – ein manueller Lauf von einem anderen Bildschirm löscht dies nicht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Use Ejecutar ahora aquí: una ejecución manual desde otra pantalla no lo resolverá."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Utilisez Exécuter maintenant ici — une exécution manuelle depuis un autre écran n’effacera pas ceci."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Usare Esegui ora qui: un’esecuzione manuale da un’altra schermata non azzera questa segnalazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ここで“今すぐ実行”を使用してください — ほかの画面からの手動実行ではこれは解消されません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Use Executar agora aqui — uma execução manual de outra tela não limpará isto."
           }
         }
       }
@@ -2370,6 +2370,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ aceitou as credenciais, mas elas não têm uma permissão que os relatórios leem."
+          }
+        }
+      }
+    },
+    "%@ across %@; each evaluates the computers that report its column (%lld to %lld)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ in %@; jede bewertet die Computer, die ihre Spalte melden (%lld bis %lld)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ en %@; cada una evalúa los ordenadores que informan su columna (de %lld a %lld)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sur %@ ; chacun évalue les ordinateurs qui renseignent sa colonne (%lld à %lld)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ su %@; ciascuna valuta i computer che riportano la propria colonna (da %lld a %lld)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（%@にわたる）。各ベースラインは自身の列を報告するコンピュータを評価します（%lld～%lld台）。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ em %@; cada uma avalia os computadores que informam sua coluna (%lld a %lld)."
           }
         }
       }
@@ -14840,6 +14880,86 @@
         }
       }
     },
+    "%lld mSCP baseline" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld mSCP-Baseline"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld línea base mSCP"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld référentiel mSCP"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld baseline mSCP"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mSCP ベースライン%lld件"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld linha de base mSCP"
+          }
+        }
+      }
+    },
+    "%lld mSCP baselines" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld mSCP-Baselines"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld líneas base mSCP"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld référentiels mSCP"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld baseline mSCP"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mSCP ベースライン%lld件"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld linhas de base mSCP"
+          }
+        }
+      }
+    },
     "%lld missing" : {
       "localizations" : {
         "de" : {
@@ -15406,6 +15526,46 @@
         }
       }
     },
+    "%lld of %@ evaluated across %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %@ bewertet in %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %@ evaluados en %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur %@ évalués sur %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld di %@ valutati su %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@のうち%1$lld件を、%3$@にわたって評価しました。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %@ avaliados em %@."
+          }
+        }
+      }
+    },
     "%lld of %lld" : {
       "localizations" : {
         "de" : {
@@ -15712,6 +15872,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de %lld dispositivos com versão informada"
+          }
+        }
+      }
+    },
+    "%lld of %lld evaluated" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld bewertet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld evaluados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur %lld évalués"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld di %lld valutati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld / %lld件を評価"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld avaliados"
           }
         }
       }
@@ -26301,6 +26501,46 @@
         }
       }
     },
+    "Add a schedule the background item runs automatically." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fügen Sie einen Zeitplan hinzu, den das Hintergrundobjekt automatisch ausführt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añada una programación que el elemento en segundo plano ejecuta automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoutez une planification que l’élément en arrière-plan exécute automatiquement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi una pianificazione che l’elemento in background esegue automaticamente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バックグラウンド項目が自動的に実行するスケジュールを追加します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adicione um agendamento que o item em segundo plano executa automaticamente."
+          }
+        }
+      }
+    },
     "Add a workspace or Jamf Protect, or use a profile jamf-cli already has." : {
       "localizations" : {
         "de" : {
@@ -31165,6 +31405,86 @@
         }
       }
     },
+    "Available with a live profile" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit einem aktiven Profil verfügbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible con un perfil activo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible avec un profil actif"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponibile con un profilo attivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブプロファイルで利用できます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponível com um perfil ativo"
+          }
+        }
+      }
+    },
+    "Available with a live profile." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit einem aktiven Profil verfügbar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible con un perfil activo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible avec un profil actif."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponibile con un profilo attivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブプロファイルで利用できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponível com um perfil ativo."
+          }
+        }
+      }
+    },
     "Awaiting schedule" : {
       "localizations" : {
         "de" : {
@@ -33285,6 +33605,46 @@
         }
       }
     },
+    "Build the redacted diagnostic zip in this profile's workspace and reveal it in Finder. Runs entirely in-app — no Terminal needed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erstellt das bereinigte Diagnose-Zip im Arbeitsbereich dieses Profils und zeigt es im Finder an. Läuft vollständig in der App – kein Terminal nötig."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crea el zip de diagnóstico con datos redactados en el espacio de trabajo de este perfil y lo muestra en el Finder. Se ejecuta por completo en la app: no hace falta Terminal."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crée l’archive zip de diagnostic expurgée dans l’espace de travail de ce profil et l’affiche dans le Finder. S’exécute entièrement dans l’app — aucun Terminal requis."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crea lo zip di diagnostica con i dati oscurati nello spazio di lavoro di questo profilo e lo mostra nel Finder. Viene eseguito interamente nell’app: non serve il Terminale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロファイルのワークスペースに、機密情報を伏せた診断用 zip を作成し、Finder で表示します。すべてアプリ内で実行されるため、ターミナルは不要です。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cria o zip de diagnóstico com dados ocultados no espaço de trabalho deste perfil e o mostra no Finder. Roda inteiramente no app — sem precisar do Terminal."
+          }
+        }
+      }
+    },
     "Build your Jamf Reports workspace." : {
       "localizations" : {
         "de" : {
@@ -34651,6 +35011,46 @@
         }
       }
     },
+    "Check GitHub releases (or Homebrew, depending on install source) for a newer jamf-cli." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sucht in den GitHub-Releases (oder in Homebrew, je nach Installationsquelle) nach einer neueren Version von jamf-cli."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Busca una versión más reciente de jamf-cli en las versiones de GitHub (o en Homebrew, según el origen de la instalación)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherche une version plus récente de jamf-cli dans les releases GitHub (ou Homebrew, selon la source d’installation)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca una versione più recente di jamf-cli nelle release di GitHub (o in Homebrew, a seconda dell’origine dell’installazione)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub のリリース（インストール元によっては Homebrew）で、新しい jamf-cli を確認します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Procura uma versão mais recente do jamf-cli nos releases do GitHub (ou no Homebrew, dependendo da origem da instalação)."
+          }
+        }
+      }
+    },
     "Check connection" : {
       "localizations" : {
         "de" : {
@@ -35647,6 +36047,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escolher"
+          }
+        }
+      }
+    },
+    "Choose a template or sheets and the formats, then generate" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählen Sie eine Vorlage oder Tabellenblätter und die Formate und erstellen Sie dann den Bericht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elija una plantilla u hojas y los formatos, y genere"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez un modèle ou des feuilles et les formats, puis générez"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un modello o dei fogli e i formati, quindi genera"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テンプレートまたはシートと形式を選んでから生成します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha um modelo ou planilhas e os formatos e depois gere"
           }
         }
       }
@@ -49123,6 +49563,46 @@
         }
       }
     },
+    "Delete this backup" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Backup löschen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar esta copia de seguridad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer cette sauvegarde"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina questo backup"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このバックアップを削除"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Excluir este backup"
+          }
+        }
+      }
+    },
     "Delete…" : {
       "localizations" : {
         "de" : {
@@ -55975,6 +56455,46 @@
         }
       }
     },
+    "Export a wide CSV of all computer inventory" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine breite CSV mit dem gesamten Computer-Inventar exportieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar un CSV amplio con todo el inventario de ordenadores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporter un CSV large de tout l’inventaire des ordinateurs"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esporta un CSV esteso con tutto l’inventario dei computer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのコンピュータのインベントリを含む詳細な CSV を書き出す"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar um CSV amplo com todo o inventário de computadores"
+          }
+        }
+      }
+    },
     "Export a workbook or HTML report to share with your team." : {
       "localizations" : {
         "de" : {
@@ -56411,6 +56931,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exportar o gráfico de distribuição de estados do plano como PNG"
+          }
+        }
+      }
+    },
+    "Export the currently filtered computer list to a CSV file" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die aktuell gefilterte Computerliste in eine CSV-Datei exportieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar a un archivo CSV la lista de ordenadores filtrada actualmente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporter la liste des ordinateurs actuellement filtrée dans un fichier CSV"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esporta in un file CSV l’elenco dei computer attualmente filtrato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在絞り込まれているコンピュータの一覧を CSV ファイルに書き出す"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar para um arquivo CSV a lista de computadores filtrada no momento"
           }
         }
       }
@@ -60085,6 +60645,46 @@
         }
       }
     },
+    "Fleet numbers for a period, with start, end and change" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flottenzahlen für einen Zeitraum mit Anfang, Ende und Änderung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cifras de la flota de un periodo, con inicio, fin y variación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiffres du parc pour une période, avec début, fin et variation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numeri del parco dispositivi per un periodo, con inizio, fine e variazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期間ごとのフリートの数値（開始、終了、変化）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Números da frota em um período, com início, fim e variação"
+          }
+        }
+      }
+    },
     "Fleet numbers for a window, with a start, an end and the change. Each figure carries the date it came from." : {
       "localizations" : {
         "de" : {
@@ -63259,6 +63859,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volte à primeira tela e escolha outra forma de conectar"
+          }
+        }
+      }
+    },
+    "Go back to ~/Jamf-Reports on this Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem Mac zu ~/Jamf-Reports zurückkehren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a ~/Jamf-Reports en este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revenir à ~/Jamf-Reports sur ce Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Torna a ~/Jamf-Reports su questo Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac で ~/Jamf-Reports に戻します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voltar para ~/Jamf-Reports neste Mac."
           }
         }
       }
@@ -80975,6 +81615,46 @@
         }
       }
     },
+    "No device data matched the configured baseline EA column." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Gerätedaten passten zur konfigurierten Baseline-EA-Spalte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún dato de dispositivo coincidió con la columna EA de la línea base configurada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune donnée d’appareil ne correspond à la colonne EA du référentiel configuré."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun dato dei dispositivi corrisponde alla colonna EA della baseline configurata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定されたベースラインの EA 列に一致するデバイスデータがありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum dado de dispositivo correspondeu à coluna EA da linha de base configurada."
+          }
+        }
+      }
+    },
     "No devices collected yet" : {
       "localizations" : {
         "de" : {
@@ -89353,6 +90033,86 @@
         }
       }
     },
+    "Open the active workspace directory in Finder." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet den Ordner des aktiven Arbeitsbereichs im Finder."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre en el Finder la carpeta del espacio de trabajo activo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre le dossier de l’espace de travail actif dans le Finder."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre nel Finder la cartella dello spazio di lavoro attivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アクティブなワークスペースのフォルダを Finder で開きます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre a pasta do espaço de trabalho ativo no Finder."
+          }
+        }
+      }
+    },
+    "Open the backups directory for this workspace in Finder." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet den Backup-Ordner dieses Arbeitsbereichs im Finder."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre en el Finder la carpeta de copias de seguridad de este espacio de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre le dossier des sauvegardes de cet espace de travail dans le Finder."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre nel Finder la cartella dei backup di questo spazio di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースのバックアップフォルダを Finder で開きます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre a pasta de backups deste espaço de trabalho no Finder."
+          }
+        }
+      }
+    },
     "Open the device's Jamf Pro record → Management → Management Commands, read the failure text, then clear the failed command there. The app never flushes commands." : {
       "localizations" : {
         "de" : {
@@ -89629,6 +90389,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abra a tela com os registros por trás deste achado."
+          }
+        }
+      }
+    },
+    "Open the snapshots directory where dated archives live." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet den Snapshot-Ordner, in dem die datierten Archive liegen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la carpeta de instantáneas donde están los archivos con fecha."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre le dossier des instantanés où se trouvent les archives datées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre la cartella degli snapshot in cui si trovano gli archivi datati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付付きアーカイブが保存されているスナップショットのフォルダを開きます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre a pasta de snapshots, onde ficam os arquivos com data."
           }
         }
       }
@@ -92725,6 +93525,86 @@
         }
       }
     },
+    "Pick collected Extension Attributes (or import a CSV once) to track in config.yaml." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählen Sie erfasste Erweiterungsattribute (oder importieren Sie einmalig eine CSV), die in config.yaml verfolgt werden sollen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elija los atributos de extensión recopilados (o importe un CSV una vez) para seguirlos en config.yaml."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez les attributs d’extension collectés (ou importez un CSV une fois) à suivre dans config.yaml."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli gli attributi di estensione raccolti (o importa una volta un CSV) da tracciare in config.yaml."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml で追跡する、収集済みの拡張属性を選びます（CSV を一度だけ読み込むこともできます）。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha os atributos de extensão coletados (ou importe um CSV uma vez) para acompanhar em config.yaml."
+          }
+        }
+      }
+    },
+    "Pick collected Extension Attributes to track in config.yaml." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählen Sie erfasste Erweiterungsattribute, die in config.yaml verfolgt werden sollen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elija los atributos de extensión recopilados para seguirlos en config.yaml."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez les attributs d’extension collectés à suivre dans config.yaml."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli gli attributi di estensione raccolti da tracciare in config.yaml."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml で追跡する、収集済みの拡張属性を選びます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha os atributos de extensão coletados para acompanhar em config.yaml."
+          }
+        }
+      }
+    },
     "Pick the Extension Attributes and security agents collected from Jamf Pro to track in config.yaml. A CSV export can be imported once instead." : {
       "localizations" : {
         "de" : {
@@ -92881,6 +93761,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escolha o dispositivo que deseja inspecionar."
+          }
+        }
+      }
+    },
+    "Pick the folder that holds your Jamf Reports workspaces." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählen Sie den Ordner, der Ihre Jamf-Reports-Arbeitsbereiche enthält."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elija la carpeta que contiene sus espacios de trabajo de Jamf Reports."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez le dossier qui contient vos espaces de travail Jamf Reports."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli la cartella che contiene gli spazi di lavoro di Jamf Reports."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Reports のワークスペースを保存するフォルダを選択します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha a pasta que contém seus espaços de trabalho do Jamf Reports."
           }
         }
       }
@@ -95915,6 +96835,46 @@
         }
       }
     },
+    "Re-detect jamf-cli on PATH and reload workspace state from disk." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erkennt jamf-cli im PATH erneut und lädt den Zustand des Arbeitsbereichs vom Datenträger neu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a detectar jamf-cli en PATH y recarga el estado del espacio de trabajo desde el disco."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Détecte de nouveau jamf-cli dans PATH et recharge l’état de l’espace de travail depuis le disque."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rileva di nuovo jamf-cli nel PATH e ricarica lo stato dello spazio di lavoro dal disco."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PATH 上の jamf-cli を再検出し、ワークスペースの状態をディスクから再読み込みします。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detecta novamente o jamf-cli no PATH e recarrega o estado do espaço de trabalho a partir do disco."
+          }
+        }
+      }
+    },
     "Re-enable Gatekeeper via profile or `spctl --master-enable`." : {
       "localizations" : {
         "de" : {
@@ -96115,6 +97075,46 @@
         }
       }
     },
+    "Re-read schedules from disk." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liest die Zeitpläne erneut vom Datenträger."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a leer las programaciones desde el disco."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relit les planifications depuis le disque."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rilegge le pianificazioni dal disco."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スケジュールをディスクから再読み込みします。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lê novamente os agendamentos a partir do disco."
+          }
+        }
+      }
+    },
     "Re-read this workspace's latest summary snapshot." : {
       "localizations" : {
         "de" : {
@@ -96231,6 +97231,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Registrar novamente as credenciais do jamf-cli para o perfil"
+          }
+        }
+      }
+    },
+    "Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registriert die jamf-cli-Anmeldedaten dieses Profils (URL, Client-ID und Secret) neu, ohne die App zu verlassen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a registrar las credenciales de jamf-cli de este perfil (URL, ID de cliente y secreto) sin salir de la app."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réenregistre les identifiants jamf-cli de ce profil (URL, ID client et secret) sans quitter l’app."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registra di nuovo le credenziali jamf-cli di questo profilo (URL, ID client e secret) senza uscire dall’app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロファイルの jamf-cli の資格情報（URL、クライアント ID、シークレット）を、アプリを離れずに再登録します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registra novamente as credenciais do jamf-cli deste perfil (URL, ID do cliente e segredo) sem sair do app."
           }
         }
       }
@@ -99105,6 +100145,46 @@
         }
       }
     },
+    "Remove from this connection. The profile and workspace stay." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus dieser Verbindung entfernen. Profil und Arbeitsbereich bleiben erhalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar de esta conexión. El perfil y el espacio de trabajo se conservan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer de cette connexion. Le profil et l’espace de travail sont conservés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovi da questa connessione. Il profilo e lo spazio di lavoro restano."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この接続から削除します。プロファイルとワークスペースは残ります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover desta conexão. O perfil e o espaço de trabalho permanecem."
+          }
+        }
+      }
+    },
     "Remove from this environment?" : {
       "localizations" : {
         "de" : {
@@ -99461,6 +100541,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remover a entrada"
+          }
+        }
+      }
+    },
+    "Remove the list from config.yaml and score the default factors." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernt die Liste aus config.yaml und bewertet mit den Standardfaktoren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina la lista de config.yaml y puntúa con los factores predeterminados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprime la liste de config.yaml et calcule le score avec les facteurs par défaut."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuove l’elenco da config.yaml e calcola il punteggio con i fattori predefiniti."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml からリストを削除し、既定の要素でスコアを計算します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove a lista de config.yaml e pontua com os fatores padrão."
           }
         }
       }
@@ -99873,6 +100993,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Renomear…"
+          }
+        }
+      }
+    },
+    "Render the HTML report to PDF via WKWebView" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendert den HTML-Bericht über WKWebView als PDF"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convierte el informe HTML a PDF mediante WKWebView"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convertit le rapport HTML en PDF via WKWebView"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Converte il report HTML in PDF tramite WKWebView"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HTML レポートを WKWebView 経由で PDF に変換します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Converte o relatório HTML em PDF via WKWebView"
           }
         }
       }
@@ -101233,6 +102393,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restaurar configuração padrão…"
+          }
+        }
+      }
+    },
+    "Restore every hidden tab to the sidebar." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stellt alle ausgeblendeten Tabs in der Seitenleiste wieder her."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaura en la barra lateral todas las pestañas ocultas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaure tous les onglets masqués dans la barre latérale."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristina nella barra laterale tutte le schede nascoste."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非表示にしたタブをすべてサイドバーに戻します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaura todas as abas ocultas na barra lateral."
           }
         }
       }
@@ -102719,6 +103919,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Execute `jamf-cli config list` e defina profiles.%@ com um perfil exibido."
+          }
+        }
+      }
+    },
+    "Run `jamf-cli config validate` and check this profile's URL and credential settings, plus the config file itself." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Führt `jamf-cli config validate` aus und prüft URL und Anmeldedaten dieses Profils sowie die Konfigurationsdatei selbst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ejecuta `jamf-cli config validate` y comprueba la URL y las credenciales de este perfil, además del propio archivo de configuración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exécute `jamf-cli config validate` et vérifie l’URL et les identifiants de ce profil, ainsi que le fichier de configuration lui-même."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esegue `jamf-cli config validate` e controlla l’URL e le credenziali di questo profilo, oltre al file di configurazione stesso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "`jamf-cli config validate` を実行し、このプロファイルの URL と資格情報の設定、および設定ファイル自体を確認します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Executa `jamf-cli config validate` e verifica a URL e as credenciais deste perfil, além do próprio arquivo de configuração."
           }
         }
       }
@@ -108941,6 +110181,46 @@
         }
       }
     },
+    "Set by your organization's configuration profile" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von einem Konfigurationsprofil Ihrer Organisation festgelegt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Definido por el perfil de configuración de su organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Défini par le profil de configuration de votre organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostato dal profilo di configurazione della tua organizzazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組織の構成プロファイルによって設定されています"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Definido pelo perfil de configuração da sua organização"
+          }
+        }
+      }
+    },
     "Set connected_value for a precise match." : {
       "localizations" : {
         "de" : {
@@ -110777,6 +112057,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gravidade"
+          }
+        }
+      }
+    },
+    "Share of all %lld computer, No Data included" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteil an allen %lld Computer, einschließlich ohne Daten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proporción sobre %lld ordenador en total, incluidos los que no tienen datos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Part de l’ensemble des %lld ordinateur, y compris sans données"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quota su tutti i %lld computer, inclusi quelli senza dati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全%lld台に占める割合（データなしを含む）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Participação em todos os %lld computador, incluindo os sem dados"
+          }
+        }
+      }
+    },
+    "Share of all %lld computers, No Data included" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteil an allen %lld Computern, einschließlich ohne Daten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proporción sobre los %lld ordenadores en total, incluidos los que no tienen datos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Part de l’ensemble des %lld ordinateurs, y compris sans données"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quota su tutti i %lld computer, inclusi quelli senza dati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全%lld台に占める割合（データなしを含む）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Participação em todos os %lld computadores, incluindo os sem dados"
           }
         }
       }
@@ -133101,6 +134461,46 @@
         }
       }
     },
+    "Write the workbook" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Arbeitsmappe schreiben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribir el libro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écrire le classeur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scrivi la cartella di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークブックを書き込む"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gravar a pasta de trabalho"
+          }
+        }
+      }
+    },
     "Write true or false." : {
       "localizations" : {
         "de" : {
@@ -136047,46 +137447,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "os dados nas telas que as usam estão desatualizados"
-          }
-        }
-      }
-    },
-    "data source" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Datenquelle"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "fuente de datos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "source de données"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "origine dati"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "データソース"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "fonte de dados"
           }
         }
       }
@@ -142188,6 +143548,86 @@
         }
       }
     },
+    "of %lld computer, %lld No Data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "von %lld Computer, %lld ohne Daten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %lld ordenador, %lld sin datos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sur %lld ordinateur, %lld sans données"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "su %lld computer, %lld senza dati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータ%lld台中、データなし%lld台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %lld computador, %lld sem dados"
+          }
+        }
+      }
+    },
+    "of %lld computers, %lld No Data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "von %lld Computern, %lld ohne Daten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %lld ordenadores, %lld sin datos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sur %lld ordinateurs, %lld sans données"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "su %lld computer, %lld senza dati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータ%lld台中、データなし%lld台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %lld computadores, %lld sem dados"
+          }
+        }
+      }
+    },
     "of %lld managed Macs" : {
       "localizations" : {
         "de" : {
@@ -142268,42 +143708,82 @@
         }
       }
     },
-    "oldest Jamf Reports can run — aborting '%@' to avoid writing data from an unsupported binary. Update jamf-cli in Settings or with brew upgrade jamf-cli." : {
+    "off" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "älteste Version, die Jamf Reports ausführen kann — '%@' wird abgebrochen, um keine Daten einer nicht unterstützten Binärdatei zu schreiben. Aktualisieren Sie jamf-cli in den Einstellungen oder mit brew upgrade jamf-cli."
+            "value" : "aus"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "la más antigua con la que puede funcionar Jamf Reports — se cancela '%@' para evitar escribir datos de un binario no compatible. Actualice jamf-cli en Ajustes o con brew upgrade jamf-cli."
+            "value" : "desactivados"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "la plus ancienne que Jamf Reports puisse exécuter — abandon de « %@ » pour éviter d’écrire des données issues d’un binaire non pris en charge. Mettez à jour jamf-cli dans Réglages ou avec brew upgrade jamf-cli."
+            "value" : "off"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "la più vecchia che Jamf Reports può eseguire: '%@' viene interrotto per evitare di scrivere dati da un binario non supportato. Aggiornare jamf-cli in Impostazioni o con brew upgrade jamf-cli."
+            "value" : "disattivi"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Reportsが実行できる最も古いバージョンです。未対応のバイナリのデータを書き込まないよう、“%@”を中止しました。設定で、またはbrew upgrade jamf-cliでjamf-cliをアップデートしてください。"
+            "value" : "オフ"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "a mais antiga com que o Jamf Reports pode ser executado — abortando '%@' para evitar gravar dados de um binário incompatível. Atualize o jamf-cli em Ajustes ou com brew upgrade jamf-cli."
+            "value" : "desativados"
+          }
+        }
+      }
+    },
+    "on" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ein"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "activados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "on"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "attivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ativados"
           }
         }
       }

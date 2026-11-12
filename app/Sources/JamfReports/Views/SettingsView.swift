@@ -128,7 +128,7 @@ struct SettingsView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Re-detect jamf-cli on PATH and reload workspace state from disk.")
+                          : L("Re-detect jamf-cli on PATH and reload workspace state from disk."))
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
@@ -208,7 +208,7 @@ struct SettingsView: View {
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
                           : workspaceRootManaged ? ManagedPreference.note
-                          : "Pick the folder that holds your Jamf Reports workspaces.")
+                          : L("Pick the folder that holds your Jamf Reports workspaces."))
                     .accessibilityHint("Opens a folder picker for the workspace location.")
 
                     if !workspace.demoMode && WorkspaceRootStore.isCustomised() {
@@ -217,7 +217,7 @@ struct SettingsView: View {
                         }
                         .disabled(workspaceRootManaged)
                         .help(workspaceRootManaged
-                              ? ManagedPreference.note : "Go back to ~/Jamf-Reports on this Mac.")
+                              ? ManagedPreference.note : L("Go back to ~/Jamf-Reports on this Mac."))
                     }
                 }
 
@@ -377,7 +377,7 @@ struct SettingsView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Check GitHub releases (or Homebrew, depending on install source) for a newer jamf-cli.")
+                      : L("Check GitHub releases (or Homebrew, depending on install source) for a newer jamf-cli."))
                 if workspace.jamfCLIUpdateAvailable && !workspace.demoMode {
                     PNPButton(title: L("Update"), icon: "arrow.down.circle", style: .gold, size: .sm) {
                         Task { await workspace.updateJamfCLI() }
@@ -452,8 +452,8 @@ struct SettingsView: View {
                         NotificationCenter.default.post(name: .showAddSheet, object: nil)
                     }
                     .help(workspace.demoMode
-                          ? "Set up a real connection; demo mode ends when setup finishes."
-                          : "Add a workspace or Jamf Protect, or use a profile jamf-cli already has.")
+                          ? L("Set up a real connection; demo mode ends when setup finishes.")
+                          : L("Add a workspace or Jamf Protect, or use a profile jamf-cli already has."))
                     Text("A new Jamf Pro, Platform API or Jamf School workspace, Jamf Protect for this workspace, or a profile jamf-cli already has.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -505,7 +505,7 @@ struct SettingsView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Run `jamf-cli config validate` and check this profile's URL and credential settings, plus the config file itself.")
+                      : L("Run `jamf-cli config validate` and check this profile's URL and credential settings, plus the config file itself."))
             }
         }
     }
@@ -867,7 +867,7 @@ struct SettingsView: View {
                         .disabled(workspace.profile.isEmpty || workspace.demoMode)
                         .help(workspace.demoMode
                               ? DemoData.liveOnlyHelp
-                              : "Build the redacted diagnostic zip in this profile's workspace and reveal it in Finder. Runs entirely in-app — no Terminal needed.")
+                              : L("Build the redacted diagnostic zip in this profile's workspace and reveal it in Finder. Runs entirely in-app — no Terminal needed."))
                         .accessibilityHint(
                             "Generates a redacted diagnostic bundle and reveals it in Finder.")
                     }
@@ -881,7 +881,7 @@ struct SettingsView: View {
                     .disabled(workspace.demoMode || currentWorkspaceURL == nil)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Open the active workspace directory in Finder.")
+                          : L("Open the active workspace directory in Finder."))
                 }
 
                 if let msg = diagnosticBundleMessage {
@@ -983,11 +983,11 @@ struct SettingsView: View {
     nonisolated static func managedLoggingText(_ managed: ManagedDebugLogging?) -> String {
         guard let managed else { return L("No configuration profile sets logging for Jamf Reports.") }
         func onOff(_ value: Bool?) -> String {
-            value.map { $0 ? "on" : "off" } ?? L("not set")
+            value.map { $0 ? L("on") : L("off") } ?? L("not set")
         }
         let base = L("A configuration profile sets logging for Jamf Reports: verbose logs \(onOff(managed.persistVerbose)), private data \(onOff(managed.revealPrivate)).")
         guard managed.revealPrivate == true else { return base }
-        return base + L(" Private values (server names, paths, account names) are written to this Mac's unified log.")
+        return L("\(base) Private values (server names, paths, account names) are written to this Mac's unified log.")
     }
 
     private func revealDebugProfile() {
@@ -1233,7 +1233,7 @@ struct SettingsView: View {
                     }
                     .disabled(hiddenTabsManaged)
                     .help(hiddenTabsManaged
-                          ? ManagedPreference.note : "Restore every hidden tab to the sidebar.")
+                          ? ManagedPreference.note : L("Restore every hidden tab to the sidebar."))
                 }
                 Text(hiddenTabsManaged ? ManagedPreference.note
                      : "Hide dashboards you don't use. Core tabs (Overview, \(inventoryTabLabel), Data Sources, Settings) cannot be hidden.")

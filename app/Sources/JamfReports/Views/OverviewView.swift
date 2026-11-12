@@ -587,8 +587,8 @@ struct OverviewView: View {
                 // real workspace for it.
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
-                      ? "Demo data is fixed. Generating a report needs a live profile."
-                      : "Collect if the data is stale, then build this profile's report.")
+                      ? L("Demo data is fixed. Generating a report needs a live profile.")
+                      : L("Collect if the data is stale, then build this profile's report."))
             }
         }
     }
@@ -665,9 +665,10 @@ struct OverviewView: View {
                 // requires CLIBridge-side emit, which is outside this change's scope.
                 let skipMessage: String
                 if case .fresh(let ageMinutes) = freshnessDecision {
-                    skipMessage = L("[info] snapshots are fresh (\(ageMinutes)m old) — skipped collect; Trends will not gain a new data point this run")
+                    skipMessage = "[info] snapshots are fresh (\(ageMinutes)m old) — skipped collect;"
+                        + " Trends will not gain a new data point this run"
                 } else {
-                    skipMessage = L("[info] snapshots are fresh — skipped collect")
+                    skipMessage = "[info] snapshots are fresh — skipped collect"
                 }
                 await MainActor.run { workspace.globalStatus = skipMessage }
                 AppLogger.cli.info("\(skipMessage, privacy: .private)")

@@ -598,11 +598,11 @@ private struct HealthCard: View {
             // could previously only ever say "reported failure", leaving the
             // operator with nowhere to go). Falls back to the original wording
             // for status records written without a numeric code.
-            if let reason = issue.reason { return reason + managedRerunHint(issue) }
+            if let reason = issue.reason { return withRerunHint(reason, issue) }
             let cause = issue.lastRunExitCode.map {
                 "\(CLIBridge.explainExit($0, operation: "Last run")) (\(last))."
             } ?? L("Last run reported failure — \(last).")
-            return cause + managedRerunHint(issue)
+            return withRerunHint(cause, issue)
         case .tickerDisabled:
             return L("Scheduled runs are paused until \"Allow in the Background\" is turned on for JamfReports in Login Items.")
         }
@@ -613,9 +613,9 @@ private struct HealthCard: View {
     /// it deliberately does not clear the failing state (that anti-masking
     /// behavior is correct). Users try it anyway — point them at "Run now".
     /// Omitted for hand-built agents, whose "Run now" lives on Schedules.
-    private func managedRerunHint(_ issue: AutomationHealthIssue) -> String {
-        guard issue.isManagedAgent else { return "" }
-        return L(" Use Run now here — a manual run from another screen won't clear this.")
+    private func withRerunHint(_ text: String, _ issue: AutomationHealthIssue) -> String {
+        guard issue.isManagedAgent else { return text }
+        return L("\(text) Use Run now here — a manual run from another screen won't clear this.")
     }
 }
 

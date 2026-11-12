@@ -183,8 +183,8 @@ struct OutreachView: View {
                 // the demo profile has no workspace of its own.
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
-                      ? "Demo data is fixed. Exporting a CSV needs a live profile."
-                      : "Export all stale devices across every tier to a CSV in the workspace")
+                      ? L("Demo data is fixed. Exporting a CSV needs a live profile.")
+                      : L("Export all stale devices across every tier to a CSV in the workspace"))
 
                 if let copyConfirmation {
                     Pill(text: copyConfirmation, tone: .teal)

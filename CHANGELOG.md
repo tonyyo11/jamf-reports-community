@@ -211,6 +211,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- In a language other than English, the health banner, the Overview mobile tiles, the Data Sources
+  run counts, the schedule summary and the stale-date wording in tables and tooltips read as whole
+  translated sentences, with plural forms, instead of English fragments joined to translated words.
+  Demo-mode and button tooltips are translated too.
 - A Mac that never inventoried and never checked in now counts as "Jamf binary missing" even when Jamf marks it managed, so it gets the Computers filter and remediation steps and is listed apart in Offline Outreach, the HTML report and the Check-in Health sheet instead of as a stale Mac.
 - Workbook rows that tie on a count now come out in the same order every run. The Mobile Fleet Summary's distributions and Top Models list, the Hardware Models tab and each text extension attribute's value table ordered tied rows at random, so the top ten models could change between two runs on the same data.
 - A Mac that never sent inventory reads No Data for FileVault, SIP, Firewall and Gatekeeper on every screen and report, not Jamf's placeholder values (firewall off, FileVault unencrypted), so it no longer appears under Failing controls. A Mac with real inventory and the firewall off still reads off.

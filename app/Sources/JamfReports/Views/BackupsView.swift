@@ -177,7 +177,7 @@ struct BackupsView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? Self.demoRevealHelp
-                      : "Open the backups directory for this workspace in Finder.")
+                      : L("Open the backups directory for this workspace in Finder."))
                 Mono(
                     text: diffSelectionHint,
                     size: 10.5,
@@ -438,7 +438,7 @@ struct BackupsView: View {
                                 showDeleteConfirm = true
                             }
                             .disabled(workspace.demoMode || isRunningBackup)
-                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "Delete this backup")
+                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : L("Delete this backup"))
                             .accessibilityHint("Shows a confirmation dialog to delete this backup")
                         }
                         .contextMenu {

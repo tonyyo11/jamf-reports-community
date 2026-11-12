@@ -190,7 +190,7 @@ struct SchedulesView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Re-read schedules from disk.")
+                      : L("Re-read schedules from disk."))
                 PNPButton(title: L("New schedule"), icon: "plus", style: .gold) {
                     newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                     showNewSchedule = true
@@ -198,7 +198,7 @@ struct SchedulesView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Add a schedule the background item runs automatically.")
+                      : L("Add a schedule the background item runs automatically."))
             }
         }
     }

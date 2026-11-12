@@ -351,7 +351,7 @@ struct DevicesView: View {
                 .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Export the currently filtered computer list to a CSV file")
+                      : L("Export the currently filtered computer list to a CSV file"))
             }
         }
     }
@@ -738,7 +738,7 @@ struct DevicesView: View {
             }
 
             if workspace.demoMode {
-                Text(DemoData.liveOnlyHelp + ".")
+                Text(L("Available with a live profile."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             } else {
