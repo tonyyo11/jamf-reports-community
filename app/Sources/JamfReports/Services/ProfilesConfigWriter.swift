@@ -81,6 +81,37 @@ enum ProfilesConfigWriter {
         return block
     }
 
+    /// The School setup's write for the workspace's own profile, on a block that names the
+    /// workspace as Jamf Pro (a setup that began on the Jamf Pro path, or a login jamf-cli could
+    /// not place): the MDM slot becomes `jamf_school`, as `school_cli` did on an old-shape file,
+    /// and a `platform` slot naming the workspace itself goes with it. Nil when the block does
+    /// not name the workspace as Jamf Pro.
+    static func schoolTakesTheMDMSlot(
+        workspace: String, appSupport: URL = AppSupport.directory()
+    ) throws -> ConfigSaveReport? {
+        guard hasProfilesBlock(workspace: workspace) else { return nil }
+        var droppedPlatform = false
+        var moved = false
+        let report = try ConfigService.saveBlock(key: "profiles", profile: workspace) { root in
+            guard var block = root.value(for: "profiles")?.mapping,
+                  block.value(for: Slot.jamfPro.rawValue)?.stringValue == workspace,
+                  block.value(for: Slot.jamfSchool.rawValue) == nil else { return }
+            droppedPlatform = block.value(for: Slot.platform.rawValue)?.stringValue == workspace
+            let drop: Set = droppedPlatform
+                ? [Slot.jamfPro.rawValue, Slot.platform.rawValue] : [Slot.jamfPro.rawValue]
+            block.entries.removeAll { drop.contains($0.key) }
+            block.set(Slot.jamfSchool.rawValue, value: .scalar(.string(workspace)))
+            root.set("profiles", value: .mapping(block))
+            moved = true
+        }.report
+        guard moved else { return nil }
+        if droppedPlatform {
+            SharedConfigPin.confirmWritten(
+                "", key: .platformProfile, profile: workspace, appSupport: appSupport)
+        }
+        return report
+    }
+
     /// The `profiles:` block of a Protect-only environment: the one slot, no MDM slot.
     static func protectOnlyBlock(login: String) -> String {
         "\nprofiles:\n  \(Slot.protect.rawValue): \"\(ScaffoldService.yamlEscape(login))\"\n"

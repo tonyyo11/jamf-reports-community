@@ -454,12 +454,13 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: try ConfigService.configURL(for: profile),
                                   encoding: .utf8), before)
         XCTAssertEqual(EnvironmentProfiles.read(workspace: profile).jamfSchool, profile)
-        // A Jamf Pro workspace never takes School (one MDM per environment).
+        // A Jamf Pro workspace never takes another School login (one MDM per environment).
         let pro = "testpro\(Int.random(in: 1000...9999))"
         flow.productPath = .pro
         flow.profileName = pro
         try flow.createWorkspace()
-        XCTAssertThrowsError(try flow.writeSchoolConfig(profileSlug: pro, schoolProfileName: pro))
+        XCTAssertThrowsError(try flow.writeSchoolConfig(
+            profileSlug: pro, schoolProfileName: "other-school"))
     }
 
     // MARK: - Jamf School product path: step sequence

@@ -77,6 +77,39 @@ final class NewWorkspaceProfilesBlockTests: XCTestCase {
         XCTAssertEqual(try config("district"), before)
     }
 
+    /// Setup that began on the Jamf Pro path (Set up Jamf School after "no Jamf Pro"), or an
+    /// adopted School login jamf-cli could not place, wrote a Jamf Pro block; the School write
+    /// for the workspace's own profile moves the MDM slot, as `school_cli` did on the old shape.
+    func testTheSchoolWriteMovesAJamfProBlockToSchool() throws {
+        let support = root.appendingPathComponent("support", isDirectory: true)
+        let pro = OnboardingFlow()
+        pro.profileName = "campus"
+        try pro.createWorkspace()
+        try pro.recordOwnPlatformSlot("campus", appSupport: support)
+        XCTAssertEqual(try environment("campus").jamfPro, "campus")
+
+        let school = OnboardingFlow()
+        school.productPath = .school
+        school.profileName = "campus"
+        try school.createWorkspace()
+        try school.writeSchoolConfig(profileSlug: "campus", schoolProfileName: "campus")
+        let env = try environment("campus")
+        XCTAssertEqual(env.jamfSchool, "campus")
+        XCTAssertNil(env.jamfPro)
+        XCTAssertNil(env.platform)
+        XCTAssertNil(EnvironmentProfiles.resolve(
+            config: try ConfigLoader.loadFromString(try config("campus")), workspace: "campus")
+            .refusal(workspace: "campus"))
+
+        // The adoption path's own writer reaches the same seam.
+        try ReportEngine.initializeWorkspace(
+            profile: "district", workspacesRoot: root, kind: .init(platform: true)) { _ in }
+        XCTAssertNoThrow(try OnboardingFlow.writeProductBlock(
+            "school_cli", profile: "district", for: "district"))
+        XCTAssertEqual(try environment("district").jamfSchool, "district")
+        XCTAssertNil(try environment("district").jamfPro)
+    }
+
     func testOnboardingAddsThePlatformSlotOnlyToAConfigItWrote() throws {
         let support = root.appendingPathComponent("support", isDirectory: true)
         let flow = OnboardingFlow()

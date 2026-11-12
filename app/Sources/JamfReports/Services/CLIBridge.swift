@@ -2689,10 +2689,13 @@ try await ReportEngine.inventoryCSV(
         if !FileManager.default.fileExists(atPath: config.path) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] initializing workspace for \(profile)"))
+            // Asking jamf-cli what the profile is runs `config list`, so never on the main actor.
+            let kind = await Task.detached { ProfilesConfigWriter.NewWorkspace.of(profile) }.value
             do {
                 try ReportEngine.initializeWorkspace(
                     profile: profile,
                     workspacesRoot: ProfileService.workspacesRoot(),
+                    kind: kind,
                     onLine: onLine
                 )
             } catch {

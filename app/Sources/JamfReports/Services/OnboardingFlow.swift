@@ -557,6 +557,9 @@ final class OnboardingFlow {
         // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
         ProfileAuthMethod.invalidateCache()
         PlatformTwin.invalidateCache()
+        if proConnectionType == .platformGateway, profileRegistered {
+            try recordOwnPlatformSlot(profileName.trimmed)
+        }
     }
 
     private func registerOAuth2Profile() async throws {
@@ -634,7 +637,6 @@ final class OnboardingFlow {
         validationOutput.removeAll()
         connectionCheck = nil
         lastError = nil
-        try recordOwnPlatformSlot(profileName.trimmed)
     }
 
     /// A Platform API workspace collects the Platform kinds as its own profile, so the block
@@ -1417,6 +1419,10 @@ final class OnboardingFlow {
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
         let slot = key == "school_cli" ? "jamf_school" : key
+        if key == "school_cli", name.trimmingCharacters(in: .whitespaces) == profileSlug,
+           let moved = try ProfilesConfigWriter.schoolTakesTheMDMSlot(workspace: profileSlug) {
+            return moved
+        }
         return try ConfigService.saveBlock(
             key: key, profile: profileSlug, profilesSlot: slot, slotValue: name
         ) { root in

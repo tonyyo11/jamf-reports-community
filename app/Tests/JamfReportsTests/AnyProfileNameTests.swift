@@ -39,8 +39,9 @@ final class AnyProfileNameTests: XCTestCase {
             XCTAssertEqual(flow.statuses[name], .done, name)
             let folder = tempRoot.appendingPathComponent(ProfileName.pathComponent(name))
             let config = folder.appendingPathComponent("config.yaml")
-            XCTAssertEqual(try ConfigLoader.load(from: config).jamfCli?.profile, name,
-                           "config.yaml records the name jamf-cli is called with")
+            // D3: the profiles: block's MDM slot is the name jamf-cli is called with.
+            XCTAssertEqual(EnvironmentProfiles.read(configURL: config, workspace: name).jamfPro,
+                           name, "config.yaml records the name jamf-cli is called with")
         }
         let folders = try FileManager.default.contentsOfDirectory(atPath: tempRoot.path)
         XCTAssertEqual(folders.count, names.count, "one folder per name, nothing outside the root")
