@@ -304,10 +304,17 @@ final class ExistingCLISetupFlow {
         let platforms = profiles.filter {
             unusable[$0.name] == nil && refusals[$0.name] == nil && $0.auth?.isPlatform == true
         }
-        guard !platforms.isEmpty else { return }
-        var learned: [String: String] = [:]
-        for platform in platforms {
-            if let url = await learn(platform.name) { learned[platform.name] = url }
+        // Jamf Pro is asked only when an oauth2 profile could be the twin, and every Platform
+        // profile at once, so a hung gateway costs one 60 s limit, not one per profile.
+        guard !platforms.isEmpty, profiles.contains(where: PlatformTwin.isCandidate) else { return }
+        let learned = await withTaskGroup(of: (String, String?).self) { group in
+            for platform in platforms {
+                let name = platform.name
+                group.addTask { (name, await learn(name)) }
+            }
+            var found: [String: String] = [:]
+            for await (name, url) in group { if let url { found[name] = url } }
+            return found
         }
         guard !isRunning, !didComplete, !learned.isEmpty else { return }
         apply(EnvironmentProposal.propose(

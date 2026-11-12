@@ -69,6 +69,23 @@ final class EnvironmentProposalTests: XCTestCase {
         XCTAssertEqual(result.extensions.first?.slot, .platform)
     }
 
+    /// A free oauth2 profile on the same Jamf Pro must not take the twin from a workspace that
+    /// exists, or the Add sheet offers a second workspace for one fleet.
+    func testExistingWorkspaceBeatsAFreeTwinOfAnEarlierName() {
+        let existing = ["Prod": EnvironmentProfiles(jamfPro: "Prod")]
+        let profiles = [
+            profile("Admin", auth: "oauth2", url: "example.jamfcloud.com"),
+            profile("Prod", auth: "oauth2", url: "example.jamfcloud.com"),
+            gw("Prod-API"),
+        ]
+        let result = EnvironmentProposal.propose(
+            profiles: profiles, learnedJamfProURLs: ["Prod-API": "https://example.jamfcloud.com"],
+            existingWorkspaces: existing)
+        XCTAssertEqual(result.extensions.map(\.id), ["Prod/Prod-API"])
+        XCTAssertFalse(result.environments.contains { $0.platform == "Prod-API" })
+        XCTAssertFalse(result.environments.contains { $0.workspace == "Prod-API" })
+    }
+
     func testExistingWorkspaceWithAnotherPlatformLeavesTheProfileUnassigned() {
         let existing = ["Example": EnvironmentProfiles(jamfPro: "Example", platform: "Old-API")]
         let result = EnvironmentProposal.propose(
