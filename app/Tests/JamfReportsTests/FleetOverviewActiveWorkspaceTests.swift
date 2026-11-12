@@ -52,6 +52,22 @@ final class FleetOverviewActiveWorkspaceTests: XCTestCase {
         XCTAssertEqual(overview.summary?.totalDevices, 45)
     }
 
+    /// Demo mode gives the stability trend the Overview's whole history, not one point, and
+    /// the latest day is the summary the tiles show.
+    func testDemoFleetOverviewCarriesTheDemoHistory() async throws {
+        let store = WorkspaceStore(
+            demoMode: true, tickerRegistrar: StubTickerRegistrar(), jamfCLIProfileNames: { [] })
+        let overview = await store.loadFleetOverview(readSummaries: { _ in
+            XCTFail("demo mode never reads a workspace"); return []
+        })
+        XCTAssertEqual(overview.summaries.count, DemoData.trendDates.count)
+        XCTAssertEqual(overview.summaries.map(\.date), DemoData.trendDates)
+        XCTAssertEqual(overview.summary?.date, overview.summaries.last?.date)
+        XCTAssertNotNil(overview.summary?.mobileFormFactorCounts, "the latest day has the device maps")
+        XCTAssertNil(overview.summaries.first?.mobileFormFactorCounts)
+        XCTAssertGreaterThan(overview.summaries.compactMap(\.stabilityIndex).count, 1)
+    }
+
     // MARK: - Fixtures
 
     private func makeStore(active: String) -> WorkspaceStore {

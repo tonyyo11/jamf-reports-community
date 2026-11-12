@@ -88507,6 +88507,46 @@
         }
       }
     },
+    "One daily summary so far" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bisher eine Tageszusammenfassung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Por ahora, un resumen diario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un seul résumé quotidien pour l’instant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finora un solo riepilogo giornaliero"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日次サマリーはまだ1件です"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Até agora, um resumo diário"
+          }
+        }
+      }
+    },
     "One environment has one MDM" : {
       "localizations" : {
         "de" : {
@@ -122917,6 +122957,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A pasta de origem é movida para %@ e nunca é excluída."
+          }
+        }
+      }
+    },
+    "The trend line starts once a second day's summary is written." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Trendlinie beginnt, sobald die Zusammenfassung eines zweiten Tages geschrieben ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La línea de tendencia empieza cuando se escribe el resumen de un segundo día."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La courbe de tendance commence dès que le résumé d’un deuxième jour est écrit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La linea di tendenza inizia quando viene scritto il riepilogo di un secondo giorno."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2日目のサマリーが書き込まれると、トレンドラインが表示されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A linha de tendência começa quando o resumo de um segundo dia é gravado."
           }
         }
       }

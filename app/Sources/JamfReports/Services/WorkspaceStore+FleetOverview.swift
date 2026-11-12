@@ -41,30 +41,36 @@ extension WorkspaceStore {
     }
 
     /// The first demo profile reads the Overview's own demo fleet; each later one is a
-    /// smaller variation of it.
+    /// smaller variation of it. Every demo trend date is a summary, so the stability trend has
+    /// the Overview's history, not one point.
     private func demoFleetOverview() -> FleetWorkspaceOverview {
-        func latest(_ metric: TrendSeries.Metric) -> Double {
-            DemoData.trends[metric]?.last ?? 0
-        }
         let idx = profiles.firstIndex { $0.name == profile } ?? 0
         let offset = Double(idx * 4)
-        let dateIndex = max(DemoData.trendDates.count - 1 - idx, 0)
-        // Only the first profile is the demo fleet itself; a variation has no device maps.
-        let maps = idx == 0 ? DemoData.summaryDeviceMaps : SummaryDeviceMaps.Fields()
-        let summary = DailySummary(
-            date: DemoData.trendDates[safe: dateIndex] ?? "2026-04-20",
-            totalDevices: DemoData.deviceCount(forProfileAt: idx),
-            fileVaultPct: latest(.fileVault) - offset,
-            compliancePct: max(latest(.compliance) - offset, 0),
-            staleCount: Int(latest(.stale).rounded()) + idx * 4,
-            osCurrentPct: latest(.osCurrent) - offset,
-            crowdstrikePct: latest(.edrAgent) - offset,
-            patchPct: latest(.patch) - offset,
-            osMajorCounts: maps.osMajor,
-            modelFamilyCounts: maps.modelFamily,
-            mobileFormFactorCounts: maps.formFactor,
-            lastSeenBuckets: maps.lastSeen
-        )
-        return FleetWorkspaceOverview(profile: profile, summary: summary, summaries: [summary])
+        let lastIndex = max(DemoData.trendDates.count - 1 - idx, 0)
+        func value(_ metric: TrendSeries.Metric, at i: Int) -> Double {
+            DemoData.trends[metric]?[safe: i] ?? DemoData.trends[metric]?.last ?? 0
+        }
+        func summary(at i: Int) -> DailySummary {
+            // Only the first profile's latest day is the demo fleet itself; other days and
+            // variations have no device maps.
+            let maps = idx == 0 && i == lastIndex
+                ? DemoData.summaryDeviceMaps : SummaryDeviceMaps.Fields()
+            return DailySummary(
+                date: DemoData.trendDates[safe: i] ?? "2026-04-20",
+                totalDevices: DemoData.deviceCount(forProfileAt: idx),
+                fileVaultPct: value(.fileVault, at: i) - offset,
+                compliancePct: max(value(.compliance, at: i) - offset, 0),
+                staleCount: Int(value(.stale, at: i).rounded()) + idx * 4,
+                osCurrentPct: value(.osCurrent, at: i) - offset,
+                crowdstrikePct: value(.edrAgent, at: i) - offset,
+                patchPct: value(.patch, at: i) - offset,
+                osMajorCounts: maps.osMajor,
+                modelFamilyCounts: maps.modelFamily,
+                mobileFormFactorCounts: maps.formFactor,
+                lastSeenBuckets: maps.lastSeen
+            )
+        }
+        let summaries = (0...lastIndex).map(summary(at:))
+        return FleetWorkspaceOverview(profile: profile, summary: summaries.last, summaries: summaries)
     }
 }

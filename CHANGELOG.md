@@ -230,6 +230,9 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Fleet Overview's four tiles are one height when a caption wraps, and its Stability Trend
+  says a trend starts with a second day's summary instead of drawing empty axes for one. In demo
+  mode the trend shows the same 26 weeks of history as the Overview.
 - With the app in a language other than English, reports, run logs, stored failure hints and
   the Offline Outreach clipboard copy stay in English, and a translated label no longer stays in
   whichever language read it first until the app is relaunched. The Health Audit's jump links
