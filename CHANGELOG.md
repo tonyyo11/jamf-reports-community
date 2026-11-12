@@ -9,6 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Fleet Overview shows what the environment holds: tiles for Mac models, mobile device types,
+  operating systems by major version, and when Macs and mobile devices were last seen (under a
+  day, 1 to 6 days, 7 days or more, never), from the latest daily summary. A figure the summary
+  does not carry is left out, never shown as 0.
 - Percentages can be whole numbers. `display.percent_decimals: 0` in `config.yaml`, or
   **Percentages** on the Customize screen, prints `57%` instead of `56.7%` on every screen and
   in the workbook, CSV folder, HTML report, PDF, period report, alert cards and on-device

@@ -49,6 +49,8 @@ extension WorkspaceStore {
         let idx = profiles.firstIndex { $0.name == profile } ?? 0
         let offset = Double(idx * 4)
         let dateIndex = max(DemoData.trendDates.count - 1 - idx, 0)
+        // Only the first profile is the demo fleet itself; a variation has no device maps.
+        let maps = idx == 0 ? DemoData.summaryDeviceMaps : SummaryDeviceMaps.Fields()
         let summary = DailySummary(
             date: DemoData.trendDates[safe: dateIndex] ?? "2026-04-20",
             totalDevices: DemoData.deviceCount(forProfileAt: idx),
@@ -57,7 +59,11 @@ extension WorkspaceStore {
             staleCount: Int(latest(.stale).rounded()) + idx * 4,
             osCurrentPct: latest(.osCurrent) - offset,
             crowdstrikePct: latest(.edrAgent) - offset,
-            patchPct: latest(.patch) - offset
+            patchPct: latest(.patch) - offset,
+            osMajorCounts: maps.osMajor,
+            modelFamilyCounts: maps.modelFamily,
+            mobileFormFactorCounts: maps.formFactor,
+            lastSeenBuckets: maps.lastSeen
         )
         return FleetWorkspaceOverview(profile: profile, summary: summary, summaries: [summary])
     }
