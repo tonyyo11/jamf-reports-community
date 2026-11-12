@@ -15,22 +15,30 @@ struct TrendChange: Equatable, Sendable {
     let verdict: Verdict
     /// The magnitude with its unit, "2.0 pp" or "9"; empty when flat.
     let size: String
+    /// How the figures are printed, which the hero's relative change follows too.
+    let format: PercentFormat
 
-    init(metric: TrendSeries.Metric, first: Double, last: Double) {
-        self.init(unit: metric.unit, polarity: metric.polarity, first: first, last: last)
+    init(metric: TrendSeries.Metric, first: Double, last: Double, format: PercentFormat) {
+        self.init(unit: metric.unit, polarity: metric.polarity, first: first, last: last,
+                  format: format)
     }
 
     /// For a figure that is not a trend metric (the HTML report's P0 count): `unit` is "%" for
     /// a share or score, whose change is in percentage points, and "" for a count.
-    init(unit: String, polarity: FleetInsightInput.Polarity, first: Double, last: Double) {
+    init(
+        unit: String, polarity: FleetInsightInput.Polarity, first: Double, last: Double,
+        format: PercentFormat
+    ) {
+        self.format = format
         let isShare = unit == "%"
-        let delta = isShare ? Self.tenths(Self.tenths(last) - Self.tenths(first))
+        let delta = isShare
+            ? format.roundedChange(format.rounded(last) - format.rounded(first))
             : (last - first).rounded()
         let moved: Direction = delta == 0 ? .flat : (delta > 0 ? .up : .down)
         direction = moved
         size = switch moved {
         case .flat: ""
-        default: isShare ? String(format: "%.1f pp", abs(delta)) : "\(Int(abs(delta)))"
+        default: isShare ? format.points(abs(delta)) : "\(Int(abs(delta)))"
         }
         verdict = switch (moved, polarity) {
         case (.flat, _), (_, .neutral): .neutral
@@ -45,7 +53,7 @@ struct TrendChange: Equatable, Sendable {
     func heroText(relativeChange: Double?) -> String {
         guard direction != .flat else { return L("No change") }
         guard let relativeChange else { return size }
-        return "\(size) (\(String(format: "%.1f", relativeChange))%)"
+        return "\(size) (\(format.changeText(relativeChange)))"
     }
 
     var symbol: String {
@@ -64,6 +72,4 @@ struct TrendChange: Equatable, Sendable {
         case .flat: "±0"
         }
     }
-
-    private static func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
 }

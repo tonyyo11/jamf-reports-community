@@ -235,7 +235,7 @@ enum ChartRenderer {
             ctx.fill(CGRect(x: startX, y: y - swatchSize + 2,
                             width: swatchSize, height: swatchSize))
             // Count + percent label: "No Data: N (P%)"
-            let pctStr = String(format: "%.0f%%", slice.pct)
+            let pctStr = PercentFormat.whole.text(slice.pct)
             let legend = "\(slice.label): \(slice.count) (\(pctStr))"
             drawText(ctx: ctx, text: legend,
                      at: CGPoint(x: startX + swatchSize + 5, y: y - 2),

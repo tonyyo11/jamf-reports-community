@@ -5,6 +5,7 @@ import SwiftUI
 /// workspace can be a different Jamf Pro server, so this screen never shows two; the sidebar
 /// profile switcher changes what it shows.
 struct FleetOverviewView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -73,7 +74,7 @@ struct FleetOverviewView: View {
     private func workspaceDetail(_ row: FleetWorkspaceOverview) -> some View {
         // #184: each flagged condition gets its explanation and a route to the
         // screen where the operator can act on it.
-        if row.hasIssue {
+        if !row.issues(format: percentFormat).isEmpty {
             profileIssuesCard(for: row)
         }
 
@@ -85,7 +86,7 @@ struct FleetOverviewView: View {
             )
             StatTile(
                 label: L("Stability"),
-                value: stabilityLabel(row.summary?.stabilityIndex),
+                value: stabilityLabel(row.summary?.stabilityIndex, format: percentFormat),
                 sub: L("Composite index")
             )
             StatTile(
@@ -95,7 +96,7 @@ struct FleetOverviewView: View {
             )
             StatTile(
                 label: L("Patch"),
-                value: row.summary?.patchPct.map { "\(String(format: "%.1f", $0))%" } ?? "--",
+                value: percentFormat.text(row.summary?.patchPct, missing: "--"),
                 sub: L("Devices on latest")
             )
         }
@@ -112,11 +113,12 @@ struct FleetOverviewView: View {
                     Spacer()
                     let index = row.summary?.stabilityIndex
                     Pill(
-                        text: row.summary == nil ? L("No Data") : stabilityPillText(index),
+                        text: row.summary == nil ? L("No Data") : stabilityPillText(index, format: percentFormat),
                         tone: stabilityTone(index)
                     )
                     .accessibilityLabel(
-                        stabilityAccessibilityLabel(index, hasSummary: row.summary != nil))
+                        stabilityAccessibilityLabel(
+                            index, hasSummary: row.summary != nil, format: percentFormat))
                 }
 
                 if let summary = row.summary {
@@ -260,7 +262,8 @@ struct FleetOverviewView: View {
             seriesName: L("Stability Index"),
             dates: points.map(\.date),
             values: points.map(\.value),
-            unit: "%"
+            unit: "%",
+            percentFormat: percentFormat
         ))
     }
 
@@ -285,12 +288,12 @@ struct FleetOverviewView: View {
             }
             .frame(height: 8)
             .accessibilityHidden(true)
-            Mono(text: value.map { "\(String(format: "%.1f", $0))%" } ?? "--",
+            Mono(text: percentFormat.text(value, missing: "--"),
                  color: Theme.Colors.fg)
                 .frame(width: 56, alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? L("no data"))")
+        .accessibilityLabel("\(label): \(percentFormat.text(value, missing: L("no data")))")
     }
 
     private func stalePercent(_ summary: DailySummary) -> Double? {
@@ -307,7 +310,7 @@ struct FleetOverviewView: View {
                         .accessibilityHidden(true)
                     SectionHeader(title: L("Issues on This Workspace"))
                 }
-                ForEach(row.issues) { issue in
+                ForEach(row.issues(format: percentFormat)) { issue in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(issue.reason)
                             .font(.callout.weight(.semibold))
@@ -365,21 +368,22 @@ func stabilityWord(_ value: Double?) -> String? {
     return L("Low")
 }
 
-func stabilityPillText(_ value: Double?) -> String {
-    guard let word = stabilityWord(value) else { return stabilityLabel(value) }
-    return "\(word) · \(stabilityLabel(value))"
+func stabilityPillText(_ value: Double?, format: PercentFormat) -> String {
+    guard let word = stabilityWord(value) else { return stabilityLabel(value, format: format) }
+    return "\(word) · \(stabilityLabel(value, format: format))"
 }
 
-func stabilityAccessibilityLabel(_ value: Double?, hasSummary: Bool) -> String {
+func stabilityAccessibilityLabel(
+    _ value: Double?, hasSummary: Bool, format: PercentFormat
+) -> String {
     guard hasSummary, let value, let word = stabilityWord(value) else {
         return hasSummary ? L("Stability unknown") : L("Stability: no data")
     }
-    return L("Stability \(word), \(String(format: "%.1f", value)) percent")
+    return L("Stability \(word), \(format.numberText(value)) percent")
 }
 
-private func stabilityLabel(_ value: Double?) -> String {
-    guard let value else { return "--" }
-    return "\(String(format: "%.1f", value))%"
+private func stabilityLabel(_ value: Double?, format: PercentFormat) -> String {
+    format.text(value, missing: "--")
 }
 
 private func stabilityTone(_ value: Double?) -> Pill.Tone {
@@ -399,7 +403,7 @@ struct FleetProfileIssue: Identifiable {
 }
 
 /// Why a workspace is flagged (#184), for Fleet Overview's issues card.
-func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
+func fleetProfileIssues(_ summary: DailySummary?, format: PercentFormat) -> [FleetProfileIssue] {
     guard let summary else {
         return [FleetProfileIssue(
             reason: L("No summary collected yet"),
@@ -411,7 +415,7 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     var issues: [FleetProfileIssue] = []
     if let stability = summary.stabilityIndex, stability < 70 {
         issues.append(FleetProfileIssue(
-            reason: L("Stability \(String(format: "%.0f", stability)) (below 70)"),
+            reason: L("Stability \(PercentFormat.whole.numberText(stability, beside: 70)) (below 70)"),
             explanation: L("Composite of the summary's compliance, patch posture, and stale-device metrics. Components the last collect could not measure are dropped and the rest reweighted, so the score reflects measured data only."),
             actionLabel: L("Open Trends"),
             tab: .trends
@@ -429,7 +433,7 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     // than over-flag. A nil here means the snapshot didn't carry the field at all.
     if let fileVaultPct = summary.fileVaultPct, fileVaultPct < 90 {
         issues.append(FleetProfileIssue(
-            reason: L("FileVault \(String(format: "%.1f", fileVaultPct))% (below 90%)"),
+            reason: L("FileVault \(format.numberText(fileVaultPct, beside: 90))% (below 90%)"),
             explanation: L("Share of computers reporting FileVault encryption enabled in the latest security snapshot."),
             actionLabel: L("Open Security Posture"),
             tab: .securityPosture
@@ -437,7 +441,7 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     }
     if let patchPct = summary.patchPct, patchPct < 80 {
         issues.append(FleetProfileIssue(
-            reason: L("Patch \(String(format: "%.1f", patchPct))% (below 80%)"),
+            reason: L("Patch \(format.numberText(patchPct, beside: 80))% (below 80%)"),
             explanation: L("Share of computers on the latest version of their patch titles, in the latest patch snapshot."),
             actionLabel: L("Open Patch Compliance"),
             tab: .patch

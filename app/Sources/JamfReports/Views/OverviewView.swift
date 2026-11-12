@@ -3,6 +3,7 @@ import Charts
 
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
@@ -1104,7 +1105,7 @@ struct OverviewView: View {
                 let hasData = !metricValues(metric).isEmpty
                 let isDanger = hasData && Self.tileIsDanger(
                     metric: metric, values: metricValues(metric),
-                    comparable: scoreCardComparable(metric))
+                    comparable: scoreCardComparable(metric), format: percentFormat)
                 Button {
                     drill = .metric(metric.rawValue)
                 } label: {
@@ -1170,7 +1171,7 @@ struct OverviewView: View {
         let valueStr: String = {
             guard let val = lastValue else { return "--" }
             if metric.unit == "%" {
-                return "\(String(format: "%.1f", val))%"
+                return percentFormat.text(val)
             } else {
                 return "\(Int(val))"
             }
@@ -1180,15 +1181,21 @@ struct OverviewView: View {
             guard lastValue != nil, values.count >= 2 else { return L("No Data") }
             guard comparable else { return L("Not comparable") }
             let absDiff = abs(diff)
+            // A change that rounds to nothing reads "±0", as the Trends pills do.
             if metric.unit == "%" {
-                return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"
+                let shown = percentFormat.roundedChange(
+                    percentFormat.rounded(current) - percentFormat.rounded(prev))
+                guard shown != 0 else { return "±0" }
+                return "\(shown > 0 ? "+" : "−")\(percentFormat.changeNumberText(abs(shown)))pp"
             } else {
-                return "\(diff >= 0 ? "+" : "−")\(Int(absDiff))"
+                guard absDiff.rounded() != 0 else { return "±0" }
+                return "\(diff > 0 ? "+" : "−")\(Int(absDiff.rounded()))"
             }
         }()
 
         let trend = Self.tileTrend(metric: metric, previous: prev, current: current,
-                                   comparable: comparable && lastValue != nil)
+                                   comparable: comparable && lastValue != nil,
+                                   format: percentFormat)
 
         // DRAFT — needs visual verification. Two captions share this line:
         // the Active Devices clarification (redefined 2.6 to exclude stale
@@ -1244,10 +1251,11 @@ struct OverviewView: View {
     /// The tile's good/bad verdict, from the same rule as the Trends hero (`TrendChange`,
     /// `Metric.polarity`): a metric with no good direction, or no comparison, is flat.
     static func tileTrend(
-        metric: TrendSeries.Metric, previous: Double, current: Double, comparable: Bool
+        metric: TrendSeries.Metric, previous: Double, current: Double, comparable: Bool,
+        format: PercentFormat
     ) -> StatTile.Trend {
         guard comparable else { return .flat }
-        switch TrendChange(metric: metric, first: previous, last: current).verdict {
+        switch TrendChange(metric: metric, first: previous, last: current, format: format).verdict {
         case .better: return .up
         case .worse: return .down
         case .neutral: return .flat
@@ -1258,12 +1266,12 @@ struct OverviewView: View {
     /// and the delta colour never disagree. Not limited to Stale: a rising Stale count is
     /// as much "worse" as a rising mobile stale or jailbroken count.
     static func tileIsDanger(
-        metric: TrendSeries.Metric, values: [Double], comparable: Bool
+        metric: TrendSeries.Metric, values: [Double], comparable: Bool, format: PercentFormat
     ) -> Bool {
         guard let current = values.last else { return false }
         let previous = values.count > 1 ? values[values.count - 2] : current
         return tileTrend(metric: metric, previous: previous, current: current,
-                         comparable: comparable) == .down
+                         comparable: comparable, format: format) == .down
     }
 
     /// Lines a score card's title may take: two for the fixed titles, one for the compliance
@@ -1302,7 +1310,7 @@ struct OverviewView: View {
                                             ? Theme.Colors.fg : Theme.Text.tertiary(contrast))
                                     Spacer(minLength: 0)
                                     Mono(text: "\(o.count)")
-                                    Text("\(String(format: "%.1f", o.pct))%")
+                                    Text(percentFormat.text(o.pct))
                                         .font(Theme.Fonts.mono(11, weight: .semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                         .frame(minWidth: 44, alignment: .trailing)
@@ -1359,9 +1367,9 @@ struct OverviewView: View {
     /// to judge currency — how many Macs the chart covers.
     private var donut: some View {
         let share = osCurrentShare
-        let centre = share.map { "\(String(format: "%.1f", $0))%" } ?? "\(osDeviceCount)"
+        let centre = share.map { percentFormat.text($0) } ?? "\(osDeviceCount)"
         let summary = share.map {
-            L("macOS distribution donut chart: \(String(format: "%.1f", $0)) percent of Macs are on the newest release of their macOS version")
+            L("macOS distribution donut chart: \(percentFormat.numberText($0)) percent of Macs are on the newest release of their macOS version")
         } ?? L("macOS distribution donut chart: \(osDeviceCount) Macs")
         return Chart(osRows) { o in
             SectorMark(
@@ -1387,7 +1395,8 @@ struct OverviewView: View {
         .accessibilityChartDescriptor(SectorChartDescriptor(
             title: L("macOS Distribution"),
             unit: "%",
-            slices: osRows.map { .init(label: $0.version, value: $0.pct) }
+            slices: osRows.map { .init(label: $0.version, value: $0.pct) },
+            percentFormat: percentFormat
         ))
     }
 
@@ -1623,9 +1632,12 @@ struct OverviewView: View {
         let dates = workspace.demoMode ? [] : trendStore.points(metric: metric).map(\.date)
         let current = values.last ?? 0
         let first = values.first ?? current
+        // A share's change is taken between the figures as printed, as on the tiles.
+        let shown = metric.unit == "%" ? values.map(percentFormat.rounded) : values
         let figures = MetricDetailFigures.make(
-            values: values,
-            comparable: workspace.demoMode ? values : trendStore.comparableValues(metric: metric),
+            values: shown,
+            comparable: (workspace.demoMode ? values : trendStore.comparableValues(metric: metric))
+                .map { metric.unit == "%" ? percentFormat.rounded($0) : $0 },
             value: { metricValueLabel($0, metric: metric) },
             delta: { metricDeltaLabel($0, metric: metric) })
         // Same reasoning as the Overview tiles: name the day rather than imply
@@ -1701,7 +1713,7 @@ struct OverviewView: View {
                         detailProgressRow(
                             label: item.version,
                             value: item.pct,
-                            trailing: "\(item.count) · \(String(format: "%.1f", item.pct))%",
+                            trailing: "\(item.count) · \(percentFormat.text(item.pct))",
                             color: Color(hex: item.colorHex)
                         )
                     }
@@ -1772,7 +1784,7 @@ struct OverviewView: View {
             // left the tile without a caption shorter than its neighbour; the grid gives
             // the row one height, three across at the minimum width (3 x 180 + 2 x 12).
             EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
-                StatTile(label: L("Coverage"), value: "\(String(format: "%.1f", agent.pct))%",
+                StatTile(label: L("Coverage"), value: percentFormat.text(agent.pct),
                          fillsHeight: true)
                 StatTile(label: L("Installed"), value: "\(agent.installed)",
                          sub: fleet > 0 ? L("of \(fleet) managed Macs") : L("managed Macs"),
@@ -1787,7 +1799,7 @@ struct OverviewView: View {
                     detailProgressRow(
                         label: agent.name,
                         value: agent.pct,
-                        trailing: "\(String(format: "%.1f", agent.pct))%",
+                        trailing: percentFormat.text(agent.pct),
                         color: agent.pct > 90 ? Theme.Colors.ok : agent.pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
                     )
                     Divider().background(Theme.Colors.hairline)
@@ -1954,7 +1966,7 @@ struct OverviewView: View {
 
     private func metricValueLabel(_ value: Double, metric: TrendSeries.Metric) -> String {
         metric.unit == "%"
-            ? "\(String(format: "%.1f", value))%"
+            ? percentFormat.text(value)
             : "\(Int(value.rounded()))"
     }
 
@@ -1962,7 +1974,7 @@ struct OverviewView: View {
         let prefix = value >= 0 ? "+" : "-"
         let absValue = abs(value)
         return metric.unit == "%"
-            ? "\(prefix)\(String(format: "%.1f", absValue))pp"
+            ? "\(prefix)\(percentFormat.changeNumberText(absValue))pp"
             : "\(prefix)\(Int(absValue.rounded()))"
     }
 
@@ -2115,6 +2127,7 @@ private struct StatTileHealthModifier: ViewModifier {
 }
 
 struct AgentCardView: View {
+    @Environment(\.percentFormat) private var percentFormat
     let agent: SecurityAgent
     let fleetCount: Int
     @Environment(\.colorSchemeContrast) private var contrast
@@ -2135,7 +2148,7 @@ struct AgentCardView: View {
         return VStack(alignment: .leading, spacing: 4) {
             Text(agent.name).font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.Colors.fg)
-            Text("\(String(format: "%.1f", pct))%")
+            Text(percentFormat.text(pct))
                 .font(Theme.Fonts.serif(summaryKPISize, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()
@@ -2178,7 +2191,8 @@ struct AgentCardView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(agentCardAccessibilityLabel(agent: agent, fleetCount: fleetCount))
+        .accessibilityLabel(agentCardAccessibilityLabel(
+            agent: agent, fleetCount: fleetCount, format: percentFormat))
     }
 }
 
@@ -2202,9 +2216,11 @@ func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
 
 /// Composite accessibility label announcing coverage and gap.
 /// `fleetCount <= 0` omits the "of N installed" and gap clauses.
-func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> String {
+func agentCardAccessibilityLabel(
+    agent: SecurityAgent, fleetCount: Int, format: PercentFormat
+) -> String {
     var parts: [String] = [
-        L("\(agent.name): \(String(format: "%.1f", agent.pct))% coverage"),
+        L("\(agent.name): \(format.numberText(agent.pct))% coverage"),
     ]
     if fleetCount > 0 {
         parts.append(L("\(agent.installed) of \(fleetCount) installed"))

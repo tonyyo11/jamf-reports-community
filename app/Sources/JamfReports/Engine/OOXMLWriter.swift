@@ -259,12 +259,16 @@ final class Worksheet: @unchecked Sendable {
 final class Workbook: @unchecked Sendable {
     private var sheets: [Worksheet] = []
     let accentColor: String
+    /// `display.percent_decimals`: the `0.0%` or `0%` number format of percentage cells. The
+    /// stored value keeps full precision either way.
+    let percentFormat: PercentFormat
     /// Set once by `ReportEngine.generate` when the login is site-limited; every tab added
     /// afterwards carries it in its header.
     var siteScopeNote: String?
 
-    init(accentColor: String = "#2D5EA2") {
+    init(accentColor: String = "#2D5EA2", percentFormat: PercentFormat = .standard) {
         self.accentColor = accentColor
+        self.percentFormat = percentFormat
     }
 
     @discardableResult
@@ -510,7 +514,8 @@ final class Workbook: @unchecked Sendable {
 
         // numFmts
         xml += "<numFmts count=\"3\">"
-        xml += "<numFmt numFmtId=\"164\" formatCode=\"0.0%\"/>"
+        let pctCode = percentFormat.decimals == 0 ? "0%" : "0.0%"
+        xml += "<numFmt numFmtId=\"164\" formatCode=\"\(pctCode)\"/>"
         xml += "<numFmt numFmtId=\"165\" formatCode=\"yyyy-mm-dd\"/>"
         xml += "<numFmt numFmtId=\"166\" formatCode=\"0\"/>"
         xml += "</numFmts>"

@@ -239,7 +239,7 @@ struct SchoolDeviceTiles: View {
 
     private func share(_ count: Int, of total: Int) -> String {
         guard total > 0 else { return "—" }
-        return String(format: "%.0f%% of devices", Double(count) / Double(total) * 100)
+        return L("\(PercentFormat.whole.text(count, of: total)) of devices")
     }
 }
 

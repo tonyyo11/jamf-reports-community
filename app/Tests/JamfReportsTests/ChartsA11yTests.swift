@@ -164,7 +164,8 @@ final class ChartsA11yTests: XCTestCase {
         ]
         let descriptor = MultiLineChartDescriptor(
             title: "Security Posture Compared",
-            seriesList: seriesList
+            seriesList: seriesList,
+            percentFormat: .standard
         )
         let ax = descriptor.makeChartDescriptor()
         XCTAssertEqual(ax.title, "Security Posture Compared")

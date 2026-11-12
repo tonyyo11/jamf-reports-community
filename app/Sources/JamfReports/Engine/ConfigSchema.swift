@@ -251,5 +251,6 @@ enum ConfigSchema {
             "off_values": Node(SecurityControlPolicy.ControlKeys.self),
             "score_factors": Node(SecurityControlPolicy.FactorKeys.self, list: true),
         ]),
+        "display": Node(DisplayConfig.CodingKeys.self),
     ])
 }

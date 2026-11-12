@@ -3,6 +3,7 @@ import SwiftUI
 /// The Overview's Mobile Devices section: the day's `MobileSummary` as four lines. The header
 /// button opens Mobile Devices; the Needs attention line opens the Health Audit.
 struct MobileOverviewCard: View {
+    @Environment(\.percentFormat) private var percentFormat
     let summary: MobileSummary
     /// "Daily summary 2026-10-28": which snapshot the figures come from.
     let subtitle: String
@@ -27,7 +28,7 @@ struct MobileOverviewCard: View {
                 }
                 // Two columns fit a half-width card at the minimum window width.
                 EqualHeightTileGrid(minTileWidth: 120, spacing: 10, idealColumns: 2) {
-                    ForEach(summary.overviewTiles) { tile in
+                    ForEach(summary.overviewTiles(format: percentFormat)) { tile in
                         if tile.opensAudit {
                             MobileAttentionButton(tile: tile, action: onOpenAudit)
                         } else {

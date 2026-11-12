@@ -260,7 +260,7 @@ final class OverviewMobileSectionTests: XCTestCase {
     // MARK: - Tiles
 
     func testTheSectionHasTheSpecsFourLinesWithWhatEachCounts() {
-        let tiles = mobileFigures(jailbroken: 1, updateErrors: 3).overviewTiles
+        let tiles = mobileFigures(jailbroken: 1, updateErrors: 3).overviewTiles(format: .standard)
 
         XCTAssertEqual(tiles.map(\.label), [
             "Devices", "OS current", "Passcode compliant", "Needs attention",
@@ -280,16 +280,16 @@ final class OverviewMobileSectionTests: XCTestCase {
     func testNeedsAttentionCountsOnlyWhatIsReportedAndHidesAtZero() {
         var figures = mobileFigures(jailbroken: nil, updateErrors: nil)
         XCTAssertEqual(figures.needsAttentionCount, 2, "Only the unmanaged devices are known")
-        XCTAssertEqual(figures.overviewTiles.last?.caption, "2 unmanaged")
+        XCTAssertEqual(figures.overviewTiles(format: .standard).last?.caption, "2 unmanaged")
 
         figures.unmanaged = 0
         XCTAssertEqual(figures.needsAttentionCount, 0)
-        XCTAssertEqual(figures.overviewTiles.map(\.label),
+        XCTAssertEqual(figures.overviewTiles(format: .standard).map(\.label),
                        ["Devices", "OS current", "Passcode compliant"])
     }
 
     func testAShareNoDeviceReportsIsADashNeverZero() {
-        let tiles = mobileFigures(passcode: .init(met: 0, of: 0), osCurrent: nil).overviewTiles
+        let tiles = mobileFigures(passcode: .init(met: 0, of: 0), osCurrent: nil).overviewTiles(format: .standard)
 
         for index in [1, 2] {
             XCTAssertEqual(tiles[index].value, MobileOverviewTile.dash, tiles[index].label)
@@ -299,7 +299,7 @@ final class OverviewMobileSectionTests: XCTestCase {
     }
 
     func testAShareOfNothingMetIsZeroPercentNotADash() {
-        let tiles = mobileFigures(passcode: .init(met: 0, of: 9)).overviewTiles
+        let tiles = mobileFigures(passcode: .init(met: 0, of: 9)).overviewTiles(format: .standard)
         XCTAssertEqual(tiles[2].value, "0.0%")
         XCTAssertEqual(tiles[2].caption, "0 of 9 devices reporting")
     }

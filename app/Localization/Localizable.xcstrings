@@ -4646,48 +4646,48 @@
         }
       }
     },
-    "%@ coverage dropped from %lld percent to %lld percent" : {
+    "%@ coverage dropped from %@ percent to %@ percent" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@-Abdeckung ist von %lld Prozent auf %lld Prozent gesunken"
+            "value" : "%@-Abdeckung ist von %@ Prozent auf %@ Prozent gesunken"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ coverage dropped from %2$lld percent to %3$lld percent"
+            "value" : "%1$@ coverage dropped from %2$@ percent to %3$@ percent"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La cobertura de %@ ha bajado del %lld por ciento al %lld por ciento"
+            "value" : "La cobertura de %@ ha bajado del %@ por ciento al %@ por ciento"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La couverture %@ est passée de %lld pour cent à %lld pour cent"
+            "value" : "La couverture %@ est passée de %@ pour cent à %@ pour cent"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La copertura %@ è scesa da %lld percento a %lld percento"
+            "value" : "La copertura %@ è scesa da %@ percento a %@ percento"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@のカバレッジが%lldパーセントから%lldパーセントに低下しました"
+            "value" : "%@のカバレッジが%@パーセントから%@パーセントに低下しました"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A cobertura de %@ caiu de %lld por cento para %lld por cento"
+            "value" : "A cobertura de %@ caiu de %@ por cento para %@ por cento"
           }
         }
       }
@@ -6600,6 +6600,46 @@
         }
       }
     },
+    "%@ is not 0 or 1, so the app shows percentages with one decimal." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist weder 0 noch 1, daher zeigt die App Prozentwerte mit einer Nachkommastelle."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no es 0 ni 1, así que la app muestra los porcentajes con un decimal."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est ni 0 ni 1 : l’app affiche les pourcentages avec une décimale."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è 0 né 1, quindi l’app mostra le percentuali con un decimale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@は0でも1でもないため、パーセンテージを小数点以下1桁で表示します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não é 0 nem 1, então o app mostra as porcentagens com uma casa decimal."
+          }
+        }
+      }
+    },
     "%@ is not a Jamf Protect login" : {
       "localizations" : {
         "de" : {
@@ -7918,6 +7958,166 @@
         }
       }
     },
+    "%@ of Macs pass" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ der Macs bestehen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de los Mac aprueban"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ des Mac réussissent"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dei Mac superano"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Macの%@が合格"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dos Macs passam"
+          }
+        }
+      }
+    },
+    "%@ of devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ der Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de los dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ des appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dei dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスの%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dos dispositivos"
+          }
+        }
+      }
+    },
+    "%@ of fleet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ der Flotte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de la flota"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ du parc"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ del parco dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フリートの%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ da frota"
+          }
+        }
+      }
+    },
+    "%@ of score" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ des Scores"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de la puntuación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ du score"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ del punteggio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スコアの%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ da pontuação"
+          }
+        }
+      }
+    },
     "%@ opts in, as true does." : {
       "localizations" : {
         "de" : {
@@ -8262,48 +8462,48 @@
         }
       }
     },
-    "%@ severity alerts: %lld of %lld total, %lld percent" : {
+    "%@ severity alerts: %lld of %lld total, %@ percent" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Warnungen mit Schweregrad %@: %lld von %lld gesamt, %lld Prozent"
+            "value" : "Warnungen mit Schweregrad %@: %lld von %lld gesamt, %@ Prozent"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ severity alerts: %2$lld of %3$lld total, %4$lld percent"
+            "value" : "%1$@ severity alerts: %2$lld of %3$lld total, %4$@ percent"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alertas de gravedad %@: %lld de %lld en total, %lld por ciento"
+            "value" : "Alertas de gravedad %@: %lld de %lld en total, %@ por ciento"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alertes de gravité %@ : %lld sur %lld au total, %lld pour cent"
+            "value" : "Alertes de gravité %@ : %lld sur %lld au total, %@ pour cent"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avvisi di gravità %@: %lld su %lld totali, %lld percento"
+            "value" : "Avvisi di gravità %@: %lld su %lld totali, %@ percento"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重大度%1$@のアラート: 全%3$lld件中%2$lld件、%4$lldパーセント"
+            "value" : "重大度%1$@のアラート: 全%3$lld件中%2$lld件、%4$@パーセント"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alertas de severidade %@: %lld de %lld no total, %lld por cento"
+            "value" : "Alertas de severidade %@: %lld de %lld no total, %@ por cento"
           }
         }
       }
@@ -8692,6 +8892,52 @@
         }
       }
     },
+    "%@ · %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
     "%@ · %lld enabled · %@" : {
       "localizations" : {
         "de" : {
@@ -8783,17 +9029,6 @@
           }
         }
       }
-    },
-    "%@ · %lld%@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$lld%3$@"
-          }
-        }
-      },
-      "shouldTranslate" : false
     },
     "%@ · 1 snapshot" : {
       "localizations" : {
@@ -9184,9 +9419,6 @@
         }
       }
     },
-    "%@%%" : {
-      "shouldTranslate" : false
-    },
     "%@%@, %lld files, %@, created %@" : {
       "localizations" : {
         "de" : {
@@ -9428,48 +9660,48 @@
         }
       }
     },
-    "%@, %lld devices, %lld percent" : {
+    "%@, %lld devices, %@ percent" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld Geräte, %lld Prozent"
+            "value" : "%@, %lld Geräte, %@ Prozent"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@, %2$lld devices, %3$lld percent"
+            "value" : "%1$@, %2$lld devices, %3$@ percent"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld dispositivos, %lld por ciento"
+            "value" : "%@, %lld dispositivos, %@ por ciento"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld appareils, %lld pour cent"
+            "value" : "%@, %lld appareils, %@ pour cent"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld dispositivi, %lld percento"
+            "value" : "%@, %lld dispositivi, %@ percento"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@、%lld台のデバイス、%lldパーセント"
+            "value" : "%@、%lld台のデバイス、%@パーセント"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld dispositivos, %lld por cento"
+            "value" : "%@, %lld dispositivos, %@ por cento"
           }
         }
       }
@@ -9658,48 +9890,48 @@
         }
       }
     },
-    "%@, %lld plans, %lld percent" : {
+    "%@, %lld plans, %@ percent" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld Pläne, %lld Prozent"
+            "value" : "%@, %lld Pläne, %@ Prozent"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@, %2$lld plans, %3$lld percent"
+            "value" : "%1$@, %2$lld plans, %3$@ percent"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld planes, %lld por ciento"
+            "value" : "%@, %lld planes, %@ por ciento"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld plans, %lld pour cent"
+            "value" : "%@, %lld plans, %@ pour cent"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld piani, %lld percento"
+            "value" : "%@, %lld piani, %@ percento"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@、プラン%lld件、%lldパーセント"
+            "value" : "%@、プラン%lld件、%@パーセント"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, %lld planos, %lld por cento"
+            "value" : "%@, %lld planos, %@ por cento"
           }
         }
       }
@@ -10376,6 +10608,52 @@
         }
       }
     },
+    "%@: %@ adopted" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ übernommen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ adopted"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ adoptado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$@ adopté"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ adottato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@適用済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ de adoção"
+          }
+        }
+      }
+    },
     "%@: %@%% coverage" : {
       "localizations" : {
         "de" : {
@@ -10628,48 +10906,48 @@
         }
       }
     },
-    "%@: %lld of %lld, %lld percent" : {
+    "%@: %lld of %lld, %@ percent" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@: %lld von %lld, %lld Prozent"
+            "value" : "%@: %lld von %lld, %@ Prozent"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@: %2$lld of %3$lld, %4$lld percent"
+            "value" : "%1$@: %2$lld of %3$lld, %4$@ percent"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@: %lld de %lld, %lld por ciento"
+            "value" : "%@: %lld de %lld, %@ por ciento"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ : %lld sur %lld, %lld pour cent"
+            "value" : "%@ : %lld sur %lld, %@ pour cent"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@: %lld di %lld, %lld percento"
+            "value" : "%@: %lld di %lld, %@ percento"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@: %3$lld件中%2$lld件、%4$lldパーセント"
+            "value" : "%1$@: %3$lld件中%2$lld件、%4$@パーセント"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@: %lld de %lld, %lld por cento"
+            "value" : "%@: %lld de %lld, %@ por cento"
           }
         }
       }
@@ -10716,52 +10994,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@: %lld diretórios de snapshot"
-          }
-        }
-      }
-    },
-    "%@: %lld%% adopted" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@: %lld%% übernommen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@: %2$lld%% adopted"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@: %lld%% adoptado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ : %lld %% adopté"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@: %lld%% adottato"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@: %lld%%適用済み"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@: %lld%% de adoção"
           }
         }
       }
@@ -13476,48 +13708,48 @@
         }
       }
     },
-    "%lld devices, %lld%%" : {
+    "%lld devices, %@" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld Geräte, %lld%%"
+            "value" : "%1$lld Geräte, %2$@"
           }
         },
         "en" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld devices, %2$lld%%"
+            "state" : "translated",
+            "value" : "%1$lld devices, %2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld dispositivos, %lld%%"
+            "value" : "%1$lld dispositivos, %2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld appareils, %lld %%"
+            "value" : "%1$lld appareils, %2$@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld dispositivi, %lld%%"
+            "value" : "%1$lld dispositivi, %2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "デバイス%lld 台、%lld%%"
+            "value" : "デバイス%1$lld 台、%2$@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld dispositivos, %lld%%"
+            "value" : "%1$lld dispositivos, %2$@"
           }
         }
       }
@@ -19012,28 +19244,6 @@
           }
         }
       }
-    },
-    "%lld%% → %lld%%" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld%% → %2$lld%%"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
-    "%lld%@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld%2$@"
-          }
-        }
-      },
-      "shouldTranslate" : false
     },
     "%lld+ days" : {
       "localizations" : {
@@ -91999,6 +92209,46 @@
         }
       }
     },
+    "Percentages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prozentwerte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Porcentajes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pourcentages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Percentuali"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーセンテージ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Porcentagens"
+          }
+        }
+      }
+    },
     "Period report" : {
       "localizations" : {
         "de" : {
@@ -105947,6 +106197,46 @@
         }
       }
     },
+    "Screens, workbooks, HTML reports and alert cards round to this. Stored figures and thresholds keep full precision." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bildschirme, Arbeitsmappen, HTML-Berichte und Warnkarten runden so. Gespeicherte Werte und Schwellenwerte behalten die volle Genauigkeit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las pantallas, los libros, los informes HTML y las tarjetas de alerta redondean así. Las cifras guardadas y los umbrales conservan toda su precisión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les écrans, classeurs, rapports HTML et cartes d’alerte arrondissent ainsi. Les valeurs enregistrées et les seuils restent exacts."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schermate, cartelle di lavoro, report HTML e schede di avviso arrotondano così. I valori salvati e le soglie mantengono la precisione completa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面、ワークブック、HTMLレポート、アラートカードはこの桁数に丸めます。保存された値としきい値は元の精度のままです。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telas, pastas de trabalho, relatórios HTML e cartões de alerta arredondam assim. Os valores armazenados e os limites mantêm a precisão total."
+          }
+        }
+      }
+    },
     "Search" : {
       "localizations" : {
         "de" : {
@@ -108509,6 +108799,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Definido no arquivo, não editável aqui"
+          }
+        }
+      }
+    },
+    "Set it to 0 for whole numbers or 1 for one decimal." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setzen Sie den Wert auf 0 für ganze Zahlen oder auf 1 für eine Nachkommastelle."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establézcalo en 0 para números enteros o en 1 para un decimal."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indiquez 0 pour des nombres entiers ou 1 pour une décimale."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostare 0 per numeri interi o 1 per un decimale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整数にするには0、小数点以下1桁にするには1を設定します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina 0 para números inteiros ou 1 para uma casa decimal."
           }
         }
       }

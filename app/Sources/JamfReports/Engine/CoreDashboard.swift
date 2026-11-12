@@ -292,7 +292,7 @@ struct CoreDashboard: Sendable {
             for v in combined {
                 ws.write(v.version, row: row, col: 0, format: .cell)
                 ws.write(v.count, row: row, col: 1, format: .cell)
-                ws.write(String(format: "%.1f%%", v.pct), row: row, col: 2, format: .cell)
+                ws.write(config.percentFormat.text(v.pct), row: row, col: 2, format: .cell)
                 row += 1
             }
         }
@@ -424,7 +424,7 @@ struct CoreDashboard: Sendable {
             ws.write(v.releaseDate.map { patchVelocityDateFormatter.string(from: $0) } ?? dash,
                      row: row, col: 1, format: .cell)
             ws.write(v.daysBehind.map { "\($0)" } ?? dash, row: row, col: 2, format: .cell)
-            ws.write(v.adoptionPct.map { String(format: "%.1f%%", $0) } ?? dash,
+            ws.write(v.adoptionPct.map { config.percentFormat.text($0) } ?? dash,
                      row: row, col: 3, format: .cell)
             ws.write(v.daysTo50.map { "\($0)" } ?? dash, row: row, col: 4, format: .cell)
             ws.write(v.daysTo90.map { "\($0)" } ?? dash, row: row, col: 5, format: .cell)
@@ -1329,12 +1329,12 @@ struct CoreDashboard: Sendable {
         row += 1
         ws.write("Checked In (within \(threshold) days)", row: row, col: 0, format: .cell)
         ws.write(current, row: row, col: 1, format: .cell)
-        ws.write(String(format: "%.1f%%", pctCurrent), row: row, col: 2, format: .cell)
+        ws.write(config.percentFormat.text(pctCurrent), row: row, col: 2, format: .cell)
         row += 1
         let overdueFmt: CellFormat = overdue > 0 ? .red : .cell
         ws.write("Overdue (>\(threshold) days)", row: row, col: 0, format: overdueFmt)
         ws.write(overdue, row: row, col: 1, format: overdueFmt)
-        ws.write(String(format: "%.1f%%", pctOverdue), row: row, col: 2, format: overdueFmt)
+        ws.write(config.percentFormat.text(pctOverdue), row: row, col: 2, format: overdueFmt)
         row += 2
         writeContactDetail(ws: ws, row: row, overdueRule: overdueRule)
     }
@@ -2433,7 +2433,7 @@ struct CoreDashboard: Sendable {
             ws.write(value, row: row, col: 1, format: .cell)
             row += 1
         }
-        let activeRatioPct = String(format: "%.1f%%", activeRatio * 100)
+        let activeRatioPct = config.percentFormat.text(activeRatio * 100)
         ws.write("Active Device Ratio", row: row, col: 0, format: .cell)
         ws.write(activeRatioPct, row: row, col: 1, format: .cell)
         row += 2
@@ -2445,7 +2445,7 @@ struct CoreDashboard: Sendable {
         ws.write(totalTitles, row: row, col: 1, format: .cell)
         row += 1
         ws.write("Fleet Compliance (devices on latest)", row: row, col: 0, format: .cell)
-        ws.write(fleetPct.map { String(format: "%.1f%%", $0) } ?? "\u{2014}",
+        ws.write(config.percentFormat.text(fleetPct),
                  row: row, col: 1, format: .cell)
         row += 1
         ws.write("Fully Compliant (\u{2265}95%)", row: row, col: 0, format: .cell)
@@ -2487,10 +2487,10 @@ struct CoreDashboard: Sendable {
         for (col, h) in top10Hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for pr in top10 {
-            let adjPctStr = String(format: "%.1f%%", pr.adjPct * 100)
+            let adjPctStr = config.percentFormat.text(pr.adjPct * 100)
             ws.write(pr.title, row: row, col: 0, format: .cell)
             ws.write(pr.latest, row: row, col: 1, format: .cell)
-            ws.write(adjPctStr, row: row, col: 2, format: colorForPctString(adjPctStr))
+            ws.write(adjPctStr, row: row, col: 2, format: Self.colorForPct(pr.adjPct * 100))
             ws.write(pr.adjSecondary, row: row, col: 3, format: .cell)
             row += 1
         }
@@ -2669,8 +2669,8 @@ struct CoreDashboard: Sendable {
 
         for (family, counts) in perFamily.sorted(by: { $0.key < $1.key }) {
             let pct = counts.total > 0
-                ? String(format: "%.1f%%", Double(counts.supervised) / Double(counts.total) * 100)
-                : "0.0%"
+                ? config.percentFormat.text(Double(counts.supervised) / Double(counts.total) * 100)
+                : config.percentFormat.text(0)
             ws.write(family, row: row, col: 0, format: .cell)
             ws.write(counts.total, row: row, col: 1, format: .cell)
             ws.write(counts.supervised, row: row, col: 2, format: .cell)
@@ -2756,7 +2756,7 @@ struct CoreDashboard: Sendable {
                 ws.write(onLatest, row: row, col: 7, format: .cell)
                 ws.write(behind, row: row, col: 8, format: .cell)
                 if total > 0 {
-                    let pct = String(format: "%.1f%%", Double(onLatest) / Double(total) * 100)
+                    let pct = config.percentFormat.text(Double(onLatest) / Double(total) * 100)
                     ws.write(pct, row: row, col: 9, format: .cell)
                 } else {
                     ws.write("\u{2014}", row: row, col: 9, format: .cell)
@@ -2781,7 +2781,7 @@ struct CoreDashboard: Sendable {
             for col in 3...6 { ws.write("\u{2014}", row: row, col: col, format: .cell) }
             ws.write(0, row: row, col: 7, format: .cell)
             ws.write(eolDevices, row: row, col: 8, format: .red)
-            ws.write("0.0%", row: row, col: 9, format: .cell)
+            ws.write(config.percentFormat.text(0), row: row, col: 9, format: .cell)
             row += 1
         }
     }
@@ -2919,7 +2919,8 @@ struct CoreDashboard: Sendable {
         let rule = config.staleRule
         return m.securityScoreParts.map { part in
             ("Score — \(part.factor.label(staleDays: rule.days, staleBasis: rule.basis))",
-             String(format: "%.1f%% · %.1f pts", part.share, score.points(of: part)))
+             "\(config.percentFormat.text(part.share)) · "
+                + String(format: "%.1f pts", score.points(of: part)))
         }
     }
 
@@ -3013,12 +3014,12 @@ struct CoreDashboard: Sendable {
         let dash = "—"
         let scoreLabel: String = {
             guard let v = m.securityScore, let g = m.securityGrade else { return dash }
-            return String(format: "%.1f", v) + " / 100 (\(g.rawValue))"
+            return config.percentFormat.numberText(v) + " / 100 (\(g.rawValue))"
         }()
 
         func fmtPct(_ d: Double?) -> String {
             guard let d else { return dash }
-            return String(format: "%.1f%%", d)
+            return config.percentFormat.text(d)
         }
         func fmtInt(_ n: Int?) -> String {
             guard let n else { return dash }
@@ -3315,7 +3316,7 @@ struct CoreDashboard: Sendable {
         // Metric rows: (label, rawValue, pctValue for RAG, security control the policy grades)
         let metrics: [(label: String, value: String, pct: Double?, control: SecurityControl?)] = [
             ("Device Compliance (managed %)",
-             deviceTotal > 0 ? String(format: "%.0f%%", compliancePct) : "\u{2014}",
+             deviceTotal > 0 ? PercentFormat.whole.text(compliancePct) : "\u{2014}",
              deviceTotal > 0 ? compliancePct : nil, nil),
             ("FileVault Encrypted",
              onLabel(.fileVault, asInt(secSummary["filevault_encrypted"])),
@@ -3330,7 +3331,7 @@ struct CoreDashboard: Sendable {
              onLabel(.gatekeeper, asInt(secSummary["gatekeeper_enabled"])),
              nil, .gatekeeper),
             ("Patch Compliance (devices on latest)",
-             patchPct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",
+             patchPct.map { PercentFormat.whole.text($0) } ?? "\u{2014}",
              patchPct, nil),
             ("Stale Devices (>\(config.thresholds?.resolvedStaleDays ?? 30) days)",
              "\(staleCount)",
@@ -3633,14 +3634,20 @@ struct CoreDashboard: Sendable {
     private func percentLabel(_ value: Int?, total: Int) -> String {
         guard let value, total > 0 else { return "0" }
         let pct = Double(value) / Double(total) * 100
-        return String(format: "%d (%.1f%%)", value, pct)
+        return "\(value) (\(config.percentFormat.text(pct)))"
     }
 
-    /// Green, yellow or red for a "93.3%" string; a blank or unparseable one is neutral, since
-    /// no figure is not a 0% result.
+    /// Green, yellow or red for a "93.3%" string jamf-cli wrote; a blank or unparseable one is
+    /// neutral, since no figure is not a 0% result.
     private func colorForPctString(_ pct: String) -> CellFormat {
         let text = pct.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
-        guard let num = Double(text), num.isFinite else { return .cell }
+        guard let num = Double(text) else { return .cell }
+        return Self.colorForPct(num)
+    }
+
+    /// From the raw share, never the printed one, so rounding cannot move a colour band.
+    static func colorForPct(_ num: Double) -> CellFormat {
+        guard num.isFinite else { return .cell }
         if num >= 95 { return .green }
         if num >= 80 { return .yellow }
         return .red
@@ -3705,7 +3712,7 @@ struct CoreDashboard: Sendable {
         // Summary row: total / evaluated / compliance % / rule count
         let compliancePctStr: String
         if let pct = result.compliancePct {
-            compliancePctStr = String(format: "%.1f%%", pct)
+            compliancePctStr = config.percentFormat.text(pct)
         } else {
             compliancePctStr = "\u{2014}"
         }
@@ -3731,7 +3738,7 @@ struct CoreDashboard: Sendable {
         let noDataPct = total > 0 ? Double(result.noDataCount) / Double(total) * 100 : 0
         ws.write("No Data", row: row, col: 0, format: .cell)
         ws.write(result.noDataCount, row: row, col: 1, format: .cell)
-        ws.write(String(format: "%.1f%%", noDataPct), row: row, col: 2, format: .cell)
+        ws.write(config.percentFormat.text(noDataPct), row: row, col: 2, format: .cell)
         row += 1
 
         // bands is in Band.allCases order: pass, low, medLow, medium, high, noData
@@ -3745,7 +3752,7 @@ struct CoreDashboard: Sendable {
             let fmt = idx < bandFormats.count ? bandFormats[idx] : .cell
             ws.write(label, row: row, col: 0, format: fmt)
             ws.write(band.count, row: row, col: 1, format: fmt)
-            ws.write(String(format: "%.1f%%", band.pct), row: row, col: 2, format: fmt)
+            ws.write(config.percentFormat.text(band.pct), row: row, col: 2, format: fmt)
             row += 1
         }
     }

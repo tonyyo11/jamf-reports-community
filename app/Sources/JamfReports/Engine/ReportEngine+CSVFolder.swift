@@ -14,13 +14,14 @@ extension Worksheet {
     /// The tab's rows as CSV text, padded to the widest row. Cell text was guarded when it was
     /// written (`CellValue.safe`), so only RFC 4180 quoting is applied here, never a second guard.
     /// Nil for a tab with no cells (the Charts tab holds images only).
-    func csvText() -> String? {
+    func csvText(percentFormat: PercentFormat = .standard) -> String? {
         let cells = dedupedCells
         guard !cells.isEmpty else { return nil }
         let width = (cells.map(\.col).max() ?? 0) + 1
         var rows: [Int: [Int: String]] = [:]
         for cell in cells {
-            rows[cell.row, default: [:]][cell.col] = Self.csvCellText(cell.value, cell.format)
+            rows[cell.row, default: [:]][cell.col] =
+                Self.csvCellText(cell.value, cell.format, percentFormat)
         }
         let last = rows.keys.max() ?? 0
         return (0...last).map { index in
@@ -31,7 +32,9 @@ extension Worksheet {
     }
 
     /// What the cell shows in Excel: a percentage format displays the fraction as `83.3%`.
-    private static func csvCellText(_ value: CellValue, _ format: CellFormat?) -> String {
+    private static func csvCellText(
+        _ value: CellValue, _ format: CellFormat?, _ percentFormat: PercentFormat
+    ) -> String {
         switch value {
         case .blank: return ""
         case .string(let text): return text
@@ -39,7 +42,7 @@ extension Worksheet {
         case .int(let number): return String(number)
         case .double(let number):
             switch format {
-            case .pct, .pctGreen, .pctYellow, .pctRed: return String(format: "%.1f%%", number * 100)
+            case .pct, .pctGreen, .pctYellow, .pctRed: return percentFormat.text(number * 100)
             default: return number == number.rounded() && abs(number) < 1e15
                 ? String(Int(number)) : String(number)
             }
@@ -86,7 +89,7 @@ extension Workbook {
         var written = 0
         var used: Set<String> = []
         for sheet in worksheets {
-            guard let text = sheet.csvText() else { continue }
+            guard let text = sheet.csvText(percentFormat: percentFormat) else { continue }
             let name = Self.uniqueFileName(ProfileName.pathComponent(sheet.name), used: &used)
             try Self.createFile(Data(text.utf8), named: name, inFolder: directory)
             written += 1

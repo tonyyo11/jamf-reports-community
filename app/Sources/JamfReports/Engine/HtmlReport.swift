@@ -146,10 +146,10 @@ struct HtmlReport: Sendable {
     ) -> String {
         let tiles: [(String, String, Double?, SecurityControl?)] = [
             ("Computers", "\(total)", nil, nil),
-            ("FileVault", fileVaultPct.map { String(format: "%.1f%%", $0) } ?? "—", fileVaultPct, .fileVault),
-            ("SIP", sipPct.map { String(format: "%.1f%%", $0) } ?? "—", sipPct, .sip),
-            ("Firewall", firewallPct.map { String(format: "%.1f%%", $0) } ?? "—", firewallPct, .firewall),
-            ("Gatekeeper", gatekeeperPct.map { String(format: "%.1f%%", $0) } ?? "—", gatekeeperPct, .gatekeeper),
+            ("FileVault", config.percentFormat.text(fileVaultPct), fileVaultPct, .fileVault),
+            ("SIP", config.percentFormat.text(sipPct), sipPct, .sip),
+            ("Firewall", config.percentFormat.text(firewallPct), firewallPct, .firewall),
+            ("Gatekeeper", config.percentFormat.text(gatekeeperPct), gatekeeperPct, .gatekeeper),
         ]
         let tileHTML = tiles.map { label, value, pct, control -> String in
             let ignored = control.map { config.resolvedSecurityPolicy.level(for: $0) == .ignore }
@@ -266,7 +266,7 @@ struct HtmlReport: Sendable {
         let colorCls = pct >= 95 ? "compliance-hero-green"
                        : pct >= 80 ? "compliance-hero-amber"
                        : "compliance-hero-red"
-        let pctStr = String(format: "%.0f%%", pct)
+        let pctStr = PercentFormat.whole.text(pct)
         let label = "\(pctStr) Computer Compliance &middot; \(failing) of \(total) "
             + "computer\(total == 1 ? "" : "s") have failures"
         return """
@@ -410,7 +410,8 @@ struct HtmlReport: Sendable {
         guard !rows.isEmpty else { return .omitted("no patch title has a measured share") }
         return .shown(HtmlSectionFormatters.block(
             id: "patch-chart", title: "Patch compliance (first 10 titles)",
-            body: HtmlSectionFormatters.renderPercentBars(rows, colored: .title)))
+            body: HtmlSectionFormatters.renderPercentBars(
+                rows, colored: .title, percent: config.percentFormat)))
     }
 
     // MARK: - Policies, profiles and apps

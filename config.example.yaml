@@ -257,6 +257,19 @@ html:
 
 
 # =============================================================================
+# DISPLAY
+# =============================================================================
+# percent_decimals: how every screen, workbook, HTML report, period report and
+#   alert card prints a percentage. 1 (default) prints 56.7%, 0 prints 57%.
+#   Standard rounding; a share above 0% or below 100% never prints as 0% or
+#   100%. Stored figures, thresholds and alerts keep full precision. Any other
+#   value reads as 1. The Customize screen's Percentages picker writes it.
+#
+display:
+  percent_decimals: 1
+
+
+# =============================================================================
 # JAMF PROTECT
 # =============================================================================
 # Optional Jamf Protect data, collected after each Jamf Pro collect that runs:

@@ -334,6 +334,8 @@ final class WorkspaceStore {
     /// cards edit them through `saveSecurityLevel` and its siblings.
     var securityPolicy: SecurityControlPolicy = .default
     var securityPolicyIssues: [SecurityPolicyIssue] = []
+    /// `display.percent_decimals` of the active workspace; one decimal in demo mode.
+    var percentFormat: PercentFormat = .standard
     /// The products the active workspace's config.yaml names, read with the config and when
     /// Data Sources connects or disconnects one (`refreshEnvironmentProducts`).
     private var environmentProfiles = EnvironmentProfiles.none
@@ -826,6 +828,7 @@ final class WorkspaceStore {
         // workspace with no policy (or a profile switch) has to drop the previous one.
         securityPolicy = SecurityPolicyConfigLoader.load(profile: profile)
         securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
+        percentFormat = DisplayConfigLoader.percentFormat(profile: profile)
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
@@ -958,7 +961,13 @@ final class WorkspaceStore {
         configRepairedKeys = []
         securityPolicy = .default
         securityPolicyIssues = []
+        percentFormat = .standard
         rebuildCustomEAs()
+    }
+
+    /// After Customize writes `display:`, without reloading the rest of the config.
+    func reloadPercentFormat() {
+        percentFormat = demoMode ? .standard : DisplayConfigLoader.percentFormat(profile: profile)
     }
 
     // MARK: Mutations

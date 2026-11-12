@@ -10,8 +10,10 @@ struct FleetWorkspaceOverview: Sendable {
     /// A Jamf School workspace writes no daily summary, so none of the summary issues applies.
     var isSchool = false
 
-    var issues: [FleetProfileIssue] { isSchool ? [] : fleetProfileIssues(summary) }
-    var hasIssue: Bool { !issues.isEmpty }
+    /// Taken when shown, so a Customize change reads without reloading the summaries.
+    func issues(format: PercentFormat) -> [FleetProfileIssue] {
+        isSchool ? [] : fleetProfileIssues(summary, format: format)
+    }
 
     /// This overview when it was loaded for `profile`, else nil: a load that finished after
     /// the sidebar moved to another workspace must not show under that workspace's name.

@@ -302,7 +302,7 @@ extension HtmlReport {
                 parts.append(f.plural(inputs.auditFindings.count, "audit finding"))
             }
             if shown.contains(.agentHealth), let low = lowestAgentCoverage(inputs) {
-                parts.append("\(low.name) on \(String(format: "%.0f%%", low.pct))")
+                parts.append("\(low.name) on \(PercentFormat.whole.text(low.pct))")
             }
             if shown.contains(.exceptionList) {
                 parts.append(f.plural(config.exceptions?.count ?? 0, "exception"))

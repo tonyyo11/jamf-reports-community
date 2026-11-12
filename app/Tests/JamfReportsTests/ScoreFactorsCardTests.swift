@@ -83,7 +83,7 @@ final class ScoreFactorsCardTests: XCTestCase {
         _ factor: Factor, _ snapshot: ScoreFactorsSnapshot = ScoreFactorsSnapshot(),
         policy: SecurityControlPolicy = .default
     ) -> String {
-        Card.status(of: factor, snapshot: snapshot, policy: policy)
+        Card.status(of: factor, snapshot: snapshot, policy: policy, format: .standard)
     }
 
     func testStatusShowsTheShareWhenTheFactorHasData() {

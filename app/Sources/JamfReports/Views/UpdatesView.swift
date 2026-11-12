@@ -5,6 +5,7 @@ import Charts
 /// and failure details from `pro report update-status` snapshots via
 /// `UpdateStatusService`.
 struct UpdatesView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: UpdateStatusService.Snapshot = .empty
@@ -221,7 +222,8 @@ struct UpdatesView: View {
             title: "Plan State Distribution",
             subtitle: "OS Updates",
             footnote: "Source: pro report update-status · \(planTotal) plans tracked",
-            suggestedFilename: DashboardChartExport.filename(for: "update-plan-states", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "update-plan-states", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             UpdatesPlanStateDonutExport(slices: slices, planTotal: planTotal)
         }
@@ -276,14 +278,14 @@ struct UpdatesView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    Text(String(format: "%.1f%%", pct))
+                    Text(percentFormat.text(pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(minWidth: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(name), \(slice.count) plans, \(Int(pct.rounded())) percent")
+                .accessibilityLabel("\(name), \(slice.count) plans, \(PercentFormat.whole.numberText(pct)) percent")
             }
         }
     }
@@ -322,7 +324,7 @@ struct UpdatesView: View {
                 Text(slice.count == 1 ? "\(slice.count) status" : "\(slice.count) statuses")
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", pct))
+                Text(percentFormat.text(pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Color(hex: slice.colorHex))
                     .frame(minWidth: 56, alignment: .trailing)
@@ -341,7 +343,7 @@ struct UpdatesView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(slice.label) update status, \(String(format: "%.1f", snapshot.total > 0 ? (Double(slice.count) / Double(snapshot.total)) * 100 : 0)) percent, \(slice.count) update statuses")
+        .accessibilityLabel("\(slice.label) update status, \(percentFormat.numberText(snapshot.total > 0 ? (Double(slice.count) / Double(snapshot.total)) * 100 : 0)) percent, \(slice.count) update statuses")
     }
 
     private func statusIcon(for status: String) -> String {
@@ -566,6 +568,7 @@ struct UpdatesView: View {
 /// slice color hex values directly — they're already chosen for state
 /// semantics (green completed / blue active / red failed).
 private struct UpdatesPlanStateDonutExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let slices: [UpdateStatusService.Snapshot.Slice]
     let planTotal: Int
 
@@ -602,7 +605,7 @@ private struct UpdatesPlanStateDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", pct))
+                        Text(percentFormat.text(pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 50, alignment: .trailing)

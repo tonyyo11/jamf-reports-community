@@ -178,7 +178,7 @@ final class TrendStorePatchRecomputeTests: XCTestCase {
         }
         let insight = FleetInsightInput.fleet(current: fleetOverview, previous: nil)
         let fact = try XCTUnwrap(insight.facts.first { $0.label == "Patch compliance" })
-        XCTAssertEqual(fact.value.text, "78.7%")
+        XCTAssertEqual(fact.value.text(format: .standard), "78.7%")
     }
 
     func testResolvedPriorStaysComparableForTheInsight() throws {
@@ -190,7 +190,7 @@ final class TrendStorePatchRecomputeTests: XCTestCase {
         let insight = FleetInsightInput.fleet(
             current: try XCTUnwrap(summaries.last), previous: summaries.first)
         let fact = try XCTUnwrap(insight.facts.first { $0.label == "Patch compliance" })
-        XCTAssertEqual(fact.prior?.text, "75.0%")
+        XCTAssertEqual(fact.prior?.text(format: .standard), "75.0%")
     }
 
     /// A workspace whose `days` hold summaries recorded under the per-title mean (70.0),

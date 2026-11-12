@@ -143,8 +143,8 @@ final class SecurityScoreSurfacesTests: XCTestCase {
     }
 
     func testTheBreakdownFormatsShareAndPoints() {
-        XCTAssertEqual(ScoreBreakdownList.percent(96), "96.0%")
-        XCTAssertEqual(ScoreBreakdownList.percent(33.333), "33.3%")
+        XCTAssertEqual(ScoreBreakdownList.percent(96, format: .standard), "96.0%")
+        XCTAssertEqual(ScoreBreakdownList.percent(33.333, format: .standard), "33.3%")
         XCTAssertEqual(ScoreBreakdownList.points(36.04), "36.0 pts")
         XCTAssertEqual(ScoreBreakdownList.points(0), "0.0 pts")
     }

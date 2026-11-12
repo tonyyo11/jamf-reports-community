@@ -777,7 +777,8 @@ extension FleetInsightInput {
         for (fact, span) in zip(facts, spans) {
             if case .count = fact.value, let prior = fact.prior {
                 notes.append(
-                    "\(fact.label): \(prior.text) at the start, \(fact.value.text) at the end.")
+                    "\(fact.label): \(prior.text(format: .standard)) at the start, "
+                        + "\(fact.value.text(format: .standard)) at the end.")
             }
             if span.first != start || span.last != end {
                 notes.append("\(fact.label): compared from \(day(span.first)) to "

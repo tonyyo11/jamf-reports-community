@@ -46,6 +46,12 @@ struct ContentView: View {
     }
 
     var body: some View {
+        // Set here, below the store, so a Customize Apply re-renders every screen.
+        root.environment(\.percentFormat, workspace.percentFormat)
+    }
+
+    @ViewBuilder
+    private var root: some View {
         if workspace.profiles.isEmpty && !workspace.demoMode {
             if userPickedOnboarding {
                 OnboardingView(onStartOver: { userPickedOnboarding = false })

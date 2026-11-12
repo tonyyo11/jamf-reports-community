@@ -46,6 +46,7 @@ enum DashboardChartExport {
         subtitle: String? = nil,
         footnote: String? = nil,
         suggestedFilename: String,
+        percentFormat: PercentFormat,
         @ViewBuilder content: @escaping () -> Content
     ) -> Result<URL, ExportError>? {
         let panel = NSSavePanel()
@@ -60,7 +61,9 @@ enum DashboardChartExport {
             footnote: footnote,
             content: content
         )
-        let renderer = ImageRenderer(content: exportView)
+        // An image renders outside the window, so it gets the workspace's format here.
+        let renderer = ImageRenderer(
+            content: exportView.environment(\.percentFormat, percentFormat))
         renderer.scale = 2.0
 
         guard let image = renderer.nsImage,
@@ -93,6 +96,7 @@ enum DashboardChartExport {
     @discardableResult
     static func render<Content: View>(
         suggestedFilename: String,
+        percentFormat: PercentFormat,
         @ViewBuilder content: @escaping () -> Content
     ) -> Result<URL, ExportError>? {
         let panel = NSSavePanel()
@@ -104,6 +108,7 @@ enum DashboardChartExport {
         let framed = content()
             .frame(width: 848, height: 448)
             .environment(\.colorScheme, .light)
+            .environment(\.percentFormat, percentFormat)
             .environment(\.dynamicTypeSize, .large) // pin DynamicTypeSize so PNG exports stay deterministic regardless of OS accessibility settings
         let renderer = ImageRenderer(content: framed)
         renderer.scale = 2.0

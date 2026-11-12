@@ -193,34 +193,34 @@ final class AccessibilitySweepTests: XCTestCase {
     /// mobile stale count has it, and a falling stale count does not.
     func testOverviewTileDangerFollowsVerdict() {
         XCTAssertFalse(OverviewView.tileIsDanger(
-            metric: .managedDevices, values: [450, 400], comparable: true))
+            metric: .managedDevices, values: [450, 400], comparable: true, format: .standard))
         XCTAssertTrue(OverviewView.tileIsDanger(
-            metric: .mobileStale, values: [2, 5], comparable: true))
+            metric: .mobileStale, values: [2, 5], comparable: true, format: .standard))
         XCTAssertTrue(OverviewView.tileIsDanger(
-            metric: .stale, values: [8, 10], comparable: true))
+            metric: .stale, values: [8, 10], comparable: true, format: .standard))
         XCTAssertFalse(OverviewView.tileIsDanger(
-            metric: .stale, values: [10, 8], comparable: true))
+            metric: .stale, values: [10, 8], comparable: true, format: .standard))
         XCTAssertFalse(OverviewView.tileIsDanger(
-            metric: .fileVault, values: [90, 80], comparable: false))
-        XCTAssertFalse(OverviewView.tileIsDanger(metric: .fileVault, values: [], comparable: true))
+            metric: .fileVault, values: [90, 80], comparable: false, format: .standard))
+        XCTAssertFalse(OverviewView.tileIsDanger(metric: .fileVault, values: [], comparable: true, format: .standard))
     }
 
     /// The Overview tile takes its verdict from `Metric.polarity`, as the Trends hero does.
     func testOverviewTileTrendFollowsPolarity() {
         XCTAssertEqual(OverviewView.tileTrend(
-            metric: .stale, previous: 10, current: 8, comparable: true), .up)
+            metric: .stale, previous: 10, current: 8, comparable: true, format: .standard), .up)
         XCTAssertEqual(OverviewView.tileTrend(
-            metric: .stale, previous: 8, current: 10, comparable: true), .down)
+            metric: .stale, previous: 8, current: 10, comparable: true, format: .standard), .down)
         XCTAssertEqual(OverviewView.tileTrend(
-            metric: .fileVault, previous: 90, current: 91, comparable: true), .up)
+            metric: .fileVault, previous: 90, current: 91, comparable: true, format: .standard), .up)
         XCTAssertEqual(OverviewView.tileTrend(
-            metric: .fileVault, previous: 91, current: 90, comparable: true), .down)
+            metric: .fileVault, previous: 91, current: 90, comparable: true, format: .standard), .down)
         XCTAssertEqual(OverviewView.tileTrend(
-            metric: .mobileJailbroken, previous: 1, current: 3, comparable: true), .down)
+            metric: .mobileJailbroken, previous: 1, current: 3, comparable: true, format: .standard), .down)
         XCTAssertEqual(OverviewView.tileTrend(
-            metric: .managedDevices, previous: 400, current: 450, comparable: true), .flat)
+            metric: .managedDevices, previous: 400, current: 450, comparable: true, format: .standard), .flat)
         XCTAssertEqual(OverviewView.tileTrend(
-            metric: .fileVault, previous: 90, current: 91, comparable: false), .flat)
+            metric: .fileVault, previous: 90, current: 91, comparable: false, format: .standard), .flat)
     }
 
     /// Reduce Motion turns every helper-routed animation into none.

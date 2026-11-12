@@ -17,6 +17,8 @@ protocol ReportNarrativeGenerating: Sendable {
 /// can carry prompt-injection text; the grade is a fixed enum).
 struct ReportNarrativeInput: Sendable {
     let metrics: CoreDashboard.ExecutiveSummaryMetrics
+    /// The workspace's `display.percent_decimals`, so the paragraph quotes the report's figures.
+    var percentFormat: PercentFormat = .standard
 
     /// Same "has anything to say" bar as `writeExecutiveSummary`.
     static func hasAnyData(_ m: CoreDashboard.ExecutiveSummaryMetrics) -> Bool {
@@ -30,7 +32,7 @@ struct ReportNarrativeInput: Sendable {
         appendInt(&lines, "Total devices", metrics.totalDevices)
         appendInt(&lines, "Managed devices", metrics.managedCount)
         if let score = metrics.securityScore {
-            var line = "- Security score: \(String(format: "%.1f", score)) / 100"
+            var line = "- Security score: \(percentFormat.numberText(score)) / 100"
             if let grade = metrics.securityGrade { line += " (grade \(grade.rawValue))" }
             lines.append(line)
         }
@@ -54,7 +56,7 @@ struct ReportNarrativeInput: Sendable {
 
     private func appendPct(_ lines: inout [String], _ label: String, _ value: Double?) {
         guard let value else { return }
-        lines.append("- \(label): \(String(format: "%.1f%%", value))")
+        lines.append("- \(label): \(percentFormat.text(value))")
     }
 }
 
@@ -132,7 +134,7 @@ enum ReportNarrative {
             let config = (try? ConfigLoader.load(from: configURL)) ?? ReportConfig()
             let metrics = CoreDashboard.executiveMetrics(config: config, dataDir: dataDir)
             guard ReportNarrativeInput.hasAnyData(metrics) else { return nil }
-            return ReportNarrativeInput(metrics: metrics)
+            return ReportNarrativeInput(metrics: metrics, percentFormat: config.percentFormat)
         }.value
         guard let input else { return nil }
 

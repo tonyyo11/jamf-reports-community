@@ -7,10 +7,10 @@ import Foundation
 enum PeriodReportEmitter {
 
     static func emit(
-        model: PeriodReportModel, to url: URL,
+        model: PeriodReportModel, to url: URL, percent: PercentFormat = .standard,
         siteScope: SiteScope = .unknown
     ) throws {
-        try workbook(for: model, siteScope: siteScope).write(to: url)
+        try workbook(for: model, percent: percent, siteScope: siteScope).write(to: url)
     }
 
     /// `ExportNaming` kind carrying the period, so two quarters' reports are
@@ -20,10 +20,11 @@ enum PeriodReportEmitter {
     }
 
     static func workbook(
-        for model: PeriodReportModel, siteScope: SiteScope = .unknown
+        for model: PeriodReportModel, percent: PercentFormat = .standard,
+        siteScope: SiteScope = .unknown
     ) -> Workbook {
-        let wb = Workbook()
-        buildSummary(wb.addSheet("Summary"), model)
+        let wb = Workbook(percentFormat: percent)
+        buildSummary(wb.addSheet("Summary"), model, percent)
         buildDaily(wb.addSheet("Daily detail"), model)
         let distributions = model.rows.filter { $0.unit == .distribution }
         if !distributions.isEmpty {
@@ -35,7 +36,9 @@ enum PeriodReportEmitter {
 
     /// The paste-ready block. Deliberately free of caveats and commentary so a
     /// rectangular selection copies straight into another document.
-    private static func buildSummary(_ ws: Worksheet, _ m: PeriodReportModel) {
+    private static func buildSummary(
+        _ ws: Worksheet, _ m: PeriodReportModel, _ percent: PercentFormat
+    ) {
         ws.write("Fleet metrics", row: 0, col: 0, format: .title)
         ws.write("\(dateLabel(m.period.start.resolved)) – \(dateLabel(m.period.end.resolved))"
                  + " · \(m.profile)", row: 1, col: 0, format: .subtitle)
@@ -46,11 +49,14 @@ enum PeriodReportEmitter {
         for (i, row) in m.rows.enumerated() {
             let r = 4 + i
             ws.write(row.label, row: r, col: 0, format: .cell)
-            ws.write(PeriodReportModel.formatValue(row.startValue, unit: row.unit),
-                     row: r, col: 1, format: .cell)
-            ws.write(PeriodReportModel.formatValue(row.endValue, unit: row.unit),
-                     row: r, col: 2, format: .cell)
-            ws.write(PeriodReportModel.formatChange(row.change, unit: row.unit),
+            ws.write(
+                PeriodReportModel.formatValue(row.startValue, unit: row.unit, percent: percent),
+                row: r, col: 1, format: .cell)
+            ws.write(
+                PeriodReportModel.formatValue(row.endValue, unit: row.unit, percent: percent),
+                row: r, col: 2, format: .cell)
+            ws.write(PeriodReportModel.formatChange(shownChange(row, percent), unit: row.unit,
+                                                    percent: percent),
                      row: r, col: 3, format: .cell)
             ws.write(dateLabel(row.startDate), row: r, col: 4, format: .cell)
             ws.write(dateLabel(row.endDate), row: r, col: 5, format: .cell)
@@ -58,6 +64,15 @@ enum PeriodReportEmitter {
         ws.setColumnWidth(0, 0, 34)
         ws.setColumnWidth(1, 5, 14)
         ws.freezePane(row: 4, col: 1)
+    }
+
+    /// A share's change between the figures as printed, so Start, End and Change agree.
+    private static func shownChange(
+        _ row: PeriodReportModel.Row, _ percent: PercentFormat
+    ) -> Double? {
+        guard row.unit == .percent, row.change != nil,
+              let start = row.startValue, let end = row.endValue else { return row.change }
+        return percent.roundedChange(percent.rounded(end) - percent.rounded(start))
     }
 
     private static func buildDaily(_ ws: Worksheet, _ m: PeriodReportModel) {

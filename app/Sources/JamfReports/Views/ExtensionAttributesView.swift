@@ -6,6 +6,7 @@ import Charts
 /// snapshots. Shows which EAs are actually populating data across the fleet
 /// and what values are appearing.
 struct ExtensionAttributesView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ExtensionAttributeService.Snapshot = .empty
@@ -357,7 +358,7 @@ struct ExtensionAttributesView: View {
                 .foregroundStyle(Theme.Colors.fg)
             Text("—")
                 .foregroundStyle(Theme.Text.tertiary(contrast))
-            Text("\(Int(drift.previousPct.rounded()))% → \(Int(drift.currentPct.rounded()))%")
+            Text(verbatim: "\(PercentFormat.whole.text(drift.previousPct)) → \(PercentFormat.whole.text(drift.currentPct))")
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Text("(\(Int(drift.deltaPP.rounded()))pp)")
@@ -366,7 +367,7 @@ struct ExtensionAttributesView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(drift.eaName) coverage dropped from \(Int(drift.previousPct.rounded())) percent to \(Int(drift.currentPct.rounded())) percent"
+            "\(drift.eaName) coverage dropped from \(PercentFormat.whole.numberText(drift.previousPct)) percent to \(PercentFormat.whole.numberText(drift.currentPct)) percent"
         )
     }
 
@@ -601,7 +602,8 @@ struct ExtensionAttributesView: View {
         let totalRowCount = snapshot.totalRowCount
         let snapshotDate = snapshot.snapshotDate
         let result = DashboardChartExport.render(
-            suggestedFilename: DashboardChartExport.filename(for: "ea-values-\(distribution.eaName)", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "ea-values-\(distribution.eaName)", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             BarChartExportView(
                 distribution: distribution,

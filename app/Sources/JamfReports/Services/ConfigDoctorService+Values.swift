@@ -34,6 +34,7 @@ extension ConfigDoctorService {
         rows += customEAValueRows(config)
         rows += alertValueRows(config.alerts, raw: raw)
         rows += productValueRows(config, profile: profile)
+        rows += displayValueRows(raw)
         return rows
     }
 
@@ -389,6 +390,18 @@ extension ConfigDoctorService {
             "school_cli.profile",
             L("school_cli.profile names \(shown(foreign)), not this workspace's profile. The app collects Jamf Pro for this workspace and does not use that Jamf School profile here. Jamf School needs its own workspace."),
             L("Set school_cli.enabled to false here, and add Jamf School as a separate workspace."))]
+    }
+
+    /// `display.percent_decimals` other than 0 or 1 reads as 1.
+    static func displayValueRows(_ raw: [String: Any]) -> [DoctorRow] {
+        guard let value = ConfigLoader.rawValue(at: ["display", "percent_decimals"], in: raw),
+              !(value is NSNull) else { return [] }
+        if !(value is Bool), let number = value as? Int, number == 0 || number == 1 { return [] }
+        let typed = (value as? String).map(shown) ?? "\(value)"
+        return [valueRow(
+            "display.percent_decimals",
+            L("\(typed) is not 0 or 1, so the app shows percentages with one decimal."),
+            L("Set it to 0 for whole numbers or 1 for one decimal."))]
     }
 
     // MARK: - Row builders

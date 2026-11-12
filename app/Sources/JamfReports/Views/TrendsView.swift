@@ -5,6 +5,7 @@ import Charts
 /// Differentiator vs. JamfDash, which only shows live state.
 struct TrendsView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
@@ -213,10 +214,11 @@ struct TrendsView: View {
         return L("Snapshot")
     }
 
-    /// A metric value as the hero shows it. No value is a dash: "0%" would read as measured.
+    /// A metric value as the hero shows it, whole. No value is a dash: "0%" would read as
+    /// measured.
     nonisolated static func metricValueText(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
-        return "\(Int(value.rounded()))\(unit)"
+        return unit == "%" ? PercentFormat.whole.text(value) : "\(Int(value.rounded()))\(unit)"
     }
 
     /// Min, max and mean of the values in range, or nil when there are none.
@@ -229,12 +231,12 @@ struct TrendsView: View {
 
     /// The change over the range for one metric, nil with fewer than two comparable points.
     nonisolated static func trendChange(
-        metric: TrendSeries.Metric, series: [Double]
+        metric: TrendSeries.Metric, series: [Double], format: PercentFormat
     ) -> TrendChange? {
         guard series.count >= 2, let first = series.first, let last = series.last else {
             return nil
         }
-        return TrendChange(metric: metric, first: first, last: last)
+        return TrendChange(metric: metric, first: first, last: last, format: format)
     }
 
     /// Why there is no change to show: a dash with no points, "Not comparable" with one, so a
@@ -244,14 +246,19 @@ struct TrendsView: View {
     }
 
     /// A pill's change over the range, in percentage points for a share.
-    nonisolated static func pillDeltaText(metric: TrendSeries.Metric, series: [Double]) -> String {
-        trendChange(metric: metric, series: series)?.pillText ?? noChangeText(series: series)
+    nonisolated static func pillDeltaText(
+        metric: TrendSeries.Metric, series: [Double], format: PercentFormat
+    ) -> String {
+        trendChange(metric: metric, series: series, format: format)?.pillText
+            ?? noChangeText(series: series)
     }
 
     /// The hero's change: a relative percentage only for a count, whose baseline can be a
     /// different size from its change. A share's change is already in percentage points.
-    nonisolated static func heroChangeText(metric: TrendSeries.Metric, series: [Double]) -> String {
-        guard let change = trendChange(metric: metric, series: series),
+    nonisolated static func heroChangeText(
+        metric: TrendSeries.Metric, series: [Double], format: PercentFormat
+    ) -> String {
+        guard let change = trendChange(metric: metric, series: series, format: format),
               let first = series.first, let last = series.last else {
             return noChangeText(series: series)
         }
@@ -261,11 +268,11 @@ struct TrendsView: View {
     }
 
     private var heroChange: TrendChange? {
-        Self.trendChange(metric: metric, series: changeValues)
+        Self.trendChange(metric: metric, series: changeValues, format: percentFormat)
     }
 
     private var heroChangeText: String {
-        Self.heroChangeText(metric: metric, series: changeValues)
+        Self.heroChangeText(metric: metric, series: changeValues, format: percentFormat)
     }
 
     private func verdictColor(_ verdict: TrendChange.Verdict) -> Color {
@@ -492,7 +499,8 @@ struct TrendsView: View {
         series = points(for: m).map(\.value)
         sparkValues = Self.sparklineValues(series)
 
-        let change = Self.trendChange(metric: m, series: changeSeries(for: m, series))
+        let change = Self.trendChange(
+            metric: m, series: changeSeries(for: m, series), format: percentFormat)
         let verdict = change?.verdict ?? .neutral
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
@@ -507,7 +515,8 @@ struct TrendsView: View {
                 Text(metricLabel(m))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text(Self.pillDeltaText(metric: m, series: changeSeries(for: m, series)))
+                Text(Self.pillDeltaText(
+                    metric: m, series: changeSeries(for: m, series), format: percentFormat))
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(verdictColor(verdict))
                 if sparkValues.count >= 2 {
@@ -553,7 +562,8 @@ struct TrendsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Self.metricPillAccessibilityLabel(
-            label: metricLabel(m), metric: m, series: changeSeries(for: m, series)
+            label: metricLabel(m), metric: m, series: changeSeries(for: m, series),
+            format: percentFormat
         ))
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(metricLabel(m)) trend")
@@ -739,7 +749,7 @@ struct TrendsView: View {
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .symbolSize(100)
                                     .annotation(position: .top, spacing: 8) {
-                                        Text("\(Int(selectedPoint.value.rounded()))\(metric.unit)")
+                                        Text(Self.metricValueText(selectedPoint.value, unit: metric.unit))
                                             .font(Theme.Fonts.mono(12, weight: .bold))
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
@@ -794,7 +804,8 @@ struct TrendsView: View {
                         seriesName: metricLabel(metric),
                         dates: trendPoints.map(\.date),
                         values: trendPoints.map(\.value),
-                        unit: metric.unit
+                        unit: metric.unit,
+                        percentFormat: percentFormat
                     ))
                 } else {
                     ProgressView().frame(height: 260)
@@ -1215,7 +1226,8 @@ struct TrendsView: View {
                         .init(name: L("macOS Current"),
                               dates: points(for: .osCurrent).map(\.date),
                               values: points(for: .osCurrent).map(\.value)),
-                    ]
+                    ],
+                    percentFormat: percentFormat
                 ))
             } else {
                 ProgressView().frame(height: 200)
@@ -1229,9 +1241,10 @@ struct TrendsView: View {
     nonisolated static func metricPillAccessibilityLabel(
         label: String,
         metric: TrendSeries.Metric,
-        series: [Double]
+        series: [Double],
+        format: PercentFormat
     ) -> String {
-        guard let change = trendChange(metric: metric, series: series) else {
+        guard let change = trendChange(metric: metric, series: series, format: format) else {
             return series.isEmpty
                 ? L("\(label), no snapshots in range") : L("\(label), not comparable")
         }
@@ -1391,7 +1404,7 @@ struct TrendsView: View {
             }
             .overlay(alignment: .top) {
                 if isHovered {
-                    Text("\(SummaryJSONParser.dateFormatter.string(from: date)) · \(Int(value.rounded()))\(metric.unit)")
+                    Text("\(SummaryJSONParser.dateFormatter.string(from: date)) · \(TrendsView.metricValueText(value, unit: metric.unit))")
                         .font(Theme.Fonts.mono(10))
                         .foregroundStyle(Theme.Colors.fg)
                         .padding(.horizontal, 6)
@@ -1424,7 +1437,7 @@ struct TrendsView: View {
 
     private func archiveBarLabel(date: Date, value: Double, isLatest: Bool) -> String {
         let dateStr = SummaryJSONParser.dateFormatter.string(from: date)
-        let valueStr = "\(Int(value.rounded()))\(metric.unit)"
+        let valueStr = TrendsView.metricValueText(value, unit: metric.unit)
         return isLatest
             ? L("\(dateStr): \(valueStr), latest snapshot")
             : "\(dateStr): \(valueStr)"
@@ -1513,7 +1526,8 @@ struct TrendsView: View {
         let exportResult = DashboardChartExport.run(
             title: label,
             subtitle: subtitle,
-            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile)
+            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile),
+            percentFormat: percentFormat
         ) { ChartExportView(trendPoints: pts, metric: m, domain: dom, axisLabel: label) }
 
         if case .failure(let error) = exportResult {
@@ -1684,6 +1698,7 @@ struct FlowLayout: Layout {
 /// Chart-only content view used as the body of DashboardChartExport.run.
 /// DashboardExportCanvas owns the outer frame, background, title, and footnote.
 private struct ChartExportView: View {
+    @Environment(\.percentFormat) private var percentFormat
     let trendPoints: [TrendPoint]
     let metric: TrendSeries.Metric
     let domain: ClosedRange<Date>?
@@ -1827,7 +1842,7 @@ private struct ChartExportView: View {
     }
 
     private func formatValue(_ value: Double) -> String {
-        isPercentMetric ? "\(String(format: "%.1f", value))%" : "\(Int(value.rounded()))"
+        isPercentMetric ? percentFormat.text(value) : "\(Int(value.rounded()))"
     }
 
     private func formatAxisValue(_ value: Double) -> String {

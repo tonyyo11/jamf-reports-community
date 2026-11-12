@@ -38,10 +38,10 @@ final class PostureViewsRenderTests: XCTestCase {
         XCTAssertEqual(CompliancePostureView.controlBarCountText(two), "3 failing · 2 warnings")
 
         let label = "Firewall control coverage, 30.0 percent failing, 3 of 10 devices"
-        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(none), label)
-        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(one),
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(none, format: .standard), label)
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(one, format: .standard),
                        label + ", 1 warning")
-        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(two),
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(two, format: .standard),
                        label + ", 2 warnings")
     }
 
@@ -138,12 +138,12 @@ final class PostureViewsRenderTests: XCTestCase {
 
     /// A score where nothing had data shows a dash, not 0.0 (which would read as grade F).
     func testScoreTextIsADashWhenNothingWasScored() {
-        XCTAssertEqual(SecurityPostureView.scoreText(.empty), "—")
+        XCTAssertEqual(SecurityPostureView.scoreText(.empty, format: .standard), "—")
         let on = SecurityFleetCounts.Control(level: .fail, on: 2, fail: 0, warning: 0)
         let scored = SecurityScoreTestSupport.score(SecurityFleetCounts(
             totalDevices: 2, controls: [.sip: on], fileVaultOffHardwareEncrypted: 0))
         XCTAssertFalse(scored.parts.isEmpty)
-        XCTAssertEqual(SecurityPostureView.scoreText(scored), "100.0")
+        XCTAssertEqual(SecurityPostureView.scoreText(scored, format: .standard), "100.0")
     }
 
     // MARK: - Reading off the main actor

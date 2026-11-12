@@ -6,6 +6,7 @@ import Charts
 /// Health Dashboard. Reads the latest `pro security report` snapshot via
 /// `SecurityPostureService`.
 struct SecurityPostureView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -210,9 +211,9 @@ struct SecurityPostureView: View {
     static let noScoreCaption = L("No factor had data")
 
     /// The ring's number: a dash when nothing was scored, never a 0.0 that reads as grade F.
-    static func scoreText(_ score: SecurityScore) -> String {
+    static func scoreText(_ score: SecurityScore, format: PercentFormat) -> String {
         guard !score.parts.isEmpty, score.value.isFinite else { return "—" }
-        return String(format: "%.1f", score.value)
+        return format.numberText(score.value)
     }
 
     /// The hero card's line for metrics the ring does not score. FileVault, when the report
@@ -269,10 +270,9 @@ struct SecurityPostureView: View {
         let total = snapshot.totalDevices
         if let count, total > 0 {
             let pct = (Double(count) / Double(total)) * 100
-            // Rounded as the AI card rounds it, so an exact x.x5 reads the same in both.
             StatTile(
                 label: label,
-                value: FleetInsightInput.Value.percent(pct).text,
+                value: percentFormat.text(pct),
                 sub: Self.kpiTileSub(
                     control, on: count, total: total, fleet: snapshot.fleetCounts)
             )
@@ -397,7 +397,8 @@ struct SecurityPostureView: View {
             title: "macOS Version Distribution",
             subtitle: "Security Posture",
             footnote: "Source: pro report security · \(total) devices",
-            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             SecurityPostureOSDonutExport(rows: rows, totalDevices: total)
         }
@@ -432,7 +433,7 @@ struct SecurityPostureView: View {
             )
             .foregroundStyle(by: .value("Version", row.osVersion))
             .accessibilityLabel(row.osVersion)
-            .accessibilityValue("\(row.count) devices, \(Int(row.pct.rounded()))%")
+            .accessibilityValue("\(row.count) devices, \(PercentFormat.whole.text(row.pct))")
         }
         .chartForegroundStyleScale(
             domain: orderedKeys, range: Theme.ChartColors.colors(forVersions: orderedKeys))
@@ -462,6 +463,7 @@ struct SecurityPostureView: View {
 /// `Circle` shapes: track + filled arc. The center renders the score and
 /// letter grade in the same `Theme.Fonts.serif` used by `StatTile`.
 private struct ScoreRing: View {
+    @Environment(\.percentFormat) private var percentFormat
     let score: SecurityScore
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -502,7 +504,7 @@ private struct ScoreRing: View {
         return min(max(score.value / 100, 0), 1)
     }
 
-    private var displayValue: String { SecurityPostureView.scoreText(score) }
+    private var displayValue: String { SecurityPostureView.scoreText(score, format: percentFormat) }
 }
 
 // MARK: - Export-only chart
@@ -544,7 +546,7 @@ private struct SecurityPostureOSDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.0f%%", row.pct))
+                        Text(PercentFormat.whole.text(row.pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 40, alignment: .trailing)
@@ -559,6 +561,7 @@ private struct SecurityPostureOSDonutExport: View {
 
 /// Under the score ring: each scored factor, its share of Macs and the points it adds.
 struct ScoreBreakdownList: View {
+    @Environment(\.percentFormat) private var percentFormat
     let score: SecurityScore
     let staleDays: Int?
     var staleBasis: [StaleBasis] = StaleBasis.default
@@ -572,7 +575,7 @@ struct ScoreBreakdownList: View {
                     Text(part.factor.label(staleDays: staleDays, staleBasis: staleBasis))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(Self.percent(part.share))
+                    Text(Self.percent(part.share, format: percentFormat))
                         .gridColumnAlignment(.trailing)
                     Text(Self.points(score.points(of: part)))
                         .gridColumnAlignment(.trailing)
@@ -584,7 +587,7 @@ struct ScoreBreakdownList: View {
         .accessibilityElement(children: .combine)
     }
 
-    static func percent(_ share: Double) -> String { String(format: "%.1f%%", share) }
+    static func percent(_ share: Double, format: PercentFormat) -> String { format.text(share) }
 
     static func points(_ value: Double) -> String { String(format: "%.1f pts", value) }
 }

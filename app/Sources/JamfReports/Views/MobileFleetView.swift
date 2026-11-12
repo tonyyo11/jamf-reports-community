@@ -6,6 +6,7 @@ import Charts
 /// inventories from the `pro mobile-devices list` and `classic-mobile-config-profiles`
 /// snapshots.
 struct MobileFleetView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: MobileFleetService.Snapshot = .empty
@@ -342,7 +343,7 @@ struct MobileFleetView: View {
     /// A count as a share of the fleet, or a dash when the count is unknown.
     private func fleetPercentText(_ count: Int?) -> String {
         guard let count else { return "—" }
-        return String(format: "%.1f%%", pct(count: count, total: snapshot.totalDevices))
+        return percentFormat.text(pct(count: count, total: snapshot.totalDevices))
     }
 
     /// "N of M", or why there is no N.
@@ -471,7 +472,7 @@ struct MobileFleetView: View {
                             .font(Theme.Fonts.mono(12, weight: .semibold))
                             .foregroundStyle(Theme.Colors.fg2)
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", percentage))
+                        Text(percentFormat.text(percentage))
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(minWidth: 48, alignment: .trailing)
@@ -615,7 +616,7 @@ struct MobileFleetView: View {
                 Text(count == 1 ? "\(count) device" : "\(count) devices")
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", percentage))
+                Text(percentFormat.text(percentage))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Theme.Colors.fg)
                     .frame(minWidth: 48, alignment: .trailing)
@@ -633,7 +634,7 @@ struct MobileFleetView: View {
             .frame(height: 4)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(method): \(count) devices, \(String(format: "%.0f", percentage)) percent")
+        .accessibilityLabel("\(method): \(count) devices, \(PercentFormat.whole.numberText(percentage)) percent")
     }
 
     @ViewBuilder
@@ -672,7 +673,8 @@ struct MobileFleetView: View {
             title: "iOS / iPadOS Version Distribution",
             subtitle: "Mobile Devices",
             footnote: "Source: pro mobile-devices · \(total) mobile devices",
-            suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             MobileFleetOSDistributionExport(rows: rows, totalDevices: total)
         }
@@ -694,7 +696,7 @@ struct MobileFleetView: View {
                 Text(count == 1 ? "\(count) device" : "\(count) devices")
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", percentage))
+                Text(percentFormat.text(percentage))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Theme.Colors.fg)
                     .frame(minWidth: 40, alignment: .trailing)
@@ -712,7 +714,7 @@ struct MobileFleetView: View {
             .frame(height: 4)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(osVersion): \(count) devices, \(String(format: "%.0f", percentage)) percent of fleet")
+        .accessibilityLabel("\(osVersion): \(count) devices, \(PercentFormat.whole.numberText(percentage)) percent of fleet")
     }
 
     private var totalMobileDevices: Int {
@@ -1100,7 +1102,7 @@ struct MobileFleetView: View {
     }
 
     private func pctString(count: Int, total: Int) -> String {
-        total > 0 ? String(format: "%.1f%% of fleet", pct(count: count, total: total)) : "—"
+        total > 0 ? L("\(percentFormat.text(pct(count: count, total: total))) of fleet") : "—"
     }
 }
 
@@ -1153,6 +1155,7 @@ private struct ProfileWithIndex: Identifiable {
 /// horizontal bar layout (one bar per OS version) so the export reads at a
 /// glance even with 10+ versions stacked.
 private struct MobileFleetOSDistributionExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let rows: [(osVersion: String, count: Int)]
     let totalDevices: Int
 
@@ -1178,7 +1181,7 @@ private struct MobileFleetOSDistributionExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", pct))
+                        Text(percentFormat.text(pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 52, alignment: .trailing)

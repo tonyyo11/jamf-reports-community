@@ -9,6 +9,13 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Percentages can be whole numbers. `display.percent_decimals: 0` in `config.yaml`, or
+  **Percentages** on the Customize screen, prints `57%` instead of `56.7%` on every screen and
+  in the workbook, CSV folder, HTML report, PDF, period report, alert cards and on-device
+  insights. Rounding is to the nearest step; stored figures, thresholds and alerts keep full
+  precision. A figure printed beside the threshold it missed keeps one more decimal, so 89.6%
+  never reads "90% (below 90%)", and changes read in whole percentage points. The default stays
+  one decimal, and the cross-workspace fleet reports keep one decimal.
 - A Jamf Security Cloud login you set up with `jamf-cli security setup` can be added to a Jamf Pro or Jamf School environment from Data Sources. Each collect then saves every device's risk category and a few status fields (never a user, phone number, location or device name); `jamf_cli.collect_skip: [security-risk]` leaves it out. The daily summary then records how many devices Security Cloud lists, how many match this environment's devices (by UDID) and the count per risk category; Trends and metric alerts (`security_cloud_device_count`, `security_cloud_matched_pct`, `security_cloud_high_risk_count`) use them.
 - Jamf Reports now notices when the jamf-cli login can see only some Jamf Pro sites. The collect log, Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, fleet workbook and period report note that they cover only the sites that login sees.
 - A Jamf School workspace with Jamf Protect connected now backs up Protect: the Backups screen,
@@ -102,6 +109,15 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A share just below 100% or just above 0% no longer prints as 100% or 0%, on screens and in
+  reports: 99.96% reads 99.9%, 0.04% reads 0.1%, and where a figure was already whole (the
+  workbook's Executive Summary compliance and patch cells, chart labels, the Trends headline)
+  99.6% reads 99% instead of 100%. An exact half now rounds up (56.25% reads 56.3%) where it
+  sometimes rounded down. Security and stability scores follow the same precision as
+  percentages. An Overview score card whose figure did not move reads "±0", as the Trends pills
+  do, instead of "+0pp" or "+0". With `display.percent_decimals: 0`, workbook text cells that hold a percentage,
+  and the CSV folder, hold whole numbers, and percentage number cells use the `0%` format with
+  their stored values unchanged. If a tool reads these workbooks, check it against a new one.
 - **Workbook layout, for anything that reads the workbooks automatically.** When the jamf-cli login sees only some Jamf Pro sites, every Jamf Pro tab carries a sentence saying so in the header row just above its table (the row that was blank). No tab, column or table row moves, and a login that sees every site writes nothing new. Separately, rows that tie on a count (Mobile Fleet Summary, Hardware Models, text extension attribute tables) now sort by name, so their order no longer changes between runs. If a script or a tool such as Power BI reads these workbooks, check it against a new report.
 - Device Security State writes "No Data" in every control column for a Mac that never sent inventory, where it was blank.
 - The workbook's DDM Device Status tab counts only invalid declarations in its Failing column; an

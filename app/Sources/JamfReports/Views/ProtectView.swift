@@ -5,6 +5,7 @@ import Charts
 /// agent health, and insights from `jamf-cli protect *` snapshots. Renders a
 /// clear empty state when no Protect data exists (many tenants don't run Protect).
 struct ProtectView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
@@ -298,7 +299,7 @@ struct ProtectView: View {
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg2)
                     .monospacedDigit()
-                Text(String(format: "%.0f%%", pct))
+                Text(PercentFormat.whole.text(pct))
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
@@ -317,7 +318,7 @@ struct ProtectView: View {
             .frame(height: 6)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(stage): \(count) of \(total), \(Int(pct)) percent")
+        .accessibilityLabel("\(stage): \(count) of \(total), \(PercentFormat.whole.numberText(pct)) percent")
     }
 
     private var agentVersionCard: some View {
@@ -408,7 +409,7 @@ struct ProtectView: View {
                 StatTile(
                     label: L("Web Protection"),
                     value: "\(snapshot.webProtectionActiveCount)",
-                    sub: L("\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
+                    sub: L("\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(PercentFormat.whole.text(snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
@@ -417,7 +418,7 @@ struct ProtectView: View {
                 StatTile(
                     label: L("Full Disk Access"),
                     value: "\(snapshot.fullDiskAccessCount)",
-                    sub: L("\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
+                    sub: L("\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(PercentFormat.whole.text(snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
@@ -507,7 +508,8 @@ struct ProtectView: View {
             subtitle: "Jamf Protect",
             footnote: "Source: jamf-cli protect alerts · "
                 + "\(total) open alert\(total == 1 ? "" : "s")",
-            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             ProtectAlertsSeverityExport(
                 high: high, medium: medium, low: low, informational: informational
@@ -538,7 +540,7 @@ struct ProtectView: View {
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg2)
                     .monospacedDigit()
-                Text(String(format: "%.0f%%", pct))
+                Text(PercentFormat.whole.text(pct))
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
@@ -559,7 +561,7 @@ struct ProtectView: View {
             .frame(height: 6)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label) severity alerts: \(count) of \(total) total, \(Int(pct)) percent")
+        .accessibilityLabel("\(label) severity alerts: \(count) of \(total) total, \(PercentFormat.whole.numberText(pct)) percent")
     }
 
     private var recentAlertsCard: some View {
@@ -1095,6 +1097,7 @@ struct ProtectView: View {
 /// in-dashboard view uses Theme tokens which read poorly on the light export
 /// canvas.
 private struct ProtectAlertsSeverityExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let high: Int
     let medium: Int
     let low: Int
@@ -1133,7 +1136,7 @@ private struct ProtectAlertsSeverityExport: View {
                             .font(.caption.monospaced().weight(.semibold))
                             .foregroundStyle(Theme.Chart.textPrimary)
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", pct))
+                        Text(percentFormat.text(pct))
                             .font(.caption.monospaced())
                             .foregroundStyle(Theme.Chart.textSecondary)
                             .frame(width: 50, alignment: .trailing)

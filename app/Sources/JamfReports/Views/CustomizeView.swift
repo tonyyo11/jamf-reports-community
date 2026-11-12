@@ -17,6 +17,7 @@ struct CustomizeView: View {
     @State private var chartSavePNGs: Bool = false
     @State private var chartsLoaded = false
     @State private var htmlWithWorkbook: Bool = false
+    @State private var percentDecimals: Int = 1
 
     @State private var applySaved = false
     @State private var saveError: String?
@@ -77,6 +78,8 @@ struct CustomizeView: View {
         chartPerMajor = charts.perMajorCharts
         htmlWithWorkbook = !workspace.demoMode
             && HTMLReportConfigLoader.withWorkbook(profile: workspace.profile)
+        percentDecimals = workspace.demoMode
+            ? 1 : DisplayConfigLoader.percentFormat(profile: workspace.profile).decimals
         saveNote = nil
     }
 
@@ -203,6 +206,7 @@ struct CustomizeView: View {
             scoreCardsCard
             chartsCard
             HTMLWithWorkbookCard(isOn: $htmlWithWorkbook, isDemo: workspace.demoMode)
+            PercentagesCard(decimals: $percentDecimals, isDemo: workspace.demoMode)
         }
         .frame(width: 260)
     }
@@ -299,13 +303,16 @@ struct CustomizeView: View {
         )
         let profile = workspace.profile
         let withWorkbook = htmlWithWorkbook
+        let decimals = percentDecimals
         Task {
             do {
                 // Only this screen's options. It edits nothing else, so it
                 // no longer saves the Config tab's unsaved edits along with them.
                 try Self.writeOptions(
-                    chartOptions, withWorkbook: withWorkbook, profile: profile
+                    chartOptions, withWorkbook: withWorkbook, percentDecimals: decimals,
+                    profile: profile
                 ) { saveNote = $0 }
+                workspace.reloadPercentFormat()
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
@@ -321,17 +328,25 @@ struct CustomizeView: View {
 
 extension CustomizeView {
     /// Writes this screen's options, charts first. Each write's note reaches `noting` as soon
-    /// as it is made, so a failed html write does not lose the charts write's note.
+    /// as it is made, so a failed later write does not lose an earlier write's note.
     nonisolated static func writeOptions(
-        _ chartOptions: ChartsOptions, withWorkbook: Bool, profile: String,
-        noting: (ProfileSaveNote) -> Void
+        _ chartOptions: ChartsOptions, withWorkbook: Bool, percentDecimals: Int,
+        profile: String, noting: (ProfileSaveNote) -> Void
     ) throws {
         let charts = try ChartsConfigWriter.save(chartOptions, profile: profile)
+        var lines = [charts.report.statusLine].compactMap { $0 }
         if let saved = charts.report.note(for: profile) { noting(saved) }
         let html = try HTMLReportConfigWriter.save(withWorkbook: withWorkbook, profile: profile)
-        guard let line = html.report.statusLine else { return }
-        let lines = [charts.report.statusLine, line].compactMap { $0 }
-        noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
+        if let line = html.report.statusLine {
+            lines.append(line)
+            noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
+        }
+        let display = try DisplayConfigWriter.save(
+            percentDecimals: percentDecimals, profile: profile)
+        if let line = display.report.statusLine {
+            lines.append(line)
+            noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
+        }
     }
 }
 
@@ -360,6 +375,34 @@ private struct HTMLWithWorkbookCard: View {
                         .help(isDemo ? DemoData.liveOnlyHelp : "")
                 }
                 Text("Scheduled runs and the command-line tool write it too.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The picker for `display.percent_decimals`: how every screen and report prints a percentage.
+private struct PercentagesCard: View {
+    @Binding var decimals: Int
+    let isDemo: Bool
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: L("Percentages"), style: .body)
+                Picker(L("Percentages"), selection: $decimals) {
+                    Text(verbatim: PercentFormat.standard.text(56.7)).tag(1)
+                    Text(verbatim: PercentFormat.whole.text(56.7)).tag(0)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(isDemo)
+                .help(isDemo ? DemoData.liveOnlyHelp : "")
+                Text("Screens, workbooks, HTML reports and alert cards round to this. Stored figures and thresholds keep full precision.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)

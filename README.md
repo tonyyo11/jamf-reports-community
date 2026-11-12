@@ -26,7 +26,7 @@ The repository is `jamf-reports-community`. The app is featured in the
   profiles, mobile devices and Jamf Protect. See
   [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards).
 - **Reports** as Excel workbooks, self-contained HTML, PDF and CSV, from a template or your own
-  choice of sheets. See
+  choice of sheets, with percentages to one decimal (`56.7%`) or as whole numbers (`57%`). See
   [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
 - **History** from a daily snapshot: trend charts, and quarter or month reports with the start,
   end and change for each figure. See

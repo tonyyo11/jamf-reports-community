@@ -400,6 +400,15 @@ The **Customize** screen holds the report options that are not in Config:
 - Two chart switches, saved per profile when you press Apply:
   **Save PNGs alongside xlsx** (`charts.save_png`) and **Per-major-version charts**
   (`charts.os_adoption.per_major_charts`).
+- **Percentages** (`display.percent_decimals`, saved with Apply): `56.7%` (one decimal, the
+  default) or `57%` (whole numbers). Every screen, workbook, CSV folder, HTML report, period
+  report, alert card and on-device insight follows it. Rounding is to the nearest step, and a
+  share above 0% or below 100% never prints as 0% or 100%. Stored figures, thresholds and
+  alerts keep full precision; workbook number cells keep the full value and only display it
+  rounded. A figure printed beside the threshold it missed keeps one more decimal, so 89.6%
+  never reads "90% (below 90%)". Changes read as whole percentage points at `57%`, and a
+  change that rounds to nothing reads "No change". The cross-workspace fleet reports keep
+  one decimal.
 - **Write the HTML report with every workbook** (`html.with_workbook`, saved with Apply
   too): when on, each run that writes a profile's workbook also writes that profile's HTML
   report beside it, with the same name and a `.html` extension and the same template's

@@ -30,6 +30,7 @@ struct ReportConfig: Decodable, Sendable {
     var ai: AIConfig?
     var html: HTMLReportConfig?
     var securityPolicy: SecurityControlPolicy?
+    var display: DisplayConfig?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case securityAgents = "security_agents"
@@ -54,6 +55,7 @@ struct ReportConfig: Decodable, Sendable {
         case ai
         case html
         case securityPolicy = "security_policy"
+        case display
     }
 
     /// Produce a config with all optional fields filled in from hardcoded defaults,
