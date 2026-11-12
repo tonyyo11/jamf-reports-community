@@ -32,6 +32,14 @@ expect "team from a Developer ID subject" "ABCDE12345" \
 expect "team from a multiline subject" "ABCDE12345" \
   "$(jr_team_id_from_subject 'subject= /UID=X/CN=n/OU=ABCDE12345/O=o/C=US')"
 expect "no OU, no team" "" "$(jr_team_id_from_subject 'CN=nobody,O=o')"
+# The caller runs `set -euo pipefail`; an identity the keychain does not hold must still fall
+# back to the trailing "(TEAMID)" in its name instead of ending the build with no message.
+expect "unknown identity under set -e falls back to the name" "ABCDE12345" \
+  "$(zsh -c 'set -euo pipefail; source "$1"; jr_identity_team_id "Developer ID Application: Nobody Here (ABCDE12345)"' \
+    _ "${SCRIPT_DIR}/lib/spawn-constraint.zsh" 2>/dev/null)"
+expect "unknown identity with no team in its name prints nothing and succeeds" "0:" \
+  "$(zsh -c 'set -euo pipefail; source "$1"; t="$(jr_identity_team_id "NoSuchIdentity")"; echo "0:$t"' \
+    _ "${SCRIPT_DIR}/lib/spawn-constraint.zsh" 2>/dev/null)"
 
 cp "$src" "$plist"
 jr_add_spawn_constraint "$plist" ABCDE12345 com.tonyyo.jamfreports
