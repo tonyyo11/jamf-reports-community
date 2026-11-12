@@ -324,7 +324,7 @@ struct OverviewView: View {
             } ?? L("on schedule")
             let last = first.lastRunFinishedAt.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
-            } ?? "never"
+            } ?? L("never")
             let more = overdue.count > 1 ? L(" (+\(overdue.count - 1) more)") : ""
             if first.isMulti {
                 // Global all-profiles managed agent — label it fleet-wide so a
@@ -342,20 +342,18 @@ struct OverviewView: View {
         // overdue branch uses.
         let name: String
         if firstFailing.isMulti {
-            name = L("Managed automation (all profiles) — ")
-                + WorkspaceStore.fleetWideDisplayName(firstFailing.displayName)
+            name = L("Managed automation (all profiles) — \(WorkspaceStore.fleetWideDisplayName(firstFailing.displayName))")
         } else {
             name = firstFailing.displayName
         }
         let last = firstFailing.lastRunFinishedAt.map {
             formatter.localizedString(for: $0, relativeTo: Date())
-        } ?? "never"
+        } ?? L("never")
         // Name the cause when the run recorded an exit code, so the banner
         // says WHY (401 / 403 / 429 / network) rather than just "failed".
         if let reason = firstFailing.reason { return L("\(name) can't run\(more). \(reason)") }
         if let code = firstFailing.lastRunExitCode {
-            return L("\(name) failed \(last)\(more). ")
-                + CLIBridge.explainExit(code, operation: L("Last run"))
+            return L("\(name) failed \(last)\(more). \(CLIBridge.explainExit(code, operation: L("Last run")))")
         }
         return L("\(name) failed on its last run \(last)\(more) — check Automation.")
     }
@@ -591,8 +589,8 @@ struct OverviewView: View {
                 // real workspace for it.
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
-                      ? "Demo data is fixed. Generating a report needs a live profile."
-                      : "Collect if the data is stale, then build this profile's report.")
+                      ? L("Demo data is fixed. Generating a report needs a live profile.")
+                      : L("Collect if the data is stale, then build this profile's report."))
             }
         }
     }
@@ -669,8 +667,8 @@ struct OverviewView: View {
                 // requires CLIBridge-side emit, which is outside this change's scope.
                 let skipMessage: String
                 if case .fresh(let ageMinutes) = freshnessDecision {
-                    skipMessage = "[info] snapshots are fresh (\(ageMinutes)m old) — skipped collect;" +
-                        L(" Trends will not gain a new data point this run")
+                    skipMessage = "[info] snapshots are fresh (\(ageMinutes)m old) — skipped collect;"
+                        + " Trends will not gain a new data point this run"
                 } else {
                     skipMessage = "[info] snapshots are fresh — skipped collect"
                 }
@@ -1570,7 +1568,7 @@ struct OverviewView: View {
             Image(systemName: enabled ? "checkmark" : "xmark")
                 .foregroundStyle(enabled ? Theme.Colors.ok : Theme.Colors.danger)
                 .font(.system(size: 11, weight: .bold))
-                .accessibilityLabel(enabled ? "FileVault on" : "FileVault off")
+                .accessibilityLabel(enabled ? L("FileVault on") : L("FileVault off"))
         } else {
             Mono(text: "—")
                 .accessibilityLabel("FileVault state unknown")
@@ -1884,10 +1882,9 @@ struct OverviewView: View {
                 staleMeasured: latest?.staleCount != nil
             ) ?? L("Composite of compliance, patch posture, and stale-device pressure.")
         case .activeDevices:
-            L("Excludes devices stale beyond \(workspace.configState.staleRule.days)d")
-            + (workspace.configState.staleRule.usesDefaultBasis
-                ? "" : " (\(workspace.configState.staleRule.basisPhrase))")
-            + L(". Open Computers to inspect records contributing to this count.")
+            workspace.configState.staleRule.usesDefaultBasis
+                ? L("Excludes devices stale beyond \(workspace.configState.staleRule.days)d. Open Computers to inspect records contributing to this count.")
+                : L("Excludes devices stale beyond \(workspace.configState.staleRule.days)d (\(workspace.configState.staleRule.basisPhrase)). Open Computers to inspect records contributing to this count.")
         case .compliance:
             latest?.complianceIsProxy == true
                 ? L("Control-gap proxy (FileVault/SIP/Firewall/Gatekeeper). Configure a Compliance EA for true mSCP banding.")

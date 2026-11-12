@@ -997,8 +997,7 @@ final class OnboardingFlow {
 
         validationExitCode = exit
         guard exit == 0 else {
-            lastError = "jamf-cli config validate failed for \(profile). Review the URL, "
-                + L("client ID, secret, and API role privileges, then retry.")
+            lastError = L("jamf-cli config validate failed for \(profile). Review the URL, client ID, secret, and API role privileges, then retry.")
             return
         }
         guard proConnectionType == .platformGateway else {

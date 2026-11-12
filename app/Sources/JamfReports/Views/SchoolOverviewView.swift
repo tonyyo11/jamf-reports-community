@@ -25,7 +25,7 @@ struct SchoolOverviewView: View {
                 lastModified: snapshot.collectedAt
             )
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "overview")
+                ScreenLoadingCard(what: L("overview"))
             } else {
                 if let checklist, !checklist.isComplete {
                     GettingStartedCard(checklist: checklist, onAction: perform)

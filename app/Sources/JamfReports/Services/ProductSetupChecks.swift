@@ -95,6 +95,7 @@ enum ProductSetupChecks {
         let outcome = await JamfCLIProbe.runOutcomeAsync(
             executable: binary, arguments: arguments)
         if case .completed(let output) = outcome, output.exitCode == 0 { return nil }
-        return L("jamf-cli now uses \(setUp) as its default profile. To use \(previous) again: jamf-cli config set-default -- ") + ProfileName.shellWord(previous)
+        let word = ProfileName.shellWord(previous)
+        return L("jamf-cli now uses \(setUp) as its default profile. To use \(previous) again: jamf-cli config set-default -- \(word)")
     }
 }

@@ -103,8 +103,12 @@ struct PolicyProfileView: View {
         case .profiles:
             guard snapshot.hasProfileData else { return nil }
             let count = snapshot.profilesWithFailures
-            let days = snapshot.profileLookbackDays.map { L(" in the last \($0) days") } ?? ""
-            return (count == 1 ? L("\(count) profile with failures\(days).") : L("\(count) profiles with failures\(days)."))
+            guard let days = snapshot.profileLookbackDays else {
+                return count == 1 ? L("\(count) profile with failures.") : L("\(count) profiles with failures.")
+            }
+            return count == 1
+                ? L("\(count) profile with failures in the last \(days) days.")
+                : L("\(count) profiles with failures in the last \(days) days.")
         }
     }
 
@@ -337,7 +341,7 @@ struct PolicyProfileView: View {
                             .font(.caption.monospaced())
                             .foregroundStyle(profile.errors > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel(profile.errors == 1 ? "\(profile.errors) error" : "\(profile.errors) errors")
+                            .accessibilityLabel(profile.errors == 1 ? L("\(profile.errors) error") : L("\(profile.errors) errors"))
                     }
                     .width(min: 60, ideal: 80)
 

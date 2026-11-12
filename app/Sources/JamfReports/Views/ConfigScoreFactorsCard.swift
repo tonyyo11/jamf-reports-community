@@ -280,7 +280,7 @@ private struct ScoreFactorsHeader: View {
             PNPButton(title: L("Use defaults"), size: .sm, action: onDefaults)
                 .disabled(demo || isDefault)
                 .help(demo ? DemoData.liveOnlyHelp
-                      : "Remove the list from config.yaml and score the default factors.")
+                      : L("Remove the list from config.yaml and score the default factors."))
         }
     }
 }
@@ -338,7 +338,7 @@ private struct ScoreFactorAddMenu: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(options.isEmpty)
-        .help(options.isEmpty ? "Every factor is already listed." : "Add a factor to the score.")
+        .help(options.isEmpty ? L("Every factor is already listed.") : L("Add a factor to the score."))
     }
 }
 

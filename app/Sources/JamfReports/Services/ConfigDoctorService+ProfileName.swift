@@ -20,17 +20,20 @@ extension ConfigDoctorService {
         let shownProfile = ConfigSchema.displayText(profile)
         let caseOnly = ProfileService.isCaseVariant(named, of: profile)
         let refused = environment.source == .profilesBlock
+        let mismatch = caseOnly
+            ? L("config.yaml sets \(key) to '\(shownNamed)' but this workspace is '\(shownProfile)' (the names differ only in case).")
+            : L("config.yaml sets \(key) to '\(shownNamed)' but this workspace is '\(shownProfile)'.")
+        let consequence = refused
+            ? L("Collecting and backing up refuse to run until they agree.")
+            : L("The app runs this workspace as '\(shownProfile)' and ignores the key.")
         return [DoctorRow(
             id: "config.profile_mismatch",
             severity: refused ? .fail : .warn,
             title: L("\(key) names a different profile than this workspace"),
-            detail: L("config.yaml sets \(key) to '\(shownNamed)' but this workspace is '\(shownProfile)'") + (caseOnly ? L(" (the names differ only in case)") : "")
-                + (refused
-                    ? L(". Collecting and backing up refuse to run until they agree.")
-                    : L(". The app runs this workspace as '\(shownProfile)' and ignores the key.")),
-            hint: L("Edit \(key) in config.yaml to read '\(shownProfile)'")
-                + (environment.source == .legacyKeys ? L(", or remove the line") : "")
-                + L(". A copied or renamed workspace keeps the old name.")
+            detail: "\(mismatch) \(consequence)",
+            hint: environment.source == .legacyKeys
+                ? L("Edit \(key) in config.yaml to read '\(shownProfile)', or remove the line. A copied or renamed workspace keeps the old name.")
+                : L("Edit \(key) in config.yaml to read '\(shownProfile)'. A copied or renamed workspace keeps the old name.")
         )]
     }
 }

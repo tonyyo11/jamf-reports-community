@@ -69,8 +69,8 @@ private struct MobileOverviewTileView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             tile.value == MobileOverviewTile.dash
-                ? "\(tile.label): \(tile.caption)"
-                : "\(tile.label): \(tile.value), \(tile.caption)")
+                ? L("\(tile.label): \(tile.caption)")
+                : L("\(tile.label): \(tile.value), \(tile.caption)"))
     }
 }
 

@@ -30,10 +30,12 @@ extension MobileSummary {
         var tiles = [
             MobileOverviewTile(
                 label: L("Devices"), value: "\(managed)", caption: L("managed mobile devices")),
-            Self.shareTile(
-                L("OS current"), osCurrent, of: "devices with a listed version", format: format),
-            Self.shareTile(L("Passcode compliant"), passcode, of: "devices reporting",
-                           format: format),
+            Self.shareTile(L("OS current"), osCurrent, format: format) {
+                L("\($0.met) of \($0.of) devices with a listed version")
+            },
+            Self.shareTile(L("Passcode compliant"), passcode, format: format) {
+                L("\($0.met) of \($0.of) devices reporting")
+            },
         ]
         if let attention = needsAttentionTile { tiles.append(attention) }
         return tiles
@@ -41,16 +43,17 @@ extension MobileSummary {
 
     private var needsAttentionTile: MobileOverviewTile? {
         guard needsAttentionCount > 0 else { return nil }
-        let parts = [(unmanaged, "unmanaged"), (jailbroken ?? 0, "jailbroken"),
-                     (updateErrors ?? 0, L("update errors"))]
+        let parts = [(unmanaged, L("\(unmanaged) unmanaged")),
+                     (jailbroken ?? 0, L("\(jailbroken ?? 0) jailbroken")),
+                     (updateErrors ?? 0, L("\(updateErrors ?? 0) update errors"))]
         return MobileOverviewTile(
             label: L("Needs attention"), value: "\(needsAttentionCount)",
-            caption: parts.filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }.joined(separator: ", "),
+            caption: parts.filter { $0.0 > 0 }.map(\.1).joined(separator: ", "),
             opensAudit: true)
     }
 
     private static func shareTile(
-        _ label: String, _ share: Share?, of population: String, format: PercentFormat
+        _ label: String, _ share: Share?, format: PercentFormat, caption: (Share) -> String
     ) -> MobileOverviewTile {
         // A pair with no devices behind it has no share (`Share.pct`), whatever `met` says.
         guard let share, let pct = share.pct else {
@@ -60,6 +63,6 @@ extension MobileSummary {
         }
         return MobileOverviewTile(
             label: label, value: format.text(pct),
-            caption: L("\(share.met) of \(share.of) \(population)"))
+            caption: caption(share))
     }
 }

@@ -277,7 +277,7 @@ struct SourcesView: View {
         let running = sources.filter { $0.skipReason == nil }
         let cached = running.filter { cachedAt[$0.kind] != nil }.count
         let skipped = sources.count - running.count
-        var parts = [L("\(running.count) run")]
+        var parts = [running.count == 1 ? L("\(running.count) run") : L("\(running.count) runs")]
         if cached > 0 { parts.append(L("\(cached) cached")) }
         if skipped > 0 { parts.append(L("\(skipped) skipped")) }
         return parts.joined(separator: " · ")
@@ -353,7 +353,7 @@ struct SourcesView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Pick collected Extension Attributes (or import a CSV once) to track in config.yaml.")
+                      : L("Pick collected Extension Attributes (or import a CSV once) to track in config.yaml."))
                 TipView(SourcesTips.eaTracking)
                     .frame(maxWidth: 460, alignment: .leading)
             }
@@ -392,7 +392,7 @@ struct SourcesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app.")
+                          : L("Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app."))
                     Button(doctorOutcome == nil ? "Check connection" : "Re-check") {
                         runDoctor()
                     }
@@ -624,7 +624,7 @@ struct SourcesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Open the snapshots directory where dated archives live.")
+                          : L("Open the snapshots directory where dated archives live."))
                 }
                 if families.isEmpty {
                     emptyFamiliesState
@@ -901,7 +901,7 @@ struct SourcesView: View {
 
     private func scopeHelp(_ scope: APIScope) -> String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
-        return Self.scopeExplanation(scope) + L(" Click to change.")
+        return L("\(Self.scopeExplanation(scope)) Click to change.")
     }
 
     /// Older builds wrote these kinds under other folder names; their snapshots still count.

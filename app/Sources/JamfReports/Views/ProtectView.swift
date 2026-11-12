@@ -923,7 +923,7 @@ struct ProtectView: View {
             text: isConnected ? L("Online") : L("Offline"),
             tone: isConnected ? .teal : .warn
         )
-        .accessibilityLabel("\(isConnected ? "Online" : "Offline") connection status")
+        .accessibilityLabel("\(isConnected ? L("Online") : L("Offline")) connection status")
     }
 
     private var insightsCard: some View {
@@ -1159,7 +1159,7 @@ private struct ProtectAlertsSeverityExport: View {
             if total > 0 {
                 HStack {
                     Spacer()
-                    Text(total == 1 ? "Total: \(total) alert" : "Total: \(total) alerts")
+                    Text(total == 1 ? L("Total: \(total) alert") : L("Total: \(total) alerts"))
                         .font(.caption.monospaced().weight(.semibold))
                         .foregroundStyle(Theme.Chart.textSecondary)
                 }

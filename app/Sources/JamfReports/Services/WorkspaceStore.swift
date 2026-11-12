@@ -676,13 +676,10 @@ final class WorkspaceStore {
         }
         configError = nil
         reloadFromDisk()
-        let rebuildHint = priorSummary.isEmpty
-            ? ""
-            : L(" Previous config (\(priorSummary)) saved as \(backupName); re-run the CSV → EA guide and Columns scaffold to rebuild from your CSV.")
         toast = Toast(
-            message: rebuildHint.isEmpty
+            message: priorSummary.isEmpty
                 ? L("Default config restored — old file kept as \(backupName)")
-                : L("Default config restored.\(rebuildHint)"),
+                : L("Default config restored. Previous config (\(priorSummary)) saved as \(backupName); re-run the CSV → EA guide and Columns scaffold to rebuild from your CSV."),
             style: .success
         )
         return nil

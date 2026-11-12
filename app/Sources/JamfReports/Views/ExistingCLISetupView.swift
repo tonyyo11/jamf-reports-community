@@ -398,11 +398,9 @@ struct ExistingCLISetupView: View {
     }
 
     private var collectingCaption: String {
-        var caption = flow.progress.summary
-        if let kind = flow.progress.currentKind {
-            caption += L(" · fetching \(kind)…")
-        }
-        return caption
+        let summary = flow.progress.summary
+        guard let kind = flow.progress.currentKind else { return summary }
+        return L("\(summary) · fetching \(kind)…")
     }
 
     @ViewBuilder
@@ -412,7 +410,7 @@ struct ExistingCLISetupView: View {
             Image(systemName: "circle").foregroundStyle(Theme.Colors.fgMuted)
         case .initializing, .collecting:
             ProgressView().controlSize(.small)
-                .accessibilityLabel(status == .initializing ? "Setting up" : "Collecting data")
+                .accessibilityLabel(status == .initializing ? L("Setting up") : L("Collecting data"))
         case .done:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.Colors.ok)
         case .failed:

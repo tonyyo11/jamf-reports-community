@@ -67,9 +67,10 @@ extension SchoolPlatformCheck.Verdict {
     var message: String {
         switch self {
         case .accepted(let count):
-            return L("The Platform API answered: ")
-                + (count.map { ($0 == 1 ? L("\($0) blueprint") : L("\($0) blueprints")) } ?? "blueprints")
-                + L(" listed.")
+            guard let count else { return L("The Platform API answered: blueprints listed.") }
+            return count == 1
+                ? L("The Platform API answered: \(count) blueprint listed.")
+                : L("The Platform API answered: \(count) blueprints listed.")
         case .missingPermission:
             return L("The gateway accepted the tenant ID, but the integration lacks \(SchoolPlatformCheck.permission). Grant it on the integration in Jamf Account.")
         case .rejectedTenant:

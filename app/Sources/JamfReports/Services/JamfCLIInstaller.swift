@@ -171,7 +171,7 @@ final class JamfCLIInstaller {
     /// The `[error]` line that stops a scheduled run on a jamf-cli below the floor.
     nonisolated static func floorLine(installed: String, profile: String) -> String {
         "[error] jamf-cli \(installed) is below \(minimumSupportedVersion), the "
-            + L("oldest Jamf Reports can run — aborting '\(profile)' to avoid writing data from an unsupported binary. Update jamf-cli in Settings or with brew upgrade jamf-cli.")
+            + "oldest Jamf Reports can run — aborting '\(profile)' to avoid writing data from an unsupported binary. Update jamf-cli in Settings or with brew upgrade jamf-cli."
     }
 
     /// First release with the top-level `dashboard` command: one self-contained
@@ -406,19 +406,15 @@ final class JamfCLIInstaller {
     static func refusalMessage(_ blocker: CLIBridgeError) -> String {
         switch blocker {
         case .toolUpdateInProgress:
-            return "jamf-cli is already being updated."
+            return L("jamf-cli is already being updated.")
         case .tickLockHeld:
-            return "jamf-cli was not updated: a scheduled run is in progress. "
-                + L("Update it again when the run finishes.")
+            return L("jamf-cli was not updated: a scheduled run is in progress. Update it again when the run finishes.")
         case .generateInProgress:
-            return "jamf-cli was not updated: a report is being generated. "
-                + L("Update it again when the report finishes.")
+            return L("jamf-cli was not updated: a report is being generated. Update it again when the report finishes.")
         case .mergeInProgress:
-            return "jamf-cli was not updated: a workspace merge is running. "
-                + L("Update it again when the merge finishes.")
+            return L("jamf-cli was not updated: a workspace merge is running. Update it again when the merge finishes.")
         default:
-            return "jamf-cli was not updated: a refresh is running. "
-                + L("Update it again when the refresh finishes.")
+            return L("jamf-cli was not updated: a refresh is running. Update it again when the refresh finishes.")
         }
     }
 
@@ -662,8 +658,7 @@ final class JamfCLIInstaller {
                         domain: "JamfCLIInstaller",
                         code: 5,
                         userInfo: [NSLocalizedDescriptionKey:
-                            "jamf-cli codesign verification failed: signature missing,"
-                            + L(" invalid, or not issued by team \(Self.expectedJamfTeamID).")]
+                            L("jamf-cli codesign verification failed: signature missing, invalid, or not issued by team \(Self.expectedJamfTeamID).")]
                     )
                 }
             } else {

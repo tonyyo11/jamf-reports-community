@@ -67,14 +67,15 @@ struct BackupProductResult: Sendable, Hashable {
         case .ok:
             return L("The latest backup includes Jamf Protect: \(found).")
         case .partial:
-            return L("The latest backup's Jamf Protect part is incomplete: \(found) saved. ")
-                + (hasFailuresFile
-                    ? L("Resources that failed are listed in \(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName) in the backup folder. ")
-                    : "")
-                + L("It is kept until a later backup's Jamf Protect part completes.")
+            let failures = "\(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName)"
+            return hasFailuresFile
+                ? L("The latest backup's Jamf Protect part is incomplete: \(found) saved. Resources that failed are listed in \(failures) in the backup folder. It is kept until a later backup's Jamf Protect part completes.")
+                : L("The latest backup's Jamf Protect part is incomplete: \(found) saved. It is kept until a later backup's Jamf Protect part completes.")
         case .failed:
-            let code = exitCode.map { L(" (exit \($0))") } ?? ""
-            return L("The latest backup has no Jamf Protect part: the Protect backup failed\(code). It is kept until a later backup's Jamf Protect part completes.")
+            guard let exitCode else {
+                return L("The latest backup has no Jamf Protect part: the Protect backup failed. It is kept until a later backup's Jamf Protect part completes.")
+            }
+            return L("The latest backup has no Jamf Protect part: the Protect backup failed (exit \(exitCode)). It is kept until a later backup's Jamf Protect part completes.")
         case .skipped:
             return L("Jamf Protect was not backed up: \(reason ?? "skipped").")
         }

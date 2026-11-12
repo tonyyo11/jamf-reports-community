@@ -1032,7 +1032,7 @@ struct OnboardingView: View {
             .disabled(!backEnabled)
             .opacity(backEnabled ? 1 : 0.45)
             .accessibilityLabel(flow.currentStep == .welcome
-                ? "Back to the first screen" : "Back to step \(max(1, flow.stepPosition - 1))")
+                ? L("Back to the first screen") : L("Back to step \(max(1, flow.stepPosition - 1))"))
 
             if onStartOver != nil && flow.currentStep != .welcome {
                 PNPButton(title: L("Start over"), icon: "arrow.uturn.backward") {

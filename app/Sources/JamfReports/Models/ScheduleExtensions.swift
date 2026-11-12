@@ -5,7 +5,7 @@ extension Schedule {
     var plainLanguageSummary: String {
         let cadenceSummary: String
         if schedule.contains("Daily") {
-            cadenceSummary = "daily"
+            cadenceSummary = L("daily")
         } else if schedule.contains("Weekdays") {
             cadenceSummary = L("every weekday")
         } else if schedule.lowercased().contains("sun") ||
@@ -19,7 +19,7 @@ extension Schedule {
             if schedule.contains("×") || schedule.contains("x") {
                 cadenceSummary = L("multiple times per week")
             } else {
-                cadenceSummary = "weekly"
+                cadenceSummary = L("weekly")
             }
         } else if schedule.contains("×") || schedule.contains("x") {
             cadenceSummary = L("multiple times per week")
@@ -39,13 +39,13 @@ extension Schedule {
             modeSummary = L("backs up Jamf Pro configuration objects")
         }
 
-        let timeComponent = schedule.firstMatch(of: #/\d{2}:\d{2}/#)
-            .map { L(" at ") + String($0.0) } ?? ""
+        let time = schedule.firstMatch(of: #/\d{2}:\d{2}/#).map { String($0.0) }
 
         // Capitalize only the first character of the cadence summary
         let capitalizedCadence = cadenceSummary.prefix(1).uppercased() + cadenceSummary.dropFirst()
 
-        return "\(capitalizedCadence)\(timeComponent) — \(modeSummary)"
+        guard let time else { return L("\(capitalizedCadence) — \(modeSummary)") }
+        return L("\(capitalizedCadence) at \(time) — \(modeSummary)")
     }
 
     /// True if this schedule predates PR-20 and should show migration nudge.

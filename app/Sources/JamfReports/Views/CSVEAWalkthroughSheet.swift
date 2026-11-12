@@ -94,7 +94,7 @@ struct CSVEAWalkthroughSheet: View {
                 text: importedCSVName == nil
                     ? L("Collected data · Extension Attributes") : L("CSV import · Extension Attributes"),
                 tone: .teal)
-            Text(importedCSVName == nil ? "Adopt EAs" : "Set up EA tracking")
+            Text(importedCSVName == nil ? L("Adopt EAs") : L("Set up EA tracking"))
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Text.primary)
                 .accessibilityAddTraits(.isHeader)
@@ -180,7 +180,7 @@ struct CSVEAWalkthroughSheet: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(ea.name), \(ea.type)")
-            .accessibilityValue(selected.contains(ea.id) ? "Selected" : "Not selected")
+            .accessibilityValue(selected.contains(ea.id) ? L("Selected") : L("Not selected"))
             .accessibilityAddTraits(.isButton)
 
             if selected.contains(ea.id) {
@@ -300,7 +300,7 @@ struct CSVEAWalkthroughSheet: View {
                     Image(systemName: verdictIcon(rate))
                         .foregroundStyle(verdictColor(rate))
                         .font(.caption2)
-                    Text(health.nonEmpty == 1 ? "Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) non-empty row" : "Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) non-empty rows")
+                    Text(health.nonEmpty == 1 ? L("Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) non-empty row") : L("Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) non-empty rows"))
                         .font(.caption2)
                         .foregroundStyle(verdictColor(rate))
                 }

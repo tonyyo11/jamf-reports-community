@@ -42,14 +42,16 @@ extension ConfigDoctorService {
         let key = drift.key == .notifyURL ? "notify.url" : drift.key.rawValue
         var lines = [
             key,
-            L("  pinned: ") + (drift.pinnedIsNote ? drift.pinned : sharedConfigValue(drift.pinned)),
-            L("  now:    ") + sharedConfigValue(drift.current),
+            L("  pinned: \(drift.pinnedIsNote ? drift.pinned : sharedConfigValue(drift.pinned))"),
+            L("  now:    \(sharedConfigValue(drift.current))"),
         ]
         if drift.key.isFolder, let workspace, !drift.current.isEmpty {
             let destination = WorkspacePaths.destination(of: drift.current, workspace: workspace)
-            let place = destination.insideWorkspace ? "inside" : "outside"
             let path = ConfigSchema.fullDisplayText(destination.path)
-            lines.append((path.truncated ? L("  lands:  \(path.text) (truncated) (\(place) this workspace)") : L("  lands:  \(path.text) (\(place) this workspace)")))
+            let text = path.truncated ? L("\(path.text) (truncated)") : path.text
+            lines.append(destination.insideWorkspace
+                ? L("  lands:  \(text) (inside this workspace)")
+                : L("  lands:  \(text) (outside this workspace)"))
         }
         return lines.joined(separator: "\n")
     }
@@ -57,6 +59,6 @@ extension ConfigDoctorService {
     private static func sharedConfigValue(_ value: String) -> String {
         guard !value.isEmpty else { return L("(not set)") }
         let shown = ConfigSchema.fullDisplayText(value)
-        return "\"\(shown.text)\"" + (shown.truncated ? L(" (truncated)") : "")
+        return shown.truncated ? L("\"\(shown.text)\" (truncated)") : "\"\(shown.text)\""
     }
 }

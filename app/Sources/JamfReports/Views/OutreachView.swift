@@ -49,7 +49,9 @@ struct OutreachView: View {
         let bucketed = (count == 1 ? L("\(count) computer bucketed by days since \(staleRule.basisPhrase).") : L("\(count) computers bucketed by days since \(staleRule.basisPhrase)."))
         let missing = snapshot.binaryMissingCount
         guard missing > 0 else { return bucketed }
-        return bucketed + (missing == 1 ? L(" \(missing) more has no Jamf binary and is listed on Computers under Binary missing.") : L(" \(missing) more have no Jamf binary and are listed on Computers under Binary missing."))
+        return missing == 1
+            ? L("\(bucketed) \(missing) more has no Jamf binary and is listed on Computers under Binary missing.")
+            : L("\(bucketed) \(missing) more have no Jamf binary and are listed on Computers under Binary missing.")
     }
 
     /// The stale rule the tiers follow: the configured window over the dates `stale_basis` lists.
@@ -181,8 +183,8 @@ struct OutreachView: View {
                 // the demo profile has no workspace of its own.
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
-                      ? "Demo data is fixed. Exporting a CSV needs a live profile."
-                      : "Export all stale devices across every tier to a CSV in the workspace")
+                      ? L("Demo data is fixed. Exporting a CSV needs a live profile.")
+                      : L("Export all stale devices across every tier to a CSV in the workspace"))
 
                 if let copyConfirmation {
                     Pill(text: copyConfirmation, tone: .teal)
@@ -229,7 +231,7 @@ struct OutreachView: View {
                             Text(displayEmail)
                                 .font(Theme.Fonts.mono(11))
                                 .foregroundStyle(displayEmail == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
-                                .accessibilityLabel(displayEmail == "—" ? "No email" : "Email \(displayEmail)")
+                                .accessibilityLabel(displayEmail == "—" ? L("No email") : L("Email \(displayEmail)"))
                         }
                         .width(min: 140, ideal: 180)
 
@@ -248,7 +250,7 @@ struct OutreachView: View {
                                 .foregroundStyle(daysSinceColor(for: Int(age) ?? .max))
                                 .monospacedDigit()
                                 .accessibilityLabel(
-                                    age == "1" ? "\(age) day since \(staleRule.basisPhrase)" : "\(age) days since \(staleRule.basisPhrase)")
+                                    age == "1" ? L("\(age) day since \(staleRule.basisPhrase)") : L("\(age) days since \(staleRule.basisPhrase)"))
                         }
                         .width(min: 80, ideal: 90)
 

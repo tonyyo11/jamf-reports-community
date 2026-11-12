@@ -72,7 +72,9 @@ struct ConfigFromFileTab: View {
                         }
                     }
                 }
-                moreLine(sections.omittedSettings, "setting")
+                moreLine(sections.omittedSettings, sections.omittedSettings == 1
+                    ? L("…and 1 more setting not listed")
+                    : L("…and \(sections.omittedSettings) more settings not listed"))
             }
         }
     }
@@ -87,7 +89,9 @@ struct ConfigFromFileTab: View {
                 ForEach(Array(sections.unknown.enumerated()), id: \.offset) { _, key in
                     row(key.keyPath, key.note ?? "")
                 }
-                moreLine(sections.omittedUnknown, "key")
+                moreLine(sections.omittedUnknown, sections.omittedUnknown == 1
+                    ? L("…and 1 more key not listed")
+                    : L("…and \(sections.omittedUnknown) more keys not listed"))
             }
         }
     }
@@ -106,7 +110,9 @@ struct ConfigFromFileTab: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                moreLine(sections.omittedSkipped, "line")
+                moreLine(sections.omittedSkipped, sections.omittedSkipped == 1
+                    ? L("…and 1 more line not listed")
+                    : L("…and \(sections.omittedSkipped) more lines not listed"))
             }
         }
     }
@@ -134,9 +140,9 @@ struct ConfigFromFileTab: View {
     }
 
     @ViewBuilder
-    private func moreLine(_ omitted: Int, _ noun: String) -> some View {
+    private func moreLine(_ omitted: Int, _ text: String) -> some View {
         if omitted > 0 {
-            Text(omitted == 1 ? "…and \(omitted) more \(noun) not listed" : "…and \(omitted) more \(noun)s not listed")
+            Text(text)
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
         }
