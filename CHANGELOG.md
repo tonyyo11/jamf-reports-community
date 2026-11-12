@@ -388,6 +388,11 @@ versions in this repository map to git tags.
     slip an unconfirmed "yes" past the check.
   - A timestamp server address in config.yaml is hidden in shared logs only when it is a real
     host name, so it can no longer hide a word such as "partial" and its `[partial]` marker.
+  - Setting up a workspace, or `jamf-reports scaffold --out`, confirms on this Mac only the
+    values it wrote. A config.yaml another Mac put in its place straight after is not confirmed.
+- A CSV folder run no longer deletes a folder of yours that has the same name as the CSV folder
+  (`Q3_csv` beside `Q3.xlsx`). It replaces only a folder that holds nothing but CSV files;
+  otherwise it leaves the folder alone and logs `CSV folder not written`.
 - `jamf-reports verify` says only what it can show:
   - A manifest that lists no files fails.
   - A file named after the run that the manifest leaves out is reported as `EXTRA`.

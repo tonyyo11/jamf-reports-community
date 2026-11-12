@@ -11,10 +11,17 @@ enum AtomicInstall {
     /// On a volume without swap support (some network shares) the old entry is renamed aside,
     /// the staged one renamed in, and the old one removed, which leaves a short gap with no
     /// entry at the final name but still never follows a link.
-    /// A file never replaces a real folder: the swap would hand the folder to `discard`, which
-    /// removes it and its contents with no Trash.
-    static func install(_ staged: URL, at final: URL) throws {
-        if isRealFolder(final), !isRealFolder(staged) { throw POSIXError(.EISDIR) }
+    /// A real folder at `final` is replaced only by a folder, and only when `replacingFolderIf`
+    /// says it is one the caller wrote: the swap hands it to `discard`, which removes it and its
+    /// contents with no Trash. By default no real folder is ever replaced.
+    static func install(
+        _ staged: URL, at final: URL, replacingFolderIf replaceable: (URL) -> Bool = { _ in false }
+    ) throws {
+        if isRealFolder(final) {
+            guard isRealFolder(staged) else { throw POSIXError(.EISDIR) }
+            // shortcut: checked, then swapped; a peer adding a file in between loses it.
+            guard replaceable(final) else { throw POSIXError(.ENOTEMPTY) }
+        }
         var lastError: Int32 = EEXIST
         for _ in 0..<2 {
             let exists = isEntry(final)

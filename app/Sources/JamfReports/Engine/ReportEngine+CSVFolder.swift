@@ -53,10 +53,13 @@ extension Worksheet {
 extension Workbook {
     enum CSVFolderError: Error, LocalizedError {
         case stagingFolderNotMade(String)
+        case folderNotReplaced(String)
 
         var errorDescription: String? {
             switch self {
             case .stagingFolderNotMade(let name): return "could not make a staging folder for \(name)"
+            case .folderNotReplaced(let name):
+                return "\(name) already exists and holds more than CSV files; move it aside first"
             }
         }
     }
@@ -102,9 +105,33 @@ extension Workbook {
             throw CSVFolderError.stagingFolderNotMade(folder.lastPathComponent)
         }
 
-        try AtomicInstall.install(staging, at: folder)
+        do {
+            try AtomicInstall.install(
+                staging, at: folder, replacingFolderIf: Self.holdsOnlyCSVFiles)
+        } catch let error as POSIXError where error.code == .ENOTEMPTY {
+            throw CSVFolderError.folderNotReplaced(folder.lastPathComponent)
+        }
         installed = true
         return written
+    }
+
+    /// True for a folder an earlier run could have written: only regular `.csv` files (and
+    /// Finder's `.DS_Store`), at most `ReportLibrary.maxFolderEntriesRead`, links not followed.
+    /// A person's own folder of that name, with anything else in it, is never swapped out.
+    static func holdsOnlyCSVFiles(_ folder: URL) -> Bool {
+        guard let entries = FileManager.default.enumerator(
+            at: folder, includingPropertiesForKeys: nil, options: [.skipsSubdirectoryDescendants])
+        else { return false }
+        var read = 0
+        for case let url as URL in entries {
+            read += 1
+            var info = stat()
+            let name = url.lastPathComponent
+            guard read <= ReportLibrary.maxFolderEntriesRead,
+                  lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+                  name == ".DS_Store" || name.lowercased().hasSuffix(".csv") else { return false }
+        }
+        return true
     }
 
     /// Creates `name` (0600) in the folder open as `directory`, exclusively and never through a
