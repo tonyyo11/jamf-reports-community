@@ -375,8 +375,8 @@ enum ConfigDoctorService {
         var rows = keys.prefix(unknownKeyCap).enumerated().map { index, key in
             DoctorRow(
                 id: "config.unknown_key.\(index)", severity: .warn, title: key.keyPath,
-                detail: L("The app does not read this key.")
-                    + (key.suggestion.map { L(" Did you mean \"\($0)\"?") } ?? ""),
+                detail: key.suggestion.map { L("The app does not read this key. Did you mean \"\($0)\"?") }
+                    ?? L("The app does not read this key."),
                 hint: L("Remove it from config.yaml, or check its spelling: keys are case-sensitive.")
             )
         }
@@ -877,7 +877,7 @@ extension ConfigDoctorService {
         var detail = L("Only \(pct)% of '\(health.column)' values parse (\(health.parseable) of \(health.nonEmpty)).")
         let topSkeleton = health.topUnparseable.first
         if let top = topSkeleton {
-            detail += L(" Most common unparseable shape: \(top.skeleton) (\(top.count)).")
+            detail = L("\(detail) Most common unparseable shape: \(top.skeleton) (\(top.count)).")
         }
         // A percentage EA whose worst skeleton is all-digits is usually a raw-count
         // column mis-typed by the scaffold (values >100 fail the 0–100 clamp).
@@ -1193,7 +1193,9 @@ extension ConfigDoctorService {
                 return "\(activity.host.display) \(age)"
             }
             .joined(separator: ", ")
-        let more = inputs.otherHosts.count > 4 ? L(" (+\(inputs.otherHosts.count - 4) more)") : ""
+        let lastCollects = inputs.otherHosts.count > 4
+            ? L("Last collects: \(named) (+\(inputs.otherHosts.count - 4) more).")
+            : L("Last collects: \(named).")
 
         // A mixed-version fleet is worth naming: an older build writing here
         // predates the ordering and pruning guards this one relies on.
@@ -1205,7 +1207,7 @@ extension ConfigDoctorService {
             id: "cloud.peers",
             severity: .pass,
             title: L("\(inputs.otherHosts.count) other Mac(s) share this workspace"),
-            detail: L("Last collects: \(named)\(more)."),
+            detail: lastCollects,
             hint: nil
         )]
 
@@ -1311,8 +1313,6 @@ extension ConfigDoctorService {
     private static func conflictRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
         guard !inputs.conflictCopies.isEmpty else { return [] }
         let sample = inputs.conflictCopies.prefix(3).joined(separator: ", ")
-        let more = inputs.conflictCopies.count > 3
-            ? L(" (+\(inputs.conflictCopies.count - 3) more)") : ""
 
         // With coordination on, conflict copies are expected background noise
         // from overlapping runs rather than evidence of an unknown writer.
@@ -1328,7 +1328,9 @@ extension ConfigDoctorService {
             id: "cloud.conflicts",
             severity: severity,
             title: L("\(inputs.conflictCopies.count) sync-conflict file(s) in the workspace"),
-            detail: L("Files such as \(sample)\(more). \(cause)"),
+            detail: inputs.conflictCopies.count > 3
+                ? L("Files such as \(sample) (+\(inputs.conflictCopies.count - 3) more). \(cause)")
+                : L("Files such as \(sample). \(cause)"),
             hint: hint
         )]
     }

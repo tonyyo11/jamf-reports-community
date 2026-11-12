@@ -223,7 +223,7 @@ struct PatchView: View {
                         Text(dateStr.isEmpty ? "—" : String(dateStr.prefix(10)))
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
-                            .accessibilityLabel(dateStr.isEmpty ? "No release date" : "Released \(dateStr)")
+                            .accessibilityLabel(dateStr.isEmpty ? L("No release date") : L("Released \(dateStr)"))
                     }
                     .width(min: 90, ideal: 110)
 
@@ -272,7 +272,7 @@ struct PatchView: View {
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(failureCount > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel(failureCount == 1 ? "\(failureCount) device with patch failures" : "\(failureCount) devices with patch failures")
+                            .accessibilityLabel(failureCount == 1 ? L("\(failureCount) device with patch failures") : L("\(failureCount) devices with patch failures"))
                     }
                     .width(min: 80, ideal: 90)
                 }

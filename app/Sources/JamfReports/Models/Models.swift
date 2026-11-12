@@ -1378,21 +1378,27 @@ struct TrendSeries: Identifiable, Sendable {
         complianceIsProxy: Bool? = nil,
         staleMeasured: Bool = true
     ) -> String? {
-        let proxyNote: String = compliancePct != nil && complianceIsProxy == true
-            ? L(" Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data.")
-            : ""
-        let staleNote = staleMeasured
-            ? "" : L(" Stale-device pressure not measured (no device-compliance snapshot).")
+        // Each note is a whole sentence; the sentences are joined, never spliced into one.
+        let proxyNote: [String] = compliancePct != nil && complianceIsProxy == true
+            ? [L("Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data.")]
+            : []
+        let staleNote: [String] = staleMeasured
+            ? [] : [L("Stale-device pressure not measured (no device-compliance snapshot).")]
+        let sentences: [String]
         switch (compliancePct != nil, patchPct != nil) {
         case (true, true):
-            return L("Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)\(staleNote)")
+            sentences = [L("Composite of compliance, patch posture, and stale-device pressure.")]
+                + proxyNote + staleNote
         case (false, true):
-            return L("Composite of patch posture and stale-device pressure (compliance not collected).\(staleNote)")
+            sentences = [L("Composite of patch posture and stale-device pressure (compliance not collected).")]
+                + staleNote
         case (true, false):
-            return L("Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)\(staleNote)")
+            sentences = [L("Composite of compliance and stale-device pressure (patch data not collected).")]
+                + proxyNote + staleNote
         case (false, false):
             return nil
         }
+        return sentences.joined(separator: " ")
     }
 
     var id: String { metric.rawValue }

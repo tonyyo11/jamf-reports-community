@@ -216,7 +216,7 @@ struct SchedulesView: View {
                         Pill(text: L("All · \(workspace.schedules.count)"), tone: profileFilter == "All" ? .gold : .muted)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(workspace.schedules.count == 1 ? "Show all profiles, \(workspace.schedules.count) schedule" : "Show all profiles, \(workspace.schedules.count) schedules")
+                    .accessibilityLabel(workspace.schedules.count == 1 ? L("Show all profiles, \(workspace.schedules.count) schedule") : L("Show all profiles, \(workspace.schedules.count) schedules"))
                     ForEach(workspace.profiles) { p in
                         let count = workspace.schedules.filter { $0.profile == p.name }.count
                         Button {
@@ -226,7 +226,7 @@ struct SchedulesView: View {
                                 .opacity(count > 0 ? 1 : 0.5)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(count == 1 ? "Filter by \(p.name), \(count) schedule" : "Filter by \(p.name), \(count) schedules")
+                        .accessibilityLabel(count == 1 ? L("Filter by \(p.name), \(count) schedule") : L("Filter by \(p.name), \(count) schedules"))
                     }
                 }
             }
@@ -436,7 +436,7 @@ struct SchedulesView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(workspace.demoMode)
-                    .accessibilityLabel(s.enabled ? "Disable \(s.name)" : "Enable \(s.name)")
+                    .accessibilityLabel(s.enabled ? L("Disable \(s.name)") : L("Enable \(s.name)"))
                 }
                 .width(48)
 
@@ -707,7 +707,7 @@ private struct RunLogConsole: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if lines.isEmpty {
                         HStack(spacing: 0) {
-                            Text(isRunning ? "Starting" : "No output")
+                            Text(isRunning ? L("Starting") : L("No output"))
                                 .font(Theme.Fonts.mono(12))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                             cursor

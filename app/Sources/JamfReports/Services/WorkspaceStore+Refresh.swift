@@ -314,7 +314,7 @@ extension WorkspaceStore {
     nonisolated static func generateRefusalMessage(_ refusal: CLIBridgeError) -> String {
         let reason = CLIBridge.explainOperationError(refusal, operation: L("Generate"))
         guard refusal != .generateInProgress else { return reason }
-        return reason + L(". A report made while data is collected would mix old and new figures.")
+        return L("\(reason). A report made while data is collected would mix old and new figures.")
     }
 
     /// True, after posting why as information, when a report must not start now

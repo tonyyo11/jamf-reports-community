@@ -22,7 +22,7 @@ struct GroupsView: View {
             )
 
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "groups")
+                ScreenLoadingCard(what: L("groups"))
             } else {
                 // Shared StaleDataBanner surfaces snapshot freshness above the main content.
                 // Suppressed in demo mode (the demo dataset is intentionally static and
@@ -290,7 +290,7 @@ private struct GroupTableCard: View {
                     text: wrapper.group.isSmart ? L("Smart") : L("Static"),
                     tone: wrapper.group.isSmart ? .teal : .muted
                 )
-                .accessibilityLabel("\(wrapper.group.isSmart ? "Smart" : "Static") group")
+                .accessibilityLabel("\(wrapper.group.isSmart ? L("Smart") : L("Static")) group")
             }
             .width(min: 70, ideal: 90)
 

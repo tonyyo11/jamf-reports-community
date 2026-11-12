@@ -93,7 +93,7 @@ struct RunsView: View {
     private var revealHelp: String {
         workspace.demoMode
             ? DemoData.liveOnlyHelp
-            : L("Reveal the selected log in Finder, or open the run history folder")
+            : "Reveal the selected log in Finder, or open the run history folder"
     }
 
     private var exportHelp: String {

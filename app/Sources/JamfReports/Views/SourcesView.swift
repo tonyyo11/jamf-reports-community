@@ -277,7 +277,7 @@ struct SourcesView: View {
         let running = sources.filter { $0.skipReason == nil }
         let cached = running.filter { cachedAt[$0.kind] != nil }.count
         let skipped = sources.count - running.count
-        var parts = [L("\(running.count) run")]
+        var parts = [running.count == 1 ? L("\(running.count) run") : L("\(running.count) runs")]
         if cached > 0 { parts.append(L("\(cached) cached")) }
         if skipped > 0 { parts.append(L("\(skipped) skipped")) }
         return parts.joined(separator: " · ")
@@ -903,7 +903,7 @@ struct SourcesView: View {
 
     private func scopeHelp(_ scope: APIScope) -> String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
-        return Self.scopeExplanation(scope) + L(" Click to change.")
+        return L("\(Self.scopeExplanation(scope)) Click to change.")
     }
 
     /// Older builds wrote these kinds under other folder names; their snapshots still count.

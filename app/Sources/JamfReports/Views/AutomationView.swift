@@ -211,9 +211,16 @@ struct AutomationView: View {
         await MainActor.run {
             refreshConsolidationCandidates()
             let n = result.removed.count
-            let suffix = result.rejected.isEmpty ? "" : L(" (\(result.rejected.count) skipped)")
+            let skipped = result.rejected.count
+            let message: String
+            switch (n == 1, skipped > 0) {
+            case (true, false): message = L("Retired \(n) hand-built schedule — archived under Application Support/JamfReports/archived-launchagents")
+            case (true, true): message = L("Retired \(n) hand-built schedule (\(skipped) skipped) — archived under Application Support/JamfReports/archived-launchagents")
+            case (false, false): message = L("Retired \(n) hand-built schedules — archived under Application Support/JamfReports/archived-launchagents")
+            case (false, true): message = L("Retired \(n) hand-built schedules (\(skipped) skipped) — archived under Application Support/JamfReports/archived-launchagents")
+            }
             workspace.toast = Toast(
-                message: (n == 1 ? L("Retired \(n) hand-built schedule\(suffix) — archived under Application Support/JamfReports/archived-launchagents") : L("Retired \(n) hand-built schedules\(suffix) — archived under Application Support/JamfReports/archived-launchagents")),
+                message: message,
                 style: result.rejected.isEmpty ? .success : .danger
             )
         }

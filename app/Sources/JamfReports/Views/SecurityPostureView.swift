@@ -126,7 +126,7 @@ struct SecurityPostureView: View {
     /// An Action Items caption with the values the tile leaves out because Jamf did not
     /// report them.
     static func actionCaption(_ base: String, notReported: Int) -> String {
-        notReported > 0 ? base + L(" · not reported: \(notReported)") : base
+        notReported > 0 ? L("\(base) · not reported: \(notReported)") : base
     }
 
     /// summary.json writes no P0 without a FileVault count; the tile still sums the
@@ -144,13 +144,13 @@ struct SecurityPostureView: View {
         let counts = fleet.controls[control]
         if counts?.level == .ignore { return L("Not counted by this workspace's policy") }
         var base = L("\(on) of \(total)")
-        if let missing = counts?.notReported, missing > 0 { base += L(" · not reported: \(missing)") }
+        if let missing = counts?.notReported, missing > 0 { base = L("\(base) · not reported: \(missing)") }
         let lowered = fleet.fileVaultOffHardwareEncrypted
         if control == .fileVault, lowered > 0 {
-            return base + L(" · \(lowered) more hardware-encrypted, FileVault off")
+            return L("\(base) · \(lowered) more hardware-encrypted, FileVault off")
         }
         if let warnings = counts?.warning, warnings > 0 {
-            return base + (warnings == 1 ? L(" · \(warnings) warning") : L(" · \(warnings) warnings"))
+            return warnings == 1 ? L("\(base) · \(warnings) warning") : L("\(base) · \(warnings) warnings")
         }
         return base
     }
@@ -495,8 +495,8 @@ private struct ScoreRing: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(score.parts.isEmpty
-            ? "Security score: \(SecurityPostureView.noScoreCaption)"
-            : "Security score \(displayValue) of 100, grade \(score.grade.rawValue)")
+            ? L("Security score: \(SecurityPostureView.noScoreCaption)")
+            : L("Security score \(displayValue) of 100, grade \(score.grade.rawValue)"))
     }
 
     private var clamped: Double {

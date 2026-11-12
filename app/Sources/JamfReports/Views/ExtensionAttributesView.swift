@@ -419,7 +419,7 @@ struct ExtensionAttributesView: View {
                 .font(.callout.weight(isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? Theme.Colors.fg : Theme.Colors.fg2)
             Spacer()
-            Text(coverage.populatedDevices == 1 ? "\(coverage.populatedDevices) device" : "\(coverage.populatedDevices) devices")
+            Text(coverage.populatedDevices == 1 ? L("\(coverage.populatedDevices) device") : L("\(coverage.populatedDevices) devices"))
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .monospacedDigit()
@@ -564,7 +564,7 @@ struct ExtensionAttributesView: View {
                             Text(definition.enabled == true ? "✓" : "✗")
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(definition.enabled == true ? Theme.Colors.ok : Theme.Colors.fgMuted)
-                                .accessibilityLabel(definition.enabled == true ? "Enabled" : "Disabled")
+                                .accessibilityLabel(definition.enabled == true ? L("Enabled") : L("Disabled"))
                         }
                         .width(min: 60, ideal: 80)
                     }

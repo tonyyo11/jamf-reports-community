@@ -131,7 +131,7 @@ final class CollectSourcesPlanTests: XCTestCase {
     @MainActor
     func testTheGroupLineAndRowStatusSayWhatRunsAndWhy() {
         let sources = plan().sources(for: .platformAPI)
-        XCTAssertEqual(SourcesView.groupSummary(sources, cachedAt: [:]), "0 run · 4 skipped")
+        XCTAssertEqual(SourcesView.groupSummary(sources, cachedAt: [:]), "0 runs · 4 skipped")
         let pro = plan().sources(for: .jamfPro)
         let one = [pro[0].kind: Date(timeIntervalSince1970: 0)]
         XCTAssertTrue(SourcesView.groupSummary(pro, cachedAt: one).contains("1 cached"))

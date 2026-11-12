@@ -30,7 +30,7 @@ struct SchoolDevicesView: View {
                 lastModified: snapshot.collectedAt
             )
             if loadedSource != dataSource {
-                ScreenLoadingCard(what: "devices")
+                ScreenLoadingCard(what: L("devices"))
             } else {
                 if snapshot.devicesDate == nil {
                     emptyState

@@ -52,9 +52,7 @@ enum WorkspaceRootStore {
             case .groupOrWorldWritable:
                 return L("Other accounts can write to that folder. Remove group and world write access (chmod go-w) or pick another folder.")
             case .hasACL:
-                return "That folder has an access control list that can give other accounts "
-                    + "access. macOS puts one on its own home subfolders (Documents, Desktop), "
-                    + L("so a folder created inside one is fine. Otherwise remove it (chmod -N) or pick another folder.")
+                return L("That folder has an access control list that can give other accounts access. macOS puts one on its own home subfolders (Documents, Desktop), so a folder created inside one is fine. Otherwise remove it (chmod -N) or pick another folder.")
             }
         }
     }

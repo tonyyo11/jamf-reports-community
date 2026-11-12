@@ -550,15 +550,16 @@ final class ExistingCLISetupFlow {
             failures: profileNames.filter(selected.contains).compactMap { failureStages[$0] }
         )
         guard !canContinue else { return summary }
-        return summary + L(" No workspace exists yet, so there is no dashboard to open. Fix the cause above and try again, or skip for now.")
+        return L("\(summary) No workspace exists yet, so there is no dashboard to open. Fix the cause above and try again, or skip for now.")
     }
 
     /// Names the cause each failure had. Sign-in is blamed only for a collect that
     /// failed on credentials; a profile with no workspace never got as far as signing in.
     nonisolated static func summaryText(succeeded: Int, failures: [FailureStage]) -> String {
         if failures.isEmpty {
-            return L("All \(succeeded) profile") + (succeeded == 1 ? "" : "s")
-                + L(" collected — dashboards are populated and the first trend point is saved.")
+            return succeeded == 1
+                ? L("All \(succeeded) profile collected — dashboards are populated and the first trend point is saved.")
+                : L("All \(succeeded) profiles collected — dashboards are populated and the first trend point is saved.")
         }
         var parts = [L("\(succeeded) succeeded, \(failures.count) failed.")]
         let noWorkspace = failures.filter { $0 == .workspace }.count
