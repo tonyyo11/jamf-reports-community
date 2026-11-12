@@ -5,7 +5,7 @@ tools: [Read, Grep, Glob, Bash]
 model: sonnet
 ---
 
-Read `docs/superpowers/review-checklist.md` before the review. It names the twelve defect classes
+Read `docs/superpowers/review-checklist.md` before the review. It names the nineteen defect classes
 that recur in this project and the check for each. Cite the class number on a finding of that
 class. A fix that routes one site through an existing seam (a shared reader, validator, timeout,
 product gate, redactor, escape or calculator) but leaves sibling sites untouched is a finding of

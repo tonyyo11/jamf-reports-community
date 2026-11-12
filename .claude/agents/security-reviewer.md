@@ -18,7 +18,8 @@ Read `docs/superpowers/review-checklist.md` first. It names the defect classes t
 project and the check for each. Cite the class number on a finding of that class, and treat a fix
 that routes one site through an existing seam but leaves sibling sites untouched as a finding of
 the same class. Classes 5 (file read outside the seam), 7 (unbounded child or request),
-8 (unredacted egress) and 11 (sink interprets text) are the security ones.
+8 (unredacted egress), 11 (sink interprets text) and 13 (peer-writable value or file on shared
+storage) are the security ones.
 
 ## What to check
 
