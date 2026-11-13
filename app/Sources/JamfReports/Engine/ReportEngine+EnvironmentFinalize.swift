@@ -144,6 +144,7 @@ extension ReportEngine {
         let file = summariesDir.appendingPathComponent("summary_\(date).json")
         let protectKinds = landed[.protect] ?? []
         var summary: DailySummary
+        var creates = false
         if let data = try? BoundedFile.read(
             file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
            let existing = try? SummaryJSONParser.decode(data) {
@@ -161,6 +162,7 @@ extension ReportEngine {
             summary = protectOnlySummary(
                 date: date, collectionSources: [:],
                 collectedByHost: collectingHostLabel(dataDir: dataDir))
+            creates = true
         } else {
             return .nothingToSummarize
         }
@@ -183,9 +185,11 @@ extension ReportEngine {
         summary = summary.withEnvironment(
             products: slots.isEmpty ? nil : slots, protect: figures, securityCloud: securityFigures)
         // After a run whose MDM summary was not written, `writeSummaryFile`'s "will reflect this
-        // run" line would contradict the [partial] line already logged: drop its [ok] line.
-        let write: @Sendable (CLIBridge.LogLine) -> Void = {
-            if announcesWrite || $0.level != .ok { onLine($0) }
+        // run" line would contradict the [partial] line already logged: drop its [ok] line. A
+        // rewrite of a summary already there drops it too: the [info] line below says what it
+        // added, and the MDM collect has announced its own write.
+        let write: @Sendable (CLIBridge.LogLine) -> Void = { [creates] in
+            if (announcesWrite && creates) || $0.level != .ok { onLine($0) }
         }
         guard writeSummaryFile(summary, to: file, onLine: write) else { return .writeFailed }
         onLine(.init(timestamp: Date(), level: .info, text:
