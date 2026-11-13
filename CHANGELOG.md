@@ -237,6 +237,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- `jamf-reports school-check` no longer lists Jamf School blueprints as missing on a profile
+  without Platform API fields; it says the collect skips them and why, as the collect log does.
+- Each collect now logs "wrote summary_….json" once instead of twice, and the command line
+  prints each skipped workbook tab, and a few report warnings, once instead of twice.
 - In French, Spanish, Brazilian Portuguese, Italian and Japanese, sidebar names that were cut off
   with "…" (Fleet Overview, Compliance Benchmarks, OS Updates, Offline Outreach) are shorter and
   fit. The macOS chart's caption on the Overview no longer runs across the ring in German, Spanish
