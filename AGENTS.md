@@ -942,6 +942,21 @@ which `JamfCLIConfigList` ignores. The catalog (1,788 rows) adds five rows and r
 `pro cloud-*` aliases; every command and flag the app builds is unchanged, and the fixture stays
 `commands-1.35.0.json`.
 
+**v1.37.0 (2026-11-12) — Prevent list sets, 504 retries, platform list paging.** No code change.
+New Protect commands the app does not run (`protect prevent-list-sets`); `protect overview` adds a
+`prevent_list_sets` row, which the Protect Overview tab writes like any other, `protect plans list`
+rows gain `preventListSets` (not read), and `protect backup` writes a `prevent-list-sets/` folder,
+which `ProtectBackup.result` counts like any resource folder. Generated Platform lists
+(`benchmark-reports`, `blueprints list`, `platform-devices list`, `school blueprints list`) gain
+`--all`/`--page`/`--page-size`/`--limit`; `--all` defaults to true, so the default call still
+returns every row. A response body is read up to 256 MB instead of being cut at 10 MB (which
+failed as a parse error), and a read that gets a 504 is retried up to three times with backoff
+(not a page of a walk, which shrinks instead): behind the Platform gateway, which answers 504
+after 90 s, one per-device scan call can now pass `deviceCallTimeout` (180 s) and read as timed
+out. The catalog (1,796 rows) adds thirteen rows and drops `--convert` from `blueprints
+import-profile`; every command and flag the app builds is unchanged, and the fixture stays
+`commands-1.35.0.json`.
+
 ### notify config (v2.2.0 — opt-in webhook digest)
 
 ```yaml
