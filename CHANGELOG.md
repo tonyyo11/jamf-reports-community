@@ -237,6 +237,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- In French, Spanish, Brazilian Portuguese, Italian and Japanese, sidebar names that were cut off
+  with "…" (Fleet Overview, Compliance Benchmarks, OS Updates, Offline Outreach) are shorter and
+  fit. The macOS chart's caption on the Overview no longer runs across the ring in German, Spanish
+  or Brazilian Portuguese, and Japanese warning badges read 警告 instead of the English "WARNING".
 - Fleet Overview's four tiles are one height when a caption wraps, and its Stability Trend
   says a trend starts with a second day's summary instead of drawing empty axes for one. In demo
   mode the trend shows the same 26 weeks of history as the Overview.

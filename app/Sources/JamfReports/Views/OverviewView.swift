@@ -1406,6 +1406,11 @@ struct OverviewView: View {
                     .font(Theme.Fonts.serif(deviceCountSize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                 Kicker(text: share == nil ? L("Macs") : L("On Current"))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    // The hole is about 99 pt across and narrower below its centre, where this
+                    // sits: a long translation wraps instead of crossing the ring.
+                    .frame(maxWidth: 84)
             }
             .accessibilityHidden(true)
         )

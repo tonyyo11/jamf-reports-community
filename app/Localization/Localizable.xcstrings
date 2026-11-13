@@ -39480,13 +39480,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Benchmarks de cumplimiento"
+            "value" : "Referencias de control"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Référentiels de contrôle de conformité"
+            "value" : "Référentiels de contrôle"
           }
         },
         "it" : {
@@ -39498,13 +39498,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コンプライアンスベンチマーク"
+            "value" : "準拠ベンチマーク"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Benchmarks de conformidade"
+            "value" : "Benchmarks"
           }
         }
       }
@@ -61148,7 +61148,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Panoramica del parco dispositivi"
+            "value" : "Panoramica del parco"
           }
         },
         "ja" : {
@@ -87330,7 +87330,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aggiornamenti del sistema operativo"
+            "value" : "Aggiornamenti del SO"
           }
         },
         "ja" : {
@@ -87844,7 +87844,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Relance des appareils hors ligne"
+            "value" : "Relance hors ligne"
           }
         },
         "it" : {
@@ -87862,7 +87862,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contato com dispositivos offline"
+            "value" : "Contato offline"
           }
         }
       }
@@ -88032,13 +88032,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auf aktuellem Stand"
+            "value" : "Aktuell"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En versión actual"
+            "value" : "Al día"
           }
         },
         "fr" : {
@@ -88062,7 +88062,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Na versão atual"
+            "value" : "Em dia"
           }
         }
       }
@@ -131872,7 +131872,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WARN"
+            "value" : "警告"
           }
         },
         "pt-BR" : {
@@ -131912,7 +131912,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WARNING"
+            "value" : "警告"
           }
         },
         "pt-BR" : {
