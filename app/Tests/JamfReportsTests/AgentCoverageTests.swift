@@ -13,6 +13,8 @@ final class AgentCoverageTests: XCTestCase {
     private nonisolated(unsafe) var root: URL!
     private nonisolated(unsafe) var defaults: UserDefaults!
     private nonisolated(unsafe) var suite = ""
+    /// Read once per test: a test that crosses midnight must date every file from the same day.
+    private nonisolated(unsafe) var anchor = Date()
     /// Unique per test: the backfill remembers a decoded snapshot by profile, day and file name.
     private let profile = "agentcov-" + String(UUID().uuidString.lowercased().prefix(8))
 
@@ -31,6 +33,7 @@ final class AgentCoverageTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
+        anchor = GoldenFleetClock.anchorNoon()
         root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("JRC-AgentCov-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -332,7 +335,7 @@ final class AgentCoverageTests: XCTestCase {
 
     private func day(_ offset: Int, hour: Int = 9) -> Date {
         GoldenFleetClock.timestamp(
-            dayOffset: offset, hour: hour, minute: 0, relativeTo: GoldenFleetClock.anchorNoon())
+            dayOffset: offset, hour: hour, minute: 0, relativeTo: anchor)
     }
 
     private func dayString(_ offset: Int) -> String {
