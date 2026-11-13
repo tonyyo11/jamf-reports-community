@@ -27,7 +27,8 @@ struct SchoolDevicesView: View {
                 kicker: L("Jamf School"),
                 title: L("Devices"),
                 subtitle: subtitle,
-                lastModified: snapshot.collectedAt
+                // The demo dataset is fixed; an age measured from today would keep growing.
+                lastModified: workspace.demoMode ? nil : snapshot.collectedAt
             )
             if loadedSource != dataSource {
                 ScreenLoadingCard(what: L("devices"))
@@ -35,7 +36,7 @@ struct SchoolDevicesView: View {
                 if snapshot.devicesDate == nil {
                     emptyState
                 } else {
-                    SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
+                    SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays, now: now)
                     devicesCard
                 }
                 if !snapshot.depDevices.isEmpty { depCard }
@@ -61,7 +62,11 @@ struct SchoolDevicesView: View {
     private func load() async {
         let source = dataSource
         if loadedSource != source { loadedSource = nil; snapshot = .empty }
-        guard !workspace.demoMode else { loadedSource = source; return }
+        guard !workspace.demoMode else {
+            snapshot = DemoData.schoolSnapshot
+            loadedSource = source
+            return
+        }
         let profile = workspace.profile
         guard let loaded = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
@@ -85,8 +90,11 @@ struct SchoolDevicesView: View {
 
     /// The filtered list, kept in `rowCache`: the name sort reruns only when the data changes and
     /// the filter only when a filter input does, so a search keystroke does not re-sort the fleet.
+    /// The demo's check-in ages are measured from its reference date, never the clock.
+    private var now: Date { workspace.demoMode ? DemoData.referenceDate : Date() }
+
     private var rows: [SchoolFleetService.Device] {
-        let now = Date()
+        let now = self.now
         let key = RowCache.Key(
             data: RowCache.DataKey(
                 source: dataSource, reloads: reloads, collectedAt: snapshot.devicesDate,
@@ -114,7 +122,7 @@ struct SchoolDevicesView: View {
                     TextField("Search name, serial, model or OS", text: $search)
                         .textFieldStyle(.roundedBorder)
                 }
-                SchoolDevicesTable(rows: shown, staleDays: staleDays)
+                SchoolDevicesTable(rows: shown, staleDays: staleDays, now: now)
                     .pageTableHeight(rows: shown.count)
             }
         }
@@ -218,6 +226,7 @@ extension SchoolDevicesView {
 struct SchoolDeviceTiles: View {
     let snapshot: SchoolFleetService.Snapshot
     let staleDays: Int
+    var now = Date()
 
     var body: some View {
         let total = snapshot.devices.count
@@ -231,7 +240,8 @@ struct SchoolDeviceTiles: View {
                      sub: snapshot.supervised.map { L("\(percent($0)) of managed devices reporting") }
                          ?? L("Not reported"),
                      fillsHeight: true)
-            StatTile(label: L("Stale"), value: "\(snapshot.staleCount(atDays: staleDays))",
+            StatTile(label: L("Stale"),
+                     value: "\(snapshot.staleCount(atDays: staleDays, now: now))",
                      sub: L("No check-in for more than \(staleDays) days"), fillsHeight: true)
         }
     }
@@ -249,10 +259,10 @@ struct SchoolDeviceTiles: View {
 struct SchoolDevicesTable: View {
     let rows: [SchoolFleetService.Device]
     let staleDays: Int
+    var now = Date()
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        let now = Date()
         Table(rows) {
             TableColumn("Name") {
                 Text($0.name.isEmpty ? "—" : $0.name).font(.callout.weight(.medium))

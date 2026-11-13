@@ -50,9 +50,8 @@ struct EnvironmentProducts: Equatable, Sendable {
         return EnvironmentProducts(products: set, composition: composition)
     }
 
-    /// Every tab the demo shows today.
-    static let demo = EnvironmentProducts(
-        products: [.jamfPro, .platform, .protect], composition: .mixed)
+    /// The first demo workspace's products, meridian-prod's: Jamf Pro, Platform and Protect.
+    static var demo: EnvironmentProducts { DemoData.environmentProducts(for: DemoData.org.profile) }
 
     /// Jamf School is the MDM.
     var isSchool: Bool { has(.jamfSchool) && !has(.jamfPro) }

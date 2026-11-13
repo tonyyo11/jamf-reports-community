@@ -339,20 +339,6 @@ struct MergeResumeBanner: View {
     }
 }
 
-extension EnvironmentCardState {
-    /// Demo mode reads no workspace: one Jamf Pro and one Protect row.
-    static func demo(workspace: String) -> EnvironmentCardState {
-        EnvironmentCardState(workspace: workspace, fromBlock: true, rows: [
-            Row(slot: .jamfPro, product: L("Jamf Pro"), profile: workspace,
-                authMethod: "oauth2", level: nil, newestSnapshot: DemoData.referenceDate,
-                pinNeedsConfirming: false),
-            Row(slot: .protect, product: L("Jamf Protect"), profile: "\(workspace)-protect",
-                authMethod: "oauth2", level: nil, newestSnapshot: DemoData.referenceDate,
-                pinNeedsConfirming: false),
-        ])
-    }
-}
-
 #if DEBUG
 private func previewRow(
     _ slot: ProfilesConfigWriter.Slot, _ product: String, _ profile: String?,

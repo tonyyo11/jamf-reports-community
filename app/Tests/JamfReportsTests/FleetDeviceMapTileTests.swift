@@ -54,7 +54,7 @@ final class FleetDeviceMapTileTests: XCTestCase {
         let maps = DemoData.summaryDeviceMaps
         let macOS = try XCTUnwrap(maps.osMajor).filter { $0.key.hasPrefix("macOS") }
         XCTAssertEqual(macOS.values.reduce(0, +), DemoData.totalDevices)
-        XCTAssertNil(maps.modelFamily, "the demo Macs carry no model, so no tile, never 0")
+        XCTAssertEqual(try XCTUnwrap(maps.modelFamily).values.reduce(0, +), DemoData.totalDevices)
         XCTAssertEqual(try XCTUnwrap(maps.lastSeen?.computers).total, DemoData.totalDevices)
         XCTAssertEqual(try XCTUnwrap(maps.formFactor).values.reduce(0, +),
                        MobileFleetView.makeDemoSnapshot().richDevices.count)

@@ -58,13 +58,18 @@ extension ReportEngine {
             figures.computers = .init(count: snapshot.computers.count, matched: matched)
         }
         if readable("protect-alerts"), !snapshot.unreadableKinds.contains("protect-alerts") {
-            let open = snapshot.alerts.filter(\.isOpen)
-            let bySeverity = Dictionary(
-                grouping: open.compactMap { $0.severity?.lowercased() }, by: { $0 }
-            ).mapValues(\.count)
-            figures.alerts = .init(open: open.count, counts: bySeverity.isEmpty ? nil : bySeverity)
+            figures.alerts = protectAlertFigures(snapshot.alerts)
         }
         return figures.computers == nil && figures.alerts == nil ? nil : figures
+    }
+
+    /// The open alerts, counted by lowercased severity; the demo summary counts its alerts here.
+    static func protectAlertFigures(_ alerts: [ProtectAlertRow]) -> ProtectSummaryFigures.Alerts {
+        let open = alerts.filter(\.isOpen)
+        let bySeverity = Dictionary(
+            grouping: open.compactMap { $0.severity?.lowercased() }, by: { $0 }
+        ).mapValues(\.count)
+        return .init(open: open.count, counts: bySeverity.isEmpty ? nil : bySeverity)
     }
 
     /// The first of `kinds` whose newest snapshot exists and is past the age limit; nil when

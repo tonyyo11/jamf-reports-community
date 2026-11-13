@@ -20,8 +20,7 @@ extension DemoData {
     }()
 
     /// The 524 demo Macs and 25 mobile devices as `SummaryDeviceMaps` writes a live summary's
-    /// maps, for the Fleet Overview's device tiles. The demo Macs carry no model name, so there
-    /// is no model-family map, as a live summary has none when no Mac reports one.
+    /// maps, for the Fleet Overview's device tiles, model families included.
     static let summaryDeviceMaps: SummaryDeviceMaps.Fields = {
         let macs = SummaryDeviceMaps.computers(
             outreachRecords, rule: StaleRule(days: 30), now: referenceDate)

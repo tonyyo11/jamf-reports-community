@@ -36,6 +36,8 @@ extension DemoData {
         let department: String
         let osVersion: String
         let daysSinceContact: Int
+        /// `hardware.model`, the marketing name the model-family map reads.
+        let model: String
 
         var email: String { "\(user)@meridian.health" }
         var osMajor: Int { ComplianceBandingService.parseOSMajor(osVersion) ?? 0 }
@@ -49,7 +51,8 @@ extension DemoData {
             macs.append(FleetMac(
                 jamfID: String(1001 + position), name: record.name, serial: record.serial,
                 user: record.user, department: record.department,
-                osVersion: record.osVersion, daysSinceContact: record.daysSinceContact ?? 0))
+                osVersion: record.osVersion, daysSinceContact: record.daysSinceContact ?? 0,
+                model: record.model))
         }
         return macs
     }
@@ -70,7 +73,8 @@ extension DemoData {
                 user: user,
                 department: departmentCycle[(position * 7) % departmentCycle.count],
                 osVersion: versions[(position * 211) % versions.count],
-                daysSinceContact: checkInDays(position: position)))
+                daysSinceContact: checkInDays(position: position),
+                model: modelNames[suffix] ?? ""))
         }
         return macs
     }
@@ -87,6 +91,10 @@ extension DemoData {
         "MBA", "MBA", "MBA", "MBA", "MBA", "MBA", "MBA", "MM", "MM",
     ]
     private static let serialPrefixes = ["MBP": "C02", "MBA": "FVF", "MM": "H4T"]
+    private static let modelNames = [
+        "MBP": "MacBook Pro (14-inch, M3, 2023)", "MBA": "MacBook Air (13-inch, M2, 2022)",
+        "MM": "Mac mini (2024)",
+    ]
     /// `deviceInventory`'s departments, weighted toward a health system's clinical
     /// staff: in every 20 Macs, 6 Clinical, 3 Engineering, 3 Operations, 2 each other.
     private static let departmentCycle = [
@@ -179,6 +187,7 @@ extension DemoData {
         record.name = mac.name
         record.serial = mac.serial
         record.osVersion = mac.osVersion
+        record.marketingModel = mac.model
         record.user = mac.user
         record.email = mac.email
         record.department = mac.department

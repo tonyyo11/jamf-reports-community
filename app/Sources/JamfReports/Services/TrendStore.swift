@@ -356,6 +356,20 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .managedDevices:
             // The Mac count only; a day with no Macs (a mobile-only fleet) is a gap, never 0.
             return summary.totalDevices > 0 ? Double(summary.totalDevices) : nil
+        case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
+             .mobileDataProtection, .mobileStale, .mobileJailbroken, .protectComputers,
+             .protectMatched, .protectOpenAlerts, .securityCloudDevices, .securityCloudMatched,
+             .securityCloudHighRisk:
+            return Self.environmentValue(metric, in: summary)
+        }
+    }
+
+    /// A mobile, Protect or Security Cloud metric's point in one summary; nil for any other
+    /// metric. The demo series end on it, so they round as a live history does.
+    nonisolated static func environmentValue(
+        _ metric: TrendSeries.Metric, in summary: DailySummary
+    ) -> Double? {
+        switch metric {
         case .mobileManaged: return summary.mobile.map { Double($0.managed) }
         case .mobileOSCurrent: return summary.mobile?.osCurrent?.pct
         case .mobilePasscode: return summary.mobile?.passcode?.pct
@@ -369,6 +383,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .securityCloudDevices: return summary.securityCloudDeviceCount.map(Double.init)
         case .securityCloudMatched: return summary.securityCloudMatched?.pctOneDecimal
         case .securityCloudHighRisk: return summary.securityCloudHighRiskCount.map(Double.init)
+        default: return nil
         }
     }
 

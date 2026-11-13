@@ -477,7 +477,8 @@ final class SecurityCloudSummaryTests: XCTestCase {
         try Data(proFile.utf8).write(to: config)
         store.refreshEnvironmentProducts()
         XCTAssertTrue(all.allSatisfy { rows().contains($0) })
-        XCTAssertTrue(WorkspaceStore(demoMode: true).scoreCardExtraMetrics.isEmpty)
+        XCTAssertFalse(WorkspaceStore(demoMode: true).scoreCardExtraMetrics
+            .contains(where: \.isSecurityCloud), "no demo environment has Security Cloud")
     }
 
     func testAlertKeyUnitsAndTheOverviewOfferOnAMobileOnlyEnvironment() {

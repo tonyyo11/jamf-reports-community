@@ -380,7 +380,7 @@ extension DemoData {
 
     /// Newest first, as `ReportLibrary.list` sorts them: the weekday Mobile
     /// Inventory (iPad) run's week and the last two Weekly Executive Reports,
-    /// each with its HTML, named for their schedules in `scheduledRuns`.
+    /// each with its HTML and CSV folder, named for their schedules in `scheduledRuns`.
     /// Workbooks carry that day's Mac count, as a summary would give them.
     private static let reportFiles: [ReportFile] = [
         reportFile("2026-04-24_073305", "xlsx", 702_464, "Apr 24, 07:33", mobileInventory),
@@ -390,10 +390,14 @@ extension DemoData {
         reportFile("2026-04-20_073302", "xlsx", 699_392, "Apr 20, 07:33", mobileInventory),
         reportFile("2026-04-20_070231", "html", 2_412_877, "Apr 20, 07:02", weeklyExecutive),
         reportFile("2026-04-20_070214", "xlsx", 1_284_506, "Apr 20, 07:02", weeklyExecutive),
+        reportFile("2026-04-20_070214", ReportEngine.csvFolderSuffix, 3_906_118,
+                   "Apr 20, 07:02", weeklyExecutive),
         reportFile("2026-04-13_070227", "html", 2_398_104, "Apr 13, 07:02", weeklyExecutive,
                    weeksAgo: 1),
         reportFile("2026-04-13_070209", "xlsx", 1_279_318, "Apr 13, 07:02", weeklyExecutive,
                    weeksAgo: 1),
+        reportFile("2026-04-13_070209", ReportEngine.csvFolderSuffix, 3_881_402,
+                   "Apr 13, 07:02", weeklyExecutive, weeksAgo: 1),
     ]
 
     /// A report named the way `ReportEngine.resolveOutputURL` names one. The
@@ -406,8 +410,11 @@ extension DemoData {
         let sheets = source == weeklyExecutive ? 9 : 10
         let lastWeek = totalDevicesTrend.count - 1 - weeksAgo
         let macs = Int((totalDevicesTrend[safe: lastWeek] ?? Double(totalDevices)).rounded())
+        // A CSV folder is the workbook's name with `_csv` (`ReportEngine.csvFolderURL`).
+        let name = ext == ReportEngine.csvFolderSuffix
+            ? "report_\(org.profile)_\(stamp)\(ext)" : "report_\(org.profile)_\(stamp).\(ext)"
         return ReportFile(
-            name: "report_\(org.profile)_\(stamp).\(ext)", bytes: bytes, date: date,
+            name: name, bytes: bytes, date: date,
             source: source, sheets: isWorkbook ? sheets : 0, devices: isWorkbook ? macs : nil)
     }
 

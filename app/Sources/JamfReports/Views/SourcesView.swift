@@ -63,7 +63,7 @@ struct SourcesView: View {
             }
 
             if let card = workspace.demoMode
-                ? EnvironmentCardState.demo(workspace: workspace.profile) : environmentCard {
+                ? DemoData.environmentCard(for: workspace.profile) : environmentCard {
                 EnvironmentCard(
                     state: card, onAddProtect: { showingProtectConnect = true },
                     onChanged: { reloadEnvironment(); reloadSourcesPlan() })
@@ -704,10 +704,11 @@ struct SourcesView: View {
         guard !workspace.demoMode else {
             // The demo workspace, never this Mac's: no folder is read.
             families = DemoData.snapshotFamilies(for: workspace.profile)
-            environment = .none
-            sourcesPlan = CollectSourcesPlan.build(.init(
-                product: .jamfPro, profile: workspace.profile,
-                protectProfile: DemoData.org.profile + "-protect"))
+            environment = DemoData.environmentProfiles(for: workspace.profile)
+            sourcesPlan = DemoData.sourcesPlan(for: workspace.profile)
+            schoolResolved = environment.jamfSchool.map {
+                DemoData.resolvedProfile($0, workspace: workspace.profile)
+            }
             cachedAt = Dictionary(uniqueKeysWithValues: (sourcesPlan?.sources ?? []).compactMap {
                 source in DemoData.cacheDate(for: [source.kind], profile: workspace.profile)
                     .map { (source.kind, $0) }

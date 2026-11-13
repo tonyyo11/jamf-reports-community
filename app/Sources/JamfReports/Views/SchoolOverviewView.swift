@@ -22,7 +22,8 @@ struct SchoolOverviewView: View {
                 kicker: L("Jamf School"),
                 title: L("Overview"),
                 subtitle: workspace.profile,
-                lastModified: snapshot.collectedAt
+                // The demo dataset is fixed; an age measured from today would keep growing.
+                lastModified: workspace.demoMode ? nil : snapshot.collectedAt
             )
             if loadedSource != dataSource {
                 ScreenLoadingCard(what: L("overview"))
@@ -31,7 +32,9 @@ struct SchoolOverviewView: View {
                     GettingStartedCard(checklist: checklist, onAction: perform)
                 }
                 if snapshot.devicesDate != nil {
-                    SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
+                    SchoolDeviceTiles(
+                        snapshot: snapshot, staleDays: staleDays,
+                        now: workspace.demoMode ? DemoData.referenceDate : Date())
                 }
                 if !snapshot.overview.isEmpty { resourcesCard }
                 if !snapshot.isDetected { emptyState }
@@ -80,7 +83,13 @@ struct SchoolOverviewView: View {
         let source = dataSource
         if loadedSource != source { loadedSource = nil; snapshot = .empty; checklist = nil }
         let profile = workspace.profile
-        guard !workspace.demoMode, ProfileService.isValid(profile) else {
+        if workspace.demoMode {
+            // The demo district, never this Mac's workspace; its checklist is done.
+            snapshot = DemoData.schoolSnapshot
+            loadedSource = source
+            return
+        }
+        guard ProfileService.isValid(profile) else {
             loadedSource = source
             return
         }

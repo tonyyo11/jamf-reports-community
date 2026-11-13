@@ -63,7 +63,14 @@ final class LocalizationLayoutTests: XCTestCase {
                 XCTAssertNotEqual(L("Settings"), "Settings", "\(language) table not in use")
             }
             let workspace = WorkspaceStore(demoMode: true)
-            for tab in Tab.allCases where tab != .onboarding {
+            // English also renders the demo Jamf School workspace's own tabs, for screenshots.
+            let school = WorkspaceStore(demoMode: true)
+            school.setProfile(DemoData.schoolWorkspace)
+            let schoolTabs = Tab.allCases.filter { Tab.schoolTabs.contains($0) && $0 != .onboarding }
+            let pages = Tab.allCases.filter { $0 != .onboarding }.map { ($0, workspace, "") }
+                + (language == "en"
+                    ? schoolTabs.map { ($0, school, "\(DemoData.schoolWorkspace)-") } : [])
+            for (tab, workspace, prefix) in pages {
                 let page = TabPage(tab: tab, onboardingRun: 0)
                     .environment(workspace)
                     .environment(\.locale, Locale(identifier: language))
@@ -81,8 +88,9 @@ final class LocalizationLayoutTests: XCTestCase {
                 host.layoutSubtreeIfNeeded()
                 let needed = controller.sizeThatFits(
                     in: NSSize(width: width, height: .greatestFiniteMagnitude)).width
+                // English is the baseline, measured but not judged, the School pages too.
                 if language == "en" {
-                    englishWidth[tab] = needed
+                    if prefix.isEmpty { englishWidth[tab] = needed }
                 } else if needed > max(width, englishWidth[tab] ?? width) + 1 {
                     overflows.append("\(language) \(tab.rawValue): \(Int(needed)) pt, "
                         + "English \(Int(englishWidth[tab] ?? 0)) pt")
@@ -90,7 +98,8 @@ final class LocalizationLayoutTests: XCTestCase {
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
                     try rep.representation(using: .png, properties: [:])?
-                        .write(to: out.appendingPathComponent("\(language)-\(tab.rawValue).png"))
+                        .write(to: out.appendingPathComponent(
+                            "\(language)-\(prefix)\(tab.rawValue).png"))
                 }
                 window.contentViewController = nil
             }
