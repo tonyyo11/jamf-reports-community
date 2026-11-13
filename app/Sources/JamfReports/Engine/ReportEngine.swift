@@ -126,8 +126,11 @@ struct ReportEngine: Sendable {
             let msg = "[warn] template '\(template.identifier)': SheetID '\(sheetID.rawValue)' " +
                       "has no writer in CoreDashboard — skipped (engine follow-up required)"
             AppLogger.report.warning("\(msg, privacy: .private)")
-            print(msg)
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            } else {
+                print(msg)
+            }
         }
 
         let eaWritten = eaSheets?.writeAll(sheets: sheets) ?? []
@@ -317,8 +320,11 @@ struct ReportEngine: Sendable {
             let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): "
                 + error.englishDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
-            print(msg)
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            } else {
+                print(msg)
+            }
             return
         }
 
@@ -421,8 +427,11 @@ struct ReportEngine: Sendable {
             let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): "
                 + error.englishDescription
             AppLogger.report.warning("\(msg, privacy: .private)")
-            if label.isEmpty { print(msg) }
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            } else if label.isEmpty {
+                print(msg)
+            }
             return false
         }
     }
@@ -462,8 +471,11 @@ struct ReportEngine: Sendable {
         } catch {
             let msg = "[warn] Could not create summaries dir: \(error.englishDescription)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
-            print(msg)
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            } else {
+                print(msg)
+            }
             return .directoryUnavailable
         }
 
@@ -507,8 +519,11 @@ struct ReportEngine: Sendable {
             let msg = "[warn] summary JSON not written: no jamf-cli snapshots available to summarize " +
                       "(run `collect` first)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
-            print(msg)
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            } else {
+                print(msg)
+            }
             return .nothingToSummarize
         }
 
@@ -630,8 +645,11 @@ struct ReportEngine: Sendable {
         } catch {
             let msg = "\(Self.summaryNotWrittenMarker) \(error.englishDescription)"
             AppLogger.collect.warning("\(msg, privacy: .private)")
-            print(msg)
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            } else {
+                print(msg)
+            }
             return false
         }
     }

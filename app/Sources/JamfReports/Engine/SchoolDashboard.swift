@@ -49,8 +49,12 @@ struct SchoolDashboard: Sendable {
             } catch let skippable as SheetSkippable {
                 // Cached data absent — expected for tenants that haven't collected school snapshots.
                 let msg = SheetRegistry.skipLine(sheet: name, error: skippable)
-                print("  " + msg)
-                onLine?(.init(timestamp: Date(), level: .info, text: msg))
+                // The run log carries it when there is one; printing it too doubled it in the CLI.
+                if let onLine {
+                    onLine(.init(timestamp: Date(), level: .info, text: msg))
+                } else {
+                    print("  " + msg)
+                }
             } catch {
                 let failure = SheetRegistry.failure(sheet: name, error: error)
                 failures.append(failure)
