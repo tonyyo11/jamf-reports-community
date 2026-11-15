@@ -5,7 +5,7 @@ import Foundation
 enum ManagementReport {
     typealias Finding = ManagementHealth.Finding
 
-    /// The health of the Macs in a raw `computers` snapshot; nil with no rows.
+    /// The health of the Macs in a raw `computers` snapshot; nil with no rows or no field judged.
     static func health(
         computers: [[String: Any]], rule: StaleRule, warningDays: Int, now: Date
     ) -> ManagementHealth? {
@@ -13,7 +13,9 @@ enum ManagementReport {
         let records = computers.map {
             DeviceInventoryService.recordFromComputer($0, source: "computers")
         }
-        return ManagementHealth(records: records, rule: rule, warningDays: warningDays, now: now)
+        let health = ManagementHealth(
+            records: records, rule: rule, warningDays: warningDays, now: now)
+        return health.judgedAnything ? health : nil
     }
 
     /// One Mac in one gap or warning finding.

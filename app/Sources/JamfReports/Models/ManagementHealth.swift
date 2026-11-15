@@ -99,6 +99,13 @@ struct ManagementHealth: Sendable {
     private let breakdowns: [Breakdown: [String: [DeviceInventoryRecord]]]
     private let attentionIDs: Set<String>
 
+    /// False when no managed Mac reported any management field. A calculator that judged nothing
+    /// says nothing: its surfaces are left out, never written as "no gaps".
+    var judgedAnything: Bool { !figures.isEmpty || !toggles.isEmpty || !breakdowns.isEmpty }
+
+    /// A gap or warning finding was judged on at least one Mac, so "none has one" is a fact.
+    var judgedGapsOrWarnings: Bool { figures.keys.contains { $0.kind != .neutral } }
+
     /// Macs per value for `breakdown`, sorted by value.
     func values(_ breakdown: Breakdown) -> [(value: String, records: [DeviceInventoryRecord])] {
         (breakdowns[breakdown] ?? [:]).sorted { $0.key < $1.key }

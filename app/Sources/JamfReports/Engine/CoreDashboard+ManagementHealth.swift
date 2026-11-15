@@ -34,7 +34,8 @@ extension CoreDashboard {
         row = writeManagementValues(ws, health, row: row + 1)
         row = writeEnrollmentTokens(ws, dataDir: dataDir, warningDays: warningDays, now: now,
                                     row: row + 1)
-        writeManagementDetail(ws, ManagementReport.detailRows(health, now: now), row: row + 1)
+        writeManagementDetail(ws, ManagementReport.detailRows(health, now: now),
+                              judgedGapsOrWarnings: health.judgedGapsOrWarnings, row: row + 1)
     }
 
     private func writeManagementSummary(
@@ -148,9 +149,11 @@ extension CoreDashboard {
     }
 
     private func writeManagementDetail(
-        _ ws: Worksheet, _ rows: [ManagementReport.DetailRow], row start: Int
+        _ ws: Worksheet, _ rows: [ManagementReport.DetailRow], judgedGapsOrWarnings: Bool,
+        row start: Int
     ) {
         var row = start
+        guard !rows.isEmpty || judgedGapsOrWarnings else { return }
         ws.write("Macs with a gap or warning", row: row, col: 0, format: .header)
         row += 1
         guard !rows.isEmpty else {

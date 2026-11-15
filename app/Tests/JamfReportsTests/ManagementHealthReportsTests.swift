@@ -175,4 +175,41 @@ final class ManagementHealthReportsTests: XCTestCase {
         XCTAssertThrowsError(try dash.writeManagementHealth())
         XCTAssertNil(dash.workbook.sheet(named: "Management Health"))
     }
+
+    /// Rows that carry none of the fields judge nothing, which is not "no gaps".
+    private var bareFleet: [[String: Any]] {
+        [1, 2].map { id in
+            ["id": String(id),
+             "general": ["name": "Mac-\(id)", "managed": true, "lastCheckIn": iso(days: -1),
+                         "reportDate": iso(days: -1), "remoteManagement": ["managed": true]],
+             "hardware": ["serialNumber": "SER\(id)"], "operatingSystem": ["version": "26.0"]]
+        }
+    }
+
+    func testRowsWithNoManagementFieldsWriteNoSheet() throws {
+        let dash = try dashboard(computers: bareFleet)
+        XCTAssertThrowsError(try dash.writeManagementHealth())
+        XCTAssertNil(dash.workbook.sheet(named: "Management Health"))
+        let health = ManagementHealth(
+            records: bareFleet.map { DeviceInventoryService.recordFromComputer($0, source: "t") },
+            rule: StaleRule(days: 30), now: Date())
+        XCTAssertFalse(health.judgedAnything)
+        XCTAssertFalse(health.judgedGapsOrWarnings)
+        XCTAssertNil(ManagementCard.build(health: health, tokens: .empty))
+    }
+
+    func testJudgedWithNoGapsSaysSoAndAFlagOnlyFleetDoesNot() throws {
+        let clear = try dashboard(computers: [mac(1, approved: true)])
+        try clear.writeManagementHealth()
+        XCTAssertTrue(try rows(clear).contains { $0[0] == "No Mac has a management gap or warning." })
+        // Only a neutral count was judged: no gap or warning figure, so no "none" sentence.
+        var row = mac(1)
+        row["general"] = (row["general"] as? [String: Any] ?? [:])
+            .merging(["supervised": false]) { $1 }
+        let neutral = try dashboard(computers: [row])
+        try neutral.writeManagementHealth()
+        let all = try rows(neutral)
+        XCTAssertFalse(all.contains { $0[0] == "No Mac has a management gap or warning." })
+        XCTAssertFalse(all.contains { $0[0] == "Macs with a gap or warning" })
+    }
 }

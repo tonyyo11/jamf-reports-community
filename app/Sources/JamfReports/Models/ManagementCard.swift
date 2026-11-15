@@ -37,7 +37,7 @@ struct ManagementCard: Sendable, Equatable {
         health: ManagementHealth?, tokens snapshot: EnrollmentTokenSnapshot
     ) -> ManagementCard? {
         var card = ManagementCard()
-        if let health { card.addHealth(health) }
+        if let health, health.judgedAnything { card.addHealth(health) }
         card.addTokens(snapshot, hasHealth: !card.isEmpty)
         return card.isEmpty ? nil : card
     }
