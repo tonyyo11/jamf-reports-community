@@ -84,7 +84,8 @@ jamf_cli:
   # between tenants. Not read when the profiles block below is set.
   profile: ""
   # New snapshots leave out names no report reads: account names, FileVault users, real name,
-  # phone, position, room, Shared iPad users and the enrollment contact fields. The username
+  # phone, position, room, Shared iPad users, the device usernames in the profile and app
+  # status reports and the enrollment contact fields. The username
   # and email under user and location stay (Offline Outreach reads them), as do the username
   # columns of the patch and update failure reports. Set true to keep everything, for example
   # when you read the snapshots with your own tools. On a shared folder each Mac asks you to

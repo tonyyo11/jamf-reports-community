@@ -253,6 +253,82 @@ final class MobileLostModeTextTests: XCTestCase {
         }
     }
 
+    func testRemoteManagementUsernameGoesButTheManagedFlagStays() throws {
+        let payload = #"[{"id":"1","general":{"remoteManagement":"#
+            + #"{"managed":true,"managementUsername":"placeholder"}}}]"#
+        let row = try XCTUnwrap(saveAndRead(kind: "computers", payload: payload).first)
+        let remote = try XCTUnwrap(
+            (row["general"] as? [String: Any])?["remoteManagement"] as? [String: Any])
+        XCTAssertEqual(Set(remote.keys), ["managed"])
+    }
+
+    func testStatusReportsLoseDeviceUsernamesAndKeepWhatTheReadersDecode() throws {
+        for kind in ["app-status", "profile-status"] {
+            let payload = #"[{"summary":{"days":7},"failures":[{"name":"P","errors":1}],"#
+                + #""device_failures":[{"device":"Mac-A","username":"placeholder"}],"#
+                + #""device_pending":[{"device":"Mac-B","username":"placeholder"}]}]"#
+            let row = try XCTUnwrap(saveAndRead(kind: kind, payload: payload).first)
+            XCTAssertNotNil(row["summary"], kind)
+            XCTAssertNotNil(row["failures"], kind)
+            for key in ["device_failures", "device_pending"] {
+                let devices = try XCTUnwrap(row[key] as? [[String: Any]])
+                XCTAssertEqual(Set(try XCTUnwrap(devices.first).keys), ["device"], kind)
+            }
+            let kept = try XCTUnwrap(
+                saveAndRead(kind: kind, payload: payload, keepAccountNames: true).first)
+            XCTAssertNotNil((kept["device_failures"] as? [[String: Any]])?.first?["username"])
+        }
+        XCTAssertNotNil(ReportEngine.droppingAccountNames(
+            Data("null".utf8), table: ReportEngine.statusReportAccountNameKeys))
+    }
+
+    func testMobileDetailDropsPurchasingNetworkPhoneAndUserListsInEitherShape() throws {
+        let payload = #"{"location":{"username":"u","realName":"R","phoneNumber":"1"},"#
+            + #""ios":{"mdmCapableUsers":["x"],"purchasing":{"vendor":"V","poNumber":"1"}},"#
+            + #""network":{"phoneNumber":"1","wifiMacAddress":"m"},"purchasing":{"vendor":"V"}}"#
+        let reduced = try XCTUnwrap(ReportEngine.reducingDeviceDetail(
+            Data(payload.utf8), mobile: true, keepAccountNames: false))
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: reduced) as? [String: Any])
+        XCTAssertEqual(Set((object["location"] as? [String: Any] ?? [:]).keys), ["username"])
+        let ios = try XCTUnwrap(object["ios"] as? [String: Any])
+        XCTAssertNil(ios["mdmCapableUsers"])
+        XCTAssertEqual((ios["purchasing"] as? [String: Any])?.count, 0)
+        XCTAssertEqual((object["purchasing"] as? [String: Any])?.count, 0)
+        XCTAssertEqual(Set((object["network"] as? [String: Any] ?? [:]).keys), ["wifiMacAddress"])
+    }
+
+    // MARK: - Device detail flat rows
+
+    private func flat(_ rows: String, keep: Bool = false) -> Data? {
+        ReportEngine.reducingDeviceDetail(Data(rows.utf8), mobile: false, keepAccountNames: keep)
+    }
+
+    func testFlatRowsMatchContactLabelsInAnySectionCaseAndKeepHistoryRows() throws {
+        let rows = #"""
+            [{"section":"USER & location","resource":"  FULL NAME ","value":"x"},
+             {"section":"Contact","resource":"Phone Number","value":"x"},
+             {"section":"User & Location","resource":"Username","value":"x"},
+             {"section":"Identity","resource":"Last Logged In User","value":"x"},
+             {"section":"MDM Command History (Last 10)","resource":"Last Logged In User","value":"x"},
+             {"section":"Policy History (Last 10)","resource":"Full Name","value":"x"}]
+            """#
+        let reduced = try XCTUnwrap(flat(rows))
+        let kept = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: reduced) as? [[String: Any]])
+        XCTAssertEqual(kept.map { $0["section"] as? String }, [
+            "User & Location", "MDM Command History (Last 10)", "Policy History (Last 10)",
+        ])
+    }
+
+    /// Fails closed: an array with a non-object element is not cached.
+    func testAnArrayWithAnythingButObjectsIsNotCached() {
+        XCTAssertNil(flat(#"[{"section":"Identity","resource":"Name"}, 5]"#))
+        XCTAssertNil(flat(#"[{"section":"Identity","resource":"Name"}, null]"#))
+        XCTAssertNotNil(flat("[]"))
+        XCTAssertNotNil(flat("null"))
+    }
+
     // MARK: - Fixtures
 
     private static let accountRecord = #"""

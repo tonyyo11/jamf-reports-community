@@ -123,6 +123,26 @@ final class DeviceDetailStagingTests: XCTestCase {
         }
     }
 
+    /// On a shared workspace the cache goes through the pin, not the file's value alone.
+    func testAnUnconfirmedTrueOnASharedWorkspaceStillReducesTheCache() async throws {
+        let (profile, _) = try makeWorkspace()
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try """
+        shared_workspace:
+          enabled: true
+        jamf_cli:
+          keep_account_names: true
+        """.write(to: workspace.appendingPathComponent("config.yaml"),
+                  atomically: true, encoding: .utf8)
+        let stub = try makeStub("printf '%s' '\(Self.flatDetail)'")
+        let first = await fetch(CLIBridge(), profile: profile, stub: stub)
+        XCTAssertFalse(try cachedText(first).contains("Placeholder Name"), "unconfirmed")
+
+        try SharedConfigPin.confirm(profile: profile, keys: [.keepAccountNames])
+        let second = await fetch(CLIBridge(), profile: profile, stub: stub)
+        XCTAssertTrue(try cachedText(second).contains("Placeholder Name"), "confirmed")
+    }
+
     func testAConfirmedKeepWritesTheCacheWhole() async throws {
         let (profile, _) = try makeWorkspace()
         let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))

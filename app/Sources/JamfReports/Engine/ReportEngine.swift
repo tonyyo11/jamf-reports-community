@@ -3282,6 +3282,17 @@ struct ReportEngine: Sendable {
                 return KindCollectResult(outcome: outcome, saved: false)
             }
             saved = stripped
+        } else if Self.statusReportKinds.contains(kind), !keepAccountNames {
+            guard let stripped = Self.droppingAccountNames(
+                payload, table: Self.statusReportAccountNameKeys) else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): account names could not be removed from the "
+                        + "payload — snapshot not saved"))
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+                return KindCollectResult(outcome: outcome, saved: false)
+            }
+            saved = stripped
         } else if kind == Self.enrollmentInstancesKind, !keepAccountNames {
             guard let stripped = Self.keepingEnrollmentIdentity(payload) else {
                 onLine(.init(timestamp: Date(), level: .warn,
@@ -4541,18 +4552,44 @@ struct ReportEngine: Sendable {
             "lastLoggedInUsernameSelfService",
         ],
         "diskEncryption": ["fileVault2EnabledUserNames"],
+        "remoteManagement": ["managementUsername"],
         "userAndLocation": userContactKeys,
     ]
 
-    /// The same for a `mobile-devices-list` row.
-    /// `*` holds keys removed under any parent: Shared iPad user lists, which no reader opens.
+    /// The same for a `mobile-devices-list` row and a `pro mobile-devices get` record. `*` holds
+    /// keys removed under any parent: Shared iPad user lists, which no reader opens.
     static let mobileAccountNameKeys: [String: Set<String>] = [
         "general": ["lastLoggedInUsernameSelfService"],
         "userAndLocation": userContactKeys,
         // `pro mobile-devices get` nests the same contact details under `location`.
         "location": userContactKeys,
+        "network": ["phoneNumber"],
+        "purchasing": [allKeys],
         "*": ["sharedUsers", "userProfiles", "residentUsers", "mdmCapableUsers"],
     ]
+
+    /// In a removal table, every key of the object: no reader opens a mobile device's
+    /// purchasing contact, price, PO number or vendor.
+    private static let allKeys = "**"
+
+    /// `profile-status` and `app-status` rows naming the device's user, which no reader opens
+    /// (they decode `summary` and `failures`).
+    static let statusReportAccountNameKeys: [String: Set<String>] = [
+        "device_failures": ["username"], "device_pending": ["username"],
+    ]
+    static let statusReportKinds: Set<String> = ["app-status", "profile-status"]
+
+    /// The payload with the `table` keys removed at any depth. `null` and an empty list are
+    /// valid empty answers. Nil when it does not parse or cannot be written back.
+    static func droppingAccountNames(_ data: Data, table: [String: Set<String>]) -> Data? {
+        guard let object = try? JSONSerialization.jsonObject(
+            with: data, options: [.fragmentsAllowed]) else { return nil }
+        guard object is [Any] || object is [String: Any] || object is NSNull else { return nil }
+        var removed = false
+        let stripped = removingKeys(object, removing: table) { removed = true }
+        guard removed else { return data }
+        return try? JSONSerialization.data(withJSONObject: stripped)
+    }
 
     private static let userContactKeys: Set<String> = [
         "realname", "realName", "phone", "phoneNumber", "position", "room",
@@ -4575,7 +4612,9 @@ struct ReportEngine: Sendable {
                 let drop = (parent.flatMap { removing[$0] } ?? []).union(removing["*"] ?? [])
                 var kept: [String: Any] = [:]
                 for (key, child) in dict {
-                    if drop.contains(key) { onRemoval(); continue }
+                    if drop.contains(key) || drop.contains(allKeys) {
+                        onRemoval(); continue
+                    }
                     kept[key] = strip(child, parent: key)
                 }
                 return kept
@@ -4698,9 +4737,10 @@ struct ReportEngine: Sendable {
     ]
 
     /// The payload a single-device lookup may cache: the same reduction a snapshot gets, plus
-    /// the flat rows `pro device` prints (no JSON key to match), whose "User & Location"
-    /// contact rows and logged-in-user rows go. `username` and email rows stay. Nil when the
-    /// payload cannot be reduced, so the caller caches nothing; the live data is not touched.
+    /// the flat rows `pro device` prints (no JSON key to match): contact rows, and logged-in-user
+    /// rows, outside the history sections. `username` and email rows stay. Nil when the payload
+    /// cannot be reduced or an array holds anything but objects, so the caller caches nothing;
+    /// the live data is not touched.
     static func reducingDeviceDetail(
         _ data: Data, mobile: Bool, keepAccountNames: Bool
     ) -> Data? {
@@ -4708,19 +4748,30 @@ struct ReportEngine: Sendable {
             ? droppingLostModeText(data, removingAccountNames: !keepAccountNames)
             : reducingComputers(data, keepAccountNames: keepAccountNames)
         guard let keyed else { return nil }
-        guard !keepAccountNames,
-              let rows = try? JSONSerialization.jsonObject(with: keyed) as? [[String: Any]]
-        else { return keyed }
-        let kept = rows.filter { row in
-            guard let label = (row["resource"] as? String)?.lowercased() else { return true }
-            let contact = (row["section"] as? String) == "User & Location"
-                && deviceDetailContactLabels.contains(label)
-            let loggedIn = (label.contains("logged in") || label.contains("logged-in"))
-                && label.contains("user")
-            return !contact && !loggedIn
+        guard !keepAccountNames else { return keyed }
+        guard let object = try? JSONSerialization.jsonObject(
+            with: keyed, options: [.fragmentsAllowed]) else { return nil }
+        guard let elements = object as? [Any] else { return keyed }
+        var kept: [[String: Any]] = []
+        for element in elements {
+            guard let row = element as? [String: Any] else { return nil }
+            if !isAccountNameRow(row) { kept.append(row) }
         }
-        guard kept.count != rows.count else { return keyed }
+        guard kept.count != elements.count else { return keyed }
         return try? JSONSerialization.data(withJSONObject: kept)
+    }
+
+    /// A flat device-detail row that names a person's contact details or logged-in user.
+    private static func isAccountNameRow(_ row: [String: Any]) -> Bool {
+        guard let resource = row["resource"] as? String else { return false }
+        let section = ((row["section"] as? String) ?? "").lowercased()
+        if section.hasPrefix("mdm command history") || section.hasPrefix("policy history") {
+            return false
+        }
+        let label = resource.trimmingCharacters(in: .whitespaces).lowercased()
+        let loggedIn = (label.contains("logged in") || label.contains("logged-in"))
+            && label.contains("user")
+        return deviceDetailContactLabels.contains(label) || loggedIn
     }
 
     static func jsonPayload(from data: Data) -> Data? {
