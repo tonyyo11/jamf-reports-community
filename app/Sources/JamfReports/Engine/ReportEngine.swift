@@ -4545,9 +4545,11 @@ struct ReportEngine: Sendable {
     ]
 
     /// The same for a `mobile-devices-list` row.
+    /// `*` holds keys removed under any parent: Shared iPad user lists, which no reader opens.
     static let mobileAccountNameKeys: [String: Set<String>] = [
         "general": ["lastLoggedInUsernameSelfService"],
         "userAndLocation": userContactKeys,
+        "*": ["sharedUsers", "userProfiles", "residentUsers"],
     ]
 
     private static let userContactKeys: Set<String> = [
@@ -4568,7 +4570,7 @@ struct ReportEngine: Sendable {
     ) -> Any {
         func strip(_ value: Any, parent: String?) -> Any {
             if let dict = value as? [String: Any] {
-                let drop = parent.flatMap { removing[$0] } ?? []
+                let drop = (parent.flatMap { removing[$0] } ?? []).union(removing["*"] ?? [])
                 var kept: [String: Any] = [:]
                 for (key, child) in dict {
                     if drop.contains(key) { onRemoval(); continue }
@@ -4591,9 +4593,11 @@ struct ReportEngine: Sendable {
     static func droppingLostModeText(
         _ data: Data, sortedKeys: Bool = false, removingAccountNames: Bool = false
     ) -> Data? {
-        guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-            return nil
-        }
+        // jamf-cli prints an empty list as `null`: a valid, empty answer, saved as it is.
+        guard let object = try? JSONSerialization.jsonObject(
+            with: data, options: [.fragmentsAllowed]) else { return nil }
+        if object is NSNull { return data }
+        guard object is [Any] || object is [String: Any] else { return nil }
         var removed = false
         func strip(_ value: Any) -> Any {
             if let dict = value as? [String: Any] {
@@ -4649,23 +4653,72 @@ struct ReportEngine: Sendable {
         return try? JSONSerialization.data(withJSONObject: stripped)
     }
 
-    /// The enrollment instance list with each row cut to `enrollmentIdentityKeys`. Unchanged
-    /// when every row already holds only those; nil when it is not a list of objects or cannot
-    /// be written back, so the caller saves nothing rather than the contact details.
+    /// The enrollment instance list with each row cut to `enrollmentIdentityKeys`, whether it
+    /// is a bare list or the `results` of an envelope. `null` (jamf-cli's empty list) and `[]`
+    /// are valid empty answers. Unchanged when every row already holds only those keys; nil
+    /// when it is anything else or cannot be written back, so nothing is saved on a guess.
     static func keepingEnrollmentIdentity(_ data: Data) -> Data? {
-        guard let rows = try? JSONSerialization.jsonObject(with: data, options: []) as? [Any]
-        else { return nil }
+        guard let object = try? JSONSerialization.jsonObject(
+            with: data, options: [.fragmentsAllowed]) else { return nil }
+        if object is NSNull { return data }
         var removed = false
-        var reduced: [Any] = []
-        for row in rows {
-            guard let dict = row as? [String: Any] else { return nil }
-            if dict.keys.contains(where: { !enrollmentIdentityKeys.contains($0) }) {
-                removed = true
+        func reduce(_ rows: [Any]) -> [Any]? {
+            var reduced: [Any] = []
+            for row in rows {
+                guard let dict = row as? [String: Any] else { return nil }
+                if dict.keys.contains(where: { !enrollmentIdentityKeys.contains($0) }) {
+                    removed = true
+                }
+                reduced.append(dict.filter { enrollmentIdentityKeys.contains($0.key) })
             }
-            reduced.append(dict.filter { enrollmentIdentityKeys.contains($0.key) })
+            return reduced
+        }
+        let result: Any
+        if let rows = object as? [Any] {
+            guard let reduced = reduce(rows) else { return nil }
+            result = reduced
+        } else if var envelope = object as? [String: Any],
+                  let rows = envelope["results"] as? [Any] {
+            guard let reduced = reduce(rows) else { return nil }
+            envelope["results"] = reduced
+            result = envelope
+        } else {
+            return nil
         }
         guard removed else { return data }
-        return try? JSONSerialization.data(withJSONObject: reduced)
+        return try? JSONSerialization.data(withJSONObject: result)
+    }
+
+    /// Labels `pro device` and `pro mobile-devices get` print for a person's contact details in
+    /// the flat `{section, resource, value}` rows, which carry no JSON key names.
+    static let deviceDetailContactLabels: Set<String> = [
+        "full name", "real name", "phone", "phone number", "position", "room",
+    ]
+
+    /// The payload a single-device lookup may cache: the same reduction a snapshot gets, plus
+    /// the flat rows `pro device` prints (no JSON key to match), whose "User & Location"
+    /// contact rows and logged-in-user rows go. `username` and email rows stay. Nil when the
+    /// payload cannot be reduced, so the caller caches nothing; the live data is not touched.
+    static func reducingDeviceDetail(
+        _ data: Data, mobile: Bool, keepAccountNames: Bool
+    ) -> Data? {
+        let keyed = mobile
+            ? droppingLostModeText(data, removingAccountNames: !keepAccountNames)
+            : reducingComputers(data, keepAccountNames: keepAccountNames)
+        guard let keyed else { return nil }
+        guard !keepAccountNames,
+              let rows = try? JSONSerialization.jsonObject(with: keyed) as? [[String: Any]]
+        else { return keyed }
+        let kept = rows.filter { row in
+            guard let label = (row["resource"] as? String)?.lowercased() else { return true }
+            let contact = (row["section"] as? String) == "User & Location"
+                && deviceDetailContactLabels.contains(label)
+            let loggedIn = (label.contains("logged in") || label.contains("logged-in"))
+                && label.contains("user")
+            return !contact && !loggedIn
+        }
+        guard kept.count != rows.count else { return keyed }
+        return try? JSONSerialization.data(withJSONObject: kept)
     }
 
     static func jsonPayload(from data: Data) -> Data? {

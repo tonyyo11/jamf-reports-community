@@ -50,10 +50,13 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
             try ConfigLoader.rawMapping(fromYAML: "notify:\n  heartbeat: true\n")), [])
     }
 
-    func testANonBooleanKeepAccountNamesIsStated() throws {
-        let root = try ConfigLoader.rawMapping(fromYAML: "jamf_cli:\n  keep_account_names: yes\n")
-        XCTAssertEqual(ConfigDoctorService.fileReadBooleanRows(root).map(\.id),
-                       ["config.value.jamf_cli.keep_account_names"])
+    func testNonBooleanKeepAccountNamesIsStated() throws {
+        for typed in ["yes", "1", "sometimes"] {
+            let root = try ConfigLoader.rawMapping(
+                fromYAML: "jamf_cli:\n  keep_account_names: \(typed)\n")
+            XCTAssertEqual(ConfigDoctorService.fileReadBooleanRows(root).map(\.id),
+                           ["config.value.jamf_cli.keep_account_names"], typed)
+        }
     }
 
     func testAccountNameRowsSayWhichAppliesAndWarnOnSharedStorage() {

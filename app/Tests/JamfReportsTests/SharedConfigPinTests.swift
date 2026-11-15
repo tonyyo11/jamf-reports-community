@@ -1410,6 +1410,24 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
+    /// `yes` and `1` are not booleans, so they read as false in the decoder and the pin. A quoted
+    /// "true" reads as true everywhere (the reader's rule), so it waits for a Confirm like true.
+    func testNonBooleanSpellingsNeverKeepNames() throws {
+        for typed in ["yes", "1", "\"on\""] {
+            try writeConfig(keepNames: typed)
+            XCTAssertFalse(try namesKept(), typed)
+            let config = try ConfigLoader.load(
+                from: workspace.appendingPathComponent("config.yaml"))
+            XCTAssertFalse(config.jamfCli?.keepsAccountNames ?? false, typed)
+            XCTAssertTrue(check().drifts.isEmpty, "\(typed) pins as false")
+            try fileManager.removeItem(at: appSupport)
+            try fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        }
+        try writeConfig(keepNames: "\"true\"")
+        XCTAssertFalse(try namesKept(), "unconfirmed")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+    }
+
     func testALocalWorkspaceUsesTheFilesValue() throws {
         try writeConfig(shared: false, keepNames: "true")
         XCTAssertTrue(try namesKept())

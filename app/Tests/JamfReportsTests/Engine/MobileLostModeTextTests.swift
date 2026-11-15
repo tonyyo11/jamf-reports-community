@@ -179,7 +179,8 @@ final class MobileLostModeTextTests: XCTestCase {
     func testMobileListLosesTheSelfServiceUsernameAndContactKeys() throws {
         let kind = MobileFleetService.deviceKind
         let payload = #"""
-            [{"id": "7", "general": {"udid": "U-1", "lastLoggedInUsernameSelfService": "placeholder"},
+            [{"id": "7",
+              "general": {"udid": "U-1", "lastLoggedInUsernameSelfService": "placeholder"},
               "userAndLocation": {"username": "placeholder", "emailAddress": "a@example.com",
                                   "realName": "Placeholder Name", "phoneNumber": "555-0100",
                                   "position": "Role", "room": "1"},
@@ -193,6 +194,63 @@ final class MobileLostModeTextTests: XCTestCase {
         let kept = try XCTUnwrap(
             saveAndRead(kind: kind, payload: payload, keepAccountNames: true).first)
         XCTAssertNotNil((kept["general"] as? [String: Any])?["lastLoggedInUsernameSelfService"])
+    }
+
+    /// jamf-cli prints an empty Go slice as `null`: a valid empty answer for every reducer.
+    func testEmptyListsAreSavedAsTheyAreForAllThreeReducers() throws {
+        let kinds = [
+            "computers", MobileFleetService.deviceKind, ReportEngine.enrollmentInstancesKind,
+        ]
+        for kind in kinds {
+            for payload in ["null", "[]"] {
+                let stateDir = dataDir.appendingPathComponent("state-\(kind)-\(payload.count)")
+                try FileManager.default.createDirectory(
+                    at: stateDir, withIntermediateDirectories: true)
+                let store = StateFileStore(directory: stateDir)
+                let result = try ReportEngine.saveCollectedPayload(
+                    kind: kind, data: Data(payload.utf8),
+                    outcome: ReportEngine.CollectOutcome(kind: kind, exitCode: 0),
+                    isPartialFailure: false, dataDir: dataDir, recordManifest: false,
+                    stateStore: store, collectStart: Date(), onLine: { _ in })
+                XCTAssertTrue(result.saved, "\(kind) \(payload)")
+                XCTAssertNil(store.lastFailureExitCode(for: kind), "\(kind) \(payload)")
+            }
+        }
+    }
+
+    func testAnEnvelopeOfEnrollmentRowsIsReducedInsideResults() throws {
+        let data = Data(
+            #"{"totalCount":1,"results":[{"id":"1","orgEmail":"o@example.com"}]}"#.utf8)
+        let reduced = try XCTUnwrap(ReportEngine.keepingEnrollmentIdentity(data))
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: reduced) as? [String: Any])
+        XCTAssertEqual(object["totalCount"] as? Int, 1)
+        let rows = try XCTUnwrap(object["results"] as? [[String: Any]])
+        XCTAssertEqual(Set(try XCTUnwrap(rows.first).keys), ["id"])
+    }
+
+    func testComputersEnvelopeIsReducedLikeABareList() throws {
+        let data = Data(
+            #"{"totalCount":1,"results":[{"general":{"lastLoggedInUsernameMdm":"x"}}]}"#.utf8)
+        let reduced = try XCTUnwrap(ReportEngine.reducingComputers(data))
+        XCTAssertFalse(String(decoding: reduced, as: UTF8.self).contains("lastLoggedIn"))
+    }
+
+    func testSharedIPadUserListsAreRemovedWhateverTheirValue() throws {
+        for value in ["null", #"[{"username":"placeholder"}]"#] {
+            let payload = """
+                [{"id":"7","sharedUsers":\(value),"userProfiles":\(value),
+                  "general":{"udid":"U-1","residentUsers":\(value)}}]
+                """
+            let row = try XCTUnwrap(
+                saveAndRead(kind: MobileFleetService.deviceKind, payload: payload).first)
+            XCTAssertEqual(Set(row.keys), ["id", "general"], value)
+            XCTAssertEqual(Set((row["general"] as? [String: Any] ?? [:]).keys), ["udid"], value)
+            let kept = try XCTUnwrap(saveAndRead(
+                kind: MobileFleetService.deviceKind, payload: payload,
+                keepAccountNames: true).first)
+            XCTAssertNotNil(kept["sharedUsers"], value)
+        }
     }
 
     // MARK: - Fixtures
@@ -238,7 +296,8 @@ final class MobileLostModeTextTests: XCTestCase {
             kind: kind, data: data,
             outcome: ReportEngine.CollectOutcome(kind: kind, exitCode: 0),
             isPartialFailure: false, dataDir: dataDir, recordManifest: false,
-            keepAccountNames: keepAccountNames, stateStore: nil, collectStart: Date(), onLine: { _ in }
+            keepAccountNames: keepAccountNames, stateStore: nil, collectStart: Date(),
+            onLine: { _ in }
         )
         XCTAssertTrue(result.saved)
         let folder = dataDir.appendingPathComponent(kind, isDirectory: true)
