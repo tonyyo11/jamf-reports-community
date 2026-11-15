@@ -23,6 +23,8 @@ extension ReportEngine {
         case tierNotSelected
         case turnedOff
         case notDue(lastAttempt: Date?)
+        /// The `state` folder is refused or unwritable: no attempt stamp, so no scan.
+        case stateUnavailable
         case due
 
         var planText: String {
@@ -30,6 +32,7 @@ extension ReportEngine {
             case .tierNotSelected: "device scan: not selected (tier scan not selected)"
             case .turnedOff: "device scan: turned off (jamf_cli.collect_skip)"
             case .notDue(let last): "device scan: not due (last attempt: \(collectLogDateLabel(last)))"
+            case .stateUnavailable: "device scan: not due (the state folder is not available)"
             case .due: "device scan: due"
             }
         }
@@ -58,9 +61,18 @@ extension ReportEngine {
     ) -> SchoolDeviceScanPlan {
         guard tiers.contains(.scan) else { return .tierNotSelected }
         guard !collectSkip.contains(schoolDeviceDetailKind) else { return .turnedOff }
+        guard let stateStore else { return .stateUnavailable }
         let last = schoolDeviceScanLastAttempt(stateStore: stateStore, now: now)
-        let due = last.map { now.timeIntervalSince($0) >= schoolDeviceScanInterval } ?? true
+        // The resolver's tolerance keeps a schedule that starts a little early on day 7 due.
+        let due = CadenceResolver.isDue(
+            lastRun: last, cadence: .seconds(Int(schoolDeviceScanInterval)), now: now)
         return due ? .due : .notDue(lastAttempt: last)
+    }
+
+    /// The `state` folder without a warning: `schoolCollect` already warns about a refused one.
+    static func schoolScanStateStore(dataDir: URL) -> StateFileStore? {
+        (try? WorkspacePaths.confinedFolder(["state"], under: dataDir))
+            .map(StateFileStore.init(directory:))
     }
 
     /// A stamp ahead of now (a peer's clock on a shared workspace) reads as absent.
@@ -122,18 +134,13 @@ extension ReportEngine {
     /// peer on a shared workspace sees it as not due.
     static func runSchoolDeviceScanStep(
         workspace: WorkspaceID, school: String, workspacePaths: WorkspacePaths.Type,
-        tiers: Set<CollectionTier>, collectSkip: Set<String>, devicesData: Data?,
+        plan: SchoolDeviceScanPlan, devicesData: Data?,
         locateJamfCLI: @Sendable () -> URL?, limits: SchoolDeviceScanLimits, now: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async {
         let kind = schoolDeviceDetailKind
         guard let dataDir = try? workspacePaths.dataDir(for: workspace.name) else { return }
-        let stateStore = WorkspacePaths
-            .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
-            .map(StateFileStore.init(directory:))
-        guard planSchoolDeviceScan(
-            tiers: tiers, collectSkip: collectSkip, stateStore: stateStore, now: now) == .due
-        else { return }
+        guard plan == .due else { return }
         func say(_ level: CLIBridge.LogLevel, _ text: String) {
             onLine(.init(timestamp: Date(), level: level, text: text))
         }
@@ -145,12 +152,12 @@ extension ReportEngine {
             say(.warn, "[warn] \(kind) not written: jamf-cli was not found")
             return
         }
-        // Without a stamp every run would scan again, so a state folder that cannot be written
-        // means no scan.
-        guard let stateStore else {
+        // `plan` is due only with a state folder; without a stamp every run would scan again.
+        guard let stateStore = schoolScanStateStore(dataDir: dataDir) else {
             say(.warn, "[warn] \(kind) not written: the state folder is not available")
             return
         }
+        let previousStamp = stateStore.lastRun(report: kind)
         do { try stateStore.recordRun(report: kind, at: now) } catch {
             say(.warn, "[warn] \(kind) not written: attempt not recorded — "
                 + error.englishDescription)
@@ -159,6 +166,16 @@ extension ReportEngine {
         let started = Date()
         say(.info, "[info] \(kind): scanning \(targets.count) device(s)")
         let outcome = await scan(targets, profile: school, bin: bin, limits: limits)
+        if outcome.cancelled {
+            // Nothing written and no failure: put the earlier stamp back so the next run is due.
+            if let previousStamp {
+                try? stateStore.recordRun(report: kind, at: previousStamp)
+            } else {
+                stateStore.clearRun(report: kind)
+            }
+            say(.info, "[info] \(kind): cancelled")
+            return
+        }
         land(outcome, total: targets.count, dataDir: dataDir, stateStore: stateStore, at: now,
              onLine: onLine)
         say(.info, "[info] \(kind) took \(Int(Date().timeIntervalSince(started).rounded()))s")
@@ -202,13 +219,14 @@ extension ReportEngine {
         var rows: [SchoolDeviceDetailRow] = []
         var failed = 0
         var stop: SchoolScanStop?
+        var cancelled = false
     }
 
     enum SchoolScanStop: Sendable {
         case exit(Int32, Data, keychainLocked: Bool)
         case budget
         case firstCalls(Int)
-        case deadline
+        case deadline(limit: TimeInterval)
 
         /// The exit code to record, the cause and the log reason.
         func describe(failed: Int, total: Int) -> (Int32?, FailureCause?, String) {
@@ -222,9 +240,9 @@ extension ReportEngine {
                         "\(failed) of \(total) devices did not respond (over 25%)")
             case .firstCalls(let n):
                 return (nil, nil, "the first \(n) device calls all failed")
-            case .deadline:
-                return (CLIBridge.exitCodeTimedOut, nil,
-                        "stopped after \(Int(ReportEngine.schoolDeviceScanDeadline / 60)) minutes")
+            case .deadline(let limit):
+                let text = limit >= 60 ? "\(Int(limit / 60)) minutes" : "\(String(format: "%g", limit)) seconds"
+                return (CLIBridge.exitCodeTimedOut, nil, "stopped after \(text)")
             }
         }
     }
@@ -239,18 +257,20 @@ extension ReportEngine {
         private let total: Int
         private let firstCalls: Int
         private let deadline: Date
+        private let limit: TimeInterval
         private(set) var stop: SchoolScanStop?
         private var completed = 0
         private(set) var failed = 0
 
-        init(total: Int, deadline: Date) {
+        init(total: Int, limit: TimeInterval) {
+            self.limit = limit
             self.total = total
             self.firstCalls = min(ReportEngine.schoolDeviceScanFirstCalls, total)
-            self.deadline = deadline
+            self.deadline = Date().addingTimeInterval(limit)
         }
 
         func admit() -> Bool {
-            if stop == nil, Date() >= deadline { stop = .deadline }
+            if stop == nil, Date() >= deadline { stop = .deadline(limit: limit) }
             return stop == nil
         }
 
@@ -274,8 +294,7 @@ extension ReportEngine {
     ) async -> ScanOutcome {
         guard !targets.isEmpty else { return ScanOutcome() }
         let bridge = CLIBridge()
-        let gate = SchoolScanGate(
-            total: targets.count, deadline: Date().addingTimeInterval(limits.deadline))
+        let gate = SchoolScanGate(total: targets.count, limit: limits.deadline)
         var outcome = ScanOutcome()
         await withTaskGroup(of: SchoolDeviceDetailRow?.self) { group in
             var inFlight = 0
@@ -284,7 +303,8 @@ extension ReportEngine {
                     inFlight -= 1
                     if let row { outcome.rows.append(row) }
                 }
-                guard await gate.admit() else { break }
+                // A cancelled run admits no more calls; the ones in flight finish or time out.
+                guard !Task.isCancelled, await gate.admit() else { break }
                 inFlight += 1
                 group.addTask {
                     let result = await callOne(
@@ -297,6 +317,7 @@ extension ReportEngine {
             }
             for await row in group { if let row { outcome.rows.append(row) } }
         }
+        outcome.cancelled = Task.isCancelled
         outcome.stop = await gate.stop
         outcome.failed = await gate.failed
         let order = Dictionary(uniqueKeysWithValues: targets.enumerated().map { ($1.udid, $0) })

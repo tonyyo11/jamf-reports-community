@@ -56399,42 +56399,48 @@
         }
       }
     },
-    "Enrollment type: %@" : {
+    "Enrollment type: %@ (of %lld devices reporting)" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Registrierungstyp: %@"
+            "value" : "Registrierungstyp: %1$@ (von %2$lld meldenden Geräten)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enrollment type: %1$@ (of %2$lld devices reporting)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tipo de inscripción: %@"
+            "value" : "Tipo de inscripción: %1$@ (de %2$lld dispositivos que informan)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Type d'inscription : %@"
+            "value" : "Type d'inscription : %1$@ (sur %2$lld appareils déclarants)"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tipo di registrazione: %@"
+            "value" : "Tipo di registrazione: %1$@ (su %2$lld dispositivi che riportano)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録タイプ: %@"
+            "value" : "登録タイプ: %1$@ (報告した %2$lld デバイス中)"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tipo de inscrição: %@"
+            "value" : "Tipo de inscrição: %1$@ (de %2$lld dispositivos que informaram)"
           }
         }
       }
@@ -97059,6 +97065,46 @@
         }
       }
     },
+    "Per-device details are turned off (jamf_cli.collect_skip)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details pro Gerät sind ausgeschaltet (jamf_cli.collect_skip)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los detalles por dispositivo están desactivados (jamf_cli.collect_skip)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les détails par appareil sont désactivés (jamf_cli.collect_skip)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dettagli per dispositivo sono disattivati (jamf_cli.collect_skip)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスごとの詳細はオフです (jamf_cli.collect_skip)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os detalhes por dispositivo estão desativados (jamf_cli.collect_skip)"
+          }
+        }
+      }
+    },
     "Per-device details could not be read" : {
       "localizations" : {
         "de" : {
@@ -121311,42 +121357,48 @@
         }
       }
     },
-    "Storage: %@" : {
+    "Storage: %@ (of %lld devices reporting)" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Speicher: %@"
+            "value" : "Speicher: %1$@ (von %2$lld meldenden Geräten)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Storage: %1$@ (of %2$lld devices reporting)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Almacenamiento: %@"
+            "value" : "Almacenamiento: %1$@ (de %2$lld dispositivos que informan)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stockage : %@"
+            "value" : "Stockage : %1$@ (sur %2$lld appareils déclarants)"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Archiviazione: %@"
+            "value" : "Archiviazione: %1$@ (su %2$lld dispositivi che riportano)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ストレージ: %@"
+            "value" : "ストレージ: %1$@ (報告した %2$lld デバイス中)"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Armazenamento: %@"
+            "value" : "Armazenamento: %1$@ (de %2$lld dispositivos que informaram)"
           }
         }
       }

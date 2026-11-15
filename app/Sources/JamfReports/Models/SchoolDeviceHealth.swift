@@ -64,7 +64,7 @@ struct SchoolDeviceHealth: Sendable, Equatable {
     /// What the per-device scan holds, joined to the fleet by UDID. Every count is over the
     /// scanned devices that reported the field.
     struct Detail: Sendable, Equatable {
-        enum State: Sendable, Equatable { case notCollected, unreadable, scanned }
+        enum State: Sendable, Equatable { case notCollected, turnedOff, unreadable, scanned }
 
         var state = State.notCollected
         var scannedAt: Date?
@@ -98,7 +98,9 @@ struct SchoolDeviceHealth: Sendable, Equatable {
     private(set) var detail = Detail()
 
     /// Nil when the snapshot gives no figure and nothing unreadable to say.
-    init?(_ snapshot: SchoolFleetService.Snapshot) {
+    /// `scanTurnedOff`: `jamf_cli.collect_skip` lists the device scan, so a fleet with no scan
+    /// says that instead of "not collected yet".
+    init?(_ snapshot: SchoolFleetService.Snapshot, scanTurnedOff: Bool = false) {
         for item in Item.allCases
         where item.kinds.contains(where: snapshot.unreadable.contains) {
             unreadable.insert(item)
@@ -107,7 +109,7 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         addUsers(snapshot)
         addGroups(snapshot)
         addClasses(snapshot)
-        addDetail(snapshot)
+        addDetail(snapshot, scanTurnedOff: scanTurnedOff)
         // A fleet with no scan yet still says so.
         if figures.isEmpty && unreadable.isEmpty && detail.state == .notCollected
             && detail.failedAt == nil && snapshot.devices.isEmpty { return nil }
@@ -153,13 +155,18 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         set(.classesNoTeacher, classes.map { $0.teachers.map { $0 == 0 } })
     }
 
-    private mutating func addDetail(_ snapshot: SchoolFleetService.Snapshot) {
+    private mutating func addDetail(
+        _ snapshot: SchoolFleetService.Snapshot, scanTurnedOff: Bool
+    ) {
         detail.failedAt = snapshot.deviceDetailFailedAt
         if snapshot.unreadable.contains(SchoolFleetService.deviceDetailKind) {
             detail.state = .unreadable
             return
         }
-        guard let scan = snapshot.deviceDetail, !snapshot.devices.isEmpty else { return }
+        guard let scan = snapshot.deviceDetail, !snapshot.devices.isEmpty else {
+            if scanTurnedOff, !snapshot.devices.isEmpty { detail.state = .turnedOff }
+            return
+        }
         detail.state = .scanned
         detail.scannedAt = scan.date
         let rows = snapshot.devices.compactMap { scan.row(forUDID: $0.udid) }
@@ -214,15 +221,21 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         var lines: [String] = []
         switch detail.state {
         case .notCollected: lines.append(L("Per-device details not collected yet"))
+        case .turnedOff:
+            lines.append(L("Per-device details are turned off (jamf_cli.collect_skip)"))
         case .unreadable: lines.append(L("Per-device details could not be read"))
         case .scanned:
             if let at = detail.scannedAt, let scanned = detail.scanned {
                 lines.append(L("Last scanned \(day(at)) · \(scanned.count) of \(scanned.of) devices"))
             }
             if let text = Self.line(detail.enrollment) {
-                lines.append(L("Enrollment type: \(text)"))
+                let n = detail.enrollmentReporting
+                lines.append(L("Enrollment type: \(text) (of \(n) devices reporting)"))
             }
-            if let text = Self.line(detail.storage) { lines.append(L("Storage: \(text)")) }
+            if let text = Self.line(detail.storage) {
+                let n = detail.storageReporting
+                lines.append(L("Storage: \(text) (of \(n) devices reporting)"))
+            }
             if let low = detail.lowBattery {
                 let (cut, n, of) = (Self.lowBatteryPercent, low.count, low.of)
                 lines.append(L("Battery 1 to \(cut)% when scanned: \(n) of \(of) devices"))

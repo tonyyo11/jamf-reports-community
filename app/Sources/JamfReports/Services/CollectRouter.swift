@@ -305,6 +305,14 @@ enum CollectRouter {
                     "'\(ConfigSchema.displayText(profile))' names no Jamf Pro or Jamf School "
                         + "profile")
             }
+            // Decided once, for the School collect's plan and the scan after it.
+            let collectSkip = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
+            let scanPlan = (try? workspacePaths.dataDir(for: workspace.name)).map {
+                ReportEngine.planSchoolDeviceScan(
+                    tiers: tiers, collectSkip: collectSkip,
+                    stateStore: ReportEngine.schoolScanStateStore(dataDir: $0), now: now)
+            } ?? .stateUnavailable
+            landed.schoolScanPlan = scanPlan
             do {
                 try await ReportEngine.$routedEnvironment.withValue(environment) {
                     try await ReportEngine.$landedSources.withValue(landed) {
@@ -330,8 +338,8 @@ enum CollectRouter {
         // a scan that fails, stalls or is killed costs nothing but itself.
         guard detected.type == .jamfSchool, let mdm = environment.mdm else { return }
         await ReportEngine.runSchoolDeviceScanStep(
-            workspace: workspace, school: mdm, workspacePaths: workspacePaths, tiers: tiers,
-            collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+            workspace: workspace, school: mdm, workspacePaths: workspacePaths,
+            plan: landed.schoolScanPlan ?? .stateUnavailable,
             devicesData: landed.schoolDevices, locateJamfCLI: locateJamfCLI,
             limits: schoolScanLimits, now: now, onLine: onLine)
     }

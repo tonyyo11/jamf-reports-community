@@ -134,4 +134,19 @@ final class SchoolDeviceDetailTests: XCTestCase {
         XCTAssertTrue(healthCells.contains("Enrollment type: dep"))
         XCTAssertTrue(healthCells.contains("Battery 1 to 20% when scanned"))
     }
+
+    /// A fleet with the scan turned off by collect_skip says so, not "not collected yet"; the
+    /// breakdown lines carry their denominator.
+    func testTurnedOffWordingAndDenominators() throws {
+        try devices(3)
+        let off = try XCTUnwrap(SchoolDeviceHealth(
+            SchoolFleetService.load(dataDir: dir), scanTurnedOff: true))
+        XCTAssertEqual(off.detailLines,
+                       [L("Per-device details are turned off (jamf_cli.collect_skip)")])
+        try scan([detail(1, ["deviceEnrollType": "dep", "totalCapacity": 64]),
+                  detail(2, ["deviceEnrollType": "dep"])])
+        let lines = try health().detailLines
+        XCTAssertTrue(lines.contains(L("Enrollment type: dep 2 (of 2 devices reporting)")))
+        XCTAssertTrue(lines.contains { $0.contains("(") && $0.hasPrefix(L("Storage:")) })
+    }
 }

@@ -102,7 +102,10 @@ struct SchoolDashboard: Sendable {
 
     /// Neutral counts and the ADE devices not enrolled, from `SchoolDeviceHealth`.
     func writeSchoolDeviceHealth() throws {
-        guard let health = SchoolDeviceHealth(SchoolFleetService.load(dataDir: dataDir)),
+        let off = ReportEngine.collectSkipKinds(config.jamfCli?.collectSkip)
+            .contains(ReportEngine.schoolDeviceDetailKind)
+        guard let health = SchoolDeviceHealth(
+            SchoolFleetService.load(dataDir: dataDir), scanTurnedOff: off),
               !health.figures.isEmpty else {
             throw SchoolDashboardError.noCachedData(names: [SchoolFleetService.depDevicesKind])
         }
@@ -162,6 +165,7 @@ struct SchoolDashboard: Sendable {
         }
         switch detail.state {
         case .notCollected: note("Per-device details", "not collected yet")
+        case .turnedOff: note("Per-device details", "turned off (jamf_cli.collect_skip)")
         case .unreadable: note("Per-device details", "could not be read")
         case .scanned:
             if let scanned = detail.scanned, let at = detail.scannedAt {
@@ -486,7 +490,7 @@ struct SchoolDashboard: Sendable {
         )
         // The scan's three columns come last, so no existing column moves; blank when the
         // device was not scanned or the scan is missing or unreadable.
-        let detail = SchoolFleetService.load(dataDir: dataDir).deviceDetail
+        let detail = SchoolFleetService.loadDeviceDetail(dataDir: dataDir)
         let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin",
                     "Enrollment", "Storage (GB)", "Battery (%) when scanned"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }

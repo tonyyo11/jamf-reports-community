@@ -3875,7 +3875,7 @@ struct ReportEngine: Sendable {
             throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
         }
         let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: workspace.name))
-        let scanPlan = planSchoolDeviceScan(
+        let scanPlan = landedSources?.schoolScanPlan ?? planSchoolDeviceScan(
             tiers: tiers, collectSkip: collectSkip, stateStore: stateStore, now: now)
         let plan = planSchoolCollect(
             profile: profile, tiers: tiers, force: force,
@@ -4002,6 +4002,11 @@ struct ReportEngine: Sendable {
 
     /// `jamf_cli.collect_skip` as typed; empty when config.yaml is absent or will not load
     /// (`schoolStaleDays` already warns about the latter).
+    /// `jamf_cli.collect_skip` lists the School device scan.
+    static func schoolScanTurnedOff(profile: String) -> Bool {
+        collectSkipKinds(schoolCollectSkip(profile: profile)).contains(schoolDeviceDetailKind)
+    }
+
     private static func schoolCollectSkip(profile: String) -> [String] {
         ProfileService.workspaceURL(for: profile)
             .flatMap { try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml")) }?

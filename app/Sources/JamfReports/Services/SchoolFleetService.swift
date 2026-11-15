@@ -181,6 +181,14 @@ enum SchoolFleetService {
         return snapshot
     }
 
+    /// Only the scan's rows, for the workbook's Device Inventory columns; nil when missing or
+    /// unreadable.
+    static func loadDeviceDetail(dataDir: URL) -> SchoolDeviceDetail? {
+        guard case .rows(let rows, let date) = readRows(kind: deviceDetailKind, in: dataDir)
+        else { return nil }
+        return SchoolDeviceDetail(snapshotRows: rows, date: date)
+    }
+
     /// The devices of one `school-devices` file, or nil when it does not decode as a row list.
     static func devicesSnapshot(at file: URL, inside root: URL? = nil) -> Snapshot? {
         guard let rows = decodedRows(at: file, inside: root) else { return nil }

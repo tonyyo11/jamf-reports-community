@@ -21,6 +21,13 @@ final class LandedSources: Sendable {
         set { devices.withLock { $0 = newValue } }
     }
 
+    private let scanPlan = Mutex<ReportEngine.SchoolDeviceScanPlan?>(nil)
+    /// The School device scan's plan, decided once by the router for the collect and the scan.
+    var schoolScanPlan: ReportEngine.SchoolDeviceScanPlan? {
+        get { scanPlan.withLock { $0 } }
+        set { scanPlan.withLock { $0 = newValue } }
+    }
+
     private let unwritten = Mutex(false)
     /// The MDM step logged `summaryNotWrittenMarker` this run.
     var mdmSummaryUnwritten: Bool {

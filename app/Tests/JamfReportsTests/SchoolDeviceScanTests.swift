@@ -48,7 +48,11 @@ final class SchoolDeviceScanTests: XCTestCase {
         A="\(answers.path)"
         printf '%s\\n' "$*" >> "$A/calls.log"
         case "$*" in
+          *" devices list "*) [ -f "$A/list" ] && cat "$A/list" || printf '[]'; exit 0 ;;
           *" devices get "*)
+            W="\(try XCTUnwrap(ProfileService.workspaceURL(for: profile)).path)"
+            [ -f "$W/automation/.workspace-claim.json" ] && echo held >> "$A/claim-held"
+            ls "$W"/automation/hosts/*.json >/dev/null 2>&1 && echo yes >> "$A/activity-seen"
             u=$(echo "$*" | sed -E 's/.* devices get ([^ ]+).*/\\1/'); f="$A/dev-$u"
             [ -f "\(try dataDir.path)/state/school-device-detail.last" ] && echo yes >> "$A/stamped"
             [ -f "$f.sleep" ] && exec sleep 30
@@ -101,9 +105,12 @@ final class SchoolDeviceScanTests: XCTestCase {
     ) async throws -> [String] {
         let stub = try makeStub()
         let lines = LineBox()
+        let plan = ReportEngine.planSchoolDeviceScan(
+            tiers: tiers, collectSkip: collectSkip,
+            stateStore: ReportEngine.schoolScanStateStore(dataDir: try dataDir), now: now)
         await ReportEngine.runSchoolDeviceScanStep(
             workspace: try WorkspaceID(validating: profile), school: profile,
-            workspacePaths: WorkspacePaths.self, tiers: tiers, collectSkip: collectSkip,
+            workspacePaths: WorkspacePaths.self, plan: plan,
             devicesData: list, locateJamfCLI: { stub }, limits: limits, now: now,
             onLine: { lines.append($0.text) })
         XCTAssertFalse(lines.texts.contains { $0.contains("[partial]") }, "the scan never emits [partial]")
@@ -409,6 +416,149 @@ final class SchoolDeviceScanTests: XCTestCase {
         XCTAssertNil(thrown)
         XCTAssertTrue(events.contains("[ok] school-device-detail: 2 device(s)"))
         XCTAssertEqual(try snapshotRows()?.count, 2)
+    }
+    // MARK: - Review round
+
+    /// Class 1: the resolver's tolerance applies, so a schedule that starts a little early on
+    /// day 7 is due; day 6 is not.
+    func testCadenceUsesTheResolverTolerance() throws {
+        let store = try stateStore
+        let kind = ReportEngine.schoolDeviceDetailKind
+        try store.recordRun(report: kind, at: now.addingTimeInterval(-(7 * 86_400 - 120)))
+        XCTAssertEqual(
+            ReportEngine.planSchoolDeviceScan(
+                tiers: [.scan], collectSkip: [], stateStore: store, now: now), .due)
+        try store.recordRun(report: kind, at: now.addingTimeInterval(-6 * 86_400))
+        if case .notDue = ReportEngine.planSchoolDeviceScan(
+            tiers: [.scan], collectSkip: [], stateStore: store, now: now) {} else {
+            XCTFail("six days is not due")
+        }
+    }
+
+    /// A refused state folder plans as not due and says why; no scan, no stamp.
+    func testAnUnavailableStateFolderIsNotDue() async throws {
+        let plan = ReportEngine.planSchoolDeviceScan(
+            tiers: [.scan], collectSkip: [], stateStore: nil, now: now)
+        XCTAssertEqual(plan, .stateUnavailable)
+        XCTAssertEqual(plan.planText, "device scan: not due (the state folder is not available)")
+        let stub = try makeStub()
+        let lines = LineBox()
+        await ReportEngine.runSchoolDeviceScanStep(
+            workspace: try WorkspaceID(validating: profile), school: profile,
+            workspacePaths: WorkspacePaths.self, plan: plan, devicesData: try deviceList(["u1"]),
+            locateJamfCLI: { stub }, limits: .init(), now: now, onLine: { lines.append($0.text) })
+        XCTAssertTrue(lines.texts.isEmpty)
+        XCTAssertTrue(calls().isEmpty)
+    }
+
+    /// Class 14: a cancelled scan admits no more calls, writes nothing, records no failure and
+    /// leaves the next run due.
+    func testCancellationStopsQuietlyAndLeavesTheScanDue() async throws {
+        for u in udids(10) { try answer("dev-\(u).delay", "0.3") }
+        let stub = try makeStub()
+        let id = try WorkspaceID(validating: profile)
+        let list = try deviceList(udids(10))
+        let plan = ReportEngine.planSchoolDeviceScan(
+            tiers: [.scan], collectSkip: [],
+            stateStore: ReportEngine.schoolScanStateStore(dataDir: try dataDir), now: now)
+        let when = now
+        let lines = LineBox()
+        let task = Task {
+            await ReportEngine.runSchoolDeviceScanStep(
+                workspace: id, school: "schoolscan", workspacePaths: WorkspacePaths.self,
+                plan: plan, devicesData: list, locateJamfCLI: { stub },
+                limits: .init(concurrency: 1), now: when, onLine: { lines.append($0.text) })
+        }
+        try await Task.sleep(nanoseconds: 700_000_000)
+        task.cancel()
+        await task.value
+        XCTAssertLessThan(calls().count, 10)
+        XCTAssertEqual(lines.texts.filter { $0.contains("cancelled") },
+                       ["[info] school-device-detail: cancelled"])
+        XCTAssertFalse(lines.texts.contains { $0.hasPrefix("[warn]") || $0.contains("did not respond") })
+        XCTAssertNil(try snapshotRows())
+        let store = try stateStore
+        XCTAssertNil(store.failures(report: ReportEngine.schoolDeviceDetailKind))
+        XCTAssertNil(store.lastRun(report: ReportEngine.schoolDeviceDetailKind))
+        XCTAssertEqual(
+            ReportEngine.planSchoolDeviceScan(
+                tiers: [.scan], collectSkip: [], stateStore: store, now: now), .due)
+    }
+
+    /// The deadline reason names the limit in use.
+    func testTheDeadlineReasonNamesTheInjectedLimit() async throws {
+        for u in udids(10) { try answer("dev-\(u).delay", "0.3") }
+        var limits = ReportEngine.SchoolDeviceScanLimits(concurrency: 1)
+        limits.deadline = 0.5
+        let lines = try await runStep(deviceList(udids(10)), limits: limits)
+        XCTAssertTrue(has(lines, "[warn] school-device-detail not written: stopped after 0.5 seconds"))
+    }
+
+    /// The not-written lines are neither incomplete nor a reason to retry.
+    func testNotWrittenLinesLeaveTheHonestyWatcherQuiet() async throws {
+        try answer("all.exit", "1")
+        let lines = try await runStep(deviceList(udids(8)))
+        let watcher = CollectHonestyWatcher()
+        for line in lines { watcher.observe(line) }
+        XCTAssertFalse(lines.isEmpty)
+        XCTAssertFalse(watcher.incomplete)
+        XCTAssertFalse(watcher.retryCouldHelp(lastFailureRepeats: { _ in false }))
+    }
+
+    private func schoolCollectThroughTheStub(_ stub: URL) -> CollectRouter.SchoolCollect {
+        { workspace, profile, paths, tiers, force, onLine in
+            try await ReportEngine.schoolCollect(
+                workspace: workspace, profile: profile, workspacePaths: paths, tiers: tiers,
+                force: force, locateJamfCLI: { stub }, onLine: onLine)
+        }
+    }
+
+    /// End to end: a due scan-only School run collects school-devices, then scans; the claim is
+    /// released and this Mac's activity recorded before the first device call.
+    func testAScanOnlyRunCollectsTheListThenScansAfterTheClaimIsReleased() async throws {
+        try answer("list", String(decoding: try deviceList(udids(3)), as: UTF8.self))
+        let stub = try makeStub()
+        let config = try ConfigLoader.loadFromString("school_cli:\n  enabled: true\n")
+        let lines = LineBox()
+        let name = profile
+        try await CollectRouter.run(
+            workspace: try WorkspaceID(validating: profile), tiers: [.scan], config: config,
+            workspacePaths: WorkspacePaths.self, now: now,
+            schoolCollect: schoolCollectThroughTheStub(stub),
+            protectCollect: { _, _, _ in [] }, resolved: { _ in nil },
+            gate: { _, _, _, _, _, _ in
+                SharedWorkspace.acquire(profile: name, operation: "collect", ttl: 3_600)
+                return .proceed(holdsClaim: true, coordinating: true)
+            },
+            locateJamfCLI: { stub }, schoolScanLimits: .init(concurrency: 1),
+            onLine: { lines.append($0.text) })
+        let log = calls()
+        XCTAssertEqual(log.filter { $0.contains(" devices list ") }.count, 1)
+        XCTAssertEqual(log.filter { $0.contains(" devices get ") }.count, 3)
+        XCTAssertFalse(log.contains { $0.contains(" overview ") }, "only the scan's input is collected")
+        XCTAssertTrue(has(lines.texts, "[plan] device scan: due"))
+        XCTAssertTrue(has(lines.texts, "[ok] school-device-detail: 3 device(s)"))
+        let held = (try? String(contentsOf: answers.appendingPathComponent("claim-held"))) ?? ""
+        XCTAssertEqual(held, "", "the claim is released before the scan")
+        XCTAssertNotNil(try? String(contentsOf: answers.appendingPathComponent("activity-seen")))
+    }
+
+    /// A run whose `now` was captured before midnight keeps one day: the stamp is that instant.
+    func testTheStampKeepsTheRunsOwnInstantAcrossMidnight() async throws {
+        let beforeMidnight = Calendar.current.date(
+            bySettingHour: 23, minute: 59, second: 58, of: now) ?? now
+        let stub = try makeStub()
+        let plan = ReportEngine.planSchoolDeviceScan(
+            tiers: [.scan], collectSkip: [],
+            stateStore: ReportEngine.schoolScanStateStore(dataDir: try dataDir), now: beforeMidnight)
+        await ReportEngine.runSchoolDeviceScanStep(
+            workspace: try WorkspaceID(validating: profile), school: profile,
+            workspacePaths: WorkspacePaths.self, plan: plan, devicesData: try deviceList(["u1"]),
+            locateJamfCLI: { stub }, limits: .init(concurrency: 1), now: beforeMidnight,
+            onLine: { _ in })
+        XCTAssertEqual(
+            try stateStore.lastRun(report: ReportEngine.schoolDeviceDetailKind),
+            Date(timeIntervalSince1970: floor(beforeMidnight.timeIntervalSince1970)))
     }
 }
 
