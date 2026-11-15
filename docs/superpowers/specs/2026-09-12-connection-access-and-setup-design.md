@@ -1,11 +1,10 @@
 # Connection access and setup: design
 
 Status: partly shipped. 2.8.1 has the failure causes, the connection check and the Compliance
-Benchmarks collect; the region picker and the privilege list read from jamf-cli's command
-catalog (2.12, #357) came later. Not built, and in no epic: the requirements table, the
-reachability record, the source states, the Access card, the per-screen banners and
-`jamf-reports permissions` (sections 7, 8, 9.4, 10.2, 10.3 and 11), and spec 2. Those sections
-are non-binding. Design approved section by section on 2026-09-11/12; written autonomously on Tony's
+Benchmarks collect; the region picker came in 2.10, and in 2.12 (#357) the privilege list read
+from jamf-cli's command catalog took the place of section 7's static requirements table. Not
+built, and in no epic: the reachability record, the Access card and `jamf-reports permissions`
+(sections 8, 10.2 and 11), and spec 2. Those sections are non-binding. Design approved section by section on 2026-09-11/12; written autonomously on Tony's
 instruction to take the recommendations. Not yet reviewed as a whole document.
 
 This is spec 1 of 2. Spec 2, source-aware reporting, is outlined in the handoff section at the

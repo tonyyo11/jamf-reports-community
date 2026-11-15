@@ -23,6 +23,9 @@ same binary also ships a `jamf-reports` command-line interface (see
 
 ## Composition
 
+The diagram shows Jamf Pro; a Jamf School, Jamf Protect or Jamf Security Cloud profile is
+reached the same way, through its own jamf-cli command family.
+
 ```
 +--------+      +-------------------+      +------------+      +-----------+
 |  You   | ---> |  JamfReports.app  | ---> |  jamf-cli  | ---> | Jamf Pro  |
