@@ -245,9 +245,9 @@ Each slice is one PR into `dev/2-12-0`, stacked.
 - Answered 2026-11-15 from production (keys and types only): a `device-enrollment-instances` row
   is `{id, name, supervisionIdentityId, siteId, serverName, serverUuid, adminId, orgName,
   orgEmail, orgPhone, orgAddress, tokenExpirationDate}`, every value a string. The token reader
-  goes into slice 1. The date's format was not captured, so the reader accepts a date-only value
-  (`yyyy-MM-dd`) and the forms `DeviceInventoryService.parseDate` reads; anything else is "not
-  reported" and the fixture is corrected from one real value before slice 1 merges.
+  goes into slice 1. The date is date-only, `yyyy-MM-dd` (confirmed the same day), read as a
+  local calendar day: the token is expired from the start of the day after it. Anything else is
+  "not reported".
 - The same row carries `adminId`, `orgEmail`, `orgPhone` and `orgAddress`, which nothing reads.
   They join the sweep in slice 4: the snapshot is saved with `id`, `name`, `serverName` and
   `tokenExpirationDate` only unless `keep_account_names` is true.
