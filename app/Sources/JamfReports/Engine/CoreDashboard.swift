@@ -95,6 +95,7 @@ struct CoreDashboard: Sendable {
             ("Environment Stats", writeEnvironmentStats),
             // --- Device health (sheets 22–24) ---
             ("Check-in Health", writeCheckinHealth),
+            ("Management Health", writeManagementHealth),
             ("Active Devices", writeActiveDevices),
             ("Fleet Drift", writeFleetDrift),
             ("Group Hygiene", writeGroupHygiene),
@@ -157,7 +158,7 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Sheet title helper
 
-    private func t(_ base: String) -> String {
+    func t(_ base: String) -> String {
         orgName.isEmpty ? base : "\(orgName) \u{2014} \(base)"
     }
 
@@ -2186,15 +2187,18 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Protect Computers")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Computers"),
-                                      subtitle: "Generated: \(ts)", ncols: 8)
+                                      subtitle: "Generated: \(ts)", ncols: 10)
         ws.setColumnWidth(0, 0, 26)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 2, 24)
         ws.setColumnWidth(3, 3, 14)
         ws.setColumnWidth(4, 5, 18)
         ws.setColumnWidth(6, 7, 14)
+        ws.setColumnWidth(8, 8, 18)
+        ws.setColumnWidth(9, 9, 30)
         let hdrs = ["Host", "Serial", "Plan", "OS", "Status", "Last Connection",
-                    "Web Protection", "Full Disk Access"]
+                    "Web Protection", "Full Disk Access", "Signatures Version",
+                    "Last Disconnection Reason"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -2219,6 +2223,14 @@ struct CoreDashboard: Sendable {
             ws.write(asBool(item["webProtectionActive"]).map { $0 ? "Yes" : "No" } ?? "",
                      row: row, col: 6, format: webFmt)
             ws.write(access ?? "", row: row, col: 7, format: diskFmt)
+            // A number cell, so it sorts; blank when Protect reported none.
+            if let version = asInt(item["signaturesVersion"]) {
+                ws.write(version, row: row, col: 8, format: .cell)
+            } else {
+                ws.write("", row: row, col: 8, format: .cell)
+            }
+            ws.write(item["lastDisconnectionReason"] as? String ?? "",
+                     row: row, col: 9, format: .cell)
             row += 1
         }
     }
@@ -3221,6 +3233,8 @@ struct CoreDashboard: Sendable {
                 + "smart groups, EAs.",
             "Check-in Health": "Devices checked in vs. overdue relative to configured "
                 + "threshold.",
+            "Management Health": "MDM profile expiry, approval and capability, enrollment "
+                + "token expiry, and other management findings per Mac.",
             "Active Devices": "Active vs. stale vs. unmanaged device counts.",
             "Group Hygiene": "Smart/static groups with zero members — candidates for "
                 + "cleanup.",
@@ -3572,7 +3586,7 @@ struct CoreDashboard: Sendable {
         return candidates
     }
 
-    private func loadLatestJSON(names: [String]) throws -> Any {
+    func loadLatestJSON(names: [String]) throws -> Any {
         let data = try loadLatestJSONData(names: names)
         return try JSONSerialization.jsonObject(with: data)
     }

@@ -57,6 +57,11 @@ extension HtmlReport {
         var binaryMissingCount: Int = 0
         /// Macs in `computers` that MDM reaches while their check-in or inventory lags.
         var contactGapCounts: [ContactGap: Int] = [:]
+        /// The `computers` rows through `ManagementHealth`; nil with no snapshot.
+        var management: ManagementHealth?
+        /// The newest `device-enrollment-instances` snapshot, with its not-collected and
+        /// could-not-be-read states.
+        var enrollmentTokens = EnrollmentTokenSnapshot.empty
         /// P0 gaps as the newest daily summary counts them, else from the security snapshot.
         /// One figure for the tile, the attention list and the group headline, so a summary
         /// written by an older build cannot make the top of the report disagree with itself.
@@ -122,6 +127,13 @@ extension HtmlReport {
         inputs.staleMacCount = staleComputers(inputs.computers).count
         inputs.binaryMissingCount = binaryMissingComputers(inputs.computers).count
         inputs.contactGapCounts = contactGapCounts(inputs.computers)
+        let warningDays = config.thresholds?.resolvedCertWarningDays
+            ?? ManagementHealth.defaultWarningDays
+        inputs.management = ManagementReport.health(
+            computers: inputs.computers, rule: config.staleRule, warningDays: warningDays,
+            now: Date())
+        inputs.enrollmentTokens = EnrollmentTokenSnapshot.load(
+            dataDir: dataDir, warningDays: warningDays)
         (inputs.fleet, inputs.p0Gaps) = securityCounts()
         if !(config.securityAgents ?? []).isEmpty,
            let url = track("Extension attribute results", "ea-results"),

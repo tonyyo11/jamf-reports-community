@@ -43,6 +43,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .environmentStats,
             // Device health
             .checkinHealth,
+            .managementHealth,
             .activeDevices,
             .fleetDrift,
             .groupHygiene,
