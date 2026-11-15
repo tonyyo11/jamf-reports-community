@@ -108,6 +108,27 @@ districts many users have no device and many groups are empty, so the app does n
 either a problem. A figure whose data was not collected is left out, and one whose data could
 not be read says so.
 
+**Per-device scan.** The device list does not carry battery, enrollment type or storage, so a
+collect reads them one device at a time and adds them to the card and the workbook:
+
+- The Device health card gains enrollment type and storage breakdowns, how many devices had a
+  battery between 1 and 20% when scanned, and how many reported a battery of 0, which is shown
+  apart from the 1 to 20% count. It also shows when the
+  last scan ran, or that the last attempt failed.
+- The workbook's **Device Inventory** tab gains three columns at the end: Enrollment,
+  Storage (GB) and Battery (%) when scanned. The Device Health tab gets the same counts.
+
+Battery is the reading taken when the device was scanned, not a live value. The scan runs at
+most once every 7 days, on a run that includes the scan tier, and a manual collect does not
+force it sooner. A scan that fails never fails the School collect: the run still reads as
+successful and the card says the last attempt failed. To turn the scan off, add
+`school-device-detail` to `jamf_cli.collect_skip` in `config.yaml`:
+
+```yaml
+jamf_cli:
+  collect_skip: [school-device-detail]
+```
+
 ### Jamf Protect with Jamf School (experimental)
 
 Jamf Protect can be connected to a School workspace from Data Sources or the **Add** sheet.

@@ -27,6 +27,7 @@ Each spec's own `Status:` line agrees with this table. Status was last checked o
 | [2026-11-11-percentage-rounding-design.md](specs/2026-11-11-percentage-rounding-design.md) | `display.percent_decimals` and `PercentFormat` | Shipped (#410) | 2.12 | none |
 | [2026-11-11-site-limited-login-design.md](specs/2026-11-11-site-limited-login-design.md) | Detect a site-limited jamf-cli login and say reports cover only what it sees | Shipped | 2.12 | none |
 | [2026-11-15-management-health-design.md](specs/2026-11-15-management-health-design.md) | Management health from fields already collected; account names in saved snapshots | Built (#422). Summary object, Trends metrics, alert keys, server version read and policy levels are later work | 2.12 | #421 |
+| [2026-11-15-school-device-scan-design.md](specs/2026-11-15-school-device-scan-design.md) | Jamf School per-device scan: battery, enrollment type and storage, every 7 days | Built (#423). The School Devices screen has no columns for it yet | 2.12 | #421 |
 
 Archived spec: [archive/specs/2026-10-04-model-providers-and-app-intents-design.md](archive/specs/2026-10-04-model-providers-and-app-intents-design.md), remote model providers and App Intents. Not built, by decision: the app is on-device only (wiki page 03b) and 2.9 removed `ai.external`. It is not outstanding work and no epic tracks it.
 
