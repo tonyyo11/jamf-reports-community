@@ -58,6 +58,9 @@ final class ManagementHealthTests: XCTestCase {
         XCTAssertEqual(ids(.profileExpired), ["mac-d"])
         XCTAssertEqual(result.figures[.profileExpired]?.evaluated, 5)
         XCTAssertTrue(result.needsAttention(list[0]))
+        // Expiring on a stale Mac is a count: the stale list already holds it.
+        XCTAssertFalse(result.needsAttention(list[1]))
+        XCTAssertTrue(result.needsAttention(list[3]))
         XCTAssertFalse(result.needsAttention(list[4]))
     }
 

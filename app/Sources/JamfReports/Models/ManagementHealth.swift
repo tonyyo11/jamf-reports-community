@@ -37,8 +37,11 @@ struct ManagementHealth: Sendable {
         var kind: Kind {
             switch self {
             case .profileExpired, .notUserApproved, .notMDMCapable: .gap
-            case .profileExpiringCheckingIn, .profileExpiringStale,
-                 .profileExpiringCheckInUnknown, .attestationProblem: .warning
+            case .profileExpiringCheckingIn, .profileExpiringCheckInUnknown,
+                 .attestationProblem: .warning
+            // Already on the stale list, and it cannot renew until it checks in: a count here,
+            // not a second place to chase the same Mac.
+            case .profileExpiringStale: .neutral
             case .binaryBehind, .notSupervised, .notEnrolledViaADE, .attested,
                  .attestationPending, .batteryNeedsService, .batteryLowCapacity: .neutral
             }
