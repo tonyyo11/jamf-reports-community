@@ -112,6 +112,23 @@ struct ManagementHealth: Sendable {
             .map { (value: $0.key, records: $0.value) }
     }
 
+    /// The most values one breakdown shows. The values come from a snapshot a peer can write,
+    /// so every surface shows this many at most, through `cappedValues`.
+    static let maxShownValues = 5
+
+    /// The `maxShownValues` most common values of `breakdown` (most Macs first, then by value),
+    /// each as `ConfigSchema.displayText` shows it, and how many distinct values there are.
+    func cappedValues(
+        _ breakdown: Breakdown
+    ) -> (shown: [(value: String, count: Int)], distinct: Int) {
+        let all = (breakdowns[breakdown] ?? [:]).map { (value: $0.key, count: $0.value.count) }
+            .sorted { ($1.count, $0.value) < ($0.count, $1.value) }
+        let shown = all.prefix(Self.maxShownValues).map {
+            (value: ConfigSchema.displayText($0.value), count: $0.count)
+        }
+        return (Array(shown), all.count)
+    }
+
     /// The Mac is in a gap or warning finding; neutral findings never count.
     func needsAttention(_ record: DeviceInventoryRecord) -> Bool {
         attentionIDs.contains(record.id)

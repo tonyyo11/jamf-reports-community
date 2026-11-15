@@ -124,6 +124,22 @@ final class ManagementHealthReportsTests: XCTestCase {
         XCTAssertNil(all.first { $0[0] == "Lockdown Mode" })
     }
 
+    func testValuesBlockShowsTheFiveMostCommonAndCountsTheRest() throws {
+        let computers = (1...8).map { id -> [String: Any] in
+            var row = mac(id)
+            row["security"] = ["attestationStatus": "FAIL_\(id)"]
+            return row
+        }
+        let dash = try dashboard(computers: computers)
+        try dash.writeManagementHealth()
+        let all = try rows(dash)
+        let title = ManagementReport.title(.attestationProblem)
+        let ofField = all.filter { $0[0] == title && $0[1] != nil }
+        XCTAssertEqual(ofField.filter { $0[1]?.hasPrefix("FAIL_") == true }.count,
+                       ManagementHealth.maxShownValues)
+        XCTAssertEqual(ofField.last?[1], "… and 3 more values")
+    }
+
     func testDetailListsGapsFirstWithValueAndDays() throws {
         let dash = try dashboard(computers: fleet)
         try dash.writeManagementHealth()

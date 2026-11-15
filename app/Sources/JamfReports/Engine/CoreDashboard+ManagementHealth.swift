@@ -117,10 +117,17 @@ extension CoreDashboard {
         }
         row += 1
         for breakdown in breakdowns {
-            for entry in health.values(breakdown) {
+            let capped = health.cappedValues(breakdown)
+            for entry in capped.shown {
                 ws.write(ManagementReport.title(breakdown), row: row, col: 0, format: .cell)
                 ws.write(entry.value, row: row, col: 1, format: .cell)
-                ws.write(entry.records.count, row: row, col: 2, format: .cell)
+                ws.write(entry.count, row: row, col: 2, format: .cell)
+                row += 1
+            }
+            if capped.distinct > capped.shown.count {
+                ws.write(ManagementReport.title(breakdown), row: row, col: 0, format: .cell)
+                ws.write("… and \(capped.distinct - capped.shown.count) more values",
+                         row: row, col: 1, format: .cell)
                 row += 1
             }
         }

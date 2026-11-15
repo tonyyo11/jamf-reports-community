@@ -89,8 +89,8 @@ struct ManagementCard: Sendable, Equatable {
         let tone: Tone = marked ? (finding.kind == .gap ? .gap : .warning) : .neutral
         var breakdown: String?
         switch finding {
-        case .attestationProblem: breakdown = line(health.values(.attestationProblem))
-        case .batteryNeedsService: breakdown = line(health.values(.batteryHealth))
+        case .attestationProblem: breakdown = line(health.cappedValues(.attestationProblem))
+        case .batteryNeedsService: breakdown = line(health.cappedValues(.batteryHealth))
         default: break
         }
         return Row(
@@ -102,9 +102,9 @@ struct ManagementCard: Sendable, Equatable {
     private static func valuesRow(
         _ breakdown: ManagementHealth.Breakdown, _ health: ManagementHealth
     ) -> Row? {
-        let values = health.values(breakdown)
-        guard !values.isEmpty else { return nil }
-        let total = values.reduce(0) { $0 + $1.records.count }
+        let values = health.cappedValues(breakdown)
+        guard values.distinct > 0 else { return nil }
+        let total = health.values(breakdown).reduce(0) { $0 + $1.records.count }
         let title = breakdown == .externalBootLevel
             ? L("External boot level") : L("Enrollment type")
         return Row(
@@ -113,11 +113,15 @@ struct ManagementCard: Sendable, Equatable {
             breakdown: line(values))
     }
 
-    /// "VALUE 3 · OTHER 1", the values as Jamf gives them.
-    private static func line(_ values: [(value: String, records: [DeviceInventoryRecord])])
-        -> String? {
-        values.isEmpty ? nil
-            : values.map { "\($0.value) \($0.records.count)" }.joined(separator: " · ")
+    /// "VALUE 3 · OTHER 1", the most common values as Jamf gives them, with "5 of 12 values"
+    /// when there are more than are shown.
+    private static func line(
+        _ values: (shown: [(value: String, count: Int)], distinct: Int)
+    ) -> String? {
+        guard values.distinct > 0 else { return nil }
+        let text = values.shown.map { "\($0.value) \($0.count)" }.joined(separator: " · ")
+        return values.distinct > values.shown.count
+            ? text + " · " + L("\(values.shown.count) of \(values.distinct) values") : text
     }
 
     // MARK: - Enrollment token

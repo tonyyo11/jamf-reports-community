@@ -87,6 +87,16 @@ final class ManagementCardTests: XCTestCase {
                        "DEVICE_PROPERTIES_MISMATCH 1")
     }
 
+    func testBreakdownLineShowsAtMostFiveValuesAndSaysHowManyThereAre() {
+        let list = (1...8).map { index in
+            mac("m\(index)") { $0.attestationStatus = "FAIL_\(index)" }
+        }
+        let card = ManagementCard.build(health: health(list), tokens: .empty)
+        let line = row(card, "finding.attestationProblem")?.breakdown ?? ""
+        XCTAssertEqual(line.components(separatedBy: " · ").count, 6, line)
+        XCTAssertTrue(line.hasSuffix("5 of 8 values"), line)
+    }
+
     // MARK: - Hidden when empty
 
     func testNoFactsAndNoTokenSnapshotIsNoCard() {

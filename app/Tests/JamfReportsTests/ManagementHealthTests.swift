@@ -136,6 +136,25 @@ final class ManagementHealthTests: XCTestCase {
         XCTAssertEqual(result.figures[.batteryLowCapacity]?.evaluated, 3)
     }
 
+    func testValuesAreCappedMostMacsFirstAndShownAsDisplayText() {
+        var list: [DeviceInventoryRecord] = []
+        for index in 0..<8 {
+            let status = index == 0 ? "FAIL\u{202E}_0" : "FAIL_\(index)"
+            // FAIL_0 on three Macs, the others on one.
+            let repeats = index == 0 ? 3 : 1
+            for copy in 0..<repeats {
+                list.append(record("m\(index)-\(copy)",
+                                   security: #", "attestationStatus": "\#(status)""#))
+            }
+        }
+        let capped = health(list).cappedValues(.attestationProblem)
+        XCTAssertEqual(capped.distinct, 8)
+        XCTAssertEqual(capped.shown.count, ManagementHealth.maxShownValues)
+        XCTAssertEqual(capped.shown.first?.count, 3)
+        XCTAssertEqual(capped.shown.first?.value, ConfigSchema.displayText("FAIL\u{202E}_0"))
+        XCTAssertEqual(capped.shown.dropFirst().map(\.value), ["FAIL_1", "FAIL_2", "FAIL_3", "FAIL_4"])
+    }
+
     func testTogglesAppearOnlyWhenReported() {
         let result = health([
             record("a", security: #", "recoveryLockEnabled": true"#),
