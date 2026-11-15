@@ -11304,6 +11304,46 @@
         }
       }
     },
+    "%lld GB" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        }
+      }
+    },
     "%lld Mac" : {
       "localizations" : {
         "de" : {
@@ -34349,6 +34389,52 @@
         }
       }
     },
+    "Battery 1 to %lld%% when scanned: %lld of %lld devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akku 1 bis %1$lld%% beim Scan: %2$lld von %3$lld Geräten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Battery 1 to %1$lld%% when scanned: %2$lld of %3$lld devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batería de 1 a %1$lld%% en el análisis: %2$lld de %3$lld dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batterie de 1 à %1$lld%% à l'analyse : %2$lld sur %3$lld appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batteria da 1 a %1$lld%% alla scansione: %2$lld di %3$lld dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン時のバッテリー 1〜%1$lld%%: %2$lld / %3$lld デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bateria de 1 a %1$lld%% na verificação: %2$lld de %3$lld dispositivos"
+          }
+        }
+      }
+    },
     "Battery capacity" : {
       "localizations" : {
         "de" : {
@@ -34545,6 +34631,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bateria precisa de serviço"
+          }
+        }
+      }
+    },
+    "Battery reported as 0: %lld of %lld devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akku mit 0 gemeldet: %1$lld von %2$lld Geräten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Battery reported as 0: %1$lld of %2$lld devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batería notificada como 0: %1$lld de %2$lld dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batterie signalée à 0 : %1$lld sur %2$lld appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batteria segnalata come 0: %1$lld di %2$lld dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリー 0 と報告: %1$lld / %2$lld デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bateria informada como 0: %1$lld de %2$lld dispositivos"
           }
         }
       }
@@ -56267,6 +56399,52 @@
         }
       }
     },
+    "Enrollment type: %@ (of %lld devices reporting)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registrierungstyp: %1$@ (von %2$lld meldenden Geräten)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enrollment type: %1$@ (of %2$lld devices reporting)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo de inscripción: %1$@ (de %2$lld dispositivos que informan)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type d'inscription : %1$@ (sur %2$lld appareils déclarants)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo di registrazione: %1$@ (su %2$lld dispositivi che riportano)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録タイプ: %1$@ (報告した %2$lld デバイス中)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo de inscrição: %1$@ (de %2$lld dispositivos que informaram)"
+          }
+        }
+      }
+    },
     "Enter what this column shows when the agent is installed or connected. It is matched as a case-insensitive substring, so \"Installed\" also matches \"Installed and running\"." : {
       "localizations" : {
         "de" : {
@@ -74283,6 +74461,46 @@
         }
       }
     },
+    "Last attempt failed %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzter Versuch fehlgeschlagen am %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El último intento falló el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière tentative échouée le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimo tentativo non riuscito il %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最後の試行は失敗しました (%@)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A última tentativa falhou em %@"
+          }
+        }
+      }
+    },
     "Last attested" : {
       "localizations" : {
         "de" : {
@@ -75119,6 +75337,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Última execução: %@"
+          }
+        }
+      }
+    },
+    "Last scanned %@ · %lld of %lld devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuletzt gescannt am %1$@ · %2$lld von %3$lld Geräten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last scanned %1$@ · %2$lld of %3$lld devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último análisis el %1$@ · %2$lld de %3$lld dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière analyse le %1$@ · %2$lld sur %3$lld appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultima scansione il %1$@ · %2$lld di %3$lld dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最終スキャン %1$@ · %2$lld / %3$lld デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última verificação em %1$@ · %2$lld de %3$lld dispositivos"
           }
         }
       }
@@ -96797,6 +97061,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O status DDM por dispositivo vem da verificação semanal de dispositivos (qualquer perfil). As seções de Blueprints abaixo exigem um perfil da Platform API."
+          }
+        }
+      }
+    },
+    "Per-device details are turned off (jamf_cli.collect_skip)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details pro Gerät sind ausgeschaltet (jamf_cli.collect_skip)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los detalles por dispositivo están desactivados (jamf_cli.collect_skip)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les détails par appareil sont désactivés (jamf_cli.collect_skip)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dettagli per dispositivo sono disattivati (jamf_cli.collect_skip)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスごとの詳細はオフです (jamf_cli.collect_skip)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os detalhes por dispositivo estão desativados (jamf_cli.collect_skip)"
+          }
+        }
+      }
+    },
+    "Per-device details could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details pro Gerät konnten nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer los detalles por dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire les détails par appareil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere i dettagli per dispositivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスごとの詳細を読み取れませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler os detalhes por dispositivo"
+          }
+        }
+      }
+    },
+    "Per-device details not collected yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details pro Gerät noch nicht erfasst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalles por dispositivo aún no recopilados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Détails par appareil pas encore collectés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dettagli per dispositivo non ancora raccolti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスごとの詳細はまだ収集されていません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalhes por dispositivo ainda não coletados"
           }
         }
       }
@@ -120969,6 +121353,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Armazenamento"
+          }
+        }
+      }
+    },
+    "Storage: %@ (of %lld devices reporting)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speicher: %1$@ (von %2$lld meldenden Geräten)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Storage: %1$@ (of %2$lld devices reporting)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almacenamiento: %1$@ (de %2$lld dispositivos que informan)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stockage : %1$@ (sur %2$lld appareils déclarants)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archiviazione: %1$@ (su %2$lld dispositivi che riportano)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ストレージ: %1$@ (報告した %2$lld デバイス中)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Armazenamento: %1$@ (de %2$lld dispositivos que informaram)"
           }
         }
       }

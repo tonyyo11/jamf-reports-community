@@ -119,6 +119,7 @@ jamf_cli:
   # manual collect and is left out of the data freshness strip.
   # sofa stops the fetch from sofafeed.macadmins.io (a Jamf Pro or Jamf School collect);
   # a cached feed stays in use.
+  # school-device-detail stops the weekly per-device scan of a Jamf School workspace.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
 

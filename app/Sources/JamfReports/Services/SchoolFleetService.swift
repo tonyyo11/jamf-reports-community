@@ -14,6 +14,7 @@ enum SchoolFleetService {
     static let usersKind = "school-users"
     static let groupsKind = "school-device-groups"
     static let classesKind = "school-classes"
+    static let deviceDetailKind = ReportEngine.schoolDeviceDetailKind
 
     struct Device: Identifiable, Sendable, Equatable {
         let id: String
@@ -86,6 +87,11 @@ enum SchoolFleetService {
         var classes: [ClassRow]?
         /// Kinds whose newest snapshot exists but could not be read: unreadable, not empty.
         var unreadable: Set<String> = []
+        /// The newest per-device scan; nil when none was read (see `unreadable` for one that
+        /// could not be).
+        var deviceDetail: SchoolDeviceDetail?
+        /// When the last scan attempt failed, if its newest result is a failure.
+        var deviceDetailFailedAt: Date?
         var devicesDate: Date?
         var depDate: Date?
         var overviewDate: Date?
@@ -166,7 +172,21 @@ enum SchoolFleetService {
                          teachers: count($0, "teacherCount"))
             }
         }
+        read(deviceDetailKind) { snap, rows, date in
+            snap.deviceDetail = SchoolDeviceDetail(snapshotRows: rows, date: date)
+        }
+        snapshot.deviceDetailFailedAt = StateFileStore(
+            directory: dataDir.appendingPathComponent("state", isDirectory: true))
+            .failures(report: deviceDetailKind)?.last
         return snapshot
+    }
+
+    /// Only the scan's rows, for the workbook's Device Inventory columns; nil when missing or
+    /// unreadable.
+    static func loadDeviceDetail(dataDir: URL) -> SchoolDeviceDetail? {
+        guard case .rows(let rows, let date) = readRows(kind: deviceDetailKind, in: dataDir)
+        else { return nil }
+        return SchoolDeviceDetail(snapshotRows: rows, date: date)
     }
 
     /// The devices of one `school-devices` file, or nil when it does not decode as a row list.

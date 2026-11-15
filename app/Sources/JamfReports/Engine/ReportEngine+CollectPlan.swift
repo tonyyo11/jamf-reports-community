@@ -252,16 +252,19 @@ extension ReportEngine {
     /// The School matrix with this run's skips. School has no per-device scan, so its sources
     /// go with the refresh or inventory tier (a scan-only run collects nothing) at the refresh
     /// cadence; `force` (Collect now) ignores the cadence. `platformFieldsMissing` skips the
-    /// blueprints kind, the one School source that needs the profile's Platform fields.
+    /// blueprints kind, the one School source that needs the profile's Platform fields. A run
+    /// with only the scan tier collects `school-devices`, the device scan's input, and only
+    /// when `scanDue`, ignoring that source's cadence; otherwise it stays a no-op.
     static func planSchoolCollect(
         profile: String, tiers: Set<CollectionTier>, force: Bool, now: Date = Date(),
-        platformFieldsMissing: Bool = false, lastRun: (String) -> Date?
+        platformFieldsMissing: Bool = false, scanDue: Bool = false, lastRun: (String) -> Date?
     ) -> [PlannedKind] {
         let cadence = Cadence.seconds(CollectionTier.refresh.intervalSeconds)
         return schoolCommandMatrix(profile: profile).map { args, kind in
             let skip: CollectSkipReason?
             if tiers.isDisjoint(with: [.refresh, .inventory]) {
-                skip = .tierNotSelected(.inventory)
+                skip = scanDue && tiers.contains(.scan) && kind == SchoolFleetService.devicesKind
+                    ? nil : .tierNotSelected(.inventory)
             } else if kind == schoolBlueprintsKind, platformFieldsMissing {
                 skip = .schoolNoPlatform
             } else if !force, !CadenceResolver.isDue(

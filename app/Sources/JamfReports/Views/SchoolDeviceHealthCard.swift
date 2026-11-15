@@ -17,6 +17,9 @@ struct SchoolDeviceHealthCard: View {
                     Text(L("Automated Device Enrollment status: \(line)"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                ForEach(health.detailLines, id: \.self) { line in
+                    Text(line).font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
     }
