@@ -92,6 +92,22 @@ tenant's blueprints and the workbook gets a **Blueprints** tab: name, state, las
 created and updated. Without those fields Data Sources shows the source as skipped and says
 how to add them.
 
+### Device health
+
+The School **Overview** has a **Device health** card, and the School workbook has a **Device
+Health** tab at the end. Both come from data a School collect already saves:
+
+- devices assigned in Automated Device Enrollment that are not enrolled, with a breakdown by
+  the status Jamf School gives and by enrollment profile
+- users with no device
+- device groups with no members, smart and normal groups counted apart
+- classes with no devices, no students or no teacher
+
+Every figure is a plain count out of its total, with no colour and no warning: in most
+districts many users have no device and many groups are empty, so the app does not call
+either a problem. A figure whose data was not collected is left out, and one whose data could
+not be read says so.
+
 ### Jamf Protect with Jamf School (experimental)
 
 Jamf Protect can be connected to a School workspace from Data Sources or the **Add** sheet.
