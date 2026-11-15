@@ -1,6 +1,7 @@
 # Security score factors — design
 
-Status: approved by the owner on 2026-10-05 for 2.9.0 ("build the scoring factors into 2.9.0").
+Status: shipped in 2.9.0. Approved by the owner on 2026-10-05 ("build the scoring factors into
+2.9.0").
 The factor list and the grace periods are the session's recommendation, which the owner accepted
 by asking for the build.
 

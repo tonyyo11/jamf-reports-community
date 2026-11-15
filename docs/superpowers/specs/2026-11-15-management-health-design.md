@@ -1,6 +1,7 @@
 # Management health and snapshot usernames — design
 
-Status: approved by the owner on 2026-11-15, all ten decisions taken as recommended (after an
+Status: built for 2.12 (#422), not yet released. Approved by the owner on 2026-11-15, all ten
+decisions taken as recommended (after an
 independent plan review the same day). Scope agreed for 2.12: read every field the
 app already collects and never reads, and let the organization decide whether account names stay
 in saved snapshots. Tracked in #305; later work (new sources, a Jamf Pro server version read,

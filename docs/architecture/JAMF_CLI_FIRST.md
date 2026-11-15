@@ -57,14 +57,15 @@ Three on-disk surfaces glue the system together:
 When you click Generate in the Reports screen, the app does roughly this:
 
 1. Resolve the active workspace via `WorkspaceStore` and `ProfileService`.
-2. Determine which sheets the chosen template needs.
-3. For each sheet, look at `jamf-cli-data/` for fresh-enough JSON.
-4. For any stale or missing data, spawn `jamf-cli` with the right subcommand,
-   stream stdout/stderr to the Run History tab, and write the JSON back to
-   `jamf-cli-data/`.
-5. Hand the JSON tree to `ReportEngine`, which dispatches to `CoreDashboard`,
-   or `HtmlReport` for HTML output.
-6. Write the artifact to `Generated Reports/`.
+2. If "Collect fresh data" is ticked (it starts unticked when the snapshots are fresh), run
+   one collect: spawn `jamf-cli` for each source, stream stdout/stderr to the Run History
+   tab, and write each JSON answer to `jamf-cli-data/`. A refused or failed collect
+   generates nothing and says why.
+3. Determine which sheets and sections the chosen template needs.
+4. Hand the cached JSON to `ReportEngine`, which dispatches to `CoreDashboard`,
+   or `HtmlReport` for HTML output. A sheet whose snapshot is missing is left out.
+5. Write the artifact to the workspace's reports folder (`Generated Reports/` unless
+   `output.output_dir` names another).
 
 The same flow runs from scheduled runs (the bundled `--tick` background item,
 `--scheduled-run`, or the `jamf-reports` CLI), with the GUI-only steps (Run History
