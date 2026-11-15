@@ -16,6 +16,10 @@ extension DemoData {
     /// Devices in School's trash: counted apart, never in a fleet figure.
     static let schoolTrashedCount = 9
 
+    static let schoolUserCount = 1_212
+    static let schoolDeviceGroupCount = 38
+    static let schoolClassCount = 186
+
     /// When meridianedu's newest collect wrote `school-devices`.
     static var schoolCollectedAt: Date {
         cacheDate(for: [SchoolFleetService.devicesKind], profile: schoolWorkspace) ?? referenceDate
@@ -28,6 +32,9 @@ extension DemoData {
         snapshot.trashedCount = schoolTrashedCount
         snapshot.depDevices = schoolDEPDevices
         snapshot.overview = schoolOverviewRows(deviceCount: snapshot.devices.count)
+        snapshot.users = schoolUsers
+        snapshot.deviceGroups = schoolDeviceGroups
+        snapshot.classes = schoolClasses
         snapshot.devicesDate = schoolCollectedAt
         snapshot.depDate = schoolCollectedAt
         snapshot.overviewDate = schoolCollectedAt
@@ -108,12 +115,31 @@ extension DemoData {
             status: i <= 4 ? "Assigned" : "Pending", profile: "Meridian Schools ADE")
     }
 
+    /// Staff and students: two in five hold a device.
+    private static let schoolUsers: [SchoolFleetService.UserRow] = (0..<schoolUserCount).map {
+        .init(deviceCount: $0 % 5 < 2 ? 1 : 0)
+    }
+
+    /// Every third group is smart; every fourth has no members.
+    private static let schoolDeviceGroups: [SchoolFleetService.GroupRow] =
+        (0..<schoolDeviceGroupCount).map {
+            .init(members: $0 % 4 == 3 ? 0 : 20 + $0, isSmart: $0 % 3 == 0)
+        }
+
+    /// Classes hold students and a teacher; a few are not set up yet and none lists devices.
+    private static let schoolClasses: [SchoolFleetService.ClassRow] =
+        (0..<schoolClassCount).map {
+            .init(devices: 0, students: $0 % 31 == 5 ? 0 : 18 + $0 % 9,
+                  teachers: $0 % 17 == 3 ? 0 : 1)
+        }
+
     /// The lines `jamf-cli school overview` prints; Devices is the fleet above.
     private static func schoolOverviewRows(deviceCount: Int) -> [SchoolFleetService.OverviewRow] {
         [
-            ("Devices", "Devices", "\(deviceCount)"), ("Devices", "Device Groups", "38"),
-            ("Users", "Users", "1212"), ("Users", "User Groups", "64"),
-            ("Classes", "Classes", "186"), ("Apps", "Apps", "143"),
+            ("Devices", "Devices", "\(deviceCount)"),
+            ("Devices", "Device Groups", "\(schoolDeviceGroupCount)"),
+            ("Users", "Users", "\(schoolUserCount)"), ("Users", "User Groups", "64"),
+            ("Classes", "Classes", "\(schoolClassCount)"), ("Apps", "Apps", "143"),
             ("Profiles", "Profiles", "27"), ("Locations", "Locations", "6"),
         ].map { SchoolFleetService.OverviewRow(section: $0.0, resource: $0.1, value: $0.2) }
     }

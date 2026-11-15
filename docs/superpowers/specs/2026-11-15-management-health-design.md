@@ -218,6 +218,28 @@ way. A field with a reader stays; a field without one joins the key above.
 
 The diagnostic bundle is unchanged: it already replaces usernames, and never bundles snapshots.
 
+## Jamf School
+
+Management health reads the Jamf Pro `computers` snapshot, so a Jamf School workspace gets none
+of it. School gets its own, from snapshots the app already collects (no new command or kind):
+
+- `SchoolDeviceHealth` (one calculator) feeds a "Device health" card on the School Overview and
+  a "Device Health" tab appended at the end of the School workbook (a Figure, Count, Of summary,
+  then the Automated Device Enrollment devices not enrolled).
+- Every figure is a neutral count "N of M", never a gap, colour or score, because most are normal
+  in a district: ADE devices not enrolled (DEP serial, trimmed and case-insensitive, not the
+  serial of a School device outside trash), users with no device, device groups with no members
+  (smart and normal apart), classes with no devices, no students, no teacher. A figure is
+  absent when its snapshot is missing or no row reports the field, and a snapshot that exists
+  but cannot be read says "could not be read".
+- Row shapes: `school-dep-devices` `{id, serialNumber, deviceName, model, color, locationId,
+  profileName, status}` (`status` shown as School gives it: empty, assigned, pushed);
+  `school-users` `{..., deviceCount, inTrash}`; `school-device-groups` `{..., isSmartGroup,
+  members}`; `school-classes` `{..., deviceCount, studentCount, teacherCount}`.
+
+Left for the 2.13 epic #421: a per-device detail scan for `batteryLevel`, `deviceEnrollType` and
+`totalCapacity`; School figures in the daily summary and Trends; DDM reports.
+
 ## Not in this change (in #421)
 
 - Recovery Lock, auto-login, Remote Desktop and external boot as `security_policy.controls` or

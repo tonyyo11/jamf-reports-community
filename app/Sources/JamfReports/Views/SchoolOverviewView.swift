@@ -36,6 +36,9 @@ struct SchoolOverviewView: View {
                         snapshot: snapshot, staleDays: staleDays,
                         now: workspace.demoMode ? DemoData.referenceDate : Date())
                 }
+                if let health = SchoolDeviceHealth(snapshot) {
+                    SchoolDeviceHealthCard(health: health)
+                }
                 if !snapshot.overview.isEmpty { resourcesCard }
                 if !snapshot.isDetected { emptyState }
             }
