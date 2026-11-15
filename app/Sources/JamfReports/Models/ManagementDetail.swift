@@ -34,7 +34,8 @@ enum ManagementDetail {
         add(L("Remote Desktop"), yesNo(facts.remoteDesktopEnabled))
         add(L("Lockdown Mode"), yesNo(facts.lockdownModeEnabled))
         add(L("Battery health"), facts.batteryHealth)
-        add(L("Battery capacity"), facts.batteryCapacityPercent.flatMap { wholeInt($0) }.map { "\($0)%" })
+        add(L("Battery capacity"), facts.batteryCapacityPercent
+            .flatMap { wholeInt($0) == nil ? nil : PercentFormat.whole.text($0) })
         add(L("Last iCloud backup"), date(facts.lastCloudBackupDate))
         return rows
     }
