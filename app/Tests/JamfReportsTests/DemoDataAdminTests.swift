@@ -180,3 +180,27 @@ final class DemoDataAdminTests: XCTestCase {
                        "/Users/demonstrator/a.log")
     }
 }
+
+final class DemoDataSchoolHealthTests: XCTestCase {
+    func testDeviceHealthMatchesTheDemoSchoolFleet() throws {
+        let snapshot = DemoData.schoolSnapshot
+        let health = try XCTUnwrap(SchoolDeviceHealth(snapshot))
+        XCTAssertEqual(snapshot.users?.count, DemoData.schoolUserCount)
+        XCTAssertEqual(health.figures[.usersNoDevice]?.of, DemoData.schoolUserCount)
+        let groups = (health.figures[.groupsNoMembers]?.of ?? 0)
+            + (health.figures[.smartGroupsNoMembers]?.of ?? 0)
+        XCTAssertEqual(groups, DemoData.schoolDeviceGroupCount)
+        XCTAssertEqual(health.figures[.classesNoDevices]?.of, DemoData.schoolClassCount)
+        // The ADE iPads wait for the term: none is a fleet device yet.
+        XCTAssertEqual(health.figures[.adeNotEnrolled], .init(count: 6, of: 6))
+        let fleetSerials = Set(snapshot.devices.map { SchoolDeviceHealth.key($0.serial) })
+        XCTAssertTrue(snapshot.depDevices.allSatisfy {
+            !fleetSerials.contains(SchoolDeviceHealth.key($0.serial))
+        })
+        let overview = Dictionary(
+            uniqueKeysWithValues: snapshot.overview.map { ($0.resource, $0.value) })
+        XCTAssertEqual(overview["Users"], "\(DemoData.schoolUserCount)")
+        XCTAssertEqual(overview["Device Groups"], "\(DemoData.schoolDeviceGroupCount)")
+        XCTAssertEqual(overview["Classes"], "\(DemoData.schoolClassCount)")
+    }
+}

@@ -70,10 +70,11 @@ struct SchoolDashboard: Sendable {
         "School Overview", "Device Groups", "Users", "Classes", "Apps", "Profiles", "Locations",
         "DEP Devices", "iBeacons", "Blueprints", "Device Inventory", "OS Versions",
         "Device Status", "Stale Devices", "Trends",
-    ] + CoreDashboard.protectSheetNames
+    ] + CoreDashboard.protectSheetNames + ["Device Health"]
 
     /// The School tabs in their default order, then the Jamf Pro workbook's Protect tabs, which
-    /// are written while `protect.enabled` is on (2.11), under the same gate and names.
+    /// are written while `protect.enabled` is on (2.11), under the same gate and names, then
+    /// Device Health, appended last so no existing tab moves relative to another.
     var sheetPlan: [(name: String, write: () throws -> Void)] {
         let school: [(name: String, write: () throws -> Void)] = [
             ("School Overview", writeSchoolOverview),
@@ -94,6 +95,51 @@ struct SchoolDashboard: Sendable {
         ]
         return school
             + CoreDashboard(config: config, dataDir: dataDir, workbook: workbook).protectSheetPlan
+            + [("Device Health", writeSchoolDeviceHealth)]
+    }
+
+    // MARK: - Device Health
+
+    /// Neutral counts and the ADE devices not enrolled, from `SchoolDeviceHealth`.
+    func writeSchoolDeviceHealth() throws {
+        guard let health = SchoolDeviceHealth(SchoolFleetService.load(dataDir: dataDir)),
+              !health.figures.isEmpty else {
+            throw SchoolDashboardError.noCachedData(names: [SchoolFleetService.depDevicesKind])
+        }
+        let ws = workbook.addSheet("Device Health")
+        ws.setColumnWidth(0, 0, 48)
+        ws.setColumnWidth(1, 4, 20)
+        var row = ws.writeSheetHeader(
+            title: "Device Health",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
+            ncols: 5
+        )
+        for (col, h) in ["Figure", "Count", "Of"].enumerated() {
+            ws.write(h, row: row, col: col, format: .header)
+        }
+        row += 1
+        for item in health.items {
+            ws.write(item.title, row: row, col: 0, format: .cell)
+            if let figure = health.figures[item] {
+                ws.write(figure.count, row: row, col: 1, format: .cell)
+                ws.write(figure.of, row: row, col: 2, format: .cell)
+            } else {
+                ws.write("could not be read", row: row, col: 1, format: .cell)
+            }
+            row += 1
+        }
+        guard !health.notEnrolled.isEmpty else { return }
+        row += 1
+        let hdrs = ["Device name", "Serial", "Model", "Profile", "Status"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+        for dep in health.notEnrolled {
+            for (col, value) in [dep.name, dep.serial, dep.model, dep.profile, dep.status]
+                .enumerated() {
+                ws.write(value, row: row, col: col, format: .cell)
+            }
+            row += 1
+        }
     }
 
     // MARK: - School Overview
