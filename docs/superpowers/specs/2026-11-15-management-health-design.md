@@ -1,7 +1,7 @@
 # Management health and snapshot usernames — design
 
-Status: draft for the owner's review (2026-11-15), revised after an independent plan review the
-same day (its findings are folded in; the scope question it raised is Decision 9). Scope agreed for 2.12: read every field the
+Status: approved by the owner on 2026-11-15, all ten decisions taken as recommended (after an
+independent plan review the same day). Scope agreed for 2.12: read every field the
 app already collects and never reads, and let the organization decide whether account names stay
 in saved snapshots. Tracked in #305; later work (new sources, a Jamf Pro server version read,
 new security controls) is in #421.
@@ -255,7 +255,7 @@ Each slice is one PR into `dev/2-12-0`, stacked.
   `lockdownModeEnabled` from a Jamf Pro 11.32+ server with enrolled hardware; without one they
   are decoded as text or boolean and shown as reported.
 
-## Decisions for the owner
+## Decisions (settled 2026-11-15, each as recommended)
 
 | # | Question | Recommendation |
 |---|---|---|
