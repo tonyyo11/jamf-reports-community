@@ -824,10 +824,6 @@ enum LaunchAgentService {
         var hasFailureMarker = false
         var hasPartialMarker = false
 
-        let summaryBasedPartial = urls.first
-            .map { checkSummaryFileForPartialStatus(logURL: $0, profile: profile, isMulti: isMulti) }
-            ?? false
-
         for url in urls {
             let tail = parseLogTail(from: url)
             if exitCode == nil {
@@ -840,7 +836,7 @@ enum LaunchAgentService {
             date: newestDate,
             exitCode: exitCode,
             hasFailureMarker: hasFailureMarker,
-            hasPartialMarker: summaryBasedPartial || hasPartialMarker
+            hasPartialMarker: hasPartialMarker
         )
     }
 
@@ -855,6 +851,8 @@ enum LaunchAgentService {
             if success, let sheetFailures = runStatus?.sheetFailures, sheetFailures > 0 {
                 return .partial
             }
+            // The log's `[partial]` marker wins over a status file's flag, as in Run History.
+            if success, logSummary.hasPartialMarker { return .partial }
             return success ? .ok : .fail
         }
         if let exitCode = logSummary.exitCode {
@@ -864,51 +862,6 @@ enum LaunchAgentService {
             return exitCode == 0 ? .ok : .fail
         }
         return logSummary.hasFailureMarker ? .fail : .ok
-    }
-
-    /// PR-11 / threat-model T-12: per-LaunchAgent-run summary files
-    /// (`summary_<logFilename>.json`) are now produced by the Python
-    /// `_emit_per_log_summary_json` helper, called from `cmd_generate` when
-    /// `per_log_summary_filename` is passed. Returns false for multi-profile
-    /// logs (no per-run summary in that layout).
-    ///
-    /// **Manifest discipline:** before trusting the `status` field, verify
-    /// the file's SHA-256 against its sibling `manifest.json`. On
-    /// `.mismatch` or `.corrupt`, return false (defer to caller's
-    /// log-marker fallback in `lastStatus`) rather than trusting an
-    /// attacker-modifiable file. On `.absent` / `.omitted` / `.verified`,
-    /// trust the file content as before.
-    private static func checkSummaryFileForPartialStatus(
-        logURL: URL,
-        profile: String,
-        isMulti: Bool
-    ) -> Bool {
-        guard !isMulti else { return false }
-        guard let root = WorkspacePathGuard.root(for: profile) else { return false }
-        let logFilename = logURL.deletingPathExtension().lastPathComponent
-        let summaryURL = root
-            .appendingPathComponent("snapshots")
-            .appendingPathComponent("computers")
-            .appendingPathComponent("summaries")
-            .appendingPathComponent("summary_\(logFilename).json")
-        if FileManager.default.fileExists(atPath: summaryURL.path),
-           let data = try? BoundedFile.read(
-               summaryURL, limit: BoundedFile.documentLimit, followSymlinks: false) {
-            let verification = SnapshotManifest.verify(snapshot: summaryURL, data: data)
-            // Trust only `.verified` or `.absent` (legacy pre-PR-11).
-            // `.mismatch`, `.corrupt`, and `.omitted` all signal an
-            // attacker-modifiable summary (security-reviewer 2nd pass
-            // M-01: `.omitted` is an injection bypass — every legitimate
-            // PR-11 write registers the file in the manifest). Caller's
-            // `lastStatus` performs the log-marker fallback.
-            if verification == .verified || verification == .absent {
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let status = json["status"] as? String {
-                    return status == "partial"
-                }
-            }
-        }
-        return false
     }
 
     private static func artifactLabels(
@@ -1025,7 +978,7 @@ enum LaunchAgentService {
                 || lower.contains("[fail]")
                 || lower.contains("error:")
                 || lower.contains("traceback")
-            hasPartialMarker = hasPartialMarker || lower.contains("[partial]")
+            hasPartialMarker = hasPartialMarker || RunHistoryService.isPartialRun(logTailText: line)
             if parsedExitCode == nil {
                 parsedExitCode = exitCode(from: line)
             }
