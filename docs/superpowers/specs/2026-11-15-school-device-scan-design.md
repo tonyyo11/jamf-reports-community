@@ -1,6 +1,7 @@
 # Jamf School per-device scan — design
 
-Status: revised after plan review (2026-11-15), which sent the first draft back for rework. The owner asked for it in 2.12 ("Per device Jamf
+Status: approved with changes at the second plan-review pass (2026-11-15); those changes are in
+this text. The first draft was sent back for rework. The owner asked for it in 2.12 ("Per device Jamf
 school scan can come into 2.12"). Tracked in #305; it follows the Jamf School device health card
 (`docs/superpowers/specs/2026-11-15-management-health-design.md`, "Jamf School").
 
@@ -37,14 +38,21 @@ Revised after plan review (2026-11-15): the first draft ran the scan inside `sch
 reused the Jamf Pro scan's private machinery and let a person force it. None of that held up
 against the code; this section replaces it.
 
-**Where it runs.** A step of its own in `CollectRouter.run`, after the School collect, the Jamf
-Protect and Security Cloud add-ons and `finalize()` have all finished. Nothing the scan does can
-delay or lose the summary, an add-on or the shared-workspace claim release. It never throws out of
+**Where it runs.** A step of its own in `CollectRouter.run`, after the coordination gate's block
+has closed: the School collect, the Jamf Protect and Security Cloud add-ons and `finalize()` have
+finished, the shared-workspace claim is released and this Mac's activity is recorded. It is still
+inside the tick lock on every path (GUI, tick, CLI), since they all wrap `CollectRouter.run`.
+Nothing the scan does can delay or lose the summary, an add-on or the claim release. The attempt
+stamp is written when the scan STARTS, so a peer on a shared workspace sees it as not due. It never throws out of
 the router and never changes the collect's result.
 
 **When it runs.** All of:
-- the run's tiers contain `.scan` (a School run for the scan tier alone collects `school-devices`
-  as the scan's input and nothing else it would not otherwise collect);
+- the run's tiers contain `.scan`. A managed scan run has tiers `[.scan]` and collects nothing on
+  a School workspace today. Only when the scan is due does such a run add `school-devices` as the
+  scan's input, ignoring that source's 12-hour cadence for this once; when the scan is not due,
+  a scan-only School run stays the no-op it is now. Landing `school-devices` there behaves like
+  any School collect that lands it (the day's summary is rebuilt; a failure is the collect's
+  failure);
 - `jamf_cli.collect_skip` does not list `school-device-detail` (`ReportEngine.skippableKinds`
   learns the name);
 - `school-devices` landed in this run;
@@ -62,9 +70,9 @@ part of this change; `collect_skip` is the off switch.
 adding it would make every Jamf Pro workspace expect it); it has its own constant, like the
 Protect kinds. Its last attempt and last failure are recorded in `StateFileStore` under the kind.
 
-**Input.** The device rows `schoolCollect` landed in this run, handed to the router with the
-collect's result (the bytes that were saved, not a re-read of the newest file, which on a shared
-folder could be a peer's). Devices in School's trash and rows with no UDID are not scanned.
+**Input.** The device rows `schoolCollect` landed in this run: the bytes that were saved, carried
+on `LandedSources` (which the router owns and `schoolCollect` already writes), not a re-read of
+the newest file, which on a shared folder could be a peer's. Devices in School's trash and rows with no UDID are not scanned.
 
 **The loop.** A separate, one-call-type School loop. It shares only `DeviceCallLimits`, the
 bounded jamf-cli `run`, `save` and `exceedsFailureBudget` with the Jamf Pro scan, which is not
@@ -74,7 +82,8 @@ on any exit code.
 **Bounds.** The scan stops, records the kind failed and writes nothing when any of these happens:
 - failures exceed 25% of the targets (the target count is known up front, so this is checked as
   it goes, not at the end);
-- the first 20 calls all fail (a dead API key or an outage costs seconds, not N calls);
+- the first min(20, targets) calls all fail (a dead API key or an outage costs seconds, not N
+  calls; below 80 targets the 25% rule stops it sooner);
 - a 60-minute deadline for the whole phase passes (recorded as exit -2);
 - a call exits 3, 5, 6 or 8 (recorded with that exit).
 
@@ -184,7 +193,11 @@ daily summary, Trends or alerts (#421).
 | Device in trash; row with no UDID | not called |
 | All respond | snapshot lands; rows hold only the allow-list |
 | 25% do not respond; 26% | lands with the `[info]` gaps line; stops, kind failed, nothing written |
-| First 20 calls all exit 1 | stops there, in seconds; `[warn]`, no `[partial]` |
+| 200 targets, first 20 calls all exit 1 | stops there, in seconds; `[warn]`, no `[partial]` |
+| 15 targets, every call fails | stops at the fourth failure |
+| Scan-only School run, scan not due | collects nothing, as today |
+| Scan-only School run, scan due, `school-devices` collected 2 hours ago | collects `school-devices` anyway, then scans |
+| Peer Mac on a shared workspace starts while this scan runs | sees the attempt stamp; not due |
 | Alternating timeout and success | stops at the 25% budget or the 60-minute deadline |
 | Exit 3 on a device | stops, exit 3 recorded, no `pro auth token` call |
 | Zero devices | empty snapshot |
