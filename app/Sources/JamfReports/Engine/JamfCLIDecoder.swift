@@ -1127,8 +1127,13 @@ struct ProtectComputerRow: Decodable, Sendable {
     let connectionStatus: String?
     let lastConnection: String?
     let insightsStatsFail: Int?
+    /// The threat-signature set the agent holds; a whole number in practice.
+    let signaturesVersion: Double?
+    /// Why the agent last dropped its connection, as Protect words it (`MQTT_KEEP_ALIVE_TIMEOUT`).
+    let lastDisconnectionReason: String?
 
     private enum CodingKeys: String, CodingKey {
+        case signaturesVersion, lastDisconnectionReason
         case uuid, hostname, serial, modelName, osString, plan, version
         case osMajor, osMinor, osPatch
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
@@ -1154,6 +1159,27 @@ struct ProtectComputerRow: Decodable, Sendable {
         connectionStatus = try? c.decodeIfPresent(String.self, forKey: .connectionStatus)
         lastConnection = try? c.decodeIfPresent(String.self, forKey: .lastConnection)
         insightsStatsFail = try? c.decodeIfPresent(Int.self, forKey: .insightsStatsFail)
+        // JSON integers decode as Double, so one read takes either form.
+        // A version outside whole-number range is not a version: not reported.
+        signaturesVersion = (try? c.decodeIfPresent(Double.self, forKey: .signaturesVersion))
+            .flatMap { wholeInt($0) == nil ? nil : $0 }
+        lastDisconnectionReason = try? c.decodeIfPresent(
+            String.self, forKey: .lastDisconnectionReason)
+    }
+
+    /// The signatures version as text: no ".0" on a whole number; nil when not reported.
+    var signaturesVersionText: String? {
+        signaturesVersion.flatMap {
+            $0 == $0.rounded() ? wholeInt($0).map(String.init) : String($0)
+        }
+    }
+
+    /// How many of the Macs that report a signatures version hold less than the newest one in
+    /// this tenant. Nil with fewer than two distinct versions, where "behind" has no meaning.
+    static func signatureLag(_ rows: [ProtectComputerRow]) -> (behind: Int, reporting: Int)? {
+        let versions = rows.compactMap(\.signaturesVersion)
+        guard Set(versions).count >= 2, let newest = versions.max() else { return nil }
+        return (versions.filter { $0 < newest }.count, versions.count)
     }
 
     /// jamf-cli prints `osMajor`, `osMinor` and `osPatch` and no `osString`: "macOS 15.7.3",
@@ -1357,7 +1383,7 @@ struct LenientElement<Row: Decodable>: Decodable {
     /// skipped; nil when the file cannot be read or is not a list.
     static func rows(at url: URL, logging category: AppLogger.Category) -> [Row]? {
         let name = ConfigSchema.displayText(url.lastPathComponent)
-        guard let data = BoundedFile.readLogged(url, category: category) else { return nil }
+        guard let data = BoundedFile.readSnapshotLogged(url, category: category) else { return nil }
         guard let result = rows(in: data) else {
             AppLogger.event(category, .error, "\(name) is not a JSON list of rows; nothing read")
             return nil

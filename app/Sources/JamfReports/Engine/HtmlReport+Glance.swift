@@ -197,6 +197,9 @@ extension HtmlReport {
     /// - Macs stale under the stale rule (`thresholds.stale_device_days`, `stale_basis`),
     /// - Macs MDM reaches whose Jamf binary or inventory is more than `contact_gap_days` behind,
     /// - Macs enrolled but never given the Jamf binary (unmanaged, never checked in),
+    /// - Macs whose MDM profile has expired, or expires within `thresholds.cert_warning_days`
+    ///   while they still check in (a stale Mac is on the stale line already),
+    /// - an expired or expiring Automated Device Enrollment token (counts and days only),
     /// - P0 security gaps (FileVault, SIP or Firewall off at the `fail` level),
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
@@ -232,6 +235,12 @@ extension HtmlReport {
         if inputs.binaryMissingCount > 0 {
             add(.interventionList, .devices,
                 BinaryMissing.attentionSentence(count: inputs.binaryMissingCount))
+        }
+        for text in Self.managementSentences(inputs.management) {
+            add(.interventionList, .devices, text)
+        }
+        if let token = ManagementReport.tokenSentence(inputs.enrollmentTokens) {
+            items.append((token, nil))
         }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
@@ -276,6 +285,20 @@ extension HtmlReport {
             }
         }
         return items
+    }
+
+    /// The management lines, each only while its count is above zero.
+    static func managementSentences(_ health: ManagementHealth?) -> [String] {
+        let lines: [(ManagementHealth.Finding, String, String)] = [
+            (.profileExpired, "has an expired MDM profile and is leaving management",
+             "have expired MDM profiles and are leaving management"),
+            (.profileExpiringCheckingIn, "still checks in, but its MDM profile expires soon",
+             "still check in, but their MDM profiles expire soon"),
+        ]
+        return lines.compactMap { finding, one, many in
+            guard let count = health?.figures[finding]?.count, count > 0 else { return nil }
+            return count == 1 ? "1 Mac \(one)." : "\(count) Macs \(many)."
+        }
     }
 
     /// "3 Macs have not checked in for more than 30 days." On the default basis, the check-in

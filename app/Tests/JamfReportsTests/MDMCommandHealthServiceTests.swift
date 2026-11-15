@@ -48,4 +48,24 @@ final class MDMCommandHealthServiceTests: XCTestCase {
         XCTAssertEqual(s.topFailedCommands.map(\.name), ["A", "B", "C"])
         XCTAssertEqual(s.topFailedCommands.first?.count, 2)
     }
+
+    /// A kind folder replaced with a link to a folder outside the data folder is not followed.
+    func testALinkedKindFolderIsNotFollowed() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdm-link-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        let dataDir = base.appendingPathComponent("data", isDirectory: true)
+        let outside = base.appendingPathComponent("outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(
+            to: outside.appendingPathComponent("\(MDMCommandHealthService.kind)_20261115T100000.json"))
+        try FileManager.default.createSymbolicLink(
+            at: dataDir.appendingPathComponent(MDMCommandHealthService.kind),
+            withDestinationURL: outside)
+        XCTAssertFalse(MDMCommandHealthService.load(dataDir: dataDir).isDetected)
+        let through = dataDir.appendingPathComponent(MDMCommandHealthService.kind)
+            .appendingPathComponent("\(MDMCommandHealthService.kind)_20261115T100000.json")
+        XCTAssertNil(BoundedFile.readSnapshotLogged(through), "the read itself refuses")
+    }
 }

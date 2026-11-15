@@ -254,7 +254,9 @@ extension HtmlReport {
                 $0["section"] as? String == "os_version"
             })
         case .osCurrency: return buildOSCurrencySection()
-        case .interventionList: return buildInterventionList(computersInventory: inputs.computers)
+        case .interventionList:
+            return buildInterventionList(
+                computersInventory: inputs.computers, management: inputs.management)
         case .policyTable: return buildPolicyHealthSection(inputs.policyStatus)
         case .profileTable:
             return buildProfileStatusSection(

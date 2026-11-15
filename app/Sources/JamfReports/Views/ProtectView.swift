@@ -694,6 +694,12 @@ struct ProtectView: View {
                     trailing: snapshot.computers.count > 50
                         ? L("Showing 50 of \(snapshot.computers.count)") : nil)
 
+                if let lag = ProtectComputerRow.signatureLag(snapshot.computers) {
+                    Text(L("\(lag.behind) of \(lag.reporting) behind the newest signatures in this tenant"))
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+
                 let displayedComputers = Array(snapshot.computers.prefix(50))
 
                 if !displayedComputers.isEmpty {
@@ -752,6 +758,20 @@ struct ProtectView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 80, alignment: .trailing)
                 }
+
+                Text(computer.signaturesVersionText ?? "—")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .frame(width: 56, alignment: .trailing)
+                    .accessibilityLabel(L("Signatures version"))
+
+                Text(computer.lastDisconnectionReason ?? "—")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(width: 150, alignment: .leading)
+                    .accessibilityLabel(L("Last disconnection reason"))
             }
             .padding(.vertical, 8)
 

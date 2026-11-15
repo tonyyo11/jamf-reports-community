@@ -21,6 +21,7 @@ security_agents[6].column = string "Carbon Black Cloud - Sensor Status"
 security_agents[6].connected_value = string "ACTIVE"
 jamf_cli.data_dir = string "jamf-cli-data"
 jamf_cli.profile = string ""
+jamf_cli.keep_account_names = bool false
 jamf_cli.use_cached_data = bool true
 jamf_cli.max_cache_age_hours = int 168
 jamf_cli.require_manifest = bool false

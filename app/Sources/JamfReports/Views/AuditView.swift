@@ -123,6 +123,7 @@ struct AuditView: View {
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
     @State private var commandFindings: [AuditFinding] = []
     @State private var contactGapList: [AuditFinding] = []
+    @State private var managementCard: ManagementCard?
     @State private var mobileFindingList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
@@ -572,6 +573,7 @@ struct AuditView: View {
             duplicateSerialsSection
             commandHealthSection
             ContactGapSection(findings: contactGapList)
+            ManagementHealthSection(card: managementCard)
             MobileDevicesSection(findings: mobileFindingList)
                 .id(MobileDevicesSection.anchorID)
         }
@@ -1090,6 +1092,7 @@ struct AuditView: View {
             commandHealth = .empty
             commandFindings = []
             contactGapList = []
+            managementCard = DemoData.managementCard
             mobileFindingList = DemoData.mobileAuditFindings
             return
         }
@@ -1103,6 +1106,7 @@ struct AuditView: View {
         duplicateSerials = .empty
         commandHealth = .empty
         contactGapList = []
+        managementCard = nil
         mobileFindingList = []
         hasPreviousAudit = false
         let loadProfile = workspace.profile
@@ -1162,6 +1166,13 @@ struct AuditView: View {
         }.value
         guard !superseded() else { return }
         contactGapList = contactGapFindings(inventory)
+        let warningDays = max(Int(workspace.configState.certWarningDays)
+                              ?? ManagementHealth.defaultWarningDays, 1)
+        let card = await Task.detached(priority: .userInitiated) {
+            ManagementCard.load(profile: profile, inventory: inventory, warningDays: warningDays)
+        }.value
+        guard !superseded() else { return }
+        managementCard = card
         let staleDays = workspace.configState.staleRule.days
         if let mobile = await ScreenLoad.paint(
             stillCurrent: { profile == workspace.profile && !workspace.demoMode },

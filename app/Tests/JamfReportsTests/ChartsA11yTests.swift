@@ -171,4 +171,11 @@ final class ChartsA11yTests: XCTestCase {
         XCTAssertEqual(ax.title, "Security Posture Compared")
         XCTAssertEqual(ax.series.count, 3, "Must produce one series per metric")
     }
+
+    func testBarSummaryNeverTrapsOnANonFiniteValue() {
+        let descriptor = BarDistributionChartDescriptor(
+            title: "Bars", unit: " devices",
+            bars: [.init(label: "a", value: .infinity), .init(label: "b", value: 4)])
+        XCTAssertEqual(descriptor.makeChartDescriptor().summary, "a: — devices; b: 4 devices")
+    }
 }

@@ -32,6 +32,7 @@ struct SecurityPostureTemplate: ReportTemplate {
             .patchCompliance,
             .patchFailures,
             .eaCoverage,
+            .managementHealth,
         ]
     }
 

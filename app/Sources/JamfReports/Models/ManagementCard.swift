@@ -1,0 +1,209 @@
+import Foundation
+
+/// What the Audit screen's "Management health" card shows, built from `ManagementHealth` and
+/// the enrollment token snapshot. Pure strings and tones, so the wording is testable and the
+/// view only lays it out.
+struct ManagementCard: Sendable, Equatable {
+    enum Tone: Sendable, Equatable { case gap, warning, neutral }
+
+    struct Row: Identifiable, Sendable, Equatable {
+        let id: String
+        let title: String
+        let value: String
+        let tone: Tone
+        /// Jamf's own values, as given, one line.
+        var breakdown: String?
+        /// A gap or warning with Macs behind it opens Computers on the Management filter.
+        var opensComputers = false
+    }
+
+    var gaps: [Row] = []
+    var warnings: [Row] = []
+    var counts: [Row] = []
+    var settings: [Row] = []
+    var tokens: [Row] = []
+    /// Why there are no token rows: "not collected" and "could not be read" read apart.
+    var tokenNote: String?
+    /// Said when the Computers snapshot could not be read: the card does not hide.
+    var inventoryNote: String?
+
+    /// Draws nothing when there is nothing to say about management.
+    var isEmpty: Bool {
+        gaps.isEmpty && warnings.isEmpty && counts.isEmpty && settings.isEmpty
+            && tokens.isEmpty && tokenNote == nil && inventoryNote == nil
+    }
+
+    /// `health` is nil without a `computers` snapshot; a workspace with neither it nor a token
+    /// snapshot gets no card.
+    /// `inventoryUnreadable` is the Computers screen's own test for a snapshot that could not be
+    /// read (`unreadableInventory`); it says so instead of hiding the card.
+    static func build(
+        health: ManagementHealth?, tokens snapshot: EnrollmentTokenSnapshot,
+        inventoryUnreadable: Bool = false
+    ) -> ManagementCard? {
+        var card = ManagementCard()
+        if inventoryUnreadable {
+            card.inventoryNote = L("Computers snapshot: could not be read")
+        } else if let health, health.judgedAnything {
+            card.addHealth(health)
+        }
+        card.addTokens(snapshot, hasHealth: !card.isEmpty)
+        return card.isEmpty ? nil : card
+    }
+
+    // MARK: - Findings
+
+    private mutating func addHealth(_ health: ManagementHealth) {
+        for finding in ManagementHealth.Finding.allCases {
+            guard let figure = health.figures[finding] else { continue }
+            let row = Self.row(finding, figure, health)
+            switch finding.kind {
+            case .gap: gaps.append(row)
+            case .warning: warnings.append(row)
+            case .neutral: counts.append(row)
+            }
+        }
+        for breakdown in [ManagementHealth.Breakdown.externalBootLevel, .appleEnrollmentType] {
+            if let row = Self.valuesRow(breakdown, health) { counts.append(row) }
+        }
+        for toggle in ManagementHealth.Toggle.allCases {
+            guard let onOff = health.toggles[toggle] else { continue }
+            let notReported = max(health.managedCount - onOff.evaluated, 0)
+            settings.append(Row(
+                id: "toggle.\(toggle)", title: toggle.title,
+                value: L(
+                    "Macs: on \(onOff.on.count) · off \(onOff.off.count) · not reported \(notReported)"),
+                tone: .neutral))
+        }
+    }
+
+    private static func row(
+        _ finding: ManagementHealth.Finding, _ figure: ManagementHealth.Figure,
+        _ health: ManagementHealth
+    ) -> Row {
+        var title = finding.title
+        if finding == .binaryBehind, let newest = health.newestBinary {
+            title = L("Jamf binary behind the newest binary in this fleet (\(newest.label))")
+        }
+        let marked = finding.kind != .neutral && figure.count > 0
+        let tone: Tone = marked ? (finding.kind == .gap ? .gap : .warning) : .neutral
+        var breakdown: String?
+        switch finding {
+        case .attestationProblem: breakdown = line(health.cappedValues(.attestationProblem))
+        case .batteryNeedsService: breakdown = line(health.cappedValues(.batteryHealth))
+        default: break
+        }
+        return Row(
+            id: "finding.\(finding.rawValue)", title: title,
+            value: L("\(figure.count) of \(figure.evaluated) Macs"), tone: tone,
+            breakdown: breakdown, opensComputers: marked)
+    }
+
+    private static func valuesRow(
+        _ breakdown: ManagementHealth.Breakdown, _ health: ManagementHealth
+    ) -> Row? {
+        let values = health.cappedValues(breakdown)
+        guard values.distinct > 0 else { return nil }
+        let total = health.values(breakdown).reduce(0) { $0 + $1.records.count }
+        let title = breakdown == .externalBootLevel
+            ? L("External boot level") : L("Enrollment type")
+        return Row(
+            id: "values.\(breakdown)", title: title,
+            value: L("\(total) of \(health.managedCount) Macs"), tone: .neutral,
+            breakdown: line(values))
+    }
+
+    /// "VALUE 3 · OTHER 1", the most common values as Jamf gives them, with "5 of 12 values"
+    /// when there are more than are shown.
+    private static func line(
+        _ values: (shown: [(value: String, count: Int)], distinct: Int)
+    ) -> String? {
+        guard values.distinct > 0 else { return nil }
+        let text = values.shown.map { "\($0.value) \($0.count)" }.joined(separator: " · ")
+        return values.distinct > values.shown.count
+            ? text + " · " + L("\(values.shown.count) of \(values.distinct) values") : text
+    }
+
+    // MARK: - Enrollment token
+
+    private mutating func addTokens(_ snapshot: EnrollmentTokenSnapshot, hasHealth: Bool) {
+        if snapshot.readFailed {
+            tokenNote = L("Automated Device Enrollment token: could not be read")
+        } else if !snapshot.isDetected {
+            // Said only beside other management findings; alone it would be a card of nothing.
+            if hasHealth { tokenNote = L("Automated Device Enrollment token: not collected") }
+        } else {
+            tokens = snapshot.tokens.enumerated().map { Self.tokenRow($1, position: $0) }
+        }
+    }
+
+    static func tokenRow(_ token: EnrollmentToken, position: Int) -> Row {
+        let title = token.name ?? L("Unnamed instance")
+        let id = "token.\(position)"
+        guard let days = token.daysLeft else {
+            return Row(id: id, title: title, value: L("not reported"), tone: .neutral)
+        }
+        let tone: Tone = switch token.state {
+        case .expired: .gap
+        case .expiring: .warning
+        case .ok, .notReported: .neutral
+        }
+        return Row(id: id, title: title, value: tokenWording(days: days), tone: tone)
+    }
+
+    static func tokenWording(days: Int) -> String {
+        switch days {
+        case ..<(-1): L("expired \(-days) days ago")
+        case -1: L("expired 1 day ago")
+        case 0: L("expires today")
+        case 1: L("expires in 1 day")
+        default: L("expires in \(days) days")
+        }
+    }
+
+    /// The card for a workspace: the inventory's management health and the newest token
+    /// snapshot. Runs off the main actor.
+    /// No Mac and a warning from the reader: the same test the Computers screen uses to show
+    /// "Couldn't read computer inventory" rather than its empty state.
+    nonisolated static func unreadableInventory(_ inventory: DeviceInventorySnapshot) -> Bool {
+        inventory.devices.isEmpty && !inventory.warnings.isEmpty
+    }
+
+    nonisolated static func load(
+        profile: String, inventory: DeviceInventorySnapshot, warningDays: Int, now: Date = Date()
+    ) -> ManagementCard? {
+        // A data folder that cannot be resolved is a read failure, not "not collected".
+        load(dataDir: try? WorkspacePaths.dataDir(for: profile), inventory: inventory,
+             warningDays: warningDays, now: now)
+    }
+
+    /// `load(profile:...)` over an explicit data folder; nil is a folder that did not resolve.
+    nonisolated static func load(
+        dataDir: URL?, inventory: DeviceInventorySnapshot, warningDays: Int, now: Date = Date()
+    ) -> ManagementCard? {
+        let health = inventory.devices.contains { $0.management != nil }
+            ? ManagementHealth(
+                records: inventory.devices,
+                rule: StaleRule(days: inventory.staleDays, basis: inventory.staleBasis),
+                warningDays: warningDays, now: now)
+            : nil
+        let tokens = dataDir.map {
+            EnrollmentTokenSnapshot.load(dataDir: $0, warningDays: warningDays, now: now)
+        } ?? .unreadable
+        return build(
+            health: health, tokens: tokens, inventoryUnreadable: unreadableInventory(inventory))
+    }
+}
+
+extension ManagementHealth.Toggle {
+    var title: String {
+        switch self {
+        case .recoveryLock: L("Recovery Lock")
+        case .activationLock: L("Activation Lock")
+        case .autoLoginDisabled: L("Automatic login disabled")
+        case .remoteDesktop: L("Remote Desktop")
+        case .lockdownMode: L("Lockdown Mode")
+        case .awaitingConfiguration: L("Awaiting configuration")
+        }
+    }
+}

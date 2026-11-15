@@ -34,6 +34,55 @@ final class SnapshotManifestWriterTests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    // MARK: - A kind folder replaced by a link
+
+    /// `<tempRoot>/data/kind` is a link to `<tempRoot>/outside`, which holds a snapshot and a
+    /// manifest that vouches for it.
+    private func linkedKindFolder() throws -> (data: URL, snapshot: URL, outside: URL) {
+        let data = tempRoot.appendingPathComponent("data", isDirectory: true)
+        let outside = tempRoot.appendingPathComponent("outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let payload = Data(#"{"ok":true}"#.utf8)
+        let planted = outside.appendingPathComponent("kind_20260101T000000.json")
+        try payload.write(to: planted)
+        try SnapshotManifest.record(snapshotFile: planted, data: payload)
+        try FileManager.default.createSymbolicLink(
+            at: data.appendingPathComponent("kind"), withDestinationURL: outside)
+        return (data, data.appendingPathComponent("kind/kind_20260101T000000.json"), outside)
+    }
+
+    func testAManifestBehindALinkedKindFolderIsNotTrusted() throws {
+        let layout = try linkedKindFolder()
+        let payload = Data(#"{"ok":true}"#.utf8)
+        XCTAssertEqual(SnapshotManifest.verify(snapshot: layout.snapshot, data: payload), .absent)
+        XCTAssertEqual(SnapshotManifest.scanWorkspace(dataDir: layout.data).verified, 0)
+        XCTAssertEqual(SnapshotManifest.scanFlatDir(
+            layout.data.appendingPathComponent("kind")).verified, 0)
+        XCTAssertTrue(SnapshotManifest.entries(
+            in: layout.data.appendingPathComponent("kind")).isEmpty)
+    }
+
+    func testRecordDoesNotWriteThroughALinkedKindFolder() throws {
+        let layout = try linkedKindFolder()
+        let manifest = layout.outside.appendingPathComponent(SnapshotManifest.fileName)
+        let before = try Data(contentsOf: manifest)
+        XCTAssertThrowsError(try SnapshotManifest.record(
+            snapshotFile: layout.snapshot, data: Data("other".utf8)))
+        XCTAssertEqual(try Data(contentsOf: manifest), before)
+    }
+
+    func testALinkedKindFolderIsNotReadByTheRowReader() throws {
+        let layout = try linkedKindFolder()
+        let rows = LenientElement<GroupsListRow>.rows(at: layout.snapshot, logging: .collect)
+        XCTAssertNil(rows)
+        let folder = layout.data.appendingPathComponent("plain", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let normal = folder.appendingPathComponent("plain_20260101T000000.json")
+        try Data("[]".utf8).write(to: normal)
+        XCTAssertNotNil(LenientElement<GroupsListRow>.rows(at: normal, logging: .collect))
+    }
+
     // MARK: - Round-trip: write → verify → .verified
 
     func testRecordThenVerifyReturnsVerified() throws {

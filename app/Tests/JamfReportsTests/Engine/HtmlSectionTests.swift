@@ -622,7 +622,7 @@ final class HtmlSectionTests: XCTestCase {
              {"id": "2", "purchasing": {"poDate": "", "vendor": "Example Vendor"}},
              {"id": "3", "purchasing": null}]
             """#.utf8)
-        let saved = try XCTUnwrap(ReportEngine.keepingOnlyPODate(collected))
+        let saved = try XCTUnwrap(ReportEngine.reducingComputers(collected))
         let inventory = try XCTUnwrap(
             JSONSerialization.jsonObject(with: saved) as? [[String: Any]])
         let html = makeReport().buildPurchaseCohorts(computersInventory: inventory).html

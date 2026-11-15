@@ -48,6 +48,7 @@ final class DevicesViewListCacheTests: XCTestCase {
             case .stale: return device.isStale(rule)
             case .contactGap: return device.contactGap(rule: rule, gapDays: 14) != nil
             case .binaryMissing: return device.isBinaryMissing
+            case .management: return false
             case .patch: return device.patchFailureCount > 0
             case .security: return device.securityGapCount(policy: policy) > 0
             case .priorityAction: return risk(device).level >= .high
@@ -101,13 +102,13 @@ final class DevicesViewListCacheTests: XCTestCase {
     private func listKey(
         revision: Int = 0, query: String = "", os: String? = nil,
         filter: Screen.DeviceFilter = .all, staleDays: Int = 30,
-        hourBucket: Int = 490_000,
+        hourBucket: Int = 490_000, warningDays: Int = 90,
         sort: KeyPathComparator<DeviceSortRow> = KeyPathComparator(\DeviceSortRow.device.displayName)
     ) -> Screen.ListKey {
         Screen.ListKey(
             data: Screen.DataKey(
                 dataRevision: revision, demoMode: false, staleDays: staleDays,
-                agentConnectedValue: nil, hourBucket: hourBucket),
+                agentConnectedValue: nil, warningDays: warningDays, hourBucket: hourBucket),
             query: query, osFilter: os, filter: filter, sortOrder: [sort])
     }
 
@@ -146,7 +147,7 @@ final class DevicesViewListCacheTests: XCTestCase {
             generatedAt: "", generatedDate: nil, isDemo: false)
         let first = listKey()
         func figures(_ key: Screen.ListKey) -> Screen.Figures {
-            cache.figures(for: key.data) { Screen.Figures(snapshot: snapshot, rule: rule) }
+            cache.figures(for: key.data) { Screen.Figures(snapshot: snapshot, rule: rule, warningDays: 90, now: Date()) }
         }
         let built = figures(first)
         _ = figures(listKey(query: "mac"))
@@ -226,5 +227,10 @@ final class DevicesViewListCacheTests: XCTestCase {
             print("[6.5 timing] \(label), \(redraws) redraws x \(passesPerRedraw) passes, "
                   + "200 records: before \(before), after \(after)")
         }
+    }
+
+    func testTheKeyChangesWhenTheCertWarningWindowChanges() {
+        XCTAssertNotEqual(listKey(warningDays: 90), listKey(warningDays: 30))
+        XCTAssertEqual(listKey(warningDays: 90), listKey(warningDays: 90))
     }
 }

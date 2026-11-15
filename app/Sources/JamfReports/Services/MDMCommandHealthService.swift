@@ -64,7 +64,7 @@ struct MDMCommandHealthService: Sendable {
 
     static func load(url: URL?) -> Snapshot {
         guard let url else { return .empty }
-        guard let data = BoundedFile.readLogged(url) else {
+        guard let data = BoundedFile.readSnapshotLogged(url) else {
             return FileManager.default.fileExists(atPath: url.path) ? .unreadable : .empty
         }
         guard let rows = try? JSONDecoder().decode([MDMCommandHealthRecord].self, from: data) else {

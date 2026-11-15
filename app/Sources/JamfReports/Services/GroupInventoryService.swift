@@ -201,7 +201,7 @@ struct GroupInventoryService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [AdvancedMobileSearchRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(url) else { return [] }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         if let envelope = try? JSONDecoder().decode(AdvancedMobileSearchEnvelope.self, from: data) {
             success = true
             return envelope.results
@@ -216,7 +216,7 @@ struct GroupInventoryService: Sendable {
         from url: URL?, kind: String, success: inout Bool
     ) -> [ClassicGroupRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(url) else { return [] }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         if let groups = try? JSONDecoder().decode([ClassicGroupRow].self, from: data) {
             success = true
             return groups

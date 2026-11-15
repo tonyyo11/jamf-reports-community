@@ -541,6 +541,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var carriesDates = false
     /// `NeverInventoried` held for the `computers` item: no inventory date and no OS version.
     var neverInventoried = false
+    /// The management fields of the `computers` row (`ManagementHealth`); nil from any other source.
+    var management: ManagementFacts? = nil
 
     var displayName: String { name.isEmpty ? L("Unknown device") : name }
     var displaySerial: String { serial.isEmpty ? L("No serial") : serial }
@@ -612,6 +614,11 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
             hardwareEncrypted = mine == theirs ? mine : nil
         } else {
             hardwareEncrypted = hardwareEncrypted ?? other.hardwareEncrypted
+        }
+        if let mine = management, let theirs = other.management {
+            management = mine == theirs ? mine : nil
+        } else {
+            management = management ?? other.management
         }
         for failure in other.patchFailures where !patchFailures.contains(failure) {
             patchFailures.append(failure)
@@ -1483,6 +1490,7 @@ struct CustomSheetGroup: Sendable {
                 .mobileInventory,
                 .mobileSupervisionStatus,
                 .checkinHealth,
+                .managementHealth,
                 .activeDevices,
                 .fleetDrift,
                 .groupHygiene,
