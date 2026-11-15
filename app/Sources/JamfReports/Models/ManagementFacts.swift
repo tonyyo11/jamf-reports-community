@@ -60,7 +60,8 @@ struct ManagementFacts: Sendable, Hashable {
         appleEnrollmentType = Self.string(Self.at(item, "general", "appleEnrollmentType"))
         awaitingConfiguration = Self.bool(Self.at(item, "general", "awaitingConfiguration"))
         attestationStatus = Self.string(Self.at(item, "security", "attestationStatus"))
-        lastSuccessfulAttestation = Self.date(Self.at(item, "security", "lastSuccessfulAttestation"))
+        lastSuccessfulAttestation = Self.date(
+            Self.at(item, "security", "lastSuccessfulAttestation"))
         recoveryLockEnabled = Self.bool(Self.at(item, "security", "recoveryLockEnabled"))
         activationLockEnabled = Self.bool(Self.at(item, "security", "activationLockEnabled"))
         externalBootLevel = Self.string(Self.at(item, "security", "externalBootLevel"))
