@@ -55,15 +55,27 @@ struct EnrollmentTokenSnapshot: Sendable, Equatable {
     static let empty = EnrollmentTokenSnapshot(tokens: [], isDetected: false, readFailed: false)
     static let unreadable = EnrollmentTokenSnapshot(tokens: [], isDetected: false, readFailed: true)
 
+    /// The rows of a saved list: a bare list, jamf-cli's `null` for an empty one, or the
+    /// `results` of an envelope. Nil for anything else.
+    private static func rows(in data: Data) -> [[String: Any]]? {
+        guard let object = try? JSONSerialization.jsonObject(
+            with: data, options: [.fragmentsAllowed]) else { return nil }
+        if object is NSNull { return [] }
+        if let rows = object as? [[String: Any]] { return rows }
+        if let envelope = object as? [String: Any] {
+            return envelope["results"] as? [[String: Any]]
+        }
+        return nil
+    }
+
     static func load(
         dataDir: URL, warningDays: Int, now: Date = Date(), calendar: Calendar = .current
     ) -> EnrollmentTokenSnapshot {
         let kindDir = dataDir.appendingPathComponent(
             "device-enrollment-instances", isDirectory: true)
         guard let url = FileManager.newestJSONFile(in: kindDir) else { return .empty }
-        guard let data = BoundedFile.readLogged(url),
-              let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
-        else { return .unreadable }
+        guard let data = BoundedFile.readLogged(url, inside: dataDir),
+              let rows = Self.rows(in: data) else { return .unreadable }
         let tokens = rows.map {
             EnrollmentToken(row: $0, warningDays: warningDays, now: now, calendar: calendar)
         }

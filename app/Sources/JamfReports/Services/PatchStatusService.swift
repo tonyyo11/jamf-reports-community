@@ -127,7 +127,7 @@ struct PatchStatusService: Sendable {
             return nil
         }
 
-        guard let titlesData = BoundedFile.readLogged(titlesURL) else { return nil }
+        guard let titlesData = BoundedFile.readSnapshotLogged(titlesURL) else { return nil }
 
         guard let titles = (try? JSONDecoder().decode([PatchStatusRow].self, from: titlesData)) else {
             AppLogger.collect.info(
@@ -139,7 +139,7 @@ struct PatchStatusService: Sendable {
         var failures: [PatchFailureRow] = []
         var failuresScanned = false
         if let failuresURL, FileManager.default.fileExists(atPath: failuresURL.path) {
-            if let failuresData = BoundedFile.readLogged(failuresURL) {
+            if let failuresData = BoundedFile.readSnapshotLogged(failuresURL) {
                 if let decodedFailures = try? JSONDecoder().decode(
                     [PatchFailureRow].self, from: failuresData
                 ) {

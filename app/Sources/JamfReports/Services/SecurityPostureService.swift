@@ -137,7 +137,7 @@ struct SecurityPostureService: Sendable {
     private static func decode(
         at url: URL, policy: SecurityControlPolicy, hardware: [String: Bool]
     ) throws -> Snapshot {
-        guard let data = BoundedFile.readLogged(url) else {
+        guard let data = BoundedFile.readSnapshotLogged(url) else {
             throw LoadError.decodeFailed(
                 L("could not read \(ConfigSchema.displayText(url.lastPathComponent))"))
         }

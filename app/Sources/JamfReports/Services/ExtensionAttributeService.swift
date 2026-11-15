@@ -138,7 +138,7 @@ struct ExtensionAttributeService: Sendable {
 
         if let definitionsURL,
            FileManager.default.fileExists(atPath: definitionsURL.path) {
-            if let data = BoundedFile.readLogged(definitionsURL) {
+            if let data = BoundedFile.readSnapshotLogged(definitionsURL) {
                 do {
                     definitions = try JSONDecoder().decode([ExtensionAttribute].self, from: data)
                     sourceFile = definitionsURL
@@ -155,7 +155,7 @@ struct ExtensionAttributeService: Sendable {
 
         if let resultsURL,
            FileManager.default.fileExists(atPath: resultsURL.path) {
-            if let data = BoundedFile.readLogged(resultsURL) {
+            if let data = BoundedFile.readSnapshotLogged(resultsURL) {
                 let decoded = EAResultRow.decodeSnapshot(data)
                 if let rows = decoded.rows {
                     results = rows

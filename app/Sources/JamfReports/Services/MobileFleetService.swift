@@ -668,7 +668,7 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileDeviceListRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(url) else { return [] }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
             AppLogger.collect.info(
                 "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .private)"
@@ -683,7 +683,7 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileConfigProfileRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(url) else { return [] }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         if let profiles = try? JSONDecoder().decode([MobileConfigProfileRow].self, from: data) {
             success = true
             return profiles

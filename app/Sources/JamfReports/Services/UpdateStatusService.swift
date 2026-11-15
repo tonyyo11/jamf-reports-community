@@ -121,7 +121,7 @@ struct UpdateStatusService: Sendable {
 
     /// Test seam: load directly from an arbitrary file URL.
     static func load(from url: URL) -> Snapshot? {
-        guard let data = BoundedFile.readLogged(url) else { return nil }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return nil }
 
         // Try UpdateFailuresReport first (has more fields)
         if let failuresReport = try? JSONDecoder()
