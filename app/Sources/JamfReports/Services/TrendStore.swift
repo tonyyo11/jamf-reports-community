@@ -816,7 +816,9 @@ private extension TrendSeries.Metric {
     func insightValue(_ value: Double) -> FleetInsightInput.Value {
         switch self {
         case .stability, .securityScore: return .number(value)
-        default: return unit == "%" ? .percent(value) : .count(Int(value.rounded()))
+        default:
+            if unit == "%" { return .percent(value) }
+            return wholeInt(value).map { .count($0) } ?? .number(value)
         }
     }
 

@@ -174,7 +174,7 @@ struct BarDistributionChartDescriptor: AXChartDescriptorRepresentable {
             title: L("Count"),
             range: 0...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { "\(Int($0.rounded()))\(self.unit)" }
+        ) { (wholeInt($0).map(String.init) ?? "—") + self.unit }
 
         let series = AXDataSeriesDescriptor(
             name: title,
@@ -182,7 +182,7 @@ struct BarDistributionChartDescriptor: AXChartDescriptorRepresentable {
             dataPoints: bars.map { AXDataPoint(x: $0.label, y: $0.value) }
         )
         let summary = bars
-            .map { "\($0.label): \(Int($0.value.rounded()))\(unit)" }
+            .map { "\($0.label): \(wholeInt($0.value).map(String.init) ?? "—")\(unit)" }
             .joined(separator: "; ")
 
         return AXChartDescriptor(
@@ -217,7 +217,7 @@ struct StackedBarChartDescriptor: AXChartDescriptorRepresentable {
             title: L("Device Count"),
             range: 0...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { L("\(Int($0.rounded())) devices") }
+        ) { wholeInt($0).map { L("\($0) devices") } ?? "—" }
 
         let seriesData = bands.map { band in
             AXDataSeriesDescriptor(

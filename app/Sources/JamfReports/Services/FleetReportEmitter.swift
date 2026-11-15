@@ -138,7 +138,7 @@ enum FleetReportEmitter {
     ) -> String {
         guard let value else { return "—" }
         switch unit {
-        case .count:   return String(Int(value.rounded()))
+        case .count:   return wholeInt(value).map(String.init) ?? "—"
         case .percent: return percent.text(value)
         }
     }
@@ -150,7 +150,7 @@ enum FleetReportEmitter {
         guard let delta else { return "—" }
         let sign = delta > 0 ? "+" : ""
         switch unit {
-        case .count:   return "\(sign)\(Int(delta.rounded()))"
+        case .count:   return wholeInt(delta).map { "\(sign)\($0)" } ?? "—"
         case .percent: return "\(sign)\(percent.changeNumberText(delta))pp"
         }
     }

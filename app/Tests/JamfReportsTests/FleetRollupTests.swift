@@ -270,4 +270,14 @@ final class FleetRollupTests: XCTestCase {
         )
         XCTAssertNil(url)
     }
+
+    /// A count that is not a whole number in range reads as a dash, never traps.
+    func testCountFormattingNeverTrapsOnANonFiniteOrHugeValue() {
+        for value in [Double.infinity, .nan, 1e30] {
+            XCTAssertEqual(FleetReportEmitter.format(value, unit: .count), "—")
+            XCTAssertEqual(FleetReportEmitter.formatDelta(value, unit: .count), "—")
+        }
+        XCTAssertEqual(FleetReportEmitter.format(12.4, unit: .count), "12")
+        XCTAssertEqual(FleetReportEmitter.formatDelta(3.0, unit: .count), "+3")
+    }
 }
