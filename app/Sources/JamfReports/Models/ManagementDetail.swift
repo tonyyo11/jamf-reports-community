@@ -5,7 +5,7 @@ import Foundation
 /// status strings are shown as given.
 enum ManagementDetail {
     static func rows(
-        _ facts: ManagementFacts, now: Date = Date(), calendar: Calendar = .current
+        _ facts: ManagementFacts, now: Date, calendar: Calendar = .current
     ) -> [(String, String)] {
         var rows: [(String, String)] = []
         func add(_ label: String, _ value: String?) {
@@ -41,7 +41,7 @@ enum ManagementDetail {
 
     /// One line per gap this Mac is in, plus the renewal note for a profile about to expire.
     static func remediation(
-        _ facts: ManagementFacts, warningDays: Int, now: Date = Date()
+        _ facts: ManagementFacts, warningDays: Int, now: Date
     ) -> [String] {
         var lines: [String] = []
         if let expiry = facts.mdmProfileExpiration {

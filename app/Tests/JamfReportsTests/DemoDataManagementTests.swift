@@ -40,4 +40,34 @@ final class DemoDataManagementTests: XCTestCase {
     func testComputersDemoRecordsCarryFacts() {
         XCTAssertTrue(DemoData.deviceSnapshot.devices.allSatisfy { $0.management != nil })
     }
+
+    /// Both demo surfaces draw on `managementFacts(index:)` and the same `referenceDate`: the
+    /// Computers records are the first eight Macs of the Audit card's 524.
+    @MainActor
+    func testComputersDemoFiguresMatchTheCardForTheSameMacs() {
+        let now = DevicesView.evaluationDate(demoMode: true)
+        XCTAssertEqual(now, DemoData.referenceDate)
+        let computers = DevicesView.Figures(
+            snapshot: DemoData.deviceSnapshot, rule: StaleRule(days: 30), warningDays: 90,
+            now: now).management
+        let serials = Set(DemoData.deviceSnapshot.devices.map(\.serial))
+        XCTAssertEqual(serials.count, 8)
+        func held(_ health: ManagementHealth) -> [ManagementHealth.Finding: Set<String>] {
+            health.figures.mapValues { Set($0.records.map(\.serial)).intersection(serials) }
+        }
+        XCTAssertEqual(held(computers), held(health))
+        for record in DemoData.deviceSnapshot.devices {
+            let twin = DemoData.outreachRecords.first { $0.serial == record.serial }
+            XCTAssertEqual(record.management, twin?.management)
+            XCTAssertEqual(computers.needsAttention(record),
+                           twin.map(health.needsAttention) ?? false)
+        }
+    }
+
+    func testTheRealClockWouldJudgeTheDemoDifferently() {
+        let real = ManagementHealth(
+            records: DemoData.outreachRecords, rule: StaleRule(days: 30), now: Date())
+        XCTAssertNotEqual(
+            real.figures[.profileExpired]?.count, health.figures[.profileExpired]?.count)
+    }
 }

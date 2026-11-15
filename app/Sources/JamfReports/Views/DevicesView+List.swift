@@ -10,6 +10,8 @@ extension DevicesView {
         var demoMode: Bool
         var staleDays: Int
         var agentConnectedValue: String?
+        /// `thresholds.cert_warning_days`, which the Management filter's profile window follows.
+        var warningDays: Int
         /// Hours since the epoch. Staleness, the contact gap and so the risk rating are measured
         /// against now (`StaleRule` counts elapsed 24-hour periods), so a list built hours ago
         /// is rebuilt on the next redraw instead of disagreeing with the live per-row stale mark.
@@ -61,7 +63,7 @@ extension DevicesView {
 
         init(
             snapshot: DeviceInventorySnapshot, rule: StaleRule,
-            warningDays: Int = ManagementHealth.defaultWarningDays, now: Date = Date()
+            warningDays: Int, now: Date
         ) {
             management = ManagementHealth(
                 records: snapshot.devices, rule: rule, warningDays: warningDays, now: now)

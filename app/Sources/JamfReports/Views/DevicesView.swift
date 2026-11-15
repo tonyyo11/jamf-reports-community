@@ -126,7 +126,7 @@ struct DevicesView: View {
     private var dataKey: DataKey {
         DataKey(
             dataRevision: dataRevision, demoMode: workspace.demoMode, staleDays: staleDays,
-            agentConnectedValue: configuredAgent?.connectedValue,
+            agentConnectedValue: configuredAgent?.connectedValue, warningDays: certWarningDays,
             hourBucket: Int(Date().timeIntervalSince1970 / 3600))
     }
 
@@ -147,6 +147,13 @@ struct DevicesView: View {
         }
     }
 
+    /// The demo's own "now", so its Macs read the same here as on the Audit card.
+    private var evaluationDate: Date { Self.evaluationDate(demoMode: workspace.demoMode) }
+
+    nonisolated static func evaluationDate(demoMode: Bool) -> Date {
+        demoMode ? DemoData.referenceDate : Date()
+    }
+
     /// `thresholds.cert_warning_days`, which the MDM profile warning window follows.
     private var certWarningDays: Int {
         max(Int(workspace.configState.certWarningDays) ?? ManagementHealth.defaultWarningDays, 1)
@@ -155,7 +162,8 @@ struct DevicesView: View {
     private var figures: Figures {
         listCache.figures(for: dataKey) {
             Figures(
-                snapshot: activeSnapshot, rule: staleRule, warningDays: certWarningDays)
+                snapshot: activeSnapshot, rule: staleRule, warningDays: certWarningDays,
+                now: evaluationDate)
         }
     }
 
@@ -1003,8 +1011,9 @@ struct DevicesView: View {
     @ViewBuilder
     private func managementSection(for device: DeviceInventoryRecord) -> some View {
         if let facts = device.management {
-            let rows = ManagementDetail.rows(facts)
-            let steps = ManagementDetail.remediation(facts, warningDays: certWarningDays)
+            let now = evaluationDate
+            let rows = ManagementDetail.rows(facts, now: now)
+            let steps = ManagementDetail.remediation(facts, warningDays: certWarningDays, now: now)
             if !rows.isEmpty || !steps.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     detailSection(L("Management"), rows: rows)
