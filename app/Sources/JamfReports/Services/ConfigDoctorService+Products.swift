@@ -105,6 +105,39 @@ extension ConfigDoctorService {
         )]
     }
 
+    /// Which of the two applies to account names in saved snapshots, as a `.suggest`, and a
+    /// `.warn` when this Mac keeps them on storage other Macs reach. `configured` is what
+    /// config.yaml says, `effective` what this Mac does after the pin (`SharedConfigPin`).
+    static func accountNameRows(
+        configured: Bool, effective: Bool, onSharedStorage: () -> Bool
+    ) -> [DoctorRow] {
+        let key = SharedConfigPin.Key.keepAccountNames.rawValue
+        let earlier = L("Snapshots saved before this build still hold the names; they leave only through retention or by deleting the files.")
+        guard effective else {
+            let waiting = configured
+                ? L(" \(key) is true in config.yaml but not confirmed on this Mac, so names are still removed.")
+                : ""
+            return [DoctorRow(
+                id: "snapshots.account_names", severity: .suggest,
+                title: L("Account names are removed from saved snapshots"),
+                detail: L("New computer and mobile snapshots leave out account names and the user's real name, phone, position and room.\(waiting) \(earlier)"),
+                hint: L("Set \(key) to true only if your own tools read those fields."))]
+        }
+        var rows = [DoctorRow(
+            id: "snapshots.account_names", severity: .suggest,
+            title: L("Account names are kept in saved snapshots"),
+            detail: L("\(key) is true, so new snapshots hold the account names jamf-cli returns. \(earlier)"),
+            hint: L("Set it to false to remove them from new snapshots."))]
+        if onSharedStorage() {
+            rows.append(DoctorRow(
+                id: "snapshots.account_names_shared", severity: .warn,
+                title: L("Account names are kept on shared storage"),
+                detail: L("This workspace's data folder is reachable by other Macs or a sync provider, and \(key) keeps account names in snapshots saved there."),
+                hint: L("Set \(key) to false unless your organization's storage policy allows it.")))
+        }
+        return rows
+    }
+
     /// One `.suggest` row while backups skip Jamf Pro, or are about to, because the workspace is
     /// on storage other Macs reach and the choice is not in effect on this Mac. Whether that
     /// storage may hold Jamf Pro's configuration is the organization's call, so this points at

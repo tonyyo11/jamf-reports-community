@@ -2337,6 +2337,9 @@ struct ReportEngine: Sendable {
         // saved snapshot's sibling manifest.json so the strict-mode gate
         // (preflightStrictManifestCheck) has something to verify against.
         let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
+        // Resolved once, through the pin, so one run never mixes both behaviours.
+        let keepAccountNames = SharedConfigPin.keepAccountNames(
+            loadedConfig?.jamfCli?.keepsAccountNames ?? false, profile: workspace.name)
 
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
         let (detectedVersion, profileAuth) = try await collectPreflight(
@@ -2452,6 +2455,7 @@ struct ReportEngine: Sendable {
                     arguments: args,
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
                     dataDir: dataDir, recordManifest: recordManifest,
+                    keepAccountNames: keepAccountNames,
                     useCachedData: useCachedData, stateStore: stateStore,
                     collectStart: collectStart, kindTimeout: kindTimeout, onLine: onLine
                 )
@@ -2776,7 +2780,7 @@ struct ReportEngine: Sendable {
     /// user, email and the security columns stayed empty on jamf-cli-only
     /// workspaces (2.8.0 field pass). The flag exists on every supported
     /// jamf-cli — verified live on 1.18.0 and 1.29.0. PURCHASING feeds the report's purchase
-    /// cohorts; `keepingOnlyPODate` removes the rest of that section before it is saved.
+    /// cohorts; `reducingComputers` removes the rest of that section before it is saved.
     static let computerInventorySections = [
         "GENERAL", "HARDWARE", "OPERATING_SYSTEM",
         "USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION", "PURCHASING",
@@ -2986,6 +2990,7 @@ struct ReportEngine: Sendable {
         bridge: CLIBridge,
         dataDir: URL,
         recordManifest: Bool,
+        keepAccountNames: Bool,
         useCachedData: Bool,
         stateStore: StateFileStore?,
         collectStart: Date,
@@ -3055,8 +3060,8 @@ struct ReportEngine: Sendable {
         return try Self.saveCollectedPayload(
             kind: kind, data: payload, outcome: outcome,
             isPartialFailure: isPartialFailure, dataDir: dataDir,
-            recordManifest: recordManifest, stateStore: stateStore,
-            collectStart: collectStart, onLine: onLine
+            recordManifest: recordManifest, keepAccountNames: keepAccountNames,
+            stateStore: stateStore, collectStart: collectStart, onLine: onLine
         )
     }
 
@@ -3199,6 +3204,7 @@ struct ReportEngine: Sendable {
         isPartialFailure: Bool,
         dataDir: URL,
         recordManifest: Bool,
+        keepAccountNames: Bool = false,
         stateStore: StateFileStore?,
         collectStart: Date,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
@@ -3250,10 +3256,12 @@ struct ReportEngine: Sendable {
         }
         var saved = payload
         if kind == MobileFleetService.deviceKind {
-            guard let stripped = Self.droppingLostModeText(payload) else {
+            guard let stripped = Self.droppingLostModeText(
+                payload, removingAccountNames: !keepAccountNames) else {
                 onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): lost-mode text could not be removed from the payload "
-                        + "— snapshot not saved"))
+                    text: "[warn] \(kind): lost-mode text"
+                        + (keepAccountNames ? "" : " and account names")
+                        + " could not be removed from the payload — snapshot not saved"))
                 AttentionLog.raise(.lostModeStripFailed,
                                    "Mobile device list not saved: lost-mode text not removed")
                 stateStore?.record(
@@ -3263,9 +3271,21 @@ struct ReportEngine: Sendable {
             AttentionLog.clear(.lostModeStripFailed)
             saved = stripped
         } else if kind == "computers" {
-            guard let stripped = Self.keepingOnlyPODate(payload) else {
+            guard let stripped = Self.reducingComputers(
+                payload, keepAccountNames: keepAccountNames) else {
                 onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): purchasing details could not be removed from the "
+                    text: "[warn] \(kind): purchasing details"
+                        + (keepAccountNames ? "" : " and account names")
+                        + " could not be removed from the payload — snapshot not saved"))
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+                return KindCollectResult(outcome: outcome, saved: false)
+            }
+            saved = stripped
+        } else if kind == Self.enrollmentInstancesKind, !keepAccountNames {
+            guard let stripped = Self.keepingEnrollmentIdentity(payload) else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): contact details could not be removed from the "
                         + "payload — snapshot not saved"))
                 stateStore?.record(
                     .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
@@ -4511,12 +4531,66 @@ struct ReportEngine: Sendable {
         "lostModePhoneNumber", "lostModeLocation", "lostModeMessage", "lostModeFootnote",
     ]
 
-    /// The payload with every `lostModeTextKeys` key removed at any depth. Returned unchanged
-    /// when it holds none of them. Nil, so the caller saves nothing, when it does not parse or
-    /// cannot be written back after removal: the text must not reach disk on a guess.
+    /// Account names and contact details no reader opens, by the key of the object holding
+    /// them, in a `computers` row. `username` and `email` stay for Offline Outreach. The camel
+    /// and snake spellings jamf-cli and the Jamf Pro API use are both listed.
+    static let computerAccountNameKeys: [String: Set<String>] = [
+        "mdmCapable": ["capableUsers", "userManagementInfo"],
+        "general": [
+            "lastLoggedInUsernameBinary", "lastLoggedInUsernameMdm",
+            "lastLoggedInUsernameSelfService",
+        ],
+        "diskEncryption": ["fileVault2EnabledUserNames"],
+        "userAndLocation": userContactKeys,
+    ]
+
+    /// The same for a `mobile-devices-list` row.
+    static let mobileAccountNameKeys: [String: Set<String>] = [
+        "general": ["lastLoggedInUsernameSelfService"],
+        "userAndLocation": userContactKeys,
+    ]
+
+    private static let userContactKeys: Set<String> = [
+        "realname", "realName", "phone", "phoneNumber", "position", "room",
+    ]
+
+    /// `device-enrollment-instances` rows keep these keys when account names are not kept: the
+    /// token expiry is read, the rest is the administrator's and the organization's contact.
+    static let enrollmentInstancesKind = "device-enrollment-instances"
+    static let enrollmentIdentityKeys: Set<String> = [
+        "id", "name", "serverName", "tokenExpirationDate",
+    ]
+
+    /// `value` with each key in `removing[parentKey]` removed from the object under `parentKey`,
+    /// at any depth; `onRemoval` is told when one was.
+    private static func removingKeys(
+        _ value: Any, removing: [String: Set<String>], onRemoval: () -> Void
+    ) -> Any {
+        func strip(_ value: Any, parent: String?) -> Any {
+            if let dict = value as? [String: Any] {
+                let drop = parent.flatMap { removing[$0] } ?? []
+                var kept: [String: Any] = [:]
+                for (key, child) in dict {
+                    if drop.contains(key) { onRemoval(); continue }
+                    kept[key] = strip(child, parent: key)
+                }
+                return kept
+            }
+            if let array = value as? [Any] { return array.map { strip($0, parent: parent) } }
+            return value
+        }
+        return strip(value, parent: nil)
+    }
+
+    /// The payload with every `lostModeTextKeys` key removed at any depth, and with
+    /// `removingAccountNames` the `mobileAccountNameKeys` too. Returned unchanged when it holds
+    /// none of them. Nil, so the caller saves nothing, when it does not parse or cannot be
+    /// written back after removal: the text must not reach disk on a guess.
     /// `sortedKeys` makes the bytes a function of the content alone, so a pass that stamps a
     /// manifest before writing can be repeated after a crash and land on the same hash.
-    static func droppingLostModeText(_ data: Data, sortedKeys: Bool = false) -> Data? {
+    static func droppingLostModeText(
+        _ data: Data, sortedKeys: Bool = false, removingAccountNames: Bool = false
+    ) -> Data? {
         guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
             return nil
         }
@@ -4533,17 +4607,21 @@ struct ReportEngine: Sendable {
             if let array = value as? [Any] { return array.map(strip) }
             return value
         }
-        let stripped = strip(object)
+        var stripped = strip(object)
+        if removingAccountNames {
+            stripped = removingKeys(stripped, removing: mobileAccountNameKeys) { removed = true }
+        }
         guard removed else { return data }
         return try? JSONSerialization.data(
             withJSONObject: stripped, options: sortedKeys ? [.sortedKeys] : [])
     }
 
     /// The payload with each `purchasing` object cut down to `poDate`, the one key a report
-    /// reads. Price, PO number, vendor and contact stay out of a snapshot that can sync to a
+    /// reads, and, unless `keepAccountNames`, the `computerAccountNameKeys` removed. Price, PO
+    /// number, vendor, contact and account names stay out of a snapshot that can sync to a
     /// shared folder. Returned unchanged when there is nothing to remove; nil when the result
     /// cannot be written back, so the caller saves nothing rather than the full section.
-    static func keepingOnlyPODate(_ data: Data) -> Data? {
+    static func reducingComputers(_ data: Data, keepAccountNames: Bool = false) -> Data? {
         guard let object = try? JSONSerialization.jsonObject(
             with: data, options: [.fragmentsAllowed]) else { return nil }
         var removed = false
@@ -4563,9 +4641,31 @@ struct ReportEngine: Sendable {
             if let array = value as? [Any] { return array.map(strip) }
             return value
         }
-        let stripped = strip(object)
+        var stripped = strip(object)
+        if !keepAccountNames {
+            stripped = removingKeys(stripped, removing: computerAccountNameKeys) { removed = true }
+        }
         guard removed else { return data }
         return try? JSONSerialization.data(withJSONObject: stripped)
+    }
+
+    /// The enrollment instance list with each row cut to `enrollmentIdentityKeys`. Unchanged
+    /// when every row already holds only those; nil when it is not a list of objects or cannot
+    /// be written back, so the caller saves nothing rather than the contact details.
+    static func keepingEnrollmentIdentity(_ data: Data) -> Data? {
+        guard let rows = try? JSONSerialization.jsonObject(with: data, options: []) as? [Any]
+        else { return nil }
+        var removed = false
+        var reduced: [Any] = []
+        for row in rows {
+            guard let dict = row as? [String: Any] else { return nil }
+            if dict.keys.contains(where: { !enrollmentIdentityKeys.contains($0) }) {
+                removed = true
+            }
+            reduced.append(dict.filter { enrollmentIdentityKeys.contains($0.key) })
+        }
+        guard removed else { return data }
+        return try? JSONSerialization.data(withJSONObject: reduced)
     }
 
     static func jsonPayload(from data: Data) -> Data? {

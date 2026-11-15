@@ -40,8 +40,9 @@ final class SharedConfigPinTests: XCTestCase {
         retentionMode: String = "archive", retentionArchiveDir: String = "",
         webhook: String = "https://hooks.example.com/a", detail: String = "full",
         historicalDir: String = "snapshots", protectProfile: String = "protect-a",
-        heartbeat: Bool? = nil, protectBackup: String? = nil
+        heartbeat: Bool? = nil, protectBackup: String? = nil, keepNames: String? = nil
     ) throws {
+        let names = keepNames.map { "\njamf_cli:\n  keep_account_names: \($0)" } ?? ""
         let beat = heartbeat.map { "\n  heartbeat: \($0)" } ?? ""
         let backup = protectBackup.map { "\n  backup_on_synced_storage: \($0)" } ?? ""
         let body = """
@@ -63,7 +64,7 @@ final class SharedConfigPinTests: XCTestCase {
           historical_csv_dir: "\(historicalDir)"
         protect:
           enabled: true
-          profile: "\(protectProfile)"\(backup)
+          profile: "\(protectProfile)"\(backup)\(names)
         """
         try body.write(to: workspace.appendingPathComponent("config.yaml"),
                        atomically: true, encoding: .utf8)
@@ -1350,5 +1351,67 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertNil(ProtectBackup.syncedStorageChoice(
             profile: profile, config: try ConfigLoader.load(
                 from: workspace.appendingPathComponent("config.yaml")), appSupport: appSupport))
+    }
+
+    // MARK: - jamf_cli.keep_account_names
+
+    private func namesKept() throws -> Bool {
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        return SharedConfigPin.keepAccountNames(
+            config.jamfCli?.keepsAccountNames ?? false, profile: profile, appSupport: appSupport)
+    }
+
+    func testKeepingNamesAtFirstSightWaitsForAConfirm() throws {
+        try writeConfig(keepNames: "true")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+        XCTAssertFalse(try namesKept(), "a value a peer may have written removes names")
+        try confirmAll()
+        XCTAssertTrue(try namesKept())
+    }
+
+    func testAPeerTurningKeepOnIsDriftAndStillRemovesNames() throws {
+        try writeConfig()
+        _ = check()
+        try writeConfig(keepNames: "true")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+        let row = try XCTUnwrap(ConfigDoctorService.sharedConfigRows(
+            profile: profile, appSupport: appSupport).first)
+        XCTAssertEqual(row.items.count, 1)
+        XCTAssertNotNil(row.items.first?.action, "the row offers a Confirm")
+        XCTAssertFalse(try namesKept())
+    }
+
+    func testTurningKeepOffAppliesAtOnceAndBackOnWaits() throws {
+        try writeConfig(keepNames: "true")
+        try confirmAll()
+        XCTAssertTrue(try namesKept())
+        try writeConfig(keepNames: "false")
+        XCTAssertFalse(try namesKept())
+        XCTAssertTrue(check().drifts.isEmpty, "the safe value is pinned, not shown as drift")
+        try writeConfig(keepNames: "true")
+        XCTAssertFalse(try namesKept())
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+    }
+
+    func testAPinWrittenBeforeTheKeyAdoptsATrueAsUnconfirmed() throws {
+        try writeConfig()
+        _ = check()
+        var pin = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
+        pin.pinnedKeys.removeAll { $0 == SharedConfigPin.Key.keepAccountNames.rawValue }
+        try SharedConfigPin.save(pin, profile: profile, appSupport: appSupport)
+        try writeConfig(keepNames: "true")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+        XCTAssertFalse(try namesKept())
+    }
+
+    func testANonBooleanReadsAsFalseWithoutFailingTheDecode() throws {
+        try writeConfig(keepNames: "\"sometimes\"")
+        XCTAssertFalse(try namesKept())
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
+    func testALocalWorkspaceUsesTheFilesValue() throws {
+        try writeConfig(shared: false, keepNames: "true")
+        XCTAssertTrue(try namesKept())
     }
 }

@@ -107,6 +107,15 @@ enum ConfigDoctorService {
                 ProtectBackup.syncedStorageChoice(profile: profile, config: config))
             rows += proSyncedBackupRows(
                 ProBackup.syncedStorageChoice(profile: profile, config: config))
+            let keepConfigured = config.jamfCli?.keepsAccountNames ?? false
+            rows += accountNameRows(
+                configured: keepConfigured,
+                effective: SharedConfigPin.keepAccountNames(keepConfigured, profile: profile),
+                onSharedStorage: {
+                    (try? WorkspacePaths.dataDir(for: profile)).map {
+                        CloudStorage.isSharedStorage($0)
+                    } ?? false
+                })
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             if includeProbes { rows += accuracyRows(config: config, profile: profile) }
             rows += securityPolicyRows(profile: profile, config: config)
@@ -465,8 +474,8 @@ enum ConfigDoctorService {
     }
 
     /// true/false keys the decoder does not model, and `html.with_workbook`,
-    /// `output.csv_folder`, `notify.heartbeat`, `protect.backup_on_synced_storage` and
-    /// `backup.pro_on_synced_storage`, which it reads as off for any other value instead of
+    /// `output.csv_folder`, `notify.heartbeat`, `protect.backup_on_synced_storage`,
+    /// `backup.pro_on_synced_storage` and `jamf_cli.keep_account_names`, which it reads as off for any other value instead of
     /// failing the decode.
     /// `output.allow_absolute_paths` also takes yes, on and 1 (`WorkspacePaths.optIn`); the
     /// others take only true and false.
@@ -496,6 +505,7 @@ enum ConfigDoctorService {
             ["html", "track_history"], ["html", "with_workbook"], ["output", "csv_folder"],
             ["notify", "heartbeat"],
             ["protect", "backup_on_synced_storage"], ["backup", "pro_on_synced_storage"],
+            ["jamf_cli", "keep_account_names"],
         ]
         for path in switches {
             if let value = typedNonBoolean(at: path, in: root) {
