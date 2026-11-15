@@ -83,11 +83,12 @@ jamf_cli:
   # point data_dir at a profile-specific folder so cached snapshots do not mix
   # between tenants. Not read when the profiles block below is set.
   profile: ""
-  # Saved computer and mobile snapshots leave out the account names jamf-cli returns (local
-  # account names, last logged-in users, FileVault users) and the user's real name, phone,
-  # position and room; username and email stay. Set true to keep them, for example when you read
-  # the snapshots with your own tools. On a shared folder each Mac asks you to confirm true in
-  # Config Doctor first. Snapshots saved earlier keep what they hold.
+  # New snapshots leave out names no report reads: account names, FileVault users, real name,
+  # phone, position, room, Shared iPad users and the enrollment contact fields. The username
+  # and email under user and location stay (Offline Outreach reads them), as do the username
+  # columns of the patch and update failure reports. Set true to keep everything, for example
+  # when you read the snapshots with your own tools. On a shared folder each Mac asks you to
+  # confirm true in Config Doctor first. Snapshots saved earlier keep what they hold.
   keep_account_names: false
 
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.

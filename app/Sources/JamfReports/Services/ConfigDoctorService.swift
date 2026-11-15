@@ -475,8 +475,8 @@ enum ConfigDoctorService {
 
     /// true/false keys the decoder does not model, and `html.with_workbook`,
     /// `output.csv_folder`, `notify.heartbeat`, `protect.backup_on_synced_storage`,
-    /// `backup.pro_on_synced_storage` and `jamf_cli.keep_account_names`, which it reads as off for any other value instead of
-    /// failing the decode.
+    /// `backup.pro_on_synced_storage` and `jamf_cli.keep_account_names`, which it reads as off
+    /// for any other value instead of failing the decode.
     /// `output.allow_absolute_paths` also takes yes, on and 1 (`WorkspacePaths.optIn`); the
     /// others take only true and false.
     static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {

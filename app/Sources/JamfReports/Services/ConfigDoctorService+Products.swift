@@ -119,19 +119,19 @@ extension ConfigDoctorService {
                 : ""
             return [DoctorRow(
                 id: "snapshots.account_names", severity: .suggest,
-                title: L("Account names are removed from saved snapshots"),
-                detail: L("New computer and mobile snapshots leave out account names and the user's real name, phone, position and room.\(waiting) \(earlier)"),
+                title: L("Names no report reads are removed from new snapshots"),
+                detail: L("New computer, mobile and enrollment snapshots leave out account names, FileVault users, real name, phone, position, room and the enrollment contact fields. The username and email under user and location stay (Offline Outreach reads them), as do the username columns of the patch and update failure reports.\(waiting) \(earlier)"),
                 hint: L("Set \(key) to true only if your own tools read those fields."))]
         }
         var rows = [DoctorRow(
             id: "snapshots.account_names", severity: .suggest,
-            title: L("Account names are kept in saved snapshots"),
+            title: L("Names no report reads are kept in new snapshots"),
             detail: L("\(key) is true, so new snapshots hold the account names jamf-cli returns. \(earlier)"),
             hint: L("Set it to false to remove them from new snapshots."))]
         if onSharedStorage() {
             rows.append(DoctorRow(
                 id: "snapshots.account_names_shared", severity: .warn,
-                title: L("Account names are kept on shared storage"),
+                title: L("Names no report reads are kept on shared storage"),
                 detail: L("This workspace's data folder is reachable by other Macs or a sync provider, and \(key) keeps account names in snapshots saved there."),
                 hint: L("Set \(key) to false unless your organization's storage policy allows it.")))
         }
