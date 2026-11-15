@@ -50,9 +50,8 @@ An unmanaged record carries null for most of these. The expiry split was measure
 snapshot's own time with a 30-day check-in cut: every expired profile and all but a handful of
 the expiring ones belong to Macs that have stopped checking in, which is why the finding is split.
 
-Not seen on any tenant: a `device-enrollment-instances` row (the test tenant has no Automated
-Device Enrollment instance). The API reference names `tokenExpirationDate`; the reader is written
-from a captured production row, never from the reference (see Open before build).
+`device-enrollment-instances`: the test tenant has no instance; production has one, and its row
+carries `tokenExpirationDate` as a string (see Open before build).
 
 ## One model
 
@@ -243,8 +242,15 @@ Each slice is one PR into `dev/2-12-0`, stacked.
 
 ## Open before build
 
-- A `device-enrollment-instances` row from production, keys and value types only, to confirm the
-  expiry field's name and date format. Until then slice 1 leaves the token reader out.
+- Answered 2026-11-15 from production (keys and types only): a `device-enrollment-instances` row
+  is `{id, name, supervisionIdentityId, siteId, serverName, serverUuid, adminId, orgName,
+  orgEmail, orgPhone, orgAddress, tokenExpirationDate}`, every value a string. The token reader
+  goes into slice 1. The date's format was not captured, so the reader accepts a date-only value
+  (`yyyy-MM-dd`) and the forms `DeviceInventoryService.parseDate` reads; anything else is "not
+  reported" and the fixture is corrected from one real value before slice 1 merges.
+- The same row carries `adminId`, `orgEmail`, `orgPhone` and `orgAddress`, which nothing reads.
+  They join the sweep in slice 4: the snapshot is saved with `id`, `name`, `serverName` and
+  `tokenExpirationDate` only unless `keep_account_names` is true.
 - One real value each for `appleEnrollmentType`, `awaitingConfiguration` and
   `lockdownModeEnabled` from a Jamf Pro 11.32+ server with enrolled hardware; without one they
   are decoded as text or boolean and shown as reported.
