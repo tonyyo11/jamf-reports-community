@@ -95,6 +95,7 @@ struct CoreDashboard: Sendable {
             ("Environment Stats", writeEnvironmentStats),
             // --- Device health (sheets 22–24) ---
             ("Check-in Health", writeCheckinHealth),
+            ("Management Health", writeManagementHealth),
             ("Active Devices", writeActiveDevices),
             ("Fleet Drift", writeFleetDrift),
             ("Group Hygiene", writeGroupHygiene),
@@ -157,7 +158,7 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Sheet title helper
 
-    private func t(_ base: String) -> String {
+    func t(_ base: String) -> String {
         orgName.isEmpty ? base : "\(orgName) \u{2014} \(base)"
     }
 
@@ -3221,6 +3222,8 @@ struct CoreDashboard: Sendable {
                 + "smart groups, EAs.",
             "Check-in Health": "Devices checked in vs. overdue relative to configured "
                 + "threshold.",
+            "Management Health": "MDM profile expiry, approval and capability, enrollment "
+                + "token expiry, and other management findings per Mac.",
             "Active Devices": "Active vs. stale vs. unmanaged device counts.",
             "Group Hygiene": "Smart/static groups with zero members — candidates for "
                 + "cleanup.",
@@ -3572,7 +3575,7 @@ struct CoreDashboard: Sendable {
         return candidates
     }
 
-    private func loadLatestJSON(names: [String]) throws -> Any {
+    func loadLatestJSON(names: [String]) throws -> Any {
         let data = try loadLatestJSONData(names: names)
         return try JSONSerialization.jsonObject(with: data)
     }

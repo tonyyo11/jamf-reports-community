@@ -577,7 +577,8 @@ final class CoreDashboardTests: XCTestCase {
             "Software Installs", "Package Lifecycle",
             "EA Coverage", "EA Definitions", "Environment Stats",
             // Device health
-            "Check-in Health", "Active Devices", "Fleet Drift", "Group Hygiene",
+            "Check-in Health", "Management Health", "Active Devices", "Fleet Drift",
+            "Group Hygiene",
             // Update & patch details
             "Patch Failures", "Update Status", "Update Failures", "Smart Groups",
             "Patch Summary Dashboard", "Patch Velocity",
