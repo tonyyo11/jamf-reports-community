@@ -2187,15 +2187,18 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Protect Computers")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Computers"),
-                                      subtitle: "Generated: \(ts)", ncols: 8)
+                                      subtitle: "Generated: \(ts)", ncols: 10)
         ws.setColumnWidth(0, 0, 26)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 2, 24)
         ws.setColumnWidth(3, 3, 14)
         ws.setColumnWidth(4, 5, 18)
         ws.setColumnWidth(6, 7, 14)
+        ws.setColumnWidth(8, 8, 18)
+        ws.setColumnWidth(9, 9, 30)
         let hdrs = ["Host", "Serial", "Plan", "OS", "Status", "Last Connection",
-                    "Web Protection", "Full Disk Access"]
+                    "Web Protection", "Full Disk Access", "Signatures Version",
+                    "Last Disconnection Reason"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -2220,6 +2223,14 @@ struct CoreDashboard: Sendable {
             ws.write(asBool(item["webProtectionActive"]).map { $0 ? "Yes" : "No" } ?? "",
                      row: row, col: 6, format: webFmt)
             ws.write(access ?? "", row: row, col: 7, format: diskFmt)
+            // A number cell, so it sorts; blank when Protect reported none.
+            if let version = asInt(item["signaturesVersion"]) {
+                ws.write(version, row: row, col: 8, format: .cell)
+            } else {
+                ws.write("", row: row, col: 8, format: .cell)
+            }
+            ws.write(item["lastDisconnectionReason"] as? String ?? "",
+                     row: row, col: 9, format: .cell)
             row += 1
         }
     }
