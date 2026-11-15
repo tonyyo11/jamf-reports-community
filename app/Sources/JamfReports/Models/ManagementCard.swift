@@ -168,14 +168,22 @@ struct ManagementCard: Sendable, Equatable {
     nonisolated static func load(
         profile: String, inventory: DeviceInventorySnapshot, warningDays: Int, now: Date = Date()
     ) -> ManagementCard? {
+        // A data folder that cannot be resolved is a read failure, not "not collected".
+        load(dataDir: try? WorkspacePaths.dataDir(for: profile), inventory: inventory,
+             warningDays: warningDays, now: now)
+    }
+
+    /// `load(profile:...)` over an explicit data folder; nil is a folder that did not resolve.
+    nonisolated static func load(
+        dataDir: URL?, inventory: DeviceInventorySnapshot, warningDays: Int, now: Date = Date()
+    ) -> ManagementCard? {
         let health = inventory.devices.contains { $0.management != nil }
             ? ManagementHealth(
                 records: inventory.devices,
                 rule: StaleRule(days: inventory.staleDays, basis: inventory.staleBasis),
                 warningDays: warningDays, now: now)
             : nil
-        // A data folder that cannot be resolved is a read failure, not "not collected".
-        let tokens = (try? WorkspacePaths.dataDir(for: profile)).map {
+        let tokens = dataDir.map {
             EnrollmentTokenSnapshot.load(dataDir: $0, warningDays: warningDays, now: now)
         } ?? .unreadable
         return build(
