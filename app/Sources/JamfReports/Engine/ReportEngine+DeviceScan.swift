@@ -330,7 +330,7 @@ extension ReportEngine {
         return .ran(exit: result.exit, data: result.data)
     }
 
-    private static func run(
+    static func run(
         _ bridge: CLIBridge, _ bin: URL, _ args: [String], timeout: TimeInterval
     ) async -> (exit: Int32, data: Data, keychainLocked: Bool)? {
         // stderr is read only for the locked-keychain line; a device call prints nothing else

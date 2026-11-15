@@ -174,6 +174,7 @@ enum CollectRouter {
         },
         gate: @escaping Gate = realGate,
         locateJamfCLI: @escaping @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        schoolScanLimits: ReportEngine.SchoolDeviceScanLimits = .init(),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         try await AttentionLog.recording(profile: workspace.name) {
@@ -183,8 +184,8 @@ enum CollectRouter {
                 proCollect: proCollect ?? defaultProCollect(now: now, engine: proEngine),
                 schoolCollect: schoolCollect, protectCollect: protectCollect,
                 securityCollect: securityCollect,
-                resolved: resolved, gate: gate, locateJamfCLI: locateJamfCLI, now: now,
-                onLine: onLine)
+                resolved: resolved, gate: gate, locateJamfCLI: locateJamfCLI,
+                schoolScanLimits: schoolScanLimits, now: now, onLine: onLine)
         }
     }
 
@@ -202,6 +203,7 @@ enum CollectRouter {
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         gate: Gate,
         locateJamfCLI: @escaping @Sendable () -> URL?,
+        schoolScanLimits: ReportEngine.SchoolDeviceScanLimits,
         now: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
@@ -324,6 +326,14 @@ enum CollectRouter {
             // without parsing summaries. One file per host, so runs never write the same path.
             if coordinating { SharedWorkspace.recordActivity(profile: profile) }
         }
+        // Last: the summary, the add-ons, the claim release and this Mac's activity are done, so
+        // a scan that fails, stalls or is killed costs nothing but itself.
+        guard detected.type == .jamfSchool, let mdm = environment.mdm else { return }
+        await ReportEngine.runSchoolDeviceScanStep(
+            workspace: workspace, school: mdm, workspacePaths: workspacePaths, tiers: tiers,
+            collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+            devicesData: landed.schoolDevices, locateJamfCLI: locateJamfCLI,
+            limits: schoolScanLimits, now: now, onLine: onLine)
     }
 
     private static func runProducts(

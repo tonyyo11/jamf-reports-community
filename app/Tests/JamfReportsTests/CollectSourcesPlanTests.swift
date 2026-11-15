@@ -19,13 +19,15 @@ final class CollectSourcesPlanTests: XCTestCase {
             tenantLevel: tenantLevel, hasTenantID: hasTenantID, collectSkip: skip))
     }
 
-    /// The one other source is SOFA, which a School collect fetches for OS currency.
+    /// The other sources are SOFA, which a School collect fetches for OS currency, and the
+    /// weekly per-device scan.
     func testASchoolWorkspaceListsSchoolCommandsAndSOFAOnly() {
         let school = plan(.jamfSchool)
         XCTAssertEqual(school.sources.map(\.kind),
-                       ReportEngine.schoolCommandMatrix(profile: "prod").map(\.kind) + ["sofa"])
-        XCTAssertEqual(plan(.jamfSchool, skip: ["sofa"]).sources.last?.skipReason,
-                       "listed in jamf_cli.collect_skip")
+                       ReportEngine.schoolCommandMatrix(profile: "prod").map(\.kind)
+                           + ["sofa", ReportEngine.schoolDeviceDetailKind])
+        XCTAssertEqual(plan(.jamfSchool, skip: ["sofa"]).sources.first { $0.kind == "sofa" }?
+            .skipReason, "listed in jamf_cli.collect_skip")
         XCTAssertEqual(school.sources.filter { $0.product == .platformAPI }.map(\.kind),
                        [ReportEngine.schoolBlueprintsKind])
         XCTAssertTrue(school.sources.filter { $0.product != .platformAPI && $0.kind != "sofa" }

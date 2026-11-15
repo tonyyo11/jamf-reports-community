@@ -13,6 +13,14 @@ final class LandedSources: Sendable {
 
     var all: [EnvironmentProducts.Product: Set<String>] { kinds.withLock { $0 } }
 
+    private let devices = Mutex<Data?>(nil)
+    /// The `school-devices` bytes this run saved: the Jamf School device scan's input, never a
+    /// re-read of the newest file, which on a shared folder could be a peer's.
+    var schoolDevices: Data? {
+        get { devices.withLock { $0 } }
+        set { devices.withLock { $0 = newValue } }
+    }
+
     private let unwritten = Mutex(false)
     /// The MDM step logged `summaryNotWrittenMarker` this run.
     var mdmSummaryUnwritten: Bool {
