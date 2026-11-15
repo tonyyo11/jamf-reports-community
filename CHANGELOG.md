@@ -9,6 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
+- A Jamf School workspace's Overview has a Device health card and its workbook a Device Health
+  tab: devices waiting in Automated Device Enrollment that are not enrolled, users with no
+  device, device groups with no members, and classes with no devices, students or teacher, each
+  as a plain count out of its total. (#305)
 - **Management health.** Health Audit has a new card, Computers a new **Management** filter and
   detail section, and reports a new section, all from data Jamf Reports already collected and
   never showed: Macs whose MDM profile has expired or is about to (split into Macs that still
@@ -126,6 +130,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Jamf School workbook has one new tab, Device Health, at the end; no existing tab, column
+  or row moved. (#305)
 - The report workbook has one new tab, **Management Health**, after Check-in Health, and the
   Protect computers tab has two new columns at the end (Signatures version, Last disconnection
   reason). The tabs after Check-in Health move one place to the right; no existing column or
