@@ -48,6 +48,7 @@ final class DevicesViewListCacheTests: XCTestCase {
             case .stale: return device.isStale(rule)
             case .contactGap: return device.contactGap(rule: rule, gapDays: 14) != nil
             case .binaryMissing: return device.isBinaryMissing
+            case .management: return false
             case .patch: return device.patchFailureCount > 0
             case .security: return device.securityGapCount(policy: policy) > 0
             case .priorityAction: return risk(device).level >= .high

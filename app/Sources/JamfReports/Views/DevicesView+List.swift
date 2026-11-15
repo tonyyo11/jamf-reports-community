@@ -56,8 +56,15 @@ extension DevicesView {
         var securityGapCount: Int
         var fileVaultOffHardwareEncryptedCount: Int
         var osDistribution: [DeviceOSSummary]
+        /// The Management filter's one calculation, so a redraw never recounts it per row.
+        var management: ManagementHealth
 
-        init(snapshot: DeviceInventorySnapshot, rule: StaleRule) {
+        init(
+            snapshot: DeviceInventorySnapshot, rule: StaleRule,
+            warningDays: Int = ManagementHealth.defaultWarningDays, now: Date = Date()
+        ) {
+            management = ManagementHealth(
+                records: snapshot.devices, rule: rule, warningDays: warningDays, now: now)
             staleCount = snapshot.staleCount(rule)
             patchIssueCount = snapshot.patchIssueCount
             fileVaultPercent = snapshot.fileVaultPercent
@@ -135,6 +142,7 @@ extension DevicesView {
         devices: [DeviceInventoryRecord], query: String, osFilter: String?, filter: DeviceFilter,
         sortOrder: [KeyPathComparator<DeviceSortRow>], policy: SecurityControlPolicy,
         staleRule: StaleRule, contactGapDays: Int,
+        needsManagementAttention: (DeviceInventoryRecord) -> Bool = { _ in false },
         searchableText: (DeviceInventoryRecord) -> String,
         risk: (DeviceInventoryRecord) -> DeviceRisk
     ) -> [DeviceSortRow] {
@@ -152,6 +160,8 @@ extension DevicesView {
                 return device.contactGap(rule: staleRule, gapDays: contactGapDays) != nil
             case .binaryMissing:
                 return device.isBinaryMissing
+            case .management:
+                return needsManagementAttention(device)
             case .patch:
                 return device.patchFailureCount > 0
             case .security:

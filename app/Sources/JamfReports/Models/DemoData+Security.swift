@@ -179,7 +179,11 @@ extension DemoData {
 
     /// The Offline Outreach screen's inventory: every Mac in `fleetMacs`, last in
     /// contact `daysSinceContact` days before `referenceDate`.
-    static let outreachRecords: [DeviceInventoryRecord] = fleetMacs.map(outreachRecord)
+    static let outreachRecords: [DeviceInventoryRecord] = fleetMacs.enumerated().map {
+        var record = outreachRecord($1)
+        record.management = managementFacts(index: $0)
+        return record
+    }
 
     private static func outreachRecord(_ mac: FleetMac) -> DeviceInventoryRecord {
         var record = DeviceInventoryRecord.empty(id: mac.jamfID, source: "demo")

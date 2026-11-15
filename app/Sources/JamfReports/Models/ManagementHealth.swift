@@ -92,6 +92,9 @@ struct ManagementHealth: Sendable {
     /// Findings with a figure; a finding no Mac was judged on is absent.
     let figures: [Finding: Figure]
     let toggles: [Toggle: OnOff]
+    /// The managed Macs every finding is judged over; the card's "not reported" is this less a
+    /// finding's `evaluated`.
+    let managedCount: Int
     /// The newest major.minor any managed Mac reports; nil below two distinct versions.
     let newestBinary: BinaryVersion?
     private let breakdowns: [Breakdown: [String: [DeviceInventoryRecord]]]
@@ -115,6 +118,7 @@ struct ManagementHealth: Sendable {
         let managed = records.filter {
             !$0.isBinaryMissing && !BinaryMissing.isUnmanaged($0.managedState)
         }
+        managedCount = managed.count
         var figures: [Finding: Figure] = [:]
         var breakdowns: [Breakdown: [String: [DeviceInventoryRecord]]] = [:]
         Self.addProfile(managed, rule, warningDays, now, &figures)
