@@ -9,6 +9,19 @@ versions in this repository map to git tags.
 
 ### Added
 
+- **Management health.** Health Audit has a new card, Computers a new **Management** filter and
+  detail section, and reports a new section, all from data Jamf Reports already collected and
+  never showed: Macs whose MDM profile has expired or is about to (split into Macs that still
+  check in and Macs that are already stale), Macs that are not user-approved or not MDM capable,
+  Jamf binary versions behind the newest in the fleet, device attestation, battery condition,
+  and neutral counts for Recovery Lock, Activation Lock, external boot, automatic login and
+  Remote Desktop. It also shows when each Automated Device Enrollment token expires. A figure no
+  Mac reports is left out, never shown as 0. The HTML report lists expired profiles and an
+  expiring enrollment token under Needs attention. (#305)
+- The Jamf Protect screen and workbook tab show each computer's signatures version and last
+  disconnection reason, and how many computers are behind the newest signatures. (#305)
+- `jamf_cli.keep_account_names` in `config.yaml` (off when absent) keeps account names in saved
+  snapshots for organizations whose own tools read them. See Security below. (#305)
 - Fleet Overview shows what the environment holds: tiles for Mac models, mobile device types,
   operating systems by major version, and when Macs and mobile devices were last seen (under a
   day, 1 to 6 days, 7 days or more, never), from the latest daily summary. A figure the summary
@@ -113,6 +126,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The report workbook has one new tab, **Management Health**, after Check-in Health, and the
+  Protect computers tab has two new columns at the end (Signatures version, Last disconnection
+  reason). No existing tab, column or row moved. (#305)
 - A new workspace's config.yaml records its products in the `profiles:` block from the start:
   setup, adopting jamf-cli's profiles, Add environments and `jamf-reports scaffold --out` into a
   workspace folder all write it, in place of `jamf_cli.profile`. A workspace collects the same
@@ -237,6 +253,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A Jamf Pro server with no mobile devices no longer shows a Partial run: an empty mobile
+  device list is saved as empty instead of failing the lost-mode text check. (#305)
 - `jamf-reports school-check` no longer lists Jamf School blueprints as missing on a profile
   without Platform API fields; it says the collect skips them and why, as the collect log does.
 - Each collect now logs "wrote summary_….json" once instead of twice, and the command line
@@ -459,6 +477,15 @@ versions in this repository map to git tags.
 
 ### Security
 
+- New snapshots no longer hold account names and contact details that no screen or report
+  reads: local account names and last-logged-in usernames on Macs, FileVault-enabled user names,
+  real name, phone, position and room, Shared iPad user lists, and the administrator and
+  organization contact fields of an Automated Device Enrollment instance. The cached copy of a
+  Device Lookup is reduced the same way. Username and email stay, because Offline Outreach uses
+  them. An organization that wants the names kept sets `jamf_cli.keep_account_names: true`; on
+  a shared folder that setting must be confirmed on each Mac in Config Doctor before it applies
+  there, so one Mac cannot switch it on for another. Snapshots saved by earlier builds are not
+  rewritten. (#305)
 - On a shared workspace, another Mac's files can no longer stop this Mac's scheduled runs or
   weaken what it reports:
   - A daily summary with an impossible Jamf Protect or Security Cloud match count is refused,
