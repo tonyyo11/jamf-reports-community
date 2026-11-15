@@ -268,6 +268,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The workspace menu in the sidebar now shows each workspace's device count; it always read
+  nothing before. (#305)
 - A Jamf Pro server with no mobile devices no longer shows a Partial run: an empty mobile
   device list is saved as empty instead of failing the lost-mode text check. (#305)
 - `jamf-reports school-check` no longer lists Jamf School blueprints as missing on a profile

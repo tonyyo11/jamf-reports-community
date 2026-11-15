@@ -67,7 +67,8 @@ struct Sidebar: View {
         }
         // A collect or generate flips the in-flight flag when it starts and ends.
         .task(id: "\(workspace.profile)|\(workspace.demoMode)|"
-              + "\(workspace.isCollectInFlight(for: workspace.profile))") {
+              + "\(workspace.isCollectInFlight(for: workspace.profile))|"
+              + workspace.profiles.map(\.name).joined(separator: ",")) {
             await loadBadgeCounts()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
@@ -247,6 +248,7 @@ struct Sidebar: View {
     private func loadBadgeCounts() async {
         let profile = workspace.profile
         guard !workspace.demoMode else { return }
+        await workspace.refreshDeviceCounts()
         let counts = await Self.readBadgeCounts(profile: profile)
         guard !Task.isCancelled, profile == workspace.profile else { return }
         liveTrendCount = counts.trends
@@ -366,7 +368,7 @@ struct Sidebar: View {
             let count = workspace.deviceCount(for: p.name)
             HStack {
                 Text(title)
-                if count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
+                if let count, count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
                 if p.name == workspace.profile { Image(systemName: "checkmark") }
             }
         }
