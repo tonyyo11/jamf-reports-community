@@ -1383,7 +1383,7 @@ struct LenientElement<Row: Decodable>: Decodable {
     /// skipped; nil when the file cannot be read or is not a list.
     static func rows(at url: URL, logging category: AppLogger.Category) -> [Row]? {
         let name = ConfigSchema.displayText(url.lastPathComponent)
-        guard let data = BoundedFile.readLogged(url, category: category) else { return nil }
+        guard let data = BoundedFile.readSnapshotLogged(url, category: category) else { return nil }
         guard let result = rows(in: data) else {
             AppLogger.event(category, .error, "\(name) is not a JSON list of rows; nothing read")
             return nil

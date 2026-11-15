@@ -238,9 +238,11 @@ enum BoundedFile {
 
     /// `readLogged` for a snapshot at `<data folder>/<kind>/<file>`, with the data folder as the
     /// root: a kind folder a peer replaced with a link is refused, not followed.
-    static func readSnapshotLogged(_ url: URL, limit: Int? = nil) -> Data? {
+    static func readSnapshotLogged(
+        _ url: URL, limit: Int? = nil, category: AppLogger.Category = .collect
+    ) -> Data? {
         let dataFolder = url.deletingLastPathComponent().deletingLastPathComponent()
-        return readLogged(url, limit: limit, inside: dataFolder)
+        return readLogged(url, limit: limit, inside: dataFolder, category: category)
     }
 
     /// Largest cached single-device record.
