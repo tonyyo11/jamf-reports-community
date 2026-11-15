@@ -35,6 +35,8 @@ extension DemoData {
         snapshot.users = schoolUsers
         snapshot.deviceGroups = schoolDeviceGroups
         snapshot.classes = schoolClasses
+        snapshot.deviceDetail = SchoolDeviceDetail(
+            rows: schoolDeviceDetailRows(snapshot.devices), date: schoolCollectedAt)
         snapshot.devicesDate = schoolCollectedAt
         snapshot.depDate = schoolCollectedAt
         snapshot.overviewDate = schoolCollectedAt
@@ -105,6 +107,23 @@ extension DemoData {
             isManaged: managed, isSupervised: managed ? supervised : false,
             lastCheckin: schoolCollectedAt.addingTimeInterval(-Double(minutes) * 60),
             inTrash: false, udid: "demo-school-\(kind.lowercased())-\(i + 1)")
+    }
+
+    /// The weekly scan reached the Macs and iPads but not the Apple TVs, and missed every tenth
+    /// device. A Mac reports no battery.
+    private static func schoolDeviceDetailRows(
+        _ devices: [SchoolFleetService.Device]
+    ) -> [String: SchoolDeviceDetail.Row] {
+        let batteries = [88, 72, 95, 64, 15, 100, 43, 0, 81, 18, 56]
+        var rows: [String: SchoolDeviceDetail.Row] = [:]
+        for (i, device) in devices.enumerated() where device.platform != "tvOS" && i % 10 != 9 {
+            let mac = device.platform == "macOS"
+            rows[device.udid.lowercased()] = SchoolDeviceDetail.Row(
+                enrollType: i % 7 == 3 ? "manual" : "dep",
+                capacityGB: mac ? [256, 512][i % 2] : [64, 128, 256][i % 3],
+                battery: mac ? nil : batteries[i % batteries.count])
+        }
+        return rows
     }
 
     /// iPads bought for the new term, waiting in Automated Device Enrollment.

@@ -197,6 +197,21 @@ final class DemoDataSchoolHealthTests: XCTestCase {
         XCTAssertTrue(snapshot.depDevices.allSatisfy {
             !fleetSerials.contains(SchoolDeviceHealth.key($0.serial))
         })
+        // The per-device scan is derived from the same fleet: Macs and iPads, not Apple TVs.
+        let detail = health.detail
+        XCTAssertEqual(detail.state, .scanned)
+        let scanned = try XCTUnwrap(detail.scanned)
+        XCTAssertEqual(scanned.of, snapshot.devices.count)
+        let scannable = snapshot.devices.filter { $0.platform != "tvOS" }.count
+        XCTAssertLessThan(scanned.count, scannable)
+        XCTAssertEqual(detail.enrollmentReporting, scanned.count)
+        XCTAssertEqual(detail.storageReporting, scanned.count)
+        XCTAssertEqual(detail.enrollment.shown.map(\.count).reduce(0, +), scanned.count)
+        let low = try XCTUnwrap(detail.lowBattery)
+        let zero = try XCTUnwrap(detail.batteryZero)
+        XCTAssertLessThanOrEqual(low.count + zero.count, low.of)
+        XCTAssertEqual(low.of, zero.of)
+        XCTAssertNil(detail.failedAt)
         let overview = Dictionary(
             uniqueKeysWithValues: snapshot.overview.map { ($0.resource, $0.value) })
         XCTAssertEqual(overview["Users"], "\(DemoData.schoolUserCount)")

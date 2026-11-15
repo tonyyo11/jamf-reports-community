@@ -61,6 +61,30 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         }
     }
 
+    /// What the per-device scan holds, joined to the fleet by UDID. Every count is over the
+    /// scanned devices that reported the field.
+    struct Detail: Sendable, Equatable {
+        enum State: Sendable, Equatable { case notCollected, unreadable, scanned }
+
+        var state = State.notCollected
+        var scannedAt: Date?
+        /// When the newest scan attempt failed, nil when it did not.
+        var failedAt: Date?
+        /// Fleet devices with a scan row, of the fleet devices.
+        var scanned: Figure?
+        var enrollment = Values()
+        var enrollmentReporting = 0
+        var storage = Values()
+        var storageReporting = 0
+        /// 1 to `lowBatteryPercent` at the scan, over the devices that reported a battery.
+        var lowBattery: Figure?
+        /// A reading of 0: an empty battery or a device that reports none, so never "low".
+        var batteryZero: Figure?
+    }
+
+    /// The battery cut for the card and workbook; a display constant, not a setting.
+    static let lowBatteryPercent = 20
+
     static let maxShown = ManagementHealth.maxShownValues
 
     private(set) var figures: [Item: Figure] = [:]
@@ -71,6 +95,7 @@ struct SchoolDeviceHealth: Sendable, Equatable {
     private(set) var notEnrolledProfiles = Values()
     /// The DEP rows counted in `.adeNotEnrolled`, in snapshot order.
     private(set) var notEnrolled: [SchoolFleetService.DEPDevice] = []
+    private(set) var detail = Detail()
 
     /// Nil when the snapshot gives no figure and nothing unreadable to say.
     init?(_ snapshot: SchoolFleetService.Snapshot) {
@@ -82,7 +107,10 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         addUsers(snapshot)
         addGroups(snapshot)
         addClasses(snapshot)
-        if figures.isEmpty && unreadable.isEmpty { return nil }
+        addDetail(snapshot)
+        // A fleet with no scan yet still says so.
+        if figures.isEmpty && unreadable.isEmpty && detail.state == .notCollected
+            && detail.failedAt == nil && snapshot.devices.isEmpty { return nil }
     }
 
     /// Items to show, in declaration order: those with a figure or unreadable.
@@ -125,6 +153,31 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         set(.classesNoTeacher, classes.map { $0.teachers.map { $0 == 0 } })
     }
 
+    private mutating func addDetail(_ snapshot: SchoolFleetService.Snapshot) {
+        detail.failedAt = snapshot.deviceDetailFailedAt
+        if snapshot.unreadable.contains(SchoolFleetService.deviceDetailKind) {
+            detail.state = .unreadable
+            return
+        }
+        guard let scan = snapshot.deviceDetail, !snapshot.devices.isEmpty else { return }
+        detail.state = .scanned
+        detail.scannedAt = scan.date
+        let rows = snapshot.devices.compactMap { scan.row(forUDID: $0.udid) }
+        detail.scanned = Figure(count: rows.count, of: snapshot.devices.count)
+        let enrollTypes = rows.compactMap(\.enrollType)
+        detail.enrollmentReporting = enrollTypes.count
+        detail.enrollment = Self.capped(Dictionary(enrollTypes.map { ($0, 1) }, uniquingKeysWith: +))
+        let sizes = rows.compactMap(\.capacityGB).map { L("\($0) GB") }
+        detail.storageReporting = sizes.count
+        detail.storage = Self.capped(Dictionary(sizes.map { ($0, 1) }, uniquingKeysWith: +))
+        let batteries = rows.compactMap(\.battery)
+        guard !batteries.isEmpty else { return }
+        detail.lowBattery = Figure(
+            count: batteries.filter { (1...Self.lowBatteryPercent).contains($0) }.count,
+            of: batteries.count)
+        detail.batteryZero = Figure(count: batteries.filter { $0 == 0 }.count, of: batteries.count)
+    }
+
     /// `verdicts` has one entry per row: nil when the row does not report the field.
     private mutating func set(_ item: Item, _ verdicts: [Bool?]) {
         guard !unreadable.contains(item) else { return }
@@ -152,6 +205,34 @@ struct SchoolDeviceHealth: Sendable, Equatable {
             (value: ConfigSchema.displayText($0.key), count: $0.value)
         }
         return Values(shown: Array(shown), distinct: all.count)
+    }
+
+    /// The per-device scan's lines for the card, in order; every figure is a neutral count and
+    /// battery is worded with the scan date, since it is a point-in-time reading.
+    var detailLines: [String] {
+        func day(_ date: Date) -> String { date.formatted(date: .abbreviated, time: .omitted) }
+        var lines: [String] = []
+        switch detail.state {
+        case .notCollected: lines.append(L("Per-device details not collected yet"))
+        case .unreadable: lines.append(L("Per-device details could not be read"))
+        case .scanned:
+            if let at = detail.scannedAt, let scanned = detail.scanned {
+                lines.append(L("Last scanned \(day(at)) · \(scanned.count) of \(scanned.of) devices"))
+            }
+            if let text = Self.line(detail.enrollment) {
+                lines.append(L("Enrollment type: \(text)"))
+            }
+            if let text = Self.line(detail.storage) { lines.append(L("Storage: \(text)")) }
+            if let low = detail.lowBattery {
+                let (cut, n, of) = (Self.lowBatteryPercent, low.count, low.of)
+                lines.append(L("Battery 1 to \(cut)% when scanned: \(n) of \(of) devices"))
+            }
+            if let zero = detail.batteryZero {
+                lines.append(L("Battery reported as 0: \(zero.count) of \(zero.of) devices"))
+            }
+        }
+        if let failed = detail.failedAt { lines.append(L("Last attempt failed \(day(failed))")) }
+        return lines
     }
 
     /// "ASSIGNED 3 · PUSHED 1", with "5 of 12 values" when more exist than are shown.
