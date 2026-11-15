@@ -55,13 +55,13 @@ final class MobileLostModeTextTests: XCTestCase {
 
     func testComputersWithNothingToRemoveKeepTheirBytes() {
         let null = Data(#"[{"id":"1","purchasing":null}]"#.utf8)
-        XCTAssertEqual(ReportEngine.keepingOnlyPODate(null), null)
+        XCTAssertEqual(ReportEngine.reducingComputers(null), null)
         let dateOnly = Data(#"[{"id":"1","purchasing":{"poDate":"2022-06-01"}}]"#.utf8)
-        XCTAssertEqual(ReportEngine.keepingOnlyPODate(dateOnly), dateOnly)
+        XCTAssertEqual(ReportEngine.reducingComputers(dateOnly), dateOnly)
     }
 
     func testAPayloadThatDoesNotParseIsNotSavedWithPurchasingDetails() throws {
-        XCTAssertNil(ReportEngine.keepingOnlyPODate(Data("{".utf8)))
+        XCTAssertNil(ReportEngine.reducingComputers(Data("{".utf8)))
     }
 
     func testPayloadWithoutTheKeysKeepsItsBytes() {
@@ -105,7 +105,174 @@ final class MobileLostModeTextTests: XCTestCase {
         XCTAssertEqual(try changes(Self.record), [.lostModeStripFailed: .cleared])
     }
 
+    // MARK: - Account names
+
+    func testComputersLoseExactlyTheAccountNameKeys() throws {
+        let saved = try saveAndRead(kind: "computers", payload: Self.accountRecord)
+        let row = try XCTUnwrap(saved.first)
+        let general = try XCTUnwrap(row["general"] as? [String: Any])
+        let mdm = try XCTUnwrap(general["mdmCapable"] as? [String: Any])
+        XCTAssertEqual(Set(mdm.keys), ["capable"])
+        XCTAssertEqual(Set(general.keys), [
+            "name", "mdmCapable", "lastLoggedInUsernameBinaryTimestamp",
+            "lastLoggedInUsernameMdmTimestamp", "lastLoggedInUsernameSelfServiceTimestamp",
+        ])
+        let disk = try XCTUnwrap(row["diskEncryption"] as? [String: Any])
+        XCTAssertEqual(Set(disk.keys), ["fileVault2Enabled"])
+        let user = try XCTUnwrap(row["userAndLocation"] as? [String: Any])
+        XCTAssertEqual(Set(user.keys), ["username", "email"])
+        XCTAssertEqual((row["purchasing"] as? [String: Any])?["poDate"] as? String, "2022-06-01")
+    }
+
+    func testKeepAccountNamesLeavesThemAndStillCutsPurchasing() throws {
+        let saved = try saveAndRead(
+            kind: "computers", payload: Self.accountRecord, keepAccountNames: true)
+        let row = try XCTUnwrap(saved.first)
+        let general = try XCTUnwrap(row["general"] as? [String: Any])
+        XCTAssertEqual(general["lastLoggedInUsernameMdm"] as? String, "placeholder-user")
+        XCTAssertNotNil((general["mdmCapable"] as? [String: Any])?["capableUsers"])
+        XCTAssertNotNil((row["diskEncryption"] as? [String: Any])?["fileVault2EnabledUserNames"])
+        XCTAssertEqual(
+            (row["userAndLocation"] as? [String: Any])?["realname"] as? String, "Placeholder Name")
+        XCTAssertEqual((row["purchasing"] as? [String: Any])?.keys.sorted(), ["poDate"])
+    }
+
+    /// Valid JSON the reducer rejects (an object, not a list of rows) takes the failure path.
+    /// A computers payload cannot: whatever parses also serializes, and `{` never reaches it.
+    func testAnEnrollmentPayloadThatCannotBeReducedIsNotSavedAndFails() throws {
+        let kind = ReportEngine.enrollmentInstancesKind
+        let lines = LineBox()
+        let stateDir = dataDir.appendingPathComponent("state", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
+        let store = StateFileStore(directory: stateDir)
+        let result = try ReportEngine.saveCollectedPayload(
+            kind: kind, data: Data(#"{"id": "1"}"#.utf8),
+            outcome: ReportEngine.CollectOutcome(kind: kind, exitCode: 0),
+            isPartialFailure: false, dataDir: dataDir, recordManifest: false,
+            stateStore: store, collectStart: Date(), onLine: lines.append)
+        XCTAssertFalse(result.saved)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent(kind).path))
+        XCTAssertEqual(store.lastFailureExitCode(for: kind), 0, "the failure is recorded")
+        XCTAssertEqual(lines.texts.filter { $0.hasPrefix("[warn] \(kind)") }.count, 1)
+        XCTAssertTrue(lines.texts.contains { $0.contains("contact details") })
+    }
+
+    func testEnrollmentInstancesKeepFourKeys() throws {
+        let kind = ReportEngine.enrollmentInstancesKind
+        let payload = #"""
+            [{"id": "1", "name": "Placeholder ADE", "serverName": "Placeholder Server",
+              "tokenExpirationDate": "2027-01-01", "adminId": "admin-x",
+              "orgEmail": "org@example.com", "orgPhone": "555-0100", "orgAddress": "1 Example St",
+              "serverUuid": "uuid-x", "orgName": "Example Org"}]
+            """#
+        let saved = try saveAndRead(kind: kind, payload: payload)
+        XCTAssertEqual(
+            Set(try XCTUnwrap(saved.first).keys),
+            ["id", "name", "serverName", "tokenExpirationDate"])
+        let kept = try saveAndRead(kind: kind, payload: payload, keepAccountNames: true)
+        XCTAssertEqual(try XCTUnwrap(kept.first).keys.count, 10)
+        XCTAssertNil(ReportEngine.keepingEnrollmentIdentity(Data(#"{"id":"1"}"#.utf8)))
+        XCTAssertNil(ReportEngine.reducingComputers(Data("{".utf8)))
+    }
+
+    func testMobileListLosesTheSelfServiceUsernameAndContactKeys() throws {
+        let kind = MobileFleetService.deviceKind
+        let payload = #"""
+            [{"id": "7",
+              "general": {"udid": "U-1", "lastLoggedInUsernameSelfService": "placeholder"},
+              "userAndLocation": {"username": "placeholder", "emailAddress": "a@example.com",
+                                  "realName": "Placeholder Name", "phoneNumber": "555-0100",
+                                  "position": "Role", "room": "1"},
+              "security": {"lostModeEnabled": false}}]
+            """#
+        let saved = try XCTUnwrap(saveAndRead(kind: kind, payload: payload).first)
+        XCTAssertEqual(Set((saved["general"] as? [String: Any] ?? [:]).keys), ["udid"])
+        XCTAssertEqual(
+            Set((saved["userAndLocation"] as? [String: Any] ?? [:]).keys),
+            ["username", "emailAddress"])
+        let kept = try XCTUnwrap(
+            saveAndRead(kind: kind, payload: payload, keepAccountNames: true).first)
+        XCTAssertNotNil((kept["general"] as? [String: Any])?["lastLoggedInUsernameSelfService"])
+    }
+
+    /// jamf-cli prints an empty Go slice as `null`: a valid empty answer for every reducer.
+    func testEmptyListsAreSavedAsTheyAreForAllThreeReducers() throws {
+        let kinds = [
+            "computers", MobileFleetService.deviceKind, ReportEngine.enrollmentInstancesKind,
+        ]
+        for kind in kinds {
+            for payload in ["null", "[]"] {
+                let stateDir = dataDir.appendingPathComponent("state-\(kind)-\(payload.count)")
+                try FileManager.default.createDirectory(
+                    at: stateDir, withIntermediateDirectories: true)
+                let store = StateFileStore(directory: stateDir)
+                let result = try ReportEngine.saveCollectedPayload(
+                    kind: kind, data: Data(payload.utf8),
+                    outcome: ReportEngine.CollectOutcome(kind: kind, exitCode: 0),
+                    isPartialFailure: false, dataDir: dataDir, recordManifest: false,
+                    stateStore: store, collectStart: Date(), onLine: { _ in })
+                XCTAssertTrue(result.saved, "\(kind) \(payload)")
+                XCTAssertNil(store.lastFailureExitCode(for: kind), "\(kind) \(payload)")
+            }
+        }
+    }
+
+    func testAnEnvelopeOfEnrollmentRowsIsReducedInsideResults() throws {
+        let data = Data(
+            #"{"totalCount":1,"results":[{"id":"1","orgEmail":"o@example.com"}]}"#.utf8)
+        let reduced = try XCTUnwrap(ReportEngine.keepingEnrollmentIdentity(data))
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: reduced) as? [String: Any])
+        XCTAssertEqual(object["totalCount"] as? Int, 1)
+        let rows = try XCTUnwrap(object["results"] as? [[String: Any]])
+        XCTAssertEqual(Set(try XCTUnwrap(rows.first).keys), ["id"])
+    }
+
+    func testComputersEnvelopeIsReducedLikeABareList() throws {
+        let data = Data(
+            #"{"totalCount":1,"results":[{"general":{"lastLoggedInUsernameMdm":"x"}}]}"#.utf8)
+        let reduced = try XCTUnwrap(ReportEngine.reducingComputers(data))
+        XCTAssertFalse(String(decoding: reduced, as: UTF8.self).contains("lastLoggedIn"))
+    }
+
+    func testSharedIPadUserListsAreRemovedWhateverTheirValue() throws {
+        for value in ["null", #"[{"username":"placeholder"}]"#] {
+            let payload = """
+                [{"id":"7","sharedUsers":\(value),"userProfiles":\(value),
+                  "general":{"udid":"U-1","residentUsers":\(value)}}]
+                """
+            let row = try XCTUnwrap(
+                saveAndRead(kind: MobileFleetService.deviceKind, payload: payload).first)
+            XCTAssertEqual(Set(row.keys), ["id", "general"], value)
+            XCTAssertEqual(Set((row["general"] as? [String: Any] ?? [:]).keys), ["udid"], value)
+            let kept = try XCTUnwrap(saveAndRead(
+                kind: MobileFleetService.deviceKind, payload: payload,
+                keepAccountNames: true).first)
+            XCTAssertNotNil(kept["sharedUsers"], value)
+        }
+    }
+
     // MARK: - Fixtures
+
+    private static let accountRecord = #"""
+        [{"id": "1",
+          "general": {"name": "Mac-A",
+                      "mdmCapable": {"capable": true, "capableUsers": ["placeholder-user"],
+                                     "userManagementInfo": [{"username": "placeholder-user"}]},
+                      "lastLoggedInUsernameBinary": "placeholder-user",
+                      "lastLoggedInUsernameBinaryTimestamp": "2026-01-01T00:00:00Z",
+                      "lastLoggedInUsernameMdm": "placeholder-user",
+                      "lastLoggedInUsernameMdmTimestamp": "2026-01-01T00:00:00Z",
+                      "lastLoggedInUsernameSelfService": "placeholder-user",
+                      "lastLoggedInUsernameSelfServiceTimestamp": "2026-01-01T00:00:00Z"},
+          "diskEncryption": {"fileVault2Enabled": true,
+                             "fileVault2EnabledUserNames": ["placeholder-user"]},
+          "userAndLocation": {"username": "placeholder-user", "email": "a@example.com",
+                              "realname": "Placeholder Name", "phone": "555-0100",
+                              "position": "Role", "room": "1"},
+          "purchasing": {"poDate": "2022-06-01", "vendor": "Example Vendor"}}]
+        """#
 
     private static let record = #"""
         [{"id": "7",
@@ -121,13 +288,16 @@ final class MobileLostModeTextTests: XCTestCase {
                          "vendor": "Example Vendor", "warrantyDate": "2025-06-01"}}]
         """#
 
-    private func saveAndRead(kind: String, payload: String) throws -> [[String: Any]] {
+    private func saveAndRead(
+        kind: String, payload: String, keepAccountNames: Bool = false
+    ) throws -> [[String: Any]] {
         let data = Data(payload.utf8)
         let result = try ReportEngine.saveCollectedPayload(
             kind: kind, data: data,
             outcome: ReportEngine.CollectOutcome(kind: kind, exitCode: 0),
             isPartialFailure: false, dataDir: dataDir, recordManifest: false,
-            stateStore: nil, collectStart: Date(), onLine: { _ in }
+            keepAccountNames: keepAccountNames, stateStore: nil, collectStart: Date(),
+            onLine: { _ in }
         )
         XCTAssertTrue(result.saved)
         let folder = dataDir.appendingPathComponent(kind, isDirectory: true)

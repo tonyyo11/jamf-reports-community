@@ -65,6 +65,50 @@ final class DeviceDetailStagingTests: XCTestCase {
             jamfCLIArgs: { ["pro", "device", $0] }, locateJamfCLI: { stub })
     }
 
+    // MARK: - Account names
+
+    private static let flatDetail = #"""
+        [{"section":"Identity","resource":"Name","value":"Mac-A"},
+         {"section":"User & Location","resource":"Username","value":"placeholder"},
+         {"section":"User & Location","resource":"Full Name","value":"Placeholder Name"},
+         {"section":"User & Location","resource":"Phone","value":"555-0100"}]
+        """#
+    private static let keyedDetail = #"""
+        {"general":{"lastLoggedInUsernameMdm":"placeholder"},
+         "userAndLocation":{"username":"placeholder","realname":"Placeholder Name"}}
+        """#
+
+    private func cachedText(_ result: CLIBridge.DeviceDetailResult?) throws -> String {
+        let cache = try XCTUnwrap(try XCTUnwrap(result).cacheURL)
+        return String(decoding: try Data(contentsOf: cache), as: UTF8.self)
+    }
+
+    /// The cache can sit in a shared folder: it is reduced, the live value is not.
+    func testTheCacheDropsAccountNamesAndTheLiveValueIsUnreduced() async throws {
+        for payload in [Self.flatDetail, Self.keyedDetail] {
+            let (profile, _) = try makeWorkspace()
+            let stub = try makeStub("printf '%s' '\(payload)'")
+            let result = await fetch(CLIBridge(), profile: profile, stub: stub)
+            let live = String(decoding: try XCTUnwrap(result).data, as: UTF8.self)
+            XCTAssertTrue(live.contains("Placeholder Name"), "the view gets the live data")
+            let cached = try cachedText(result)
+            for removed in ["Placeholder Name", "555-0100", "lastLoggedInUsernameMdm", "realname"] {
+                XCTAssertFalse(cached.contains(removed), removed)
+            }
+            XCTAssertTrue(cached.contains("placeholder"), "the username stays")
+        }
+    }
+
+    func testAConfirmedKeepWritesTheCacheWhole() async throws {
+        let (profile, _) = try makeWorkspace()
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  keep_account_names: true\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let stub = try makeStub("printf '%s' '\(Self.flatDetail)'")
+        let result = await fetch(CLIBridge(), profile: profile, stub: stub)
+        XCTAssertTrue(try cachedText(result).contains("Placeholder Name"))
+    }
+
     // MARK: - Staging
 
     func testOutFileIsStagedOutsideTheWorkspaceAndRemoved() async throws {

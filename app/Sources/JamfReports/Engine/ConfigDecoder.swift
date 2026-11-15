@@ -108,6 +108,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
     /// screen save keeps it.
     var collectSkip: [String]?
+    /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
+    /// or not a boolean reads as false (`ReportEngine.reducingComputers`).
+    var keepAccountNames: Bool?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case dataDir = "data_dir"
@@ -116,7 +119,10 @@ struct JamfCLIConfig: Decodable, Sendable {
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
+        case keepAccountNames = "keep_account_names"
     }
+
+    var keepsAccountNames: Bool { keepAccountNames ?? false }
 
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data" }
@@ -134,6 +140,21 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// `0` or negative preserves the keep-forever escape hatch (returned
     /// verbatim; downstream treats `<= 0` as unlimited).
     var resolvedMaxCacheAgeHours: Int { maxCacheAgeHours ?? 168 }
+}
+
+extension JamfCLIConfig {
+    /// A mistyped `keep_account_names` reads as false rather than failing the whole decode; the
+    /// other keys decode as the synthesized initializer did.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dataDir = try c.decodeIfPresent(String.self, forKey: .dataDir)
+        profile = try c.decodeIfPresent(String.self, forKey: .profile)
+        useCachedData = try c.decodeIfPresent(Bool.self, forKey: .useCachedData)
+        requireManifest = try c.decodeIfPresent(Bool.self, forKey: .requireManifest)
+        maxCacheAgeHours = try c.decodeIfPresent(Int.self, forKey: .maxCacheAgeHours)
+        collectSkip = try c.decodeIfPresent([String].self, forKey: .collectSkip)
+        keepAccountNames = try? c.decodeIfPresent(Bool.self, forKey: .keepAccountNames)
+    }
 }
 
 // MARK: - ComplianceFramework
