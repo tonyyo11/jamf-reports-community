@@ -44,7 +44,7 @@ production `computers` snapshot from October 2026 on Jamf Pro 11.30 (aggregates 
 | `security.remoteDesktopEnabled` | bool or null | almost all true |
 | `hardware.batteryHealth` | `NORMAL`, `UNSUPPORTED`, `UNKNOWN` (others not seen) | about 3 in 4 `NORMAL` |
 | `hardware.batteryCapacityPercent` | number | about 1 in 7 under 80 |
-| `general.appleEnrollmentType`, `general.awaitingConfiguration`, `security.lockdownModeEnabled` | key absent on 11.30; null on the 11.33 test Macs | no real value seen yet |
+| `general.appleEnrollmentType`, `general.awaitingConfiguration`, `security.lockdownModeEnabled` | key absent on 11.30; null on every Mac of an 11.33 test tenant and an 11.34 development server | no real value seen yet |
 
 An unmanaged record carries null for most of these. The expiry split was measured at the
 snapshot's own time with a 30-day check-in cut: every expired profile and all but a handful of
