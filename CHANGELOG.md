@@ -4447,7 +4447,7 @@ HTML instance report (Python CLI and macOS app):
   on load — both keys are read during the transition window so no
   re-scaffolding is required. The legacy key is still honored; PR-23
   GUI saves stop emitting it. Full design in
-  `docs/architecture/tiered-collection-adr.md`. 1 589 tests pass with
+  `docs/architecture/archive/tiered-collection-adr.md`. 1 589 tests pass with
   58 new across `CollectionTierTests`, `CadencePresetTests`,
   `IsDueTests`, `CadenceResolverTests`, `CollectCadenceConfigTests`,
   `StateFileStoreTests`, `WorkspacePathsStateDirTests`,

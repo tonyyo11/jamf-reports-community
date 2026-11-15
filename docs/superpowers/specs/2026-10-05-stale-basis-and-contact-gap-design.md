@@ -1,6 +1,6 @@
 # Stale basis and contact gap — design
 
-Status: approved by the owner on 2026-10-05 for 2.9.0 ("Both in 2.9.0").
+Status: shipped in 2.9.0. Approved by the owner on 2026-10-05 ("Both in 2.9.0").
 
 Two changes built on the three dates Jamf Pro keeps for a Mac:
 

@@ -83,7 +83,8 @@ file changed on disk after the screen loaded it. See
   restriction. Period and fleet workbooks do not read these.
 - **`thresholds`**, **`output`**, **`charts`** — stale-device window, disk-usage bands,
   output retention, chart toggles. See **Stale Macs and the contact gap** below for the
-  stale rule.
+  stale rule. `thresholds.cert_warning_days` (90 when unset) is also the warning window for an
+  expiring MDM profile or Automated Device Enrollment token in Management health.
 
 ### Stale Macs and the contact gap (`thresholds`)
 
@@ -387,12 +388,20 @@ panel.
   for on-premise Jamf Pro: any of `patch-device-failures`, `profile-status`,
   `update-status`, `update-device-failures` (the per-device-heavy queries known to
   stall a server), `dashboard`, `sofa` (the one fetch from `sofafeed.macadmins.io`,
-  for networks that must not reach third-party hosts) and `security-risk` (the Jamf
-  Security Cloud device list). Underscores work in place of
+  for networks that must not reach third-party hosts), `security-risk` (the Jamf
+  Security Cloud device list) and `school-device-detail` (the Jamf School per-device scan for
+  battery, enrollment type and storage, which otherwise runs at most once every 7 days).
+  Underscores work in place of
   hyphens. Anything else in the list is ignored, so core inventory always runs. A listed
   source is skipped even by a manual collect, the run log says so, and the data
   freshness strip does not wait for it. Skipping SOFA leaves the cached feed in use;
   without cache, the macOS currency score factors have no data.
+- **`keep_account_names`** (default `false`) — whether new snapshots keep the account names
+  and contact details that no screen or report reads. Leave it off unless your own tools read
+  those fields from the saved snapshots. On a shared folder, `true` applies on a Mac only after
+  it is confirmed there in **Health Audit → Config**. A value that is not `true` or `false`
+  reads as off, and Config Doctor names it. See "What saved snapshots hold" in
+  [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 - **`max_cache_age_hours`** (default 168, one week) — how old a cached snapshot can be
   before the daily summary digest treats it as absent rather than serving it as
   current. `0` (or any value `<= 0`) keeps cache forever. This only affects the daily
@@ -591,7 +600,9 @@ enough. From the top it has:
 3. **Needs attention**: one sentence for each of stale Macs (more than
    `thresholds.stale_device_days` days without a date `thresholds.stale_basis` lists), Macs MDM
    reaches whose Jamf binary or inventory lags (the contact gap), P0 gaps, patch titles under 50%, failing configuration
-   profiles and apps, failed patch or update runs, and security agents not on every Mac. A
+   profiles and apps, failed patch or update runs, security agents not on every Mac, Macs with
+   an expired MDM profile, and an Automated Device Enrollment token that has expired or is about
+   to. A
    sentence appears only while its count is above zero and links to the part of the report
    that lists it; opening a link opens the group around it. The stale figure and its sentence
    come from the daily summary, which includes Macs enrolled without the Jamf binary; they say
