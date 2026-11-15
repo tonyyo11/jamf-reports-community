@@ -128,7 +128,8 @@ versions in this repository map to git tags.
 
 - The report workbook has one new tab, **Management Health**, after Check-in Health, and the
   Protect computers tab has two new columns at the end (Signatures version, Last disconnection
-  reason). The tabs after Check-in Health move one place to the right; no existing column or row changed. (#305)
+  reason). The tabs after Check-in Health move one place to the right; no existing column or
+  row changed. (#305)
 - A new workspace's config.yaml records its products in the `profiles:` block from the start:
   setup, adopting jamf-cli's profiles, Add environments and `jamf-reports scaffold --out` into a
   workspace folder all write it, in place of `jamf_cli.profile`. A workspace collects the same
