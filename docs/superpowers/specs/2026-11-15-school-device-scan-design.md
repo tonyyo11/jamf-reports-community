@@ -1,7 +1,8 @@
 # Jamf School per-device scan — design
 
-Status: approved with changes at the second plan-review pass (2026-11-15); those changes are in
-this text. The first draft was sent back for rework. The owner asked for it in 2.12 ("Per device Jamf
+Status: built in 2.12. Approved with changes at the second plan-review pass (2026-11-15), the
+owner taking the recommendations as given; the first draft was sent back for rework. Run once
+against a copy of a real Jamf School workspace: 15 devices scanned in 3 seconds, four at a time. The owner asked for it in 2.12 ("Per device Jamf
 school scan can come into 2.12"). Tracked in #305; it follows the Jamf School device health card
 (`docs/superpowers/specs/2026-11-15-management-health-design.md`, "Jamf School").
 
@@ -56,8 +57,8 @@ the router and never changes the collect's result.
 - `jamf_cli.collect_skip` does not list `school-device-detail` (`ReportEngine.skippableKinds`
   learns the name);
 - `school-devices` landed in this run;
-- the last attempt is 7 days old or more (`ReportEngine.schoolDeviceScanInterval`), success or
-  failure. A stamp ahead of now (a peer's clock on a shared workspace) reads as absent.
+- the last attempt is 7 days old (`ReportEngine.schoolDeviceScanInterval`, judged by
+  `CadenceResolver.isDue`, so the scheduler's tolerance applies), success or failure. A stamp ahead of now (a peer's clock on a shared workspace) reads as absent.
 
 `force` never bypasses the cadence: every GUI collect and a School `jamf-cli-full` schedule pass
 `force: true` today, so "force" cannot mean "a person asked". In 2.12 there is no way to rescan
