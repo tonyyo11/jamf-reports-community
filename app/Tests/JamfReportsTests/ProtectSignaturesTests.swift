@@ -81,4 +81,25 @@ final class ProtectSignaturesTests: XCTestCase {
         XCTAssertEqual(value(4, 9), "MQTT_KEEP_ALIVE_TIMEOUT")
         XCTAssertEqual(value(5, 8), "")
     }
+
+    func testAValueOutOfWholeNumberRangeIsNotReportedAndNeverTraps() throws {
+        let json = #"""
+        [{"hostname":"a","signaturesVersion":1e30},{"hostname":"b","signaturesVersion":-1e30},
+         {"hostname":"c","signaturesVersion":22003}]
+        """#
+        let rows = try JSONDecoder().decode([ProtectComputerRow].self, from: Data(json.utf8))
+        XCTAssertNil(rows[0].signaturesVersion)
+        XCTAssertNil(rows[0].signaturesVersionText)
+        XCTAssertNil(rows[1].signaturesVersionText)
+        XCTAssertEqual(rows[2].signaturesVersionText, "22003")
+        XCTAssertNil(ProtectComputerRow.signatureLag(rows))
+    }
+
+    func testWholeIntRefusesNaNInfinityAndOutOfRange() {
+        XCTAssertNil(wholeInt(.nan))
+        XCTAssertNil(wholeInt(.infinity))
+        XCTAssertNil(wholeInt(-.infinity))
+        XCTAssertNil(wholeInt(1e30))
+        XCTAssertEqual(wholeInt(79.6), 80)
+    }
 }

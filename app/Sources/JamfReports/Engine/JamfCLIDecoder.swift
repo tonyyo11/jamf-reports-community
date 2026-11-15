@@ -1160,14 +1160,18 @@ struct ProtectComputerRow: Decodable, Sendable {
         lastConnection = try? c.decodeIfPresent(String.self, forKey: .lastConnection)
         insightsStatsFail = try? c.decodeIfPresent(Int.self, forKey: .insightsStatsFail)
         // JSON integers decode as Double, so one read takes either form.
-        signaturesVersion = try? c.decodeIfPresent(Double.self, forKey: .signaturesVersion)
+        // A version outside whole-number range is not a version: not reported.
+        signaturesVersion = (try? c.decodeIfPresent(Double.self, forKey: .signaturesVersion))
+            .flatMap { wholeInt($0) == nil ? nil : $0 }
         lastDisconnectionReason = try? c.decodeIfPresent(
             String.self, forKey: .lastDisconnectionReason)
     }
 
     /// The signatures version as text: no ".0" on a whole number; nil when not reported.
     var signaturesVersionText: String? {
-        signaturesVersion.map { $0 == $0.rounded() ? String(Int($0)) : String($0) }
+        signaturesVersion.flatMap {
+            $0 == $0.rounded() ? wholeInt($0).map(String.init) : String($0)
+        }
     }
 
     /// How many of the Macs that report a signatures version hold less than the newest one in
