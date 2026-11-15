@@ -41441,6 +41441,46 @@
         }
       }
     },
+    "Computers snapshot: could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer-Snapshot: konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantánea de ordenadores: no se pudo leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantané des ordinateurs : lecture impossible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot dei computer: impossibile leggere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータのスナップショット: 読み込めませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot de computadores: não foi possível ler"
+          }
+        }
+      }
+    },
     "Computers with no %@ for more than this many days are flagged stale." : {
       "localizations" : {
         "de" : {
@@ -77387,6 +77427,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Macs por versão do macOS e a parcela em uma versão atual."
+          }
+        }
+      }
+    },
+    "Macs: on %lld · off %lld · not reported %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Macs: an %lld · aus %lld · nicht gemeldet %lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Macs: on %1$lld · off %2$lld · not reported %3$lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac: activado %lld · desactivado %lld · no informado %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac : actif %lld · inactif %lld · non communiqué %lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac: attivo %lld · disattivo %lld · non riportato %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac: オン %lld · オフ %lld · 未報告 %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Macs: ligado %lld · desligado %lld · não informado %lld"
           }
         }
       }
@@ -147842,52 +147928,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "em %@"
-          }
-        }
-      }
-    },
-    "on %lld · off %lld · not reported %lld" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "an %lld · aus %lld · nicht gemeldet %lld"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "on %1$lld · off %2$lld · not reported %3$lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "activado %lld · desactivado %lld · no informado %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "actif %lld · inactif %lld · non communiqué %lld"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "attivo %lld · disattivo %lld · non riportato %lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オン %lld · オフ %lld · 未報告 %lld"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ligado %lld · desligado %lld · não informado %lld"
           }
         }
       }

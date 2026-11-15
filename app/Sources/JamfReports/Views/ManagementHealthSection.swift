@@ -115,7 +115,7 @@ struct ManagementHealthSection: View {
     static func pillText(_ tone: ManagementCard.Tone) -> String {
         switch tone {
         case .gap: L("GAP")
-        case .warning: "WARNING"
+        case .warning: L("WARNING")
         case .neutral: ""
         }
     }

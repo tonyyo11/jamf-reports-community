@@ -68,7 +68,7 @@ final class ManagementCardTests: XCTestCase {
             mac("c") { $0.supervised = true }, mac("d") { $0.supervised = true },
         ]
         let card = ManagementCard.build(health: health(list), tokens: .empty)
-        XCTAssertEqual(row(card, "toggle.recoveryLock")?.value, "on 1 · off 1 · not reported 2")
+        XCTAssertEqual(row(card, "toggle.recoveryLock")?.value, "Macs: on 1 · off 1 · not reported 2")
         XCTAssertEqual(row(card, "toggle.recoveryLock")?.tone, .neutral)
     }
 
@@ -223,5 +223,16 @@ final class ManagementCardTests: XCTestCase {
         XCTAssertEqual(card?.inventoryNote, "Computers snapshot: could not be read")
         XCTAssertEqual(card?.tokenNote,
                        "Automated Device Enrollment token: could not be read")
+    }
+
+    func testBatteryCapacityThatCannotBeANumberIsNotReported() {
+        for bad in [1e30, -1e30, Double.infinity, Double.nan] {
+            var facts = ManagementFacts(item: [:])
+            facts.batteryCapacityPercent = bad
+            XCTAssertTrue(ManagementDetail.rows(facts, now: now).isEmpty, "\(bad)")
+        }
+        var facts = ManagementFacts(item: [:])
+        facts.batteryCapacityPercent = 87.4
+        XCTAssertEqual(ManagementDetail.rows(facts, now: now).first?.1, "87%")
     }
 }

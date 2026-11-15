@@ -71,7 +71,8 @@ struct ManagementCard: Sendable, Equatable {
             let notReported = max(health.managedCount - onOff.evaluated, 0)
             settings.append(Row(
                 id: "toggle.\(toggle)", title: toggle.title,
-                value: L("on \(onOff.on.count) · off \(onOff.off.count) · not reported \(notReported)"),
+                value: L(
+                    "Macs: on \(onOff.on.count) · off \(onOff.off.count) · not reported \(notReported)"),
                 tone: .neutral))
         }
     }
