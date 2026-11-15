@@ -52,7 +52,7 @@ final class CLIHelpContractTests: XCTestCase {
         "Services/JamfCLIInstaller.swift": 1, "Services/OnboardingFlow+StartOver.swift": 1,
         "Services/OnboardingFlow.swift": 4, "Services/PlatformTwin.swift": 1,
         "Services/ProductSetupChecks.swift": 3, "Services/ProtectBackup.swift": 1,
-        "Services/SchoolPlatformCheck.swift": 1,
+        "Services/SchoolPlatformCheck.swift": 1, "Engine/ReportEngine+SchoolDeviceScan.swift": 1,
         "Engine/BackupDiffModel.swift": 1, "Services/ConfigDoctorService.swift": 1,
         "Services/ConfigService.swift": 1, "Services/SharedConfigPin.swift": 2,
     ]
@@ -62,7 +62,7 @@ final class CLIHelpContractTests: XCTestCase {
     @MainActor
     enum AppCommand: CaseIterable {
         case collectMatrix, protectMatrix, securityMatrix, schoolMatrix, dashboard, audit
-        case deviceScan, patchDefinitions, benchmarks, authRefreshProbe
+        case deviceScan, schoolDeviceScan, patchDefinitions, benchmarks, authRefreshProbe
         case cliCommand, connectionCheck, schoolPlatformCheck, productSetupCheck
         case platformTwin, deviceDetail, backupAndDiff, groupAnalysis, configValidate
         case onboarding, rootFlags
@@ -101,6 +101,11 @@ final class CLIHelpContractTests: XCTestCase {
                                    profile: "p", managementId: "m"),
                                positionals: 1),
                 ]
+            case .schoolDeviceScan:
+                return [Invocation(
+                    label: "school device detail",
+                    argv: ReportEngine.schoolDeviceArguments(profile: "p", udid: "u"),
+                    positionals: 1)]
             case .patchDefinitions:
                 return [Invocation(
                     label: "patch definitions",

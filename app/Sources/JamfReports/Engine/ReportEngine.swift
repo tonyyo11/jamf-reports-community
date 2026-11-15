@@ -3874,12 +3874,15 @@ struct ReportEngine: Sendable {
         if resolved == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
             throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
         }
+        let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: workspace.name))
+        let scanPlan = landedSources?.schoolScanPlan ?? planSchoolDeviceScan(
+            tiers: tiers, collectSkip: collectSkip, stateStore: stateStore, now: now)
         let plan = planSchoolCollect(
             profile: profile, tiers: tiers, force: force,
-            platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false) {
+            platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false,
+            scanDue: scanPlan == .due) {
             stateStore?.lastRun(report: $0)
         }
-        let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: workspace.name))
         let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
             .filter { $0 == sofaKind }
         let afterMatrixSkipped = Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip)
@@ -3889,6 +3892,7 @@ struct ReportEngine: Sendable {
             afterMatrixSkipped: afterMatrixSkipped) {
             onLine(.init(timestamp: Date(), level: .info, text: line))
         }
+        onLine(.init(timestamp: Date(), level: .info, text: "[plan] \(scanPlan.planText)"))
         for kind in afterMatrixSkipped {
             onLine(.init(
                 timestamp: Date(), level: .info,
@@ -3946,6 +3950,7 @@ struct ReportEngine: Sendable {
                     data, kind: kind, dataDir: dataDir, exitCode: exitCode,
                     stateStore: stateStore, at: collectStart, onLine: onLine)
                 schoolSaved.insert(kind)
+                if kind == SchoolFleetService.devicesKind { landedSources?.schoolDevices = data }
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
@@ -3997,6 +4002,11 @@ struct ReportEngine: Sendable {
 
     /// `jamf_cli.collect_skip` as typed; empty when config.yaml is absent or will not load
     /// (`schoolStaleDays` already warns about the latter).
+    /// `jamf_cli.collect_skip` lists the School device scan.
+    static func schoolScanTurnedOff(profile: String) -> Bool {
+        collectSkipKinds(schoolCollectSkip(profile: profile)).contains(schoolDeviceDetailKind)
+    }
+
     private static func schoolCollectSkip(profile: String) -> [String] {
         ProfileService.workspaceURL(for: profile)
             .flatMap { try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml")) }?

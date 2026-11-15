@@ -87,6 +87,12 @@ struct StateFileStore: Sendable {
         try? rewriteManifest()
     }
 
+    /// Removes `report`'s last-run stamp, so the kind reads as never fetched.
+    func clearRun(report: String) {
+        try? FileManager.default.removeItem(at: fileURL(for: report))
+        try? rewriteManifest()
+    }
+
     // MARK: - Failure tracking (2.8 data-freshness health)
 
     /// Consecutive-failure record for one report kind.

@@ -13,6 +13,11 @@ versions in this repository map to git tags.
   tab: devices waiting in Automated Device Enrollment that are not enrolled, users with no
   device, device groups with no members, and classes with no devices, students or teacher, each
   as a plain count out of its total. (#305)
+- A Jamf School workspace is now scanned device by device once a week, after the collect: the
+  Device health card and workbook show each device's enrollment type, storage size and battery
+  level, how many devices were reached and when, with battery worded as of the scan. The scan
+  stops early when the Jamf School API stops answering, and `jamf_cli.collect_skip:
+  [school-device-detail]` turns it off. (#305)
 - **Management health.** Health Audit has a new card, Computers a new **Management** filter and
   detail section, and reports a new section, all from data Jamf Reports already collected and
   never showed: Macs whose MDM profile has expired or is about to (split into Macs that still
@@ -130,6 +135,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Jamf School workbook's Device Inventory tab gains three columns at the end, Enrollment,
+  Storage (GB) and Battery (%) when scanned, blank for a device not scanned yet; its Device
+  Health tab gains the scan's summary rows. No existing column or tab moves. (#305)
 - The Jamf School workbook has one new tab, Device Health, at the end; no existing tab, column
   or row moved. (#305)
 - The report workbook has one new tab, **Management Health**, after Check-in Health, and the
