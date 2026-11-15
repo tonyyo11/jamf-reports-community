@@ -608,7 +608,7 @@ final class SchoolDashboardProtectSheetTests: XCTestCase {
             .temporaryDirectory, workbook: Workbook()).sheetPlan.map(\.name)
         XCTAssertEqual(pro.filter { $0.hasPrefix("Protect ") }, CoreDashboard.protectSheetNames)
         XCTAssertEqual(
-            Array(SchoolDashboard.sheetNames.dropLast().suffix(6)), CoreDashboard.protectSheetNames)
+            Array(SchoolDashboard.sheetNames.dropLast().suffix(5)), CoreDashboard.protectSheetNames)
     }
 
     func test_protectTabs_areWrittenOnlyWhileProtectIsEnabled() throws {

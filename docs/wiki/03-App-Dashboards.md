@@ -153,7 +153,7 @@ A Jamf School workspace gets a Device health card instead; see
   User and Location sections, tier 1) and profiles (tier 2).
 - **Device Lookup** — find one device by serial, hostname, asset tag, or ID.
   Data source: per-device snapshot of computer detail from `pro device <id>` (tier 1).
-- **Jamf Protect** — Protect alerts, agent health, and insights. A **Jamf Pro match** card
+- **Jamf Protect** — Protect alerts, agent health, and plans. A **Jamf Pro match** card
   shows which Protect computers match a Jamf Pro computer (by hardware UUID or serial
   number, never by name), which have no Jamf Pro record, and which Jamf Pro Macs have no
   Protect record. The computers table shows each computer's signatures version and last

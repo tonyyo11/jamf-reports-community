@@ -56,6 +56,7 @@ enum ConfigSchema {
         "columns": "2.11",
         "exceptions.control_id": "2.11",
         "jamf_cli.allow_live_overview": "2.9",
+        "html.section_limits.insights_drift_snapshots": "2.12",
         "jamf_cli.enabled": "2.9",
         "mobile_columns": "2.11",
         "security_policy.score_weights": "2.9",

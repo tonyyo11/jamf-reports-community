@@ -135,6 +135,15 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Jamf Protect Insights are removed, because Jamf removed the Compliance feature from Jamf
+  Protect on 2026-11-03. The Jamf Pro and Jamf School workbooks lose their Protect Insights tab,
+  the HTML report loses its Protect insights drift section, and the Protect screen loses its
+  Insights card, its insight count and its Failing Insights tile. Jamf Reports no longer collects
+  Protect insights; snapshots already on disk are left alone and not read. A saved Custom report
+  selection or `sheets` list that names the Protect Insights tab simply skips it.
+  `html.section_limits.insights_drift_snapshots` is no longer read; saving the Customize screen's
+  HTML report card removes it from `config.yaml`, and Config Doctor words it as retired until then. No other tab, column or
+  row moved.
 - The Jamf School workbook's Device Inventory tab gains three columns at the end, Enrollment,
   Storage (GB) and Battery (%) when scanned, blank for a device not scanned yet; its Device
   Health tab gains the scan's summary rows. No existing column or tab moves. (#305)

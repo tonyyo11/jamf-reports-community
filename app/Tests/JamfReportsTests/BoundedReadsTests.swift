@@ -750,7 +750,7 @@ final class BoundedReadsTests: XCTestCase {
         try fifo(at: pipe)
         let snapshot = try XCTUnwrap(within {
             ProtectDashboardService.load(
-                overviewURL: nil, alertsURL: pipe, computersURL: nil, insightsURL: nil)
+                overviewURL: nil, alertsURL: pipe, computersURL: nil)
         })
         XCTAssertFalse(snapshot.isDetected)
         XCTAssertEqual(snapshot.unreadableKinds, ["protect-alerts"])

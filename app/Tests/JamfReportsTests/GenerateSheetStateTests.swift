@@ -258,6 +258,14 @@ final class GenerateSheetStateTests: XCTestCase {
         XCTAssertTrue(state.customSelectedSheets.isEmpty)
     }
 
+    /// A selection saved before the Protect Insights tab was removed drops that name and keeps the rest.
+    func testASavedSelectionNamingARemovedSheetKeepsTheOthers() {
+        UserDefaults.standard.set(
+            "Executive Summary,Protect Insights", forKey: GenerateSheetState.customSheetsKey)
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+        XCTAssertEqual(GenerateSheetState.savedCustomSelection(), [.executiveSummary])
+    }
+
     func testResolvedTemplateWithNonCustomTemplate() {
         let state = GenerateSheetState()
         state.selectedTemplateID = "executive"

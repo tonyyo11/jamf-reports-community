@@ -191,7 +191,7 @@ extension DemoData {
     private static let schoolKinds = ReportEngine.schoolCommandMatrix(profile: schoolWorkspace)
         .map(\.kind).filter { $0 != ReportEngine.schoolBlueprintsKind }
     private static let protectKinds = [
-        "protect-overview", "protect-alerts", "protect-computers", "protect-insights",
+        "protect-overview", "protect-alerts", "protect-computers",
         "protect-plans",
     ]
 
@@ -201,7 +201,7 @@ extension DemoData {
         "computers": 2_914_336, "mobile-devices-list": 162_904, "ea-results": 1_204_418,
         "app-status": 88_120, "update-status": 14_632, "patch-device-failures": 18_872,
         "update-device-failures": 21_406, "protect-overview": 2_140, "protect-alerts": 36_518,
-        "protect-computers": 128_774, "protect-insights": 44_203, "protect-plans": 6_912,
+        "protect-computers": 128_774, "protect-plans": 6_912,
         "school-overview": 1_204, "school-devices": 612_480, "school-users": 488_116,
     ]
 

@@ -143,7 +143,7 @@ final class TemplatedEngineTests: XCTestCase {
 
         // ExecutiveTemplate does not include Protect or DDM sheets.
         let protectAndDDM: Set<String> = [
-            "Protect Overview", "Protect Alerts", "Protect Computers", "Protect Insights",
+            "Protect Overview", "Protect Alerts", "Protect Computers",
             "DDM Status", "Blueprint Status", "Compliance Devices", "Compliance Rules",
         ]
         for name in written {

@@ -709,7 +709,7 @@ final class JamfCLIDecoderTests: XCTestCase {
         // flattenComputer: lower-case `hostname`, `plan` as a name, `fullDiskAccess` as an enum.
         let json = """
         [{"connectionStatus":"Connected","fullDiskAccess":"Authorized",
-          "hostname":"lab-mac-01.example","insightsStatsFail":4,
+          "hostname":"lab-mac-01.example",
           "lastConnection":"2026-05-01T09:45:00.000Z","memorySize":32,"modelName":"Mac Studio",
           "osMajor":15,"osMinor":7,"osPatch":3,"plan":"Engineering Lab",
           "serial":"SYNTH0000001","tags":"[lab dev]","uuid":"comp-1","version":"6.1.0.2",
@@ -735,7 +735,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].fullDiskAccess, true)
         XCTAssertEqual(rows[0].connectionStatus, "Connected")
         XCTAssertEqual(rows[0].lastConnection, "2026-05-01T09:45:00.000Z")
-        XCTAssertEqual(rows[0].insightsStatsFail, 4)
     }
 
     func testProtectComputerRowOmittedFieldsAreNil() throws {
@@ -766,32 +765,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows.map(\.hostName), [
             "lab-mac-01.example", "exec-mbp-09.example", "build-mini-02.example",
         ])
-    }
-
-    // MARK: - ProtectInsightRow
-
-    func testProtectInsightRowReadsJamfCLIFlattenedRow() throws {
-        // flattenInsight carries no uuid or description; `cisIDs` is one comma-joined string.
-        let json = """
-        [{"cisIDs":"2.3.1, 2.3.2","enabled":true,"label":"Bluetooth sharing disabled",
-          "section":"Sharing","totalFail":12,"totalNone":0,"totalPass":88}]
-        """
-        let rows = try JSONDecoder().decode([ProtectInsightRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].label, "Bluetooth sharing disabled")
-        XCTAssertEqual(rows[0].section, "Sharing")
-        XCTAssertEqual(rows[0].totalPass, 88)
-        XCTAssertEqual(rows[0].totalFail, 12)
-        XCTAssertEqual(rows[0].enabled, true)
-    }
-
-    func testProtectInsightListSurvivesOddFieldType() throws {
-        let json = """
-        [{"enabled":true,"label":"A","totalFail":"12","totalPass":88},
-         {"enabled":false,"label":"B","totalFail":0,"totalPass":100}]
-        """
-        let rows = try JSONDecoder().decode([ProtectInsightRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows.map(\.label), ["A", "B"])
-        XCTAssertEqual(rows.map(\.totalFail), [nil, 0])
     }
 
     // MARK: - ProtectPlanRow

@@ -1126,7 +1126,6 @@ struct ProtectComputerRow: Decodable, Sendable {
     let fullDiskAccess: Bool?
     let connectionStatus: String?
     let lastConnection: String?
-    let insightsStatsFail: Int?
     /// The threat-signature set the agent holds; a whole number in practice.
     let signaturesVersion: Double?
     /// Why the agent last dropped its connection, as Protect words it (`MQTT_KEEP_ALIVE_TIMEOUT`).
@@ -1137,7 +1136,6 @@ struct ProtectComputerRow: Decodable, Sendable {
         case uuid, hostname, serial, modelName, osString, plan, version
         case osMajor, osMinor, osPatch
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
-        case insightsStatsFail
     }
 
     init(from decoder: Decoder) throws {
@@ -1158,7 +1156,6 @@ struct ProtectComputerRow: Decodable, Sendable {
         fullDiskAccess = ProtectComputerRow.fullDiskAccessGranted(access)
         connectionStatus = try? c.decodeIfPresent(String.self, forKey: .connectionStatus)
         lastConnection = try? c.decodeIfPresent(String.self, forKey: .lastConnection)
-        insightsStatsFail = try? c.decodeIfPresent(Int.self, forKey: .insightsStatsFail)
         // JSON integers decode as Double, so one read takes either form.
         // A version outside whole-number range is not a version: not reported.
         signaturesVersion = (try? c.decodeIfPresent(Double.self, forKey: .signaturesVersion))
@@ -1198,30 +1195,6 @@ struct ProtectComputerRow: Decodable, Sendable {
         case "unauthorized": return false
         default: return nil
         }
-    }
-}
-
-// MARK: - Protect insight
-// `jamf-cli protect insights list --output json`: flattenInsight rows.
-
-struct ProtectInsightRow: Decodable, Sendable {
-    let label: String?
-    let section: String?
-    let totalPass: Int?
-    let totalFail: Int?
-    let enabled: Bool?
-
-    private enum CodingKeys: String, CodingKey {
-        case label, section, totalPass, totalFail, enabled
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        label = try? c.decodeIfPresent(String.self, forKey: .label)
-        section = try? c.decodeIfPresent(String.self, forKey: .section)
-        totalPass = try? c.decodeIfPresent(Int.self, forKey: .totalPass)
-        totalFail = try? c.decodeIfPresent(Int.self, forKey: .totalFail)
-        enabled = try? c.decodeIfPresent(Bool.self, forKey: .enabled)
     }
 }
 

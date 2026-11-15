@@ -1281,14 +1281,12 @@ struct HTMLReportConfig: Decodable, Sendable {
 /// Configurable display caps for HTML report sections.
 ///
 /// `protectAlerts` is bounded [1, 200]; values outside this range are clamped
-/// silently.  `insightsDriftSnapshots` is bounded [1, 12].
+/// silently.
 struct HTMLSectionLimits: Decodable, Sendable {
     var protectAlerts: Int?
-    var insightsDriftSnapshots: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case protectAlerts = "protect_alerts"
-        case insightsDriftSnapshots = "insights_drift_snapshots"
     }
 
     /// Maximum protect alerts to display per run. Clamped to [1, 200].
@@ -1299,18 +1297,6 @@ struct HTMLSectionLimits: Decodable, Sendable {
                 "html.section_limits.protect_alerts=\(raw) out of [1,200]; clamped."
             )
             return max(1, min(200, raw))
-        }
-        return raw
-    }
-
-    /// Number of insight snapshots to compare. Clamped to [1, 12].
-    var resolvedInsightsDriftSnapshots: Int {
-        let raw = insightsDriftSnapshots ?? 2
-        if raw < 1 || raw > 12 {
-            AppLogger.collect.warning(
-                "html.section_limits.insights_drift_snapshots=\(raw) out of [1,12]; clamped."
-            )
-            return max(1, min(12, raw))
         }
         return raw
     }

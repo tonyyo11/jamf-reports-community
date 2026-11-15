@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 
 /// Jamf Protect telemetry dashboard. Surfaces overview KPIs, alerts, computer
-/// agent health, and insights from `jamf-cli protect *` snapshots. Renders a
+/// agent health, and plans from `jamf-cli protect *` snapshots. Renders a
 /// clear empty state when no Protect data exists (many tenants don't run Protect).
 struct ProtectView: View {
     @Environment(\.percentFormat) private var percentFormat
@@ -65,7 +65,7 @@ struct ProtectView: View {
                         sourceDates: snapshot.sourceDates,
                         expectedKinds: snapshot.isDetected ? [
                             "protect-overview", "protect-alerts", "protect-computers",
-                            "protect-insights", "protect-plans",
+                            "protect-plans",
                         ] : []
                     )
                 }
@@ -112,9 +112,7 @@ struct ProtectView: View {
             !snapshot.alerts.isEmpty
                 ? (snapshot.alerts.count == 1 ? L("\(snapshot.alerts.count) alert") : L("\(snapshot.alerts.count) alerts")) :
                 (severityAlertCount > 0 ?
-                 (severityAlertCount == 1 ? L("\(severityAlertCount) alert") : L("\(severityAlertCount) alerts")) : nil),
-            !snapshot.insights.isEmpty
-                ? (snapshot.insights.count == 1 ? L("\(snapshot.insights.count) insight") : L("\(snapshot.insights.count) insights")) : nil
+                 (severityAlertCount == 1 ? L("\(severityAlertCount) alert") : L("\(severityAlertCount) alerts")) : nil)
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
@@ -171,8 +169,7 @@ struct ProtectView: View {
 
     @ViewBuilder
     private var dataSections: some View {
-        if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty
-            || !snapshot.insights.isEmpty {
+        if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty {
             kpiGrid
         }
         if !snapshot.alerts.isEmpty {
@@ -191,9 +188,6 @@ struct ProtectView: View {
         if !snapshot.computers.isEmpty {
             computersCard
             proMatchCard
-        }
-        if !snapshot.insights.isEmpty {
-            insightsCard
         }
         if !snapshot.plans.isEmpty {
             plansCard
@@ -227,7 +221,7 @@ struct ProtectView: View {
                 EmptyStateView(
                     systemImage: "shield.lefthalf.filled",
                     title: L("Jamf Protect is not connected"),
-                    message: L("Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and insights are then collected with the workspace's data.")
+                    message: L("Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and plans are then collected with the workspace's data.")
                 )
                 PNPButton(title: L("Connect Jamf Protect"), icon: "link", style: .gold) {
                     showingConnect = true
@@ -436,14 +430,6 @@ struct ProtectView: View {
                 StatTile(
                     label: L("High Alerts"),
                     value: "\(snapshot.highAlerts)",
-                    fillsHeight: true
-                )
-            }
-
-            if snapshot.failingInsights > 0 {
-                StatTile(
-                    label: L("Failing Insights"),
-                    value: "\(snapshot.failingInsights)",
                     fillsHeight: true
                 )
             }
@@ -944,81 +930,6 @@ struct ProtectView: View {
             tone: isConnected ? .teal : .warn
         )
         .accessibilityLabel("\(isConnected ? L("Online") : L("Offline")) connection status")
-    }
-
-    private var insightsCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: L("Insights"))
-
-                VStack(spacing: 8) {
-                    ForEach(Array(snapshot.insights.enumerated()), id: \.offset) { index, insight in
-                        insightRow(insight)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func insightRow(_ insight: ProtectInsightRow) -> some View {
-        let pass = insight.totalPass ?? 0
-        let fail = insight.totalFail ?? 0
-        let total = pass + fail
-
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(insight.label ?? L("Unknown Insight"))
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg)
-
-                Spacer()
-
-                if let enabled = insight.enabled {
-                    Pill(text: enabled ? L("Enabled") : L("Disabled"), tone: enabled ? .teal : .muted)
-                }
-            }
-
-            if let section = insight.section {
-                Text(section)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-            }
-
-            if total > 0 {
-                HStack(spacing: 4) {
-                    Text("Pass: \(pass)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.Colors.tealBright)
-
-                    Text("•")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.Colors.hairlineStrong)
-
-                    Text("Fail: \(fail)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
-
-                    Spacer()
-
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.Colors.hairline)
-                                .frame(height: 4)
-
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.Colors.teal)
-                                .frame(width: max(2, geometry.size.width * Double(pass) / Double(total)), height: 4)
-                        }
-                    }
-                    .frame(width: 60, height: 4)
-                }
-            }
-        }
-        .padding(.vertical, 6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(insight.label ?? L("Unknown insight")), \(pass) pass, \(fail) fail")
     }
 
     // MARK: - Plans

@@ -556,18 +556,6 @@ extension DemoData {
         ("Informational", "GPClickEvent", "Resolved", 2_296),
     ]
 
-    /// Insight results over the 12 pilot Macs.
-    private static let protectInsightFacts: [(
-        label: String, section: String, pass: Int, fail: Int, enabled: Bool
-    )] = [
-        ("Firewall Configuration", "Network Security", 10, 2, true),
-        ("FileVault Status", "Data Protection", 12, 0, true),
-        ("Gatekeeper Policy", "Application Security", 11, 1, true),
-        ("SIP Status", "System Integrity", 12, 0, true),
-        ("XProtect Updates", "Malware Protection", 9, 3, false),
-        ("Certificate Validation", "PKI", 11, 1, true),
-    ]
-
     /// Rows decoded from the JSON jamf-cli prints, so the demo goes through the
     /// decoders a live tenant's snapshots do.
     private static func decodedRows<Row: Decodable>(_ objects: [[String: Any]]) -> [Row] {
@@ -621,25 +609,12 @@ extension DemoData {
         return decodedRows(objects)
     }
 
-    private static func protectInsightRows() -> [ProtectInsightRow] {
-        var objects: [[String: Any]] = []
-        for insight in protectInsightFacts {
-            objects.append([
-                "label": insight.label, "section": insight.section,
-                "totalPass": insight.pass, "totalFail": insight.fail,
-                "enabled": insight.enabled,
-            ])
-        }
-        return decodedRows(objects)
-    }
-
     /// The Protect screen's snapshot. Every count is taken from the rows it lists.
     static let protectSnapshot = makeProtectSnapshot()
 
     private static func makeProtectSnapshot() -> ProtectDashboardService.Snapshot {
         let computers = protectComputerRows()
         let alerts = protectAlertRows()
-        let insights = protectInsightRows()
         let severity = ProtectDashboardService.alertSeverityCounts(alerts)
         let plans = [
             ProtectPlanRow(
@@ -655,7 +630,6 @@ extension DemoData {
             overviewItems: [],
             alerts: alerts,
             computers: computers,
-            insights: insights,
             plans: plans,
             totalComputers: computers.count,
             webProtectionActiveCount: computers.filter { $0.webProtectionActive == true }.count,
@@ -667,7 +641,6 @@ extension DemoData {
             mediumAlerts: severity.medium,
             lowAlerts: severity.low,
             informationalAlerts: severity.informational,
-            failingInsights: insights.filter { ($0.totalFail ?? 0) > 0 }.count,
             sourceFile: nil,
             snapshotDate: referenceDate)
     }

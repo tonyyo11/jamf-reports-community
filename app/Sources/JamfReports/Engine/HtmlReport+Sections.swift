@@ -629,70 +629,6 @@ extension HtmlReport {
             body: parts.joined(separator: "\n")))
     }
 
-    // MARK: - insightsDrift
-
-    /// Protect insights snapshot comparison, using up to
-    /// `html.section_limits.insights_drift_snapshots` (default 2, bounded [1, 12]) snapshots.
-    /// Values are failing-device counts (`totalFail`) per insight, read from the
-    /// `protect-insights` kind directory `ReportEngine.protectCollect` writes.
-    ///
-    /// When more than two snapshots are requested, the table gains one column per additional
-    /// snapshot labelled "N ago" (oldest first, current last).
-    func buildInsightsDrift(protectDataDir: URL?) -> HtmlBlock {
-        let f = HtmlSectionFormatters.self
-        let snapshotCap = config.html?.sectionLimits?.resolvedInsightsDriftSnapshots ?? 2
-
-        guard let dir = protectDataDir else {
-            return .omitted("not configured: protect.enabled is off in config.yaml")
-        }
-        let allSnapshots = loadProtectInsightSnapshots(dataDir: dir)
-        guard allSnapshots.count >= 2 else {
-            return .omitted("needs two or more Protect insights snapshots; "
-                + "\(allSnapshots.count) found")
-        }
-
-        // Take the most recent `snapshotCap` snapshots; fall back to all available if fewer.
-        let window = Array(allSnapshots.suffix(snapshotCap))
-
-        // Collect all insight labels across the window.
-        var insightKeys: [String] = []
-        for snapshot in window {
-            for key in snapshot.keys where !insightKeys.contains(key) {
-                insightKeys.append(key)
-            }
-        }
-        insightKeys.sort()
-
-        // Build headers: "Insight", then one column per snapshot from oldest → "Current".
-        var headers = ["Insight"]
-        for idx in 0 ..< window.count {
-            if idx == window.count - 1 {
-                headers.append("Current")
-            } else if idx == window.count - 2 {
-                headers.append("Previous")
-            } else {
-                headers.append("\(window.count - 1 - idx) ago")
-            }
-        }
-
-        // Plain text: renderTable escapes every cell.
-        let tableRows = insightKeys.map { key -> [String] in
-            var row = [key]
-            for snapshot in window {
-                row.append(snapshot[key].map { "\($0)" } ?? "—")
-            }
-            return row
-        }
-
-        return .shown(f.block(
-            id: "insights-drift",
-            title: "Protect insights drift (\(window.count) of \(allSnapshots.count) snapshots)",
-            body: """
-            <p class="empty-hint">Values are failing-device counts per insight.</p>
-            \(f.renderCappedTable(headers: headers, rows: tableRows, expanded: expandAll))
-            """))
-    }
-
     // MARK: - agentHealth
 
     /// Per-security-agent (CrowdStrike, etc.) installed/missing/unknown counts from the
@@ -803,41 +739,6 @@ extension HtmlReport {
             return nil
         }
         return result
-    }
-
-    /// Load Protect insights snapshots, reduced to failing-device counts
-    /// (`totalFail`) per insight label, oldest first.
-    private func loadProtectInsightSnapshots(dataDir: URL) -> [[String: Int]] {
-        let fm = FileManager.default
-        let subdir = dataDir.appendingPathComponent("protect-insights", isDirectory: true)
-        guard let files = FileManager.snapshotFolderEntries(in: subdir) else { return [] }
-        return files
-            .filter { $0.pathExtension == "json" }
-            // Shared rule (`FileSystemHelpers`): order by the filename stamp,
-            // excluding the manifest, `.partial` staging files and sync-conflict
-            // copies. Raw mtime mis-ordered the series on a synced volume — the
-            // provider re-stamps on materialize — and counted a conflict copy as
-            // an extra day of drift.
-            .filter(FileManager.isSelectableSnapshot)
-            .sorted { FileManager.isOlderSnapshot($0, than: $1) }
-            .compactMap { url -> [String: Int]? in
-                guard let data = BoundedFile.readLogged(url, inside: dataDir) else { return nil }
-                // jamf-cli's flattened row: label, section, enabled,
-                // totalPass/totalFail/totalNone, cisIDs — a bare array, not a dict.
-                let parsed = try? JSONSerialization.jsonObject(with: data)
-                guard let rows = parsed as? [[String: Any]] else {
-                    AppLogger.platform.debug(
-                        "loadProtectInsightSnapshots: JSON parse failed for '\(url.path, privacy: .private)'"
-                    )
-                    return nil
-                }
-                var byLabel: [String: Int] = [:]
-                for row in rows {
-                    guard let label = row["label"] as? String else { continue }
-                    byLabel[label] = asInt(row["totalFail"]) ?? 0
-                }
-                return byLabel
-            }
     }
 
     // MARK: - cleanupAnalysis

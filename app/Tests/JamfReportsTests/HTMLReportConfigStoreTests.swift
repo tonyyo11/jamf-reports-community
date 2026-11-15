@@ -63,14 +63,12 @@ final class HTMLReportConfigStoreTests: XCTestCase {
               history_file: "history/html.json"
               section_limits:
                 protect_alerts: 50
-                insights_drift_snapshots: 4
             """)
         try HTMLReportConfigWriter.save(withWorkbook: true, profile: profile)
 
         let config = try ConfigLoader.load(from: try configURL())
         XCTAssertEqual(config.html?.writesWithWorkbook, true)
         XCTAssertEqual(config.html?.sectionLimits?.protectAlerts, 50)
-        XCTAssertEqual(config.html?.sectionLimits?.insightsDriftSnapshots, 4)
         let text = try readBack()
         XCTAssertTrue(text.contains("track_history: true"))
         XCTAssertTrue(text.contains("history_file: \"history/html.json\"")

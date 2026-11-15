@@ -32,7 +32,6 @@ extension SectionID {
         case .agentHealth: "Security agent health"
         case .exceptionList: "Exception list"
         case .protectAlerts: "Protect alerts"
-        case .insightsDrift: "Protect insights drift"
         case .auditEvidence: "Audit findings"
         case .patchBar: "Patch compliance chart"
         case .patchQueue: "Patch titles behind"
@@ -78,7 +77,7 @@ enum HtmlDetailGroup: String, CaseIterable {
         switch self {
         case .security:
             [.securityTiles, .complianceBands, .agentHealth, .exceptionList, .protectAlerts,
-             .insightsDrift, .auditEvidence]
+             .auditEvidence]
         case .patching: [.patchBar, .patchQueue, .osAdoptionChart, .osCurrency]
         case .devices: [.interventionList]
         case .policies: [.policyTable, .profileTable, .appTable, .cleanupAnalysis]
@@ -244,7 +243,6 @@ extension HtmlReport {
             return buildAgentHealth(eaRows: inputs.eaRows, fleet: inputs.totalDevices)
         case .exceptionList: return buildExceptionList()
         case .protectAlerts: return buildProtectAlerts(protectDataDir: protectDir)
-        case .insightsDrift: return buildInsightsDrift(protectDataDir: protectDir)
         case .auditEvidence: return buildAuditEvidence(auditFindings: inputs.auditFindings)
         case .patchBar:
             return buildPatchChart(patchStatus: inputs.patchStatus)

@@ -172,9 +172,9 @@ Extension Attributes. JamfReports' primary data source.
 
 ### Jamf Protect
 Jamf's endpoint security product. Has its own GraphQL API (not REST), its
-own OAuth2 credentials, and its own concepts (plans, insights, alerts,
+own OAuth2 credentials, and its own concepts (plans, alerts,
 analytics). The Protect dashboard in JamfReports reads cached snapshots
-from `protect overview / alerts / computers / insights`.
+from `protect overview / alerts / computers / plans`.
 
 ### Jamf School
 Jamf's education-focused MDM (a separate product from Jamf Pro, not just a

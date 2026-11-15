@@ -9414,52 +9414,6 @@
         }
       }
     },
-    "%@, %lld pass, %lld fail" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld bestanden, %lld fehlgeschlagen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$lld pass, %3$lld fail"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld correctas, %lld fallidas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld réussis, %lld en échec"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld superati, %lld non superati"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@、合格%lld件、不合格%lld件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld aprovados, %lld reprovados"
-          }
-        }
-      }
-    },
     "%@, %lld passed, %@" : {
       "localizations" : {
         "de" : {
@@ -14686,86 +14640,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld inativos"
-          }
-        }
-      }
-    },
-    "%lld insight" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Erkenntnis"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld análisis"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld analyse"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld approfondimento"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インサイト%lld 件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld insight"
-          }
-        }
-      }
-    },
-    "%lld insights" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Erkenntnisse"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld análisis"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld analyses"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld approfondimenti"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インサイト%lld 件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld insights"
           }
         }
       }
@@ -22648,46 +22522,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 item precisa de atenção"
-          }
-        }
-      }
-    },
-    "1 to 12" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 bis 12"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 a 12"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 à 12"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "da 1 a 12"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1〜12"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 a 12"
           }
         }
       }
@@ -43151,42 +42985,42 @@
         }
       }
     },
-    "Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and insights are then collected with the workspace's data." : {
+    "Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and plans are then collected with the workspace's data." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Binden Sie Jamf Protect mit einem API-Client aus der Protect-Konsole an diesen Arbeitsbereich an. Seine Alarme, Computer und Insights werden dann mit den Daten des Arbeitsbereichs erfasst."
+            "value" : "Binden Sie Jamf Protect mit einem API-Client aus der Protect-Konsole an diesen Arbeitsbereich an. Seine Alarme, Computer und Pläne werden dann mit den Daten des Arbeitsbereichs erfasst."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte Jamf Protect a este espacio de trabajo con un cliente de API de la consola de Protect. Sus alertas, ordenadores y análisis se recopilan junto con los datos del espacio de trabajo."
+            "value" : "Conecte Jamf Protect a este espacio de trabajo con un cliente de API de la consola de Protect. Sus alertas, ordenadores y planes se recopilan junto con los datos del espacio de trabajo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connectez Jamf Protect à cet espace de travail avec un client API de la console Protect. Ses alertes, ordinateurs et analyses sont ensuite collectés avec les données de l’espace de travail."
+            "value" : "Connectez Jamf Protect à cet espace de travail avec un client API de la console Protect. Ses alertes, ordinateurs et plans sont ensuite collectés avec les données de l’espace de travail."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connettere Jamf Protect a questo spazio di lavoro con un client API della console Protect. I suoi avvisi, computer e insight vengono poi raccolti insieme ai dati dello spazio di lavoro."
+            "value" : "Connettere Jamf Protect a questo spazio di lavoro con un client API della console Protect. I suoi avvisi, computer e piani vengono poi raccolti insieme ai dati dello spazio di lavoro."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ProtectコンソールのAPIクライアントを使って、このワークスペースにJamf Protectを接続します。アラート、コンピュータ、インサイトは、ワークスペースのデータとともに収集されます。"
+            "value" : "ProtectコンソールのAPIクライアントを使って、このワークスペースにJamf Protectを接続します。アラート、コンピュータ、プランは、ワークスペースのデータとともに収集されます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte o Jamf Protect a este espaço de trabalho com um cliente de API do console do Protect. Os alertas, computadores e insights dele passam a ser coletados com os dados do espaço de trabalho."
+            "value" : "Conecte o Jamf Protect a este espaço de trabalho com um cliente de API do console do Protect. Os alertas, computadores e planos dele passam a ser coletados com os dados do espaço de trabalho."
           }
         }
       }
@@ -59915,46 +59749,6 @@
         }
       }
     },
-    "Fail: %lld" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fehler: %lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fallo: %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Échec : %lld"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Errori: %lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不合格: %lld"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Falha: %lld"
-          }
-        }
-      }
-    },
     "Failed" : {
       "localizations" : {
         "de" : {
@@ -60311,46 +60105,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Com falha"
-          }
-        }
-      }
-    },
-    "Failing Insights" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fehlgeschlagene Insights"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights con fallos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights défaillants"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight in errore"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失敗しているインサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights com falha"
           }
         }
       }
@@ -69433,46 +69187,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Falha ao gerar o insight."
-          }
-        }
-      }
-    },
-    "Insights" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
           }
         }
       }
@@ -96145,46 +95859,6 @@
         }
       }
     },
-    "Pass: %lld" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bestanden: %lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Correcto: %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réussis : %lld"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Superati: %lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "合格: %lld"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aprovados: %lld"
-          }
-        }
-      }
-    },
     "Passcode Compliant" : {
       "localizations" : {
         "de" : {
@@ -113201,42 +112875,42 @@
         }
       }
     },
-    "Security-engineer deep-dive: Protect alerts, mSCP findings, FileVault/SIP/Gatekeeper/Firewall health, agent coverage, and insights drift." : {
+    "Security-engineer deep-dive: Protect alerts, mSCP findings, FileVault/SIP/Gatekeeper/Firewall health, and agent coverage." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Detailanalyse für Sicherheitstechniker: Protect-Warnungen, mSCP-Befunde, Zustand von FileVault/SIP/Gatekeeper/Firewall, Agent-Abdeckung und Insights-Abweichungen."
+            "value" : "Detailanalyse für Sicherheitstechniker: Protect-Warnungen, mSCP-Befunde, Zustand von FileVault/SIP/Gatekeeper/Firewall und Agent-Abdeckung."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Análisis detallado para ingenieros de seguridad: alertas de Protect, hallazgos de mSCP, estado de FileVault/SIP/Gatekeeper/firewall, cobertura de agentes y deriva de insights."
+            "value" : "Análisis detallado para ingenieros de seguridad: alertas de Protect, hallazgos de mSCP, estado de FileVault/SIP/Gatekeeper/firewall y cobertura de agentes."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Analyse approfondie pour les ingénieurs sécurité : alertes Protect, constats mSCP, santé de FileVault/SIP/Gatekeeper/du pare-feu, couverture des agents et dérive des insights."
+            "value" : "Analyse approfondie pour les ingénieurs sécurité : alertes Protect, constats mSCP, santé de FileVault/SIP/Gatekeeper/du pare-feu et couverture des agents."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Analisi approfondita per i tecnici della sicurezza: avvisi di Protect, rilevamenti mSCP, stato di FileVault/SIP/Gatekeeper/firewall, copertura degli agenti e deriva degli insight."
+            "value" : "Analisi approfondita per i tecnici della sicurezza: avvisi di Protect, rilevamenti mSCP, stato di FileVault/SIP/Gatekeeper/firewall e copertura degli agenti."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "セキュリティエンジニア向けの詳細分析です。Protectのアラート、mSCPの検出事項、FileVault/SIP/Gatekeeper/ファイアウォールの状態、エージェントのカバレッジ、インサイトの変化を含みます。"
+            "value" : "セキュリティエンジニア向けの詳細分析です。Protectのアラート、mSCPの検出事項、FileVault/SIP/Gatekeeper/ファイアウォールの状態、エージェントのカバレッジを含みます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Análise detalhada para engenheiros de segurança: alertas do Protect, achados do mSCP, integridade de FileVault/SIP/Gatekeeper/firewall, cobertura de agentes e desvio de insights."
+            "value" : "Análise detalhada para engenheiros de segurança: alertas do Protect, achados do mSCP, integridade de FileVault/SIP/Gatekeeper/firewall e cobertura de agentes."
           }
         }
       }
@@ -131623,46 +131297,6 @@
         }
       }
     },
-    "Unknown Insight" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unbekannter Insight"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconocido"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyse inconnue"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight sconosciuto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不明なインサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconhecido"
-          }
-        }
-      }
-    },
     "Unknown OS" : {
       "localizations" : {
         "de" : {
@@ -131779,46 +131413,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Erro desconhecido"
-          }
-        }
-      }
-    },
-    "Unknown insight" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unbekannter Insight"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconocido"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyse inconnue"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight sconosciuto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不明なインサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconhecido"
           }
         }
       }

@@ -263,11 +263,6 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(snapshot.webProtectionActiveCount, 10)
         XCTAssertEqual(snapshot.fullDiskAccessCount, 9)
         XCTAssertEqual(snapshot.connectedCount, 10)
-        XCTAssertEqual(snapshot.failingInsights, 4)
-        for insight in snapshot.insights {
-            XCTAssertEqual((insight.totalPass ?? 0) + (insight.totalFail ?? 0),
-                           snapshot.totalComputers, insight.label ?? "")
-        }
         let stages = ProtectDashboardService.killChainBuckets(snapshot.alerts)
         XCTAssertEqual(stages.reduce(0) { $0 + $1.count }, snapshot.alerts.count)
         let versions = ProtectDashboardService.agentVersionDistribution(snapshot.computers)
