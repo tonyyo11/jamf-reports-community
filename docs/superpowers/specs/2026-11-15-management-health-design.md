@@ -207,8 +207,8 @@ would be re-serialized, re-stamped and re-uploaded by a sync provider, inline un
 a once-per-workspace marker would miss a false, true, false sequence; an archive outside the
 workspace would be skipped; and on shared storage a Mac whose `true` is not yet confirmed would
 erase history another Mac chose to keep, which cannot be undone. Config Doctor's row says that
-snapshots saved before this build still hold the names and that retention removes them as they
-age out. A rewrite gets its own design in #421, and when built runs only when config.yaml itself
+snapshots saved before this build still hold the names; they leave only through retention (off by
+default) or by hand. A rewrite gets its own design in #421, and when built runs only when config.yaml itself
 says absent or false, never on drift, an unconfirmed `true` or an unreadable pin.
 
 **The class.** The PR sweeps every saved kind for person-identifying fields no reader names and
