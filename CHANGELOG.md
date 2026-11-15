@@ -478,9 +478,12 @@ versions in this repository map to git tags.
 
 ### Security
 
+- Snapshot readers now refuse a snapshot folder that has been replaced by a link, so a Mac
+  sharing the workspace cannot point a report at another folder on this Mac. (#305)
 - New snapshots no longer hold account names and contact details that no screen or report
   reads: local account names and last-logged-in usernames on Macs, FileVault-enabled user names,
-  real name, phone, position and room, Shared iPad user lists, and the administrator and
+  real name, phone, position and room, the management account's username, Shared iPad user
+  lists, usernames in the app and profile status device rows, and the administrator and
   organization contact fields of an Automated Device Enrollment instance. The cached copy of a
   Device Lookup is reduced the same way. Username and email stay, because Offline Outreach uses
   them. An organization that wants the names kept sets `jamf_cli.keep_account_names: true`; on
