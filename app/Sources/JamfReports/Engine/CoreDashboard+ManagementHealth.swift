@@ -8,8 +8,17 @@ extension CoreDashboard {
 
     func writeManagementHealth() throws {
         let names = ["computers", "computers-list", "computers_list"]
-        guard let rows = try loadLatestJSON(names: names) as? [[String: Any]], !rows.isEmpty
-        else { throw CoreDashboardError.noCachedData(names: names) }
+        let loaded: Any
+        do {
+            loaded = try loadLatestJSON(names: names)
+        } catch let error as CoreDashboardError {
+            throw error
+        } catch {
+            throw warnManagementUnreadable(names)
+        }
+        // A snapshot that is not a list of computers is unreadable, not an empty fleet.
+        guard let rows = loaded as? [[String: Any]] else { throw warnManagementUnreadable(names) }
+        guard !rows.isEmpty else { throw CoreDashboardError.noCachedData(names: names) }
         let now = Date()
         let warningDays = config.thresholds?.resolvedCertWarningDays
             ?? ManagementHealth.defaultWarningDays
@@ -36,6 +45,18 @@ extension CoreDashboard {
                                     row: row + 1)
         writeManagementDetail(ws, ManagementReport.detailRows(health, now: now),
                               judgedGapsOrWarnings: health.judgedGapsOrWarnings, row: row + 1)
+    }
+
+    /// Logs one `[warn]` naming the kind and returns the error that skips the sheet.
+    private func warnManagementUnreadable(_ names: [String]) -> CoreDashboardError {
+        let line = "[warn] Management Health: the \(names[0]) snapshot could not be read; "
+            + "the sheet was skipped."
+        if let onLine {
+            onLine(.init(timestamp: Date(), level: .warn, text: line))
+        } else {
+            print("  " + line)
+        }
+        return .noCachedData(names: names)
     }
 
     private func writeManagementSummary(

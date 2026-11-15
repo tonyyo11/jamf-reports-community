@@ -24,20 +24,29 @@ struct ManagementCard: Sendable, Equatable {
     var tokens: [Row] = []
     /// Why there are no token rows: "not collected" and "could not be read" read apart.
     var tokenNote: String?
+    /// Said when the Computers snapshot could not be read: the card does not hide.
+    var inventoryNote: String?
 
     /// Draws nothing when there is nothing to say about management.
     var isEmpty: Bool {
         gaps.isEmpty && warnings.isEmpty && counts.isEmpty && settings.isEmpty
-            && tokens.isEmpty && tokenNote == nil
+            && tokens.isEmpty && tokenNote == nil && inventoryNote == nil
     }
 
     /// `health` is nil without a `computers` snapshot; a workspace with neither it nor a token
     /// snapshot gets no card.
+    /// `inventoryUnreadable` is the Computers screen's own test for a snapshot that could not be
+    /// read (`unreadableInventory`); it says so instead of hiding the card.
     static func build(
-        health: ManagementHealth?, tokens snapshot: EnrollmentTokenSnapshot
+        health: ManagementHealth?, tokens snapshot: EnrollmentTokenSnapshot,
+        inventoryUnreadable: Bool = false
     ) -> ManagementCard? {
         var card = ManagementCard()
-        if let health, health.judgedAnything { card.addHealth(health) }
+        if inventoryUnreadable {
+            card.inventoryNote = L("Computers snapshot: could not be read")
+        } else if let health, health.judgedAnything {
+            card.addHealth(health)
+        }
         card.addTokens(snapshot, hasHealth: !card.isEmpty)
         return card.isEmpty ? nil : card
     }
@@ -149,6 +158,12 @@ struct ManagementCard: Sendable, Equatable {
 
     /// The card for a workspace: the inventory's management health and the newest token
     /// snapshot. Runs off the main actor.
+    /// No Mac and a warning from the reader: the same test the Computers screen uses to show
+    /// "Couldn't read computer inventory" rather than its empty state.
+    nonisolated static func unreadableInventory(_ inventory: DeviceInventorySnapshot) -> Bool {
+        inventory.devices.isEmpty && !inventory.warnings.isEmpty
+    }
+
     nonisolated static func load(
         profile: String, inventory: DeviceInventorySnapshot, warningDays: Int, now: Date = Date()
     ) -> ManagementCard? {
@@ -158,10 +173,12 @@ struct ManagementCard: Sendable, Equatable {
                 rule: StaleRule(days: inventory.staleDays, basis: inventory.staleBasis),
                 warningDays: warningDays, now: now)
             : nil
+        // A data folder that cannot be resolved is a read failure, not "not collected".
         let tokens = (try? WorkspacePaths.dataDir(for: profile)).map {
             EnrollmentTokenSnapshot.load(dataDir: $0, warningDays: warningDays, now: now)
-        } ?? .empty
-        return build(health: health, tokens: tokens)
+        } ?? .unreadable
+        return build(
+            health: health, tokens: tokens, inventoryUnreadable: unreadableInventory(inventory))
     }
 }
 

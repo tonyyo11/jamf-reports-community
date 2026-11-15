@@ -200,4 +200,28 @@ final class ManagementCardTests: XCTestCase {
         XCTAssertTrue(ManagementDetail.remediation(facts, warningDays: 90, now: now)[0]
             .contains("renews"))
     }
+
+    // MARK: - Unreadable inventory
+
+    func testAnUnreadableComputersSnapshotShowsANoteNeverNothing() {
+        var snapshot = DeviceInventorySnapshot.empty
+        XCTAssertFalse(ManagementCard.unreadableInventory(snapshot))
+        snapshot.warnings = ["Could not parse computers_2026.json"]
+        XCTAssertTrue(ManagementCard.unreadableInventory(snapshot))
+        let card = ManagementCard.build(
+            health: nil, tokens: .empty, inventoryUnreadable: true)
+        XCTAssertEqual(card?.inventoryNote, "Computers snapshot: could not be read")
+        XCTAssertTrue(card?.gaps.isEmpty ?? false)
+        XCTAssertNil(ManagementCard.build(health: nil, tokens: .empty))
+    }
+
+    func testLoadSaysCouldNotBeReadForUnreadableInventoryAndAnUnresolvableDataFolder() {
+        var snapshot = DeviceInventorySnapshot.empty
+        snapshot.warnings = ["Could not read computers.json"]
+        let card = ManagementCard.load(
+            profile: "", inventory: snapshot, warningDays: 90)
+        XCTAssertEqual(card?.inventoryNote, "Computers snapshot: could not be read")
+        XCTAssertEqual(card?.tokenNote,
+                       "Automated Device Enrollment token: could not be read")
+    }
 }

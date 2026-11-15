@@ -14,6 +14,7 @@ struct ManagementHealthSection: View {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     SectionHeader(title: L("Management health")).padding(16)
+                    if let note = card.inventoryNote { noteText(note) }
                     group(L("Gaps"), card.gaps)
                     group(L("Warnings"), card.warnings)
                     group(L("Counts"), card.counts)
@@ -37,13 +38,15 @@ struct ManagementHealthSection: View {
         if !card.tokens.isEmpty || card.tokenNote != nil {
             caption(L("Automated Device Enrollment token"))
             ForEach(card.tokens) { row in rowView(row) }
-            if let note = card.tokenNote {
-                Text(note)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-            }
+            if let note = card.tokenNote { noteText(note) }
         }
+    }
+
+    private func noteText(_ note: String) -> some View {
+        Text(note)
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.tertiary(contrast))
+            .padding(.horizontal, 16).padding(.vertical, 8)
     }
 
     private func caption(_ title: String) -> some View {

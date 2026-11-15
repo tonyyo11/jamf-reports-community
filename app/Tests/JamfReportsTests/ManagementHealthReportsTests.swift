@@ -212,4 +212,32 @@ final class ManagementHealthReportsTests: XCTestCase {
         XCTAssertFalse(all.contains { $0[0] == "No Mac has a management gap or warning." })
         XCTAssertFalse(all.contains { $0[0] == "Macs with a gap or warning" })
     }
+
+    func testASnapshotThatIsNotAListOfComputersWarnsAndSkipsTheSheet() throws {
+        let root = GoldenFleetWorkspace.freshRoot()
+        roots.append(root)
+        let dataDir = root.appendingPathComponent("data", isDirectory: true)
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "computers", dataDir: dataDir, at: GoldenFleetClock.anchorNoon(), rows: fleet)
+        let folder = dataDir.appendingPathComponent("computers", isDirectory: true)
+        for file in try FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil) where file.pathExtension == "json" {
+            try Data(#"{"not": "a list"}"#.utf8).write(to: file)
+        }
+        let lines = LockedLines()
+        let dash = CoreDashboard(
+            config: try ConfigLoader.loadFromString(""), dataDir: dataDir, workbook: Workbook(),
+            onLine: { lines.append($0.text) })
+        XCTAssertThrowsError(try dash.writeManagementHealth())
+        XCTAssertNil(dash.workbook.sheet(named: "Management Health"))
+        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[warn] Management Health:")
+            && $0.contains("computers") }, "\(lines.all)")
+    }
+}
+
+private final class LockedLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    func append(_ line: String) { lock.lock(); lines.append(line); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return lines }
 }
