@@ -4549,7 +4549,9 @@ struct ReportEngine: Sendable {
     static let mobileAccountNameKeys: [String: Set<String>] = [
         "general": ["lastLoggedInUsernameSelfService"],
         "userAndLocation": userContactKeys,
-        "*": ["sharedUsers", "userProfiles", "residentUsers"],
+        // `pro mobile-devices get` nests the same contact details under `location`.
+        "location": userContactKeys,
+        "*": ["sharedUsers", "userProfiles", "residentUsers", "mdmCapableUsers"],
     ]
 
     private static let userContactKeys: Set<String> = [

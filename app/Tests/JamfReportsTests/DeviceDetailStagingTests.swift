@@ -83,6 +83,30 @@ final class DeviceDetailStagingTests: XCTestCase {
         return String(decoding: try Data(contentsOf: cache), as: UTF8.self)
     }
 
+    /// `pro mobile-devices get` nests contact details under `location`, not `userAndLocation`
+    /// (key layout from a real row, 2026-11-15).
+    func testAMobileLookupLosesContactDetailsUnderLocation() throws {
+        let payload = Data(#"""
+            {"name":"iPad-A","managed":true,
+             "location":{"username":"placeholder","emailAddress":"p@example.com",
+                         "realName":"Placeholder Name","phoneNumber":"555-0100",
+                         "position":"Teacher","room":"12"},
+             "ios":{"mdmCapableUsers":["placeholder"],"supervised":true}}
+            """#.utf8)
+        let reduced = try XCTUnwrap(
+            ReportEngine.reducingDeviceDetail(payload, mobile: true, keepAccountNames: false))
+        let text = String(decoding: reduced, as: UTF8.self)
+        for removed in ["Placeholder Name", "555-0100", "Teacher", "room", "mdmCapableUsers"] {
+            XCTAssertFalse(text.contains(removed), removed)
+        }
+        for kept in ["placeholder", "p@example.com", "supervised", "iPad-A"] {
+            XCTAssertTrue(text.contains(kept), kept)
+        }
+        let whole = try XCTUnwrap(
+            ReportEngine.reducingDeviceDetail(payload, mobile: true, keepAccountNames: true))
+        XCTAssertTrue(String(decoding: whole, as: UTF8.self).contains("Placeholder Name"))
+    }
+
     /// The cache can sit in a shared folder: it is reduced, the live value is not.
     func testTheCacheDropsAccountNamesAndTheLiveValueIsUnreduced() async throws {
         for payload in [Self.flatDetail, Self.keyedDetail] {
