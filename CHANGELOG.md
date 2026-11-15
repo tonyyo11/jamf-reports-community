@@ -492,6 +492,9 @@ versions in this repository map to git tags.
 
 ### Security
 
+- Run History and the schedule list now take a run's Partial status from the run's own log
+  only, so a file another Mac drops into a shared workspace can no longer make a partial run
+  read as clean. (#305)
 - Snapshot readers now refuse a snapshot folder that has been replaced by a link, so a Mac
   sharing the workspace cannot point a report at another folder on this Mac. (#305)
 - New snapshots no longer hold account names and contact details that no screen or report

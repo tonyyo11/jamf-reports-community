@@ -253,41 +253,6 @@ final class BoundedReadsTests: XCTestCase {
         XCTAssertNil(exit ?? nil)
     }
 
-    // MARK: - Per-run summary beside the log
-
-    private func summaryURL(for log: URL) -> URL {
-        log.deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("snapshots/computers/summaries")
-            .appendingPathComponent("summary_\(log.deletingPathExtension().lastPathComponent).json")
-    }
-
-    func testPartialRunSummaryIsReadOnlyFromARegularFile() throws {
-        let logs = try logsDir()
-        let log = logs.appendingPathComponent("run.log")
-        let summary = summaryURL(for: log)
-        try fm.createDirectory(at: summary.deletingLastPathComponent(),
-                               withIntermediateDirectories: true)
-        let partial = Data(#"{"status":"partial"}"#.utf8)
-        try partial.write(to: summary)
-        XCTAssertTrue(RunHistoryService.isPartialRun(logURL: log, logTailText: ""))
-
-        let elsewhere = root.appendingPathComponent("elsewhere.json")
-        try partial.write(to: elsewhere)
-        try fm.removeItem(at: summary)
-        try link(summary, to: elsewhere)
-        XCTAssertFalse(RunHistoryService.isPartialRun(logURL: log, logTailText: ""))
-
-        try fm.removeItem(at: summary)
-        try fifo(at: summary)
-        let result = within { RunHistoryService.isPartialRun(logURL: log, logTailText: "") }
-        XCTAssertEqual(result, false, "a FIFO summary must be ignored without blocking")
-
-        try fm.removeItem(at: summary)
-        try sparse(summary, bytes: UInt64(BoundedFile.documentLimit) + 1)
-        XCTAssertFalse(RunHistoryService.isPartialRun(logURL: log, logTailText: ""))
-    }
-
     // MARK: - Run status file
 
     private func status(_ ws: URL, label: String) -> URL {

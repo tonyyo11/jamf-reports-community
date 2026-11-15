@@ -331,42 +331,61 @@ final class LaunchAgentServiceTests: XCTestCase {
 
     // MARK: - Partial-status detection (PR-8 follow-up)
     //
-    // `LaunchAgentService.checkSummaryFileForPartialStatus` is `private` and
-    // not directly callable. The tests below exercise it indirectly through
-    // `LaunchAgentService.parse(plistURL)` → `readLogSummary` →
-    // `checkSummaryFileForPartialStatus`, which is the production path that
-    // populates `Schedule.lastStatus`.
+    // `parse(plistURL)` is the production path that populates `Schedule.lastStatus`.
     //
     // Workspace scaffolding uses the `JRC_TEST_WORKSPACES_ROOT` env override
     // (DEBUG-gated in `ProfileService.workspacesRoot()`) to redirect the
     // workspace lookup to a tmp dir — without it, the test would write into
     // the user's real `~/Jamf-Reports/` and pollute live data.
 
-    func testCheckSummaryFileReturnsPartialWhenStatusIsPartial() throws {
+    func testPartialLogMarkerReadsPartial() throws {
         let scaffold = try makePartialStatusScaffold(
-            profile: "dummy",
-            timestamp: "20260516-143000",
-            summaryStatus: "partial"
-        )
+            profile: "dummy", timestamp: "20260516-143000",
+            logText: "[partial] 1 source(s) did not land\n[info] exit 0 after 5s\n")
         defer { scaffold.cleanup() }
 
         let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
-        XCTAssertEqual(schedule.lastStatus, .partial,
-                       "summary_<logFilename>.json status=partial must surface as Schedule.LastStatus.partial")
+        XCTAssertEqual(schedule.lastStatus, .partial)
     }
 
-    func testCheckSummaryFileReturnsFalseWhenStatusIsOK() throws {
+    func testPlantedSummaryFileCannotHidePartialMarker() throws {
         let scaffold = try makePartialStatusScaffold(
-            profile: "dummy",
-            timestamp: "20260516-144500",
-            summaryStatus: "ok"
-        )
+            profile: "dummy", timestamp: "20260516-144500",
+            logText: "[partial] 1 source(s) did not land\n[info] exit 0 after 5s\n",
+            plantedSummary: #"{"status":"ok"}"#)
         defer { scaffold.cleanup() }
 
         let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
-        // exit 0 + no partial marker + summary status=ok → ok.
-        XCTAssertEqual(schedule.lastStatus, .ok,
-                       "summary status=ok must keep lastStatus at .ok, not .partial")
+        XCTAssertEqual(schedule.lastStatus, .partial)
+    }
+
+    func testPlantedPartialSummaryDoesNotMakeACleanRunPartial() throws {
+        let scaffold = try makePartialStatusScaffold(
+            profile: "dummy", timestamp: "20260516-145500",
+            logText: "[info] exit 0 after 5s\n", plantedSummary: #"{"status":"partial"}"#)
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .ok)
+    }
+
+    func testPartialLogMarkerWinsOverSuccessfulStatusFile() throws {
+        let scaffold = try writeSheetFailuresStatusScaffold(
+            success: true, sheetFailures: nil,
+            logText: "[partial] 1 source(s) did not land\n[info] exit 0 after 5s\n")
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .partial)
+    }
+
+    func testCleanLogWithSuccessfulStatusFileReadsOk() throws {
+        let scaffold = try writeSheetFailuresStatusScaffold(
+            success: true, sheetFailures: nil, logText: "[info] exit 0 after 5s\n")
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .ok)
     }
 
     func testCheckSummaryFileReturnsFalseForMultiLogs() throws {
@@ -407,7 +426,7 @@ final class LaunchAgentServiceTests: XCTestCase {
         let scaffold = try makePartialStatusScaffold(
             profile: "dummy",
             timestamp: "20260516-150000",
-            summaryStatus: nil  // explicitly skip writing summary.json
+            logText: "[info] exit 0 after 5s\n"
         )
         defer { scaffold.cleanup() }
 
@@ -416,7 +435,7 @@ final class LaunchAgentServiceTests: XCTestCase {
                        "Absent summary.json must not synthesize a .partial status")
     }
 
-    /// Test scaffold for `checkSummaryFileForPartialStatus` indirect tests.
+    /// Test scaffold for the log-marker and planted-summary tests.
     /// Creates a temp `JRC_TEST_WORKSPACES_ROOT`, a `<root>/<profile>/`
     /// workspace, the `automation/logs/<ts>.log` log file, optionally the
     /// `snapshots/computers/summaries/summary_<ts>.json` sibling, and the
@@ -429,7 +448,8 @@ final class LaunchAgentServiceTests: XCTestCase {
     private func makePartialStatusScaffold(
         profile: String,
         timestamp: String,
-        summaryStatus: String?
+        logText: String,
+        plantedSummary: String? = nil
     ) throws -> PartialStatusScaffold {
         let workspacesRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("JRC-Partial-\(UUID().uuidString)", isDirectory: true)
@@ -448,12 +468,11 @@ final class LaunchAgentServiceTests: XCTestCase {
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
 
         let logURL = logsDir.appendingPathComponent("\(timestamp).log")
-        try "[info] exit 0 after 5s\n".write(to: logURL, atomically: true, encoding: .utf8)
+        try logText.write(to: logURL, atomically: true, encoding: .utf8)
 
-        if let summaryStatus {
-            let summaryURL = summariesDir.appendingPathComponent("summary_\(timestamp).json")
-            let json = try JSONSerialization.data(withJSONObject: ["status": summaryStatus])
-            try json.write(to: summaryURL)
+        if let plantedSummary {
+            try Data(plantedSummary.utf8)
+                .write(to: summariesDir.appendingPathComponent("summary_\(timestamp).json"))
         }
 
         let label = "\(prefix).\(profile).partial-\(UUID().uuidString.lowercased())"
@@ -532,7 +551,8 @@ final class LaunchAgentServiceTests: XCTestCase {
     private func writeSheetFailuresStatusScaffold(
         success: Bool,
         sheetFailures: Int?,
-        refused: Bool = false
+        refused: Bool = false,
+        logText: String? = nil
     ) throws -> SheetFailuresScaffold {
         let profile = "dummy"
         let workspacesRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -552,7 +572,7 @@ final class LaunchAgentServiceTests: XCTestCase {
         let statusData = try JSONSerialization.data(withJSONObject: status)
         try statusData.write(to: automation.appendingPathComponent("\(label)_status.json"))
 
-        let plistURL = try writePlist([
+        var plist: [String: Any] = [
             "Label": label,
             "ProgramArguments": [
                 "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
@@ -561,7 +581,15 @@ final class LaunchAgentServiceTests: XCTestCase {
             ],
             "StartCalendarInterval": ["Hour": 6, "Minute": 0],
             "Disabled": false,
-        ])
+        ]
+        if let logText {
+            let logs = automation.appendingPathComponent("logs", isDirectory: true)
+            try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+            let logURL = logs.appendingPathComponent("20260727-120000.log")
+            try logText.write(to: logURL, atomically: true, encoding: .utf8)
+            plist["StandardOutPath"] = logURL.path
+        }
+        let plistURL = try writePlist(plist)
 
         return SheetFailuresScaffold(plistURL: plistURL) {
             unsetenv("JRC_TEST_WORKSPACES_ROOT")

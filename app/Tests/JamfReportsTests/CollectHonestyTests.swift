@@ -229,7 +229,7 @@ final class CollectHonestyTests: XCTestCase {
         let line = ReportEngine.standDownLine(reason: "[info] peer collected recently")
         let logURL = root.appendingPathComponent("no-such-workspace/automation/logs/x.log")
         XCTAssertTrue(
-            RunHistoryService.isPartialRun(logURL: logURL, logTailText: line + "\nexit 0 after 2s")
+            RunHistoryService.isPartialRun(logTailText: line + "\nexit 0 after 2s")
         )
     }
 
@@ -537,7 +537,6 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertEqual(marker.count, 1, "got: \(collector.texts)")
         XCTAssertTrue(
             RunHistoryService.isPartialRun(
-                logURL: root.appendingPathComponent("nope/automation/logs/x.log"),
                 logTailText: try XCTUnwrap(marker.first)
             ),
             "a run that lost its summary must not read as a clean success"
