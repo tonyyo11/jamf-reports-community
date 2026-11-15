@@ -244,6 +244,46 @@
         }
       }
     },
+    " %@ is true in config.yaml but not confirmed on this Mac, so names are still removed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ ist in config.yaml true, aber auf diesem Mac nicht bestätigt; die Namen werden daher weiterhin entfernt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ es true en config.yaml pero no está confirmado en este Mac, así que los nombres se siguen eliminando."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ vaut true dans config.yaml mais n’est pas confirmé sur ce Mac ; les noms sont donc toujours supprimés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ è true in config.yaml ma non è confermato su questo Mac, quindi i nomi vengono ancora rimossi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ は config.yaml で true ですが、この Mac では確認されていないため、名前は引き続き削除されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ é true no config.yaml, mas não foi confirmado neste Mac; por isso os nomes continuam sendo removidos."
+          }
+        }
+      }
+    },
     " (+%lld more)" : {
       "localizations" : {
         "de" : {
@@ -6282,6 +6322,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ está configurado. Alterne para ele no menu de espaços de trabalho."
+          }
+        }
+      }
+    },
+    "%@ is true, so new snapshots hold the account names jamf-cli returns. %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist true, daher enthalten neue Snapshots die von jamf-cli gelieferten Accountnamen. %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ is true, so new snapshots hold the account names jamf-cli returns. %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ es true, así que las nuevas instantáneas contienen los nombres de cuenta que devuelve jamf-cli. %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vaut true : les nouveaux instantanés contiennent les noms de compte renvoyés par jamf-cli. %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ è true, quindi i nuovi snapshot contengono i nomi account restituiti da jamf-cli. %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ が true のため、新しいスナップショットには jamf-cli が返すアカウント名が含まれます。%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ é true, então os novos snapshots contêm os nomes de conta retornados pelo jamf-cli. %@"
           }
         }
       }
@@ -16236,6 +16322,52 @@
         }
       }
     },
+    "%lld of %lld behind the newest signatures in this tenant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld hinter den neuesten Signaturen dieses Tenants"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld behind the newest signatures in this tenant"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld por detrás de las firmas más recientes de este tenant"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur %lld en retard sur les signatures les plus récentes de ce tenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld su %lld indietro rispetto alle firme più recenti di questo tenant"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このテナントの最新シグネチャより古い: %lld / %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld atrás das assinaturas mais recentes deste tenant"
+          }
+        }
+      }
+    },
     "%lld of %lld devices reporting" : {
       "localizations" : {
         "de" : {
@@ -23725,6 +23857,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Um Mac que compartilha este espaço de trabalho editou o config.yaml, ou ele foi editado aqui. Até você confirmar, todas as telas, relatórios e execuções neste Mac usam o valor seguro de cada chave (pasta Generated Reports do espaço de trabalho, arquivar em vez de excluir, nenhum envio de webhook, nenhuma coleta do Protect, nenhuma coleta da Platform API, nenhum logotipo, o arquivo de histórico ao lado do relatório, nenhum carimbo de data e hora no relatório)."
+          }
+        }
+      }
+    },
+    "A Mac sharing this workspace edited config.yaml, or it was edited here. Until you confirm, every screen, report and run on this Mac uses the safe value for each key (workspace Generated Reports folder, archive instead of delete, no webhook send, no Protect collection, no Platform API collection, no logo, the history file beside the report, no report timestamp, account names removed from saved snapshots)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Mac, der diesen Arbeitsbereich teilt, hat config.yaml bearbeitet, oder die Datei wurde hier bearbeitet. Bis du bestätigst, verwenden alle Ansichten, Berichte und Läufe auf diesem Mac für jeden Schlüssel den sicheren Wert (Ordner Generated Reports des Arbeitsbereichs, Archivieren statt Löschen, kein Webhook-Versand, keine Protect-Erfassung, keine Platform-API-Erfassung, kein Logo, die Verlaufsdatei neben dem Bericht, kein Berichtszeitstempel, Accountnamen aus gespeicherten Snapshots entfernt)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Mac que comparte este espacio de trabajo editó config.yaml, o se editó aquí. Hasta que lo confirmes, cada pantalla, informe y ejecución en este Mac usa el valor seguro de cada clave (carpeta Generated Reports del espacio de trabajo, archivar en lugar de eliminar, sin envío de webhook, sin recopilación de Protect, sin recopilación de Platform API, sin logotipo, el archivo de historial junto al informe, sin marca de tiempo en el informe, nombres de cuenta eliminados de las instantáneas guardadas)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Mac partageant cet espace de travail a modifié config.yaml, ou il a été modifié ici. Tant que vous ne confirmez pas, chaque écran, rapport et exécution sur ce Mac utilise la valeur sûre de chaque clé (dossier Generated Reports de l’espace de travail, archivage au lieu de suppression, aucun envoi de webhook, aucune collecte Protect, aucune collecte Platform API, aucun logo, fichier d’historique à côté du rapport, aucun horodatage de rapport, noms de compte retirés des instantanés enregistrés)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Mac che condivide questo spazio di lavoro ha modificato config.yaml, oppure è stato modificato qui. Finché non confermi, ogni schermata, report ed esecuzione su questo Mac usa il valore sicuro per ogni chiave (cartella Generated Reports dello spazio di lavoro, archiviazione invece di eliminazione, nessun invio webhook, nessuna raccolta Protect, nessuna raccolta Platform API, nessun logo, il file cronologia accanto al report, nessun timestamp nel report, nomi account rimossi dagli snapshot salvati)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースを共有する Mac が config.yaml を編集したか、ここで編集されました。確認するまで、この Mac のすべての画面、レポート、実行は各キーの安全な値を使います(ワークスペースの Generated Reports フォルダ、削除ではなくアーカイブ、Webhook 送信なし、Protect の収集なし、Platform API の収集なし、ロゴなし、レポートの横の履歴ファイル、レポートのタイムスタンプなし、保存済みスナップショットからアカウント名を削除)。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um Mac que compartilha este espaço de trabalho editou o config.yaml, ou ele foi editado aqui. Até você confirmar, todas as telas, relatórios e execuções neste Mac usam o valor seguro de cada chave (pasta Generated Reports do espaço de trabalho, arquivar em vez de excluir, sem envio de webhook, sem coleta do Protect, sem coleta da Platform API, sem logotipo, o arquivo de histórico ao lado do relatório, sem carimbo de data e hora no relatório, nomes de conta removidos dos snapshots salvos)."
           }
         }
       }
@@ -34121,6 +34293,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saúde da bateria"
+          }
+        }
+      }
+    },
+    "Battery health, needs service" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akkuzustand, Service nötig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de la batería, requiere servicio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État de la batterie, à réparer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato della batteria, da sostituire"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリーの状態、修理が必要"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saúde da bateria, precisa de serviço"
           }
         }
       }
@@ -57095,6 +57307,86 @@
         }
       }
     },
+    "Expired" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abgelaufen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caducado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scaduto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expirado"
+          }
+        }
+      }
+    },
+    "Expiring" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Läuft bald ab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A punto de caducar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bientôt expiré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In scadenza"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限が近い"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prestes a expirar"
+          }
+        }
+      }
+    },
     "Explain again" : {
       "localizations" : {
         "de" : {
@@ -63121,6 +63413,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "GK"
+          }
+        }
+      }
+    },
+    "Gap" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lücke"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desviación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écart"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacuna"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不備"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacuna"
           }
         }
       }
@@ -73819,6 +74151,46 @@
         }
       }
     },
+    "Last disconnection reason" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzter Trennungsgrund"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último motivo de desconexión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernier motif de déconnexion"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimo motivo di disconnessione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最後の切断理由"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último motivo de desconexão"
+          }
+        }
+      }
+    },
     "Last full month" : {
       "localizations" : {
         "de" : {
@@ -80163,6 +80535,126 @@
         }
       }
     },
+    "Names no report reads are kept in new snapshots" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Namen, die kein Bericht liest, bleiben in neuen Snapshots erhalten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los nombres que ningún informe lee se conservan en las nuevas instantáneas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les noms qu’aucun rapport ne lit sont conservés dans les nouveaux instantanés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nomi che nessun report legge vengono mantenuti nei nuovi snapshot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのレポートも読まない名前は新しいスナップショットに保持されます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nomes que nenhum relatório lê são mantidos nos novos snapshots"
+          }
+        }
+      }
+    },
+    "Names no report reads are kept on shared storage" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Namen, die kein Bericht liest, bleiben auf gemeinsamem Speicher erhalten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los nombres que ningún informe lee se conservan en el almacenamiento compartido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les noms qu’aucun rapport ne lit sont conservés sur le stockage partagé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nomi che nessun report legge vengono mantenuti sull’archiviazione condivisa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのレポートも読まない名前は共有ストレージに保持されます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nomes que nenhum relatório lê são mantidos no armazenamento compartilhado"
+          }
+        }
+      }
+    },
+    "Names no report reads are removed from new snapshots" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Namen, die kein Bericht liest, werden aus neuen Snapshots entfernt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los nombres que ningún informe lee se eliminan de las nuevas instantáneas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les noms qu’aucun rapport ne lit sont retirés des nouveaux instantanés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nomi che nessun report legge vengono rimossi dai nuovi snapshot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのレポートも読まない名前は新しいスナップショットから削除されます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nomes que nenhum relatório lê são removidos dos novos snapshots"
+          }
+        }
+      }
+    },
     "Nearly one value per device — this looks like an identifier, so including it puts per-device data in the workbook." : {
       "localizations" : {
         "de" : {
@@ -81079,6 +81571,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Novo agendamento"
+          }
+        }
+      }
+    },
+    "New computer, mobile and enrollment snapshots leave out account names, FileVault users, real name, phone, position, room and the enrollment contact fields. The username and email under user and location stay (Offline Outreach reads them), as do the username columns of the patch and update failure reports.%@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Snapshots von Computern, Mobilgeräten und Registrierungen lassen Accountnamen, FileVault-Benutzer, echten Namen, Telefon, Position, Raum und die Kontaktfelder der Registrierung weg. Benutzername und E-Mail unter Benutzer und Standort bleiben erhalten (Offline Outreach liest sie), ebenso die Benutzernamenspalten der Fehlerberichte zu Patches und Updates.%@ %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New computer, mobile and enrollment snapshots leave out account names, FileVault users, real name, phone, position, room and the enrollment contact fields. The username and email under user and location stay (Offline Outreach reads them), as do the username columns of the patch and update failure reports.%1$@ %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las nuevas instantáneas de ordenadores, dispositivos móviles e inscripción omiten los nombres de cuenta, los usuarios de FileVault, el nombre real, el teléfono, el puesto, la sala y los campos de contacto de inscripción. El nombre de usuario y el correo en usuario y ubicación se conservan (Offline Outreach los lee), igual que las columnas de nombre de usuario de los informes de fallos de parches y actualizaciones.%@ %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les nouveaux instantanés d’ordinateurs, d’appareils mobiles et d’inscription omettent les noms de compte, les utilisateurs FileVault, le nom réel, le téléphone, le poste, le bureau et les champs de contact d’inscription. Le nom d’utilisateur et l’e-mail sous utilisateur et emplacement sont conservés (Offline Outreach les lit), tout comme les colonnes de nom d’utilisateur des rapports d’échecs de correctifs et de mises à jour.%@ %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nuovi snapshot di computer, dispositivi mobili e registrazione omettono nomi account, utenti FileVault, nome reale, telefono, posizione, stanza e i campi di contatto della registrazione. Nome utente ed e-mail in utente e posizione restano (Offline Outreach li legge), così come le colonne del nome utente dei report sugli errori di patch e aggiornamenti.%@ %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータ、モバイル、登録の新しいスナップショットには、アカウント名、FileVault ユーザ、本名、電話番号、役職、部屋、登録の連絡先フィールドが含まれません。ユーザと場所のユーザ名とメールアドレスは保持されます(Offline Outreach が読み取ります)。パッチとアップデートの失敗レポートのユーザ名列も同様です。%@ %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os novos snapshots de computadores, dispositivos móveis e inscrição omitem nomes de conta, usuários do FileVault, nome real, telefone, cargo, sala e os campos de contato da inscrição. O nome de usuário e o e-mail em usuário e localização permanecem (o Offline Outreach os lê), assim como as colunas de nome de usuário dos relatórios de falhas de patches e atualizações.%@ %@"
           }
         }
       }
@@ -112661,6 +113199,86 @@
         }
       }
     },
+    "Set %@ to false unless your organization's storage policy allows it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setze %@ auf false, sofern die Speicherrichtlinie deiner Organisation es nicht erlaubt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establece %@ en false, salvo que la política de almacenamiento de tu organización lo permita."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez %@ sur false, sauf si la politique de stockage de votre organisation l’autorise."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imposta %@ su false, a meno che la policy di archiviazione della tua organizzazione non lo consenta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組織のストレージポリシーで許可されていない限り、%@ を false に設定してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina %@ como false, a menos que a política de armazenamento da sua organização permita."
+          }
+        }
+      }
+    },
+    "Set %@ to true only if your own tools read those fields." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setze %@ nur auf true, wenn deine eigenen Tools diese Felder lesen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establece %@ en true solo si tus propias herramientas leen esos campos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez %@ sur true uniquement si vos propres outils lisent ces champs."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imposta %@ su true solo se i tuoi strumenti leggono quei campi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "独自のツールがそれらのフィールドを読み取る場合にのみ、%@ を true に設定してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina %@ como true somente se suas próprias ferramentas lerem esses campos."
+          }
+        }
+      }
+    },
     "Set Secure Boot to Full Security in Startup Utility." : {
       "localizations" : {
         "de" : {
@@ -113177,6 +113795,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Defina como fail, warning ou ignore em config.yaml ou remova a linha."
+          }
+        }
+      }
+    },
+    "Set it to false to remove them from new snapshots." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setze ihn auf false, um sie aus neuen Snapshots zu entfernen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establécelo en false para eliminarlos de las nuevas instantáneas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez-le sur false pour les retirer des nouveaux instantanés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostalo su false per rimuoverli dai nuovi snapshot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいスナップショットから削除するには false に設定してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina como false para removê-los dos novos snapshots."
           }
         }
       }
@@ -116479,6 +117137,46 @@
         }
       }
     },
+    "Signatures version" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signaturversion"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión de firmas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version des signatures"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versione firme"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シグネチャのバージョン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versão das assinaturas"
+          }
+        }
+      }
+    },
     "Since %@" : {
       "localizations" : {
         "de" : {
@@ -117595,6 +118293,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Snapshots anteriores aos manifestos SHA-256"
+          }
+        }
+      }
+    },
+    "Snapshots saved before this build still hold the names; they leave only through retention or by deleting the files." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor diesem Build gespeicherte Snapshots enthalten die Namen noch; sie verschwinden nur durch die Aufbewahrung oder durch Löschen der Dateien."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las instantáneas guardadas antes de esta versión aún contienen los nombres; solo desaparecen mediante la retención o eliminando los archivos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les instantanés enregistrés avant cette version contiennent encore les noms ; ils ne disparaissent que par la conservation ou en supprimant les fichiers."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli snapshot salvati prima di questa build contengono ancora i nomi; scompaiono solo tramite la conservazione o eliminando i file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このビルドより前に保存されたスナップショットには名前が残っています。保持設定、またはファイルの削除でのみ消えます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os snapshots salvos antes desta versão ainda contêm os nomes; eles só saem pela retenção ou excluindo os arquivos."
           }
         }
       }
@@ -127033,6 +127771,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este espaço de trabalho é %@. Um backup do Protect contém configurações de ação com cabeçalhos de requisição e ajustes de encaminhamento de dados, então os backups aqui incluem apenas o Jamf Pro."
+          }
+        }
+      }
+    },
+    "This workspace's data folder is reachable by other Macs or a sync provider, and %@ keeps account names in snapshots saved there." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Datenordner dieses Arbeitsbereichs ist für andere Macs oder einen Synchronisierungsanbieter erreichbar, und %@ behält Accountnamen in dort gespeicherten Snapshots."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta de datos de este espacio de trabajo es accesible para otros Mac o un proveedor de sincronización, y %@ conserva los nombres de cuenta en las instantáneas guardadas allí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dossier de données de cet espace de travail est accessible à d’autres Mac ou à un fournisseur de synchronisation, et %@ conserve les noms de compte dans les instantanés qui y sont enregistrés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cartella dati di questo spazio di lavoro è raggiungibile da altri Mac o da un provider di sincronizzazione, e %@ mantiene i nomi account negli snapshot salvati lì."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースのデータフォルダは他の Mac や同期プロバイダから到達でき、%@ はそこに保存されるスナップショットにアカウント名を保持します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pasta de dados deste espaço de trabalho é acessível a outros Macs ou a um provedor de sincronização, e %@ mantém nomes de conta nos snapshots salvos ali."
           }
         }
       }
