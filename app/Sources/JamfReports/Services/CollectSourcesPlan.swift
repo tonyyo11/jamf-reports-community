@@ -81,7 +81,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 Source(product: $0.kind == ReportEngine.schoolBlueprintsKind
                         ? .platformAPI : .school,
                        kind: $0.kind, command: command($0.args), skipReason: $0.skip.map(text))
-            } + [sofa(inputs)] + protect(inputs) + securityCloud(inputs))
+            } + [sofa(inputs), schoolDeviceScan(inputs)] + protect(inputs) + securityCloud(inputs))
         case .jamfPro:
             return CollectSourcesPlan(
                 sources: matrix(inputs) + deviceScan(inputs) + afterMatrix(inputs)
@@ -142,6 +142,14 @@ struct CollectSourcesPlan: Equatable, Sendable {
         Source(product: .other, kind: ReportEngine.sofaKind,
                command: "SOFA macOS and iOS feeds (sofafeed.macadmins.io)",
                skipReason: inputs.collectSkip.contains(ReportEngine.sofaKind)
+                   ? text(.collectSkip) : nil)
+    }
+
+    /// Runs after the collect, from the device list it landed, at most once a week.
+    private static func schoolDeviceScan(_ inputs: Inputs) -> Source {
+        Source(product: .school, kind: ReportEngine.schoolDeviceDetailKind,
+               command: "school devices get <udid>, each device, once a week",
+               skipReason: inputs.collectSkip.contains(ReportEngine.schoolDeviceDetailKind)
                    ? text(.collectSkip) : nil)
     }
 

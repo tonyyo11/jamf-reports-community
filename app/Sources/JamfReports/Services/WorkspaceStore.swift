@@ -16,6 +16,8 @@ final class WorkspaceStore {
     var schedules: [Schedule]
     var customEAs: [CustomEA]
     var demoMode: Bool
+    /// Sidebar device counts by profile, filled by `refreshDeviceCounts()`.
+    private(set) var deviceCounts: [String: Int] = [:]
 
     /// Shared trend store, owned here so it SURVIVES tab navigation. Overview and
     /// Trends are conditional views (recreated on every tab switch), so a per-view
@@ -1031,31 +1033,29 @@ final class WorkspaceStore {
 
     // MARK: Sidebar badge helpers
 
-    /// Reads the device count from the most recent summary JSON for the given profile.
-    /// Returns 0 if no summary exists or the file cannot be read. Does not trigger a live call.
-    func deviceCount(for profile: String) -> Int {
+    /// Devices in `profile`'s newest daily summary, from the cache `refreshDeviceCounts()` fills;
+    /// nil when there is none. Never touches the disk, so a view body may call it.
+    func deviceCount(for profile: String) -> Int? {
         if demoMode {
             guard let index = DemoData.cliProfiles.firstIndex(where: { $0.name == profile })
-            else { return 0 }
+            else { return nil }
             return DemoData.deviceCount(forProfileAt: index)
         }
-        guard let dir = try? WorkspacePaths.summariesDir(for: profile) else { return 0 }
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: []
-        ) else { return 0 }
-        let jsons = files.filter { $0.pathExtension == "json" }
-            .sorted { a, b in
-                let aDate = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                let bDate = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                return aDate > bDate
+        return deviceCounts[profile]
+    }
+
+    /// Re-reads every listed profile's count off the main actor. The sidebar calls it when the
+    /// profile list, the active profile, demo mode or a collect's in-flight state changes.
+    func refreshDeviceCounts() async {
+        guard !demoMode else { return }
+        let names = profiles.map(\.name)
+        let counts = await Task.detached(priority: .utility) {
+            names.reduce(into: [String: Int]()) {
+                $0[$1] = SummaryJSONParser.newestDeviceCount(profile: $1)
             }
-        guard let newest = jsons.first,
-              let data = BoundedFile.readLogged(
-                  newest, limit: SummaryJSONParser.maxSummaryFileBytes),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let count = dict["total_devices"] as? Int else { return 0 }
-        return count
+        }.value
+        guard !demoMode else { return }
+        deviceCounts = counts
     }
 
     /// Returns a human-readable relative "last synced" label derived from the mtime

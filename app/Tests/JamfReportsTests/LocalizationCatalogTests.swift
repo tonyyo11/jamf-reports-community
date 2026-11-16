@@ -64,6 +64,15 @@ struct LocalizationCatalogTests {
         #expect(missing.isEmpty, "\(missing.count) untranslated, first: \(missing.prefix(10))")
     }
 
+    /// rc1 showed "重大" beside an English "WARNING": a translation can be filled in with the source.
+    @Test func japaneseStatusPillsAreTranslated() {
+        let pills = ["CRITICAL", "WARNING", "WARN", "INFO", "FAIL", "PASS", "RUNNING", "PARTIAL"]
+        let untranslated = pills.filter { key in
+            Self.catalog.first { $0.key == key }?.units["ja"]?.first?.value ?? key == key
+        }
+        #expect(untranslated.isEmpty, "\(untranslated)")
+    }
+
     @Test func noKeyIsStale() {
         let stale = Self.catalog.filter(\.isStale).map(\.key)
         #expect(stale.isEmpty, "run scripts/sync-strings.zsh --prune-stale: \(stale.prefix(10))")

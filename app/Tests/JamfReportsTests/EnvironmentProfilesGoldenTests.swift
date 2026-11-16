@@ -90,7 +90,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "b6c2561860d88c9142d93869a9650f93b044768343d70984b2447ba51e237acf"),
+            sha256: "9fe678098564c6373099a9e56f6ecd16d072c005da26aad9609fadd08b2b8402"),
         "pro-protect-blank": (
             transcript: """
                 pro ws-golden
@@ -106,29 +106,32 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
                 school ws-golden
+                log [skip] school-device-detail: school-devices did not land this run
                 """,
-            sha256: "b8d373822f3170238787c4e7d67938b836e6efd8206e618cfbc8ca2fdc376404"),
+            sha256: "3444c0aff66184fd094404f1d09389e7c35bda5cf86781dbf8cb47f138cca906"),
         "school-blank": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
                 school ws-golden
+                log [skip] school-device-detail: school-devices did not land this run
                 """,
-            sha256: "b8d373822f3170238787c4e7d67938b836e6efd8206e618cfbc8ca2fdc376404"),
+            sha256: "3444c0aff66184fd094404f1d09389e7c35bda5cf86781dbf8cb47f138cca906"),
         "school-foreign": (
             transcript: """
                 pro ws-golden
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "b6c2561860d88c9142d93869a9650f93b044768343d70984b2447ba51e237acf"),
+            sha256: "9fe678098564c6373099a9e56f6ecd16d072c005da26aad9609fadd08b2b8402"),
         "school-protect": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
                 school ws-golden
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
+                log [skip] school-device-detail: school-devices did not land this run
                 """,
-            sha256: "8f60c12292b9a6e3fbf599c5632c10bc3cbe92f4ff8f4f6bd48d5c42a4220abc"),
+            sha256: "d02714987955a7f7e1d103d2340aa7a9d49ecc3bc64b1689413272e8e182ebbc"),
         "jamf-cli-profile-equal": (
             transcript: """
                 pro ws-golden

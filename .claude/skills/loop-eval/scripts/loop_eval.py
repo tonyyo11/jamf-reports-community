@@ -4,7 +4,7 @@ The ledger is free prose, one event per line. A line is attributed to a task by 
 `Task <id>`, `Sweep <A|B>` or `fu-wave<N>`; everything else is counted as `other`. A task line
 with no event this script knows is listed as unreadable, never fatal.
 
-Going forward the ledger should use one line per event (see docs/superpowers/plans):
+Going forward the ledger should use one line per event (see docs/superpowers/agent-loop.md):
   Task <id>: <status> <commits>...
   Task <id> review (<reviewer>): <Approved|Needs fixes>; MUST-FIX n; SHOULD-FIX n; CONSIDER n
   Task <id> fix round <n>: ...

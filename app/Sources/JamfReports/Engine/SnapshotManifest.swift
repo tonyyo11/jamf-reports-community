@@ -54,8 +54,7 @@ enum SnapshotManifest {
     static func verify(snapshot: URL, data: Data) -> VerificationResult {
         let manifestURL = snapshot.deletingLastPathComponent()
             .appendingPathComponent(fileName)
-        guard let manifestData = try? BoundedFile.read(
-            manifestURL, limit: maxManifestBytes, followSymlinks: false) else {
+        guard let manifestData = readManifest(manifestURL) else {
             return .absent
         }
         guard let manifest = try? JSONDecoder().decode(Manifest.self, from: manifestData) else {
@@ -77,12 +76,18 @@ enum SnapshotManifest {
         return .verified
     }
 
+    /// `manifest.json` read with the folder above its kind folder as the root, so a kind folder
+    /// replaced by a link is refused and its manifest is never trusted.
+    private static func readManifest(_ url: URL) -> Data? {
+        let root = url.deletingLastPathComponent().deletingLastPathComponent()
+        return try? BoundedFile.read(
+            url, limit: maxManifestBytes, followSymlinks: false, inside: root)
+    }
+
     /// The file-name to SHA-256 entries of `dir`'s `manifest.json`; empty when it is absent or
     /// does not parse, so a caller that needs one read per folder treats both as "lists nothing".
     static func entries(in dir: URL) -> [String: String] {
-        guard let data = try? BoundedFile.read(
-                dir.appendingPathComponent(fileName), limit: maxManifestBytes,
-                followSymlinks: false),
+        guard let data = readManifest(dir.appendingPathComponent(fileName)),
               let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
             return [:]
         }
@@ -116,10 +121,11 @@ enum SnapshotManifest {
     static func record(snapshotFile: URL, data: Data) throws {
         let dir = snapshotFile.deletingLastPathComponent()
         let manifestURL = dir.appendingPathComponent(fileName)
+        // `saveSnapshot` confines the kind folder; a link swapped in since is not written through.
+        if FileManager.isLink(dir) { throw POSIXError(.ELOOP) }
 
         var files: [String: String] = [:]
-        if let existingData = try? BoundedFile.read(
-            manifestURL, limit: maxManifestBytes, followSymlinks: false) {
+        if let existingData = readManifest(manifestURL) {
             if let existing = try? JSONDecoder().decode(Manifest.self, from: existingData) {
                 files = existing.files
             } else {
@@ -227,7 +233,7 @@ enum SnapshotManifest {
             && !$0.lastPathComponent.hasSuffix(fileName)
         }
         for snapshot in candidates {
-            guard let data = BoundedFile.readLogged(snapshot) else { continue }
+            guard let data = BoundedFile.readSnapshotLogged(snapshot) else { continue }
             switch verify(snapshot: snapshot, data: data) {
             case .verified: summary.verified += 1
             case .absent:   summary.absent += 1

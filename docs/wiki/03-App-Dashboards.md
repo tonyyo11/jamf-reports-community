@@ -68,8 +68,11 @@ Overview, Devices and Trends screens and a workbook of its own; see
   compliant, data protection off, OS behind, update errors, stale); each count opens Mobile
   Devices filtered to those devices, and the table's **Needs attention** menu offers the same
   filters.
+  A **Management health** card shows how well each Mac is managed: MDM profile expiry,
+  approval, attestation, battery and when each Automated Device Enrollment token expires. See
+  **Management health** below.
   Data source: `pro audit` (instance-config checks, fetched by the Run Audit button)
-  and group lists (tier 1).
+  and group lists (tier 1); the Management health card reads the `computers` snapshot.
 - **Generated** — the library of reports already produced, with **Generate…** (a sheet:
   a template or your own sheets, the formats XLSX, HTML, PDF, CSV and CSV folder (one CSV per workbook tab), whether to collect
   fresh data first, and whether to run a Health Audit first), Export PDF, an inventory CSV
@@ -77,6 +80,50 @@ Overview, Devices and Trends screens and a workbook of its own; see
   start/end/change workbook for a rolling or calendar window — see
   [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports).
   Data source: generated report catalog (no single tier; see [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) for report composition).
+
+### Management health
+
+Management health reports how well each Mac is managed, from data a collect already saves. It
+needs no extra permission and no new collect. Unmanaged Macs and Macs without the Jamf binary
+are left out; they have their own lists.
+
+Where it shows:
+
+- **Health Audit**: a Management health card with a count for each finding below, out of the
+  Macs that reported that field.
+- **Computers**: a **Management** filter, and a Management section in the detail panel.
+- **Workbook**: a **Management Health** tab after Check-in Health. The tabs after it move one
+  place to the right.
+- **HTML report**: Needs attention gets a sentence for Macs with an expired MDM profile and
+  one for an Automated Device Enrollment token that has expired or is about to.
+
+What each finding means:
+
+| Finding | What it means | What to do |
+|---------|---------------|------------|
+| MDM profile expired | MDM can no longer manage the Mac | Re-enroll the Mac |
+| MDM profile expiring, still checking in | The profile expires inside the warning window. It renews when the Mac checks in, so a Mac that checks in and still shows here is not renewing | Look at why renewal fails on that Mac before the profile expires |
+| MDM profile expiring, also stale | The profile is about to expire on a Mac that has stopped checking in | Nothing extra: the stale list already holds this Mac, and the profile cannot renew until it checks in. This is a count, not a warning |
+| MDM profile expiring, check-in unknown | The profile is about to expire and the Mac has no check-in date | Check the Mac's record in Jamf Pro |
+| MDM not user-approved | Some MDM features are unavailable on the Mac | Approve the MDM profile in System Settings › Privacy & Security › Profiles |
+| Not MDM capable | The Mac cannot take MDM commands | Re-enroll the Mac |
+| Attestation problem | The Mac's device attestation did not succeed. A Mac whose hardware cannot attest is not counted | Check the Mac's record in Jamf Pro |
+
+The card also has plain counts with no judgement attached: attested and attestation pending,
+battery needs service and battery capacity under 80%, Jamf binary versions behind the newest
+in the fleet, supervised, enrolled through Automated Device Enrollment, Recovery Lock,
+Activation Lock, external boot level, automatic login, Remote Desktop and Lockdown Mode.
+
+Two more things to know:
+
+- The warning window is `thresholds.cert_warning_days` in `config.yaml` (90 days when unset).
+  Each Automated Device Enrollment token is shown with its expiry day and the days left, and
+  is marked Expiring inside the same window.
+- A field no Mac reports is left out, never shown as 0. If the inventory carries none of these
+  fields, there is no card, tab or report line at all.
+
+A Jamf School workspace gets a Device health card instead; see
+[Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School).
 
 ## Fleet
 
@@ -89,6 +136,8 @@ Overview, Devices and Trends screens and a workbook of its own; see
   FileVault off on a hardware-encrypted Mac reads "Off (hardware-encrypted)" and, under a
   policy that lowers it, adds no risk points. A value Jamf did not collect shows neutral,
   not red.
+  A **Management** filter lists the Macs with a management finding, and the detail panel has a
+  Management section with that Mac's values and what to do (see **Management health** below).
   Data source: per-device snapshots of computers and mobile-device inventory (tier 1).
   The table shows what jamf-cli collected; a CSV export is no longer merged in.
 - **School Devices** (labelled **Devices**) — a Jamf School workspace's devices with
@@ -104,10 +153,12 @@ Overview, Devices and Trends screens and a workbook of its own; see
   User and Location sections, tier 1) and profiles (tier 2).
 - **Device Lookup** — find one device by serial, hostname, asset tag, or ID.
   Data source: per-device snapshot of computer detail from `pro device <id>` (tier 1).
-- **Jamf Protect** — Protect alerts, agent health, and insights. A **Jamf Pro match** card
+- **Jamf Protect** — Protect alerts, agent health, and plans. A **Jamf Pro match** card
   shows which Protect computers match a Jamf Pro computer (by hardware UUID or serial
   number, never by name), which have no Jamf Pro record, and which Jamf Pro Macs have no
-  Protect record. Shows an explicit
+  Protect record. The computers table shows each computer's signatures version and last
+  disconnection reason, and a line above it says how many computers are behind the newest
+  signatures in the tenant (the newest version any computer reports). Shows an explicit
   "Protect not detected" state for tenants that do not run Jamf Protect.
   Data source: Jamf Protect GraphQL API (separate OAuth2 credentials, tier 2).
 - **Groups & Searches** — computer and mobile-device group inventory (smart vs. static)

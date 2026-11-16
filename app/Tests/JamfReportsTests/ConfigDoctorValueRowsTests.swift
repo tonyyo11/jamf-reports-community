@@ -248,12 +248,9 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         html:
           section_limits:
             protect_alerts: 500
-            insights_drift_snapshots: 0
         """)
         XCTAssertEqual(detail(found, "html.section_limits.protect_alerts"),
                        "500 is outside 1 to 200. The app uses 200.")
-        XCTAssertEqual(detail(found, "html.section_limits.insights_drift_snapshots"),
-                       "0 is outside 1 to 12. The app uses 1.")
         XCTAssertEqual(try rows("html:\n  section_limits:\n    protect_alerts: 25\n"), [])
     }
 

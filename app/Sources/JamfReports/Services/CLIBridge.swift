@@ -1367,7 +1367,17 @@ try await ReportEngine.schoolGenerateReport(
                             at: cache.appendingPathExtension("meta")
                         )
                         // Atomic, so it replaces whatever sits at `cache` instead of following it.
-                        let cached = Self.writeDeviceDetailCache(data, to: cache)
+                        // The cache can sit in a shared folder: it gets the snapshot reduction,
+                        // the view gets the live data.
+                        let reduced = ReportEngine.reducingDeviceDetail(
+                            data, mobile: cacheSubdir == "mobile-devices",
+                            keepAccountNames: Self.keepsAccountNames(profile: profile))
+                        if reduced == nil {
+                            AppLogger.cli.warning(
+                                "deviceDetail: account names could not be removed; not cached")
+                        }
+                        let cached = reduced.map { Self.writeDeviceDetailCache($0, to: cache) }
+                            ?? false
                         if cached { CLIBridge.writeDeviceDetailFreshnessSidecar(for: cache) }
                         return DeviceDetailResult(
                             data: data, fromCache: false, cacheURL: cached ? cache : nil
@@ -1423,6 +1433,14 @@ try await ReportEngine.schoolGenerateReport(
                   ["jamf-cli-data", cacheSubdir], under: workspace),
               folder.standardizedFileURL != current?.standardizedFileURL else { return nil }
         return folder.appendingPathComponent(file)
+    }
+
+    /// `jamf_cli.keep_account_names` as this Mac may use it; false when config.yaml cannot be read.
+    nonisolated private static func keepsAccountNames(profile: String) -> Bool {
+        let configured = ProfileService.workspaceURL(for: profile)
+            .flatMap { try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml")) }?
+            .jamfCli?.keepsAccountNames ?? false
+        return SharedConfigPin.keepAccountNames(configured, profile: profile)
     }
 
     /// Writes `data` to `cache` through a temp file and rename, then restricts it to the owner.

@@ -108,6 +108,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
     /// screen save keeps it.
     var collectSkip: [String]?
+    /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
+    /// or not a boolean reads as false (`ReportEngine.reducingComputers`).
+    var keepAccountNames: Bool?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case dataDir = "data_dir"
@@ -116,7 +119,10 @@ struct JamfCLIConfig: Decodable, Sendable {
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
+        case keepAccountNames = "keep_account_names"
     }
+
+    var keepsAccountNames: Bool { keepAccountNames ?? false }
 
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data" }
@@ -134,6 +140,21 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// `0` or negative preserves the keep-forever escape hatch (returned
     /// verbatim; downstream treats `<= 0` as unlimited).
     var resolvedMaxCacheAgeHours: Int { maxCacheAgeHours ?? 168 }
+}
+
+extension JamfCLIConfig {
+    /// A mistyped `keep_account_names` reads as false rather than failing the whole decode; the
+    /// other keys decode as the synthesized initializer did.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dataDir = try c.decodeIfPresent(String.self, forKey: .dataDir)
+        profile = try c.decodeIfPresent(String.self, forKey: .profile)
+        useCachedData = try c.decodeIfPresent(Bool.self, forKey: .useCachedData)
+        requireManifest = try c.decodeIfPresent(Bool.self, forKey: .requireManifest)
+        maxCacheAgeHours = try c.decodeIfPresent(Int.self, forKey: .maxCacheAgeHours)
+        collectSkip = try c.decodeIfPresent([String].self, forKey: .collectSkip)
+        keepAccountNames = try? c.decodeIfPresent(Bool.self, forKey: .keepAccountNames)
+    }
 }
 
 // MARK: - ComplianceFramework
@@ -1260,14 +1281,12 @@ struct HTMLReportConfig: Decodable, Sendable {
 /// Configurable display caps for HTML report sections.
 ///
 /// `protectAlerts` is bounded [1, 200]; values outside this range are clamped
-/// silently.  `insightsDriftSnapshots` is bounded [1, 12].
+/// silently.
 struct HTMLSectionLimits: Decodable, Sendable {
     var protectAlerts: Int?
-    var insightsDriftSnapshots: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case protectAlerts = "protect_alerts"
-        case insightsDriftSnapshots = "insights_drift_snapshots"
     }
 
     /// Maximum protect alerts to display per run. Clamped to [1, 200].
@@ -1278,18 +1297,6 @@ struct HTMLSectionLimits: Decodable, Sendable {
                 "html.section_limits.protect_alerts=\(raw) out of [1,200]; clamped."
             )
             return max(1, min(200, raw))
-        }
-        return raw
-    }
-
-    /// Number of insight snapshots to compare. Clamped to [1, 12].
-    var resolvedInsightsDriftSnapshots: Int {
-        let raw = insightsDriftSnapshots ?? 2
-        if raw < 1 || raw > 12 {
-            AppLogger.collect.warning(
-                "html.section_limits.insights_drift_snapshots=\(raw) out of [1,12]; clamped."
-            )
-            return max(1, min(12, raw))
         }
         return raw
     }

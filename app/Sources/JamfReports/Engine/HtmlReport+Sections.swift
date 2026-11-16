@@ -195,17 +195,25 @@ extension HtmlReport {
         let gap: ContactGap?
         let contact: Date?
         var binaryMissing = false
+        /// The management findings that list the Mac (`ManagementReport.interventionFindings`).
+        var management: [ManagementHealth.Finding] = []
 
         /// The row's reason cell.
-        var reason: String { binaryMissing ? BinaryMissing.shortLabel : gap?.label ?? "—" }
+        var reason: String {
+            if binaryMissing { return BinaryMissing.shortLabel }
+            let parts = (gap.map { [$0.label] } ?? []) + management.map(\.title)
+            return parts.isEmpty ? "—" : parts.joined(separator: "; ")
+        }
     }
 
     /// The Macs with a reason first, so the row cap never hides the Macs the binary and
     /// contact-gap lines lead to: without the Jamf binary, then a contact gap (Jamf binary
     /// silent before inventory not updating, the longest silence first, stale or not), then
-    /// the Macs that are only stale, oldest first. Each Mac once.
+    /// the Macs a management finding lists (`management`, by record ID), then the Macs that
+    /// are only stale, oldest first. Each Mac once.
     func interventionMacs(
-        _ computers: [[String: Any]], now: Date = Date()
+        _ computers: [[String: Any]], now: Date = Date(),
+        management: [String: [ManagementHealth.Finding]] = [:]
     ) -> [InterventionMac] {
         let rows = computers.compactMap { item -> InterventionMac? in
             let age = staleRuleAge(of: item, now: now)
@@ -216,10 +224,12 @@ extension HtmlReport {
             }
             let isStale = age.map(isStale) ?? false
             let gap = contactGap(of: item, now: now)
-            guard isStale || gap != nil else { return nil }
+            let findings = management.isEmpty ? [] : management[
+                DeviceInventoryService.recordFromComputer(item, source: "computers").id] ?? []
+            guard isStale || gap != nil || !findings.isEmpty else { return nil }
             return InterventionMac(
                 item: item, age: age, isStale: isStale, gap: gap,
-                contact: ComputerDates(item: item).contact)
+                contact: ComputerDates(item: item).contact, management: findings)
         }
         func rank(_ gap: ContactGap?) -> Int {
             gap.flatMap(ContactGap.allCases.firstIndex(of:)) ?? 0
@@ -230,9 +240,13 @@ extension HtmlReport {
                 ? rank($0.gap) < rank($1.gap)
                 : ($0.age ?? .days(0)) > ($1.age ?? .days(0))
         }
-        let staleOnly = rows.filter { $0.isStale && $0.gap == nil }
-            .sorted { ($0.age ?? .days(0)) > ($1.age ?? .days(0)) }
-        return missing + gaps + staleOnly
+        func byAge(_ lhs: InterventionMac, _ rhs: InterventionMac) -> Bool {
+            (lhs.age ?? .days(0)) > (rhs.age ?? .days(0))
+        }
+        let managed = rows.filter { $0.gap == nil && !$0.management.isEmpty }.sorted(by: byAge)
+        let staleOnly = rows.filter { $0.isStale && $0.gap == nil && $0.management.isEmpty }
+            .sorted(by: byAge)
+        return missing + gaps + managed + staleOnly
     }
 
     /// The Macs the "Needs attention" stale, contact-gap and Jamf-binary lines count: stale
@@ -242,12 +256,15 @@ extension HtmlReport {
     /// stale and a gap has one row with both. Titled by the stale rule alone when no other
     /// reason applies.
     func buildInterventionList(
-        computersInventory: [[String: Any]], now: Date = Date()
+        computersInventory: [[String: Any]], now: Date = Date(),
+        management: ManagementHealth? = nil
     ) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let rule = config.staleRule
         guard !computersInventory.isEmpty else { return .omitted("no computers snapshot") }
-        let macs = interventionMacs(computersInventory, now: now)
+        let macs = interventionMacs(
+            computersInventory, now: now,
+            management: ManagementReport.interventionFindings(management))
         guard !macs.isEmpty else {
             return .omitted(
                 "no Mac has gone more than \(rule.days) days without a \(rule.basisPhrase)")
@@ -258,7 +275,9 @@ extension HtmlReport {
              mac.contact.map { CoreDashboard.dayText($0) } ?? "—", mac.reason]
         }
         let staleTitle = "Macs with no \(rule.basisPhrase) for more than \(rule.days) days"
-        let plain = macs.allSatisfy { $0.gap == nil && !$0.binaryMissing }
+        let plain = macs.allSatisfy {
+            $0.gap == nil && !$0.binaryMissing && $0.management.isEmpty
+        }
         let title = plain
             ? "\(staleTitle) (\(macs.count))" : "Macs to follow up (\(macs.count))"
         return .shown(f.block(
@@ -274,13 +293,16 @@ extension HtmlReport {
     private func interventionNote(_ macs: [InterventionMac], rule: StaleRule) -> String {
         let gaps = macs.filter { $0.gap != nil }.count
         let missing = macs.filter(\.binaryMissing).count
-        guard gaps > 0 || missing > 0 else { return "" }
+        let managed = macs.filter { !$0.management.isEmpty }.count
+        guard gaps > 0 || missing > 0 || managed > 0 else { return "" }
         var parts = ["\(macs.filter(\.isStale).count) with no \(rule.basisPhrase) for more "
                      + "than \(rule.days) days"]
         if gaps > 0 { parts.append("\(gaps) with a contact gap") }
         if missing > 0 { parts.append("\(missing) enrolled without the Jamf binary") }
+        if managed > 0 { parts.append("\(managed) with a management finding") }
         var text = parts.joined(separator: ", ") + "."
         if gaps > 0 { text += " A Mac that is both has one row." }
+        if managed > 0 { text += " A Mac with several reasons has one row." }
         if missing > 0 {
             text += " Macs without the binary are not counted as stale. The fleet totals and "
                 + "percentages in this report come from Jamf's own summaries and may still "
@@ -607,70 +629,6 @@ extension HtmlReport {
             body: parts.joined(separator: "\n")))
     }
 
-    // MARK: - insightsDrift
-
-    /// Protect insights snapshot comparison, using up to
-    /// `html.section_limits.insights_drift_snapshots` (default 2, bounded [1, 12]) snapshots.
-    /// Values are failing-device counts (`totalFail`) per insight, read from the
-    /// `protect-insights` kind directory `ReportEngine.protectCollect` writes.
-    ///
-    /// When more than two snapshots are requested, the table gains one column per additional
-    /// snapshot labelled "N ago" (oldest first, current last).
-    func buildInsightsDrift(protectDataDir: URL?) -> HtmlBlock {
-        let f = HtmlSectionFormatters.self
-        let snapshotCap = config.html?.sectionLimits?.resolvedInsightsDriftSnapshots ?? 2
-
-        guard let dir = protectDataDir else {
-            return .omitted("not configured: protect.enabled is off in config.yaml")
-        }
-        let allSnapshots = loadProtectInsightSnapshots(dataDir: dir)
-        guard allSnapshots.count >= 2 else {
-            return .omitted("needs two or more Protect insights snapshots; "
-                + "\(allSnapshots.count) found")
-        }
-
-        // Take the most recent `snapshotCap` snapshots; fall back to all available if fewer.
-        let window = Array(allSnapshots.suffix(snapshotCap))
-
-        // Collect all insight labels across the window.
-        var insightKeys: [String] = []
-        for snapshot in window {
-            for key in snapshot.keys where !insightKeys.contains(key) {
-                insightKeys.append(key)
-            }
-        }
-        insightKeys.sort()
-
-        // Build headers: "Insight", then one column per snapshot from oldest → "Current".
-        var headers = ["Insight"]
-        for idx in 0 ..< window.count {
-            if idx == window.count - 1 {
-                headers.append("Current")
-            } else if idx == window.count - 2 {
-                headers.append("Previous")
-            } else {
-                headers.append("\(window.count - 1 - idx) ago")
-            }
-        }
-
-        // Plain text: renderTable escapes every cell.
-        let tableRows = insightKeys.map { key -> [String] in
-            var row = [key]
-            for snapshot in window {
-                row.append(snapshot[key].map { "\($0)" } ?? "—")
-            }
-            return row
-        }
-
-        return .shown(f.block(
-            id: "insights-drift",
-            title: "Protect insights drift (\(window.count) of \(allSnapshots.count) snapshots)",
-            body: """
-            <p class="empty-hint">Values are failing-device counts per insight.</p>
-            \(f.renderCappedTable(headers: headers, rows: tableRows, expanded: expandAll))
-            """))
-    }
-
     // MARK: - agentHealth
 
     /// Per-security-agent (CrowdStrike, etc.) installed/missing/unknown counts from the
@@ -781,41 +739,6 @@ extension HtmlReport {
             return nil
         }
         return result
-    }
-
-    /// Load Protect insights snapshots, reduced to failing-device counts
-    /// (`totalFail`) per insight label, oldest first.
-    private func loadProtectInsightSnapshots(dataDir: URL) -> [[String: Int]] {
-        let fm = FileManager.default
-        let subdir = dataDir.appendingPathComponent("protect-insights", isDirectory: true)
-        guard let files = FileManager.snapshotFolderEntries(in: subdir) else { return [] }
-        return files
-            .filter { $0.pathExtension == "json" }
-            // Shared rule (`FileSystemHelpers`): order by the filename stamp,
-            // excluding the manifest, `.partial` staging files and sync-conflict
-            // copies. Raw mtime mis-ordered the series on a synced volume — the
-            // provider re-stamps on materialize — and counted a conflict copy as
-            // an extra day of drift.
-            .filter(FileManager.isSelectableSnapshot)
-            .sorted { FileManager.isOlderSnapshot($0, than: $1) }
-            .compactMap { url -> [String: Int]? in
-                guard let data = BoundedFile.readLogged(url, inside: dataDir) else { return nil }
-                // jamf-cli's flattened row: label, section, enabled,
-                // totalPass/totalFail/totalNone, cisIDs — a bare array, not a dict.
-                let parsed = try? JSONSerialization.jsonObject(with: data)
-                guard let rows = parsed as? [[String: Any]] else {
-                    AppLogger.platform.debug(
-                        "loadProtectInsightSnapshots: JSON parse failed for '\(url.path, privacy: .private)'"
-                    )
-                    return nil
-                }
-                var byLabel: [String: Int] = [:]
-                for row in rows {
-                    guard let label = row["label"] as? String else { continue }
-                    byLabel[label] = asInt(row["totalFail"]) ?? 0
-                }
-                return byLabel
-            }
     }
 
     // MARK: - cleanupAnalysis

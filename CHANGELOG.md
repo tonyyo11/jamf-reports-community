@@ -22,6 +22,28 @@ writes into a shared workspace.
 
 ### Added
 
+- A Jamf School workspace's Overview has a Device health card and its workbook a Device Health
+  tab: devices waiting in Automated Device Enrollment that are not enrolled, users with no
+  device, device groups with no members, and classes with no devices, students or teacher, each
+  as a plain count out of its total. (#305)
+- A Jamf School workspace is now scanned device by device once a week, after the collect: the
+  Device health card and workbook show each device's enrollment type, storage size and battery
+  level, how many devices were reached and when, with battery worded as of the scan. The scan
+  stops early when the Jamf School API stops answering, and `jamf_cli.collect_skip:
+  [school-device-detail]` turns it off. (#305)
+- **Management health.** Health Audit has a new card, Computers a new **Management** filter and
+  detail section, and reports a new section, all from data Jamf Reports already collected and
+  never showed: Macs whose MDM profile has expired or is about to (split into Macs that still
+  check in and Macs that are already stale), Macs that are not user-approved or not MDM capable,
+  Jamf binary versions behind the newest in the fleet, device attestation, battery condition,
+  and neutral counts for Recovery Lock, Activation Lock, external boot, automatic login and
+  Remote Desktop. It also shows when each Automated Device Enrollment token expires. A figure no
+  Mac reports is left out, never shown as 0. The HTML report lists expired profiles and an
+  expiring enrollment token under Needs attention. (#305)
+- The Jamf Protect screen and workbook tab show each computer's signatures version and last
+  disconnection reason, and how many computers are behind the newest signatures. (#305)
+- `jamf_cli.keep_account_names` in `config.yaml` (off when absent) keeps account names in saved
+  snapshots for organizations whose own tools read them. See Security below. (#305)
 - Fleet Overview shows what the environment holds: tiles for Mac models, mobile device types,
   operating systems by major version, and when Macs and mobile devices were last seen (under a
   day, 1 to 6 days, 7 days or more, never), from the latest daily summary. A figure the summary
@@ -126,6 +148,26 @@ writes into a shared workspace.
 
 ### Changed
 
+- Run History shows a run in progress with a grey RUNNING pill instead of a gold one, which read
+  as a warning.
+- Jamf Protect Insights are removed, because Jamf removed the Compliance feature from Jamf
+  Protect on 2026-11-03. The Jamf Pro and Jamf School workbooks lose their Protect Insights tab,
+  the HTML report loses its Protect insights drift section, and the Protect screen loses its
+  Insights card, its insight count and its Failing Insights tile. Jamf Reports no longer collects
+  Protect insights; snapshots already on disk are left alone and not read. A saved Custom report
+  selection or `sheets` list that names the Protect Insights tab simply skips it.
+  `html.section_limits.insights_drift_snapshots` is no longer read; saving the Customize screen's
+  HTML report card removes it from `config.yaml`, and Config Doctor words it as retired until then. No other tab, column or
+  row moved.
+- The Jamf School workbook's Device Inventory tab gains three columns at the end, Enrollment,
+  Storage (GB) and Battery (%) when scanned, blank for a device not scanned yet; its Device
+  Health tab gains the scan's summary rows. No existing column or tab moves. (#305)
+- The Jamf School workbook has one new tab, Device Health, at the end; no existing tab, column
+  or row moved. (#305)
+- The report workbook has one new tab, **Management Health**, after Check-in Health, and the
+  Protect computers tab has two new columns at the end (Signatures version, Last disconnection
+  reason). The tabs after Check-in Health move one place to the right; no existing column or
+  row changed. (#305)
 - A new workspace's config.yaml records its products in the `profiles:` block from the start:
   setup, adopting jamf-cli's profiles, Add environments and `jamf-reports scaffold --out` into a
   workspace folder all write it, in place of `jamf_cli.profile`. A workspace collects the same
@@ -250,6 +292,39 @@ writes into a shared workspace.
 
 ### Fixed
 
+- Report workbooks are now compressed. They were written uncompressed, so a workbook for a
+  fleet of 6,000 Macs with many extension attributes was 89 MB.
+- The background item no longer retries, the same day, a data source that timed out twice in a
+  row. Each try can run for an hour, so on a large fleet the retries kept a scheduled run going
+  most of the day and every manual refresh was turned away with "A scheduled run is in
+  progress". The next day's run and Collect now still try the source.
+- A data source that Jamf Pro never answers (jamf-cli reports "the server did not answer in
+  time") is tried once per run instead of twice, and after two such runs in a row it is left to
+  the next day like any other timeout. On one large server this source alone held each run for
+  24 minutes, several times a day.
+- An Overview score card no longer shows an older day's figure as today's when the newest daily
+  summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
+  this profile", and the card's detail screen says "No data yet".
+- A Jamf School workspace can turn the weekly deep scan off and choose its day on the Automation
+  screen; the caption no longer says School has no deep scan. Settings now says "Skip expensive
+  collections" applies to Jamf Pro workspaces only.
+- The Computers detail panel shows Last check-in and Last inventory as dates like Last contact,
+  and Jamf's management values (external boot level, attestation, enrollment type, battery
+  health) read as words ("Allow booting from external media") there and on the Management
+  health card. Workbook and report cells keep Jamf's values.
+- The Config Doctor subtitle no longer mentions the CSV export.
+- The workspace menu in the sidebar now shows each workspace's device count; it always read
+  nothing before. (#305)
+- A Jamf Pro server with no mobile devices no longer shows a Partial run: an empty mobile
+  device list is saved as empty instead of failing the lost-mode text check. (#305)
+- `jamf-reports school-check` no longer lists Jamf School blueprints as missing on a profile
+  without Platform API fields; it says the collect skips them and why, as the collect log does.
+- Each collect now logs "wrote summary_….json" once instead of twice, and the command line
+  prints each skipped workbook tab, and a few report warnings, once instead of twice.
+- In French, Spanish, Brazilian Portuguese, Italian and Japanese, sidebar names that were cut off
+  with "…" (Fleet Overview, Compliance Benchmarks, OS Updates, Offline Outreach) are shorter and
+  fit. The macOS chart's caption on the Overview no longer runs across the ring in German, Spanish
+  or Brazilian Portuguese, and Japanese warning badges read 警告 instead of the English "WARNING".
 - Fleet Overview's four tiles are one height when a caption wraps, and its Stability Trend
   says a trend starts with a second day's summary instead of drawing empty axes for one. In demo
   mode the trend shows the same 26 weeks of history as the Overview.
@@ -464,6 +539,21 @@ writes into a shared workspace.
 
 ### Security
 
+- Run History and the schedule list now take a run's Partial status from the run's own log
+  only, so a file another Mac drops into a shared workspace can no longer make a partial run
+  read as clean. (#305)
+- Snapshot readers now refuse a snapshot folder that has been replaced by a link, so a Mac
+  sharing the workspace cannot point a report at another folder on this Mac. (#305)
+- New snapshots no longer hold account names and contact details that no screen or report
+  reads: local account names and last-logged-in usernames on Macs, FileVault-enabled user names,
+  real name, phone, position and room, the management account's username, Shared iPad user
+  lists, usernames in the app and profile status device rows, and the administrator and
+  organization contact fields of an Automated Device Enrollment instance. The cached copy of a
+  Device Lookup is reduced the same way. Username and email stay, because Offline Outreach uses
+  them. An organization that wants the names kept sets `jamf_cli.keep_account_names: true`; on
+  a shared folder that setting must be confirmed on each Mac in Config Doctor before it applies
+  there, so one Mac cannot switch it on for another. Snapshots saved by earlier builds are not
+  rewritten. (#305)
 - On a shared workspace, another Mac's files can no longer stop this Mac's scheduled runs or
   weaken what it reports:
   - A daily summary with an impossible Jamf Protect or Security Cloud match count is refused,
@@ -4402,7 +4492,7 @@ HTML instance report (Python CLI and macOS app):
   on load — both keys are read during the transition window so no
   re-scaffolding is required. The legacy key is still honored; PR-23
   GUI saves stop emitting it. Full design in
-  `docs/architecture/tiered-collection-adr.md`. 1 589 tests pass with
+  `docs/architecture/archive/tiered-collection-adr.md`. 1 589 tests pass with
   58 new across `CollectionTierTests`, `CadencePresetTests`,
   `IsDueTests`, `CadenceResolverTests`, `CollectCadenceConfigTests`,
   `StateFileStoreTests`, `WorkspacePathsStateDirTests`,

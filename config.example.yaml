@@ -83,6 +83,14 @@ jamf_cli:
   # point data_dir at a profile-specific folder so cached snapshots do not mix
   # between tenants. Not read when the profiles block below is set.
   profile: ""
+  # New snapshots leave out names no report reads: account names, FileVault users, real name,
+  # phone, position, room, Shared iPad users, the device usernames in the profile and app
+  # status reports and the enrollment contact fields. The username
+  # and email under user and location stay (Offline Outreach reads them), as do the username
+  # columns of the patch and update failure reports. Set true to keep everything, for example
+  # when you read the snapshots with your own tools. On a shared folder each Mac asks you to
+  # confirm true in Config Doctor first. Snapshots saved earlier keep what they hold.
+  keep_account_names: false
 
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
   # This helps generate/check keep working from cached report data, but
@@ -111,6 +119,7 @@ jamf_cli:
   # manual collect and is left out of the data freshness strip.
   # sofa stops the fetch from sofafeed.macadmins.io (a Jamf Pro or Jamf School collect);
   # a cached feed stays in use.
+  # school-device-detail stops the weekly per-device scan of a Jamf School workspace.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
 
@@ -251,9 +260,6 @@ html:
     # Most alerts the Protect Alerts section lists, highest severity first.
     # Range 1-200.
     protect_alerts: 25
-    # Number of recent Protect insight snapshots the Insights Drift section
-    # compares, one column each. Range 1-12.
-    insights_drift_snapshots: 2
 
 
 # =============================================================================
@@ -276,10 +282,9 @@ display:
 #   - jamf-cli protect overview
 #   - jamf-cli protect alerts list
 #   - jamf-cli protect computers list
-#   - jamf-cli protect insights list
 #   - jamf-cli protect plans list
 # Snapshots live under jamf_cli.data_dir with the rest, and the workbook gets a
-# Protect Overview, Alerts, Computers, Insights and Plans sheet for each one that
+# Protect Overview, Alerts, Computers and Plans sheet for each one that
 # landed.
 #
 # Protect has its own jamf-cli profile and setup flow, which the app runs when

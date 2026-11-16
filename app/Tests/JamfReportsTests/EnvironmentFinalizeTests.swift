@@ -223,6 +223,26 @@ final class EnvironmentFinalizeTests: XCTestCase {
         XCTAssertEqual(s.collectionSources?["protect-alerts"], "live")
     }
 
+    /// Every Pro and School collect logged "[ok] wrote summary_…json" twice: once for the MDM
+    /// write and again for this rewrite. Only a summary this step creates is announced.
+    func testOnlyASummaryThisStepCreatesIsAnnounced() async throws {
+        let announced = { (o: Options) in
+            o.lines.all.filter { $0.contains("will reflect this run") }.count
+        }
+        try makeRoot()
+        let rewrite = Options()
+        try await run(proFile, rewrite)
+        XCTAssertEqual(announced(rewrite), 0)
+        XCTAssertTrue(rewrite.lines.all.contains { $0.contains("added environment fields") })
+
+        try makeRoot()
+        var create = Options()
+        create.writesMDMSummary = false
+        create.inventory = .none
+        try await run("profiles:\n  protect: \(ws)\n", create)
+        XCTAssertEqual(announced(create), 1)
+    }
+
     func testASecondRunTheSameDayUnionsProducts() async throws {
         try makeRoot()
         var o = Options()

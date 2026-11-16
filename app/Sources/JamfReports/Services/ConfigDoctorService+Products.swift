@@ -105,6 +105,39 @@ extension ConfigDoctorService {
         )]
     }
 
+    /// Which of the two applies to account names in saved snapshots, as a `.suggest`, and a
+    /// `.warn` when this Mac keeps them on storage other Macs reach. `configured` is what
+    /// config.yaml says, `effective` what this Mac does after the pin (`SharedConfigPin`).
+    static func accountNameRows(
+        configured: Bool, effective: Bool, onSharedStorage: () -> Bool
+    ) -> [DoctorRow] {
+        let key = SharedConfigPin.Key.keepAccountNames.rawValue
+        let earlier = L("Snapshots saved before this build still hold the names; they leave only through retention or by deleting the files.")
+        guard effective else {
+            let waiting = configured
+                ? L(" \(key) is true in config.yaml but not confirmed on this Mac, so names are still removed.")
+                : ""
+            return [DoctorRow(
+                id: "snapshots.account_names", severity: .suggest,
+                title: L("Names no report reads are removed from new snapshots"),
+                detail: L("New computer, mobile and enrollment snapshots leave out account names, FileVault users, real name, phone, position, room and the enrollment contact fields. The username and email under user and location stay (Offline Outreach reads them), as do the username columns of the patch and update failure reports.\(waiting) \(earlier)"),
+                hint: L("Set \(key) to true only if your own tools read those fields."))]
+        }
+        var rows = [DoctorRow(
+            id: "snapshots.account_names", severity: .suggest,
+            title: L("Names no report reads are kept in new snapshots"),
+            detail: L("\(key) is true, so new snapshots hold the account names jamf-cli returns. \(earlier)"),
+            hint: L("Set it to false to remove them from new snapshots."))]
+        if onSharedStorage() {
+            rows.append(DoctorRow(
+                id: "snapshots.account_names_shared", severity: .warn,
+                title: L("Names no report reads are kept on shared storage"),
+                detail: L("This workspace's data folder is reachable by other Macs or a sync provider, and \(key) keeps account names in snapshots saved there."),
+                hint: L("Set \(key) to false unless your organization's storage policy allows it.")))
+        }
+        return rows
+    }
+
     /// One `.suggest` row while backups skip Jamf Pro, or are about to, because the workspace is
     /// on storage other Macs reach and the choice is not in effect on this Mac. Whether that
     /// storage may hold Jamf Pro's configuration is the organization's call, so this points at

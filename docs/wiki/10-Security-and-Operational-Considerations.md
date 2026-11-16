@@ -397,6 +397,41 @@ when fewer, warns in the run log, adds a note to the HTML report, every workbook
 Config Doctor, and records the scope per workspace, so a report is never mistaken for the
 whole fleet.
 
+## What saved snapshots hold
+
+**New snapshots leave out account names and contact details that no screen or report reads.**
+A collect saves what jamf-cli returns as snapshot files in the workspace. Before a snapshot is
+saved, these are removed:
+
+- on Macs: local account names, the last-logged-in usernames, the names of FileVault-enabled
+  users, and the management account's username
+- on Macs and mobile devices: the assigned user's real name, phone, position and room
+- on mobile devices: Shared iPad user lists
+- the usernames in the device rows of the app status and profile status reports
+- the administrator and organization contact fields of an Automated Device Enrollment instance
+
+What stays, and why:
+
+- the assigned user's username and email, because Offline Outreach uses them to contact the
+  owner of a Mac that has gone quiet
+- the username columns of the patch and update failure reports, because the Patch and OS
+  Updates screens show them
+
+The copy of a Device Lookup result kept on disk is reduced the same way; the screen itself
+shows the live answer.
+
+**An organization that wants the names kept sets `jamf_cli.keep_account_names: true`.** On a
+shared folder that setting must be confirmed on each Mac in **Health Audit → Config** before it
+applies there, so one Mac cannot switch it on for another. Turning it back off applies at once.
+Config Doctor says which applies and warns when names are kept on shared storage.
+
+**Snapshots saved by earlier builds are not rewritten.** They keep what they held until
+retention removes them or you delete them.
+
+**A snapshot folder that has been replaced by a link is refused.** The readers behind every
+screen and report open snapshots only inside the workspace's data folder, so a Mac sharing the
+workspace cannot point a report at another folder on this Mac.
+
 ## Diagnostic Bundle Redaction Scope
 
 **`diagnostic-bundle` and run history log export redact credentials, most PII and IPv4 addresses.**

@@ -244,6 +244,46 @@
         }
       }
     },
+    " %@ is true in config.yaml but not confirmed on this Mac, so names are still removed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ ist in config.yaml true, aber auf diesem Mac nicht bestätigt; die Namen werden daher weiterhin entfernt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ es true en config.yaml pero no está confirmado en este Mac, así que los nombres se siguen eliminando."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ vaut true dans config.yaml mais n’est pas confirmé sur ce Mac ; les noms sont donc toujours supprimés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ è true in config.yaml ma non è confermato su questo Mac, quindi i nomi vengono ancora rimossi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ は config.yaml で true ですが、この Mac では確認されていないため、名前は引き続き削除されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ é true no config.yaml, mas não foi confirmado neste Mac; por isso os nomes continuam sendo removidos."
+          }
+        }
+      }
+    },
     " (+%lld more)" : {
       "localizations" : {
         "de" : {
@@ -6286,6 +6326,52 @@
         }
       }
     },
+    "%@ is true, so new snapshots hold the account names jamf-cli returns. %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist true, daher enthalten neue Snapshots die von jamf-cli gelieferten Accountnamen. %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ is true, so new snapshots hold the account names jamf-cli returns. %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ es true, así que las nuevas instantáneas contienen los nombres de cuenta que devuelve jamf-cli. %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vaut true : les nouveaux instantanés contiennent les noms de compte renvoyés par jamf-cli. %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ è true, quindi i nuovi snapshot contengono i nomi account restituiti da jamf-cli. %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ が true のため、新しいスナップショットには jamf-cli が返すアカウント名が含まれます。%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ é true, então os novos snapshots contêm os nomes de conta retornados pelo jamf-cli. %@"
+          }
+        }
+      }
+    },
     "%@ is working in %@ — try the merge again when it finishes." : {
       "localizations" : {
         "de" : {
@@ -9328,52 +9414,6 @@
         }
       }
     },
-    "%@, %lld pass, %lld fail" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld bestanden, %lld fehlgeschlagen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$lld pass, %3$lld fail"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld correctas, %lld fallidas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld réussis, %lld en échec"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld superati, %lld non superati"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@、合格%lld件、不合格%lld件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %lld aprovados, %lld reprovados"
-          }
-        }
-      }
-    },
     "%@, %lld passed, %@" : {
       "localizations" : {
         "de" : {
@@ -11214,6 +11254,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld atributos de extensão"
+          }
+        }
+      }
+    },
+    "%lld GB" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld GB"
           }
         }
       }
@@ -14564,86 +14644,6 @@
         }
       }
     },
-    "%lld insight" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Erkenntnis"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld análisis"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld analyse"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld approfondimento"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インサイト%lld 件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld insight"
-          }
-        }
-      }
-    },
-    "%lld insights" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Erkenntnisse"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld análisis"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld analyses"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld approfondimenti"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インサイト%lld 件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld insights"
-          }
-        }
-      }
-    },
     "%lld installed" : {
       "localizations" : {
         "de" : {
@@ -16052,6 +16052,52 @@
         }
       }
     },
+    "%lld of %lld %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld %3$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld %3$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur %2$lld %3$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld di %2$lld %3$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%3$@: %1$lld / %2$lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld %3$@"
+          }
+        }
+      }
+    },
     "%lld of %lld (%@)" : {
       "localizations" : {
         "de" : {
@@ -16232,6 +16278,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld de %2$lld computadores do Protect correspondem a um computador do %3$@."
+          }
+        }
+      }
+    },
+    "%lld of %lld behind the newest signatures in this tenant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld hinter den neuesten Signaturen dieses Tenants"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld behind the newest signatures in this tenant"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld por detrás de las firmas más recientes de este tenant"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur %lld en retard sur les signatures les plus récentes de ce tenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld su %lld indietro rispetto alle firme più recenti di questo tenant"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このテナントの最新シグネチャより古い: %lld / %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld atrás das assinaturas mais recentes deste tenant"
           }
         }
       }
@@ -16570,6 +16662,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de %lld exibidos"
+          }
+        }
+      }
+    },
+    "%lld of %lld values" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld Werten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld values"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld valores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld valeurs sur %2$lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld valori su %2$lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld 個の値のうち %1$lld 個"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld valores"
           }
         }
       }
@@ -22388,46 +22526,6 @@
         }
       }
     },
-    "1 to 12" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 bis 12"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 a 12"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 à 12"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "da 1 a 12"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1〜12"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 a 12"
-          }
-        }
-      }
-    },
     "1 to 200" : {
       "localizations" : {
         "de" : {
@@ -23725,6 +23823,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Um Mac que compartilha este espaço de trabalho editou o config.yaml, ou ele foi editado aqui. Até você confirmar, todas as telas, relatórios e execuções neste Mac usam o valor seguro de cada chave (pasta Generated Reports do espaço de trabalho, arquivar em vez de excluir, nenhum envio de webhook, nenhuma coleta do Protect, nenhuma coleta da Platform API, nenhum logotipo, o arquivo de histórico ao lado do relatório, nenhum carimbo de data e hora no relatório)."
+          }
+        }
+      }
+    },
+    "A Mac sharing this workspace edited config.yaml, or it was edited here. Until you confirm, every screen, report and run on this Mac uses the safe value for each key (workspace Generated Reports folder, archive instead of delete, no webhook send, no Protect collection, no Platform API collection, no logo, the history file beside the report, no report timestamp, account names removed from saved snapshots)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Mac, der diesen Arbeitsbereich teilt, hat config.yaml bearbeitet, oder die Datei wurde hier bearbeitet. Bis du bestätigst, verwenden alle Ansichten, Berichte und Läufe auf diesem Mac für jeden Schlüssel den sicheren Wert (Ordner Generated Reports des Arbeitsbereichs, Archivieren statt Löschen, kein Webhook-Versand, keine Protect-Erfassung, keine Platform-API-Erfassung, kein Logo, die Verlaufsdatei neben dem Bericht, kein Berichtszeitstempel, Accountnamen aus gespeicherten Snapshots entfernt)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Mac que comparte este espacio de trabajo editó config.yaml, o se editó aquí. Hasta que lo confirmes, cada pantalla, informe y ejecución en este Mac usa el valor seguro de cada clave (carpeta Generated Reports del espacio de trabajo, archivar en lugar de eliminar, sin envío de webhook, sin recopilación de Protect, sin recopilación de Platform API, sin logotipo, el archivo de historial junto al informe, sin marca de tiempo en el informe, nombres de cuenta eliminados de las instantáneas guardadas)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Mac partageant cet espace de travail a modifié config.yaml, ou il a été modifié ici. Tant que vous ne confirmez pas, chaque écran, rapport et exécution sur ce Mac utilise la valeur sûre de chaque clé (dossier Generated Reports de l’espace de travail, archivage au lieu de suppression, aucun envoi de webhook, aucune collecte Protect, aucune collecte Platform API, aucun logo, fichier d’historique à côté du rapport, aucun horodatage de rapport, noms de compte retirés des instantanés enregistrés)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Mac che condivide questo spazio di lavoro ha modificato config.yaml, oppure è stato modificato qui. Finché non confermi, ogni schermata, report ed esecuzione su questo Mac usa il valore sicuro per ogni chiave (cartella Generated Reports dello spazio di lavoro, archiviazione invece di eliminazione, nessun invio webhook, nessuna raccolta Protect, nessuna raccolta Platform API, nessun logo, il file cronologia accanto al report, nessun timestamp nel report, nomi account rimossi dagli snapshot salvati)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースを共有する Mac が config.yaml を編集したか、ここで編集されました。確認するまで、この Mac のすべての画面、レポート、実行は各キーの安全な値を使います(ワークスペースの Generated Reports フォルダ、削除ではなくアーカイブ、Webhook 送信なし、Protect の収集なし、Platform API の収集なし、ロゴなし、レポートの横の履歴ファイル、レポートのタイムスタンプなし、保存済みスナップショットからアカウント名を削除)。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um Mac que compartilha este espaço de trabalho editou o config.yaml, ou ele foi editado aqui. Até você confirmar, todas as telas, relatórios e execuções neste Mac usam o valor seguro de cada chave (pasta Generated Reports do espaço de trabalho, arquivar em vez de excluir, sem envio de webhook, sem coleta do Protect, sem coleta da Platform API, sem logotipo, o arquivo de histórico ao lado do relatório, sem carimbo de data e hora no relatório, nomes de conta removidos dos snapshots salvos)."
           }
         }
       }
@@ -29947,6 +30085,46 @@
         }
       }
     },
+    "Applies to Jamf Pro workspaces only. Jamf School collects ignore it; the weekly per-device scan is set on the Automation screen." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt nur für Jamf Pro-Arbeitsbereiche. Jamf School-Erfassungen ignorieren die Einstellung; der wöchentliche Scan pro Gerät wird im Bereich Automatisierung festgelegt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica solo a los espacios de trabajo de Jamf Pro. Las recopilaciones de Jamf School lo ignoran; el análisis semanal por dispositivo se configura en la pantalla Automatización."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S'applique uniquement aux espaces de travail Jamf Pro. Les collectes Jamf School l'ignorent ; l'analyse hebdomadaire par appareil se règle dans l'écran Automatisation."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vale solo per gli spazi di lavoro Jamf Pro. Le raccolte di Jamf School lo ignorano; la scansione settimanale per dispositivo si imposta nella schermata Automazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Proのワークスペースにのみ適用されます。Jamf Schoolの収集では無視されます。デバイスごとの週次スキャンは「自動化」画面で設定します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplica-se somente a espaços de trabalho do Jamf Pro. As coletas do Jamf School a ignoram; a varredura semanal por dispositivo é definida na tela Automação."
+          }
+        }
+      }
+    },
     "Applies to Overview and Trends until you change the picker in-view." : {
       "localizations" : {
         "de" : {
@@ -30799,6 +30977,166 @@
         }
       }
     },
+    "Attestation" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestierung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atestación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成証明"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atestação"
+          }
+        }
+      }
+    },
+    "Attestation pending" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestierung ausstehend"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atestación pendiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestation en attente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestazione in sospeso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成証明を保留中"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atestação pendente"
+          }
+        }
+      }
+    },
+    "Attestation problem" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestierungsproblem"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Problema de atestación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Problème d’attestation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Problema di attestazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成証明の問題"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Problema de atestação"
+          }
+        }
+      }
+    },
+    "Attested" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atestado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attesté"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attestato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成証明済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atestado"
+          }
+        }
+      }
+    },
     "Audit failed · %@" : {
       "localizations" : {
         "de" : {
@@ -31359,6 +31697,46 @@
         }
       }
     },
+    "Auto-login off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-Login aus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio auto desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexion auto désactivée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login auto disattivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動ログイン無効"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login auto desativado"
+          }
+        }
+      }
+    },
     "Auto-resolves serials and names against `%@` cached inventory. %@." : {
       "localizations" : {
         "de" : {
@@ -31605,6 +31983,206 @@
         }
       }
     },
+    "Automated Device Enrollment devices not enrolled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geräte der automatisierten Geräteregistrierung, nicht registriert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de inscripción automatizada sin inscribir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareils d'inscription automatisée non inscrits"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivi di registrazione automatica non registrati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未登録の自動デバイス登録デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos de inscrição automatizada não inscritos"
+          }
+        }
+      }
+    },
+    "Automated Device Enrollment status: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status der automatisierten Geräteregistrierung: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de la inscripción automatizada de dispositivos: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statut de l'inscription automatisée des appareils : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato della registrazione automatica dei dispositivi: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動デバイス登録の状況: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status da inscrição automatizada de dispositivos: %@"
+          }
+        }
+      }
+    },
+    "Automated Device Enrollment token" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token für die automatische Geräteregistrierung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token de inscripción automatizada de dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeton d’inscription automatisée des appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token di registrazione automatica dei dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動デバイス登録のトークン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token de inscrição automática de dispositivos"
+          }
+        }
+      }
+    },
+    "Automated Device Enrollment token: could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token für die automatische Geräteregistrierung: konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token de inscripción automatizada de dispositivos: no se pudo leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeton d’inscription automatisée des appareils : lecture impossible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token di registrazione automatica dei dispositivi: impossibile leggere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動デバイス登録のトークン: 読み込めませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token de inscrição automática de dispositivos: não foi possível ler"
+          }
+        }
+      }
+    },
+    "Automated Device Enrollment token: not collected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token für die automatische Geräteregistrierung: nicht erfasst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token de inscripción automatizada de dispositivos: no recopilado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeton d’inscription automatisée des appareils : non collecté"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token di registrazione automatica dei dispositivi: non raccolto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動デバイス登録のトークン: 未収集"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token de inscrição automática de dispositivos: não coletado"
+          }
+        }
+      }
+    },
     "Automated checks for security, compliance, and hygiene" : {
       "localizations" : {
         "de" : {
@@ -31681,6 +32259,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Varreduras automatizadas"
+          }
+        }
+      }
+    },
+    "Automatic login disabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatische Anmeldung deaktiviert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio de sesión automático desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexion automatique désactivée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login automatico disattivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動ログインが無効"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login automático desativado"
           }
         }
       }
@@ -32045,6 +32663,46 @@
         }
       }
     },
+    "Awaiting configuration" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf Konfiguration"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pendiente de configuración"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de configuration"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa di configurazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成待ち"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aguardando configuração"
+          }
+        }
+      }
+    },
     "Awaiting schedule" : {
       "localizations" : {
         "de" : {
@@ -32081,6 +32739,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aguardando agendamento"
+          }
+        }
+      }
+    },
+    "Awaiting setup" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf Setup"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Config. pendiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Config. en attente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa di setup"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定待ち"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aguardando setup"
           }
         }
       }
@@ -33565,6 +34263,298 @@
         }
       }
     },
+    "Battery 1 to %lld%% when scanned: %lld of %lld devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akku 1 bis %1$lld%% beim Scan: %2$lld von %3$lld Geräten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Battery 1 to %1$lld%% when scanned: %2$lld of %3$lld devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batería de 1 a %1$lld%% en el análisis: %2$lld de %3$lld dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batterie de 1 à %1$lld%% à l'analyse : %2$lld sur %3$lld appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batteria da 1 a %1$lld%% alla scansione: %2$lld di %3$lld dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン時のバッテリー 1〜%1$lld%%: %2$lld / %3$lld デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bateria de 1 a %1$lld%% na verificação: %2$lld de %3$lld dispositivos"
+          }
+        }
+      }
+    },
+    "Battery capacity" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akkukapazität"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacidad batería"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacité batterie"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacità batteria"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリー容量"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacidade bateria"
+          }
+        }
+      }
+    },
+    "Battery capacity under 80%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akkukapazität unter 80 %"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacidad de la batería inferior al 80 %"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacité de la batterie sous 80 %"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacità della batteria sotto l’80%"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリー容量が80%未満"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacidade da bateria abaixo de 80%"
+          }
+        }
+      }
+    },
+    "Battery health" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akkuzustand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado batería"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État batterie"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato batteria"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリーの状態"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saúde da bateria"
+          }
+        }
+      }
+    },
+    "Battery health, needs service" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akkuzustand, Service nötig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de la batería, requiere servicio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État de la batterie, à réparer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato della batteria, da sostituire"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリーの状態、修理が必要"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saúde da bateria, precisa de serviço"
+          }
+        }
+      }
+    },
+    "Battery needs service" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akku benötigt Service"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batería requiere servicio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batterie à réparer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batteria da sostituire"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリーの修理が必要"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bateria precisa de serviço"
+          }
+        }
+      }
+    },
+    "Battery reported as 0: %lld of %lld devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akku mit 0 gemeldet: %1$lld von %2$lld Geräten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Battery reported as 0: %1$lld of %2$lld devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batería notificada como 0: %1$lld de %2$lld dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batterie signalée à 0 : %1$lld sur %2$lld appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batteria segnalata come 0: %1$lld di %2$lld dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリー 0 と報告: %1$lld / %2$lld デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bateria informada como 0: %1$lld de %2$lld dispositivos"
+          }
+        }
+      }
+    },
     "Before You Export" : {
       "localizations" : {
         "de" : {
@@ -34321,6 +35311,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pacote gravado em %@ em ~/Library/Logs/JamfReports/diagnostics (a exibição no Finder foi bloqueada)."
+          }
+        }
+      }
+    },
+    "By enrollment profile: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach Registrierungsprofil: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Por perfil de inscripción: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Par profil d'inscription : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per profilo di registrazione: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録プロファイル別: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Por perfil de inscrição: %@"
           }
         }
       }
@@ -37097,6 +38127,126 @@
         }
       }
     },
+    "Classes with no devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klassen ohne Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clases sin dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classes sans appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classi senza dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスのないクラス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turmas sem dispositivos"
+          }
+        }
+      }
+    },
+    "Classes with no students" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klassen ohne Schüler"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clases sin estudiantes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classes sans élèves"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classi senza studenti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生徒のいないクラス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turmas sem alunos"
+          }
+        }
+      }
+    },
+    "Classes with no teacher" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klassen ohne Lehrkraft"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clases sin docente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classes sans enseignant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classi senza docente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "教員のいないクラス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turmas sem professor"
+          }
+        }
+      }
+    },
     "Clean" : {
       "localizations" : {
         "de" : {
@@ -39480,13 +40630,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Benchmarks de cumplimiento"
+            "value" : "Referencias de control"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Référentiels de contrôle de conformité"
+            "value" : "Référentiels de contrôle"
           }
         },
         "it" : {
@@ -39498,13 +40648,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コンプライアンスベンチマーク"
+            "value" : "準拠ベンチマーク"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Benchmarks de conformidade"
+            "value" : "Benchmarks"
           }
         }
       }
@@ -40625,6 +41775,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Computadores além do limite de desatualização deste espaço de trabalho: mais de %lld dias pelas datas que Config › Limites conta. O Offline Outreach os agrupa pelo tempo de inatividade."
+          }
+        }
+      }
+    },
+    "Computers snapshot: could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer-Snapshot: konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantánea de ordenadores: no se pudo leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantané des ordinateurs : lecture impossible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot dei computer: impossibile leggere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータのスナップショット: 読み込めませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot de computadores: não foi possível ler"
           }
         }
       }
@@ -41835,42 +43025,42 @@
         }
       }
     },
-    "Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and insights are then collected with the workspace's data." : {
+    "Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and plans are then collected with the workspace's data." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Binden Sie Jamf Protect mit einem API-Client aus der Protect-Konsole an diesen Arbeitsbereich an. Seine Alarme, Computer und Insights werden dann mit den Daten des Arbeitsbereichs erfasst."
+            "value" : "Binden Sie Jamf Protect mit einem API-Client aus der Protect-Konsole an diesen Arbeitsbereich an. Seine Alarme, Computer und Pläne werden dann mit den Daten des Arbeitsbereichs erfasst."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte Jamf Protect a este espacio de trabajo con un cliente de API de la consola de Protect. Sus alertas, ordenadores y análisis se recopilan junto con los datos del espacio de trabajo."
+            "value" : "Conecte Jamf Protect a este espacio de trabajo con un cliente de API de la consola de Protect. Sus alertas, ordenadores y planes se recopilan junto con los datos del espacio de trabajo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connectez Jamf Protect à cet espace de travail avec un client API de la console Protect. Ses alertes, ordinateurs et analyses sont ensuite collectés avec les données de l’espace de travail."
+            "value" : "Connectez Jamf Protect à cet espace de travail avec un client API de la console Protect. Ses alertes, ordinateurs et plans sont ensuite collectés avec les données de l’espace de travail."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connettere Jamf Protect a questo spazio di lavoro con un client API della console Protect. I suoi avvisi, computer e insight vengono poi raccolti insieme ai dati dello spazio di lavoro."
+            "value" : "Connettere Jamf Protect a questo spazio di lavoro con un client API della console Protect. I suoi avvisi, computer e piani vengono poi raccolti insieme ai dati dello spazio di lavoro."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ProtectコンソールのAPIクライアントを使って、このワークスペースにJamf Protectを接続します。アラート、コンピュータ、インサイトは、ワークスペースのデータとともに収集されます。"
+            "value" : "ProtectコンソールのAPIクライアントを使って、このワークスペースにJamf Protectを接続します。アラート、コンピュータ、プランは、ワークスペースのデータとともに収集されます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte o Jamf Protect a este espaço de trabalho com um cliente de API do console do Protect. Os alertas, computadores e insights dele passam a ser coletados com os dados do espaço de trabalho."
+            "value" : "Conecte o Jamf Protect a este espaço de trabalho com um cliente de API do console do Protect. Os alertas, computadores e planos dele passam a ser coletados com os dados do espaço de trabalho."
           }
         }
       }
@@ -46479,6 +47669,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A contagem e a lista concordam em %lld dispositivos comparados."
+          }
+        }
+      }
+    },
+    "Counts" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anzahlen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recuentos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Totaux"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conteggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "件数"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contagens"
           }
         }
       }
@@ -51523,6 +52753,86 @@
         }
       }
     },
+    "Device groups with no members" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerätegruppen ohne Mitglieder"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grupos de dispositivos sin miembros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Groupes d'appareils sans membres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gruppi di dispositivi senza membri"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メンバーのいないデバイスグループ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grupos de dispositivos sem membros"
+          }
+        }
+      }
+    },
+    "Device health" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerätezustand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de los dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État des appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato dei dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスの状態"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integridade dos dispositivos"
+          }
+        }
+      }
+    },
     "Device lookup is available in live mode only." : {
       "localizations" : {
         "de" : {
@@ -54763,6 +56073,46 @@
         }
       }
     },
+    "Enrolled via ADE" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über ADE registriert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inscrito vía ADE"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inscrit via ADE"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registrato via ADE"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ADE経由で登録"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inscrito via ADE"
+          }
+        }
+      }
+    },
     "Enrollment" : {
       "localizations" : {
         "de" : {
@@ -54879,6 +56229,92 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O método de inscrição vem do inventário completo de dispositivos móveis."
+          }
+        }
+      }
+    },
+    "Enrollment type" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registrierungsart"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo de inscripción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type d’inscription"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo di registrazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録の種類"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo de inscrição"
+          }
+        }
+      }
+    },
+    "Enrollment type: %@ (of %lld devices reporting)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registrierungstyp: %1$@ (von %2$lld meldenden Geräten)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enrollment type: %1$@ (of %2$lld devices reporting)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo de inscripción: %1$@ (de %2$lld dispositivos que informan)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type d'inscription : %1$@ (sur %2$lld appareils déclarants)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo di registrazione: %1$@ (su %2$lld dispositivi che riportano)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録タイプ: %1$@ (報告した %2$lld デバイス中)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo de inscrição: %1$@ (de %2$lld dispositivos que informaram)"
           }
         }
       }
@@ -56371,6 +57807,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Experimental: blueprints do Jamf School pela Platform API; relate os resultados no GitHub."
+          }
+        }
+      }
+    },
+    "Expired" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abgelaufen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caducado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scaduto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expirado"
+          }
+        }
+      }
+    },
+    "Expiring" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Läuft bald ab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A punto de caducar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bientôt expiré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In scadenza"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限が近い"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prestes a expirar"
           }
         }
       }
@@ -57913,6 +59429,86 @@
         }
       }
     },
+    "External boot" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Externer Start"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arranque externo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Démarrage externe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvio esterno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部起動"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boot externo"
+          }
+        }
+      }
+    },
+    "External boot level" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stufe für externen Start"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nivel de arranque externo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niveau de démarrage externe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Livello di avvio esterno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部起動のレベル"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nível de boot externo"
+          }
+        }
+      }
+    },
     "FAIL" : {
       "localizations" : {
         "de" : {
@@ -58189,46 +59785,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Falha"
-          }
-        }
-      }
-    },
-    "Fail: %lld" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fehler: %lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fallo: %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Échec : %lld"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Errori: %lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不合格: %lld"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Falha: %lld"
           }
         }
       }
@@ -58589,46 +60145,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Com falha"
-          }
-        }
-      }
-    },
-    "Failing Insights" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fehlgeschlagene Insights"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights con fallos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights défaillants"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight in errore"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失敗しているインサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights com falha"
           }
         }
       }
@@ -61148,7 +62664,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Panoramica del parco dispositivi"
+            "value" : "Panoramica del parco"
           }
         },
         "ja" : {
@@ -62245,6 +63761,46 @@
         }
       }
     },
+    "GAP" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LÜCKE"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DESVIACIÓN"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ÉCART"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LACUNA"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不備"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LACUNA"
+          }
+        }
+      }
+    },
     "GK" : {
       "localizations" : {
         "de" : {
@@ -62281,6 +63837,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "GK"
+          }
+        }
+      }
+    },
+    "Gap" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lücke"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desviación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écart"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacuna"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不備"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacuna"
+          }
+        }
+      }
+    },
+    "Gaps" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lücken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desviaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écarts"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacune"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不備"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacunas"
           }
         }
       }
@@ -67595,46 +69231,6 @@
         }
       }
     },
-    "Insights" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insights"
-          }
-        }
-      }
-    },
     "Install a `jamf-reports` command so you can generate reports, collect snapshots, and back up from Terminal or a script — the same engine the app uses. This links the app into a directory on your PATH; the app never uses administrator rights." : {
       "localizations" : {
         "de" : {
@@ -70127,46 +71723,6 @@
         }
       }
     },
-    "Jamf Pro workspaces only. Jamf School has no deep scan: its daily collect covers every School source." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nur Jamf Pro-Arbeitsbereiche. Jamf School hat keinen Tiefenscan: Die tägliche Erfassung deckt alle School-Quellen ab."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo para espacios de trabajo de Jamf Pro. Jamf School no tiene análisis profundo: su recopilación diaria cubre todas las fuentes de School."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Espaces de travail Jamf Pro uniquement. Jamf School n’a pas d’analyse approfondie : sa collecte quotidienne couvre toutes les sources School."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo spazi di lavoro Jamf Pro. Jamf School non ha la scansione approfondita: la raccolta giornaliera copre tutte le origini di School."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Proワークスペースのみ。Jamf Schoolにはディープスキャンはなく、毎日の収集でJamf Schoolのすべてのソースを対象にします。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Somente em espaços de trabalho do Jamf Pro. O Jamf School não tem varredura profunda: a coleta diária cobre todas as fontes do School."
-          }
-        }
-      }
-    },
     "Jamf Pro, the Platform API or Jamf School, in a workspace of its own." : {
       "localizations" : {
         "de" : {
@@ -71379,6 +72935,126 @@
         }
       }
     },
+    "Jamf binary" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf-Binary"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binario de Jamf"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binaire Jamf"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binario Jamf"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamfバイナリ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binário do Jamf"
+          }
+        }
+      }
+    },
+    "Jamf binary behind the newest binary in this fleet (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf-Binary älter als die neueste der Flotte (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binario de Jamf por detrás del más reciente de la flota (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binaire Jamf en retard sur le plus récent du parc (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binario Jamf indietro rispetto al più recente della flotta (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フリート内で最新のバイナリ(%@)より古いJamfバイナリ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binário do Jamf atrás do mais recente da frota (%@)"
+          }
+        }
+      }
+    },
+    "Jamf binary behind the newest in this fleet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf-Binary älter als die neueste der Flotte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binario de Jamf por detrás del más reciente de la flota"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binaire Jamf en retard sur le plus récent du parc"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binario Jamf indietro rispetto al più recente della flotta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フリート内で最新より古いJamfバイナリ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binário do Jamf atrás do mais recente da frota"
+          }
+        }
+      }
+    },
     "Jamf binary missing" : {
       "localizations" : {
         "de" : {
@@ -72499,6 +74175,86 @@
         }
       }
     },
+    "Last attempt failed %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzter Versuch fehlgeschlagen am %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El último intento falló el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière tentative échouée le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimo tentativo non riuscito il %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最後の試行は失敗しました (%@)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A última tentativa falhou em %@"
+          }
+        }
+      }
+    },
+    "Last attested" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuletzt attestiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última atestación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière attestation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultima attestazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最終構成証明"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última atestação"
+          }
+        }
+      }
+    },
     "Last audit: Never" : {
       "localizations" : {
         "de" : {
@@ -72779,6 +74535,46 @@
         }
       }
     },
+    "Last disconnection reason" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzter Trennungsgrund"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último motivo de desconexión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernier motif de déconnexion"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimo motivo di disconnessione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最後の切断理由"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último motivo de desconexão"
+          }
+        }
+      }
+    },
     "Last full month" : {
       "localizations" : {
         "de" : {
@@ -72855,6 +74651,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Último trimestre completo"
+          }
+        }
+      }
+    },
+    "Last iCloud backup" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letztes iCloud-Backup"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última copia de iCloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière sauvegarde iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimo backup iCloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最終iCloudバックアップ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último backup do iCloud"
           }
         }
       }
@@ -73215,6 +75051,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Última execução: %@"
+          }
+        }
+      }
+    },
+    "Last scanned %@ · %lld of %lld devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuletzt gescannt am %1$@ · %2$lld von %3$lld Geräten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last scanned %1$@ · %2$lld of %3$lld devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último análisis el %1$@ · %2$lld de %3$lld dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière analyse le %1$@ · %2$lld sur %3$lld appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultima scansione il %1$@ · %2$lld di %3$lld dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最終スキャン %1$@ · %2$lld / %3$lld デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última verificação em %1$@ · %2$lld de %3$lld dispositivos"
           }
         }
       }
@@ -74819,6 +76701,46 @@
         }
       }
     },
+    "Lockdown Mode" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blockierungsmodus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modo Aislamiento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode Isolement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modalità Isolamento"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロックダウンモード"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modo de Isolamento"
+          }
+        }
+      }
+    },
     "Log: %@" : {
       "localizations" : {
         "de" : {
@@ -75139,6 +77061,86 @@
         }
       }
     },
+    "MDM approved" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM genehmigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM aprobado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM approuvé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM approvato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM承認済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM aprovado"
+          }
+        }
+      }
+    },
+    "MDM capable" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM-fähig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible con MDM"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible MDM"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatibile MDM"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM対応"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatível com MDM"
+          }
+        }
+      }
+    },
     "MDM commands" : {
       "localizations" : {
         "de" : {
@@ -75215,6 +77217,286 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Comandos MDM pendentes há mais de %lld dias"
+          }
+        }
+      }
+    },
+    "MDM is not user-approved. Approve the MDM profile in System Settings › Privacy & Security › Profiles." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM ist nicht vom Benutzer genehmigt. Genehmige das MDM-Profil in Systemeinstellungen › Datenschutz & Sicherheit › Profile."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El MDM no está aprobado por el usuario. Aprueba el perfil MDM en Ajustes del Sistema › Privacidad y seguridad › Perfiles."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le MDM n’est pas approuvé par l’utilisateur. Approuvez le profil MDM dans Réglages Système › Confidentialité et sécurité › Profils."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’MDM non è approvato dall’utente. Approva il profilo MDM in Impostazioni di Sistema › Privacy e sicurezza › Profili."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMがユーザに承認されていません。システム設定 › プライバシーとセキュリティ › プロファイルでMDMプロファイルを承認してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O MDM não foi aprovado pelo usuário. Aprove o perfil MDM em Ajustes do Sistema › Privacidade e Segurança › Perfis."
+          }
+        }
+      }
+    },
+    "MDM not user-approved" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM nicht vom Benutzer genehmigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM no aprobado por el usuario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM non approuvé par l’utilisateur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM non approvato dall’utente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMが未承認"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM não aprovado pelo usuário"
+          }
+        }
+      }
+    },
+    "MDM profile" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM-Profil"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil MDM"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profilo MDM"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMプロファイル"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM"
+          }
+        }
+      }
+    },
+    "MDM profile expired" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM-Profil abgelaufen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM caducado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil MDM expiré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profilo MDM scaduto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMプロファイルの期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM expirado"
+          }
+        }
+      }
+    },
+    "MDM profile expiring, also stale" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM-Profil läuft bald ab, Mac auch inaktiv"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM a punto de caducar, Mac también inactivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil MDM bientôt expiré, Mac aussi inactif"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profilo MDM in scadenza, Mac anche inattivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMプロファイルの期限が近く、Macも非アクティブ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM prestes a expirar, Mac também inativo"
+          }
+        }
+      }
+    },
+    "MDM profile expiring, check-in unknown" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM-Profil läuft bald ab, Check-in unbekannt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM a punto de caducar, conexión desconocida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil MDM bientôt expiré, dernière connexion inconnue"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profilo MDM in scadenza, check-in sconosciuto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMプロファイルの期限が近く、チェックイン不明"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM prestes a expirar, check-in desconhecido"
+          }
+        }
+      }
+    },
+    "MDM profile expiring, still checking in" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM-Profil läuft bald ab, Mac meldet sich noch"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM a punto de caducar, Mac aún se conecta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil MDM bientôt expiré, Mac toujours connecté"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profilo MDM in scadenza, Mac ancora attivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMプロファイルの期限が近く、Macはチェックイン中"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil MDM prestes a expirar, Mac ainda faz check-in"
           }
         }
       }
@@ -75535,6 +77817,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Macs por versão do macOS e a parcela em uma versão atual."
+          }
+        }
+      }
+    },
+    "Macs: on %lld · off %lld · not reported %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Macs: an %lld · aus %lld · nicht gemeldet %lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Macs: on %1$lld · off %2$lld · not reported %3$lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac: activado %lld · desactivado %lld · no informado %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac : actif %lld · inactif %lld · non communiqué %lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac: attivo %lld · disattivo %lld · non riportato %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac: オン %lld · オフ %lld · 未報告 %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Macs: ligado %lld · desligado %lld · não informado %lld"
           }
         }
       }
@@ -76221,6 +78549,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gerenciamento"
+          }
+        }
+      }
+    },
+    "Management health" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwaltungszustand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de la administración"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État de la gestion"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato della gestione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理の状態"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saúde do gerenciamento"
           }
         }
       }
@@ -78643,6 +81011,126 @@
         }
       }
     },
+    "Names no report reads are kept in new snapshots" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Namen, die kein Bericht liest, bleiben in neuen Snapshots erhalten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los nombres que ningún informe lee se conservan en las nuevas instantáneas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les noms qu’aucun rapport ne lit sont conservés dans les nouveaux instantanés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nomi che nessun report legge vengono mantenuti nei nuovi snapshot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのレポートも読まない名前は新しいスナップショットに保持されます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nomes que nenhum relatório lê são mantidos nos novos snapshots"
+          }
+        }
+      }
+    },
+    "Names no report reads are kept on shared storage" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Namen, die kein Bericht liest, bleiben auf gemeinsamem Speicher erhalten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los nombres que ningún informe lee se conservan en el almacenamiento compartido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les noms qu’aucun rapport ne lit sont conservés sur le stockage partagé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nomi che nessun report legge vengono mantenuti sull’archiviazione condivisa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのレポートも読まない名前は共有ストレージに保持されます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nomes que nenhum relatório lê são mantidos no armazenamento compartilhado"
+          }
+        }
+      }
+    },
+    "Names no report reads are removed from new snapshots" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Namen, die kein Bericht liest, werden aus neuen Snapshots entfernt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los nombres que ningún informe lee se eliminan de las nuevas instantáneas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les noms qu’aucun rapport ne lit sont retirés des nouveaux instantanés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nomi che nessun report legge vengono rimossi dai nuovi snapshot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのレポートも読まない名前は新しいスナップショットから削除されます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nomes que nenhum relatório lê são removidos dos novos snapshots"
+          }
+        }
+      }
+    },
     "Nearly one value per device — this looks like an identifier, so including it puts per-device data in the workbook." : {
       "localizations" : {
         "de" : {
@@ -79559,6 +82047,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Novo agendamento"
+          }
+        }
+      }
+    },
+    "New computer, mobile and enrollment snapshots leave out account names, FileVault users, real name, phone, position, room and the enrollment contact fields. The username and email under user and location stay (Offline Outreach reads them), as do the username columns of the patch and update failure reports.%@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Snapshots von Computern, Mobilgeräten und Registrierungen lassen Accountnamen, FileVault-Benutzer, echten Namen, Telefon, Position, Raum und die Kontaktfelder der Registrierung weg. Benutzername und E-Mail unter Benutzer und Standort bleiben erhalten (Offline Outreach liest sie), ebenso die Benutzernamenspalten der Fehlerberichte zu Patches und Updates.%@ %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New computer, mobile and enrollment snapshots leave out account names, FileVault users, real name, phone, position, room and the enrollment contact fields. The username and email under user and location stay (Offline Outreach reads them), as do the username columns of the patch and update failure reports.%1$@ %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las nuevas instantáneas de ordenadores, dispositivos móviles e inscripción omiten los nombres de cuenta, los usuarios de FileVault, el nombre real, el teléfono, el puesto, la sala y los campos de contacto de inscripción. El nombre de usuario y el correo en usuario y ubicación se conservan (Offline Outreach los lee), igual que las columnas de nombre de usuario de los informes de fallos de parches y actualizaciones.%@ %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les nouveaux instantanés d’ordinateurs, d’appareils mobiles et d’inscription omettent les noms de compte, les utilisateurs FileVault, le nom réel, le téléphone, le poste, le bureau et les champs de contact d’inscription. Le nom d’utilisateur et l’e-mail sous utilisateur et emplacement sont conservés (Offline Outreach les lit), tout comme les colonnes de nom d’utilisateur des rapports d’échecs de correctifs et de mises à jour.%@ %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I nuovi snapshot di computer, dispositivi mobili e registrazione omettono nomi account, utenti FileVault, nome reale, telefono, posizione, stanza e i campi di contatto della registrazione. Nome utente ed e-mail in utente e posizione restano (Offline Outreach li legge), così come le colonne del nome utente dei report sugli errori di patch e aggiornamenti.%@ %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータ、モバイル、登録の新しいスナップショットには、アカウント名、FileVault ユーザ、本名、電話番号、役職、部屋、登録の連絡先フィールドが含まれません。ユーザと場所のユーザ名とメールアドレスは保持されます(Offline Outreach が読み取ります)。パッチとアップデートの失敗レポートのユーザ名列も同様です。%@ %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os novos snapshots de computadores, dispositivos móveis e inscrição omitem nomes de conta, usuários do FileVault, nome real, telefone, cargo, sala e os campos de contato da inscrição. O nome de usuário e o e-mail em usuário e localização permanecem (o Offline Outreach os lê), assim como as colunas de nome de usuário dos relatórios de falhas de patches e atualizações.%@ %@"
           }
         }
       }
@@ -85467,6 +88001,46 @@
         }
       }
     },
+    "Not MDM capable" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht MDM-fähig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No compatible con MDM"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non compatible MDM"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non compatibile MDM"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDM非対応"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não compatível com MDM"
+          }
+        }
+      }
+    },
     "Not added to the connection. %@%@" : {
       "localizations" : {
         "de" : {
@@ -86023,6 +88597,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dados insuficientes de versão do SO neste snapshot."
+          }
+        }
+      }
+    },
+    "Not enrolled through Automated Device Enrollment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht über die automatische Geräteregistrierung registriert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No inscrito mediante la inscripción automatizada de dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non inscrit via l’inscription automatisée des appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non registrato tramite la registrazione automatica dei dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動デバイス登録で登録されていない"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não inscrito via inscrição automática de dispositivos"
           }
         }
       }
@@ -86787,6 +89401,46 @@
         }
       }
     },
+    "Not supervised" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht beaufsichtigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin supervisar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non supervisé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non supervisionato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非監視対象"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não supervisionado"
+          }
+        }
+      }
+    },
     "Not yet" : {
       "localizations" : {
         "de" : {
@@ -87330,7 +89984,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aggiornamenti del sistema operativo"
+            "value" : "Aggiornamenti del SO"
           }
         },
         "ja" : {
@@ -87844,7 +90498,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Relance des appareils hors ligne"
+            "value" : "Relance hors ligne"
           }
         },
         "it" : {
@@ -87862,7 +90516,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contato com dispositivos offline"
+            "value" : "Contato offline"
           }
         }
       }
@@ -88032,13 +90686,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auf aktuellem Stand"
+            "value" : "Aktuell"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En versión actual"
+            "value" : "Al día"
           }
         },
         "fr" : {
@@ -88062,7 +90716,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Na versão atual"
+            "value" : "Em dia"
           }
         }
       }
@@ -88423,6 +91077,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uma vez por dia, apenas versões estáveis. Nada é baixado nem instalado."
+          }
+        }
+      }
+    },
+    "Once a week, reads each device's details (enrollment type, storage, battery) one device at a time. This setting applies to every workspace." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einmal pro Woche werden die Details jedes Geräts (Registrierungsart, Speicher, Akku) nacheinander gelesen. Diese Einstellung gilt für alle Arbeitsbereiche."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una vez por semana, lee los detalles de cada dispositivo (tipo de inscripción, almacenamiento, batería), de uno en uno. Este ajuste se aplica a todos los espacios de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fois par semaine, lit les détails de chaque appareil (type d'inscription, stockage, batterie), un appareil à la fois. Ce réglage s'applique à tous les espaces de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una volta alla settimana legge i dettagli di ogni dispositivo (tipo di registrazione, spazio di archiviazione, batteria), uno alla volta. Questa impostazione vale per tutti gli spazi di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "週に1回、各デバイスの詳細(登録タイプ、ストレージ、バッテリー)を1台ずつ読み取ります。この設定はすべてのワークスペースに適用されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma vez por semana, lê os detalhes de cada dispositivo (tipo de inscrição, armazenamento, bateria), um de cada vez. Esta configuração se aplica a todos os espaços de trabalho."
           }
         }
       }
@@ -89189,6 +91883,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir Computadores no Jamf Pro"
+          }
+        }
+      }
+    },
+    "Open Computers on the Management filter." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer mit dem Filter „Verwaltung“ öffnen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ordenadores con el filtro Administración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir Ordinateurs avec le filtre Gestion."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Computer con il filtro Gestione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「管理」フィルタでコンピュータを開きます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Computadores com o filtro Gerenciamento."
           }
         }
       }
@@ -91393,6 +94127,46 @@
         }
       }
     },
+    "Opens Computers on the Management filter." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet Computer mit dem Filter „Verwaltung“."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Ordenadores con el filtro Administración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre Ordinateurs avec le filtre Gestion."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre Computer con il filtro Gestione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「管理」フィルタでコンピュータを開きます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Computadores com o filtro Gerenciamento."
+          }
+        }
+      }
+    },
     "Opens Health Audit" : {
       "localizations" : {
         "de" : {
@@ -93125,46 +95899,6 @@
         }
       }
     },
-    "Pass: %lld" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bestanden: %lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Correcto: %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réussis : %lld"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Superati: %lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "合格: %lld"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aprovados: %lld"
-          }
-        }
-      }
-    },
     "Passcode Compliant" : {
       "localizations" : {
         "de" : {
@@ -94041,6 +96775,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O status DDM por dispositivo vem da verificação semanal de dispositivos (qualquer perfil). As seções de Blueprints abaixo exigem um perfil da Platform API."
+          }
+        }
+      }
+    },
+    "Per-device details are turned off (jamf_cli.collect_skip)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details pro Gerät sind ausgeschaltet (jamf_cli.collect_skip)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los detalles por dispositivo están desactivados (jamf_cli.collect_skip)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les détails par appareil sont désactivés (jamf_cli.collect_skip)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dettagli per dispositivo sono disattivati (jamf_cli.collect_skip)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスごとの詳細はオフです (jamf_cli.collect_skip)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os detalhes por dispositivo estão desativados (jamf_cli.collect_skip)"
+          }
+        }
+      }
+    },
+    "Per-device details could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details pro Gerät konnten nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer los detalles por dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire les détails par appareil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere i dettagli per dispositivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスごとの詳細を読み取れませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler os detalhes por dispositivo"
+          }
+        }
+      }
+    },
+    "Per-device details not collected yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details pro Gerät noch nicht erfasst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalles por dispositivo aún no recopilados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Détails par appareil pas encore collectés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dettagli per dispositivo non ancora raccolti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスごとの詳細はまだ収集されていません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalhes por dispositivo ainda não coletados"
           }
         }
       }
@@ -99235,6 +102089,46 @@
         }
       }
     },
+    "Recovery Lock" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederherstellungssperre"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloqueo de recuperación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verrouillage de récupération"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocco di recupero"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リカバリロック"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloqueio de recuperação"
+          }
+        }
+      }
+    },
     "Red highlight in Disk Usage sheet" : {
       "localizations" : {
         "de" : {
@@ -100649,6 +103543,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recarrega do disco o estado do espaço de trabalho e os snapshots de tendências. Não executa o jamf-cli."
+          }
+        }
+      }
+    },
+    "Remote Desktop" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote Desktop"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escritorio remoto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bureau à distance"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desktop remoto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リモートデスクトップ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Área de Trabalho Remota"
           }
         }
       }
@@ -109981,42 +112915,42 @@
         }
       }
     },
-    "Security-engineer deep-dive: Protect alerts, mSCP findings, FileVault/SIP/Gatekeeper/Firewall health, agent coverage, and insights drift." : {
+    "Security-engineer deep-dive: Protect alerts, mSCP findings, FileVault/SIP/Gatekeeper/Firewall health, and agent coverage." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Detailanalyse für Sicherheitstechniker: Protect-Warnungen, mSCP-Befunde, Zustand von FileVault/SIP/Gatekeeper/Firewall, Agent-Abdeckung und Insights-Abweichungen."
+            "value" : "Detailanalyse für Sicherheitstechniker: Protect-Warnungen, mSCP-Befunde, Zustand von FileVault/SIP/Gatekeeper/Firewall und Agent-Abdeckung."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Análisis detallado para ingenieros de seguridad: alertas de Protect, hallazgos de mSCP, estado de FileVault/SIP/Gatekeeper/firewall, cobertura de agentes y deriva de insights."
+            "value" : "Análisis detallado para ingenieros de seguridad: alertas de Protect, hallazgos de mSCP, estado de FileVault/SIP/Gatekeeper/firewall y cobertura de agentes."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Analyse approfondie pour les ingénieurs sécurité : alertes Protect, constats mSCP, santé de FileVault/SIP/Gatekeeper/du pare-feu, couverture des agents et dérive des insights."
+            "value" : "Analyse approfondie pour les ingénieurs sécurité : alertes Protect, constats mSCP, santé de FileVault/SIP/Gatekeeper/du pare-feu et couverture des agents."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Analisi approfondita per i tecnici della sicurezza: avvisi di Protect, rilevamenti mSCP, stato di FileVault/SIP/Gatekeeper/firewall, copertura degli agenti e deriva degli insight."
+            "value" : "Analisi approfondita per i tecnici della sicurezza: avvisi di Protect, rilevamenti mSCP, stato di FileVault/SIP/Gatekeeper/firewall e copertura degli agenti."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "セキュリティエンジニア向けの詳細分析です。Protectのアラート、mSCPの検出事項、FileVault/SIP/Gatekeeper/ファイアウォールの状態、エージェントのカバレッジ、インサイトの変化を含みます。"
+            "value" : "セキュリティエンジニア向けの詳細分析です。Protectのアラート、mSCPの検出事項、FileVault/SIP/Gatekeeper/ファイアウォールの状態、エージェントのカバレッジを含みます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Análise detalhada para engenheiros de segurança: alertas do Protect, achados do mSCP, integridade de FileVault/SIP/Gatekeeper/firewall, cobertura de agentes e desvio de insights."
+            "value" : "Análise detalhada para engenheiros de segurança: alertas do Protect, achados do mSCP, integridade de FileVault/SIP/Gatekeeper/firewall e cobertura de agentes."
           }
         }
       }
@@ -110861,6 +113795,86 @@
         }
       }
     },
+    "Set %@ to false unless your organization's storage policy allows it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setze %@ auf false, sofern die Speicherrichtlinie deiner Organisation es nicht erlaubt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establece %@ en false, salvo que la política de almacenamiento de tu organización lo permita."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez %@ sur false, sauf si la politique de stockage de votre organisation l’autorise."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imposta %@ su false, a meno che la policy di archiviazione della tua organizzazione non lo consenta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組織のストレージポリシーで許可されていない限り、%@ を false に設定してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina %@ como false, a menos que a política de armazenamento da sua organização permita."
+          }
+        }
+      }
+    },
+    "Set %@ to true only if your own tools read those fields." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setze %@ nur auf true, wenn deine eigenen Tools diese Felder lesen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establece %@ en true solo si tus propias herramientas leen esos campos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez %@ sur true uniquement si vos propres outils lisent ces champs."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imposta %@ su true solo se i tuoi strumenti leggono quei campi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "独自のツールがそれらのフィールドを読み取る場合にのみ、%@ を true に設定してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina %@ como true somente se suas próprias ferramentas lerem esses campos."
+          }
+        }
+      }
+    },
     "Set Secure Boot to Full Security in Startup Utility." : {
       "localizations" : {
         "de" : {
@@ -111377,6 +114391,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Defina como fail, warning ou ignore em config.yaml ou remova a linha."
+          }
+        }
+      }
+    },
+    "Set it to false to remove them from new snapshots." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setze ihn auf false, um sie aus neuen Snapshots zu entfernen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establécelo en false para eliminarlos de las nuevas instantáneas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définissez-le sur false pour les retirer des nouveaux instantanés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostalo su false per rimuoverli dai nuovi snapshot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいスナップショットから削除するには false に設定してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defina como false para removê-los dos novos snapshots."
           }
         }
       }
@@ -114679,6 +117733,46 @@
         }
       }
     },
+    "Signatures version" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signaturversion"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión de firmas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version des signatures"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versione firme"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シグネチャのバージョン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versão das assinaturas"
+          }
+        }
+      }
+    },
     "Since %@" : {
       "localizations" : {
         "de" : {
@@ -115239,6 +118333,46 @@
         }
       }
     },
+    "Smart device groups with no members" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intelligente Gerätegruppen ohne Mitglieder"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grupos de dispositivos inteligentes sin miembros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Groupes d'appareils dynamiques sans membres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gruppi di dispositivi smart senza membri"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メンバーのいないスマートデバイスグループ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grupos de dispositivos inteligentes sem membros"
+          }
+        }
+      }
+    },
     "Snapshot" : {
       "localizations" : {
         "de" : {
@@ -115795,6 +118929,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Snapshots anteriores aos manifestos SHA-256"
+          }
+        }
+      }
+    },
+    "Snapshots saved before this build still hold the names; they leave only through retention or by deleting the files." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor diesem Build gespeicherte Snapshots enthalten die Namen noch; sie verschwinden nur durch die Aufbewahrung oder durch Löschen der Dateien."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las instantáneas guardadas antes de esta versión aún contienen los nombres; solo desaparecen mediante la retención o eliminando los archivos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les instantanés enregistrés avant cette version contiennent encore les noms ; ils ne disparaissent que par la conservation ou en supprimant les fichiers."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli snapshot salvati prima di questa build contengono ancora i nomi; scompaiono solo tramite la conservazione o eliminando i file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このビルドより前に保存されたスナップショットには名前が残っています。保持設定、またはファイルの削除でのみ消えます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os snapshots salvos antes desta versão ainda contêm os nomes; eles só saem pela retenção ou excluindo os arquivos."
           }
         }
       }
@@ -117893,6 +121067,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Armazenamento"
+          }
+        }
+      }
+    },
+    "Storage: %@ (of %lld devices reporting)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speicher: %1$@ (von %2$lld meldenden Geräten)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Storage: %1$@ (of %2$lld devices reporting)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almacenamiento: %1$@ (de %2$lld dispositivos que informan)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stockage : %1$@ (sur %2$lld appareils déclarants)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archiviazione: %1$@ (su %2$lld dispositivi che riportano)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ストレージ: %1$@ (報告した %2$lld デバイス中)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Armazenamento: %1$@ (de %2$lld dispositivos que informaram)"
           }
         }
       }
@@ -120379,6 +123599,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O login do Jamf Protect tem uma pasta de espaço de trabalho de que não precisa"
+          }
+        }
+      }
+    },
+    "The MDM profile has expired. Re-enroll the Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das MDM-Profil ist abgelaufen. Registriere den Mac neu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil MDM ha caducado. Vuelve a inscribir el Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil MDM a expiré. Réinscrivez le Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo MDM è scaduto. Registra di nuovo il Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MDMプロファイルの期限が切れています。Macを再登録してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil MDM expirou. Reinscreva o Mac."
+          }
+        }
+      }
+    },
+    "The MDM profile renews when the Mac checks in." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das MDM-Profil wird erneuert, wenn sich der Mac meldet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil MDM se renueva cuando el Mac se conecta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil MDM est renouvelé quand le Mac se connecte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo MDM si rinnova quando il Mac fa il check-in."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacがチェックインするとMDMプロファイルは更新されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O perfil MDM é renovado quando o Mac faz check-in."
+          }
+        }
+      }
+    },
+    "The Mac is not MDM capable. Re-enroll the Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Mac ist nicht MDM-fähig. Registriere den Mac neu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Mac no es compatible con MDM. Vuelve a inscribirlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le Mac n’est pas compatible MDM. Réinscrivez le Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il Mac non è compatibile con MDM. Registra di nuovo il Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacはMDMに対応していません。Macを再登録してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Mac não é compatível com MDM. Reinscreva o Mac."
           }
         }
       }
@@ -125117,6 +128457,46 @@
         }
       }
     },
+    "This workspace's data folder is reachable by other Macs or a sync provider, and %@ keeps account names in snapshots saved there." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Datenordner dieses Arbeitsbereichs ist für andere Macs oder einen Synchronisierungsanbieter erreichbar, und %@ behält Accountnamen in dort gespeicherten Snapshots."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta de datos de este espacio de trabajo es accesible para otros Mac o un proveedor de sincronización, y %@ conserva los nombres de cuenta en las instantáneas guardadas allí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dossier de données de cet espace de travail est accessible à d’autres Mac ou à un fournisseur de synchronisation, et %@ conserve les noms de compte dans les instantanés qui y sont enregistrés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cartella dati di questo spazio di lavoro è raggiungibile da altri Mac o da un provider di sincronizzazione, e %@ mantiene i nomi account negli snapshot salvati lì."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースのデータフォルダは他の Mac や同期プロバイダから到達でき、%@ はそこに保存されるスナップショットにアカウント名を保持します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pasta de dados deste espaço de trabalho é acessível a outros Macs ou a um provedor de sincronização, e %@ mantém nomes de conta nos snapshots salvos ali."
+          }
+        }
+      }
+    },
     "Those columns are already in config.yaml." : {
       "localizations" : {
         "de" : {
@@ -127957,46 +131337,6 @@
         }
       }
     },
-    "Unknown Insight" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unbekannter Insight"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconocido"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyse inconnue"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight sconosciuto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不明なインサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconhecido"
-          }
-        }
-      }
-    },
     "Unknown OS" : {
       "localizations" : {
         "de" : {
@@ -128113,46 +131453,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Erro desconhecido"
-          }
-        }
-      }
-    },
-    "Unknown insight" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unbekannter Insight"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconocido"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyse inconnue"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight sconosciuto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不明なインサイト"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insight desconhecido"
           }
         }
       }
@@ -128473,6 +131773,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dispositivo sem nome"
+          }
+        }
+      }
+    },
+    "Unnamed instance" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instanz ohne Namen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instancia sin nombre"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instance sans nom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istanza senza nome"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前のないインスタンス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instância sem nome"
           }
         }
       }
@@ -130723,6 +134063,46 @@
         }
       }
     },
+    "Users with no device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzer ohne Gerät"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usuarios sin dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisateurs sans appareil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utenti senza dispositivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスのないユーザ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usuários sem dispositivo"
+          }
+        }
+      }
+    },
     "VPN Connection" : {
       "localizations" : {
         "de" : {
@@ -130963,42 +134343,42 @@
         }
       }
     },
-    "Validating config.yaml against your CSV export and cached EA results" : {
+    "Validating config.yaml against the collected jamf-cli snapshots" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "config.yaml wird anhand Ihres CSV-Exports und der zwischengespeicherten EA-Ergebnisse validiert"
+            "value" : "config.yaml wird anhand der erfassten jamf-cli-Snapshots geprüft"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Validando config.yaml con su exportación CSV y los resultados de EA en caché"
+            "value" : "Validando config.yaml con las instantáneas de jamf-cli recopiladas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Validation de config.yaml par rapport à votre export CSV et aux résultats d’EA en cache"
+            "value" : "Validation de config.yaml par rapport aux instantanés jamf-cli collectés"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Convalida di config.yaml rispetto all’esportazione CSV e ai risultati EA in cache"
+            "value" : "Convalida di config.yaml rispetto agli snapshot jamf-cli raccolti"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CSVエクスポートとキャッシュされた拡張属性の結果に対してconfig.yamlを検証しています"
+            "value" : "収集済みのjamf-cliスナップショットに対してconfig.yamlを検証しています"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Validando o config.yaml com base na sua exportação CSV e nos resultados de EA em cache"
+            "value" : "Validando o config.yaml com os snapshots do jamf-cli coletados"
           }
         }
       }
@@ -131872,7 +135252,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WARN"
+            "value" : "警告"
           }
         },
         "pt-BR" : {
@@ -131912,7 +135292,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WARNING"
+            "value" : "警告"
           }
         },
         "pt-BR" : {
@@ -137061,6 +140441,46 @@
         }
       }
     },
+    "classes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "clases"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "classes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "classi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "turmas"
+          }
+        }
+      }
+    },
     "client ID and secret" : {
       "localizations" : {
         "de" : {
@@ -138165,6 +141585,46 @@
         }
       }
     },
+    "could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no se pudo leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "n’a pas pu être lu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non è stato possibile leggerlo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取れませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "não foi possível ler"
+          }
+        }
+      }
+    },
     "could not read %@" : {
       "localizations" : {
         "de" : {
@@ -139136,6 +142596,206 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "exit 1 — geralmente um erro de rede ou uma falha em um comando específico. Revise a saída do log desta execução para ver o comando com falha."
+          }
+        }
+      }
+    },
+    "expired %lld days ago" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vor %lld Tagen abgelaufen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "caducó hace %lld días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expiré il y a %lld jours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "scaduto %lld giorni fa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld日前に期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expirou há %lld dias"
+          }
+        }
+      }
+    },
+    "expired 1 day ago" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vor 1 Tag abgelaufen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "caducó hace 1 día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expiré il y a 1 jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "scaduto 1 giorno fa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1日前に期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expirou há 1 dia"
+          }
+        }
+      }
+    },
+    "expires in %lld days" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "läuft in %lld Tagen ab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "caduca en %lld días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expire dans %lld jours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "scade tra %lld giorni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld日後に期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expira em %lld dias"
+          }
+        }
+      }
+    },
+    "expires in 1 day" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "läuft in 1 Tag ab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "caduca en 1 día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expire dans 1 jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "scade tra 1 giorno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1日後に期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expira em 1 dia"
+          }
+        }
+      }
+    },
+    "expires today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "läuft heute ab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "caduca hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expire aujourd’hui"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "scade oggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "expira hoje"
           }
         }
       }
@@ -144428,6 +148088,46 @@
         }
       }
     },
+    "not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no informado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non communiqué"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non riportato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "não informado"
+          }
+        }
+      }
+    },
     "not served through this connection" : {
       "localizations" : {
         "de" : {
@@ -148254,6 +151954,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "unlockpt falhou: errno %d"
+          }
+        }
+      }
+    },
+    "users" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "usuarios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "utilisateurs"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "utenti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ユーザ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "usuários"
           }
         }
       }

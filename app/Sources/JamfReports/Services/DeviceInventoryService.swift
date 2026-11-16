@@ -492,6 +492,7 @@ extension DeviceInventoryService {
             record.bootstrapToken = ""
         }
         record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
+        record.management = ManagementFacts(item: item)
         return record
     }
 

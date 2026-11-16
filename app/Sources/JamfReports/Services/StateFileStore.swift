@@ -87,6 +87,12 @@ struct StateFileStore: Sendable {
         try? rewriteManifest()
     }
 
+    /// Removes `report`'s last-run stamp, so the kind reads as never fetched.
+    func clearRun(report: String) {
+        try? FileManager.default.removeItem(at: fileURL(for: report))
+        try? rewriteManifest()
+    }
+
     // MARK: - Failure tracking (2.8 data-freshness health)
 
     /// Consecutive-failure record for one report kind.
@@ -117,13 +123,16 @@ struct StateFileStore: Sendable {
         return Int32(parts[2])
     }
 
-    /// How many failures in a row ended in `CLIBridge.exitCodeTimedOut`, newest included; 0 for
+    /// How many failures in a row ended in a timeout (`CLIBridge.exitCodeTimedOut`, or jamf-cli
+    /// giving up on a server that never answered, `FailureCause.serverTimedOut`), newest
+    /// included; 0 for
     /// a kind whose last failure was anything else, and for a record that predates the count.
     /// Kept in `<report>.timeouts`, beside the `.fail` file rather than in it: an older build
     /// reads only the two- and three-field forms of `.fail` and would see a longer one as no
     /// record at all.
     func consecutiveTimeouts(for report: String) -> Int {
-        guard lastFailureExitCode(for: report) == CLIBridge.exitCodeTimedOut,
+        guard lastFailureExitCode(for: report) == CLIBridge.exitCodeTimedOut
+                || cause(for: report)?.serverTimedOut == true,
               let text = BoundedFile.stateText(timeoutsURL(for: report), inside: trustedRoot),
               let count = Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return 0 }
@@ -160,7 +169,9 @@ struct StateFileStore: Sendable {
     /// no code to record (a launch failure), which keeps the record in the
     /// original two-field form and reads back as "unknown" rather than as a
     /// fabricated exit 0.
-    func recordFailure(report: String, at date: Date, exitCode: Int32? = nil) throws {
+    func recordFailure(
+        report: String, at date: Date, exitCode: Int32? = nil, timedOut: Bool? = nil
+    ) throws {
         try FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true
         )
@@ -173,12 +184,13 @@ struct StateFileStore: Sendable {
             throw StateFileError.encodingFailed(report: report)
         }
         try atomicWrite(data: data, to: failureURL(for: report))
-        try recordTimeoutStreak(report: report, exitCode: exitCode)
+        try recordTimeoutStreak(
+            report: report, timedOut: timedOut ?? (exitCode == CLIBridge.exitCodeTimedOut))
     }
 
     /// Counts a timeout on top of the previous failure's streak; any other failure ends it.
-    private func recordTimeoutStreak(report: String, exitCode: Int32?) throws {
-        guard exitCode == CLIBridge.exitCodeTimedOut else {
+    private func recordTimeoutStreak(report: String, timedOut: Bool) throws {
+        guard timedOut else {
             try? FileManager.default.removeItem(at: timeoutsURL(for: report))
             return
         }
@@ -239,7 +251,8 @@ struct StateFileStore: Sendable {
             try? recordRun(report: report, at: date)
             clearFailures(report: report)
         case .failed(let exitCode):
-            try? recordFailure(report: report, at: date, exitCode: exitCode)
+            try? recordFailure(
+                report: report, at: date, exitCode: exitCode, timedOut: cause?.isTimeout)
             if let cause {
                 try? writeCause(cause, report: report, at: date)
             } else {

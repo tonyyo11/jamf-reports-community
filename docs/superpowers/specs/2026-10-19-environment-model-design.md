@@ -1,8 +1,8 @@
 # The workspace is the environment — design
 
 Status: P1 to P9 shipped in 2.12, and P12 slices 1 and 2 (Security Cloud slot, collect, match
-and summary fields). P10 is deferred to 2.13 (D27); P11 was replaced by the mobile spec's M6;
-P13 (docs) is open. Where the text below differs from the code, a note says which ruling or phase changed it.
+and summary fields). P10 is deferred to 2.13 (D27, #421); P11 was replaced by the mobile spec's
+M6; the rest of P12 and P13 (docs) are open in #305. Where the text below differs from the code, a note says which ruling or phase changed it.
 The direction was decided on 2026-10-19, so this document designs it and does not argue for it.
 It landed before the Security Cloud collect code (epic #283). It also
 covers epic #284's "Several Platform connections; Jamf Pro vs Jamf School" and #207 L1, L3, L5

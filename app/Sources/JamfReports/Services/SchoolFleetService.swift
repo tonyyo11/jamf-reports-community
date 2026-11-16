@@ -11,6 +11,10 @@ enum SchoolFleetService {
     static let devicesKind = "school-devices"
     static let depDevicesKind = "school-dep-devices"
     static let overviewKind = "school-overview"
+    static let usersKind = "school-users"
+    static let groupsKind = "school-device-groups"
+    static let classesKind = "school-classes"
+    static let deviceDetailKind = ReportEngine.schoolDeviceDetailKind
 
     struct Device: Identifiable, Sendable, Equatable {
         let id: String
@@ -54,6 +58,15 @@ enum SchoolFleetService {
         let profile: String
     }
 
+    /// The count fields `SchoolDeviceHealth` reads; nil when a row has none of the right type.
+    struct UserRow: Sendable, Equatable { let deviceCount: Int? }
+    struct GroupRow: Sendable, Equatable { let members: Int?; let isSmart: Bool? }
+    struct ClassRow: Sendable, Equatable {
+        let devices: Int?
+        let students: Int?
+        let teachers: Int?
+    }
+
     /// One `school overview` line: a School resource and its count, as jamf-cli prints it.
     struct OverviewRow: Sendable, Equatable, Identifiable {
         let section: String
@@ -68,6 +81,17 @@ enum SchoolFleetService {
         var trashedCount = 0
         var depDevices: [DEPDevice] = []
         var overview: [OverviewRow] = []
+        /// Users not in trash, device groups and classes; nil when no snapshot was read.
+        var users: [UserRow]?
+        var deviceGroups: [GroupRow]?
+        var classes: [ClassRow]?
+        /// Kinds whose newest snapshot exists but could not be read: unreadable, not empty.
+        var unreadable: Set<String> = []
+        /// The newest per-device scan; nil when none was read (see `unreadable` for one that
+        /// could not be).
+        var deviceDetail: SchoolDeviceDetail?
+        /// When the last scan attempt failed, if its newest result is a failure.
+        var deviceDetailFailedAt: Date?
         var devicesDate: Date?
         var depDate: Date?
         var overviewDate: Date?
@@ -111,18 +135,58 @@ enum SchoolFleetService {
 
     static func load(dataDir: URL) -> Snapshot {
         var snapshot = Snapshot()
-        if let (rows, date) = newestRows(kind: devicesKind, in: dataDir) {
-            snapshot = devicesSnapshot(rows: rows, date: date)
+        func read(_ kind: String, _ apply: (inout Snapshot, [[String: Any]], Date) -> Void) {
+            switch readRows(kind: kind, in: dataDir) {
+            case .missing: break
+            case .unreadable: snapshot.unreadable.insert(kind)
+            case .rows(let rows, let date): apply(&snapshot, rows, date)
+            }
         }
-        if let (rows, date) = newestRows(kind: depDevicesKind, in: dataDir) {
-            snapshot.depDevices = rows.enumerated().map { depDevice(from: $1, index: $0) }
-            snapshot.depDate = date
+        read(devicesKind) { snap, rows, date in
+            let devices = devicesSnapshot(rows: rows, date: date)
+            snap.devices = devices.devices
+            snap.trashedCount = devices.trashedCount
+            snap.devicesDate = date
         }
-        if let (rows, date) = newestRows(kind: overviewKind, in: dataDir) {
-            snapshot.overview = rows.compactMap(overviewRow)
-            snapshot.overviewDate = date
+        read(depDevicesKind) { snap, rows, date in
+            snap.depDevices = rows.enumerated().map { depDevice(from: $1, index: $0) }
+            snap.depDate = date
         }
+        read(overviewKind) { snap, rows, date in
+            snap.overview = rows.compactMap(overviewRow)
+            snap.overviewDate = date
+        }
+        read(usersKind) { snap, rows, _ in
+            snap.users = partitionFleet(rows).members.map {
+                UserRow(deviceCount: count($0, "deviceCount"))
+            }
+        }
+        read(groupsKind) { snap, rows, _ in
+            snap.deviceGroups = rows.map {
+                GroupRow(members: count($0, "members"), isSmart: flag($0, "isSmartGroup"))
+            }
+        }
+        read(classesKind) { snap, rows, _ in
+            snap.classes = rows.map {
+                ClassRow(devices: count($0, "deviceCount"), students: count($0, "studentCount"),
+                         teachers: count($0, "teacherCount"))
+            }
+        }
+        read(deviceDetailKind) { snap, rows, date in
+            snap.deviceDetail = SchoolDeviceDetail(snapshotRows: rows, date: date)
+        }
+        snapshot.deviceDetailFailedAt = StateFileStore(
+            directory: dataDir.appendingPathComponent("state", isDirectory: true))
+            .failures(report: deviceDetailKind)?.last
         return snapshot
+    }
+
+    /// Only the scan's rows, for the workbook's Device Inventory columns; nil when missing or
+    /// unreadable.
+    static func loadDeviceDetail(dataDir: URL) -> SchoolDeviceDetail? {
+        guard case .rows(let rows, let date) = readRows(kind: deviceDetailKind, in: dataDir)
+        else { return nil }
+        return SchoolDeviceDetail(snapshotRows: rows, date: date)
     }
 
     /// The devices of one `school-devices` file, or nil when it does not decode as a row list.
@@ -192,11 +256,30 @@ enum SchoolFleetService {
 
     // MARK: - Helpers
 
-    private static func newestRows(kind: String, in dataDir: URL) -> ([[String: Any]], Date)? {
+    private enum RowsRead {
+        case missing, unreadable
+        case rows([[String: Any]], Date)
+    }
+
+    private static func readRows(kind: String, in dataDir: URL) -> RowsRead {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        guard let file = FileManager.newestSnapshotFile(in: dir),
-              let rows = decodedRows(at: file) else { return nil }
-        return (rows, snapshotDate(of: file))
+        guard let file = FileManager.newestSnapshotFile(in: dir) else { return .missing }
+        guard let rows = decodedRows(at: file) else { return .unreadable }
+        return .rows(rows, snapshotDate(of: file))
+    }
+
+    /// A whole count of the right type; a boolean, string or fraction is not one.
+    private static func count(_ row: [String: Any], _ key: String) -> Int? {
+        guard let n = row[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
+              let value = Int(exactly: n.doubleValue), value >= 0 else { return nil }
+        return value
+    }
+
+    private static func flag(_ row: [String: Any], _ key: String) -> Bool? {
+        guard let n = row[key] as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() else {
+            return nil
+        }
+        return n.boolValue
     }
 
     private static func decodedRows(at file: URL, inside root: URL? = nil) -> [[String: Any]]? {

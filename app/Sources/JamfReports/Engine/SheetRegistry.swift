@@ -140,8 +140,12 @@ struct SheetRegistry: @unchecked Sendable {
             } catch let skippable as SheetSkippable {
                 // Data absent or expected-missing — omit sheet, not a failure.
                 let msg = SheetRegistry.skipLine(sheet: name, error: skippable)
-                print("  " + msg)
-                onLine?(.init(timestamp: Date(), level: .info, text: msg))
+                // The run log carries it when there is one; printing it too doubled it in the CLI.
+                if let onLine {
+                    onLine(.init(timestamp: Date(), level: .info, text: msg))
+                } else {
+                    print("  " + msg)
+                }
             } catch {
                 let failure = SheetRegistry.failure(sheet: name, error: error)
                 failures.append(failure)

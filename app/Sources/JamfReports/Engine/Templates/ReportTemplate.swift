@@ -32,6 +32,7 @@ enum SheetID: String, Sendable, CaseIterable {
     case environmentStats    = "Environment Stats"
     // Device health
     case checkinHealth       = "Check-in Health"
+    case managementHealth    = "Management Health"
     case activeDevices       = "Active Devices"
     case fleetDrift          = "Fleet Drift"
     case groupHygiene        = "Group Hygiene"
@@ -57,7 +58,6 @@ enum SheetID: String, Sendable, CaseIterable {
     case protectOverview     = "Protect Overview"
     case protectAlerts       = "Protect Alerts"
     case protectComputers    = "Protect Computers"
-    case protectInsights     = "Protect Insights"
     case protectPlans        = "Protect Plans"
     case protectThreatOverview = "Protect Threat Overview"
     // OS currency
@@ -93,7 +93,6 @@ enum SectionID: String, Sendable, CaseIterable {
     case exceptionList   = "exception_list"
     case orgInfo         = "org_info"
     case protectAlerts   = "protect_alerts"
-    case insightsDrift   = "insights_drift"
     case agentHealth     = "agent_health"
     case recentFailures  = "recent_failures"
     case interventionList = "intervention_list"

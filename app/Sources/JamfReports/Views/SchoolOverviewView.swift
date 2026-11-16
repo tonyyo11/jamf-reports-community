@@ -8,6 +8,7 @@ struct SchoolOverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: SchoolFleetService.Snapshot = .empty
+    @State private var scanTurnedOff = false
     @State private var checklist: GettingStartedChecklist?
     /// The `dataSource` `snapshot` and `checklist` were read for; the content waits for it to
     /// match.
@@ -35,6 +36,9 @@ struct SchoolOverviewView: View {
                     SchoolDeviceTiles(
                         snapshot: snapshot, staleDays: staleDays,
                         now: workspace.demoMode ? DemoData.referenceDate : Date())
+                }
+                if let health = SchoolDeviceHealth(snapshot, scanTurnedOff: scanTurnedOff) {
+                    SchoolDeviceHealthCard(health: health)
                 }
                 if !snapshot.overview.isEmpty { resourcesCard }
                 if !snapshot.isDetected { emptyState }
@@ -94,10 +98,11 @@ struct SchoolOverviewView: View {
             return
         }
         let connected = !workspace.profiles.isEmpty
-        guard let (loaded, scheduled, reported) = await ScreenLoad.paint(
+        guard let (loaded, scheduled, reported, scanOff) = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
             read: {
                 let loaded = SchoolFleetService.load(profile: profile)
+                let scanOff = ReportEngine.schoolScanTurnedOff(profile: profile)
                 let hasAgent = ScheduleStore().load().map { $0.toSchedule() }
                     .contains { $0.profile == profile }
                 let policy = AutomationPolicy.current()
@@ -105,10 +110,11 @@ struct SchoolOverviewView: View {
                     hasAgent: hasAgent, policyIsManaged: policy.isManaged,
                     excluded: policy.excludedWorkspaces.contains(profile))
                 let reported = !ReportLibrary().list(profile: profile).isEmpty
-                return (loaded, scheduled, reported)
+                return (loaded, scheduled, reported, scanOff)
             }
         ) else { return }
         snapshot = loaded
+        scanTurnedOff = scanOff
         checklist = .buildSchool(
             connected: connected, collected: loaded.isDetected,
             scheduled: scheduled, reported: reported)

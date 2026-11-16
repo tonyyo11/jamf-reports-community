@@ -149,8 +149,11 @@ extension CoreDashboard {
             // Row 2 is the header's blank row, so the sections keep their rows.
             ws.writeSiteScopeNote(row: row - 1, extra: warning)
             let line = "[warn] Fleet Drift: \(warning)"
-            print("  " + line)
-            onLine?(.init(timestamp: Date(), level: .warn, text: line))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: line))
+            } else {
+                print("  " + line)
+            }
             AttentionLog.raise(.fleetDriftLargeChange,
                                "Fleet Drift: \(drift.joined.count) joined and \(drift.left.count) "
                                    + "left (\(percent)% of the fleet)")

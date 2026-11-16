@@ -147,7 +147,7 @@ struct DDMDeviceStatusService: Sendable {
 
     static func load(url: URL?) -> Snapshot {
         guard let url else { return .empty }
-        guard let data = BoundedFile.readLogged(url) else {
+        guard let data = BoundedFile.readSnapshotLogged(url) else {
             return FileManager.default.fileExists(atPath: url.path) ? .unreadable : .empty
         }
         guard let rows = try? JSONDecoder().decode([DDMDeviceStatusRecord].self, from: data) else {
@@ -180,7 +180,7 @@ struct DDMDeviceStatusService: Sendable {
 
     static func fleetDDMCounts(computersURL: URL?) -> (enabled: Int, total: Int)? {
         guard let computersURL else { return (0, 0) }
-        guard let data = BoundedFile.readLogged(computersURL),
+        guard let data = BoundedFile.readSnapshotLogged(computersURL),
               let rows = try? JSONDecoder().decode([ReportEngine.DeviceScanTarget].self, from: data)
         else { return FileManager.default.fileExists(atPath: computersURL.path) ? nil : (0, 0) }
         return (rows.filter(\.ddmEnabled).count, rows.count)

@@ -643,6 +643,17 @@ struct SummaryJSONParser {
             .filter { $0 <= tomorrow }.max()
     }
 
+    /// Devices (Macs plus mobile) in the newest canonical summary for `profile`, by the date in
+    /// its name. Nil when there is no readable summary. A School or mobile-only day writes
+    /// `totalDevices` 0 beside its `mobileDeviceCount`, so the sum is what the fleet holds.
+    static func newestDeviceCount(profile: String) -> Int? {
+        guard let day = newestSummaryDay(profile: profile),
+              let dir = try? WorkspacePaths.summariesDir(for: profile),
+              let summary = try? parse(dir.appendingPathComponent("summary_\(day).json"))
+        else { return nil }
+        return summary.totalDevices + (summary.mobileDeviceCount ?? 0)
+    }
+
     /// Real summaries are a few KB; anything near this is corrupt or hostile.
     /// Bounds the whole-file read (T-26 — the workspace sits on synced storage
     /// other software can write to).

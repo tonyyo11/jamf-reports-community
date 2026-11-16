@@ -59,9 +59,8 @@ struct CustomTemplate: ReportTemplate {
                 if !sections.contains(.profileTable) { sections.append(.profileTable) }
             case .appStatus:
                 if !sections.contains(.appTable) { sections.append(.appTable) }
-            case .protectOverview, .protectAlerts, .protectComputers, .protectInsights:
+            case .protectOverview, .protectAlerts, .protectComputers:
                 if !sections.contains(.protectAlerts) { sections.append(.protectAlerts) }
-                if !sections.contains(.insightsDrift) { sections.append(.insightsDrift) }
             default:
                 // For other sheets, no specific HTML section mapping
                 break

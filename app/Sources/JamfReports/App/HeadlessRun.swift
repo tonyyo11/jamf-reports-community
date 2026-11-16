@@ -992,20 +992,33 @@ func runSchoolCheck(profile: String) -> Int32 {
             return 1
         }
         print("[ok] config.yaml decoded successfully")
-        let schoolSnapshotKinds = ReportEngine.schoolCommandMatrix(profile: profile).map(\.kind)
         if let dataDir = try? WorkspacePaths.dataDir(for: profile) {
-            let fm = FileManager.default
-            for kind in schoolSnapshotKinds {
-                let kindDir = dataDir.appendingPathComponent(kind)
-                let exists = fm.fileExists(atPath: kindDir.path)
-                print("[\(exists ? "ok" : "miss")] snapshot \(kind): \(exists ? "present" : "missing")")
-            }
+            let missing = ProfileAuthMethod.resolve(profile: profile).map { !$0.hasTenantID }
+            schoolSnapshotLines(
+                profile: profile, platformFieldsMissing: missing ?? false
+            ) { FileManager.default.fileExists(atPath: dataDir.appendingPathComponent($0).path) }
+                .forEach { print($0) }
         }
         return 0
     } catch {
         fputs(LogRedactor.redact("[error] \(error.englishDescription)") + "\n", stderr)
         return 1
     }
+}
+
+/// One `school-check` line per School source. A source collect skips (blueprints on a profile
+/// without Platform fields) reads as skipped with collect's reason, not as missing.
+func schoolSnapshotLines(
+    profile: String, platformFieldsMissing: Bool, exists: (String) -> Bool
+) -> [String] {
+    ReportEngine.planSchoolCollect(
+        profile: profile, tiers: Set(CollectionTier.allCases), force: true,
+        platformFieldsMissing: platformFieldsMissing) { _ in nil }
+        .map { item in
+            if exists(item.kind) { return "[ok] snapshot \(item.kind): present" }
+            if let skip = item.skip { return "[skip] snapshot \(item.kind): \(skip.planLabel)" }
+            return "[miss] snapshot \(item.kind): missing"
+        }
 }
 
 // MARK: - Included CLI dispatch

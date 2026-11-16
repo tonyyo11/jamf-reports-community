@@ -1,6 +1,10 @@
 # Period Report — design
 
-_Status: implemented in 2.7.0; this document records the original design. See the wiki's Period Reports page for the operator view. Original design date 2026-08-27. Since 2.12 percentage text follows `display.percent_decimals` through `PercentFormat` (the `"%.1f%%"` convention below is the 2.7 state), and the About sheet notes a site-limited login. A period CLI subcommand is still deferred._
+Status: shipped in 2.7.0; this document records the original design (2026-08-27). See the wiki's
+Period Reports page for the operator view. Since 2.12 percentage text follows
+`display.percent_decimals` through `PercentFormat` (the `"%.1f%%"` convention below is the 2.7
+state), and the About sheet notes a site-limited login. The period report is still GUI-only; a
+scheduled one is part of #305's "A scheduled executive report" item.
 
 ## Problem
 

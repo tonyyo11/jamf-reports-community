@@ -95,6 +95,7 @@ struct CoreDashboard: Sendable {
             ("Environment Stats", writeEnvironmentStats),
             // --- Device health (sheets 22–24) ---
             ("Check-in Health", writeCheckinHealth),
+            ("Management Health", writeManagementHealth),
             ("Active Devices", writeActiveDevices),
             ("Fleet Drift", writeFleetDrift),
             ("Group Hygiene", writeGroupHygiene),
@@ -129,7 +130,7 @@ struct CoreDashboard: Sendable {
 
     /// The Protect tabs, also written into the Jamf School workbook (`SchoolDashboard`, 2.11).
     static let protectSheetNames = [
-        "Protect Overview", "Protect Alerts", "Protect Computers", "Protect Insights",
+        "Protect Overview", "Protect Alerts", "Protect Computers",
         "Protect Plans", "Protect Threat Overview",
     ]
 
@@ -138,7 +139,6 @@ struct CoreDashboard: Sendable {
             ("Protect Overview", gatedOnProtect(writeProtectOverview)),
             ("Protect Alerts", gatedOnProtect(writeProtectAlerts)),
             ("Protect Computers", gatedOnProtect(writeProtectComputers)),
-            ("Protect Insights", gatedOnProtect(writeProtectInsights)),
             ("Protect Plans", gatedOnProtect(writeProtectPlans)),
             ("Protect Threat Overview", gatedOnProtect(writeProtectThreatOverview)),
         ]
@@ -157,7 +157,7 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Sheet title helper
 
-    private func t(_ base: String) -> String {
+    func t(_ base: String) -> String {
         orgName.isEmpty ? base : "\(orgName) \u{2014} \(base)"
     }
 
@@ -2186,15 +2186,18 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Protect Computers")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Computers"),
-                                      subtitle: "Generated: \(ts)", ncols: 8)
+                                      subtitle: "Generated: \(ts)", ncols: 10)
         ws.setColumnWidth(0, 0, 26)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 2, 24)
         ws.setColumnWidth(3, 3, 14)
         ws.setColumnWidth(4, 5, 18)
         ws.setColumnWidth(6, 7, 14)
+        ws.setColumnWidth(8, 8, 18)
+        ws.setColumnWidth(9, 9, 30)
         let hdrs = ["Host", "Serial", "Plan", "OS", "Status", "Last Connection",
-                    "Web Protection", "Full Disk Access"]
+                    "Web Protection", "Full Disk Access", "Signatures Version",
+                    "Last Disconnection Reason"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -2219,38 +2222,14 @@ struct CoreDashboard: Sendable {
             ws.write(asBool(item["webProtectionActive"]).map { $0 ? "Yes" : "No" } ?? "",
                      row: row, col: 6, format: webFmt)
             ws.write(access ?? "", row: row, col: 7, format: diskFmt)
-            row += 1
-        }
-    }
-
-    // MARK: - Protect Insights
-    // Source: `jamf-cli protect insights list --output json` (gated on protect.enabled).
-    // Rows carry no description; `cisIDs` holds the CIS benchmark IDs, comma-joined.
-
-    func writeProtectInsights() throws {
-        let raw = try loadLatestJSON(names: ["protect-insights"])
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else { return }
-        let ws = workbook.addSheet("Protect Insights")
-        let ts = ISO8601Time.string(Date())
-        var row = ws.writeSheetHeader(title: t("Protect Insights"),
-                                      subtitle: "Generated: \(ts)", ncols: 6)
-        ws.setColumnWidth(0, 0, 40)
-        ws.setColumnWidth(1, 2, 20)
-        ws.setColumnWidth(3, 5, 14)
-        let hdrs = ["Label", "Section", "CIS IDs", "Pass", "Fail", "Enabled"]
-        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
-        row += 1
-        for item in items {
-            let fail = asInt(item["totalFail"]) ?? 0
-            let fmt: CellFormat = fail > 0 ? .yellow : .cell
-            ws.write(item["label"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["section"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["cisIDs"] as? String ?? "", row: row, col: 2, format: .cell)
-            ws.write(asInt(item["totalPass"]) ?? 0, row: row, col: 3, format: .cell)
-            ws.write(fail, row: row, col: 4, format: fmt)
-            ws.write(asBool(item["enabled"]).map { $0 ? "Yes" : "No" } ?? "",
-                     row: row, col: 5, format: .cell)
+            // A number cell, so it sorts; blank when Protect reported none.
+            if let version = asInt(item["signaturesVersion"]) {
+                ws.write(version, row: row, col: 8, format: .cell)
+            } else {
+                ws.write("", row: row, col: 8, format: .cell)
+            }
+            ws.write(item["lastDisconnectionReason"] as? String ?? "",
+                     row: row, col: 9, format: .cell)
             row += 1
         }
     }
@@ -3221,6 +3200,8 @@ struct CoreDashboard: Sendable {
                 + "smart groups, EAs.",
             "Check-in Health": "Devices checked in vs. overdue relative to configured "
                 + "threshold.",
+            "Management Health": "MDM profile expiry, approval and capability, enrollment "
+                + "token expiry, and other management findings per Mac.",
             "Active Devices": "Active vs. stale vs. unmanaged device counts.",
             "Group Hygiene": "Smart/static groups with zero members — candidates for "
                 + "cleanup.",
@@ -3247,7 +3228,6 @@ struct CoreDashboard: Sendable {
             "Protect Alerts": "Open Protect alerts with severity and event type.",
             "Protect Computers": "Protect-enrolled computers with plan, status, and "
                 + "access grants.",
-            "Protect Insights": "Protect insight pass/fail counts by section.",
             "mSCP Compliance": "Per-baseline band distribution: No Data / Pass / Low / "
                 + "Med-Low / Medium / High with count and percent.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
@@ -3572,7 +3552,7 @@ struct CoreDashboard: Sendable {
         return candidates
     }
 
-    private func loadLatestJSON(names: [String]) throws -> Any {
+    func loadLatestJSON(names: [String]) throws -> Any {
         let data = try loadLatestJSONData(names: names)
         return try JSONSerialization.jsonObject(with: data)
     }

@@ -255,16 +255,16 @@ struct AutomationView: View {
                     : "A daily collect (everything except the two heavy per-device scans) so Trends and reports stay current.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                 Divider().background(Theme.Colors.hairline)
-                if workspace.environmentProducts.has(.jamfPro) {
+                if workspace.environmentProducts.has(.jamfPro) || workspace.isSchoolWorkspace {
                     Toggle("Weekly deep scan", isOn: binding(\.scanEnabled))
                         .toggleStyle(.switch)
                     if policy.scanEnabled {
                         weekdayPicker(L("Scan day"), binding(\.scanWeekday))
                     }
                 }
-                // The policy covers every profile; only Jamf Pro has a deep scan.
+                // The policy covers every workspace; Jamf Pro and Jamf School each have a scan.
                 Text(workspace.isSchoolWorkspace
-                    ? "Jamf Pro workspaces only. Jamf School has no deep scan: its daily collect covers every School source."
+                    ? "Once a week, reads each device's details (enrollment type, storage, battery) one device at a time. This setting applies to every workspace."
                     : "The two per-device --scan-failures queries (patch + update failures) that can stall on-prem Jamf Pro — run weekly, never daily.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
             }

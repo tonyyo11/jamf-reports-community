@@ -9,7 +9,8 @@ extension ReportEngine {
     /// known to stall on-prem Jamf Pro, jamf-cli's `dashboard`, which sweeps the
     /// whole inventory again for a page only the HTML report uses, and `sofa`, the
     /// one fetch from a third-party host, for a network that must not reach it, and
-    /// `security-risk`, the Jamf Security Cloud device list, for an organization that keeps it out.
+    /// `security-risk`, the Jamf Security Cloud device list, for an organization that keeps it out, and `school-device-detail`, the Jamf School
+    /// per-device scan.
     /// Anything else in the list is ignored, so a typo or an over-eager list can never
     /// stop core inventory from being collected.
     static let skippableKinds: Set<String> = [
@@ -20,6 +21,7 @@ extension ReportEngine {
         dashboardKind,
         sofaKind,
         securityRiskKind,
+        schoolDeviceDetailKind,
     ]
 
     /// `collect_skip` as kind names: trimmed, lowercased, underscores read as hyphens

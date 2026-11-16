@@ -51,6 +51,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// `backup.pro_on_synced_storage`: whether a backup on shared storage includes Jamf Pro.
     /// An absent key pins as false; whether it was absent is read from config.yaml, not the pin.
     var proBackupOnSyncedStorage: Bool = false
+    /// `jamf_cli.keep_account_names`: whether saved snapshots keep account names. Pinned like the
+    /// backup opt-ins: only a confirmed true keeps them.
+    var keepAccountNames: Bool = false
     /// `output.timestamp_authority`, pinned as the webhook is: `host[:port]` and the SHA-256 of
     /// the URL, which can carry a token.
     var timestampAuthorityHost: String = ""
@@ -81,6 +84,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case brandingLogoPath = "branding.logo_path"
         case protectBackupOnSyncedStorage = "protect.backup_on_synced_storage"
         case proBackupOnSyncedStorage = "backup.pro_on_synced_storage"
+        case keepAccountNames = "jamf_cli.keep_account_names"
         case timestampAuthority = "output.timestamp_authority"
 
         /// `text(of:)` with everything a comparison needs: a URL's full hash.
@@ -125,6 +129,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .brandingLogoPath: pin.brandingLogoPath
             case .protectBackupOnSyncedStorage: String(pin.protectBackupOnSyncedStorage)
             case .proBackupOnSyncedStorage: String(pin.proBackupOnSyncedStorage)
+            case .keepAccountNames: String(pin.keepAccountNames)
             case .notifyURL: Self.urlText(pin.notifyURLHost, pin.notifyURLHash)
             case .timestampAuthority:
                 Self.urlText(pin.timestampAuthorityHost, pin.timestampAuthorityHash)
@@ -158,6 +163,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                 pin.protectBackupOnSyncedStorage = source.protectBackupOnSyncedStorage
             case .proBackupOnSyncedStorage:
                 pin.proBackupOnSyncedStorage = source.proBackupOnSyncedStorage
+            case .keepAccountNames: pin.keepAccountNames = source.keepAccountNames
             case .notifyURL:
                 pin.notifyURLHost = source.notifyURLHost
                 pin.notifyURLHash = source.notifyURLHash
@@ -245,6 +251,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
         if current.protectBackupOnSyncedStorage { waiting.append(.protectBackupOnSyncedStorage) }
         if current.proBackupOnSyncedStorage { waiting.append(.proBackupOnSyncedStorage) }
+        if current.keepAccountNames { waiting.append(.keepAccountNames) }
         // An address this Mac would send to is never taken on first sight.
         if !current.timestampAuthorityHash.isEmpty { waiting.append(.timestampAuthority) }
         // D18: a Platform profile other than the workspace's own is held until confirmed.
@@ -341,6 +348,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                 (raw("protect", "backup_on_synced_storage") as? Bool) ?? false,
             proBackupOnSyncedStorage:
                 (raw("backup", "pro_on_synced_storage") as? Bool) ?? false,
+            keepAccountNames: (raw("jamf_cli", "keep_account_names") as? Bool) ?? false,
             timestampAuthorityHost: webhookHost(authority),
             timestampAuthorityHash: authority.isEmpty ? "" : SharedConfigPin.sha256Hex(authority),
             platformProfile: (ConfigLoader.textValue(platformProfile) ?? "")
@@ -493,8 +501,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
     }
 
-    /// Re-pins the two backup opt-ins (`protect.backup_on_synced_storage`,
-    /// `backup.pro_on_synced_storage`) to false when config.yaml no longer says true: moving to
+    /// Re-pins the opt-ins (`protect.backup_on_synced_storage`, `backup.pro_on_synced_storage`,
+    /// `jamf_cli.keep_account_names`) to false when config.yaml no longer says true: moving to
     /// the safe value needs no Confirm, and a later true is then drift again.
     private static func repinningBackupOptOuts(
         _ pin: inout SharedConfigPin, current: SharedConfigPin
@@ -502,6 +510,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let optIns: [(Key, WritableKeyPath<SharedConfigPin, Bool>)] = [
             (.protectBackupOnSyncedStorage, \.protectBackupOnSyncedStorage),
             (.proBackupOnSyncedStorage, \.proBackupOnSyncedStorage),
+            (.keepAccountNames, \.keepAccountNames),
         ]
         var changed = false
         for (key, field) in optIns {
@@ -841,6 +850,15 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         } ? .allowed : .awaitingConfirmation
     }
 
+    /// `jamf_cli.keep_account_names` as this Mac may use it, by the same rule: names are kept only
+    /// while config.yaml says true and a confirmed pin agrees; otherwise they are removed.
+    static func keepAccountNames(
+        _ configured: Bool, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        configured && confirmedTrue(.keepAccountNames, profile: profile,
+                                    appSupport: appSupport) { $0.keepAccountNames }
+    }
+
     /// The `pinAllows` shape for a boolean: the pin holds a confirmed true and the key has not
     /// drifted; with no pin, only a local workspace.
     private static func confirmedTrue(
@@ -1113,6 +1131,7 @@ extension SharedConfigPin {
             Bool.self, forKey: .protectBackupOnSyncedStorage) ?? false
         proBackupOnSyncedStorage = try c.decodeIfPresent(
             Bool.self, forKey: .proBackupOnSyncedStorage) ?? false
+        keepAccountNames = try c.decodeIfPresent(Bool.self, forKey: .keepAccountNames) ?? false
         timestampAuthorityHost = try c.decodeIfPresent(
             String.self, forKey: .timestampAuthorityHost) ?? ""
         timestampAuthorityHash = try c.decodeIfPresent(

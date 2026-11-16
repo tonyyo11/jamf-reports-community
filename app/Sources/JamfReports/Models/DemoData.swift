@@ -354,7 +354,11 @@ enum DemoData {
     ]
 
     static let deviceSnapshot = DeviceInventorySnapshot(
-        devices: deviceInventory,
+        devices: deviceInventory.enumerated().map {
+            var record = $1
+            record.management = managementFacts(index: $0)
+            return record
+        },
         patchTitles: patchTitleSummary,
         sourceFiles: [
             "~/Jamf-Reports/meridian-prod/Generated Reports/automation_inventory_meridian-prod_2026-04-25_060155.csv",

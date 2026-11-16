@@ -2,7 +2,8 @@
 
 Status: M1 to M5 shipped in 2.12. Of M6, the Fleet Overview device tiles that need no P10 data
 shipped in 2.12 (Mac models, mobile device types, operating systems, last seen); storage and App
-Installers wait on P10 (2.13), and the encryption tile and the product cards are not built. This builds on the environment model
+Installers wait on P10 (2.13, #421), and the encryption tile and the product cards are not built
+(M6 in #305). This builds on the environment model
 ([2026-10-19-environment-model-design.md](2026-10-19-environment-model-design.md), D1–D14
 accepted). It replaces that spec's section 10, the multi-environment view, as section 6 here
 explains. Epic #207 L5 (carried into #284) is the backlog item.

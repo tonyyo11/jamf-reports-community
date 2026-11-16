@@ -56,7 +56,7 @@ struct DevicesView: View {
     }
 
     enum DeviceFilter: String, CaseIterable, Identifiable {
-        case all, stale, contactGap, binaryMissing, patch, security, priorityAction
+        case all, stale, contactGap, binaryMissing, management, patch, security, priorityAction
         var id: String { rawValue }
 
         var label: String {
@@ -65,6 +65,7 @@ struct DevicesView: View {
             case .stale:          L("Stale")
             case .contactGap:     L("Contact gap")
             case .binaryMissing:  L("Binary missing")
+            case .management:     L("Management")
             case .patch:          L("Patch")
             case .security:       L("Security")
             case .priorityAction: L("Priority")
@@ -77,6 +78,7 @@ struct DevicesView: View {
             case .stale:          "clock.badge.exclamationmark"
             case .contactGap:     "wifi.exclamationmark"
             case .binaryMissing:  "shippingbox"
+            case .management:     "gearshape.2"
             case .patch:          "square.and.arrow.down.badge.clock"
             case .security:       "lock.shield"
             case .priorityAction: "exclamationmark.triangle.fill"
@@ -124,7 +126,7 @@ struct DevicesView: View {
     private var dataKey: DataKey {
         DataKey(
             dataRevision: dataRevision, demoMode: workspace.demoMode, staleDays: staleDays,
-            agentConnectedValue: configuredAgent?.connectedValue,
+            agentConnectedValue: configuredAgent?.connectedValue, warningDays: certWarningDays,
             hourBucket: Int(Date().timeIntervalSince1970 / 3600))
     }
 
@@ -139,14 +141,29 @@ struct DevicesView: View {
                 devices: activeSnapshot.devices, query: query, osFilter: osFilter, filter: filter,
                 sortOrder: sortOrder, policy: activeSnapshot.securityPolicy, staleRule: staleRule,
                 contactGapDays: activeSnapshot.contactGapDays,
+                needsManagementAttention: { figures.management.needsAttention($0) },
                 searchableText: { listCache.searchableText(of: $0, key: data) },
                 risk: { priorityRisk(for: $0, key: data) })
         }
     }
 
+    /// The demo's own "now", so its Macs read the same here as on the Audit card.
+    private var evaluationDate: Date { Self.evaluationDate(demoMode: workspace.demoMode) }
+
+    nonisolated static func evaluationDate(demoMode: Bool) -> Date {
+        demoMode ? DemoData.referenceDate : Date()
+    }
+
+    /// `thresholds.cert_warning_days`, which the MDM profile warning window follows.
+    private var certWarningDays: Int {
+        max(Int(workspace.configState.certWarningDays) ?? ManagementHealth.defaultWarningDays, 1)
+    }
+
     private var figures: Figures {
         listCache.figures(for: dataKey) {
-            Figures(snapshot: activeSnapshot, rule: staleRule)
+            Figures(
+                snapshot: activeSnapshot, rule: staleRule, warningDays: certWarningDays,
+                now: evaluationDate)
         }
     }
 
@@ -650,8 +667,8 @@ struct DevicesView: View {
                         (L("Model"), device.model),
                         ("macOS", device.osVersion),
                         (L("Managed"), device.managedState),
-                        (L("Last check-in"), device.lastContact),
-                        (L("Last inventory"), device.lastInventory),
+                        (L("Last check-in"), Self.timestampText(device.lastContact)),
+                        (L("Last inventory"), Self.timestampText(device.lastInventory)),
                         (L("Last contact"), Self.contactText(device)),
                         (L("Contact gap"), contactGap(of: device)?.label ?? ""),
                         (L("User"), userLabel(device)),
@@ -660,6 +677,8 @@ struct DevicesView: View {
                     ])
 
                     binaryMissingSection(for: device)
+
+                    managementSection(for: device)
 
                     securitySection(for: device)
 
@@ -988,6 +1007,26 @@ struct DevicesView: View {
         }
     }
 
+    /// Every management field the Mac reported, and what to do about a gap; absent without facts.
+    @ViewBuilder
+    private func managementSection(for device: DeviceInventoryRecord) -> some View {
+        if let facts = device.management {
+            let now = evaluationDate
+            let rows = ManagementDetail.rows(facts, now: now)
+            let steps = ManagementDetail.remediation(facts, warningDays: certWarningDays, now: now)
+            if !rows.isEmpty || !steps.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    detailSection(L("Management"), rows: rows)
+                    ForEach(steps, id: \.self) { step in
+                        Text(step)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                }
+            }
+        }
+    }
+
     private func securitySection(for device: DeviceInventoryRecord) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: L("Security State"))
@@ -1296,6 +1335,11 @@ struct DevicesView: View {
     /// the check-in and inventory dates are: an ISO 8601 timestamp.
     nonisolated static func contactText(_ device: DeviceInventoryRecord) -> String {
         device.contactDate.map(ISO8601Time.string) ?? ""
+    }
+
+    /// A device timestamp in the form the Last contact row uses; text that is not a date as given.
+    nonisolated static func timestampText(_ raw: String) -> String {
+        DeviceInventoryService.parseDate(raw).map(ISO8601Time.string) ?? raw
     }
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {

@@ -1173,7 +1173,7 @@ struct OverviewView: View {
         // date is per-metric, not global — points() compactMaps away days where
         // this metric was unmeasured, so Active Devices can be comparing
         // against a different day than FileVault in the same render.
-        let points: [TrendPoint] = workspace.demoMode ? [] : trendStore.points(metric: metric)
+        let points: [TrendPoint] = workspace.demoMode ? [] : trendStore.currentPoints(metric: metric)
         let values: [Double] = workspace.demoMode ?
             (DemoData.trends(for: workspace.profile)[metric] ?? []) :
             points.map(\.value)
@@ -1406,6 +1406,11 @@ struct OverviewView: View {
                     .font(Theme.Fonts.serif(deviceCountSize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                 Kicker(text: share == nil ? L("Macs") : L("On Current"))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    // The hole is about 99 pt across and narrower below its centre, where this
+                    // sits: a long translation wraps instead of crossing the ring.
+                    .frame(maxWidth: 84)
             }
             .accessibilityHidden(true)
         )
@@ -1646,7 +1651,7 @@ struct OverviewView: View {
 
     private func metricDetail(_ metric: TrendSeries.Metric) -> some View {
         let values = metricValues(metric)
-        let dates = workspace.demoMode ? [] : trendStore.points(metric: metric).map(\.date)
+        let dates = workspace.demoMode ? [] : trendStore.currentPoints(metric: metric).map(\.date)
         let current = values.last ?? 0
         let first = values.first ?? current
         // A share's change is taken between the figures as printed, as on the tiles.
@@ -1977,7 +1982,7 @@ struct OverviewView: View {
         if workspace.demoMode {
             return DemoData.trends(for: workspace.profile)[metric] ?? []
         }
-        return trendStore.values(metric: metric)
+        return trendStore.currentPoints(metric: metric).map(\.value)
     }
 
     private func metricValueLabel(_ value: Double, metric: TrendSeries.Metric) -> String {

@@ -49,8 +49,12 @@ struct SchoolDashboard: Sendable {
             } catch let skippable as SheetSkippable {
                 // Cached data absent — expected for tenants that haven't collected school snapshots.
                 let msg = SheetRegistry.skipLine(sheet: name, error: skippable)
-                print("  " + msg)
-                onLine?(.init(timestamp: Date(), level: .info, text: msg))
+                // The run log carries it when there is one; printing it too doubled it in the CLI.
+                if let onLine {
+                    onLine(.init(timestamp: Date(), level: .info, text: msg))
+                } else {
+                    print("  " + msg)
+                }
             } catch {
                 let failure = SheetRegistry.failure(sheet: name, error: error)
                 failures.append(failure)
@@ -66,10 +70,11 @@ struct SchoolDashboard: Sendable {
         "School Overview", "Device Groups", "Users", "Classes", "Apps", "Profiles", "Locations",
         "DEP Devices", "iBeacons", "Blueprints", "Device Inventory", "OS Versions",
         "Device Status", "Stale Devices", "Trends",
-    ] + CoreDashboard.protectSheetNames
+    ] + CoreDashboard.protectSheetNames + ["Device Health"]
 
     /// The School tabs in their default order, then the Jamf Pro workbook's Protect tabs, which
-    /// are written while `protect.enabled` is on (2.11), under the same gate and names.
+    /// are written while `protect.enabled` is on (2.11), under the same gate and names, then
+    /// Device Health, appended last so no existing tab moves relative to another.
     var sheetPlan: [(name: String, write: () throws -> Void)] {
         let school: [(name: String, write: () throws -> Void)] = [
             ("School Overview", writeSchoolOverview),
@@ -90,6 +95,101 @@ struct SchoolDashboard: Sendable {
         ]
         return school
             + CoreDashboard(config: config, dataDir: dataDir, workbook: workbook).protectSheetPlan
+            + [("Device Health", writeSchoolDeviceHealth)]
+    }
+
+    // MARK: - Device Health
+
+    /// Neutral counts and the ADE devices not enrolled, from `SchoolDeviceHealth`.
+    func writeSchoolDeviceHealth() throws {
+        let off = ReportEngine.collectSkipKinds(config.jamfCli?.collectSkip)
+            .contains(ReportEngine.schoolDeviceDetailKind)
+        guard let health = SchoolDeviceHealth(
+            SchoolFleetService.load(dataDir: dataDir), scanTurnedOff: off),
+              !health.figures.isEmpty else {
+            throw SchoolDashboardError.noCachedData(names: [SchoolFleetService.depDevicesKind])
+        }
+        let ws = workbook.addSheet("Device Health")
+        ws.setColumnWidth(0, 0, 48)
+        ws.setColumnWidth(1, 4, 20)
+        var row = ws.writeSheetHeader(
+            title: "Device Health",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
+            ncols: 5
+        )
+        for (col, h) in ["Figure", "Count", "Of"].enumerated() {
+            ws.write(h, row: row, col: col, format: .header)
+        }
+        row += 1
+        for item in health.items {
+            ws.write(item.title, row: row, col: 0, format: .cell)
+            if let figure = health.figures[item] {
+                ws.write(figure.count, row: row, col: 1, format: .cell)
+                ws.write(figure.of, row: row, col: 2, format: .cell)
+            } else {
+                ws.write("could not be read", row: row, col: 1, format: .cell)
+            }
+            row += 1
+        }
+        row = writeDeviceDetailRows(health.detail, to: ws, row: row)
+        guard !health.notEnrolled.isEmpty else { return }
+        row += 1
+        let hdrs = ["Device name", "Serial", "Model", "Profile", "Status"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+        for dep in health.notEnrolled {
+            for (col, value) in [dep.name, dep.serial, dep.model, dep.profile, dep.status]
+                .enumerated() {
+                ws.write(value, row: row, col: col, format: .cell)
+            }
+            row += 1
+        }
+    }
+
+    /// The per-device scan's summary rows under the figures: how many devices were scanned, the
+    /// enrollment type and storage breakdowns and the battery counts.
+    private func writeDeviceDetailRows(
+        _ detail: SchoolDeviceHealth.Detail, to ws: Worksheet, row start: Int
+    ) -> Int {
+        var row = start
+        func figure(_ title: String, _ count: Int, of total: Int) {
+            ws.write(title, row: row, col: 0, format: .cell)
+            ws.write(count, row: row, col: 1, format: .cell)
+            ws.write(total, row: row, col: 2, format: .cell)
+            row += 1
+        }
+        func note(_ title: String, _ text: String) {
+            ws.write(title, row: row, col: 0, format: .cell)
+            ws.write(text, row: row, col: 1, format: .cell)
+            row += 1
+        }
+        switch detail.state {
+        case .notCollected: note("Per-device details", "not collected yet")
+        case .turnedOff: note("Per-device details", "turned off (jamf_cli.collect_skip)")
+        case .unreadable: note("Per-device details", "could not be read")
+        case .scanned:
+            if let scanned = detail.scanned, let at = detail.scannedAt {
+                figure("Devices scanned (last scanned \(ISO8601Time.string(at)))",
+                       scanned.count, of: scanned.of)
+            }
+            for value in detail.enrollment.shown {
+                figure("Enrollment type: \(value.value)", value.count, of: detail.enrollmentReporting)
+            }
+            for value in detail.storage.shown {
+                figure("Storage: \(value.value)", value.count, of: detail.storageReporting)
+            }
+            if let low = detail.lowBattery {
+                figure("Battery 1 to \(SchoolDeviceHealth.lowBatteryPercent)% when scanned",
+                       low.count, of: low.of)
+            }
+            if let zero = detail.batteryZero {
+                figure("Battery reported as 0 when scanned", zero.count, of: zero.of)
+            }
+        }
+        if let failed = detail.failedAt {
+            note("Per-device scan", "last attempt failed \(ISO8601Time.string(failed))")
+        }
+        return row
     }
 
     // MARK: - School Overview
@@ -382,12 +482,17 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 3, 16)
         ws.setColumnWidth(4, 5, 22)
+        ws.setColumnWidth(6, 8, 18)
         var row = ws.writeSheetHeader(
             title: "Device Inventory",
             subtitle: "Generated: \(ISO8601Time.string(now))",
-            ncols: 6
+            ncols: 9
         )
-        let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin"]
+        // The scan's three columns come last, so no existing column moves; blank when the
+        // device was not scanned or the scan is missing or unreadable.
+        let detail = SchoolFleetService.loadDeviceDetail(dataDir: dataDir)
+        let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin",
+                    "Enrollment", "Storage (GB)", "Battery (%) when scanned"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -398,6 +503,10 @@ struct SchoolDashboard: Sendable {
             ws.write(boolField(item, ["isManaged"]), row: row, col: 4, format: .cell)
             ws.write(stringField(item, ["lastCheckin", "last_checkin", "lastContactTime"]),
                      row: row, col: 5, format: .cell)
+            let scanned = detail?.row(forUDID: stringField(item, ["udid"]))
+            ws.write(scanned?.enrollType ?? "", row: row, col: 6, format: .cell)
+            if let gb = scanned?.capacityGB { ws.write(gb, row: row, col: 7, format: .cell) }
+            if let battery = scanned?.battery { ws.write(battery, row: row, col: 8, format: .cell) }
             row += 1
         }
     }

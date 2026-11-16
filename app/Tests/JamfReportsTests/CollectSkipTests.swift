@@ -17,10 +17,12 @@ final class CollectSkipTests: XCTestCase {
 
     /// The four per-device-heavy kinds, plus jamf-cli's dashboard (2.9), which sweeps
     /// the whole inventory again for a page only the HTML report uses, and the SOFA feed
-    /// fetch, the one call to a third-party host, and the Security Cloud device list (P12).
+    /// fetch, the one call to a third-party host, the Security Cloud device list (P12) and the Jamf
+    /// School per-device scan.
     func testTheHeavyKindsTheDashboardAndSOFACanBeSkipped() {
         let all = ["patch-device-failures", "profile-status", "update-status",
-                   "update-device-failures", "dashboard", "sofa", "security-risk"]
+                   "update-device-failures", "dashboard", "sofa", "security-risk",
+                   "school-device-detail"]
         XCTAssertEqual(ReportEngine.collectSkipKinds(all), Set(all))
         XCTAssertEqual(ReportEngine.skippableKinds, Set(all))
     }
@@ -39,9 +41,11 @@ final class CollectSkipTests: XCTestCase {
 
     func testEverySkippableKindIsACollectKind() {
         for kind in ReportEngine.skippableKinds {
-            // Security Cloud follows the MDM collect, so its kind is not a Pro matrix kind.
+            // Security Cloud follows the MDM collect and the School scan follows the School
+            // collect, so neither kind is a Pro matrix kind.
             XCTAssertTrue(ReportEngine.knownCollectKinds.contains(kind)
-                || DataFreshnessHealth.securityCloudKinds.contains(kind), kind)
+                || DataFreshnessHealth.securityCloudKinds.contains(kind)
+                || kind == ReportEngine.schoolDeviceDetailKind, kind)
         }
     }
 

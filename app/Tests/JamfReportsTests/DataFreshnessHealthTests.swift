@@ -154,7 +154,7 @@ final class DataFreshnessHealthTests: XCTestCase {
     // MARK: - Protect kinds
 
     func testProtectKindsAreJudgedOnTheRefreshCadence() {
-        XCTAssertEqual(DataFreshnessHealth.protectKinds.count, 5)
+        XCTAssertEqual(DataFreshnessHealth.protectKinds.count, 4)
         XCTAssertNil(CollectionTier.tier(forReport: "protect-alerts"),
                      "the tier map stays Pro-only; freshness maps Protect itself")
         XCTAssertTrue(DataFreshnessHealth.evaluate(

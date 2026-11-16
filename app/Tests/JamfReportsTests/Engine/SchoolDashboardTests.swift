@@ -583,7 +583,7 @@ final class SchoolBlueprintsSheetTests: XCTestCase {
         var expected = old
         expected.insert("Blueprints", at: old.firstIndex(of: "Device Inventory") ?? 0)
         XCTAssertEqual(SchoolDashboard.sheetNames,
-                       expected + ["Trends"] + CoreDashboard.protectSheetNames)
+                       expected + ["Trends"] + CoreDashboard.protectSheetNames + ["Device Health"])
     }
 }
 
@@ -607,7 +607,8 @@ final class SchoolDashboardProtectSheetTests: XCTestCase {
         let pro = CoreDashboard(config: ReportConfig(), dataDir: FileManager.default
             .temporaryDirectory, workbook: Workbook()).sheetPlan.map(\.name)
         XCTAssertEqual(pro.filter { $0.hasPrefix("Protect ") }, CoreDashboard.protectSheetNames)
-        XCTAssertEqual(Array(SchoolDashboard.sheetNames.suffix(6)), CoreDashboard.protectSheetNames)
+        XCTAssertEqual(
+            Array(SchoolDashboard.sheetNames.dropLast().suffix(5)), CoreDashboard.protectSheetNames)
     }
 
     func test_protectTabs_areWrittenOnlyWhileProtectIsEnabled() throws {
