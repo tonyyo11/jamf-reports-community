@@ -4,6 +4,16 @@ import Foundation
 /// to do about a gap. A field Jamf did not report is left out, never shown as No or 0; Jamf's
 /// status strings are shown as given.
 enum ManagementDetail {
+    /// A Jamf status string for the screen only: `ALLOW_BOOTING_FROM_EXTERNAL_MEDIA` reads
+    /// "Allow booting from external media". A value that already has lowercase letters is kept.
+    /// Workbook, HTML and CSV keep the raw value.
+    static func displayValue(_ raw: String) -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.contains(where: \.isLowercase) else { return text }
+        let words = text.lowercased().replacingOccurrences(of: "_", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
+
     static func rows(
         _ facts: ManagementFacts, now: Date, calendar: Calendar = .current
     ) -> [(String, String)] {
@@ -23,17 +33,17 @@ enum ManagementDetail {
         add(L("MDM capable"), yesNo(facts.mdmCapable))
         add(L("Supervised"), yesNo(facts.supervised))
         add(L("Enrolled via ADE"), yesNo(facts.enrolledViaADE))
-        add(L("Enrollment type"), facts.appleEnrollmentType)
+        add(L("Enrollment type"), facts.appleEnrollmentType.map(displayValue))
         add(L("Awaiting setup"), yesNo(facts.awaitingConfiguration))
-        add(L("Attestation"), facts.attestationStatus)
+        add(L("Attestation"), facts.attestationStatus.map(displayValue))
         add(L("Last attested"), date(facts.lastSuccessfulAttestation))
         add(L("Recovery Lock"), yesNo(facts.recoveryLockEnabled))
         add(L("Activation Lock"), yesNo(facts.activationLockEnabled))
-        add(L("External boot"), facts.externalBootLevel)
+        add(L("External boot"), facts.externalBootLevel.map(displayValue))
         add(L("Auto-login off"), yesNo(facts.autoLoginDisabled))
         add(L("Remote Desktop"), yesNo(facts.remoteDesktopEnabled))
         add(L("Lockdown Mode"), yesNo(facts.lockdownModeEnabled))
-        add(L("Battery health"), facts.batteryHealth)
+        add(L("Battery health"), facts.batteryHealth.map(displayValue))
         add(L("Battery capacity"), facts.batteryCapacityPercent
             .flatMap { wholeInt($0) == nil ? nil : PercentFormat.whole.text($0) })
         add(L("Last iCloud backup"), date(facts.lastCloudBackupDate))

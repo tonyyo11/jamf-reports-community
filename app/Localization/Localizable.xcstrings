@@ -30085,6 +30085,46 @@
         }
       }
     },
+    "Applies to Jamf Pro workspaces only. Jamf School collects ignore it; the weekly per-device scan is set on the Automation screen." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt nur für Jamf Pro-Arbeitsbereiche. Jamf School-Erfassungen ignorieren die Einstellung; der wöchentliche Scan pro Gerät wird im Bereich Automatisierung festgelegt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica solo a los espacios de trabajo de Jamf Pro. Las recopilaciones de Jamf School lo ignoran; el análisis semanal por dispositivo se configura en la pantalla Automatización."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S'applique uniquement aux espaces de travail Jamf Pro. Les collectes Jamf School l'ignorent ; l'analyse hebdomadaire par appareil se règle dans l'écran Automatisation."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vale solo per gli spazi di lavoro Jamf Pro. Le raccolte di Jamf School lo ignorano; la scansione settimanale per dispositivo si imposta nella schermata Automazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Proのワークスペースにのみ適用されます。Jamf Schoolの収集では無視されます。デバイスごとの週次スキャンは「自動化」画面で設定します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplica-se somente a espaços de trabalho do Jamf Pro. As coletas do Jamf School a ignoram; a varredura semanal por dispositivo é definida na tela Automação."
+          }
+        }
+      }
+    },
     "Applies to Overview and Trends until you change the picker in-view." : {
       "localizations" : {
         "de" : {
@@ -71683,46 +71723,6 @@
         }
       }
     },
-    "Jamf Pro workspaces only. Jamf School has no deep scan: its daily collect covers every School source." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nur Jamf Pro-Arbeitsbereiche. Jamf School hat keinen Tiefenscan: Die tägliche Erfassung deckt alle School-Quellen ab."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo para espacios de trabajo de Jamf Pro. Jamf School no tiene análisis profundo: su recopilación diaria cubre todas las fuentes de School."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Espaces de travail Jamf Pro uniquement. Jamf School n’a pas d’analyse approfondie : sa collecte quotidienne couvre toutes les sources School."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo spazi di lavoro Jamf Pro. Jamf School non ha la scansione approfondita: la raccolta giornaliera copre tutte le origini di School."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jamf Proワークスペースのみ。Jamf Schoolにはディープスキャンはなく、毎日の収集でJamf Schoolのすべてのソースを対象にします。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Somente em espaços de trabalho do Jamf Pro. O Jamf School não tem varredura profunda: a coleta diária cobre todas as fontes do School."
-          }
-        }
-      }
-    },
     "Jamf Pro, the Platform API or Jamf School, in a workspace of its own." : {
       "localizations" : {
         "de" : {
@@ -91077,6 +91077,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uma vez por dia, apenas versões estáveis. Nada é baixado nem instalado."
+          }
+        }
+      }
+    },
+    "Once a week, reads each device's details (enrollment type, storage, battery) one device at a time. This setting applies to every workspace." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einmal pro Woche werden die Details jedes Geräts (Registrierungsart, Speicher, Akku) nacheinander gelesen. Diese Einstellung gilt für alle Arbeitsbereiche."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una vez por semana, lee los detalles de cada dispositivo (tipo de inscripción, almacenamiento, batería), de uno en uno. Este ajuste se aplica a todos los espacios de trabajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fois par semaine, lit les détails de chaque appareil (type d'inscription, stockage, batterie), un appareil à la fois. Ce réglage s'applique à tous les espaces de travail."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una volta alla settimana legge i dettagli di ogni dispositivo (tipo di registrazione, spazio di archiviazione, batteria), uno alla volta. Questa impostazione vale per tutti gli spazi di lavoro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "週に1回、各デバイスの詳細(登録タイプ、ストレージ、バッテリー)を1台ずつ読み取ります。この設定はすべてのワークスペースに適用されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma vez por semana, lê os detalhes de cada dispositivo (tipo de inscrição, armazenamento, bateria), um de cada vez. Esta configuração se aplica a todos os espaços de trabalho."
           }
         }
       }
@@ -134303,42 +134343,42 @@
         }
       }
     },
-    "Validating config.yaml against your CSV export and cached EA results" : {
+    "Validating config.yaml against the collected jamf-cli snapshots" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "config.yaml wird anhand Ihres CSV-Exports und der zwischengespeicherten EA-Ergebnisse validiert"
+            "value" : "config.yaml wird anhand der erfassten jamf-cli-Snapshots geprüft"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Validando config.yaml con su exportación CSV y los resultados de EA en caché"
+            "value" : "Validando config.yaml con las instantáneas de jamf-cli recopiladas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Validation de config.yaml par rapport à votre export CSV et aux résultats d’EA en cache"
+            "value" : "Validation de config.yaml par rapport aux instantanés jamf-cli collectés"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Convalida di config.yaml rispetto all’esportazione CSV e ai risultati EA in cache"
+            "value" : "Convalida di config.yaml rispetto agli snapshot jamf-cli raccolti"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CSVエクスポートとキャッシュされた拡張属性の結果に対してconfig.yamlを検証しています"
+            "value" : "収集済みのjamf-cliスナップショットに対してconfig.yamlを検証しています"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Validando o config.yaml com base na sua exportação CSV e nos resultados de EA em cache"
+            "value" : "Validando o config.yaml com os snapshots do jamf-cli coletados"
           }
         }
       }

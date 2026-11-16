@@ -113,13 +113,16 @@ struct ManagementCard: Sendable, Equatable {
             breakdown: line(values))
     }
 
-    /// "VALUE 3 · OTHER 1", the most common values as Jamf gives them, with "5 of 12 values"
+    /// "Value 3 · Other 1", the most common values in `ManagementDetail.displayValue` wording,
+    /// with "5 of 12 values"
     /// when there are more than are shown.
     private static func line(
         _ values: (shown: [(value: String, count: Int)], distinct: Int)
     ) -> String? {
         guard values.distinct > 0 else { return nil }
-        let text = values.shown.map { "\($0.value) \($0.count)" }.joined(separator: " · ")
+        let text = values.shown
+            .map { "\(ManagementDetail.displayValue($0.value)) \($0.count)" }
+            .joined(separator: " · ")
         return values.distinct > values.shown.count
             ? text + " · " + L("\(values.shown.count) of \(values.distinct) values") : text
     }

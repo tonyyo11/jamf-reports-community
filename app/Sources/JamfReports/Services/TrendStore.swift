@@ -310,6 +310,16 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         }
     }
 
+    /// `points(metric:)` for a tile that states the CURRENT figure: empty when the newest summary
+    /// in range did not measure `metric`, because `points` skips such days and its last point is
+    /// then an older day passed off as today's.
+    func currentPoints(metric: TrendSeries.Metric) -> [TrendPoint] {
+        guard let newest = filteredSummaries.last, value(for: metric, in: newest) != nil else {
+            return []
+        }
+        return points(metric: metric)
+    }
+
     /// Series values for `metric`. Kept for existing summary-only callers;
     /// `points(metric:)` should be used when dates are rendered with values.
     func values(metric: TrendSeries.Metric) -> [Double] {

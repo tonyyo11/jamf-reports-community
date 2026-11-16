@@ -784,7 +784,10 @@ struct SettingsView: View {
                 settingsRow(
                     label: L("Skip expensive collections"),
                     sub: skipExpensiveManaged
-                        ? ManagedPreference.note : skipExpensiveCollectionsSubtitle,
+                        ? ManagedPreference.note
+                        : workspace.isSchoolWorkspace
+                            ? L("Applies to Jamf Pro workspaces only. Jamf School collects ignore it; the weekly per-device scan is set on the Automation screen.")
+                            : skipExpensiveCollectionsSubtitle,
                     trailing: PNPToggle(isOn: $skipExpensiveCollections)
                         .disabled(skipExpensiveManaged)
                 )

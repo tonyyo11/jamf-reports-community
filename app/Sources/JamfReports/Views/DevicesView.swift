@@ -667,8 +667,8 @@ struct DevicesView: View {
                         (L("Model"), device.model),
                         ("macOS", device.osVersion),
                         (L("Managed"), device.managedState),
-                        (L("Last check-in"), device.lastContact),
-                        (L("Last inventory"), device.lastInventory),
+                        (L("Last check-in"), Self.timestampText(device.lastContact)),
+                        (L("Last inventory"), Self.timestampText(device.lastInventory)),
                         (L("Last contact"), Self.contactText(device)),
                         (L("Contact gap"), contactGap(of: device)?.label ?? ""),
                         (L("User"), userLabel(device)),
@@ -1335,6 +1335,11 @@ struct DevicesView: View {
     /// the check-in and inventory dates are: an ISO 8601 timestamp.
     nonisolated static func contactText(_ device: DeviceInventoryRecord) -> String {
         device.contactDate.map(ISO8601Time.string) ?? ""
+    }
+
+    /// A device timestamp in the form the Last contact row uses; text that is not a date as given.
+    nonisolated static func timestampText(_ raw: String) -> String {
+        DeviceInventoryService.parseDate(raw).map(ISO8601Time.string) ?? raw
     }
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {

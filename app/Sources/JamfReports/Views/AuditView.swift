@@ -375,7 +375,7 @@ struct AuditView: View {
         switch index {
         case 0: L("Automated checks for security, compliance, and hygiene")
         case 1: L("Identifying unused or redundant configuration objects")
-        default: L("Validating config.yaml against your CSV export and cached EA results")
+        default: L("Validating config.yaml against the collected jamf-cli snapshots")
         }
     }
 
