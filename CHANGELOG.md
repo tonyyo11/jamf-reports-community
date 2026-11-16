@@ -279,6 +279,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Report workbooks are now compressed. They were written uncompressed, so a workbook for a
+  fleet of 6,000 Macs with many extension attributes was 89 MB.
 - The background item no longer retries, the same day, a data source that timed out twice in a
   row. Each try can run for an hour, so on a large fleet the retries kept a scheduled run going
   most of the day and every manual refresh was turned away with "A scheduled run is in

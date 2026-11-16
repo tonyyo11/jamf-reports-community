@@ -327,12 +327,17 @@ final class Workbook: @unchecked Sendable {
     /// returned bytes into the entry's compressed size. The provider MUST return
     /// only the requested slice `data[position ..< position + requested]`.
     /// Returning the whole blob on every call inflates `compressedSize` to a
-    /// multiple of the real length — for a STORED entry that desynchronizes
-    /// `compressedSize` from `uncompressedSize`, which Excel rejects as corrupt
-    /// worksheet content even though the ZIP container still opens.
+    /// multiple of the real length, which Excel rejects as corrupt worksheet
+    /// content even though the ZIP container still opens.
+    ///
+    /// XML parts are deflated: stored, a 6,000-Mac workbook was 89 MB. Images are already
+    /// compressed and stay stored.
     private static func addData(_ data: Data, path: String, to archive: Archive) throws {
         let size = Int64(data.count)
-        try archive.addEntry(with: path, type: .file, uncompressedSize: size) { position, requested in
+        let method: CompressionMethod = path.hasPrefix("xl/media/") ? .none : .deflate
+        try archive.addEntry(
+            with: path, type: .file, uncompressedSize: size, compressionMethod: method
+        ) { position, requested in
             let start = Int(position)
             guard start < data.count else { return Data() }
             let end = Swift.min(start + requested, data.count)
