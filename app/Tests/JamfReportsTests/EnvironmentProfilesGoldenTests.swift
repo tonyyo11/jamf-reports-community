@@ -90,7 +90,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "b6c2561860d88c9142d93869a9650f93b044768343d70984b2447ba51e237acf"),
+            sha256: "9fe678098564c6373099a9e56f6ecd16d072c005da26aad9609fadd08b2b8402"),
         "pro-protect-blank": (
             transcript: """
                 pro ws-golden
@@ -122,7 +122,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "b6c2561860d88c9142d93869a9650f93b044768343d70984b2447ba51e237acf"),
+            sha256: "9fe678098564c6373099a9e56f6ecd16d072c005da26aad9609fadd08b2b8402"),
         "school-protect": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
@@ -131,7 +131,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 protect ws-golden-protect
                 log [skip] school-device-detail: school-devices did not land this run
                 """,
-            sha256: "13ea0d3168bc5a61207bc04ced4654da0b6f41d27aa08c2686ca19391f08b163"),
+            sha256: "d02714987955a7f7e1d103d2340aa7a9d49ecc3bc64b1689413272e8e182ebbc"),
         "jamf-cli-profile-equal": (
             transcript: """
                 pro ws-golden

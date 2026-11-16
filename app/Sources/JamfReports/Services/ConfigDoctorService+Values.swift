@@ -167,9 +167,6 @@ extension ConfigDoctorService {
             rows += [
                 clampRow("html.section_limits.protect_alerts", typed: limits.protectAlerts,
                          used: limits.resolvedProtectAlerts, range: L("1 to 200")),
-                clampRow("html.section_limits.insights_drift_snapshots",
-                         typed: limits.insightsDriftSnapshots,
-                         used: limits.resolvedInsightsDriftSnapshots, range: L("1 to 12")),
             ].compactMap { $0 }
         }
         if let ai = config.ai {

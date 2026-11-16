@@ -210,10 +210,6 @@ final class ReportTemplateTests: XCTestCase {
         XCTAssertEqual(SecurityPostureTemplate().recommendedSchedule, .protect)
     }
 
-    func testSecurityPostureTemplateHTMLIncludesInsightsDrift() {
-        XCTAssertTrue(SecurityPostureTemplate().htmlSections.contains(.insightsDrift))
-    }
-
     // MARK: - Report depth
 
     /// Every template that lists the framing sections is a report that opens with the
@@ -392,10 +388,9 @@ final class ReportTemplateTests: XCTestCase {
             (.policyHealth,       [.policyTable]),
             (.profileStatus,      [.profileTable]),
             (.mobileConfigProfiles, [.profileTable]),
-            (.protectOverview,    [.protectAlerts, .insightsDrift]),
-            (.protectAlerts,      [.protectAlerts, .insightsDrift]),
-            (.protectComputers,   [.protectAlerts, .insightsDrift]),
-            (.protectInsights,    [.protectAlerts, .insightsDrift]),
+            (.protectOverview,    [.protectAlerts]),
+            (.protectAlerts,      [.protectAlerts]),
+            (.protectComputers,   [.protectAlerts]),
         ]
 
         for (sheet, expectedSections) in cases {

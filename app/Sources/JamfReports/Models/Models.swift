@@ -1502,7 +1502,6 @@ struct CustomSheetGroup: Sendable {
                 .protectOverview,
                 .protectAlerts,
                 .protectComputers,
-                .protectInsights,
                 .protectPlans,
                 .protectThreatOverview,
             ]),

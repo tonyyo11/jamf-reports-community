@@ -36,7 +36,6 @@ html.with_workbook = bool false
 html.track_history = bool false
 html.history_file = string ""
 html.section_limits.protect_alerts = int 25
-html.section_limits.insights_drift_snapshots = int 2
 display.percent_decimals = int 1
 protect.enabled = bool false
 protect.profile = string ""

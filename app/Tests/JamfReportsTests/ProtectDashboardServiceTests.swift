@@ -31,15 +31,13 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let snapshot = ProtectDashboardService.load(
             overviewURL: nil,
             alertsURL: nil,
-            computersURL: nil,
-            insightsURL: nil
+            computersURL: nil
         )
 
         XCTAssertFalse(snapshot.isDetected)
         XCTAssertTrue(snapshot.overviewItems.isEmpty)
         XCTAssertTrue(snapshot.alerts.isEmpty)
         XCTAssertTrue(snapshot.computers.isEmpty)
-        XCTAssertTrue(snapshot.insights.isEmpty)
         XCTAssertEqual(snapshot.totalComputers, 0)
         XCTAssertEqual(snapshot.webProtectionActiveCount, 0)
         XCTAssertEqual(snapshot.fullDiskAccessCount, 0)
@@ -48,7 +46,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.mediumAlerts, 0)
         XCTAssertEqual(snapshot.lowAlerts, 0)
         XCTAssertEqual(snapshot.informationalAlerts, 0)
-        XCTAssertEqual(snapshot.failingInsights, 0)
         XCTAssertNil(snapshot.sourceFile)
         XCTAssertNil(snapshot.snapshotDate)
     }
@@ -61,7 +58,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: nil, computersURL: nil, insightsURL: nil, plansURL: url)
+            overviewURL: nil, alertsURL: nil, computersURL: nil, plansURL: url)
 
         XCTAssertTrue(snapshot.isDetected, "a decoded plans file should mark Protect detected")
         XCTAssertEqual(snapshot.plans.count, 1)
@@ -78,14 +75,12 @@ final class ProtectDashboardServiceTests: XCTestCase {
             overviewURL: nil,
             alertsURL: fixtures.appendingPathComponent("protect-alerts/alerts_happy.json"),
             computersURL: fixtures.appendingPathComponent("protect-computers/computers_happy.json"),
-            insightsURL: fixtures.appendingPathComponent("protect-insights/insights_happy.json"),
             plansURL: fixtures.appendingPathComponent("protect-plans/plans_happy.json")
         )
 
         XCTAssertTrue(snapshot.isDetected)
         XCTAssertEqual(snapshot.alerts.count, 4)
         XCTAssertEqual(snapshot.computers.count, 3)
-        XCTAssertEqual(snapshot.insights.count, 3)
         XCTAssertEqual(snapshot.plans.count, 3)
         XCTAssertEqual(snapshot.webProtectionActiveCount, 1)
         XCTAssertEqual(snapshot.fullDiskAccessCount, 1, "only Authorized counts as granted")
@@ -95,7 +90,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.lowAlerts, 0, "the Low alert is Resolved")
         XCTAssertEqual(snapshot.informationalAlerts, 0, "the Informational alert is AutoResolved")
         XCTAssertEqual(snapshot.openAlertCount, 2)
-        XCTAssertEqual(snapshot.failingInsights, 2)
         XCTAssertNotNil(snapshot.sourceFile)
         XCTAssertNotNil(snapshot.snapshotDate)
     }
@@ -113,7 +107,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: url, computersURL: nil, insightsURL: nil)
+            overviewURL: nil, alertsURL: url, computersURL: nil)
 
         XCTAssertEqual(snapshot.highAlerts, 1)
         XCTAssertEqual(snapshot.mediumAlerts, 1)
@@ -135,7 +129,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: url, computersURL: nil, insightsURL: nil)
+            overviewURL: nil, alertsURL: url, computersURL: nil)
 
         XCTAssertEqual(snapshot.alerts.count, 3, "closed alerts are still listed")
         XCTAssertEqual(snapshot.highAlerts, 1)
@@ -154,7 +148,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
 
         func lowAlerts(_ url: URL) -> Int {
             ProtectDashboardService.load(
-                overviewURL: nil, alertsURL: url, computersURL: nil, insightsURL: nil).lowAlerts
+                overviewURL: nil, alertsURL: url, computersURL: nil).lowAlerts
         }
         XCTAssertEqual(lowAlerts(closed), 0)
         XCTAssertEqual(lowAlerts(reopened), 1)
@@ -191,7 +185,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
 
         let snapshot = ProtectDashboardService.load(
             overviewURL: nil, alertsURL: alerts, computersURL: computers,
-            insightsURL: nil, plansURL: plans)
+            plansURL: plans)
 
         XCTAssertEqual(snapshot.alerts.map(\.hostName), [nil, "lab-mac-01.example"])
         XCTAssertEqual(snapshot.alerts.map(\.severity), ["High", "Low"])
@@ -245,8 +239,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let snapshot = ProtectDashboardService.load(
             overviewURL: nil,
             alertsURL: nil,
-            computersURL: computersFile,
-            insightsURL: nil
+            computersURL: computersFile
         )
 
         // Connected counts in any case; Disconnected and a missing status do not.
@@ -275,8 +268,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let snapshot = ProtectDashboardService.load(
             overviewURL: emptyFile,
             alertsURL: nil,
-            computersURL: nil,
-            insightsURL: nil
+            computersURL: nil
         )
 
         // File was readable, so isDetected should be true, but counts are 0
@@ -287,45 +279,8 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.fullDiskAccessCount, 0)
         XCTAssertEqual(snapshot.connectedCount, 0)
         XCTAssertEqual(snapshot.informationalAlerts, 0)
-        XCTAssertEqual(snapshot.failingInsights, 0)
         XCTAssertNotNil(snapshot.sourceFile)
         XCTAssertNotNil(snapshot.snapshotDate)
-    }
-
-    func testInsightsFailingCount() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-        let insightsFile = tempDir.appendingPathComponent("insights-test.json")
-
-        // flattenInsight rows with mixed pass/fail counts
-        let insightsJSON = """
-        [
-            {"cisIDs": "1.1.1", "enabled": true, "label": "Test1", "section": "Sharing",
-             "totalFail": 0, "totalNone": 0, "totalPass": 10},
-            {"cisIDs": "1.1.2", "enabled": true, "label": "Test2", "section": "Sharing",
-             "totalFail": 2, "totalNone": 0, "totalPass": 8},
-            {"cisIDs": "1.1.3", "enabled": true, "label": "Test3", "section": "Network",
-             "totalFail": 5, "totalNone": 0, "totalPass": 5},
-            {"cisIDs": "", "enabled": false, "label": "Test4", "section": "Network",
-             "totalFail": 0, "totalNone": 0, "totalPass": 0}
-        ]
-        """
-
-        try insightsJSON.write(to: insightsFile, atomically: true, encoding: .utf8)
-
-        defer {
-            try? FileManager.default.removeItem(at: insightsFile)
-        }
-
-        let snapshot = ProtectDashboardService.load(
-            overviewURL: nil,
-            alertsURL: nil,
-            computersURL: nil,
-            insightsURL: insightsFile
-        )
-
-        XCTAssertEqual(snapshot.failingInsights, 2,
-                       "Should count insights with totalFail > 0 (Test2 and Test3)")
-        XCTAssertEqual(snapshot.insights.count, 4)
     }
 
     // MARK: - CacheSource derivation
@@ -336,7 +291,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
             overviewItems: [],
             alerts: [],
             computers: [],
-            insights: [],
             plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
@@ -346,7 +300,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
             mediumAlerts: 0,
             lowAlerts: 0,
             informationalAlerts: 0,
-            failingInsights: 0,
             sourceFile: nil,
             snapshotDate: nil
         )
@@ -360,7 +313,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
             overviewItems: [],
             alerts: [],
             computers: [],
-            insights: [],
             plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
@@ -370,7 +322,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
             mediumAlerts: 0,
             lowAlerts: 0,
             informationalAlerts: 0,
-            failingInsights: 0,
             sourceFile: nil,
             snapshotDate: recent
         )
@@ -384,7 +335,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
             overviewItems: [],
             alerts: [],
             computers: [],
-            insights: [],
             plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
@@ -394,7 +344,6 @@ final class ProtectDashboardServiceTests: XCTestCase {
             mediumAlerts: 0,
             lowAlerts: 0,
             informationalAlerts: 0,
-            failingInsights: 0,
             sourceFile: nil,
             snapshotDate: stale
         )
@@ -429,7 +378,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: alertsFile) }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: alertsFile, computersURL: nil, insightsURL: nil
+            overviewURL: nil, alertsURL: alertsFile, computersURL: nil
         )
         let buckets = ProtectDashboardService.killChainBuckets(snapshot.alerts)
         XCTAssertEqual(buckets.count, 4)
@@ -460,7 +409,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: computersFile) }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: nil, computersURL: computersFile, insightsURL: nil
+            overviewURL: nil, alertsURL: nil, computersURL: computersFile
         )
         let versions = ProtectDashboardService.agentVersionDistribution(snapshot.computers)
         XCTAssertEqual(versions.count, 3)
@@ -491,7 +440,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: alertsFile) }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: alertsFile, computersURL: nil, insightsURL: nil
+            overviewURL: nil, alertsURL: alertsFile, computersURL: nil
         )
         let timeline = ProtectDashboardService.alertTimeline(
             for: "mac-001.example", in: snapshot.alerts)
@@ -519,19 +468,18 @@ final class ProtectDashboardServiceTests: XCTestCase {
         }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: alertsFile, computersURL: computersFile, insightsURL: nil
+            overviewURL: nil, alertsURL: alertsFile, computersURL: computersFile
         )
 
         XCTAssertNotNil(snapshot.sourceDates["protect-alerts"])
         XCTAssertNotNil(snapshot.sourceDates["protect-computers"])
         XCTAssertNil(snapshot.sourceDates["protect-overview"])
-        XCTAssertNil(snapshot.sourceDates["protect-insights"])
         XCTAssertNil(snapshot.sourceDates["protect-plans"])
     }
 
     func testSourceDatesEmptyWhenAllURLsNil() {
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: nil, computersURL: nil, insightsURL: nil
+            overviewURL: nil, alertsURL: nil, computersURL: nil
         )
         XCTAssertTrue(snapshot.sourceDates.isEmpty)
     }

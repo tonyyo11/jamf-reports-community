@@ -588,7 +588,7 @@ final class CoreDashboardTests: XCTestCase {
             "Compliance Devices", "Compliance Rules", "DDM Status", "Blueprint Status",
             "DDM Device Status", "MDM Command Health",
             // Protect (optional)
-            "Protect Overview", "Protect Alerts", "Protect Computers", "Protect Insights",
+            "Protect Overview", "Protect Alerts", "Protect Computers",
             "Protect Plans", "Protect Threat Overview",
             // OS currency
             "OS Currency",
@@ -965,25 +965,6 @@ final class CoreDashboardTests: XCTestCase {
         ])
         let denied = ws.dedupedCells.first { $0.row == 5 && $0.col == 7 }
         XCTAssertEqual(denied?.format, .yellow, "Unauthorized full disk access is highlighted")
-    }
-
-    func testWriteProtectInsights() throws {
-        let dataDir = try tempDataDir(
-            seeding: "protect-insights",
-            fromFixture: "protect-insights/insights_happy.json"
-        )
-        guard FileManager.default.fileExists(
-            atPath: dataDir.appendingPathComponent("protect-insights").path
-        ) else { throw XCTSkip("protect-insights fixture not available") }
-
-        let dash = makeDashboard(dataDir: dataDir)
-        XCTAssertNoThrow(try dash.writeProtectInsights())
-        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Insights"))
-        XCTAssertEqual(rowText(ws, row: 3, columns: 6),
-                       ["Label", "Section", "CIS IDs", "Pass", "Fail", "Enabled"])
-        XCTAssertEqual(rowText(ws, row: 4, columns: 6), [
-            "Bluetooth sharing disabled", "Sharing", "2.3.1, 2.3.2", "88", "12", "Yes",
-        ])
     }
 
     // Negative cases: (1) no fixture dir at all → loadLatestJSON throws

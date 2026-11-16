@@ -10,7 +10,7 @@ that.
 |---|---|---|---|
 | Jamf Pro, direct | One Jamf Pro instance's Jamf Pro API and Classic API. The only choice for an on-premises server. | Jamf Pro: **Settings > System > API roles and clients** | The privileges on the client's API role |
 | Jamf Platform API (recommended for Jamf Cloud) | Through Jamf's gateway: the Jamf Pro and Classic APIs of the Jamf Pro tenant in the integration's environment, plus Compliance Benchmarks, blueprint status and DDM status | Jamf Account: **Integrations** | The integration's scope level and permissions |
-| Jamf Protect | Protect overview, alerts, computers, insights and plans | Jamf Protect console: **API Clients** | The role assigned to the API client |
+| Jamf Protect | Protect overview, alerts, computers and plans | Jamf Protect console: **API Clients** | The role assigned to the API client |
 | Jamf Security Cloud | The device risk list only (`security risk list`); the app never runs a Security Cloud command that changes anything | `jamf-cli security setup` in Terminal, then **Add to this environment** on the Data Sources screen | The access of the credential you give `security setup`; read access to device risk is enough |
 | Jamf School | School overview, devices, device groups, users, classes, apps, profiles, locations, iBeacons and DEP devices | Jamf School console: **Organization > Settings > API** | The API methods allowed for the key |
 
@@ -224,7 +224,7 @@ turn on **Back up Jamf Protect in this folder** (see
 ## Jamf Protect and Jamf School
 
 **Jamf Protect.** Create an API client under **API Clients** in the Jamf Protect console and
-assign it the most restrictive role that can read computers, alerts, insights and plans.
+assign it the most restrictive role that can read computers, alerts and plans.
 Jamf's current documentation and the app's form place the page at **Administrative > API
 Clients**, with the **Read Only** role or a custom role; jamf-cli's setup guide still says
 **Settings > API Clients**. Connect it with the Protect URL, client ID and client secret. It

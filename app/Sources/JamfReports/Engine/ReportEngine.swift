@@ -2839,7 +2839,6 @@ struct ReportEngine: Sendable {
             (["-p", profile, "protect", "overview", "--output", "json"], "protect-overview"),
             (["-p", profile, "protect", "alerts", "list", "--output", "json"], "protect-alerts"),
             (["-p", profile, "protect", "computers", "list", "--output", "json"], "protect-computers"),
-            (["-p", profile, "protect", "insights", "list", "--output", "json"], "protect-insights"),
             (["-p", profile, "protect", "plans", "list", "--output", "json"], "protect-plans"),
         ]
     }

@@ -6,14 +6,14 @@ import Foundation
 ///
 /// Audience: Security engineers and CISO staff conducting periodic security reviews.
 /// Surfaces Protect alerts, mSCP audit findings, FileVault/Gatekeeper/SIP/Firewall
-/// percentages, CrowdStrike and other security-agent health, and Protect insights
-/// drift over time. Requires the `protect` collection tier.
+/// percentages, and CrowdStrike and other security-agent health.
+/// Requires the `protect` collection tier.
 struct SecurityPostureTemplate: ReportTemplate {
 
     let identifier = "security-posture"
     let displayName = "Security Posture"
     let description = "Security-engineer deep-dive: Protect alerts, mSCP findings, " +
-        "FileVault/SIP/Gatekeeper/Firewall health, agent coverage, and insights drift."
+        "FileVault/SIP/Gatekeeper/Firewall health, and agent coverage."
     let audience = "Security engineers, CISO staff"
 
     var includedSheets: [SheetID] {
@@ -28,7 +28,6 @@ struct SecurityPostureTemplate: ReportTemplate {
             .protectOverview,
             .protectAlerts,
             .protectComputers,
-            .protectInsights,
             .patchCompliance,
             .patchFailures,
             .eaCoverage,
@@ -43,7 +42,6 @@ struct SecurityPostureTemplate: ReportTemplate {
             .jamfDashboard,
             .securityTiles,
             .protectAlerts,
-            .insightsDrift,
             .agentHealth,
             .auditEvidence,
             .complianceBands,
@@ -56,7 +54,7 @@ struct SecurityPostureTemplate: ReportTemplate {
 
     /// The security and compliance group starts open: it is what this template is for.
     var htmlOpenSections: [SectionID] {
-        [.securityTiles, .protectAlerts, .insightsDrift, .agentHealth, .auditEvidence,
+        [.securityTiles, .protectAlerts, .agentHealth, .auditEvidence,
          .complianceBands, .exceptionList]
     }
 
