@@ -268,6 +268,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The workspace menu in the sidebar now shows each workspace's device count; it always read
+  nothing before. (#305)
 - A Jamf Pro server with no mobile devices no longer shows a Partial run: an empty mobile
   device list is saved as empty instead of failing the lost-mode text check. (#305)
 - `jamf-reports school-check` no longer lists Jamf School blueprints as missing on a profile
@@ -492,6 +494,9 @@ versions in this repository map to git tags.
 
 ### Security
 
+- Run History and the schedule list now take a run's Partial status from the run's own log
+  only, so a file another Mac drops into a shared workspace can no longer make a partial run
+  read as clean. (#305)
 - Snapshot readers now refuse a snapshot folder that has been replaced by a link, so a Mac
   sharing the workspace cannot point a report at another folder on this Mac. (#305)
 - New snapshots no longer hold account names and contact details that no screen or report
@@ -4442,7 +4447,7 @@ HTML instance report (Python CLI and macOS app):
   on load — both keys are read during the transition window so no
   re-scaffolding is required. The legacy key is still honored; PR-23
   GUI saves stop emitting it. Full design in
-  `docs/architecture/tiered-collection-adr.md`. 1 589 tests pass with
+  `docs/architecture/archive/tiered-collection-adr.md`. 1 589 tests pass with
   58 new across `CollectionTierTests`, `CadencePresetTests`,
   `IsDueTests`, `CadenceResolverTests`, `CollectCadenceConfigTests`,
   `StateFileStoreTests`, `WorkspacePathsStateDirTests`,

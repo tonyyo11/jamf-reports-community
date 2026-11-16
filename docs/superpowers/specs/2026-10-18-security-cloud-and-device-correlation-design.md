@@ -8,7 +8,8 @@ rows reduced to eight scalar keys before disk, and the summary's `securityCloudD
 computers and mobile devices (`externalId` is the Jamf Pro UDID lowercased, seen on an NFR
 tenant); a Jamf School environment gets no match, because School devices reach Security Cloud
 by management ID (below) and the reduced rows keep none. Not built: the gateway kinds, the
-Security Cloud screen, the risk pill, the workbook and HTML sections and the score factor.
+Security Cloud screen, the risk pill, the workbook and HTML sections and the score factor; #305
+holds them (epic #283 is closed).
 
 ## What shipped
 

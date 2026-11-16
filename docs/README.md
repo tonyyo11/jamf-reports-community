@@ -15,8 +15,6 @@ This directory holds documentation that is versioned alongside the code:
     source and how the app, the cache and scheduled runs fit around it.
   - [`clibridge-error-typing-adr.md`](architecture/clibridge-error-typing-adr.md): why
     `CLIBridge` throws typed errors instead of returning `-1`.
-  - [`period-report-design.md`](architecture/period-report-design.md): the design behind
-    period reports (implemented in 2.7.0).
   - [`archive/tiered-collection-adr.md`](architecture/archive/tiered-collection-adr.md):
     the 2026-05 tiered collection proposal, kept as history; most of it did not ship as
     written.
@@ -30,9 +28,10 @@ This directory holds documentation that is versioned alongside the code:
   (`review-package`, `class-sweep`, `changelog-union`, `bundle-wave`, `stack-adopt`,
   `tip-test`, `loop-eval`, `wave-review`); [`superpowers/agent-loop.md`](superpowers/agent-loop.md)
   says when each runs.
-- [`superpowers/`](superpowers/) — point-in-time design specs and implementation plans from
-  the 2.8.0 to 2.12.0 cycles; [`superpowers/README.md`](superpowers/README.md) says which
-  shipped, which did not, and where the shipped code diverged.
+- [`superpowers/`](superpowers/) — point-in-time design specs from the 2.7.0 to 2.12.0
+  cycles; [`superpowers/README.md`](superpowers/README.md) indexes them, says which shipped
+  and where the shipped code diverged. Executed plans and unbuilt specs are in
+  [`superpowers/archive/`](superpowers/archive/).
 
 For a quick overview of the project, see the repository [`README.md`](../README.md).
 Contributor and code-level conventions are in [`CLAUDE.md`](../CLAUDE.md).

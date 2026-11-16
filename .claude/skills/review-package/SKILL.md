@@ -13,7 +13,7 @@ A reviewer reads one file instead of re-deriving the range. Use the task's recor
 Run `${CLAUDE_SKILL_DIR}/scripts/review-package $ARGUMENTS`.
 
 - `PLAN_FILE` is the plan the task belongs to, for example
-  `docs/superpowers/plans/2026-10-28-2-12-0-plan.md`. Its basename (without `.md`) names the
+  `docs/superpowers/archive/plans/2026-10-28-2-12-0-plan.md`. Its basename (without `.md`) names the
   folder `.superpowers/sdd/<plan>/` under the repo root, which is git-ignored.
 - The file is named `review-<base7>..<head7>.diff`, so a re-review after a fix round (new HEAD, or
   FIX_BASE as BASE for a scoped re-review) gets a fresh file and never reuses a stale one.
