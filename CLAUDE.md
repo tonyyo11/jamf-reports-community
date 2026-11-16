@@ -665,9 +665,13 @@ The patch-definition walk (`patch-release-dates`) stops the same way. `DeviceCal
 `collect(patchDefinitionLimits:)`. `StateFileStore` keeps the number of consecutive timeouts per
 kind in `<kind>.timeouts` beside the `.fail` file (an older build reads only the two- and
 three-field `.fail` forms, so the count is not in it; a missing file reads as 0), and
-self-remediation (`lastFailureRepeatsOnRetry(countingRepeatedTimeouts:)`) leaves a kind alone
-after `WorkspaceStore.repeatedTimeoutsBeforeBackoff` (2) in a row; Collect now and the tick's
-same-day retry still try it. `runAndCapture` also stops waiting for pipe EOF
+self-remediation and the tick's same-day retry (`lastFailureRepeatsOnRetry(countingRepeatedTimeouts:)`)
+leave a kind alone after `WorkspaceStore.repeatedTimeoutsBeforeBackoff` (2) in a row; Collect now
+and the next day's run still try it. jamf-cli's own give-up on a server that never answers
+(exit 1, message containing `FailureCause.serverTimeoutMarker`, "the server did not answer in
+time") counts toward that streak (`FailureCause.serverTimedOut`, `isTimeout`) and is not retried
+inside the run (`invokeWithRetry`): jamf-cli already waited out its limit at every page size.
+`runAndCapture` also stops waiting for pipe EOF
 `CLIBridge.eofGraceAfterExit` (3 s) after a normal exit, so a process the child left running
 cannot hold the call; it returns what was read.
 

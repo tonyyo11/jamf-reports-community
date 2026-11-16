@@ -710,9 +710,9 @@ extension WorkspaceStore {
     /// The rule above for one kind: its last failure was exit 2, 3 or 8, or carries a
     /// permanent cause. The background item's same-day retry shares it with
     /// `countingUnauthorized: false`, so it still reaches an exit-3 kind once someone
-    /// re-authenticates. Self-remediation also passes `countingRepeatedTimeouts`: a kind whose
-    /// last `repeatedTimeoutsBeforeBackoff` failures all timed out would otherwise hold the tick
-    /// lock for its whole limit every hour. Collect now and the same-day retry keep trying it.
+    /// re-authenticates. Both also pass `countingRepeatedTimeouts`: a kind whose last
+    /// `repeatedTimeoutsBeforeBackoff` failures all timed out would otherwise hold the tick
+    /// lock for its whole limit on every retry. Collect now and the next day's run still try it.
     nonisolated static func lastFailureRepeatsOnRetry(
         _ kind: String, in store: StateFileStore, countingUnauthorized: Bool = true,
         countingRepeatedTimeouts: Bool = false

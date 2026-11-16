@@ -65,9 +65,33 @@ final class RepeatedTimeoutBackoffTests: XCTestCase {
             "ea-results", in: store, countingRepeatedTimeouts: true))
         XCTAssertFalse(WorkspaceStore.lastFailureRepeatsOnRetry("ea-results", in: store),
                        "Collect now and the unauthorized-aware callers keep the old rule")
-        XCTAssertFalse(WorkspaceStore.lastFailureRepeatsOnRetry(
-            "ea-results", in: store, countingUnauthorized: false),
-                       "the tick's same-day retry keeps trying")
+    }
+
+    /// A 60-minute timeout retried at 1 h, 2 h and 4 h held the tick lock most of the day.
+    func testTheSameDayRetryLeavesASourceAloneAfterTwoTimeoutsInARow() throws {
+        let profile = "retry-timeout"
+        let root = dir.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let start = Date()
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["patch-status"], attempted: 20))
+
+        fail(store, timedOut, kind: "patch-status")
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile), "one timeout still retries")
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile, exitCode: 1, since: start))
+        fail(store, timedOut, kind: "patch-status")
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile, exitCode: 1, since: start))
+
+        watcher.observe(ReportEngine.unlandedSourcesLine(["patch-status", "computers"], attempted: 20))
+        fail(store, 1, kind: "computers")
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile),
+                      "another source that failed for a retryable reason still retries")
     }
 
     func testTheRemediationFilterDropsTheRepeatedlyTimedOutKind() throws {

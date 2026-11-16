@@ -135,6 +135,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Run History shows a run in progress with a grey RUNNING pill instead of a gold one, which read
+  as a warning.
 - Jamf Protect Insights are removed, because Jamf removed the Compliance feature from Jamf
   Protect on 2026-11-03. The Jamf Pro and Jamf School workbooks lose their Protect Insights tab,
   the HTML report loses its Protect insights drift section, and the Protect screen loses its
@@ -277,6 +279,14 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The background item no longer retries, the same day, a data source that timed out twice in a
+  row. Each try can run for an hour, so on a large fleet the retries kept a scheduled run going
+  most of the day and every manual refresh was turned away with "A scheduled run is in
+  progress". The next day's run and Collect now still try the source.
+- A data source that Jamf Pro never answers (jamf-cli reports "the server did not answer in
+  time") is tried once per run instead of twice, and after two such runs in a row it is left to
+  the next day like any other timeout. On one large server this source alone held each run for
+  24 minutes, several times a day.
 - An Overview score card no longer shows an older day's figure as today's when the newest daily
   summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
   this profile", and the card's detail screen says "No data yet".

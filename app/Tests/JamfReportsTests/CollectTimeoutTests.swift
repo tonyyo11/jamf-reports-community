@@ -77,6 +77,52 @@ final class CollectTimeoutTests: XCTestCase {
                        "a timeout is retried by the next run, like exit 1")
     }
 
+    /// jamf-cli's own give-up on a server that never answers (exit 1, after it shrank the page
+    /// size as far as it goes): one try per run, counted as a timeout, left alone after two.
+    func testAServerThatNeverAnswersIsTriedOncePerRunAndBacksOffAfterTwoRuns() async throws {
+        try "jamf_cli:\n  profile: \"\(profile)\"\n".write(
+            to: try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+                .appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        let stub = root.appendingPathComponent("bin/stub-cli")
+        let calls = root.appendingPathComponent("calls")
+        try """
+        #!/bin/sh
+        [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
+        case "$*" in
+          *patch-status*)
+            echo x >> '\(calls.path)'
+            printf '%s' '{"error":"error","message":"fetching patch title configurations: \
+        fetching page 0: the server did not answer in time: Get \\"https://jamf.example.com/api\\": \
+        http2: timeout awaiting response headers","hint":"pass a smaller --page-size"}'
+            exit 1 ;;
+        esac
+        printf '[]'
+        """.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let kind = "patch-device-failures"
+
+        for run in 1...2 {
+            _ = try? await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
+                profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan], force: true,
+                authConfirmationProbe: { _, _ in false }, locateJamfCLI: { stub },
+                onLine: { _ in })
+            let lines = try String(contentsOf: calls, encoding: .utf8).split(separator: "\n")
+            XCTAssertEqual(lines.count, run, "one jamf-cli call per run, no retry inside it")
+            XCTAssertEqual(store.lastFailureExitCode(for: kind), 1)
+            XCTAssertEqual(store.cause(for: kind)?.serverTimedOut, true)
+            XCTAssertEqual(store.consecutiveTimeouts(for: kind), run)
+            XCTAssertEqual(
+                WorkspaceStore.lastFailureRepeatsOnRetry(
+                    kind, in: store, countingUnauthorized: false, countingRepeatedTimeouts: true),
+                run == 2, "the same-day retry stops after the second run")
+        }
+        store.record(.failed(exitCode: 1), report: kind, at: Date())
+        XCTAssertEqual(store.consecutiveTimeouts(for: kind), 0, "another failure ends the streak")
+    }
+
     /// Every kind answers 401 and the confirmation probe never answers: the run must not read
     /// that as expired credentials (`authExpired` asks the user to re-authenticate).
     func testAnAuthProbeThatTimesOutIsNotExpiredCredentials() async throws {

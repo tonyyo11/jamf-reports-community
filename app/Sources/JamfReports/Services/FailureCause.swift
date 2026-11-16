@@ -58,8 +58,23 @@ struct FailureCause: Codable, Equatable, Sendable {
     let exitCode: Int32
     /// When the failure was recorded; set by `StateFileStore`.
     var recordedAt: Date? = nil
+    /// True when jamf-cli gave up because the server never answered (`serverTimeoutMarker`).
+    /// Optional so a record written by an earlier build still decodes.
+    var serverTimedOut: Bool? = nil
+
+    /// The call ended on a timeout: the app's own limit, or jamf-cli's wait for the server.
+    var isTimeout: Bool { exitCode == CLIBridge.exitCodeTimedOut || serverTimedOut == true }
 
     static let hintByteLimit = 4_096
+    /// jamf-cli's wording (1.32+) when a request got no response headers within its own limit,
+    /// after it had shrunk the page size as far as it goes. It exits 1.
+    static let serverTimeoutMarker = "the server did not answer in time"
+
+    /// True for a failed call whose error envelope says the server never answered. Another try
+    /// in the same run waits out the same limit, so `invokeWithRetry` skips it.
+    static func isServerTimeout(stdout: Data) -> Bool {
+        JamfCLIErrorEnvelope.parse(stdout)?.message?.contains(serverTimeoutMarker) == true
+    }
     /// What jamf-cli prints on stderr when a command swallows a 403 and exits 0.
     static let forbiddenStderrMarker = "permission denied (HTTP 403)"
     /// `pro report blueprint-status` prints this and exits 0 when the environment has none.
@@ -201,7 +216,11 @@ struct FailureCause: Codable, Equatable, Sendable {
             }
             return cause(.missingPermission)
         }
-        guard exitCode == 0 else { return cause(.other) }
+        guard exitCode == 0 else {
+            var other = cause(.other)
+            if message.contains(serverTimeoutMarker) { other.serverTimedOut = true }
+            return other
+        }
         if sawForbiddenOnStderr { return cause(.missingPermission) }
         if sawSoftwareUpdatePlansOffOnStderr { return cause(.softwareUpdatePlansOff) }
         return cause(sawNoDeclarationDataOnStderr ? .noDeclarationData : .other)
