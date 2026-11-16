@@ -135,6 +135,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Run History shows a run in progress with a grey RUNNING pill instead of a gold one, which read
+  as a warning.
 - Jamf Protect Insights are removed, because Jamf removed the Compliance feature from Jamf
   Protect on 2026-11-03. The Jamf Pro and Jamf School workbooks lose their Protect Insights tab,
   the HTML report loses its Protect insights drift section, and the Protect screen loses its
