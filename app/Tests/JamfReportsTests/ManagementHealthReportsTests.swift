@@ -14,9 +14,10 @@ final class ManagementHealthReportsTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// An hour clear of a day boundary.
+    /// Local noon plus whole days, so the calendar day holds at any time of day.
     private func iso(days: Double) -> String {
-        ISO8601DateFormatter().string(from: Date().addingTimeInterval(days * 86_400 + 3_600))
+        let noon = Calendar.current.startOfDay(for: Date()).addingTimeInterval(43_200)
+        return ISO8601DateFormatter().string(from: noon.addingTimeInterval(days * 86_400))
     }
 
     private func day(_ offset: Int) -> String {
