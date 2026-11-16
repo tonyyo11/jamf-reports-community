@@ -277,6 +277,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Report workbooks are now compressed. They were written uncompressed, so a workbook for a
+  fleet of 6,000 Macs with many extension attributes was 89 MB.
 - An Overview score card no longer shows an older day's figure as today's when the newest daily
   summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
   this profile", and the card's detail screen says "No data yet".

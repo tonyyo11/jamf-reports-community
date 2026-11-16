@@ -10,9 +10,8 @@ import ZIPFoundation
 // from /xl/worksheets/sheetN.xml"):
 //
 //  1. The ZIP `addEntry` provider returned the whole blob on every chunk
-//     call, so each STORED entry's `compressedSize` ballooned to a multiple
-//     of `uncompressedSize`. Excel reads `compressedSize` bytes for a STORED
-//     entry and chokes on the repeated content.
+//     call, so each entry held the content several times over and Excel
+//     choked on the repeated content.
 //  2. Repeated `(row, col)` writes emitted two `<c>` elements with the same
 //     `r` reference inside one `<row>` — the classic Excel corruption
 //     signature.
@@ -72,9 +71,11 @@ final class XLSXIntegrityTests: XCTestCase {
         return url
     }
 
-    // MARK: - STORED entry size consistency (primary defect)
+    // MARK: - Entry size consistency (primary defect)
 
-    func testStoredEntriesHaveConsistentSize() throws {
+    /// Every part extracts to exactly its recorded size (a provider that repeats the blob per
+    /// chunk breaks this), and the XML parts are deflated, not stored.
+    func testEntriesExtractToTheirRecordedSizeAndXMLIsDeflated() throws {
         let url = try writeTempWorkbook(makeRepresentativeWorkbook())
         defer { try? FileManager.default.removeItem(at: url) }
 
@@ -82,16 +83,17 @@ final class XLSXIntegrityTests: XCTestCase {
         var entryCount = 0
         for entry in archive {
             entryCount += 1
-            // Every part is added with compressionMethod .none (STORED).
-            // For a STORED entry the spec requires compressedSize == uncompressedSize.
             XCTAssertEqual(
-                entry.compressedSize, entry.uncompressedSize,
-                "STORED entry '\(entry.path)' has compressedSize "
-                    + "\(entry.compressedSize) != uncompressedSize "
-                    + "\(entry.uncompressedSize) — Excel will reject this part"
-            )
+                UInt64(try extract(entry, from: archive).count), entry.uncompressedSize,
+                "'\(entry.path)' does not extract to its recorded size; Excel rejects the part")
+            if entry.path.hasPrefix("xl/media/") {
+                XCTAssertEqual(entry.compressedSize, entry.uncompressedSize, entry.path)
+            }
         }
         XCTAssertGreaterThan(entryCount, 0, "archive should contain entries")
+        let large = try XCTUnwrap(archive["xl/worksheets/sheet3.xml"])
+        XCTAssertLessThan(large.compressedSize, large.uncompressedSize / 2,
+                          "a worksheet is stored compressed")
     }
 
     // MARK: - Worksheet XML well-formedness
