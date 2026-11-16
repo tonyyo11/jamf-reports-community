@@ -212,7 +212,8 @@ struct RunsView: View {
     @ViewBuilder
     private func statusPill(for run: RunHistoryService.RunSummary) -> some View {
         if run.isRunning {
-            Pill(text: L("RUNNING"), tone: .gold, icon: "hourglass")
+            // Muted: gold reads as a warning beside WARN, and a run still going has no outcome.
+            Pill(text: L("RUNNING"), tone: .muted, icon: "hourglass")
                 .accessibilityLabel("Status: Running")
         } else {
             statusPill(for: run.status)

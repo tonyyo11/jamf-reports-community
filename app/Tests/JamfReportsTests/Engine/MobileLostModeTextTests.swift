@@ -368,6 +368,9 @@ final class MobileLostModeTextTests: XCTestCase {
         kind: String, payload: String, keepAccountNames: Bool = false
     ) throws -> [[String: Any]] {
         let data = Data(payload.utf8)
+        let folder = dataDir.appendingPathComponent(kind, isDirectory: true)
+        // An earlier save's file would be read back instead, in whatever order the folder lists.
+        try? FileManager.default.removeItem(at: folder)
         let result = try ReportEngine.saveCollectedPayload(
             kind: kind, data: data,
             outcome: ReportEngine.CollectOutcome(kind: kind, exitCode: 0),
@@ -376,7 +379,6 @@ final class MobileLostModeTextTests: XCTestCase {
             onLine: { _ in }
         )
         XCTAssertTrue(result.saved)
-        let folder = dataDir.appendingPathComponent(kind, isDirectory: true)
         let file = try XCTUnwrap(
             FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
                 .first { $0.pathExtension == "json" })

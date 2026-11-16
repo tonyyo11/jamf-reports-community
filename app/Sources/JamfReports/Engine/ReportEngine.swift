@@ -3179,6 +3179,11 @@ struct ReportEngine: Sendable {
         // load, and before this a single timeout meant the kind waited a
         // whole tier cadence (up to a week) for its next chance.
         let firstExit = captureResult?.0
+        // jamf-cli already waited out its own limit at every page size; a second try in this
+        // run would hold the lock for as long again. The next run retries it.
+        if let first = captureResult, first.0 != 0, FailureCause.isServerTimeout(stdout: first.1) {
+            return captureResult
+        }
         if firstExit == nil || Self.retryableExitCodes.contains(firstExit ?? 0) {
             let reason = firstExit.map { "exit \($0)" } ?? "launch failure"
             onLine(.init(timestamp: Date(), level: .warn,
