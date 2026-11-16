@@ -277,6 +277,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The background item no longer retries, the same day, a data source that timed out twice in a
+  row. Each try can run for an hour, so on a large fleet the retries kept a scheduled run going
+  most of the day and every manual refresh was turned away with "A scheduled run is in
+  progress". The next day's run and Collect now still try the source.
 - An Overview score card no longer shows an older day's figure as today's when the newest daily
   summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
   this profile", and the card's detail screen says "No data yet".

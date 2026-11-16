@@ -617,7 +617,9 @@ final class CollectHonestyWatcher: Sendable {
     }
 
     /// The rule self-remediation uses (`WorkspaceStore.lastFailureRepeatsOnRetry`), read from
-    /// `profile`'s state files, except that exit 3 still retries (#226 5a).
+    /// `profile`'s state files, except that exit 3 still retries (#226 5a). Like it, a source
+    /// that timed out twice in a row is left to the next day's run: retrying it holds the lock
+    /// for its whole limit each time, which on a large fleet is most of the day.
     ///
     /// A stand-down because a peer collected recently is also worth a retry while `profile` has
     /// no summary for today: if that peer is off, a later wake finds its data older than the
@@ -628,7 +630,8 @@ final class CollectHonestyWatcher: Sendable {
         guard let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return incomplete }
         let store = StateFileStore(directory: stateDir)
         return retryCouldHelp {
-            WorkspaceStore.lastFailureRepeatsOnRetry($0, in: store, countingUnauthorized: false)
+            WorkspaceStore.lastFailureRepeatsOnRetry(
+                $0, in: store, countingUnauthorized: false, countingRepeatedTimeouts: true)
         }
     }
 
@@ -648,7 +651,8 @@ final class CollectHonestyWatcher: Sendable {
             .filter { (store.failures(report: $0)?.last ?? .distantPast) >= floor }
         guard !failed.isEmpty else { return true }
         return !failed.allSatisfy {
-            WorkspaceStore.lastFailureRepeatsOnRetry($0, in: store, countingUnauthorized: false)
+            WorkspaceStore.lastFailureRepeatsOnRetry(
+                $0, in: store, countingUnauthorized: false, countingRepeatedTimeouts: true)
         }
     }
 
