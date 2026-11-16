@@ -13,7 +13,8 @@ final class ManagementHealthHtmlTests: XCTestCase {
     }
 
     private func iso(days: Double) -> String {
-        ISO8601DateFormatter().string(from: Date().addingTimeInterval(days * 86_400 + 3_600))
+        let noon = Calendar.current.startOfDay(for: Date()).addingTimeInterval(43_200)
+        return ISO8601DateFormatter().string(from: noon.addingTimeInterval(days * 86_400))
     }
 
     private func day(_ offset: Int) -> String {
