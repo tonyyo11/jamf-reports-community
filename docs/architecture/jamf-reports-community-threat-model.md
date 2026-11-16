@@ -134,7 +134,7 @@ When the app is shipped to external organizations via notarized DMG or PKG insta
 | Headless invocation by the bundled background item or an external scheduler | `HeadlessRun.swift`, `App/Tick.swift` | `--tick` (the background item) and `--scheduled-run` (an external scheduler); `--tick --now <label>` is how the GUI and `jamf-reports schedules run` start a schedule immediately |
 | `config.yaml` parsing | `YAMLCodec` (Swift) | Untrusted-ish: user-edited, but could be replaced by A1 |
 | Cached JSON parsed by `ReportEngine` | `app/Sources/JamfReports/Engine/*` | Source-of-truth originates from Jamf, but file is replaceable by A1; **integrity-checked against manifest** (PR-7) for files under `jamf-cli-data/<kind>/` when `jamf_cli.require_manifest` is true |
-| Run status: `automation/logs/<label>.<stamp>.log` tails, `automation/<label>_status.json`, and a per-run `summary_<label>.<stamp>.json` path no writer produces | `RunHistoryService`, `LaunchAgentService` | Peer-writable on a shared workspace; none is manifest-covered (T-12) |
+| Run status: `automation/logs/<label>.<stamp>.log` tails and `automation/<label>_status.json` | `RunHistoryService`, `LaunchAgentService` | Peer-writable on a shared workspace; neither is manifest-covered (T-12) |
 | Daily summaries `summary_<date>.json` | `SummaryJSONParser.decode` (`numbersAreInRange`), the HTML history and report-library readers | Peer-writable on a shared workspace (T-36) |
 | One-time EA import from a Jamf Pro CSV export (the CSV report pipeline was removed in 2.11) | `InventoryCSV`, `ScaffoldService` | Read through `BoundedFile` up to 256 MB; proposes EAs only; cell values neutralized by `OOXMLWriter.sanitizeString` before write |
 | jamf-cli stdout (JSON) | `CLIBridge.runAndCapture`, then `ReportEngine.saveCollectedPayload` | Parsed; trusted as jamf-cli's output because the binary is codesign-verified at every launch. Once saved it is a workspace file, so on a shared workspace a peer can replace it (T-34, T-36) |
@@ -361,16 +361,16 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Residual:** A workspace that never enables `require_manifest` still renders
   tampered data, but the AuditView card makes the unverified state visible.
 
-### T-12. Run status read from peer-writable files; a per-run summary path no writer produces (revised 2026-11-15)
-- **Goal:** Make a Partial or failed run read as OK, by editing or planting one file.
+### T-12. Run status read from peer-writable files (revised 2026-11-15, after #425)
+- **Goal:** Make a Partial or failed run read as OK, by editing one file.
+- **Closed by #425 (2.12):** Run History and the schedule list no longer read a per-run `summary_<label>.<stamp>.json`. No Swift code wrote that file (its writer was the removed Python engine), and a planted one decided Partial before the `[partial]` marker was read. `RunHistoryService.isPartialRun(logTailText:)` is now the one test, and it reads only the `[partial]` marker in the log tail; `LaunchAgentService` uses the same function.
 - **How status is derived today:**
-  - **Run History** (`RunHistoryService`, `RunHistoryService.swift:41-68`) reads the tail of each `automation/logs/<label>.<stamp>.log`: the recorder's `exit N` footer gives OK or Fail, and an exit-0 run is Partial when `isPartialRun` says so. `isPartialRun` (`RunHistoryService.swift:230-260`) first looks for `<workspace>/snapshots/computers/summaries/summary_<label>.<stamp>.json` and, when that file exists and its manifest verdict is `.verified` or `.absent`, returns its `status == "partial"` without reading the log; otherwise it returns whether the log tail contains `[partial]`.
-  - **Schedule list "Last Run"** (`LaunchAgentService.lastStatus`, `LaunchAgentService.swift:847-866`) reads `automation/<label>_status.json`, written by `ScheduledRunRecorder.writeStatusJSON`: `success` (exit 0), `exit_code`, `sheet_failures`, `refused`. When that file has `success`, the result is OK, Fail, or Partial only for `sheet_failures > 0`; the `[partial]` log marker (and the same per-run summary check, `LaunchAgentService.swift:881-911`, which can only add Partial) is consulted only when there is no status file.
-- **The per-run summary file is never written.** Daily summaries are `summary_<yyyy-MM-dd>.json` under `<charts.historical_csv_dir>/summaries/` (`WorkspacePaths.summariesDir`); no Swift code writes `summary_<label>.<stamp>.json` or a `computers/summaries/` folder. The writer was the removed Python engine. The read therefore never matches a file the app made, and the summaries folder has no manifest, so a planted file reads as `.absent` and is trusted.
-- **Path:** A1, or P1 on a shared workspace, plants `snapshots/computers/summaries/summary_<label>.<stamp>.json` holding `{"status":"ok"}` beside a run that logged `[partial]`; Run History then shows OK. Or edits `<label>_status.json` (`success`, `sheet_failures`) or the log tail itself; all are plain files in the workspace's `automation/` folder.
-- **Existing mitigations:** Reads are bounded and refuse a link at the file (`BoundedFile.read(followSymlinks: false)`). The Run History log tail and status file carry no integrity check, and none is claimed.
-- **Likelihood:** Low (needs A1 or P1). **Impact:** Low–Medium (an operator misses a Partial run; collected data is unchanged, and `DataFreshnessHealth` and the health banner judge freshness from the state files, not from this status).
-- **Priority: LOW–MEDIUM (open).** Recommended: remove the per-run summary read from both services (it has no producer), so Run History always reads the `[partial]` marker; decide whether the schedule list should also read `[partial]` when the status file says success.
+  - **Run History** (`RunHistoryService`) reads the tail of each `automation/logs/<label>.<stamp>.log`: the recorder's `exit N` footer gives OK or Fail, and an exit-0 run is Partial when the tail holds a `[partial]` line.
+  - **Schedule list "Last Run"** (`LaunchAgentService.lastStatus`) reads `automation/<label>_status.json`, written by `ScheduledRunRecorder`: `success` (exit 0), `exit_code`, `sheet_failures`, `refused`. When that file has `success`, the result is OK, Fail, or Partial only for `sheet_failures > 0`; the `[partial]` log marker is consulted only when there is no status file.
+- **Path (residual):** A1, or P1 on a shared workspace, edits `<label>_status.json` (`success`, `sheet_failures`) or the log tail itself; both are plain files in the workspace's `automation/` folder.
+- **Existing mitigations:** Reads are bounded and refuse a link at the file (`BoundedFile.read(followSymlinks: false)`). The log tail and status file carry no integrity check, and none is claimed.
+- **Likelihood:** Low (needs A1 or P1). **Impact:** Low (an operator misses a Partial run; collected data is unchanged, and `DataFreshnessHealth` and the health banner judge freshness from the state files, not from this status).
+- **Priority: LOW (residual accepted).** Open question, not a defect: whether the schedule list should also read `[partial]` when the status file says success.
 
 ### T-13. Generated reports (XLSX/HTML) carry integrity checks, not signatures (revised 2026-11-15)
 - **Goal:** Tamper with a leadership-bound report between generation and recipient open.
@@ -612,7 +612,7 @@ All runtime threats, highest priority first. None is marked closed: T-13, which 
 | T-4 XLSX formula injection | LOW–MEDIUM | `StaleDeviceService.formulaGuarded` + Patch CSV escaper; whole plain negative numbers pass unprefixed (2.12) |
 | T-8 Exit-code silent fallback | LOW–MEDIUM | Stale banner + PARTIAL pill; the pill's own inputs are T-12 |
 | T-2 Tampered cached JSON | LOW–MEDIUM | Swift verify + writer (2.6, with `require_manifest`, off by default) + AuditView surfacing; unkeyed manifest; summaries, SOFA and patch-release-dates not stamped |
-| T-12 Run status from peer-writable files | LOW–MEDIUM (open) | Run History trusts a per-run summary file no writer produces, before the `[partial]` marker; the schedule list reads the status JSON |
+| T-12 Run status from peer-writable files | LOW (residual) | The per-run summary read is gone (#425); the log tail and status JSON stay peer-writable with no integrity check |
 | T-13 Report integrity checks | LOW–MEDIUM (partial) | `.sha256` sidecar, `.manifest.txt`, HTML `report-sha256` meta, run-log hash line; detects damage, not a deliberate edit |
 | T-23 Shared-workspace peer trust | LOW–MEDIUM | Local-or-team-only layout, output deny-list; per-Mac pin and Confirm (`SharedConfigPin`, 21 keys) |
 | T-30 Jamf Pro backup on synced storage | LOW–MEDIUM | Per-workspace choice, per-Mac Confirm, 0600/0700 |
@@ -673,7 +673,7 @@ Open questions (not verified at this refresh):
 
 ## 9. Highest-Value Next Actions (current state)
 
-1. **Fix the run-status read (T-12).** Remove the per-run summary read in `RunHistoryService.isPartialRun` and `LaunchAgentService.checkSummaryFileForPartialStatus` (no writer produces that file, and a planted one overrides the `[partial]` marker), and decide whether the schedule list should read `[partial]` when the status JSON says success.
+1. **Run-status read (T-12): done in #425.** The per-run summary read is removed from `RunHistoryService` and `LaunchAgentService`. Still to decide: whether the schedule list should read `[partial]` when the status JSON says success.
 2. **Harden the supply-chain trust boundary for a public repo (T-9).** A public repo accepts outside PRs. Require CODEOWNERS review on `main` for any change to `Package.swift`, `Package.resolved`, the `app/scripts/` release tooling, `.github/workflows/`, and the jamf-cli Team ID constants.
 3. **Finish the manifest producers (T-2).** `SnapshotManifest.record` stamps snapshots saved through `ReportEngine.saveSnapshot` when `require_manifest` is on. The `summaries/` directory, the SOFA cache and `patch-release-dates` have no producer.
 4. **Close the data-minimisation gaps (T-31).** Reduce `school-users` as the 2.12 design names, and design the rewrite of snapshots saved before 2.12 (tracked for a later release).
