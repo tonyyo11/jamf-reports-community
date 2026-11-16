@@ -268,6 +268,18 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- An Overview score card no longer shows an older day's figure as today's when the newest daily
+  summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
+  this profile", and the card's detail screen says "No data yet".
+- A Jamf School workspace can turn the weekly deep scan off and choose its day on the Automation
+  screen; the caption no longer says School has no deep scan. Settings now says "Skip expensive
+  collections" applies to Jamf Pro workspaces only.
+- The Computers detail panel shows Last check-in and Last inventory as dates like Last contact,
+  and Jamf's management values (external boot level, attestation, enrollment type, battery
+  health) read as words ("Allow booting from external media") there and on the Management
+  health card. Workbook and report cells keep Jamf's values.
+- The Config Doctor subtitle no longer mentions the CSV export, and the status bar says
+  "catching up daily data for <workspace>" instead of "profile=".
 - The workspace menu in the sidebar now shows each workspace's device count; it always read
   nothing before. (#305)
 - A Jamf Pro server with no mobile devices no longer shows a Partial run: an empty mobile

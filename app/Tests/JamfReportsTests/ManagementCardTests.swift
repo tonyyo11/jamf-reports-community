@@ -84,7 +84,7 @@ final class ManagementCardTests: XCTestCase {
                        "Jamf binary behind the newest binary in this fleet (11.33)")
         XCTAssertEqual(row(card, "finding.binaryBehind")?.tone, .neutral)
         XCTAssertEqual(row(card, "finding.attestationProblem")?.breakdown,
-                       "DEVICE_PROPERTIES_MISMATCH 1")
+                       "Device properties mismatch 1")
     }
 
     func testBreakdownLineShowsAtMostFiveValuesAndSaysHowManyThereAre() {
@@ -190,7 +190,7 @@ final class ManagementCardTests: XCTestCase {
         let rows = Dictionary(
             uniqueKeysWithValues: ManagementDetail.rows(facts, now: now, calendar: calendar))
         XCTAssertEqual(rows["Supervised"], "No")
-        XCTAssertEqual(rows["Attestation"], "DEVICE_PROPERTIES_MISMATCH")
+        XCTAssertEqual(rows["Attestation"], "Device properties mismatch")
         XCTAssertTrue(rows["MDM profile"]?.hasSuffix("expires in 10 days") ?? false)
         XCTAssertNil(rows["MDM capable"])
         XCTAssertEqual(rows.count, 3)
@@ -244,5 +244,21 @@ final class ManagementCardTests: XCTestCase {
         var facts = ManagementFacts(item: [:])
         facts.batteryCapacityPercent = 87.4
         XCTAssertEqual(ManagementDetail.rows(facts, now: now).first?.1, "87%")
+    }
+}
+
+final class ManagementDisplayValueTests: XCTestCase {
+    func testScreamingSnakeValuesReadAsSentences() {
+        XCTAssertEqual(ManagementDetail.displayValue("ALLOW_BOOTING_FROM_EXTERNAL_MEDIA"),
+                       "Allow booting from external media")
+        XCTAssertEqual(ManagementDetail.displayValue("PENDING"), "Pending")
+        XCTAssertEqual(ManagementDetail.displayValue("Device Enrollment"), "Device Enrollment")
+        XCTAssertEqual(ManagementDetail.displayValue(" 85% "), "85%")
+    }
+
+    func testTimestampTextKeepsWhatItCannotParse() {
+        XCTAssertEqual(DevicesView.timestampText("2026-11-15T03:20:06.123Z"), "2026-11-15T03:20:06Z")
+        XCTAssertEqual(DevicesView.timestampText("never"), "never")
+        XCTAssertEqual(DevicesView.timestampText(""), "")
     }
 }
