@@ -278,8 +278,7 @@ versions in this repository map to git tags.
   and Jamf's management values (external boot level, attestation, enrollment type, battery
   health) read as words ("Allow booting from external media") there and on the Management
   health card. Workbook and report cells keep Jamf's values.
-- The Config Doctor subtitle no longer mentions the CSV export, and the status bar says
-  "catching up daily data for <workspace>" instead of "profile=".
+- The Config Doctor subtitle no longer mentions the CSV export.
 - The workspace menu in the sidebar now shows each workspace's device count; it always read
   nothing before. (#305)
 - A Jamf Pro server with no mobile devices no longer shows a Partial run: an empty mobile
