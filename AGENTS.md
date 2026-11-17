@@ -231,7 +231,7 @@ without cache, the OS-current and XProtect-current score factors have no data
 mobile sources, and one with no computers does not collect the Mac sources, until `pro overview`
 counts one. `ReportEngine.sourceSides` (`Engine/ReportEngine+FleetSides.swift`) classifies every
 Jamf Pro matrix kind, both device-scan kinds and both after-matrix kinds as Mac, mobile or both
-(a test keeps it total). `FleetState.load(dataDir:now:)` reads the newest `overview` snapshot
+(a test keeps it total; a source that is not certainly one side is `.both`, since a wrong side would skip it on a fleet that has only the other: `profile-status`, `app-status`, `ddm-status`, `blueprint-status` and the Compliance Benchmark kinds are `.both`). `FleetState.load(dataDir:now:)` reads the newest `overview` snapshot
 when readable and stamped within 48 hours: computers = Fleet › Managed Computers + Unmanaged
 Computers, mobile = Managed Devices + Unmanaged Devices (exact section and resource, whole numbers
 through `SiteScope.fleetTotal`; anything else is unknown, and unknown skips nothing). A side is

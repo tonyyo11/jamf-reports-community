@@ -102,6 +102,10 @@ extension ReportEngine {
 
     /// The side each Jamf Pro source describes: every matrix kind, both device-scan kinds and
     /// both after-matrix kinds. A kind missing here is never skipped for its side.
+    // When unsure, `.both`: a source wrongly classed to one side would be skipped on a fleet
+    // that has only the other. `profile-status` and `app-status` read MDM command history for
+    // every device, `ddm-status` and `blueprint-status` cover all Platform devices, and
+    // Compliance Benchmarks are not Mac-only by contract.
     static let sourceSides: [String: SourceSides] = [
         "overview": .both, "sites": .both, "buildings": .both, "departments": .both,
         "categories": .both, "groups": .both, "update-status": .both,
@@ -112,9 +116,9 @@ extension ReportEngine {
         "security": .mac, "inventory-summary": .mac, "device-compliance": .mac,
         "computers": .mac, "patch-status": .mac, "patch-device-failures": .mac,
         patchReleaseDatesKind: .mac, "policy-status": .mac, "classic-macos-profiles": .mac,
-        "app-status": .mac, "software-installs": .mac, "computer-extension-attributes": .mac,
-        "ea-results": .mac, "profile-status": .mac, "compliance-devices": .mac,
-        "compliance-rules": .mac, "ddm-status": .mac, "blueprint-status": .mac,
+        "app-status": .both, "software-installs": .mac, "computer-extension-attributes": .mac,
+        "ea-results": .mac, "profile-status": .both, "compliance-devices": .both,
+        "compliance-rules": .both, "ddm-status": .both, "blueprint-status": .both,
         "policies": .mac, "scripts": .mac, "packages": .mac, "smart-computer-groups": .mac,
         "classic-computer-groups": .mac, "duplicate-serials": .mac,
         ddmDeviceStatusKind: .mac, mdmCommandHealthKind: .mac,
