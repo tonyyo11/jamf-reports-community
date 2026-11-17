@@ -190,8 +190,8 @@ collecting every source: a cadence skip there would land nothing and read as a d
 
 ## L6 — Sites
 
-Status: proposed on 2026-11-17, not built. A reporting feature, so it gets its own plan and its
-own pull request; only the scan order below rides with L3.
+Status: agreed for 2.13 by the owner on 2026-11-17, not built. A reporting feature, so it gets
+its own plan and its own pull request; only the scan order below rides with L3 in 2.12.
 
 An organization can have 20,000 devices with 5,000 of them in one Jamf Pro site. Sites are how
 such an organization reads its fleet, so the app should let it read by site.
@@ -229,8 +229,8 @@ Sites are detected, never typed in. A setting exists only for choices (below).
    Hidden when sites are not in use.
 3. **Reports.** "This site only" when generating: the workbook, HTML and CSV folder hold that
    site's devices, with the site named on the cover and in the file name. Server-wide tabs that
-   have no device rows (policies, patch titles, groups) are marked as server-wide or left out;
-   that is a decision below.
+   have no device rows (policies, patch titles, groups) are kept and marked as covering the
+   whole server, in the tab's note row, so no tab or column moves between the two reports.
 4. **Daily summary.** Per-site device count, stale count and the main security shares as
    `{met, of}` pairs keyed by site id, with the site's name beside it, so Trends and alert rules
    can follow one site. A figure a site does not report is absent, never zero. A site that is
@@ -243,13 +243,16 @@ Sites are detected, never typed in. A setting exists only for choices (below).
    (`locationId`). The same filter and "this location only" report apply; the summary figures
    are the School ones (managed, stale, OS current).
 
-### Decisions needed before a plan
+### Decisions
 
-1. Which release: 2.12 or 2.13.
-2. In a one-site report, are server-wide tabs left out or kept and marked?
-3. Which per-site figures go in the summary first (proposed: devices, stale, FileVault, OS
+Taken (owner, 2026-11-17): sites go in 2.13; a one-site report keeps the server-wide tabs and
+marks them.
+
+Still needed before a plan:
+
+1. Which per-site figures go in the summary first (proposed: devices, stale, FileVault, OS
    current), since every one is a new Trends series and alert key.
-4. Whether the fleet workbook for report groups gets a per-site sheet.
+2. Whether the fleet workbook for report groups gets a per-site sheet.
 
 ### How it is tested
 
