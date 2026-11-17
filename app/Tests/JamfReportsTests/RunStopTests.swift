@@ -163,6 +163,60 @@ final class RunStopTests: XCTestCase {
         XCTAssertNil(store.globalStatus)
     }
 
+    /// Trends advance before the slow part of a run, but only from a run with no failure so
+    /// far: the dead-run verdicts are judged at the end.
+    func testTheSummaryIsWrittenBeforeASlowSourceUnlessSomethingFailed() async throws {
+        try "jamf_cli:\n  profile: \"\(profile)\"\n".write(
+            to: try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+                .appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8)
+        let stub = root.appendingPathComponent("bin/stub-cli")
+        let failOverview = root.appendingPathComponent("fail-overview")
+        try """
+        #!/bin/sh
+        [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
+        case "$*" in
+          *"pro overview"*) [ -f '\(failOverview.path)' ] && exit 1 ;;
+          *"report security"*)
+            printf '%s' '[{"section":"summary","data":{"total_devices":3,"filevault_encrypted":3,\
+        "gatekeeper_enabled":3,"sip_enabled":3,"firewall_enabled":3}}]'
+            exit 0 ;;
+        esac
+        printf '[]'
+        """.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.recordDuration(report: "patch-status", seconds: 500)
+
+        func run() async throws -> [String] {
+            let lines = Lines()
+            _ = try? await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
+                profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
+                force: true, authConfirmationProbe: { _, _ in false },
+                locateJamfCLI: { stub }, refreshSOFA: { _ in (.empty, []) }, onLine: lines.add)
+            return lines.all
+        }
+        let early = "[info] summary written before the slow sources"
+
+        let clean = try await run()
+        let wrote = try XCTUnwrap(clean.firstIndex(of: early), "\(clean)")
+        let slow = try XCTUnwrap(
+            clean.firstIndex(of: "[info] collecting patch-status for \(profile)"))
+        XCTAssertLessThan(wrote, slow)
+        XCTAssertEqual(slow, clean.lastIndex { $0.hasPrefix("[info] collecting ") && !$0.contains("sofa") && !$0.contains("patch-release") },
+                       "the slow source runs last")
+
+        let summaries = try WorkspacePaths.summariesDir(for: profile)
+        for name in try FileManager.default.contentsOfDirectory(atPath: summaries.path) {
+            try FileManager.default.removeItem(at: summaries.appendingPathComponent(name))
+        }
+        store.recordDuration(report: "patch-status", seconds: 500)
+        try Data().write(to: failOverview)
+        let failed = try await run()
+        XCTAssertFalse(failed.contains(early), "a failure so far waits for the verdicts: \(failed)")
+    }
+
     func testAStoppedRunLeavesTheRestDueAndIsNotPartial() async throws {
         try "jamf_cli:\n  profile: \"\(profile)\"\n".write(
             to: try XCTUnwrap(ProfileService.workspaceURL(for: profile))

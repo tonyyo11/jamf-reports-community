@@ -2425,8 +2425,22 @@ struct ReportEngine: Sendable {
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
         var stoppedEarly = false
+        // Written once, before the first slow source or the device scan, so Trends advance in
+        // the run's first minutes; the end of the run rebuilds it with what landed later.
+        var wroteEarlySummary = false
+        func writeEarlySummary() async {
+            guard !wroteEarlySummary, let config = loadedConfig else { return }
+            wroteEarlySummary = true
+            await Self.writeEarlySummary(
+                config: config, workspace: workspace, bin: bin, dataDir: dataDir,
+                outcomes: outcomes, savedKinds: savedKinds, workspacePaths: workspacePaths,
+                day: collectDay, onLine: onLine)
+        }
         for (index, planned) in plan.enumerated() {
             let (args, kind) = (planned.args, planned.kind)
+            if planned.skip == nil, (lastDuration(kind) ?? 0) > Self.slowSourceThreshold {
+                await writeEarlySummary()
+            }
             if planned.skip == nil, Self.stopsRun(
                 left: plan[index...].filter { $0.skip == nil }.map(\.kind), onLine: onLine) {
                 stoppedEarly = true
@@ -2515,6 +2529,7 @@ struct ReportEngine: Sendable {
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
         // as live in today's summary).
+        if scanPlan == .due, deadAfterScan == nil { await writeEarlySummary() }
         // A stopped run starts nothing else: the scan and the release-date walk stay due.
         if !stoppedEarly, scanPlan == .due || !afterMatrix.isEmpty {
             stoppedEarly = Self.stopsRun(
@@ -2705,6 +2720,31 @@ struct ReportEngine: Sendable {
                         ? "[ok] sofa: feeds refreshed"
                         : "[warn] sofa: no feed data — kept the previous cache"))
         return succeeded
+    }
+
+    /// Today's summary from the sources that have landed so far, before the run's slow part.
+    /// Only when every source attempted so far landed: a run with a failure waits for the
+    /// verdicts at the end, so a dead run can never date cached figures today. Silent unless it
+    /// wrote; the end of the run reports a summary that could not be written.
+    private static func writeEarlySummary(
+        config: ReportConfig, workspace: WorkspaceID, bin: URL, dataDir: URL,
+        outcomes: [CollectOutcome], savedKinds: Set<String>,
+        workspacePaths: WorkspacePaths.Type, day: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async {
+        guard !outcomes.isEmpty, outcomes.allSatisfy({ savedKinds.contains($0.kind) }),
+              let summariesDir = try? workspacePaths.summariesDir(for: workspace.name)
+        else { return }
+        let provenance = await Provenance.current(
+            profile: workspace.name, jamfCLIURL: bin, dataDir: dataDir)
+        let outcome = ReportEngine(config: config, dataDir: dataDir).emitSummaryJSON(
+            summariesDir: summariesDir, provenance: provenance,
+            liveKinds: buildLiveKinds(savedKinds: savedKinds, sofaRefreshed: false),
+            day: day, onLine: { _ in })
+        if outcome == .wrote {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] summary written before the slow sources"))
+        }
     }
 
     /// The post-collect work that turns saved snapshots into something the

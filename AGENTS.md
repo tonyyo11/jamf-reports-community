@@ -683,6 +683,12 @@ seconds in `<kind>.took` (`StateFileStore.recordDuration`, `lastDuration(for:)`;
 outside the manifest). `ReportEngine.slowLast` moves the planned sources whose last attempt took
 over `slowSourceThreshold` (120 s) to the end, shortest first; everything else keeps the matrix
 order, and `slowLastLine` logs `[plan] running last (slow on their last run): …`.
+**Early summary (2.12).** Before the first slow source and before a due device scan, `collect`
+writes today's summary once (`writeEarlySummary`), only when every source attempted so far
+landed, so the dead-run verdicts at the end still decide a run with a failure; the end of the
+run rebuilds it (`freshSummaryIsBetter`). Config Doctor's `retention.data_folder_size` (probe
+runs only) suggests retention when the data folder passes `dataFolderSuggestionBytes` (20 GB)
+with retention off.
 **Stopping between sources (2.12).** `ReportEngine.runStop` (task-local, set through
 `stoppingBetweenSources(profile:)` by `scheduledRunSingle` and by the app's automatic collects:
 `recordingAutomaticCollect` for self-repair and catch-up, `runBackgroundRefresh`; the budget is

@@ -305,6 +305,10 @@ versions in this repository map to git tags.
 - Jamf Protect and Jamf Security Cloud are no longer collected again by every automatic collect
   in a day: after the day's first run they wait 12 hours, and a source that timed out two runs in
   a row waits like any other.
+- The day's summary is written before a run's slow sources and the per-device scan, so the
+  Overview and Trends have today's figures in the first minutes of a run; the end of the run
+  updates it with what landed later.
+- Config Doctor suggests turning on retention when saved snapshots use more than 20 GB.
 - A data source that took more than two minutes on its last run now runs after the others,
   shortest first, so one slow source no longer holds up the rest of the day's data. The run log
   names them in a "running last" line. Jamf School sources are ordered the same way.

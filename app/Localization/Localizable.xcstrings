@@ -110503,6 +110503,86 @@
         }
       }
     },
+    "Saved snapshots" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte Snapshots"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantáneas guardadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantanés enregistrés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot salvati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みスナップショット"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshots salvos"
+          }
+        }
+      }
+    },
+    "Saved snapshots use more than %lld GB and retention is off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte Snapshots belegen mehr als %lld GB und die Aufbewahrung ist deaktiviert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las instantáneas guardadas ocupan más de %lld GB y la retención está desactivada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les instantanés enregistrés occupent plus de %lld Go et la conservation est désactivée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli snapshot salvati occupano più di %lld GB e la conservazione è disattivata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みスナップショットが %lld GB を超えており、保持設定はオフです。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os snapshots salvos ocupam mais de %lld GB e a retenção está desativada."
+          }
+        }
+      }
+    },
     "Saved to %@" : {
       "localizations" : {
         "de" : {
@@ -130733,6 +130813,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ative Definir data e hora automaticamente em Ajustes do Sistema › Geral › Data e Hora em todos os Macs que compartilham esta pasta."
+          }
+        }
+      }
+    },
+    "Turn on retention in config.yaml (retention.enabled) to archive or remove old snapshots." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivieren Sie die Aufbewahrung in config.yaml (retention.enabled), um alte Snapshots zu archivieren oder zu entfernen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active la retención en config.yaml (retention.enabled) para archivar o eliminar las instantáneas antiguas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez la conservation dans config.yaml (retention.enabled) pour archiver ou supprimer les anciens instantanés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attivare la conservazione in config.yaml (retention.enabled) per archiviare o rimuovere i vecchi snapshot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "古いスナップショットをアーカイブまたは削除するには、config.yaml で保持設定（retention.enabled）をオンにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ative a retenção no config.yaml (retention.enabled) para arquivar ou remover snapshots antigos."
           }
         }
       }

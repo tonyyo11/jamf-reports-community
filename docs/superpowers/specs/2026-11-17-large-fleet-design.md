@@ -96,7 +96,10 @@ that is L4, because it needs a cadence first.
 
 ## L2 — Short runs first, the summary early, a time budget per run
 
-Items 1, 2, 4 and 5 are built (Jamf Pro and Jamf School). Benchmark reports and the dashboard
+All five items are built (item 3, the early summary, for Jamf Pro only: a School run has no
+slow tail to wait behind, and its summary is written straight after its few sources). The early
+summary is written only when nothing attempted so far has failed. Items 1, 2, 4 and 5 cover Jamf
+Pro and Jamf School. Benchmark reports and the dashboard
 do not record a duration yet, so they keep their place. As built: the budget stops the run
 before any further source, slow or not (the slow ones are last anyway); the app waits up to 30
 minutes for the source in progress and does not yet name it in the status line; the pickup is
@@ -181,7 +184,7 @@ collecting every source: a cadence skip there would land nothing and read as a d
    12,000 fleets with the existing signposts. Target on the reference Mac: first paint under
    2 s, no main-thread block over 250 ms. The app runs on macOS Sequoia 15 and on older Apple
    silicon, so a target is met only with half of it to spare.
-3. **Disk.** Two days of snapshots are 772 MB at 12,000 Macs and retention is off by default,
+3. **Disk** (built: Config Doctor's `retention.data_folder_size`). Two days of snapshots are 772 MB at 12,000 Macs and retention is off by default,
    which is a few hundred GB a year at daily inventory. Proposed: Config Doctor suggests
    retention when the data folder passes 20 GB; no default changes.
 
