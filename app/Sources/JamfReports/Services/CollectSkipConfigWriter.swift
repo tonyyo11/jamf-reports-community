@@ -42,7 +42,9 @@ enum CollectSkipConfigWriter {
         }
         let protectOnly = EnvironmentProfiles.resolve(config: config, workspace: profile)
             .isConfirmedProtectOnly(workspace: profile)
-        guard ReportEngine.optionalKinds(protectOnly: protectOnly).contains(name) else {
+        let fleet = FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
+        guard ReportEngine.optionalKinds(protectOnly: protectOnly, fleet: fleet).contains(name)
+        else {
             throw WriteError.coreSource(name)
         }
         let read = SharedConfigPin.collectSkipList(

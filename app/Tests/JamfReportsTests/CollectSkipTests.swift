@@ -37,10 +37,11 @@ final class CollectSkipTests: XCTestCase {
                        "the dependents are added at read time, never listed")
     }
 
-    /// The core set per product is locked: the daily summary is built from it.
+    /// The core set on an unknown or mixed fleet is locked: the daily summary is built from it.
+    /// The mobile list is core only on a mobile-only fleet (`FleetSidesTests`).
     func testTheCoreSourcesAreLocked() {
         let core = ["overview", "security", "inventory-summary", "device-compliance",
-                    "computers", "mobile-devices-list", "school-devices"]
+                    "computers", "school-devices"]
         XCTAssertTrue(ReportEngine.collectSkipKinds(core).isEmpty)
         for kind in core { XCTAssertTrue(ReportEngine.isCoreKind(kind), kind) }
         XCTAssertEqual(

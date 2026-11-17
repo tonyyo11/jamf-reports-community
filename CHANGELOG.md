@@ -140,6 +140,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- A Jamf Pro fleet with no iPads or iPhones no longer collects the mobile device reports, and one
+  with no Macs no longer collects the Mac reports, until Jamf Pro counts a device of that kind.
+  Each is still checked once a week, and Data Sources says which sources are left out and why.
+  Jamf School, Jamf Protect and Jamf Security Cloud are not affected.
 - `jamf_cli.collect_skip` now accepts any source except the ones the daily summary is built
   from, and every collect honours it, Jamf School and Jamf Protect included. On a shared folder
   each Mac follows the list it confirmed in Config Doctor.

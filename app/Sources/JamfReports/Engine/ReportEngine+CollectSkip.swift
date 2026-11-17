@@ -5,20 +5,12 @@ import Foundation
 /// through `SharedConfigPin.collectSkip`, which narrows it here.
 extension ReportEngine {
 
-    /// The Jamf Pro sources the daily summary and most screens are built from: `security` and
-    /// `inventory-summary` give the Mac count, `mobile-devices-list` the count of a fleet with
-    /// no Macs, `device-compliance` the stale count, `computers` the inventory, `overview` the
-    /// site-scope check and the background refresh's freshness probe.
-    static let coreProKinds: Set<String> = [
-        "overview", "security", "inventory-summary", "device-compliance", "computers",
-        "mobile-devices-list",
+    /// The Mac sources the daily summary and most screens are built from: `security` and
+    /// `inventory-summary` give the Mac count, `device-compliance` the stale count, `computers`
+    /// the inventory. Core unless the fleet's Mac side is skipped (no computers).
+    static let macCoreKinds: Set<String> = [
+        "security", "inventory-summary", "device-compliance", "computers",
     ]
-
-    /// Jamf School's summary input.
-    static let coreSchoolKinds: Set<String> = [SchoolFleetService.devicesKind]
-
-    /// The one source a Protect-only environment's summary reads.
-    static let coreProtectOnlyKinds: Set<String> = ["protect-computers"]
 
     /// Every source the app collects, for every product.
     static let allSourceKinds: Set<String> = Set(knownCollectKinds)
@@ -26,22 +18,36 @@ extension ReportEngine {
         .union(protectCommandMatrix(profile: "").map(\.kind))
         .union([schoolDeviceDetailKind, securityRiskKind])
 
-    /// The sources that can be turned off. Protect is optional beside an MDM; in a Protect-only
-    /// environment its computer list is the summary's input.
-    static func optionalKinds(protectOnly: Bool = false) -> Set<String> {
-        allSourceKinds.subtracting(coreProKinds).subtracting(coreSchoolKinds)
-            .subtracting(protectOnly ? coreProtectOnlyKinds : [])
+    /// Whether `kind` can never be turned off here, the one answer for the writer, the planner,
+    /// the screen and Config Doctor. `overview` (the fleet count, the site-scope check) and
+    /// Jamf School's device list always; the Mac core unless the Mac side is skipped;
+    /// `mobile-devices-list` only on a mobile-only fleet, whose summary is built from it;
+    /// `protect-computers` only in a Protect-only environment.
+    static func isCoreKind(
+        _ kind: String, protectOnly: Bool = false, fleet: FleetState = .unknown
+    ) -> Bool {
+        switch kind {
+        case "overview", SchoolFleetService.devicesKind: return true
+        case "mobile-devices-list": return fleet.isMobileOnly && !fleet.skipped.contains(.mobile)
+        case "protect-computers": return protectOnly
+        default: return macCoreKinds.contains(kind) && !fleet.skipped.contains(.mac)
+        }
     }
 
-    /// Whether `kind` can never be turned off in this environment.
-    static func isCoreKind(_ kind: String, protectOnly: Bool = false) -> Bool {
-        allSourceKinds.contains(kind) && !optionalKinds(protectOnly: protectOnly).contains(kind)
+    /// The sources that can be turned off here.
+    static func optionalKinds(
+        protectOnly: Bool = false, fleet: FleetState = .unknown
+    ) -> Set<String> {
+        allSourceKinds.filter { !isCoreKind($0, protectOnly: protectOnly, fleet: fleet) }
     }
 
     /// `collect_skip` as the list it names: trimmed, lowercased, underscores read as hyphens,
     /// narrowed to `optionalKinds`, so a typo can never stop core inventory. No dependents.
-    static func listedSkipKinds(_ raw: [String]?, protectOnly: Bool = false) -> Set<String> {
-        Set((raw ?? []).map(normalizedKind)).intersection(optionalKinds(protectOnly: protectOnly))
+    static func listedSkipKinds(
+        _ raw: [String]?, protectOnly: Bool = false, fleet: FleetState = .unknown
+    ) -> Set<String> {
+        Set((raw ?? []).map(normalizedKind))
+            .intersection(optionalKinds(protectOnly: protectOnly, fleet: fleet))
     }
 
     static func normalizedKind(_ name: String) -> String {
@@ -50,8 +56,10 @@ extension ReportEngine {
     }
 
     /// The kinds a list turns off: `listedSkipKinds` plus the sources that need `patch-status`.
-    static func collectSkipKinds(_ raw: [String]?, protectOnly: Bool = false) -> Set<String> {
-        var kinds = listedSkipKinds(raw, protectOnly: protectOnly)
+    static func collectSkipKinds(
+        _ raw: [String]?, protectOnly: Bool = false, fleet: FleetState = .unknown
+    ) -> Set<String> {
+        var kinds = listedSkipKinds(raw, protectOnly: protectOnly, fleet: fleet)
         // The release-date walk reads the patch-status snapshot and has nothing to walk without
         // it, and the failures scan starts with the same patch-title request.
         if kinds.contains("patch-status") { kinds.formUnion(patchStatusDependents) }

@@ -190,9 +190,10 @@ the workspace with their old JSON keys and names, so a 2.11 file decodes to the 
 (`WorkspaceKeyedStoresTests`).
 
 `collect_skip` accepts any source the app collects except the core ones (2.12,
-`ReportEngine.optionalKinds`): Jamf Pro's `overview`, `security`, `inventory-summary`,
-`device-compliance`, `computers` and `mobile-devices-list` (the daily summary's inputs: the Mac
-count, a mobile-only fleet's count, the stale count, the inventory, the site-scope check),
+`ReportEngine.optionalKinds`, `isCoreKind`): Jamf Pro's `overview`, `security`,
+`inventory-summary`, `device-compliance` and `computers` (the daily summary's inputs: the Mac
+count, the stale count, the inventory, the site-scope check), `mobile-devices-list` on a
+mobile-only fleet (see **Fleet-aware collecting**),
 Jamf School's `school-devices`, and in a Protect-only environment `protect-computers`; beside an
 MDM every Protect source is optional. Underscores and hyphens are interchangeable; a core name or
 anything that is no source is ignored (Config Doctor's value row names it).
@@ -225,6 +226,31 @@ so a peer's edit is never confirmed by this one) and confirms only a value it wr
 (`confirmWritten`). While the list waits for a Confirm the card shows one line with Review. Skipping SOFA leaves the cached feed in use;
 without cache, the OS-current and XProtect-current score factors have no data
 (dropped from the weights, never 0).
+
+**Fleet-aware collecting (2.12).** A Jamf Pro fleet with no mobile devices does not collect the
+mobile sources, and one with no computers does not collect the Mac sources, until `pro overview`
+counts one. `ReportEngine.sourceSides` (`Engine/ReportEngine+FleetSides.swift`) classifies every
+Jamf Pro matrix kind, both device-scan kinds and both after-matrix kinds as Mac, mobile or both
+(a test keeps it total). `FleetState.load(dataDir:now:)` reads the newest `overview` snapshot
+when readable and stamped within 48 hours: computers = Fleet › Managed Computers + Unmanaged
+Computers, mobile = Managed Devices + Unmanaged Devices (exact section and resource, whole numbers
+through `SiteScope.fleetTotal`; anything else is unknown, and unknown skips nothing). A side is
+skipped (`FleetState.skipped`) only when its count is 0 AND the newest snapshot of its own list
+(`computers`, `mobile-devices-list`) exists, is readable, holds no rows and is under 7 days old, so
+each side is still collected once a week as a check, and a new workspace collects everything.
+Forced runs follow it. `planCollect` gives the reason `.noDevices(side)` (`[plan] skipping N
+sources (no mobile devices in Jamf Pro)`, `[skip] <kind>: no mobile devices in Jamf Pro
+(overview); checked again weekly`), the device scan is `.noComputers` with the Mac side, and
+`patch-release-dates` follows; nothing is recorded, never `[partial]`, `expectedKinds` leaves the
+side out, and the daily summary reads a skipped side's kinds as absent, so a mobile-only fleet
+writes `mobileOnlySummary`. The core set is dynamic (`ReportEngine.isCoreKind(_:protectOnly:fleet:)`,
+the one answer for the writer, the planner, Data Sources and Config Doctor): `overview` always; the
+Mac core (`security`, `inventory-summary`, `device-compliance`, `computers`) unless the Mac side
+is skipped; `mobile-devices-list` only on a mobile-only fleet (on a mixed or unknown fleet it is
+optional). Data Sources shows "No computers in Jamf Pro" / "No mobile devices in Jamf Pro" on a
+skipped row, with no switch. Jamf School (one device list for every platform), Protect and
+Security Cloud are not affected. Known limit: a login limited to some sites sees a server-wide
+overview, so it may keep collecting a list that is empty for its sites.
 
 Every decoded key has a reader. 2.9 wired two keys that had none and removed six:
 `thresholds.checkin_overdue_days` is the Check-in Health sheet's overdue cut-off (a Mac whose

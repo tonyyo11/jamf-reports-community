@@ -402,8 +402,10 @@ extension ConfigDoctorService {
         let protectOnly = EnvironmentProfiles.resolve(config: config, workspace: profile)
             .isConfirmedProtectOnly(workspace: profile)
         let typed = config.jamfCli?.collectSkip ?? []
+        let fleet = FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
         let core = typed.filter {
-            ReportEngine.isCoreKind(ReportEngine.normalizedKind($0), protectOnly: protectOnly)
+            ReportEngine.isCoreKind(
+                ReportEngine.normalizedKind($0), protectOnly: protectOnly, fleet: fleet)
         }
         let unknown = typed.filter {
             !ReportEngine.allSourceKinds.contains(ReportEngine.normalizedKind($0))

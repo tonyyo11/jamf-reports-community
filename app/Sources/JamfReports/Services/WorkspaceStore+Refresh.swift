@@ -701,9 +701,14 @@ extension WorkspaceStore {
         let protectCollected = environment.protect.map {
             protectPinAllows(profile, $0) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false
+        // Jamf Pro's fleet sides; School, Protect and Security Cloud are not affected.
+        let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
+        let fleet = environment.isProtectOnly || isSchool
+            ? FleetState.unknown
+            : FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
         let collectSkip = SharedConfigPin.collectSkip(
             configured: config?.jamfCli?.collectSkip, profile: profile,
-            protectOnly: environment.isConfirmedProtectOnly(workspace: profile))
+            protectOnly: environment.isConfirmedProtectOnly(workspace: profile), fleet: fleet)
         let protectKinds = DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) }
         // Security Cloud follows an MDM collect where `CollectRouter` would run it.
         let securityCloudCollected = environment.securityCloud.map {
@@ -725,7 +730,7 @@ extension WorkspaceStore {
         // it follows a Pro one (2.11), so its kinds still count, and so does `sofa`, which a
         // School collect fetches as a Pro one does unless `collect_skip` lists it. Its own kinds count
         // too (#207), less `school-blueprints`, which needs Platform fields.
-        if ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool {
+        if isSchool {
             return DataFreshnessHealth.schoolKinds.filter { !collectSkip.contains($0) }
                 + (collectSkip.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
                 + (protectCollected ? protectKinds : []) + securityKinds
@@ -746,7 +751,8 @@ extension WorkspaceStore {
             dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
             protectConnected: protectCollected,
             securityCloudConnected: !securityKinds.isEmpty,
-            platformUnavailable: platform.unavailable != nil
+            platformUnavailable: platform.unavailable != nil,
+            skippedSides: fleet.skipped
         )
     }
 

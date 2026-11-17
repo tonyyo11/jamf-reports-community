@@ -55,9 +55,14 @@ struct CollectSourcesPlan: Equatable, Sendable {
         var collectSkipInFile: [String]?
         /// The kinds the collects leave out, as `collectSkipKinds` reads `collectSkipList`.
         var collectSkip: Set<String> {
-            get { ReportEngine.collectSkipKinds(collectSkipList, protectOnly: protectOnly) }
+            get {
+                ReportEngine.collectSkipKinds(
+                    collectSkipList, protectOnly: protectOnly, fleet: fleet)
+            }
             set { collectSkipList = newValue.sorted() }
         }
+        /// Jamf Pro's fleet sides (`FleetState.load`); unknown elsewhere.
+        var fleet: FleetState = .unknown
         /// Why the Platform-only kinds do not run (no Platform profile), or nil.
         var platformUnavailable: String?
     }
@@ -80,17 +85,19 @@ struct CollectSourcesPlan: Equatable, Sendable {
     var listed: Set<String> = []
     var listedInFile: Set<String>?
     var protectOnly = false
+    var fleet: FleetState = .unknown
 
     func sources(for product: Product) -> [Source] { sources.filter { $0.product == product } }
 
     static func build(_ inputs: Inputs) -> CollectSourcesPlan {
         var plan = CollectSourcesPlan(sources: sources(inputs))
         plan.listed = ReportEngine.listedSkipKinds(
-            inputs.collectSkipList, protectOnly: inputs.protectOnly)
+            inputs.collectSkipList, protectOnly: inputs.protectOnly, fleet: inputs.fleet)
         plan.listedInFile = inputs.collectSkipInFile.map {
-            ReportEngine.listedSkipKinds($0, protectOnly: inputs.protectOnly)
+            ReportEngine.listedSkipKinds($0, protectOnly: inputs.protectOnly, fleet: inputs.fleet)
         }
         plan.protectOnly = inputs.protectOnly
+        plan.fleet = inputs.product == .jamfPro && !inputs.protectOnly ? inputs.fleet : .unknown
         return plan
     }
 
@@ -126,7 +133,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 tenantLevel: inputs.tenantLevel, collectSkip: inputs.collectSkip,
                 dashboardSupported: JamfCLIInstaller.supportsDashboard(inputs.installedVersion),
                 installedVersion: inputs.installedVersion, now: Date(),
-                platformUnavailable: inputs.platformUnavailable),
+                platformUnavailable: inputs.platformUnavailable,
+                skippedSides: inputs.fleet.skipped),
             lastRun: { _ in nil })
         return plan.map { planned in
             Source(
@@ -139,7 +147,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
 
     private static func deviceScan(_ inputs: Inputs) -> [Source] {
         func off(_ kind: String) -> String? {
-            inputs.skipExpensive ? text(.settingsSkipExpensive) : skipped(kind, inputs)
+            if inputs.fleet.skipped.contains(.mac) { return text(.noDevices(.mac)) }
+            return inputs.skipExpensive ? text(.settingsSkipExpensive) : skipped(kind, inputs)
         }
         return [
             Source(product: .jamfPro, kind: ReportEngine.ddmDeviceStatusKind,
@@ -163,7 +172,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
         [
             Source(product: .jamfPro, kind: ReportEngine.patchReleaseDatesKind,
                    command: "pro patch-software-title-configurations definitions <id>, each title",
-                   skipReason: inputs.collectSkip.contains(ReportEngine.patchReleaseDatesKind)
+                   skipReason: inputs.fleet.skipped.contains(.mac) ? text(.noDevices(.mac))
+                       : inputs.collectSkip.contains(ReportEngine.patchReleaseDatesKind)
                        ? text(.collectSkip) : nil),
             sofa(inputs),
         ]
@@ -215,6 +225,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
         case off
         /// Off because `patch-status` is: no switch of its own.
         case followsPatchStatus
+        /// Not collected: the fleet has none of this side's devices. No switch.
+        case noDevices(FleetSide)
     }
 
     struct SwitchState: Equatable, Sendable {
@@ -228,7 +240,9 @@ struct CollectSourcesPlan: Equatable, Sendable {
         let changed = listedInFile.map { $0.contains(source.kind) != listed.contains(source.kind) }
             ?? false
         let control: SourceSwitch
-        if ReportEngine.isCoreKind(source.kind, protectOnly: protectOnly) {
+        if let side = ReportEngine.skippedSide(of: source.kind, skipped: fleet.skipped) {
+            control = .noDevices(side)
+        } else if ReportEngine.isCoreKind(source.kind, protectOnly: protectOnly, fleet: fleet) {
             control = .locked
         } else if let reason = source.skipReason, reason != Self.collectSkipText {
             control = .hidden

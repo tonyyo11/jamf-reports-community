@@ -112,9 +112,10 @@ jamf_cli:
   # Sources collect never runs. Data Sources has a switch for each one; this is the
   # list those switches write. Any source can be listed except the core ones the
   # daily summary is built from (overview, security, inventory-summary,
-  # device-compliance, computers, mobile-devices-list, school-devices, and
-  # protect-computers in a Protect-only environment); underscores and hyphens are
-  # interchangeable, and a core name or a typo is ignored. A listed source is
+  # device-compliance, computers, school-devices; mobile-devices-list on a fleet of
+  # only mobile devices; protect-computers in a Protect-only environment);
+  # underscores and hyphens are interchangeable, and a core name or a typo is
+  # ignored. A listed source is
   # skipped even by a manual collect and is left out of the data freshness strip.
   # On a shared workspace each Mac follows the list it confirmed in Config Doctor.
   # sofa stops the fetch from sofafeed.macadmins.io; a cached feed stays in use.

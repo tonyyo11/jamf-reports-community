@@ -84589,6 +84589,46 @@
         }
       }
     },
+    "No computers in Jamf Pro" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Computer in Jamf Pro"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ordenadores en Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun ordinateur dans Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun computer in Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Pro にコンピュータがありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum computador no Jamf Pro"
+          }
+        }
+      }
+    },
     "No config.yaml at %@" : {
       "localizations" : {
         "de" : {
@@ -86351,6 +86391,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nenhum grupo de dispositivos móveis encontrado."
+          }
+        }
+      }
+    },
+    "No mobile devices in Jamf Pro" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Mobilgeräte in Jamf Pro"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay dispositivos móviles en Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun appareil mobile dans Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun dispositivo mobile in Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Pro にモバイルデバイスがありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum dispositivo móvel no Jamf Pro"
           }
         }
       }

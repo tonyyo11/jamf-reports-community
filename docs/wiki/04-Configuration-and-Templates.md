@@ -388,8 +388,13 @@ panel.
   switch for each source in the "jamf-cli · live" card, and this is the list the switches write;
   you do not need to edit it by hand. Any source can be turned off except the ones the daily
   summary and most screens are built from: `overview`, `security`, `inventory-summary`,
-  `device-compliance`, `computers` and `mobile-devices-list` on Jamf Pro, `school-devices` on
-  Jamf School, and `protect-computers` in a Protect-only environment. Turning off `patch-status`
+  `device-compliance` and `computers` on Jamf Pro (`mobile-devices-list` too when the fleet has
+  only mobile devices), `school-devices` on Jamf School, and `protect-computers` in a
+  Protect-only environment. A Jamf Pro fleet with no mobile devices does not collect the mobile
+  sources, and one with no computers the Mac sources, until Jamf Pro's overview counts one (each
+  side is checked again weekly); Jamf School collects one device list for every platform and is
+  not affected. A login limited to some sites sees a server-wide count, so it may keep
+  collecting a list that is empty for its sites. Turning off `patch-status`
   also turns off `patch-release-dates` and `patch-device-failures`, which start from it.
   Underscores work in place of hyphens; a core name or anything that is not a source is
   ignored, and Config Doctor names it. A listed source is skipped even by a manual collect, the

@@ -769,6 +769,32 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNotNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
     }
 
+    /// A fleet with no computers: the scan is skipped, nothing recorded, the run not Partial.
+    func testAFleetWithNoComputersSkipsTheScanAndRecordsNothing() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "overview", dataDir: data, at: Date().addingTimeInterval(-60), rows: [
+                ["section": "Fleet", "resource": "Managed Computers", "value": 0],
+                ["section": "Fleet", "resource": "Unmanaged Computers", "value": 0],
+                ["section": "Fleet", "resource": "Managed Devices", "value": 4],
+                ["section": "Fleet", "resource": "Unmanaged Devices", "value": 0],
+            ])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "computers", dataDir: data, at: Date().addingTimeInterval(-60), rows: [])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "mobile-devices-list", dataDir: data, at: Date().addingTimeInterval(-60),
+            rows: (0..<4).map { ["id": "\($0)", "name": "iPad \($0)", "deviceType": "iOS"] })
+        let lines = try await runScan()
+
+        XCTAssertTrue(lines.contains("[plan] device scan: skipped (no computers in Jamf Pro)"),
+                      "\(lines)")
+        XCTAssertFalse(lines.contains { $0.hasPrefix("[partial]") }, "\(lines)")
+        XCTAssertFalse(callsLog().contains("classic-computer-history"), callsLog())
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.failures(report: "mdm-command-health"))
+        XCTAssertNil(store.lastRun(report: "mdm-command-health"))
+    }
+
     // MARK: - A dead matrix verdict and the scan (#207 G17)
 
     /// Runs a scan-tier collect that must fail on its reports; returns the history calls made.

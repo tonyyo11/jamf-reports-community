@@ -908,11 +908,11 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// The kinds `collect_skip` turns off on this Mac (`collectSkipList`, then the dependents).
     static func collectSkip(
         configured: [String]?, profile: String, protectOnly: Bool = false,
-        appSupport: URL = AppSupport.directory()
+        fleet: FleetState = .unknown, appSupport: URL = AppSupport.directory()
     ) -> Set<String> {
         ReportEngine.collectSkipKinds(
             collectSkipList(configured: configured, profile: profile, appSupport: appSupport)
-                .effective, protectOnly: protectOnly)
+                .effective, protectOnly: protectOnly, fleet: fleet)
     }
 
     /// The `pinAllows` shape for a boolean: the pin holds a confirmed true and the key has not

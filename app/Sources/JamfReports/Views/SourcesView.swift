@@ -363,6 +363,8 @@ struct SourcesView: View {
         switch state {
         case .off: L("Turned off in this workspace")
         case .followsPatchStatus: L("Turned off with patch-status")
+        case .noDevices(.mac): L("No computers in Jamf Pro")
+        case .noDevices(.mobile): L("No mobile devices in Jamf Pro")
         default: sourceStatus(source, cachedAt: cachedAt)
         }
     }
@@ -917,6 +919,9 @@ struct SourcesView: View {
                     hasTenantID: workspaceAuth?.hasTenantID == true,
                     collectSkipList: skipList.effective,
                     collectSkipInFile: skipList.drifted ? typedSkip ?? [] : nil,
+                    fleet: detected.type == .jamfPro
+                        ? FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
+                        : .unknown,
                     platformUnavailable: routed.unavailable))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 // The derived Platform slot can equal the MDM profile: resolve each name once.

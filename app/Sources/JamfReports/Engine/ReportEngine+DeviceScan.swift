@@ -117,11 +117,13 @@ extension ReportEngine {
     /// round is open, any unforced run takes one pass a local day, whatever its tiers.
     static func planDeviceScan(
         tiers: Set<CollectionTier>, skipExpensive: Bool, force: Bool,
-        collectSkip: Set<String> = [], stateStore: StateFileStore?, now: Date
+        collectSkip: Set<String> = [], skippedSides: Set<FleetSide> = [],
+        stateStore: StateFileStore?, now: Date
     ) -> DeviceScanPlan {
         let round = continuedRound(
             DeviceScanPasses.round(in: stateStore, now: now), collectSkip: collectSkip)
         guard tiers.contains(.scan) || (round != nil && !force) else { return .tierNotSelected }
+        guard !skippedSides.contains(.mac) else { return .noComputers }
         guard !skipExpensive else { return .turnedOff }
         let scanKinds = [ddmDeviceStatusKind, mdmCommandHealthKind].filter {
             !collectSkip.contains($0)

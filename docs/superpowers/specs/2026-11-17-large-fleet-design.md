@@ -366,6 +366,20 @@ Macs in 12 sites with 5,000 in the largest and about 3% in none. Its workbook bu
 69 s at 5.4 GB peak, 8 extension attribute rows per Mac. A one-site report for the largest site
 should be about a quarter of that.
 
+## L7 — Fleet-aware collecting
+
+A Mac-only fleet does not collect mobile sources until a mobile device shows up, and a
+mobile-only fleet does not collect Mac sources until a Mac shows up (owner, 2026-11-17). Every
+Jamf Pro source is classified Mac, mobile or both (`ReportEngine.sourceSides`). The newest
+`pro overview`, readable and under 48 hours old, gives each side's count (Managed plus Unmanaged
+Computers or Devices, Fleet rows, whole numbers; else unknown, which skips nothing). A side is
+skipped when its count is 0 and its own list (`computers`, `mobile-devices-list`) was collected
+in the last 7 days with no rows, so it is rechecked weekly and a new workspace collects
+everything. Skipped sources record nothing and are not expected or judged. The core set follows
+the fleet: the mobile list is core only on a mobile-only fleet. Jamf School, Protect and
+Security Cloud are not affected. Limit: a site-limited login sees a server-wide overview, so it
+may keep collecting a list that is empty for its sites.
+
 ## How it is judged
 
 `loop-eval` style, on the generator (kept outside the repository; it clones row shapes from a
