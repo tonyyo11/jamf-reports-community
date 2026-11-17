@@ -111,7 +111,7 @@ final class MissingJamfCLIProfileTests: XCTestCase {
             try await CollectRouter.run(
                 workspace: WorkspaceID(validating: profile),
                 config: try ConfigLoader.loadFromString("profiles:\n  protect: \(profile)\n"),
-                protectCollect: { _, _, _ in XCTFail("must not collect"); return [] },
+                protectCollect: { _, _, _, _ in XCTFail("must not collect"); return [] },
                 resolved: { _ in nil }, locateJamfCLI: { bin }, onLine: lines.append)
             XCTFail("a Protect login jamf-cli does not have must not collect")
         } catch ReportEngineError.profileNotFound(let name) {

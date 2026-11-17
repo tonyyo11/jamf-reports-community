@@ -529,7 +529,8 @@ extension WorkspaceStore {
         platformUnavailable: Bool = false
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
-        let protect = (protectConnected ? DataFreshnessHealth.protectKinds : [])
+        let protect = (protectConnected
+                ? DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) } : [])
             + (securityCloudConnected
                 ? DataFreshnessHealth.securityCloudKinds.filter { !collectSkip.contains($0) } : [])
         return ReportEngine.knownCollectKinds.filter { kind in

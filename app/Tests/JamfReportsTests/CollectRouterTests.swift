@@ -185,7 +185,7 @@ final class CollectRouterTests: XCTestCase {
             workspacePaths: WorkspacePaths.self,
             now: .testNoon,
             proEngine: { _, _, _, _, _, _, now, _ in seen.add(now); return .collected },
-            protectCollect: { _, _, _ in ["protect-alerts"] },
+            protectCollect: { _, _, _, _ in ["protect-alerts"] },
             onLine: { _ in }
         )
 
@@ -313,7 +313,7 @@ final class CollectRouterTests: XCTestCase {
             workspacePaths: WorkspacePaths.self,
             proCollect: { _, _, _, _, _, _, _ in .collected },
             schoolCollect: { _, _, _, _, _, _ in },
-            protectCollect: { _, _, _ in throw NSError(domain: "test", code: 42) },
+            protectCollect: { _, _, _, _ in throw NSError(domain: "test", code: 42) },
             onLine: { line in
                 watcher.observe(line.text)
                 if line.level == .warn, line.text.hasPrefix("[partial] protect collect failed") {
@@ -437,7 +437,7 @@ final class CollectRouterTests: XCTestCase {
                 return .collected
             },
             schoolCollect: { _, _, _, _, _, _ in },
-            protectCollect: { _, _, _ in ["protect-alerts"] },
+            protectCollect: { _, _, _, _ in ["protect-alerts"] },
             onLine: { _ in }
         )
 
@@ -817,7 +817,7 @@ private struct RouterSpy {
     var protectCollect: CollectRouter.ProtectCollect {
         let counter = protectCounter
         let error = protectError
-        return { _, _, _ in
+        return { _, _, _, _ in
             counter.increment()
             if let error { throw error }
             return ["protect-alerts"]
@@ -850,7 +850,7 @@ final class ScheduledCollectForceTests: XCTestCase {
             force: mode.forcesCollect(for: ProfileProductType.detect(from: config, profile: "testschool").type),
             config: config,
             schoolCollect: { _, _, _, _, force, _ in seen.set(force) },
-            protectCollect: { _, _, _ in ["protect-alerts"] },
+            protectCollect: { _, _, _, _ in ["protect-alerts"] },
             onLine: { _ in })
         XCTAssertEqual(seen.value, true)
     }

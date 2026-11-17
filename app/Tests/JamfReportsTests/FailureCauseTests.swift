@@ -153,7 +153,7 @@ final class FailureCauseTests: XCTestCase {
             exitCode: 0, stdout: Data(), sawSoftwareUpdatePlansOffOnStderr: true)
         XCTAssertEqual(cause.kind, .softwareUpdatePlansOff)
         XCTAssertTrue(cause.isPermanent)
-        XCTAssertTrue(cause.label.contains("jamf_cli.collect_skip"), cause.label)
+        XCTAssertTrue(cause.label.contains("Data Sources"), cause.label)
     }
 
     func testTheWatcherSeesTheSoftwareUpdatePlansLine() {

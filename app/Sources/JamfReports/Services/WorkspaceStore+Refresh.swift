@@ -594,6 +594,12 @@ extension WorkspaceStore {
             else {
                 return false
             }
+            // `audit` turned off in this workspace: the sweep must not run it behind the switch.
+            let typed = ProfileService.workspaceURL(for: activeProfile).flatMap {
+                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+            }?.jamfCli?.collectSkip
+            guard !SharedConfigPin.collectSkip(configured: typed, profile: activeProfile)
+                .contains("audit") else { return false }
             return Self.newestSnapshotAge(profile: activeProfile, kind: "audit")
                 .map { $0 >= threshold } ?? true
         }.value
@@ -695,7 +701,10 @@ extension WorkspaceStore {
         let protectCollected = environment.protect.map {
             protectPinAllows(profile, $0) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false
-        let collectSkip = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
+        let collectSkip = SharedConfigPin.collectSkip(
+            configured: config?.jamfCli?.collectSkip, profile: profile,
+            protectOnly: environment.isConfirmedProtectOnly(workspace: profile))
+        let protectKinds = DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) }
         // Security Cloud follows an MDM collect where `CollectRouter` would run it.
         let securityCloudCollected = environment.securityCloud.map {
             securityCloudPinAllows(profile, $0)
@@ -707,7 +716,7 @@ extension WorkspaceStore {
         // A Protect-only environment collects Protect alone (P8); unconfirmed on this Mac (a
         // peer's edit, which `protectCollected` checks), it expects nothing.
         if environment.isProtectOnly {
-            return protectCollected ? DataFreshnessHealth.protectKinds : []
+            return protectCollected ? protectKinds : []
         }
         // config.yaml unreadable and the login known to be School or Protect: no Jamf Pro kinds.
         if config == nil, let product = auth?.product, !product.canBeProWorkspace { return [] }
@@ -717,9 +726,9 @@ extension WorkspaceStore {
         // School collect fetches as a Pro one does unless `collect_skip` lists it. Its own kinds count
         // too (#207), less `school-blueprints`, which needs Platform fields.
         if ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool {
-            return DataFreshnessHealth.schoolKinds
+            return DataFreshnessHealth.schoolKinds.filter { !collectSkip.contains($0) }
                 + (collectSkip.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
-                + (protectCollected ? DataFreshnessHealth.protectKinds : []) + securityKinds
+                + (protectCollected ? protectKinds : []) + securityKinds
         }
         // The Platform kinds follow the same route `collect` takes, so the strip never expects
         // what collect will not run, nor judges them by the workspace login's auth method.

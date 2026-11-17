@@ -378,7 +378,7 @@ final class SecurityCloudSummaryTests: XCTestCase {
                 return .collected
             },
             schoolCollect: { _, _, _, _, _, _ in },
-            protectCollect: { _, _, _ in [] },
+            protectCollect: { _, _, _, _ in [] },
             securityCollect: { _, _, _, _ in
                 try ReportEngine.saveSnapshot(data: reduced, kind: "security-risk", dataDir: dir)
                 return ["security-risk"]

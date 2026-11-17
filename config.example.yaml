@@ -109,19 +109,16 @@ jamf_cli:
   # (.absent/.omitted) are tolerated. AuditView surfaces verify results
   # regardless of this setting. Threat-model T-11.
   require_manifest: false
-  # Report types collect never runs — a stall guard for on-prem Jamf Pro. Accepts
-  # any of patch-device-failures, profile-status, update-status and
-  # update-device-failures, the per-device-heavy queries known to stall an
-  # on-prem server, and dashboard, jamf-cli's HTML fleet dashboard (1.31.0+),
-  # which reads the whole inventory again for the HTML report's dashboard
-  # section; underscores and hyphens are interchangeable. Anything else is
-  # ignored, so core inventory always runs. A listed source is skipped even by a
-  # manual collect and is left out of the data freshness strip.
-  # sofa stops the fetch from sofafeed.macadmins.io (a Jamf Pro or Jamf School collect);
-  # a cached feed stays in use.
-  # school-device-detail stops the weekly per-device scan of a Jamf School workspace.
-  # patch-status stops the patch title report, for a server that cannot list its patch
-  # titles in time; patch screens and the patch score factor then have no data.
+  # Sources collect never runs. Data Sources has a switch for each one; this is the
+  # list those switches write. Any source can be listed except the core ones the
+  # daily summary is built from (overview, security, inventory-summary,
+  # device-compliance, computers, mobile-devices-list, school-devices, and
+  # protect-computers in a Protect-only environment); underscores and hyphens are
+  # interchangeable, and a core name or a typo is ignored. A listed source is
+  # skipped even by a manual collect and is left out of the data freshness strip.
+  # On a shared workspace each Mac follows the list it confirmed in Config Doctor.
+  # sofa stops the fetch from sofafeed.macadmins.io; a cached feed stays in use.
+  # patch-status also stops patch-release-dates and patch-device-failures.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
   # How long a scheduled run may hold the lock before it leaves the rest of its sources for

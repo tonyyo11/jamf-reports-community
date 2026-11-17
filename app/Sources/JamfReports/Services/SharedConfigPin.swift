@@ -62,6 +62,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var platformProfile: String = ""
     /// `profiles.security_cloud` as the decoder reads it; "" without a `profiles:` block.
     var securityCloudProfile: String = ""
+    /// `jamf_cli.collect_skip` as every typed name, normalized, sorted and comma-joined; narrowed
+    /// to the optional kinds only when read, so a change to the kinds or the core set is no drift.
+    var collectSkip: String = ""
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -86,6 +89,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case proBackupOnSyncedStorage = "backup.pro_on_synced_storage"
         case keepAccountNames = "jamf_cli.keep_account_names"
         case timestampAuthority = "output.timestamp_authority"
+        case collectSkip = "jamf_cli.collect_skip"
 
         /// `text(of:)` with everything a comparison needs: a URL's full hash.
         fileprivate func token(of pin: SharedConfigPin) -> String {
@@ -130,6 +134,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .protectBackupOnSyncedStorage: String(pin.protectBackupOnSyncedStorage)
             case .proBackupOnSyncedStorage: String(pin.proBackupOnSyncedStorage)
             case .keepAccountNames: String(pin.keepAccountNames)
+            case .collectSkip: pin.collectSkip
             case .notifyURL: Self.urlText(pin.notifyURLHost, pin.notifyURLHash)
             case .timestampAuthority:
                 Self.urlText(pin.timestampAuthorityHost, pin.timestampAuthorityHash)
@@ -164,6 +169,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .proBackupOnSyncedStorage:
                 pin.proBackupOnSyncedStorage = source.proBackupOnSyncedStorage
             case .keepAccountNames: pin.keepAccountNames = source.keepAccountNames
+            case .collectSkip: pin.collectSkip = source.collectSkip
             case .notifyURL:
                 pin.notifyURLHost = source.notifyURLHost
                 pin.notifyURLHash = source.notifyURLHash
@@ -281,6 +287,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             key.copy(from: current, into: &upgraded)
             upgraded.pinnedKeys.append(key.rawValue)
         }
+        if missing.contains(.collectSkip) {
+            upgraded.collectSkip = collectSkipText(
+                collectSkipNames(current.collectSkip).filter(legacyCollectSkipKinds.contains))
+        }
         upgraded.unconfirmed += unconfirmedKeys(
             current: current, workspace: workspace, profile: profile, among: missing
         ).map(\.rawValue)
@@ -354,9 +364,29 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             platformProfile: (ConfigLoader.textValue(platformProfile) ?? "")
                 .trimmingCharacters(in: .whitespaces),
             securityCloudProfile: (ConfigLoader.textValue(securityCloudProfile) ?? "")
-                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: .whitespaces),
+            collectSkip: collectSkipText(raw("jamf_cli", "collect_skip"))
         )
     }
+
+    /// The pinned form of a `collect_skip` value: every typed name normalized, sorted, joined.
+    static func collectSkipText(_ raw: Any?) -> String {
+        let names = (raw as? [Any])?.compactMap { $0 as? String } ?? []
+        return Set(names.map(ReportEngine.normalizedKind).filter { !$0.isEmpty })
+            .sorted().joined(separator: ", ")
+    }
+
+    static func collectSkipNames(_ text: String) -> [String] {
+        text.isEmpty ? [] : text.components(separatedBy: ", ")
+    }
+
+    /// What builds before 2.12 honoured in `collect_skip`. A pin learning the key takes only
+    /// these at first sight: any other entry was ignored then, so it must not come alive unseen.
+    static let legacyCollectSkipKinds: Set<String> = [
+        "patch-status", "patch-device-failures", "profile-status", "update-status",
+        "update-device-failures", "sofa", "security-risk", "school-device-detail",
+        ReportEngine.dashboardKind,
+    ]
 
     private static func webhookHost(_ url: String) -> String {
         guard let parsed = URL(string: url), let host = parsed.host?.lowercased() else { return "" }
@@ -859,6 +889,32 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                                     appSupport: appSupport) { $0.keepAccountNames }
     }
 
+    /// `jamf_cli.collect_skip` as this Mac may use it, the one way any code reads it: on a
+    /// pinned workspace the pinned list (also while config.yaml cannot be read), so a peer's
+    /// edit turns nothing off or on here until Confirm; on a local one `configured`. Only a
+    /// pin file that cannot be read turns nothing off. `pinnedText` is nil when not pinned.
+    static func collectSkipList(
+        configured: [String]?, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> (effective: [String], drifted: Bool, pinnedText: String?) {
+        let result = check(profile: profile, appSupport: appSupport)
+        if result.isLocal { return (configured ?? [], false, nil) }
+        guard let pin = result.pinned ?? read(profile: profile, appSupport: appSupport).pin else {
+            return ([], true, "")
+        }
+        return (collectSkipNames(pin.collectSkip), result.isDrifted(.collectSkip),
+                pin.collectSkip)
+    }
+
+    /// The kinds `collect_skip` turns off on this Mac (`collectSkipList`, then the dependents).
+    static func collectSkip(
+        configured: [String]?, profile: String, protectOnly: Bool = false,
+        appSupport: URL = AppSupport.directory()
+    ) -> Set<String> {
+        ReportEngine.collectSkipKinds(
+            collectSkipList(configured: configured, profile: profile, appSupport: appSupport)
+                .effective, protectOnly: protectOnly)
+    }
+
     /// The `pinAllows` shape for a boolean: the pin holds a confirmed true and the key has not
     /// drifted; with no pin, only a local workspace.
     private static func confirmedTrue(
@@ -1136,5 +1192,6 @@ extension SharedConfigPin {
             String.self, forKey: .timestampAuthorityHost) ?? ""
         timestampAuthorityHash = try c.decodeIfPresent(
             String.self, forKey: .timestampAuthorityHash) ?? ""
+        collectSkip = try c.decodeIfPresent(String.self, forKey: .collectSkip) ?? ""
     }
 }

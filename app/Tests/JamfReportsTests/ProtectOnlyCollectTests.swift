@@ -43,7 +43,7 @@ final class ProtectOnlyCollectTests: XCTestCase {
             workspace: WorkspaceID(validating: ws), config: try config, now: .testNoon,
             proCollect: { _, _, _, _, _, _, _ in calls.add("pro"); return .collected },
             schoolCollect: { _, _, _, _, _, _ in calls.add("school") },
-            protectCollect: { profile, dataDir, _ in
+            protectCollect: { profile, dataDir, _, _ in
                 calls.add("protect \(profile)")
                 if throwing { throw Boom() }
                 return landed > 0 ? ["protect-alerts"] : []
@@ -246,7 +246,7 @@ final class ProtectOnlyCollectTests: XCTestCase {
             try await CollectRouter.run(
                 workspace: WorkspaceID(validating: name), config: try ConfigLoader.load(from: file),
                 now: .testNoon,
-                protectCollect: { profile, _, _ in calls.add(profile); return ["protect-alerts"] },
+                protectCollect: { profile, _, _, _ in calls.add(profile); return ["protect-alerts"] },
                 resolved: { _ in nil }, onLine: { _ in })
             XCTFail("expected protectNotConfirmed")
         } catch let error as ReportEngineError {
@@ -274,7 +274,7 @@ final class ProtectOnlyCollectTests: XCTestCase {
             workspace: WorkspaceID(validating: ws), config: try ConfigLoader.load(from: file),
             now: .testNoon,
             schoolCollect: { _, _, _, _, _, _ in },
-            protectCollect: { _, _, _ in ["protect-alerts"] },
+            protectCollect: { _, _, _, _ in ["protect-alerts"] },
             resolved: { _ in nil }, gate: gate, onLine: { _ in })
     }
 
@@ -355,7 +355,7 @@ final class ProtectOnlyCollectTests: XCTestCase {
             try await CollectRouter.run(
                 workspace: WorkspaceID(validating: name), config: try configAt(root, name),
                 now: .testNoon,
-                protectCollect: { profile, _, _ in calls.add(profile); return ["protect-alerts"] },
+                protectCollect: { profile, _, _, _ in calls.add(profile); return ["protect-alerts"] },
                 resolved: { _ in nil },
                 gate: { _, _, _, _, _, _ in asked.add("gate"); return .stop(.alreadyCollected) },
                 onLine: { _ in })

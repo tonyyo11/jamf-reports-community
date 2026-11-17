@@ -9,6 +9,11 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Data Sources has a switch for each source the app collects, so an organization whose server
+  cannot answer a source can stop collecting it without editing config.yaml. A source turned off
+  stops updating: screens keep showing what was last collected, with its date, and the daily
+  summary stops using it. The sources the daily summary is built from stay on. On a shared team folder, a source another Mac turned off or on
+  is collected as before on this Mac until you confirm the change in Config Doctor.
 - A Jamf School workspace's Overview has a Device health card and its workbook a Device Health
   tab: devices waiting in Automated Device Enrollment that are not enrolled, users with no
   device, device groups with no members, and classes with no devices, students or teacher, each
@@ -135,6 +140,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- `jamf_cli.collect_skip` now accepts any source except the ones the daily summary is built
+  from, and every collect honours it, Jamf School and Jamf Protect included. On a shared folder
+  each Mac follows the list it confirmed in Config Doctor.
 - The weekly per-device scan of a Jamf Pro fleet (DDM status and MDM command health) now runs in
   passes. A scheduled or automatic pass takes one site's Macs before the next, those scanned
   longest ago first, and stops after 30 minutes or when someone waits to refresh in the app; the

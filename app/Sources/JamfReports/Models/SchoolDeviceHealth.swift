@@ -233,7 +233,7 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         switch detail.state {
         case .notCollected: lines.append(L("Per-device details not collected yet"))
         case .turnedOff:
-            lines.append(L("Per-device details are turned off (jamf_cli.collect_skip)"))
+            lines.append(L("Per-device details are turned off in Data Sources"))
         case .unreadable: lines.append(L("Per-device details could not be read"))
         case .scanned:
             if let at = detail.scannedAt, let scanned = detail.scanned {

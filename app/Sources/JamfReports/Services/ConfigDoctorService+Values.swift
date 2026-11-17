@@ -25,7 +25,7 @@ extension ConfigDoctorService {
         rows += timestampAuthorityRows(config.output, raw: raw)
         rows += retentionValueRows(config.retention, workspace: workspace)
         rows += sharedWorkspaceValueRows(config.sharedWorkspace)
-        rows += limitValueRows(config)
+        rows += limitValueRows(config, profile: profile)
         rows += colourValueRows(config)
         rows += sheetValueRows(config, profile: profile)
         rows += exceptionValueRows(config)
@@ -147,17 +147,8 @@ extension ConfigDoctorService {
         ].compactMap { $0 }
     }
 
-    private static func limitValueRows(_ config: ReportConfig) -> [DoctorRow] {
-        var rows: [DoctorRow] = []
-        let skipped = (config.jamfCli?.collectSkip ?? [])
-            .filter { ReportEngine.collectSkipKinds([$0]).isEmpty }
-        if !skipped.isEmpty {
-            let many = skipped.count > 1
-            rows.append(valueRow(
-                "jamf_cli.collect_skip",
-                (many ? L("\(listed(skipped)) are not kinds collect can skip, so they skip nothing and the stall guard does not apply to them.") : L("\(listed(skipped)) is not a kind collect can skip, so it skips nothing and the stall guard does not apply to it.")),
-                L("Kinds that can be skipped: \(ReportEngine.skippableKinds.sorted().joined(separator: ", ")).")))
-        }
+    private static func limitValueRows(_ config: ReportConfig, profile: String) -> [DoctorRow] {
+        var rows = collectSkipValueRows(config, profile: profile)
         if let output = config.output, let typed = output.keepLatestRuns, typed < 1 {
             rows.append(valueRow(
                 "output.keep_latest_runs",
@@ -403,6 +394,35 @@ extension ConfigDoctorService {
     }
 
     // MARK: - Row builders
+
+    /// `collect_skip` names that turn nothing off: a core source (always collected) or no source.
+    private static func collectSkipValueRows(
+        _ config: ReportConfig, profile: String
+    ) -> [DoctorRow] {
+        let protectOnly = EnvironmentProfiles.resolve(config: config, workspace: profile)
+            .isConfirmedProtectOnly(workspace: profile)
+        let typed = config.jamfCli?.collectSkip ?? []
+        let core = typed.filter {
+            ReportEngine.isCoreKind(ReportEngine.normalizedKind($0), protectOnly: protectOnly)
+        }
+        let unknown = typed.filter {
+            !ReportEngine.allSourceKinds.contains(ReportEngine.normalizedKind($0))
+        }
+        var rows: [DoctorRow] = []
+        if !core.isEmpty {
+            rows.append(valueRow(
+                "jamf_cli.collect_skip",
+                core.count > 1 ? L("\(listed(core)) are always collected: the daily summary and most screens are built from them.") : L("\(listed(core)) is always collected: the daily summary and most screens are built from it."),
+                L("Remove it from the list; it turns nothing off."), tag: ".core"))
+        }
+        if !unknown.isEmpty {
+            rows.append(valueRow(
+                "jamf_cli.collect_skip",
+                unknown.count > 1 ? L("\(listed(unknown)) are not sources this app collects, so they turn nothing off.") : L("\(listed(unknown)) is not a source this app collects, so it turns nothing off."),
+                L("Turn sources off with the switches on Data Sources.")))
+        }
+        return rows
+    }
 
     private static func valueRow(
         _ key: String, _ detail: String, _ hint: String, tag: String = ""

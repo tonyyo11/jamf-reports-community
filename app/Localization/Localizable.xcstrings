@@ -2924,6 +2924,46 @@
         }
       }
     },
+    "%@ are always collected: the daily summary and most screens are built from them." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ werden immer erfasst: Die tägliche Zusammenfassung und die meisten Ansichten beruhen auf ihnen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se recopilan siempre: el resumen diario y la mayoría de las pantallas se basan en ellas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sont toujours collectées : le résumé quotidien et la plupart des écrans en dépendent."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vengono sempre raccolte: il riepilogo giornaliero e la maggior parte delle schermate si basano su di esse."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は常に収集されます。日次サマリーとほとんどの画面がこれらから作られます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ são sempre coletadas: o resumo diário e a maioria das telas são criados a partir delas."
+          }
+        }
+      }
+    },
     "%@ are behind the current iOS or iPadOS release." : {
       "localizations" : {
         "de" : {
@@ -2964,46 +3004,6 @@
         }
       }
     },
-    "%@ are not kinds collect can skip, so they skip nothing and the stall guard does not apply to them." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ sind keine Arten, die die Erfassung überspringen kann; sie überspringen daher nichts, und der Stall-Schutz gilt nicht für sie."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ no son tipos que collect pueda omitir, así que no omiten nada y la protección contra bloqueos no se aplica a ellos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ne font pas partie des types que la collecte peut ignorer ; ils n’ignorent donc rien et la protection contre le blocage ne s’y applique pas."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ non sono tipi che la raccolta può ignorare, quindi non ignorano nulla e la protezione anti-stallo non si applica."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@は収集でスキップできる種類ではないため、何もスキップされず、停止ガードも適用されません。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ não são tipos que a coleta pode ignorar, portanto não ignoram nada e a proteção contra travamento não se aplica a eles."
-          }
-        }
-      }
-    },
     "%@ are not managed." : {
       "localizations" : {
         "de" : {
@@ -3040,6 +3040,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ não são gerenciados."
+          }
+        }
+      }
+    },
+    "%@ are not sources this app collects, so they turn nothing off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sind keine Quellen, die diese App erfasst, daher schalten sie nichts aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no son fuentes que esta app recopile, así que no desactivan nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne sont pas des sources collectées par cette app, elles ne désactivent donc rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non sono fonti raccolte da questa app, quindi non disattivano nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのアプリが収集するソースではないため、何もオフにしません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não são fontes que este app coleta, então não desativam nada."
           }
         }
       }
@@ -5370,6 +5410,46 @@
         }
       }
     },
+    "%@ is always collected: the daily summary and most screens are built from it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird immer erfasst: Die tägliche Zusammenfassung und die meisten Ansichten beruhen darauf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se recopila siempre: el resumen diario y la mayoría de las pantallas se basan en ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est toujours collectée : le résumé quotidien et la plupart des écrans en dépendent."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ viene sempre raccolta: il riepilogo giornaliero e la maggior parte delle schermate si basano su di essa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は常に収集されます。日次サマリーとほとんどの画面がこれから作られます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ é sempre coletada: o resumo diário e a maioria das telas são criados a partir dela."
+          }
+        }
+      }
+    },
     "%@ is behind the current iOS or iPadOS release." : {
       "localizations" : {
         "de" : {
@@ -5686,6 +5766,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ não é um tipo que a coleta pode ignorar, portanto não ignora nada e a proteção contra travamento não se aplica."
+          }
+        }
+      }
+    },
+    "%@ is not a source this app collects, so it turns nothing off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist keine Quelle, die diese App erfasst, daher schaltet es nichts aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no es una fuente que esta app recopile, así que no desactiva nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est pas une source collectée par cette app, elle ne désactive donc rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è una fonte raccolta da questa app, quindi non disattiva nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのアプリが収集するソースではないため、何もオフにしません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não é uma fonte que este app coleta, então não desativa nada."
+          }
+        }
+      }
+    },
+    "%@ is not a source this app collects." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist keine Quelle, die diese App erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no es una fuente que esta app recopile."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est pas une source collectée par cette app."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è una fonte raccolta da questa app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのアプリが収集するソースではありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não é uma fonte que este app coleta."
           }
         }
       }
@@ -36361,6 +36521,46 @@
         }
       }
     },
+    "Changed on another Mac; confirm in Config Doctor" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf einem anderen Mac geändert; in Config Doctor bestätigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiado en otro Mac; confírmalo en Config Doctor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifié sur un autre Mac ; confirmez dans Config Doctor"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modificato su un altro Mac; conferma in Config Doctor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の Mac で変更されました。Config Doctor で確認してください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alterado em outro Mac; confirme no Config Doctor"
+          }
+        }
+      }
+    },
     "Chart and HTML options for generated reports, and where to change what else a report shows" : {
       "localizations" : {
         "de" : {
@@ -38803,6 +39003,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Coletar"
+          }
+        }
+      }
+    },
+    "Collect %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ erfassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recopilar %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collecter %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccogli %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を収集"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coletar %@"
           }
         }
       }
@@ -59429,6 +59669,46 @@
         }
       }
     },
+    "Extension attribute data stops updating. Screens and report tabs keep showing what was last collected, with its date; the daily summary and security agent coverage stop using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten der Erweiterungsattribute werden nicht mehr aktualisiert. Ansichten und Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung und die Abdeckung der Sicherheitsagenten verwenden sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de atributos de extensión dejan de actualizarse. Las pantallas y pestañas del informe siguen mostrando lo último recopilado, con su fecha; el resumen diario y la cobertura de agentes de seguridad dejan de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données des attributs d’extension ne sont plus mises à jour. Les écrans et onglets du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien et la couverture des agents de sécurité ne les utilisent plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati degli attributi di estensione non vengono più aggiornati. Le schermate e le schede del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero e la copertura degli agenti di sicurezza smettono di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拡張属性のデータは更新されなくなります。画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーとセキュリティエージェントのカバー率では使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os dados de atributos de extensão deixam de ser atualizados. As telas e abas do relatório continuam mostrando a última coleta, com a data; o resumo diário e a cobertura dos agentes de segurança deixam de usá-los."
+          }
+        }
+      }
+    },
     "External boot" : {
       "localizations" : {
         "de" : {
@@ -73535,46 +73815,6 @@
         }
       }
     },
-    "Kinds that can be skipped: %@." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quellen, die übersprungen werden können: %@."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipos que se pueden omitir: %@."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Types pouvant être ignorés : %@."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipi che possono essere saltati: %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スキップできる種類: %@。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipos que podem ser ignorados: %@."
-          }
-        }
-      }
-    },
     "LICENSE" : {
       "localizations" : {
         "de" : {
@@ -78227,42 +78467,42 @@
         }
       }
     },
-    "Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this source to jamf_cli.collect_skip" : {
+    "Managed Software Update Plans is turned off in Jamf Pro; turn it on, or turn this source off in Data Sources" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verwaltete Software-Update-Pläne sind in Jamf Pro ausgeschaltet; schalten Sie sie ein oder fügen Sie diese Quelle zu jamf_cli.collect_skip hinzu"
+            "value" : "Managed Software Update Plans ist in Jamf Pro ausgeschaltet; schalten Sie es ein oder diese Quelle unter Data Sources aus"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Managed Software Update Plans está desactivado en Jamf Pro; actívelo o añada esta fuente a jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans está desactivado en Jamf Pro; actívalo o desactiva esta fuente en Data Sources"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Managed Software Update Plans est désactivé dans Jamf Pro ; activez-le ou ajoutez cette source à jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans est désactivé dans Jamf Pro ; activez-le ou désactivez cette source dans Data Sources"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Managed Software Update Plans è disattivato in Jamf Pro; attivarlo oppure aggiungere questa origine a jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans è disattivato in Jamf Pro; attivalo oppure disattiva questa fonte in Data Sources"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Proで“管理対象ソフトウェアアップデートプラン”がオフになっています。オンにするか、このソースをjamf_cli.collect_skipに追加してください"
+            "value" : "Jamf Pro で Managed Software Update Plans がオフです。オンにするか、Data Sources でこのソースをオフにしてください"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Managed Software Update Plans está desativado no Jamf Pro; ative-o ou adicione esta fonte a jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans está desativado no Jamf Pro; ative-o ou desative esta fonte em Data Sources"
           }
         }
       }
@@ -90161,6 +90401,46 @@
         }
       }
     },
+    "OS update data stops updating. The OS Updates screen and report tabs keep showing what was last collected, with its date; the daily summary stops using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OS-Update-Daten werden nicht mehr aktualisiert. Die Ansicht OS Updates und die Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung verwendet sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de actualizaciones del sistema dejan de actualizarse. La pantalla OS Updates y las pestañas del informe siguen mostrando lo último recopilado, con su fecha; el resumen diario deja de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données de mises à jour du système ne sont plus mises à jour. L’écran OS Updates et les onglets du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien ne les utilise plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati sugli aggiornamenti del sistema non vengono più aggiornati. La schermata OS Updates e le schede del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero smette di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OS アップデートのデータは更新されなくなります。OS Updates 画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーでは使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os dados de atualizações do sistema deixam de ser atualizados. A tela OS Updates e as abas do relatório continuam mostrando a última coleta, com a data; o resumo diário deixa de usá-los."
+          }
+        }
+      }
+    },
     "OS updates" : {
       "localizations" : {
         "de" : {
@@ -96419,6 +96699,46 @@
         }
       }
     },
+    "Patch data stops updating. Patch screens and report tabs keep showing what was last collected, with its date; the daily summary and the patch part of the Security Score stop using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Patch-Daten werden nicht mehr aktualisiert. Patch-Ansichten und Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung und der Patch-Anteil des Security Score verwenden sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de parches dejan de actualizarse. Las pantallas y pestañas del informe de parches siguen mostrando lo último recopilado, con su fecha; el resumen diario y la parte de parches del Security Score dejan de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données des correctifs ne sont plus mises à jour. Les écrans et onglets correctifs du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien et la part correctifs du Security Score ne les utilisent plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati delle patch non vengono più aggiornati. Le schermate e le schede patch del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero e la parte patch del Security Score smettono di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パッチのデータは更新されなくなります。パッチの画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーと Security Score のパッチ部分では使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os dados de patches deixam de ser atualizados. As telas e abas de patches do relatório continuam mostrando a última coleta, com a data; o resumo diário e a parte de patches do Security Score deixam de usá-los."
+          }
+        }
+      }
+    },
     "Patch policies tracked" : {
       "localizations" : {
         "de" : {
@@ -96779,42 +97099,42 @@
         }
       }
     },
-    "Per-device details are turned off (jamf_cli.collect_skip)" : {
+    "Per-device details are turned off in Data Sources" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Details pro Gerät sind ausgeschaltet (jamf_cli.collect_skip)"
+            "value" : "Gerätedetails sind unter Data Sources ausgeschaltet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los detalles por dispositivo están desactivados (jamf_cli.collect_skip)"
+            "value" : "Los detalles por dispositivo están desactivados en Data Sources"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les détails par appareil sont désactivés (jamf_cli.collect_skip)"
+            "value" : "Les détails par appareil sont désactivés dans Data Sources"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "I dettagli per dispositivo sono disattivati (jamf_cli.collect_skip)"
+            "value" : "I dettagli per dispositivo sono disattivati in Data Sources"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "デバイスごとの詳細はオフです (jamf_cli.collect_skip)"
+            "value" : "デバイスごとの詳細は Data Sources でオフになっています"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Os detalhes por dispositivo estão desativados (jamf_cli.collect_skip)"
+            "value" : "Os detalhes por dispositivo estão desativados em Data Sources"
           }
         }
       }
@@ -104195,6 +104515,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remova-o de on_values ou de off_values no config.yaml."
+          }
+        }
+      }
+    },
+    "Remove it from the list; it turns nothing off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus der Liste entfernen; es schaltet nichts aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quítalo de la lista; no desactiva nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirez-le de la liste ; il ne désactive rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovilo dall’elenco; non disattiva nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リストから削除してください。何もオフにしません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remova-o da lista; ele não desativa nada."
           }
         }
       }
@@ -124261,6 +124621,46 @@
         }
       }
     },
+    "The SOFA feed stops updating. OS currency keeps showing what was last collected, with its date; the daily summary and the macOS and XProtect current parts of the Security Score stop using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der SOFA-Feed wird nicht mehr aktualisiert. Die Aktualität des Betriebssystems zeigt weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung und die Anteile macOS aktuell und XProtect aktuell des Security Score verwenden ihn nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El feed de SOFA deja de actualizarse. La actualización del sistema sigue mostrando lo último recopilado, con su fecha; el resumen diario y las partes de macOS y XProtect al día del Security Score dejan de usarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le flux SOFA n’est plus mis à jour. L’actualité du système continue d’afficher la dernière collecte, avec sa date ; le résumé quotidien et les parts macOS et XProtect à jour du Security Score ne l’utilisent plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il feed SOFA non viene più aggiornato. L’aggiornamento del sistema continua a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero e le parti macOS e XProtect aggiornati del Security Score smettono di usarlo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SOFA フィードは更新されなくなります。OS の最新状況には最後に収集したデータが日付付きで表示され続けます。日次サマリーと Security Score の macOS 最新と XProtect 最新の部分では使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O feed do SOFA deixa de ser atualizado. A atualização do sistema continua mostrando a última coleta, com a data; o resumo diário e as partes de macOS e XProtect atuais do Security Score deixam de usá-lo."
+          }
+        }
+      }
+    },
     "The Security Score is the weighted share of Macs that pass each factor, on Security Posture, the Overview, Trends, alerts and reports. Weights need not add up to 100: a factor with no data drops out and the rest are rescaled. The list is saved to this workspace's config.yaml (security_policy.score_factors)." : {
       "localizations" : {
         "de" : {
@@ -127371,6 +127771,46 @@
         }
       }
     },
+    "This Jamf Protect data stops updating. The Jamf Protect screen and report tabs keep showing what was last collected, with its date; the daily summary stops using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Jamf Protect-Daten werden nicht mehr aktualisiert. Die Ansicht Jamf Protect und die Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung verwendet sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estos datos de Jamf Protect dejan de actualizarse. La pantalla Jamf Protect y las pestañas del informe siguen mostrando lo último recopilado, con su fecha; el resumen diario deja de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ces données Jamf Protect ne sont plus mises à jour. L’écran Jamf Protect et les onglets du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien ne les utilise plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questi dati di Jamf Protect non vengono più aggiornati. La schermata Jamf Protect e le schede del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero smette di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Jamf Protect のデータは更新されなくなります。Jamf Protect 画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーでは使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estes dados do Jamf Protect deixam de ser atualizados. A tela Jamf Protect e as abas do relatório continuam mostrando a última coleta, com a data; o resumo diário deixa de usá-los."
+          }
+        }
+      }
+    },
     "This Jamf Protect login is an environment of its own." : {
       "localizations" : {
         "de" : {
@@ -128413,6 +128853,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta configuração criou:"
+          }
+        }
+      }
+    },
+    "This source cannot be turned off: the daily summary and most screens are built from it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Quelle kann nicht ausgeschaltet werden: Die tägliche Zusammenfassung und die meisten Ansichten beruhen auf ihr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fuente no se puede desactivar: el resumen diario y la mayoría de las pantallas se basan en ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette source ne peut pas être désactivée : le résumé quotidien et la plupart des écrans en dépendent."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa fonte non può essere disattivata: il riepilogo giornaliero e la maggior parte delle schermate si basano su di essa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このソースはオフにできません。日次サマリーとほとんどの画面がこのソースから作られます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fonte não pode ser desativada: o resumo diário e a maioria das telas são criados a partir dela."
+          }
+        }
+      }
+    },
+    "This source stops updating. Screens keep showing what was last collected, with its date, and the daily summary stops using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Quelle wird nicht mehr aktualisiert. Ansichten zeigen weiter die zuletzt erfassten Daten mit ihrem Datum, und die tägliche Zusammenfassung verwendet sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fuente deja de actualizarse. Las pantallas siguen mostrando lo último recopilado, con su fecha, y el resumen diario deja de usarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette source n’est plus mise à jour. Les écrans continuent d’afficher la dernière collecte, avec sa date, et le résumé quotidien ne l’utilise plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa fonte non viene più aggiornata. Le schermate continuano a mostrare l’ultima raccolta, con la sua data, e il riepilogo giornaliero smette di usarla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このソースは更新されなくなります。画面には最後に収集したデータが日付付きで表示され続け、日次サマリーでは使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fonte deixa de ser atualizada. As telas continuam mostrando a última coleta, com a data, e o resumo diário deixa de usá-la."
           }
         }
       }
@@ -130875,6 +131395,46 @@
         }
       }
     },
+    "Turn Off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausschalten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattiva"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにする"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativar"
+          }
+        }
+      }
+    },
     "Turn already-collected fleet data into plain-language insight cards on Overview, Trends, Audit, Security Posture and Compliance Posture, using the On-Device Foundation Model (Apple Intelligence). Off by default. The model runs on this Mac and nothing leaves it." : {
       "localizations" : {
         "de" : {
@@ -130911,6 +131471,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transforme dados da frota já coletados em cartões de insight em linguagem simples na Visão geral, em Tendências, Auditoria, Postura de segurança e Postura de conformidade, usando o modelo de fundação no dispositivo (Apple Intelligence). Desativado por padrão. O modelo é executado neste Mac e nada sai dele."
+          }
+        }
+      }
+    },
+    "Turn off %@?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ausschalten?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desactivar %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver %@ ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivare %@?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ をオフにしますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativar %@?"
           }
         }
       }
@@ -131035,6 +131635,46 @@
         }
       }
     },
+    "Turn sources off with the switches on Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quellen mit den Schaltern unter Data Sources ausschalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactiva fuentes con los interruptores de Data Sources."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez des sources avec les interrupteurs de Data Sources."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattiva le fonti con gli interruttori in Data Sources."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data Sources のスイッチでソースをオフにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desative fontes com os botões em Data Sources."
+          }
+        }
+      }
+    },
     "Turn this on, pick Microsoft Teams or Slack, and paste an incoming webhook URL — then send a test notification to confirm it. Full detail includes metric values and error text; Minimal sends counts only." : {
       "localizations" : {
         "de" : {
@@ -131111,6 +131751,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transforme os dados da frota de hoje em um resumo em linguagem simples usando inteligência no dispositivo."
+          }
+        }
+      }
+    },
+    "Turned off in this workspace" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In diesem Arbeitsbereich ausgeschaltet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado en este espacio de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé dans cet espace de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivato in questo spazio di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースでオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativado neste espaço de trabalho"
+          }
+        }
+      }
+    },
+    "Turned off with patch-status" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit patch-status ausgeschaltet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado junto con patch-status"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé avec patch-status"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivato con patch-status"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "patch-status と一緒にオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativado com patch-status"
           }
         }
       }

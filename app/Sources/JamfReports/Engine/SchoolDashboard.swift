@@ -19,6 +19,8 @@ struct SchoolDashboard: Sendable {
     var summaries: [DailySummary] = []
     /// The run's start: the "Generated" stamp and the age of a check-in.
     let now: Date
+    /// The kinds this Mac turns off (`SharedConfigPin.collectSkip`).
+    var collectSkip: Set<String> = []
 
     private var staleThreshold: Int { config.thresholds?.resolvedStaleDays ?? 30 }
 
@@ -102,8 +104,7 @@ struct SchoolDashboard: Sendable {
 
     /// Neutral counts and the ADE devices not enrolled, from `SchoolDeviceHealth`.
     func writeSchoolDeviceHealth() throws {
-        let off = ReportEngine.collectSkipKinds(config.jamfCli?.collectSkip)
-            .contains(ReportEngine.schoolDeviceDetailKind)
+        let off = collectSkip.contains(ReportEngine.schoolDeviceDetailKind)
         guard let health = SchoolDeviceHealth(
             SchoolFleetService.load(dataDir: dataDir), scanTurnedOff: off),
               !health.figures.isEmpty else {

@@ -104,6 +104,7 @@ enum CollectRouter {
     typealias ProtectCollect = @Sendable (
         _ profile: String,
         _ dataDir: URL,
+        _ collectSkip: Set<String>,
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> [String]
 
@@ -253,6 +254,10 @@ enum CollectRouter {
         // Shared workspace: say which pinned config.yaml keys changed on this Mac before any
         // collect reads them, for Jamf Pro, Protect and Jamf School alike.
         SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
+        // Decided once for every product of the run, after the checkpoint.
+        let collectSkip = SharedConfigPin.collectSkip(
+            configured: config?.jamfCli?.collectSkip, profile: profile,
+            protectOnly: environment.isConfirmedProtectOnly(workspace: profile))
         let landed = LandedSources()
         // Protect, then Jamf Security Cloud: both are add-ons to the MDM and follow it under the
         // same rule (a Protect-only environment never reaches this, so it collects no Security
@@ -260,11 +265,11 @@ enum CollectRouter {
         func followWithAddOns(_ disposition: ReportEngine.CollectDisposition) async {
             landed.record(.protect, await collectProtect(
                 environment: environment, profile: profile, disposition: disposition,
-                workspacePaths: workspacePaths, protectCollect: protectCollect,
-                resolved: resolved, onLine: onLine))
+                collectSkip: collectSkip, workspacePaths: workspacePaths,
+                protectCollect: protectCollect, resolved: resolved, onLine: onLine))
             landed.record(.securityCloud, await collectSecurityCloud(
                 environment: environment, profile: profile, disposition: disposition,
-                collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+                collectSkip: collectSkip,
                 workspacePaths: workspacePaths, securityCollect: securityCollect,
                 resolved: resolved, onLine: onLine))
         }
@@ -296,7 +301,7 @@ enum CollectRouter {
             if environment.isProtectOnly {
                 landed.record(.protect, try await collectProtectOnly(
                     environment: environment, workspace: workspace, workspacePaths: workspacePaths,
-                    protectCollect: protectCollect, resolved: resolved,
+                    collectSkip: collectSkip, protectCollect: protectCollect, resolved: resolved,
                     locateJamfCLI: locateJamfCLI, onLine: onLine))
                 finalize()
                 if coordinating { SharedWorkspace.recordActivity(profile: profile) }
@@ -308,7 +313,6 @@ enum CollectRouter {
                         + "profile")
             }
             // Decided once, for the School collect's plan and the scan after it.
-            let collectSkip = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
             let scanPlan = (try? workspacePaths.dataDir(for: workspace.name)).map {
                 ReportEngine.planSchoolDeviceScan(
                     tiers: tiers, collectSkip: collectSkip,
@@ -401,6 +405,7 @@ enum CollectRouter {
         environment: EnvironmentProfiles,
         workspace: WorkspaceID,
         workspacePaths: WorkspacePaths.Type,
+        collectSkip: Set<String>,
         protectCollect: ProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         locateJamfCLI: @Sendable () -> URL?,
@@ -430,7 +435,7 @@ enum CollectRouter {
         // Protect is this environment's whole collect: a cadence skip would land nothing and
         // read as a dead run, so every source runs.
         let kinds = try await ReportEngine.$addOnCollectForced.withValue(true) {
-            try await protectCollect(protectProfile, dataDir, onLine)
+            try await protectCollect(protectProfile, dataDir, collectSkip, onLine)
         }
         guard !kinds.isEmpty else {
             throw ReportEngineError.collectDead(
@@ -468,6 +473,7 @@ enum CollectRouter {
         environment: EnvironmentProfiles,
         profile: String,
         disposition: ReportEngine.CollectDisposition,
+        collectSkip: Set<String>,
         workspacePaths: WorkspacePaths.Type,
         protectCollect: ProtectCollect,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
@@ -512,7 +518,7 @@ enum CollectRouter {
         onLine(.init(timestamp: Date(), level: .info,
                      text: "[info] running protect collect for \(profile)"))
         do {
-            return try await protectCollect(protectProfile, dataDir, onLine)
+            return try await protectCollect(protectProfile, dataDir, collectSkip, onLine)
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "\(ReportEngine.protectCollectFailedMarker)\(error.englishDescription)"))
@@ -691,11 +697,12 @@ try await ReportEngine.schoolCollect(
     }
 
     /// Default production closure wrapping `ReportEngine.protectCollect`.
-    static let defaultProtectCollect: ProtectCollect = { profile, dataDir, onLine in
+    static let defaultProtectCollect: ProtectCollect = { profile, dataDir, collectSkip, onLine in
         try await Localization.english {
 return try await ReportEngine.protectCollect(
             profile: profile,
             dataDir: dataDir,
+            collectSkip: collectSkip,
             onLine: onLine
         )
 }

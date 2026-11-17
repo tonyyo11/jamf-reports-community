@@ -217,7 +217,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
             schoolCollect: { _, profile, _, _, _, _ in
                 calls.add(product: "school", profile: profile)
             },
-            protectCollect: { profile, _, _ in
+            protectCollect: { profile, _, _, _ in
                 calls.add(product: "protect", profile: profile); return ["protect-alerts"]
             },
             resolved: resolved,

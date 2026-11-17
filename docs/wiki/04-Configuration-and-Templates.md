@@ -384,19 +384,19 @@ panel.
 
 ### jamf-cli collection, cache & integrity (`jamf_cli`)
 
-- **`collect_skip`** (default empty) — report types a collect never runs, a stall guard
-  for on-premise Jamf Pro: any of `patch-device-failures`, `profile-status`,
-  `update-status`, `update-device-failures` (the per-device-heavy queries known to
-  stall a server), `dashboard`, `sofa` (the one fetch from `sofafeed.macadmins.io`,
-  for networks that must not reach third-party hosts), `patch-status` (for a server that
-  cannot list its patch titles in time), `security-risk` (the Jamf
-  Security Cloud device list) and `school-device-detail` (the Jamf School per-device scan for
-  battery, enrollment type and storage, which otherwise runs at most once every 7 days).
-  Underscores work in place of
-  hyphens. Anything else in the list is ignored, so core inventory always runs. A listed
-  source is skipped even by a manual collect, the run log says so, and the data
-  freshness strip does not wait for it. Skipping SOFA leaves the cached feed in use;
-  without cache, the macOS currency score factors have no data.
+- **`collect_skip`** (default empty) — sources a collect never runs. **Data Sources** has a
+  switch for each source in the "jamf-cli · live" card, and this is the list the switches write;
+  you do not need to edit it by hand. Any source can be turned off except the ones the daily
+  summary and most screens are built from: `overview`, `security`, `inventory-summary`,
+  `device-compliance`, `computers` and `mobile-devices-list` on Jamf Pro, `school-devices` on
+  Jamf School, and `protect-computers` in a Protect-only environment. Turning off `patch-status`
+  also turns off `patch-release-dates` and `patch-device-failures`, which start from it.
+  Underscores work in place of hyphens; a core name or anything that is not a source is
+  ignored, and Config Doctor names it. A listed source is skipped even by a manual collect, the
+  run log says so, and the data freshness strip does not wait for it. On a shared workspace a
+  change made on another Mac does not apply here until you confirm it in Config Doctor. Skipping
+  SOFA leaves the cached feed in use; without cache, the macOS currency score factors have no
+  data.
 - **`keep_account_names`** (default `false`) — whether new snapshots keep the account names
   and contact details that no screen or report reads. Leave it off unless your own tools read
   those fields from the saved snapshots. On a shared folder, `true` applies on a Mac only after

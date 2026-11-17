@@ -48,7 +48,16 @@ struct CollectSourcesPlan: Equatable, Sendable {
         var tenantLevel = false
         /// The profile names a tenant, as a School profile needs for the Platform API.
         var hasTenantID = false
-        var collectSkip: Set<String> = []
+        /// What `jamf_cli.collect_skip` turns off on this Mac (`SharedConfigPin.collectSkipList`),
+        /// as typed; the plan narrows it as the collects do.
+        var collectSkipList: [String] = []
+        /// config.yaml's own list while it differs from the pinned one (another Mac changed it).
+        var collectSkipInFile: [String]?
+        /// The kinds the collects leave out, as `collectSkipKinds` reads `collectSkipList`.
+        var collectSkip: Set<String> {
+            get { ReportEngine.collectSkipKinds(collectSkipList, protectOnly: protectOnly) }
+            set { collectSkipList = newValue.sorted() }
+        }
         /// Why the Platform-only kinds do not run (no Platform profile), or nil.
         var platformUnavailable: String?
     }
@@ -66,26 +75,42 @@ struct CollectSourcesPlan: Equatable, Sendable {
     }
 
     let sources: [Source]
+    /// The list this Mac collects by, the file's while it differs, and whether the Protect
+    /// computer list is core: what `switchState` reads.
+    var listed: Set<String> = []
+    var listedInFile: Set<String>?
+    var protectOnly = false
 
     func sources(for product: Product) -> [Source] { sources.filter { $0.product == product } }
 
     static func build(_ inputs: Inputs) -> CollectSourcesPlan {
-        if inputs.protectOnly { return CollectSourcesPlan(sources: protect(inputs)) }
+        var plan = CollectSourcesPlan(sources: sources(inputs))
+        plan.listed = ReportEngine.listedSkipKinds(
+            inputs.collectSkipList, protectOnly: inputs.protectOnly)
+        plan.listedInFile = inputs.collectSkipInFile.map {
+            ReportEngine.listedSkipKinds($0, protectOnly: inputs.protectOnly)
+        }
+        plan.protectOnly = inputs.protectOnly
+        return plan
+    }
+
+    private static func sources(_ inputs: Inputs) -> [Source] {
+        if inputs.protectOnly { return protect(inputs) }
         switch inputs.product {
         case .jamfSchool:
             let plan = ReportEngine.planSchoolCollect(
                 profile: inputs.profile, tiers: Set(CollectionTier.allCases), force: true,
+                collectSkip: inputs.collectSkip,
                 platformFieldsMissing: inputs.authMethod != nil && !inputs.hasTenantID
             ) { _ in nil }
-            return CollectSourcesPlan(sources: plan.map {
+            return plan.map {
                 Source(product: $0.kind == ReportEngine.schoolBlueprintsKind
                         ? .platformAPI : .school,
                        kind: $0.kind, command: command($0.args), skipReason: $0.skip.map(text))
-            } + [sofa(inputs), schoolDeviceScan(inputs)] + protect(inputs) + securityCloud(inputs))
+            } + [sofa(inputs), schoolDeviceScan(inputs)] + protect(inputs) + securityCloud(inputs)
         case .jamfPro:
-            return CollectSourcesPlan(
-                sources: matrix(inputs) + deviceScan(inputs) + afterMatrix(inputs)
-                    + protect(inputs) + securityCloud(inputs))
+            return matrix(inputs) + deviceScan(inputs) + afterMatrix(inputs)
+                + protect(inputs) + securityCloud(inputs)
         }
     }
 
@@ -113,18 +138,26 @@ struct CollectSourcesPlan: Equatable, Sendable {
     }
 
     private static func deviceScan(_ inputs: Inputs) -> [Source] {
-        let off = inputs.skipExpensive
-            ? text(.settingsSkipExpensive) : nil
+        func off(_ kind: String) -> String? {
+            inputs.skipExpensive ? text(.settingsSkipExpensive) : skipped(kind, inputs)
+        }
         return [
             Source(product: .jamfPro, kind: ReportEngine.ddmDeviceStatusKind,
                    command: "pro declarative-device-management status-items <management ID>, "
                        + "each DDM-enabled Mac",
-                   skipReason: off),
+                   skipReason: off(ReportEngine.ddmDeviceStatusKind)),
             Source(product: .jamfPro, kind: ReportEngine.mdmCommandHealthKind,
                    command: "pro classic-computer-history get <id> --subset commands, each Mac",
-                   skipReason: off),
+                   skipReason: off(ReportEngine.mdmCommandHealthKind)),
         ]
     }
+
+    private static func skipped(_ kind: String, _ inputs: Inputs) -> String? {
+        inputs.collectSkip.contains(kind) ? collectSkipText : nil
+    }
+
+    /// The skip text of a source turned off by `collect_skip`.
+    static var collectSkipText: String { text(.collectSkip) }
 
     private static func afterMatrix(_ inputs: Inputs) -> [Source] {
         [
@@ -157,7 +190,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
         guard let profile = inputs.protectProfile else { return [] }
         return ReportEngine.protectCommandMatrix(profile: profile).map {
             Source(product: .protect, kind: $0.kind, command: command($0.args),
-                   skipReason: inputs.protectRefusal)
+                   skipReason: inputs.protectRefusal ?? skipped($0.kind, inputs))
         }
     }
 
@@ -169,6 +202,48 @@ struct CollectSourcesPlan: Equatable, Sendable {
                        ?? (inputs.collectSkip.contains($0.kind) ? text(.collectSkip) : nil))
         }
     }
+
+    // MARK: - Data Sources switches
+
+    /// What a source row's switch shows.
+    enum SourceSwitch: Equatable, Sendable {
+        /// Skipped for another reason (Settings, the profile's API or scope, jamf-cli): no switch.
+        case hidden
+        /// A core source: on, and cannot be turned off.
+        case locked
+        case on
+        case off
+        /// Off because `patch-status` is: no switch of its own.
+        case followsPatchStatus
+    }
+
+    struct SwitchState: Equatable, Sendable {
+        let control: SourceSwitch
+        /// config.yaml turns this source on or off differently from what this Mac confirmed.
+        let changedOnAnotherMac: Bool
+    }
+
+    /// The row's switch, from the same lists the collects read.
+    func switchState(for source: Source) -> SwitchState {
+        let changed = listedInFile.map { $0.contains(source.kind) != listed.contains(source.kind) }
+            ?? false
+        let control: SourceSwitch
+        if ReportEngine.isCoreKind(source.kind, protectOnly: protectOnly) {
+            control = .locked
+        } else if let reason = source.skipReason, reason != Self.collectSkipText {
+            control = .hidden
+        } else if listed.contains(source.kind) {
+            control = .off
+        } else if source.skipReason != nil {
+            control = .followsPatchStatus
+        } else {
+            control = .on
+        }
+        return SwitchState(control: control, changedOnAnotherMac: changed)
+    }
+
+    /// A peer's edit is pending: every switch waits for Confirm in Config Doctor.
+    var changedOnAnotherMac: Bool { listedInFile != nil }
 
     /// A skip in the words of the run log's `[skip]` line, else its `[plan]` label.
     private static func text(_ reason: ReportEngine.CollectSkipReason) -> String {

@@ -359,14 +359,17 @@ extension ReportEngine {
     /// with only the scan tier collects `school-devices`, the device scan's input, and only
     /// when `scanDue`, ignoring that source's cadence; otherwise it stays a no-op.
     static func planSchoolCollect(
-        profile: String, tiers: Set<CollectionTier>, force: Bool, now: Date = Date(),
+        profile: String, tiers: Set<CollectionTier>, force: Bool,
+        collectSkip: Set<String> = [], now: Date = Date(),
         platformFieldsMissing: Bool = false, scanDue: Bool = false,
         timeoutHold: (String) -> Date? = { _ in nil }, lastRun: (String) -> Date?
     ) -> [PlannedKind] {
         let cadence = Cadence.seconds(CollectionTier.refresh.intervalSeconds)
         return schoolCommandMatrix(profile: profile).map { args, kind in
             let skip: CollectSkipReason?
-            if tiers.isDisjoint(with: [.refresh, .inventory]) {
+            if collectSkip.contains(kind) {
+                skip = .collectSkip
+            } else if tiers.isDisjoint(with: [.refresh, .inventory]) {
                 skip = scanDue && tiers.contains(.scan) && kind == SchoolFleetService.devicesKind
                     ? nil : .tierNotSelected(.inventory)
             } else if kind == schoolBlueprintsKind, platformFieldsMissing {
@@ -500,6 +503,8 @@ enum DeviceScanPlan: Equatable, Sendable {
     case tierNotSelected
     /// Settings: Skip expensive collections.
     case turnedOff
+    /// `jamf_cli.collect_skip` turns off both scan kinds.
+    case listedInCollectSkip
     /// Every scan kind's cadence floor holds; `lastAttempt` is the newest attempt, if any.
     case notDue(lastAttempt: Date?)
     case due
@@ -510,6 +515,8 @@ enum DeviceScanPlan: Equatable, Sendable {
             return "device scan: not selected (tier scan is not in this run)"
         case .turnedOff:
             return "device scan: turned off (Settings: Skip expensive collections)"
+        case .listedInCollectSkip:
+            return "device scan: turned off (jamf_cli.collect_skip)"
         case .notDue(let lastAttempt):
             return "device scan: not due (last attempt: \(collectLogDateLabel(lastAttempt)))"
         case .due:

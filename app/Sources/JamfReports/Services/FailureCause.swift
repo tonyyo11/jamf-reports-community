@@ -158,7 +158,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .noDeclarationData:
             L("no DDM declaration data: the environment has none, or each device's report was refused (Deployment > Declarations reporting)")
         case .softwareUpdatePlansOff:
-            L("Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this source to jamf_cli.collect_skip")
+            L("Managed Software Update Plans is turned off in Jamf Pro; turn it on, or turn this source off in Data Sources")
         case .noConfiguredBenchmark:
             names.isEmpty
                 ? L("no benchmark in platform.compliance_benchmarks can be collected")
