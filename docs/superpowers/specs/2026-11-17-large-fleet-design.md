@@ -49,6 +49,35 @@ The 12,000 workbook was measured alone (peak memory footprint); the other rows r
 were going on and report resident memory, so they may read low. Memory grows with the fleet:
 about 0.5 GB per 1,000 Macs at this density. On an 8 or 16 GB Mac the 12,000 workbook pages.
 
+### Measured at production extension attribute density
+
+The table above used 68 results per Mac. One production server returns 93 per Mac (152
+defined), about 20 KB per Mac, with a few very long values (the longest about 147,000
+characters). Fleets below copy that shape from a numbers-only profile, at that density and at
+twice it, with 12 sites. The same build as above; other work was running on the Mac, so
+memory may read low.
+
+| Macs | Results per Mac | `ea-results` file | Workbook | Workbook peak memory | HTML peak memory | Tabs lost |
+|---|---|---|---|---|---|---|
+| 6,000 | 93 | 100 MB | 43 s | 3.1 GB | 0.9 GB | none |
+| 6,000 | 186 | 201 MB | 67 s | 4.6 GB | 1.7 GB | none |
+| 12,000 | 93 | 199 MB | 85 s | 6.3 GB | 1.8 GB | none |
+| 12,000 | 186 | 402 MB | 35 s | 5.3 GB | 0.8 GB | EA Coverage |
+| 20,000 | 93 | 333 MB | 55 s | 6.8 GB | 1.1 GB | EA Coverage, DDM Device Status |
+| 20,000 | 186 | 671 MB | 57 s | 6.8 GB | 1.1 GB | EA Coverage, DDM Device Status |
+
+What the last three rows show:
+
+- Over the 256 MB limit the report still finishes, faster, because it has dropped the
+  extension attribute tabs. The only sign is a `[skip]` line that says "No cached jamf-cli
+  snapshot found for: ea-results", which is untrue: the snapshot is there and was refused for
+  size. An unreadable snapshot is being reported as an absent one.
+- `ddm-device-status` is not on the list of inventory kinds, so its limit is 64 MB, which the
+  20,000-Mac fleet passes. Its tab is lost the same way. `mdm-command-health` has the same
+  64 MB limit.
+- Memory is 6 to 7 GB at 12,000 and 20,000 Macs even with the extension attribute rows
+  refused, so the rest of the inventory is a large share of it.
+
 Not measured: any screen in the app, the collect itself (no tenant of this size is available),
 the device scan's time per device, and any Protect, Platform API or Security Cloud call at size.
 
@@ -188,7 +217,11 @@ collecting every source: a cadence skip there would land nothing and read as a d
    which is a few hundred GB a year at daily inventory. Proposed: Config Doctor suggests
    retention when the data folder passes 20 GB; no default changes.
 
-4. **Large snapshots** (agreed by the owner on 2026-11-17, not built). An inventory snapshot
+4. **Large snapshots** (agreed by the owner on 2026-11-17, not built). First, whatever the
+   limit: a snapshot refused for size must be reported as refused, by name and size, in the
+   report's log, in "Not included" and as a Needs attention item, never as "no snapshot". And
+   the per-device scan kinds (`ddm-device-status`, `mdm-command-health`,
+   `school-device-detail`) join the inventory kinds, since their rows grow with the fleet. An inventory snapshot
    over 256 MB (`BoundedFile.inventoryLimit`) is refused as unreadable. One production server
    holds about 20 KB of extension attribute results per Mac (93 results each, a few very long
    values), so `ea-results` reaches the limit near 12,800 Macs, and near 6,400 at twice that
