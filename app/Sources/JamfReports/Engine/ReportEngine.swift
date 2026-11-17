@@ -2190,6 +2190,12 @@ struct ReportEngine: Sendable {
     /// `collect` routes the Platform kinds from it and not from a second read of config.yaml.
     @TaskLocal static var routedEnvironment: EnvironmentProfiles?
 
+    /// False while `CollectRouter` runs an unforced collect: Jamf Protect and Security Cloud,
+    /// which ride after the MDM collect, then keep the refresh cadence and the timeout hold
+    /// (`planAddOn`). True for a direct caller and a Protect-only environment, which collect
+    /// every source as before.
+    @TaskLocal static var addOnCollectForced = true
+
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
         platformRoute(
@@ -4118,18 +4124,18 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.invalidProfile(profile)
         }
 
-        let commands = protectCommandMatrix(profile: profile)
-
-        for line in collectPlanLines(profile: profile, running: commands.map(\.kind)) {
-            onLine(.init(timestamp: Date(), level: .info, text: line))
-        }
-
-        let bridge = CLIBridge()
         // The state folder sits under the data folder, which is all this call is given.
         let stateStore = WorkspacePaths
             .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
             .map(StateFileStore.init(directory:))
         let collectStart = Date()
+        let commands = announcing(
+            planAddOn(
+                commands: protectCommandMatrix(profile: profile), stateStore: stateStore,
+                now: collectStart),
+            profile: profile, onLine: onLine)
+
+        let bridge = CLIBridge()
         var unlanded: [String] = []
         for (args, kind) in commands {
             onLine(.init(timestamp: Date(), level: .info,

@@ -54,31 +54,24 @@ extension ReportEngine {
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> [String] {
-        let commands = securityCommandMatrix(profile: profile)
-        let skipped = commands.filter { collectSkip.contains($0.kind) }.map(\.kind)
-        let running = commands.map(\.kind).filter { !skipped.contains($0) }
-        for line in collectPlanLines(
-            profile: profile, running: running,
-            skipped: skipped.isEmpty
-                ? [] : [(CollectSkipReason.collectSkip.planLabel, skipped)]) {
-            onLine(.init(timestamp: Date(), level: .info, text: line))
-        }
-        for kind in skipped {
-            onLine(.init(timestamp: Date(), level: .info, text: "[skip] \(kind): "
-                + (CollectSkipReason.collectSkip.skipDetail ?? "")))
-        }
+        let stateStore = WorkspacePaths
+            .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
+            .map(StateFileStore.init(directory:))
+        let collectStart = Date()
+        let commands = announcing(
+            planAddOn(
+                commands: securityCommandMatrix(profile: profile), collectSkip: collectSkip,
+                stateStore: stateStore, now: collectStart),
+            profile: profile, onLine: onLine)
+        let running = commands.map(\.kind)
         guard !running.isEmpty else { return [] }
         guard let bin = locateJamfCLI() else { throw ReportEngineError.jamfCLINotFound }
         guard ProfileService.isValid(profile) else {
             throw ReportEngineError.invalidProfile(profile)
         }
         let bridge = CLIBridge()
-        let stateStore = WorkspacePaths
-            .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
-            .map(StateFileStore.init(directory:))
-        let collectStart = Date()
         var unlanded: [String] = []
-        for (args, kind) in commands where running.contains(kind) {
+        for (args, kind) in commands {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let watcher = StderrSignalWatcher()

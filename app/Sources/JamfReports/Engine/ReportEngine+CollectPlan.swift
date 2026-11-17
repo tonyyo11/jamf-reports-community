@@ -328,6 +328,47 @@ extension ReportEngine {
         }
     }
 
+    /// The plan for a product collected after the MDM collect (Jamf Protect, Security Cloud).
+    /// Unforced (`addOnCollectForced` false), a source waits out the refresh cadence and the
+    /// timeout hold like a matrix source, so a run that came for one retried Jamf Pro source
+    /// does not collect the whole product again.
+    static func planAddOn(
+        commands: [(args: [String], kind: String)], collectSkip: Set<String> = [],
+        stateStore: StateFileStore?, now: Date = Date()
+    ) -> [PlannedKind] {
+        let cadence = Cadence.seconds(CollectionTier.refresh.intervalSeconds)
+        return commands.map { args, kind in
+            let skip: CollectSkipReason?
+            let last = stateStore?.lastRun(report: kind)
+            if collectSkip.contains(kind) {
+                skip = .collectSkip
+            } else if addOnCollectForced {
+                skip = nil
+            } else if let until = stateStore?.timeoutHoldUntil(report: kind), now < until {
+                skip = .repeatedTimeouts(retryAfter: until)
+            } else if !CadenceResolver.isDue(lastRun: last, cadence: cadence, now: now) {
+                skip = .notDue(lastRun: last, cadence: cadence)
+            } else {
+                skip = nil
+            }
+            return PlannedKind(args: args, kind: kind, skip: skip)
+        }
+    }
+
+    /// Logs a fixed plan and its `[skip]` lines; returns the commands that run.
+    static func announcing(
+        _ plan: [PlannedKind], profile: String, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> [(args: [String], kind: String)] {
+        for line in collectPlanLines(profile: profile, fixedPlan: plan) {
+            onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
+        for item in plan {
+            guard let detail = item.skip?.skipDetail else { continue }
+            onLine(.init(timestamp: Date(), level: .info, text: "[skip] \(item.kind): \(detail)"))
+        }
+        return plan.filter { $0.skip == nil }.map { ($0.args, $0.kind) }
+    }
+
     /// The `[plan]` lines for a fixed-list plan (Jamf School): what runs, then what is skipped
     /// under its reason. `afterMatrix` and `afterMatrixSkipped` are the sources fetched after
     /// the commands (`sofa`), listed like the Pro plan lists them.

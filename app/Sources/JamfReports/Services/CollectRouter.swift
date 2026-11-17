@@ -178,7 +178,8 @@ enum CollectRouter {
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         try await AttentionLog.recording(profile: workspace.name) {
-            try await routed(
+            try await ReportEngine.$addOnCollectForced.withValue(force) {
+              try await routed(
                 workspace: workspace, tiers: tiers, skipExpensive: skipExpensive, force: force,
                 config: config, workspacePaths: workspacePaths,
                 proCollect: proCollect ?? defaultProCollect(now: now, engine: proEngine),
@@ -186,6 +187,7 @@ enum CollectRouter {
                 securityCollect: securityCollect,
                 resolved: resolved, gate: gate, locateJamfCLI: locateJamfCLI,
                 schoolScanLimits: schoolScanLimits, now: now, onLine: onLine)
+            }
         }
     }
 
@@ -419,7 +421,11 @@ enum CollectRouter {
         let dataDir = try workspacePaths.dataDir(for: profile)
         onLine(.init(timestamp: Date(), level: .info, text: "[info] routing \(profile) → "
             + "Jamf Protect collect (no Jamf Pro or Jamf School in this environment)"))
-        let kinds = try await protectCollect(protectProfile, dataDir, onLine)
+        // Protect is this environment's whole collect: a cadence skip would land nothing and
+        // read as a dead run, so every source runs.
+        let kinds = try await ReportEngine.$addOnCollectForced.withValue(true) {
+            try await protectCollect(protectProfile, dataDir, onLine)
+        }
         guard !kinds.isEmpty else {
             throw ReportEngineError.collectDead(
                 profile: profile, failedCount: ReportEngine.protectCommandMatrix(profile: "").count)
