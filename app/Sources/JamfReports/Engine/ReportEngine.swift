@@ -2379,11 +2379,13 @@ struct ReportEngine: Sendable {
             collectSkip: collectSkip, dashboardSupported: dashboardSupported,
             installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
-        let plan = Self.planCollect(
-            commands: commands, inputs: planInputs,
-            timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) },
-            lastRun: { stateStore?.lastRun(report: $0) }
-        )
+        let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
+        let plan = Self.slowLast(
+            Self.planCollect(
+                commands: commands, inputs: planInputs,
+                timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) },
+                lastRun: { stateStore?.lastRun(report: $0) }
+            ), lastDuration: lastDuration)
         let scanPlan = Self.planDeviceScan(
             tiers: tiers, skipExpensive: skipExpensive, force: force,
             stateStore: stateStore, now: collectStart)
@@ -2392,6 +2394,9 @@ struct ReportEngine: Sendable {
             profile: profile, plan: plan, afterMatrix: afterMatrix,
             afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
             deviceScan: scanPlan, onLine: onLine)
+        if let line = Self.slowLastLine(plan, lastDuration: lastDuration) {
+            onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
         if platformProfile != profile, platformUnavailable == nil,
            plan.contains(where: { $0.skip == nil && Self.platformOnlyKinds.contains($0.kind) }) {
             onLine(.init(timestamp: Date(), level: .info,
@@ -3013,6 +3018,7 @@ struct ReportEngine: Sendable {
 
         let seconds = Int(Date().timeIntervalSince(attemptStart).rounded())
         onLine(.init(timestamp: Date(), level: .info, text: "[info] \(kind) took \(seconds)s"))
+        stateStore?.recordDuration(report: kind, seconds: seconds)
 
         guard let (exitCode, data) = captureResult else {
             // Both launches failed. The failure counter carries the fact into
@@ -3882,13 +3888,14 @@ struct ReportEngine: Sendable {
         let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: workspace.name))
         let scanPlan = landedSources?.schoolScanPlan ?? planSchoolDeviceScan(
             tiers: tiers, collectSkip: collectSkip, stateStore: stateStore, now: now)
-        let plan = planSchoolCollect(
+        let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
+        let plan = slowLast(planSchoolCollect(
             profile: profile, tiers: tiers, force: force,
             platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false,
             scanDue: scanPlan == .due,
             timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) }) {
             stateStore?.lastRun(report: $0)
-        }
+        }, lastDuration: lastDuration)
         let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
             .filter { $0 == sofaKind }
         let afterMatrixSkipped = Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip)
@@ -3899,6 +3906,9 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .info, text: line))
         }
         onLine(.init(timestamp: Date(), level: .info, text: "[plan] \(scanPlan.planText)"))
+        if let line = slowLastLine(plan, lastDuration: lastDuration) {
+            onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
         for kind in afterMatrixSkipped {
             onLine(.init(
                 timestamp: Date(), level: .info,
@@ -3922,6 +3932,12 @@ struct ReportEngine: Sendable {
                          text: "[info] collecting \(kind) for \(profile)"))
             let schoolResult: (Int32, Data)?
             let stderrWatcher = StderrSignalWatcher()
+            let attemptStart = Date()
+            // Recorded, not logged: `slowLast` orders the next run by it.
+            defer {
+                stateStore?.recordDuration(
+                    report: kind, seconds: Int(Date().timeIntervalSince(attemptStart).rounded()))
+            }
             do {
                 schoolResult = try await bridge.runAndCapture(
                     executable: bin, arguments: args,

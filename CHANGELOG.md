@@ -294,6 +294,9 @@ versions in this repository map to git tags.
   Before, a source that had never landed counted as due in every collect, so each one waited on
   it again. The run log names it under "timed out repeatedly, left to the next day's run", and
   Collect now still tries it.
+- A data source that took more than two minutes on its last run now runs after the others,
+  shortest first, so one slow source no longer holds up the rest of the day's data. The run log
+  names them in a "running last" line. Jamf School sources are ordered the same way.
 - Patch release dates are no longer reported as "not collected yet" while the patch title report
   itself has never landed; that kept an hourly background refresh running.
 - `jamf_cli.collect_skip` accepts `patch-status`, for a Jamf Pro server that cannot list its

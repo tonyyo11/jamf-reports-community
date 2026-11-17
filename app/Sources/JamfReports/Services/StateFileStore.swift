@@ -400,6 +400,24 @@ struct StateFileStore: Sendable {
         directory.appendingPathComponent("\(report).fail", isDirectory: false)
     }
 
+    /// How many seconds `report`'s last attempt took, landed or not (`<report>.took`, outside
+    /// the manifest); nil when none was recorded. `ReportEngine.slowLast` orders a run by it.
+    func lastDuration(for report: String) -> Int? {
+        BoundedFile.stateText(tookURL(for: report), inside: trustedRoot)
+            .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .flatMap { $0 >= 0 ? $0 : nil }
+    }
+
+    /// Best effort: a duration that cannot be written only costs the next run its ordering.
+    func recordDuration(report: String, seconds: Int) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? atomicWrite(data: Data(String(max(seconds, 0)).utf8), to: tookURL(for: report))
+    }
+
+    private func tookURL(for report: String) -> URL {
+        directory.appendingPathComponent("\(report).took", isDirectory: false)
+    }
+
     /// `<report>.timeouts`: the consecutive-timeout count (see `consecutiveTimeouts`).
     private func timeoutsURL(for report: String) -> URL {
         directory.appendingPathComponent("\(report).timeouts", isDirectory: false)

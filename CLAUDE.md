@@ -678,6 +678,11 @@ after the last failure once two in a row timed out, and `planCollect` and
 `planSchoolCollect` (`timeoutHold:`) skip the kind until then with
 `CollectSkipReason.repeatedTimeouts` unless `force`, because the due check reads the last
 success only and a kind that never landed is otherwise due in every collect of its tier.
+**Slow sources last (2.12).** `collectOneKind` and the School loop record each attempt's
+seconds in `<kind>.took` (`StateFileStore.recordDuration`, `lastDuration(for:)`; best effort,
+outside the manifest). `ReportEngine.slowLast` moves the planned sources whose last attempt took
+over `slowSourceThreshold` (120 s) to the end, shortest first; everything else keeps the matrix
+order, and `slowLastLine` logs `[plan] running last (slow on their last run): …`.
 `patch-release-dates` walks the `patch-status` snapshot and records nothing without one, so
 `evaluateFreshness` leaves it out until `patch-status` has landed, and `collectSkipKinds` adds it
 whenever `patch-status` is listed.

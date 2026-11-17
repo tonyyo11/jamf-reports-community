@@ -129,6 +129,36 @@ extension ReportEngine {
                 for: kind, inputs: inputs, timeoutHold: timeoutHold, lastRun: lastRun)
     }
 
+    /// A source whose last attempt took longer than this many seconds runs after the others.
+    static let slowSourceThreshold = 120
+
+    /// The plan in the order the run takes it: sources whose last attempt took over
+    /// `slowSourceThreshold` go last, shortest first, so one slow source does not hold up the
+    /// rest of the day's data. Everything else, skipped sources included, keeps its place, and
+    /// a workspace with no slow source runs in the matrix order.
+    static func slowLast(_ plan: [PlannedKind], lastDuration: (String) -> Int?) -> [PlannedKind] {
+        let slow = plan.enumerated().compactMap { index, item -> (Int, Int, PlannedKind)? in
+            guard item.skip == nil, let seconds = lastDuration(item.kind),
+                  seconds > slowSourceThreshold else { return nil }
+            return (seconds, index, item)
+        }
+        guard !slow.isEmpty else { return plan }
+        let slowKinds = Set(slow.map(\.2.kind))
+        return plan.filter { !slowKinds.contains($0.kind) }
+            + slow.sorted { ($0.0, $0.1) < ($1.0, $1.1) }.map(\.2)
+    }
+
+    /// `[plan] running last (slow on their last run): a 310s, b 722s`, or nil with none.
+    static func slowLastLine(_ plan: [PlannedKind], lastDuration: (String) -> Int?) -> String? {
+        let slow = plan.compactMap { item -> String? in
+            guard item.skip == nil, let seconds = lastDuration(item.kind),
+                  seconds > slowSourceThreshold else { return nil }
+            return "\(item.kind) \(seconds)s"
+        }
+        return slow.isEmpty
+            ? nil : "[plan] running last (slow on their last run): " + slow.joined(separator: ", ")
+    }
+
     /// Kinds this profile's API, its scope or its jamf-cli cannot serve, or the operator
     /// turned off. Recorded nowhere: none of these is a failure.
     private static func profileSkip(

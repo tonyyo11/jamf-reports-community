@@ -41,7 +41,17 @@ final class RepeatedTimeoutBackoffTests: XCTestCase {
         XCTAssertEqual(store.consecutiveTimeouts(for: "ea-results"), 0)
     }
 
-    /// The planner's hold: a day after the last failure once two in a row timed out.
+    func testTheLastDurationIsReadBackAndAnUnreadableOneIsNone() throws {
+        let store = StateFileStore(directory: dir)
+        XCTAssertNil(store.lastDuration(for: "ea-results"))
+        store.recordDuration(report: "ea-results", seconds: 722)
+        XCTAssertEqual(store.lastDuration(for: "ea-results"), 722)
+        try "soon".write(
+            to: dir.appendingPathComponent("ea-results.took"), atomically: true, encoding: .utf8)
+        XCTAssertNil(store.lastDuration(for: "ea-results"))
+    }
+
+    /// The planner's hold: 20 hours after the last failure once two in a row timed out.
     func testTheHoldStartsAfterTwoTimeoutsInARowAndEndsWhenTheKindLands() throws {
         let store = StateFileStore(directory: dir)
         let first = Date(timeIntervalSince1970: 1_790_000_000)

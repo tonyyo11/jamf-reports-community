@@ -96,6 +96,9 @@ that is L4, because it needs a cadence first.
 
 ## L2 — Short runs first, the summary early, a time budget per run
 
+Items 1 and 2 are built (Jamf Pro and Jamf School). Benchmark reports and the dashboard do not
+record a duration yet, so they keep their place.
+
 1. **Record how long each source took.** The run log already prints `<kind> took Ns`; keep the
    last value in the state folder (`<kind>.took`, outside the manifest).
 2. **Order the run by it.** Sources with no record or a short one run first, in today's order;
