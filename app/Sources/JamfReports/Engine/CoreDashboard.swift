@@ -3668,6 +3668,17 @@ struct CoreDashboard: Sendable {
     /// systems / devices-evaluated / compliance % / rule count if configured)
     /// followed by six band rows (No Data → High) with Count and Percent columns.
     /// Skips when no baseline is configured or no ea-results snapshot is available.
+    /// Why a compliance tab has nothing to show: the snapshot is absent or was refused, or it
+    /// is there and holds no value for the configured baselines. The second is not "no
+    /// snapshot found".
+    private func noBaselineValues() -> CoreDashboardError {
+        guard (try? loadLatestJSONData(names: ["ea-results"])) != nil else {
+            return .noCachedData(names: ["ea-results"])
+        }
+        return .nothingToShow(
+            "the ea-results snapshot has no values for the configured compliance baselines")
+    }
+
     func writeMSCPCompliance() throws {
         let baselines = config.compliance?.resolvedBaselines ?? []
         guard !baselines.isEmpty else {
@@ -3685,9 +3696,7 @@ struct CoreDashboard: Sendable {
 
         let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: baselines)
         let hasAnyData = results.contains { $0.devicesWithData > 0 }
-        guard hasAnyData else {
-            throw CoreDashboardError.noCachedData(names: ["ea-results"])
-        }
+        guard hasAnyData else { throw noBaselineValues() }
 
         let ws = workbook.addSheet("mSCP Compliance")
         let ts = ISO8601Time.string(Date())
@@ -3789,9 +3798,7 @@ struct CoreDashboard: Sendable {
             dataDir: dataDir,
             summaries: []
         )
-        guard !points.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["ea-results"])
-        }
+        guard !points.isEmpty else { throw noBaselineValues() }
 
         let ws = workbook.addSheet("Compliance Trend")
         let ts = ISO8601Time.string(Date())
@@ -3834,11 +3841,15 @@ struct CoreDashboard: Sendable {
 enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
     case protectDisabled
+    /// The snapshot was read and holds nothing this tab can use; the text says what.
+    case nothingToShow(String)
 
     var errorDescription: String? { skipReason }
 
     var skipReason: String {
         switch self {
+        case .nothingToShow(let reason):
+            return reason
         case .protectDisabled:
             return "protect.enabled is off"
         case .noCachedData(let names):

@@ -339,6 +339,11 @@ versions in this repository map to git tags.
   "Not included" list and as a Needs attention item. Before, the report said no snapshot had
   been found and lost the tab without saying why. The per-device scan snapshots now share the
   256 MB limit instead of 64 MB.
+- A daily summary holding a negative device count is now refused as damaged, like any other
+  out-of-range summary, instead of being read.
+- A compliance tab left out because the extension attribute results hold no values for the
+  configured baselines now says so. It said no snapshot had been found, which sent people to
+  collect again.
 - The patch title report and the patch failures scan now share one timeout count, because both
   start with the same request to Jamf Pro. On one large server each of them waited 12 minutes
   on it, twice, before being left alone; now two timeouts between them hold both.

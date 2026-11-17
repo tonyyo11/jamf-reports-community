@@ -558,7 +558,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
 }
 
 extension DailySummary {
-    /// False when any number is non-finite or past `SummaryJSONParser.maxSummaryNumber`, or a
+    /// False when any number is non-finite or past `SummaryJSONParser.maxSummaryNumber`, a count
+    /// is negative, or a
     /// mobile share counts more devices than report the field.
     var numbersAreInRange: Bool {
         let limit = SummaryJSONParser.maxSummaryNumber
@@ -575,7 +576,8 @@ extension DailySummary {
             mobileDeviceCount,
         ].compactMap { $0 } + (mobile?.counts ?? []) + environmentCounts
         return percents.allSatisfy { $0.isFinite && abs($0) <= Double(limit) }
-            && counts.allSatisfy { (-limit...limit).contains($0) }
+            // A count of devices is never negative; a summary with one is damaged.
+            && counts.allSatisfy { (0...limit).contains($0) }
             && mobile?.sharesAreConsistent != false
             && environmentFieldsAreConsistent
     }
