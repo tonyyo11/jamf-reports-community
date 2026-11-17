@@ -388,7 +388,8 @@ panel.
   for on-premise Jamf Pro: any of `patch-device-failures`, `profile-status`,
   `update-status`, `update-device-failures` (the per-device-heavy queries known to
   stall a server), `dashboard`, `sofa` (the one fetch from `sofafeed.macadmins.io`,
-  for networks that must not reach third-party hosts), `security-risk` (the Jamf
+  for networks that must not reach third-party hosts), `patch-status` (for a server that
+  cannot list its patch titles in time), `security-risk` (the Jamf
   Security Cloud device list) and `school-device-detail` (the Jamf School per-device scan for
   battery, enrollment type and storage, which otherwise runs at most once every 7 days).
   Underscores work in place of

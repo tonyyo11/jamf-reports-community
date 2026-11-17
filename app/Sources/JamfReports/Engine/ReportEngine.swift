@@ -2381,6 +2381,7 @@ struct ReportEngine: Sendable {
         planInputs.platformUnavailable = platformUnavailable
         let plan = Self.planCollect(
             commands: commands, inputs: planInputs,
+            timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) },
             lastRun: { stateStore?.lastRun(report: $0) }
         )
         let scanPlan = Self.planDeviceScan(
@@ -3884,7 +3885,8 @@ struct ReportEngine: Sendable {
         let plan = planSchoolCollect(
             profile: profile, tiers: tiers, force: force,
             platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false,
-            scanDue: scanPlan == .due) {
+            scanDue: scanPlan == .due,
+            timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) }) {
             stateStore?.lastRun(report: $0)
         }
         let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)

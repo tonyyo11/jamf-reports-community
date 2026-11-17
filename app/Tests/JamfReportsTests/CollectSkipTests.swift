@@ -20,7 +20,7 @@ final class CollectSkipTests: XCTestCase {
     /// fetch, the one call to a third-party host, the Security Cloud device list (P12) and the Jamf
     /// School per-device scan.
     func testTheHeavyKindsTheDashboardAndSOFACanBeSkipped() {
-        let all = ["patch-device-failures", "profile-status", "update-status",
+        let all = ["patch-status", "patch-device-failures", "profile-status", "update-status",
                    "update-device-failures", "dashboard", "sofa", "security-risk",
                    "school-device-detail"]
         XCTAssertEqual(ReportEngine.collectSkipKinds(all), Set(all))

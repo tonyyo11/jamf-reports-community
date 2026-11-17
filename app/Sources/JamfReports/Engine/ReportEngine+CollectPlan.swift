@@ -17,6 +17,8 @@ extension ReportEngine {
         case dashboardUnsupported(installedVersion: String?)
         case tierNotSelected(CollectionTier)
         case notDue(lastRun: Date?, cadence: Cadence)
+        /// Its last failures all timed out; left alone until `retryAfter` unless forced.
+        case repeatedTimeouts(retryAfter: Date)
 
         /// What follows `[skip] <kind>: `; nil when one aggregate line already says it.
         var skipDetail: String? {
@@ -41,6 +43,10 @@ extension ReportEngine {
                 return "tier \(tier.rawValue) not selected"
             case .notDue(let lastRun, let cadence):
                 return "not due (last: \(collectLogDateLabel(lastRun)), cadence: \(cadence.label))"
+            case .repeatedTimeouts(let retryAfter):
+                return "timed out \(WorkspaceStore.repeatedTimeoutsBeforeBackoff) runs in a row; "
+                    + "next automatic try after \(collectLogDateLabel(retryAfter)) "
+                    + "(Collect now tries it sooner)"
             }
         }
 
@@ -58,6 +64,7 @@ extension ReportEngine {
                 return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later"
             case .tierNotSelected(let tier): return "tier \(tier.rawValue) not selected"
             case .notDue: return "not due"
+            case .repeatedTimeouts: return "timed out repeatedly, waiting a day"
             }
         }
 
@@ -92,27 +99,34 @@ extension ReportEngine {
     /// Decides every matrix command. The order is the loop's always was: Settings, then what
     /// this profile or jamf-cli cannot serve, then the tier set, then cadence, so a command
     /// is reported under the first reason that applies. `lastRun` answers a kind's last
-    /// success (the state files), read once here.
+    /// success (the state files), read once here. `timeoutHold` answers when a kind that keeps
+    /// timing out may run again (`StateFileStore.timeoutHoldUntil`); a kind that never lands
+    /// has no last success, so cadence alone would run it in every collect of its tier.
     static func planCollect(
         commands: [(args: [String], kind: String)],
         inputs: CollectPlanInputs,
+        timeoutHold: (String) -> Date? = { _ in nil },
         lastRun: (String) -> Date?
     ) -> [PlannedKind] {
         commands.map { command in
             PlannedKind(
                 args: command.args, kind: command.kind,
-                skip: skipReason(for: command.kind, inputs: inputs, lastRun: lastRun))
+                skip: skipReason(
+                    for: command.kind, inputs: inputs, timeoutHold: timeoutHold,
+                    lastRun: lastRun))
         }
     }
 
     private static func skipReason(
-        for kind: String, inputs: CollectPlanInputs, lastRun: (String) -> Date?
+        for kind: String, inputs: CollectPlanInputs, timeoutHold: (String) -> Date?,
+        lastRun: (String) -> Date?
     ) -> CollectSkipReason? {
         if inputs.skipExpensive, expensivePerDeviceKinds.contains(kind) {
             return .settingsSkipExpensive
         }
         return profileSkip(for: kind, inputs: inputs)
-            ?? scheduleSkip(for: kind, inputs: inputs, lastRun: lastRun)
+            ?? scheduleSkip(
+                for: kind, inputs: inputs, timeoutHold: timeoutHold, lastRun: lastRun)
     }
 
     /// Kinds this profile's API, its scope or its jamf-cli cannot serve, or the operator
@@ -137,12 +151,16 @@ extension ReportEngine {
     /// The tier set, then cadence. An unmapped kind has no tier and is always allowed;
     /// `force` bypasses cadence so an ad-hoc refresh always refetches.
     private static func scheduleSkip(
-        for kind: String, inputs: CollectPlanInputs, lastRun: (String) -> Date?
+        for kind: String, inputs: CollectPlanInputs, timeoutHold: (String) -> Date?,
+        lastRun: (String) -> Date?
     ) -> CollectSkipReason? {
         if let tier = CollectionTier.tier(forReport: kind), !inputs.tiers.contains(tier) {
             return .tierNotSelected(tier)
         }
         guard !inputs.force else { return nil }
+        if let until = timeoutHold(kind), inputs.now < until {
+            return .repeatedTimeouts(retryAfter: until)
+        }
         let cadence = CadenceResolver.cadence(forReport: kind)
         let last = lastRun(kind)
         return CadenceResolver.isDue(lastRun: last, cadence: cadence, now: inputs.now)
@@ -257,7 +275,8 @@ extension ReportEngine {
     /// when `scanDue`, ignoring that source's cadence; otherwise it stays a no-op.
     static func planSchoolCollect(
         profile: String, tiers: Set<CollectionTier>, force: Bool, now: Date = Date(),
-        platformFieldsMissing: Bool = false, scanDue: Bool = false, lastRun: (String) -> Date?
+        platformFieldsMissing: Bool = false, scanDue: Bool = false,
+        timeoutHold: (String) -> Date? = { _ in nil }, lastRun: (String) -> Date?
     ) -> [PlannedKind] {
         let cadence = Cadence.seconds(CollectionTier.refresh.intervalSeconds)
         return schoolCommandMatrix(profile: profile).map { args, kind in
@@ -267,6 +286,8 @@ extension ReportEngine {
                     ? nil : .tierNotSelected(.inventory)
             } else if kind == schoolBlueprintsKind, platformFieldsMissing {
                 skip = .schoolNoPlatform
+            } else if !force, let until = timeoutHold(kind), now < until {
+                skip = .repeatedTimeouts(retryAfter: until)
             } else if !force, !CadenceResolver.isDue(
                 lastRun: lastRun(kind), cadence: cadence, now: now) {
                 skip = .notDue(lastRun: lastRun(kind), cadence: cadence)

@@ -144,6 +144,18 @@ struct StateFileStore: Sendable {
     /// the legacy two-field form or the three-field form carrying an exit code.
     /// Anything else reads as no record at all — a corrupt counter must not be
     /// able to silence the alarm it exists to raise.
+    /// How long an unforced collect leaves alone a kind whose last failures all timed out.
+    static let timeoutHold: TimeInterval = 86_400
+
+    /// When an unforced collect may try `report` again: `timeoutHold` after its last failure,
+    /// once `WorkspaceStore.repeatedTimeoutsBeforeBackoff` failures in a row timed out. nil
+    /// for any other kind. A landed snapshot clears the count.
+    func timeoutHoldUntil(report: String) -> Date? {
+        guard consecutiveTimeouts(for: report) >= WorkspaceStore.repeatedTimeoutsBeforeBackoff,
+              let last = failures(report: report)?.last else { return nil }
+        return last.addingTimeInterval(Self.timeoutHold)
+    }
+
     private func validFailureFields(report: String) -> [Substring]? {
         guard let raw = BoundedFile.stateText(failureURL(for: report), inside: trustedRoot)
         else { return nil }

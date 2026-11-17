@@ -10,10 +10,12 @@ extension ReportEngine {
     /// whole inventory again for a page only the HTML report uses, and `sofa`, the
     /// one fetch from a third-party host, for a network that must not reach it, and
     /// `security-risk`, the Jamf Security Cloud device list, for an organization that keeps it out, and `school-device-detail`, the Jamf School
-    /// per-device scan.
+    /// per-device scan, and `patch-status`, for a server that cannot list its patch titles in
+    /// time (a 5,900-Mac fleet, 2.12.0-rc1).
     /// Anything else in the list is ignored, so a typo or an over-eager list can never
     /// stop core inventory from being collected.
     static let skippableKinds: Set<String> = [
+        "patch-status",
         "patch-device-failures",
         "profile-status",
         "update-status",

@@ -195,7 +195,8 @@ queries known to stall on-prem Jamf Pro. It also accepts `dashboard` (2.9), whic
 sweeps the whole inventory again for the HTML report's dashboard section, and
 `sofa` (2.9), the one fetch from the SOFA host (`sofafeed.macadmins.io`), for a
 network that must not reach a third-party host, and `security-risk` (P12), the Jamf
-Security Cloud device list. Underscores and hyphens are
+Security Cloud device list, and `patch-status` (2.12), for a server that cannot list its
+patch titles in time. Underscores and hyphens are
 interchangeable. Core inventory commands always run.
 `ReportEngine.collectSkipKinds` normalizes the list (trimmed, lowercased, anything
 outside `ReportEngine.skippableKinds` dropped); `collect` skips a listed kind even
@@ -671,6 +672,11 @@ and the next day's run still try it. jamf-cli's own give-up on a server that nev
 (exit 1, message containing `FailureCause.serverTimeoutMarker`, "the server did not answer in
 time") counts toward that streak (`FailureCause.serverTimedOut`, `isTimeout`) and is not retried
 inside the run (`invokeWithRetry`): jamf-cli already waited out its limit at every page size.
+The planner holds the same streak: `StateFileStore.timeoutHoldUntil(report:)` is a day
+(`timeoutHold`) after the last failure once two in a row timed out, and `planCollect` and
+`planSchoolCollect` (`timeoutHold:`) skip the kind until then with
+`CollectSkipReason.repeatedTimeouts` unless `force`, because the due check reads the last
+success only and a kind that never landed is otherwise due in every collect of its tier.
 `runAndCapture` also stops waiting for pipe EOF
 `CLIBridge.eofGraceAfterExit` (3 s) after a normal exit, so a process the child left running
 cannot hold the call; it returns what was read.

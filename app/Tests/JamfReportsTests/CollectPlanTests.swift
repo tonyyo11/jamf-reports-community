@@ -81,6 +81,43 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertEqual(skip("computers", in: plan), .tierNotSelected(.inventory))
     }
 
+    /// A kind that never lands has no last success, so cadence alone runs it in every collect
+    /// of its tier. A hold keeps an unforced collect off it; Collect now (`force`) still tries.
+    func testAKindOnTimeoutHoldIsSkippedUntilTheHoldEndsUnlessForced() {
+        let until = now.addingTimeInterval(3_600)
+        func plan(force: Bool = false, at time: Date? = nil) -> [ReportEngine.PlannedKind] {
+            var planInputs = inputs(tiers: [.refresh], force: force)
+            if let time {
+                planInputs = ReportEngine.CollectPlanInputs(
+                    tiers: planInputs.tiers, force: force, skipExpensive: false,
+                    nonPlatformAuth: nil, tenantLevel: false, collectSkip: [],
+                    dashboardSupported: true, installedVersion: nil, now: time)
+            }
+            return ReportEngine.planCollect(
+                commands: matrix, inputs: planInputs,
+                timeoutHold: { $0 == "patch-status" ? until : nil },
+                lastRun: { _ in nil })
+        }
+        XCTAssertEqual(skip("patch-status", in: plan()), .repeatedTimeouts(retryAfter: until))
+        XCTAssertNil(skip("overview", in: plan()), "only the held kind waits")
+        XCTAssertNil(skip("patch-status", in: plan(force: true)))
+        XCTAssertNil(skip("patch-status", in: plan(at: until)), "due again once the hold ends")
+        XCTAssertFalse(ReportEngine.CollectSkipReason.repeatedTimeouts(retryAfter: until).isNotDue)
+    }
+
+    func testASchoolKindOnTimeoutHoldIsSkippedUnlessForced() {
+        let until = now.addingTimeInterval(3_600)
+        func plan(force: Bool) -> [ReportEngine.PlannedKind] {
+            ReportEngine.planSchoolCollect(
+                profile: "school", tiers: [.refresh], force: force, now: now,
+                timeoutHold: { $0 == SchoolFleetService.devicesKind ? until : nil }) { _ in nil }
+        }
+        XCTAssertEqual(
+            skip(SchoolFleetService.devicesKind, in: plan(force: false)),
+            .repeatedTimeouts(retryAfter: until))
+        XCTAssertNil(skip(SchoolFleetService.devicesKind, in: plan(force: true)))
+    }
+
     func testSettingsSkipsThePerDeviceKinds() {
         let plan = ReportEngine.planCollect(
             commands: matrix, inputs: inputs(skipExpensive: true), lastRun: { _ in nil })
