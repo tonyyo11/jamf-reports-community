@@ -2303,6 +2303,8 @@ struct ReportEngine: Sendable {
         deviceLimits: DeviceCallLimits = DeviceCallLimits(),
         patchDefinitionLimits: DeviceCallLimits = DeviceCallLimits(
             timeout: patchDefinitionTimeout),
+        scanBudget: TimeInterval? = nil,
+        scanStop: (@Sendable (Int) -> Bool)? = nil,
         now: Date = Date(),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> CollectDisposition {
@@ -2525,7 +2527,10 @@ struct ReportEngine: Sendable {
             plan: stoppedEarly && scanPlan == .due ? .notDue(lastAttempt: nil) : scanPlan,
             recordManifest: recordManifest,
             stateStore: stateStore, collectStart: collectStart,
-            authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
+            authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, force: force,
+            scanBudget: scanBudget ?? TimeInterval(60 * (loadedConfig?.jamfCli?
+                .resolvedScanBudgetMinutes ?? JamfCLIConfig.defaultScanBudgetMinutes)),
+            scanStop: scanStop, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
         // P9-R1: Platform-only kinds count under `platform` for a separate profiles.platform, or

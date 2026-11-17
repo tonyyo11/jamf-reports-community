@@ -1,11 +1,5 @@
 import Foundation
 
-/// Shared shape a persisted scan row must have so `ReportEngine.landOrReject`
-/// can sort it by device id before writing.
-private protocol DeviceIdentified { var deviceId: String { get } }
-extension MDMCommandHealthRecord: DeviceIdentified {}
-extension DDMDeviceStatusRecord: DeviceIdentified {}
-
 /// 2.8.0 per-device scan phase. Two read-only jamf-cli calls per managed Mac,
 /// bounded to four concurrent processes, reduced through `DeviceScanBuilders`
 /// into the `ddm-device-status` and `mdm-command-health` snapshots.
@@ -42,11 +36,14 @@ extension ReportEngine {
         let name: String
         let managementId: String?
         let ddmEnabled: Bool
+        /// `general.site.id`; nil for no site ("-1", blank or absent).
+        let siteId: String?
 
         private enum Keys: String, CodingKey { case id, general }
         private enum General: String, CodingKey {
-            case name, managementId, declarativeDeviceManagementEnabled
+            case name, managementId, declarativeDeviceManagementEnabled, site
         }
+        private enum Site: String, CodingKey { case id }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
@@ -67,6 +64,10 @@ extension ReportEngine {
                 ddm = raw.boolValue ?? false
             }
             ddmEnabled = ddm
+            let site = (try? g?.nestedContainer(keyedBy: Site.self, forKey: .site))
+                .flatMap { try? $0.decodeIfPresent(AnyCodable.self, forKey: .id) }?
+                .stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            siteId = (site == nil || site == "" || site == "-1") ? nil : site
         }
     }
 
@@ -112,14 +113,20 @@ extension ReportEngine {
     }
 
     /// Whether the phase runs: the tier set, Settings, then the cadence floor, which `force`
-    /// bypasses. Decided with the matrix, so the `[plan]` block and the phase share it.
+    /// bypasses. Decided with the matrix, so the `[plan]` block and the phase share it. While a
+    /// round is open, any unforced run takes one pass a local day, whatever its tiers.
     static func planDeviceScan(
         tiers: Set<CollectionTier>, skipExpensive: Bool, force: Bool,
         stateStore: StateFileStore?, now: Date
     ) -> DeviceScanPlan {
-        guard tiers.contains(.scan) else { return .tierNotSelected }
+        let round = DeviceScanPasses.round(in: stateStore, now: now)
+        guard tiers.contains(.scan) || (round != nil && !force) else { return .tierNotSelected }
         guard !skipExpensive else { return .turnedOff }
         guard !force else { return .due }
+        if let round {
+            return Calendar.current.isDate(round.lastPass, inSameDayAs: now)
+                ? .notDue(lastAttempt: round.lastPass) : .due
+        }
         let attempts = [ddmDeviceStatusKind, mdmCommandHealthKind].map { kind in
             (kind: kind, last: lastAttemptDate(for: kind, stateStore: stateStore))
         }
@@ -131,13 +138,18 @@ extension ReportEngine {
     }
 
     /// Returns the kinds it wrote. Never throws: the matrix's verdicts have
-    /// already run, and a scan problem must not turn a good run red.
+    /// already run, and a scan problem must not turn a good run red. An unforced pass stops
+    /// starting Macs after `scanBudget` seconds or when `runStop` asks; a forced one scans all.
+    /// `scanStop` (tests) replaces that decision; it gets how many Macs the pass has started.
     static func runDeviceScanPhase(
         profile: String, bin: URL, dataDir: URL, plan: DeviceScanPlan,
         recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
         authConfirmationProbe: @escaping AuthConfirmationProbe,
         limits: DeviceCallLimits = DeviceCallLimits(),
+        force: Bool = true,
+        scanBudget: TimeInterval = TimeInterval(JamfCLIConfig.defaultScanBudgetMinutes * 60),
+        scanStop: (@Sendable (Int) -> Bool)? = nil,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> Set<String> {
         guard plan == .due else {
@@ -146,52 +158,132 @@ extension ReportEngine {
             }
             return []
         }
-        guard let data = try? loadLatestSnapshotData(kind: "computers", dataDir: dataDir),
-              let all = try? JSONDecoder().decode([DeviceScanTarget].self, from: data),
-              !all.isEmpty else {
-            onLine(.init(
-                timestamp: Date(), level: .info,
-                text: "[skip] device scan: no computers snapshot"
-            ))
-            return []
-        }
-        var targets: [DeviceScanTarget] = []
-        var seenIDs = Set<String>()
-        for t in all {
-            guard CLIBridge.isSafeDeviceIdentifier(t.id) else {
-                onLine(.init(
-                    timestamp: Date(), level: .warn,
-                    text: "[warn] device scan: skipping a device with an unsafe id"
-                ))
-                continue
-            }
-            // A device listed twice in `computers` is scanned once: a second pass
-            // repeats both jamf-cli calls and writes the Mac twice into each snapshot.
-            guard seenIDs.insert(t.id).inserted else { continue }
-            targets.append(t)
-        }
-        guard !targets.isEmpty else {
-            onLine(.init(
-                timestamp: Date(), level: .warn,
-                text: "[warn] device scan: no reachable devices — nothing attempted"
-            ))
-            return []
-        }
+        guard let targets = loadScanTargets(dataDir: dataDir, onLine: onLine),
+              let earlier = loadEarlier(dataDir: dataDir, onLine: onLine) else { return [] }
         onLine(.init(
             timestamp: Date(), level: .info,
             text: "[info] device scan: \(targets.count) Mac(s), "
                 + "\(targets.filter(\.ddmEnabled).count) DDM-enabled"
         ))
-
+        let targetIDs = Set(targets.map(\.id))
+        var round = force ? nil : DeviceScanPasses.round(in: stateStore, now: collectStart)
+        var doneBefore = Set(round?.attempted ?? []).intersection(targetIDs)
+        // A round that already covers every current target has nothing left: start afresh.
+        if doneBefore == targetIDs { round = nil; doneBefore = [] }
+        let pending = DeviceScanPasses.passOrder(
+            targets.filter { !doneBefore.contains($0.id) },
+            health: earlier.health, ddm: earlier.ddm)
+        let passStart = Date()
+        let stopRun = runStop
+        let shouldStop: (@Sendable (Int) -> Bool)? = scanStop ?? (force ? nil : { @Sendable _ in
+            passShouldStop(passStart: passStart, now: Date(), budget: scanBudget,
+                           runStop: stopRun)
+        })
         let (results, stops, stopCause) = await scanDevices(
-            targets, profile: profile, bin: bin,
-            probe: authConfirmationProbe, limits: limits, onLine: onLine
+            pending, profile: profile, bin: bin,
+            probe: authConfirmationProbe, limits: limits, shouldStop: shouldStop, onLine: onLine
         )
-        return reduceAndSave(
-            results: results, stops: stops, stopCause: stopCause, dataDir: dataDir,
-            recordManifest: recordManifest, stateStore: stateStore,
-            collectStart: collectStart, onLine: onLine
-        )
+        let attempted = Set(results.map(\.target.id))
+        guard !attempted.isEmpty else {
+            // Nothing new: no write, no landing, and the round stays as it was.
+            onLine(.init(timestamp: Date(), level: .info, text:
+                "[info] device scan: scanned 0 of \(targets.count) Macs this pass; "
+                    + "\(pending.count) left for the next pass"))
+            return []
+        }
+        let left = pending.count - attempted.count
+        let pass = PassInput(
+            results: results, stops: stops, stopCause: stopCause, targets: targets,
+            earlier: earlier, prior: round,
+            roundEnds: left <= 0 || !stops.isEmpty)
+        let (written, tallies) = reduceAndSave(
+            pass, dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
+            collectStart: collectStart, onLine: onLine)
+        if pass.roundEnds {
+            stateStore?.clearDeviceScanRound()
+        } else {
+            let next = DeviceScanRound(
+                started: round?.started ?? collectStart, lastPass: collectStart,
+                attempted: doneBefore.union(attempted).sorted(), remaining: left,
+                history: (round?.history ?? DeviceScanTally()) + (tallies[.history] ?? .init()),
+                statusItems: (round?.statusItems ?? DeviceScanTally())
+                    + (tallies[.statusItems] ?? .init()))
+            do { try stateStore?.recordDeviceScanRound(next) } catch {
+                onLine(.init(timestamp: Date(), level: .warn, text:
+                    "[warn] device scan: round not recorded — \(error.englishDescription)"))
+            }
+            onLine(.init(timestamp: Date(), level: .info, text:
+                "[info] device scan: scanned \(attempted.count) of \(targets.count) Macs "
+                    + "this pass; \(left) left for the next pass"))
+        }
+        return written
+    }
+
+    /// The budget is spent or someone is waiting to refresh in the app.
+    static func passShouldStop(
+        passStart: Date, now: Date, budget: TimeInterval, runStop: (@Sendable () -> RunStop?)?
+    ) -> Bool {
+        now.timeIntervalSince(passStart) >= budget || runStop?() != nil
+    }
+
+    /// The scan targets from the newest `computers` snapshot, logging why there are none.
+    private static func loadScanTargets(
+        dataDir: URL, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> [DeviceScanTarget]? {
+        guard let data = try? loadLatestSnapshotData(kind: "computers", dataDir: dataDir),
+              let found = DeviceScanPasses.scanTargets(from: data),
+              found.unsafe + found.targets.count > 0 else {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[skip] device scan: no computers snapshot"))
+            return nil
+        }
+        for _ in 0..<found.unsafe {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] device scan: skipping a device with an unsafe id"))
+        }
+        guard !found.targets.isEmpty else {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] device scan: no reachable devices — nothing attempted"))
+            return nil
+        }
+        return found.targets
+    }
+
+    /// The two kinds' newest earlier rows; nil, after one line per kind, when a snapshot is
+    /// there but cannot be read, so this pass's rows never replace a whole-fleet file.
+    private static func loadEarlier(
+        dataDir: URL, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> Earlier? {
+        let health = DeviceScanPasses.earlierRows(
+            kind: mdmCommandHealthKind, dataDir: dataDir, as: MDMCommandHealthRecord.self)
+        let ddm = DeviceScanPasses.earlierRows(
+            kind: ddmDeviceStatusKind, dataDir: dataDir, as: DDMDeviceStatusRecord.self)
+        for (kind, rows) in [(mdmCommandHealthKind, health == nil),
+                             (ddmDeviceStatusKind, ddm == nil)] where rows {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] device scan: \(kind) snapshot could not be read; "
+                            + "pass skipped"))
+        }
+        guard let health, let ddm else { return nil }
+        return Earlier(health: health, ddm: ddm)
+    }
+
+    /// The newest earlier row of each Mac, per kind, each with a scan time when one is known.
+    private struct Earlier {
+        let health: [MDMCommandHealthRecord]
+        let ddm: [DDMDeviceStatusRecord]
+    }
+
+    /// One pass's results and what the round knew before it.
+    private struct PassInput {
+        let results: [DeviceResult]
+        let stops: [CallType: Int32]
+        let stopCause: FailureCause?
+        let targets: [DeviceScanTarget]
+        let earlier: Earlier
+        let prior: DeviceScanRound?
+        /// Every target attempted, or a call type stopped.
+        let roundEnds: Bool
     }
 
     /// A failed attempt still counts as an attempt for cadence purposes —
@@ -219,6 +311,7 @@ extension ReportEngine {
     private static func scanDevices(
         _ targets: [DeviceScanTarget], profile: String, bin: URL,
         probe: @escaping AuthConfirmationProbe, limits: DeviceCallLimits,
+        shouldStop: (@Sendable (Int) -> Bool)?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> (results: [DeviceResult], stops: [CallType: Int32], stopCause: FailureCause?) {
         let bridge = CLIBridge()
@@ -229,6 +322,7 @@ extension ReportEngine {
 
         await withTaskGroup(of: DeviceResult.self) { group in
             var inFlight = 0
+            var started = 0
             for target in targets {
                 if inFlight >= deviceScanConcurrency, let r = await group.next() {
                     inFlight -= 1
@@ -243,6 +337,9 @@ extension ReportEngine {
                         ))
                     }
                 }
+                // Calls in flight finish; the pass only stops starting Macs.
+                if shouldStop?(started) == true { break }
+                started += 1
                 inFlight += 1
                 group.addTask {
                     await scanOne(
@@ -545,31 +642,51 @@ extension ReportEngine {
         return t
     }
 
-    /// Writes the tally's rows, sorted by device id, when under the 25%
-    /// failure budget; otherwise warns and records the kind failed without
-    /// writing anything. `attempted == failed == 0` (nothing to reduce) is
-    /// under budget, so it lands an empty snapshot — a landed, empty result,
-    /// not a failure.
-    private static func landOrReject<Row: Encodable & DeviceIdentified>(
-        _ tally: Tally<Row>, kind: String, dataDir: URL, recordManifest: Bool,
+    /// Ends a kind's pass. At the round's end a call type with more than a quarter of the
+    /// round's attempts failed records the kind failed and writes nothing; otherwise this pass's
+    /// rows, merged with every other target's earlier row, are written, and landed at the end.
+    /// Returns whether it wrote.
+    private static func finishKind<Row: DeviceScanRow>(
+        _ tally: Tally<Row>, kind: String, earlier: [Row], carry: Set<String>,
+        before: DeviceScanTally?, roundEnds: Bool, dataDir: URL, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
-        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void, saved: inout Set<String>
-    ) {
-        if DeviceScanBuilders.exceedsFailureBudget(failed: tally.failed, total: tally.attempted) {
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> Bool {
+        let round = (before ?? DeviceScanTally())
+            + DeviceScanTally(attempted: tally.attempted, failed: tally.failed)
+        if roundEnds,
+           DeviceScanBuilders.exceedsFailureBudget(failed: round.failed, total: round.attempted) {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[partial] \(kind): \(tally.failed) of \(tally.attempted) "
+                text: "[partial] \(kind): \(round.failed) of \(round.attempted) "
                     + "devices failed \(deviceScanNotWrittenMarkerSuffix)"
             ))
             stateStore?.record(.failed(exitCode: nil), report: kind, at: collectStart)
-        } else {
-            let rows = tally.rows.sorted { $0.deviceId < $1.deviceId }
-            save(
-                rows, kind: kind, failed: tally.failed, attempted: tally.attempted,
-                dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
-                collectStart: collectStart, onLine: onLine, saved: &saved
-            )
+            return false
         }
+        let now = Date()
+        let scanned = tally.rows.map { row -> Row in
+            var row = row
+            row.scannedAt = ISO8601Time.string(now)
+            return row
+        }
+        let rows = DeviceScanPasses.merged(
+            scanned: scanned, earlier: earlier, carry: carry, now: now)
+        guard save(rows, kind: kind, dataDir: dataDir, recordManifest: recordManifest,
+                   stateStore: stateStore, collectStart: collectStart, onLine: onLine)
+        else { return false }
+        guard roundEnds else { return true }
+        stateStore?.record(.landed, report: kind, at: collectStart)
+        onLine(.init(timestamp: Date(), level: .ok, text: "[ok] \(kind): \(rows.count) device(s)"))
+        if round.failed > 0 {
+            // Shared suffix: the honesty watcher must not queue a retry for a landed kind.
+            onLine(.init(
+                timestamp: Date(), level: .warn,
+                text: "[partial] \(kind): \(round.failed) of \(round.attempted) "
+                    + deviceScanGapsMarkerSuffix
+            ))
+        }
+        return true
     }
 
     /// Why a call type stopped, as the `[partial]` line says it.
@@ -578,29 +695,36 @@ extension ReportEngine {
             ? "stopped after repeated timeouts" : "stopped after exit \(stopExit)"
     }
 
+    /// Records a stopped call type's kind failed, as before passes.
+    private static func recordStopped(
+        _ kind: String, stopExit: Int32, cause: FailureCause?, stateStore: StateFileStore?,
+        collectStart: Date, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) {
+        onLine(.init(
+            timestamp: Date(), level: .warn,
+            text: "[partial] \(kind): \(stoppedText(stopExit)) " + deviceScanNotWrittenMarkerSuffix
+        ))
+        stateStore?.record(
+            .failed(exitCode: stopExit), report: kind, at: collectStart, cause: cause)
+    }
+
+    /// Returns the kinds written and this pass's attempts and failures per call type.
     private static func reduceAndSave(
-        results: [DeviceResult], stops: [CallType: Int32], stopCause: FailureCause?,
-        dataDir: URL, recordManifest: Bool,
+        _ pass: PassInput, dataDir: URL, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) -> Set<String> {
-        var saved: Set<String> = []
+    ) -> (written: Set<String>, tallies: [CallType: DeviceScanTally]) {
+        var written: Set<String> = []
+        var tallies: [CallType: DeviceScanTally] = [:]
         let now = Date()
 
         // History → mdm-command-health (every device).
-        if let stopExit = stops[.history] {
-            onLine(.init(
-                timestamp: Date(), level: .warn,
-                text: "[partial] \(mdmCommandHealthKind): \(stoppedText(stopExit)) "
-                    + deviceScanNotWrittenMarkerSuffix
-            ))
-            stateStore?.record(
-                .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart,
-                cause: stopCause
-            )
+        if let stopExit = pass.stops[.history] {
+            recordStopped(mdmCommandHealthKind, stopExit: stopExit, cause: pass.stopCause,
+                          stateStore: stateStore, collectStart: collectStart, onLine: onLine)
         } else {
-            let healthTally = tally(
-                results, outcome: \.history
+            let t = tally(
+                pass.results, outcome: \.history
             ) { (r: DeviceResult, exit: Int32, data: Data) -> MDMCommandHealthRecord? in
                 guard exit == 0 || exit == CLIBridge.exitCodePartialFailure,
                       let decoded = try? JSONDecoder().decode(
@@ -610,99 +734,74 @@ extension ReportEngine {
                     deviceId: r.target.id, name: r.target.name, history: decoded, now: now
                 )
             }
-            landOrReject(
-                healthTally, kind: mdmCommandHealthKind, dataDir: dataDir,
-                recordManifest: recordManifest, stateStore: stateStore,
-                collectStart: collectStart, onLine: onLine, saved: &saved
-            )
+            tallies[.history] = DeviceScanTally(attempted: t.attempted, failed: t.failed)
+            if finishKind(
+                t, kind: mdmCommandHealthKind, earlier: pass.earlier.health,
+                carry: Set(pass.targets.map(\.id)), before: pass.prior?.history,
+                roundEnds: pass.roundEnds, dataDir: dataDir, recordManifest: recordManifest,
+                stateStore: stateStore, collectStart: collectStart, onLine: onLine
+            ) { written.insert(mdmCommandHealthKind) }
         }
 
-        // Status items → ddm-device-status (DDM-enabled devices only).
-        if let stopExit = stops[.statusItems] {
-            onLine(.init(
-                timestamp: Date(), level: .warn,
-                text: "[partial] \(ddmDeviceStatusKind): \(stoppedText(stopExit)) "
-                    + deviceScanNotWrittenMarkerSuffix
-            ))
-            stateStore?.record(
-                .failed(exitCode: stopExit), report: ddmDeviceStatusKind, at: collectStart,
-                cause: stopCause
-            )
-        } else {
-            // Eligible devices; empty means the fleet has no DDM-enabled Mac with a managementId.
-            let ddmTargets = results.filter {
-                $0.target.ddmEnabled && $0.target.managementId != nil
-            }
-            if ddmTargets.isEmpty {
-                // A fleet with zero DDM-enabled Macs is a real result, not an
-                // absence — land an empty snapshot so the health strip sees it.
-                save(
-                    [DDMDeviceStatusRecord](), kind: ddmDeviceStatusKind, failed: 0, attempted: 0,
-                    dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
-                    collectStart: collectStart, onLine: onLine, saved: &saved
-                )
-            } else {
-                let statusTally = tally(
-                    ddmTargets, outcome: \.status
-                ) { (r: DeviceResult, exit: Int32, data: Data) -> DDMDeviceStatusRecord? in
-                    let mgmt = r.target.managementId ?? ""
-                    if exit == CLIBridge.exitCodeNotFound {
-                        return DeviceScanBuilders.ddmRecordNotReported(
-                            deviceId: r.target.id, name: r.target.name, managementId: mgmt
-                        )
-                    }
-                    guard exit == 0 || exit == CLIBridge.exitCodePartialFailure,
-                          let payload = try? JSONDecoder().decode(
-                              DDMStatusItemsPayload.self, from: data
-                          ) else { return nil }
-                    return DeviceScanBuilders.ddmRecord(
-                        deviceId: r.target.id, name: r.target.name,
-                        managementId: mgmt, payload: payload
-                    )
-                }
-                landOrReject(
-                    statusTally, kind: ddmDeviceStatusKind, dataDir: dataDir,
-                    recordManifest: recordManifest, stateStore: stateStore,
-                    collectStart: collectStart, onLine: onLine, saved: &saved
-                )
-            }
+        // Status items → ddm-device-status (DDM-enabled devices only). With none in the fleet
+        // it writes an empty snapshot, a real result the health strip must see.
+        if let stopExit = pass.stops[.statusItems] {
+            recordStopped(ddmDeviceStatusKind, stopExit: stopExit, cause: pass.stopCause,
+                          stateStore: stateStore, collectStart: collectStart, onLine: onLine)
+            return (written, tallies)
         }
-        return saved
+        let t = tally(
+            pass.results.filter { DeviceScanPasses.isDDMEligible($0.target) }, outcome: \.status
+        ) { (r: DeviceResult, exit: Int32, data: Data) -> DDMDeviceStatusRecord? in
+            let mgmt = r.target.managementId ?? ""
+            if exit == CLIBridge.exitCodeNotFound {
+                return DeviceScanBuilders.ddmRecordNotReported(
+                    deviceId: r.target.id, name: r.target.name, managementId: mgmt
+                )
+            }
+            guard exit == 0 || exit == CLIBridge.exitCodePartialFailure,
+                  let payload = try? JSONDecoder().decode(
+                      DDMStatusItemsPayload.self, from: data
+                  ) else { return nil }
+            return DeviceScanBuilders.ddmRecord(
+                deviceId: r.target.id, name: r.target.name,
+                managementId: mgmt, payload: payload
+            )
+        }
+        tallies[.statusItems] = DeviceScanTally(attempted: t.attempted, failed: t.failed)
+        // Eligible across the whole fleet, not this pass, so a pass that reached no DDM Mac
+        // keeps the fleet's rows.
+        if finishKind(
+            t, kind: ddmDeviceStatusKind, earlier: pass.earlier.ddm,
+            carry: Set(pass.targets.filter(DeviceScanPasses.isDDMEligible).map(\.id)),
+            before: pass.prior?.statusItems, roundEnds: pass.roundEnds, dataDir: dataDir,
+            recordManifest: recordManifest, stateStore: stateStore,
+            collectStart: collectStart, onLine: onLine
+        ) { written.insert(ddmDeviceStatusKind) }
+        return (written, tallies)
     }
 
+    /// Writes the snapshot; false, after recording the failure, when it cannot.
     private static func save<T: Encodable>(
-        _ rows: [T], kind: String, failed: Int, attempted: Int, dataDir: URL, recordManifest: Bool,
+        _ rows: [T], kind: String, dataDir: URL, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
-        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void, saved: inout Set<String>
-    ) {
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> Bool {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(rows)
             try saveSnapshot(
-                data: data, kind: kind, dataDir: dataDir,
+                data: try encoder.encode(rows), kind: kind, dataDir: dataDir,
                 recordManifest: recordManifest, onLine: onLine
             )
-            stateStore?.record(.landed, report: kind, at: collectStart)
-            saved.insert(kind)
-            onLine(.init(
-                timestamp: Date(), level: .ok,
-                text: "[ok] \(kind): \(rows.count) device(s)"
-            ))
-            if failed > 0 {
-                // Shared suffix: the honesty watcher must not queue a retry for a landed kind.
-                onLine(.init(
-                    timestamp: Date(), level: .warn,
-                    text: "[partial] \(kind): \(failed) of \(attempted) "
-                        + deviceScanGapsMarkerSuffix
-                ))
-            }
+            return true
         } catch {
             stateStore?.record(.failed(exitCode: nil), report: kind, at: collectStart)
             onLine(.init(
                 timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): could not write snapshot — \(error.englishDescription)"
             ))
+            return false
         }
     }
 }

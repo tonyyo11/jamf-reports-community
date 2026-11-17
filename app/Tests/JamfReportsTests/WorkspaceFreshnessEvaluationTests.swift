@@ -63,6 +63,30 @@ final class WorkspaceFreshnessEvaluationTests: XCTestCase {
         XCTAssertTrue(reported().contains("patch-release-dates"), "it can run now, so it counts")
     }
 
+    // MARK: - An open scan round
+
+    /// While a round is open and its last pass is recent the two scan kinds are in progress,
+    /// not missing; once the round goes quiet they are reported again.
+    func testScanKindsAreNotReportedDuringAnOpenRound() throws {
+        UserDefaults.standard.set(false, forKey: skipExpensiveKey)
+        let store = try stateStore()
+        try store.record(.landed, report: "overview", at: now)
+        let scanKinds: Set<String> = ["ddm-device-status", "mdm-command-health"]
+        func reported() -> Set<String> {
+            Set(WorkspaceStore.evaluateFreshness(profile: profile, now: now).map(\.snapshotKind))
+        }
+        XCTAssertTrue(scanKinds.isSubset(of: reported()))
+        func round(lastPassDaysAgo days: Double) -> DeviceScanRound {
+            DeviceScanRound(started: now.addingTimeInterval(-5 * 86_400),
+                            lastPass: now.addingTimeInterval(-days * 86_400),
+                            attempted: ["1"], remaining: 4)
+        }
+        try store.recordDeviceScanRound(round(lastPassDaysAgo: 1))
+        XCTAssertTrue(reported().isDisjoint(with: scanKinds))
+        try store.recordDeviceScanRound(round(lastPassDaysAgo: 3))
+        XCTAssertTrue(scanKinds.isSubset(of: reported()), "a stale round no longer hides them")
+    }
+
     // MARK: - skipExpensiveCollections toggle
 
     func testExpensiveKindsAreExcludedWhenSkipToggleIsOn() throws {
