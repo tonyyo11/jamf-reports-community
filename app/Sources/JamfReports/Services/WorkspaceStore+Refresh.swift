@@ -161,7 +161,7 @@ extension WorkspaceStore {
     ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         beginCollect(
@@ -210,7 +210,7 @@ extension WorkspaceStore {
         }
     ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
@@ -260,7 +260,7 @@ extension WorkspaceStore {
             toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         beginCollect(
             for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
@@ -290,6 +290,44 @@ extension WorkspaceStore {
     /// process — the bundled `--tick` agent — holds the tick lock (#226 5c), or a collect is
     /// already running in this app, for any profile. `CLIBridge.collect` would refuse the
     /// collect anyway; asking first keeps a refused button from touching any state.
+    /// `manualCollectMustWait`, except that a scheduled run in another process is asked to
+    /// stop at its next source (`ManualRefreshRequest`) and waited for, up to
+    /// `manualRefreshWait`. True when the collect may start.
+    func manualCollectMayStart() async -> Bool {
+        guard case .tickLockHeld? = CLIBridge.collectRefusal(), !isAnyCollectInFlight,
+              manualRefreshWait > 0, !isWaitingForScheduledRun else {
+            return !manualCollectMustWait()
+        }
+        isWaitingForScheduledRun = true
+        ManualRefreshRequest.post()
+        globalStatus = L("Waiting for the scheduled run to finish its current source…")
+        defer {
+            isWaitingForScheduledRun = false
+            ManualRefreshRequest.clear()
+            globalStatus = nil
+        }
+        let deadline = Date().addingTimeInterval(manualRefreshWait)
+        while Date() < deadline {
+            try? await Task.sleep(for: .seconds(manualRefreshPoll))
+            guard await CLIBridge.collectRefusalOffMain() != nil else {
+                toast = Toast(
+                    message: L("""
+                        The scheduled run stopped for this refresh. It will pick up what is \
+                        left on its next run.
+                        """),
+                    style: .info)
+                return !isAnyCollectInFlight
+            }
+        }
+        toast = Toast(
+            message: L("""
+                The scheduled run is still on one source. Try again when it finishes; Run \
+                History shows what it is collecting.
+                """),
+            style: .info)
+        return false
+    }
+
     func manualCollectMustWait() -> Bool {
         let refusal = CLIBridge.collectRefusal()
             ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)

@@ -2196,6 +2196,10 @@ struct ReportEngine: Sendable {
     /// every source as before.
     @TaskLocal static var addOnCollectForced = true
 
+    /// Asked before each source of a scheduled run: non-nil stops the run there, leaving what
+    /// is left due for the next one (`RunStop`). nil outside a scheduled run.
+    @TaskLocal static var runStop: (@Sendable () -> RunStop?)?
+
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
         platformRoute(
@@ -2420,8 +2424,14 @@ struct ReportEngine: Sendable {
         // fresh-cache kinds and failed only the chronic residue is not an outage.
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
-        for planned in plan {
+        var stoppedEarly = false
+        for (index, planned) in plan.enumerated() {
             let (args, kind) = (planned.args, planned.kind)
+            if planned.skip == nil, Self.stopsRun(
+                left: plan[index...].filter { $0.skip == nil }.map(\.kind), onLine: onLine) {
+                stoppedEarly = true
+                break
+            }
             // A skipped kind is recorded nowhere: a kind this profile's API cannot serve, the
             // operator turned off or is not due is not a failure, so it must not advance a
             // failure counter, reach `degradedKinds`, or count toward the outage guard.
@@ -2505,8 +2515,14 @@ struct ReportEngine: Sendable {
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
         // as live in today's summary).
+        // A stopped run starts nothing else: the scan and the release-date walk stay due.
+        if !stoppedEarly, scanPlan == .due || !afterMatrix.isEmpty {
+            stoppedEarly = Self.stopsRun(
+                left: (scanPlan == .due ? ["device scan"] : []) + afterMatrix, onLine: onLine)
+        }
         let scanSaved = await Self.runDeviceScanPhase(
-            profile: profile, bin: bin, dataDir: dataDir, plan: scanPlan,
+            profile: profile, bin: bin, dataDir: dataDir,
+            plan: stoppedEarly && scanPlan == .due ? .notDue(lastAttempt: nil) : scanPlan,
             recordManifest: recordManifest,
             stateStore: stateStore, collectStart: collectStart,
             authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
@@ -2526,7 +2542,8 @@ struct ReportEngine: Sendable {
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
-            workspace: workspace, profile: profile, afterMatrix: afterMatrix, bin: bin,
+            workspace: workspace, profile: profile,
+            afterMatrix: stoppedEarly ? [] : afterMatrix, bin: bin,
             dataDir: dataDir, savedKinds: savedKinds, nothingLandedReason: nothingLandedReason,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore,
@@ -3933,7 +3950,8 @@ struct ReportEngine: Sendable {
         var schoolOutcomes: [CollectOutcome] = []
         var schoolSaved: Set<String> = []
         var unlanded: [String] = []
-        for (args, kind) in commands {
+        for (index, (args, kind)) in commands.enumerated() {
+            if stopsRun(left: commands[index...].map(\.kind), onLine: onLine) { break }
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let schoolResult: (Int32, Data)?
@@ -4137,7 +4155,12 @@ struct ReportEngine: Sendable {
 
         let bridge = CLIBridge()
         var unlanded: [String] = []
-        for (args, kind) in commands {
+        var stoppedAt: Int?
+        for (index, (args, kind)) in commands.enumerated() {
+            if stopsRun(left: commands[index...].map(\.kind), onLine: onLine) {
+                stoppedAt = index
+                break
+            }
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let protectResult: (Int32, Data)?
@@ -4190,8 +4213,9 @@ struct ReportEngine: Sendable {
                     .failed(exitCode: exitCode), report: kind, at: collectStart, cause: cause)
             }
         }
-        reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
-        return commands.map(\.kind).filter { !unlanded.contains($0) }
+        let attempted = commands.prefix(stoppedAt ?? commands.count).map(\.kind)
+        reportUnlanded(unlanded, attempted: attempted.count, onLine: onLine)
+        return attempted.filter { !unlanded.contains($0) }
     }
 
     // MARK: - Public API: schoolGenerate

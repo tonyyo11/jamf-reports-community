@@ -129,6 +129,44 @@ extension ReportEngine {
                 for: kind, inputs: inputs, timeoutHold: timeoutHold, lastRun: lastRun)
     }
 
+    /// Why a scheduled run stops before its next source. Nothing failed: what is left stays
+    /// due, the run is not Partial, and the background item comes back for it
+    /// (`CollectHonestyWatcher` reads `stoppedEarlyMarker`).
+    enum RunStop: Equatable, Sendable {
+        /// The run has held the lock for `jamf_cli.run_budget_minutes`.
+        case budgetUsed(minutes: Int)
+        /// Someone asked for a refresh in the app (`ManualRefreshRequest`).
+        case manualRefresh
+
+        var reason: String {
+            switch self {
+            case .budgetUsed(let minutes): return "run budget used (\(minutes) minutes)"
+            case .manualRefresh: return "stopped for a manual refresh"
+            }
+        }
+
+        /// The one decision a scheduled run's `runStop` closure makes.
+        static func evaluate(
+            started: Date, budgetMinutes: Int, manualRefreshPending: Bool, now: Date = Date()
+        ) -> RunStop? {
+            if manualRefreshPending { return .manualRefresh }
+            return now.timeIntervalSince(started) >= Double(budgetMinutes * 60)
+                ? .budgetUsed(minutes: budgetMinutes) : nil
+        }
+    }
+
+    /// Starts every line that says a run stopped before its sources were done.
+    static let stoppedEarlyMarker = "[info] stopped early: "
+
+    /// True, after logging why and what is left, when `runStop` says to stop here.
+    static func stopsRun(left: [String], onLine: @Sendable (CLIBridge.LogLine) -> Void) -> Bool {
+        guard !left.isEmpty, let stop = runStop?() else { return false }
+        let count = left.count == 1 ? "1 source" : "\(left.count) sources"
+        onLine(.init(timestamp: Date(), level: .info, text: stoppedEarlyMarker
+            + "\(stop.reason); \(count) left for the next run: \(left.joined(separator: ", "))"))
+        return true
+    }
+
     /// A source whose last attempt took longer than this many seconds runs after the others.
     static let slowSourceThreshold = 120
 

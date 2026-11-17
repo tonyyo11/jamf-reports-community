@@ -126181,6 +126181,86 @@
         }
       }
     },
+    "The scheduled run is still on one source. Try again when it finishes; Run History shows what it is collecting." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der geplante Lauf arbeitet noch an einer Datenquelle. Versuchen Sie es erneut, wenn er fertig ist; der Laufverlauf zeigt, was er gerade erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ejecución programada sigue en una fuente de datos. Inténtelo de nuevo cuando termine; Historial de ejecuciones muestra lo que está recopilando."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’exécution planifiée traite encore une source de données. Réessayez à la fin ; Historique des exécutions montre ce qu’elle collecte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’esecuzione pianificata è ancora su un’origine dati. Riprovare al termine; Cronologia esecuzioni mostra cosa sta raccogliendo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スケジュールされた実行はまだ1つのデータソースを収集中です。完了後にもう一度お試しください。収集中の内容は実行履歴で確認できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A execução agendada ainda está em uma fonte de dados. Tente novamente quando ela terminar; o Histórico de execuções mostra o que está sendo coletado."
+          }
+        }
+      }
+    },
+    "The scheduled run stopped for this refresh. It will pick up what is left on its next run." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der geplante Lauf wurde für diese Aktualisierung angehalten. Den Rest holt er beim nächsten Lauf nach."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ejecución programada se detuvo para esta actualización. Recogerá lo que falta en su próxima ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’exécution planifiée s’est arrêtée pour cette actualisation. Elle reprendra le reste à sa prochaine exécution."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’esecuzione pianificata si è fermata per questo aggiornamento. Riprenderà il resto alla prossima esecuzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この更新のためにスケジュールされた実行を停止しました。残りは次回の実行で収集されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A execução agendada parou para esta atualização. Ela coletará o restante na próxima execução."
+          }
+        }
+      }
+    },
     "The software update scan found errors on these devices. Open OS Updates for the products and status, and check that the device can reach Apple." : {
       "localizations" : {
         "de" : {
@@ -135339,6 +135419,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "RESUMO DO ESPAÇO DE TRABALHO"
+          }
+        }
+      }
+    },
+    "Waiting for the scheduled run to finish its current source…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warten, bis der geplante Lauf seine aktuelle Datenquelle abgeschlossen hat…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a que la ejecución programada termine su fuente de datos actual…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de la fin de la source de données en cours de l’exécution planifiée…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa che l’esecuzione pianificata termini l’origine dati corrente…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スケジュールされた実行が現在のデータソースを終えるのを待っています…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aguardando a execução agendada concluir a fonte de dados atual…"
           }
         }
       }

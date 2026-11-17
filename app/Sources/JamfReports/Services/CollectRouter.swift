@@ -339,6 +339,8 @@ enum CollectRouter {
         // Last: the summary, the add-ons, the claim release and this Mac's activity are done, so
         // a scan that fails, stalls or is killed costs nothing but itself.
         guard detected.type == .jamfSchool, let mdm = environment.mdm else { return }
+        if landed.schoolScanPlan == .due,
+           ReportEngine.stopsRun(left: ["device scan"], onLine: onLine) { return }
         await ReportEngine.runSchoolDeviceScanStep(
             workspace: workspace, school: mdm, workspacePaths: workspacePaths,
             plan: landed.schoolScanPlan ?? .stateUnavailable,

@@ -96,8 +96,11 @@ that is L4, because it needs a cadence first.
 
 ## L2 — Short runs first, the summary early, a time budget per run
 
-Items 1 and 2 are built (Jamf Pro and Jamf School). Benchmark reports and the dashboard do not
-record a duration yet, so they keep their place.
+Items 1, 2, 4 and 5 are built (Jamf Pro and Jamf School). Benchmark reports and the dashboard
+do not record a duration yet, so they keep their place. As built: the budget stops the run
+before any further source, slow or not (the slow ones are last anyway); the app waits up to 30
+minutes for the source in progress and does not yet name it in the status line; the pickup is
+the background item's same-day retry (an hour later, then two, then four).
 
 1. **Record how long each source took.** The run log already prints `<kind> took Ns`; keep the
    last value in the state folder (`<kind>.took`, outside the manifest).
@@ -153,6 +156,9 @@ Not covered by passes: `patch-device-failures` and `update-device-failures`, whe
 does the walking inside one call. They stay skippable and fall under L1.
 
 ## L4 — Protect, Security Cloud and the Platform API under the same planner
+
+Built, except duration ordering for benchmark reports. A Protect-only environment keeps
+collecting every source: a cadence skip there would land nothing and read as a dead run.
 
 - Give `protectCommandMatrix` and `security-risk` a cadence (the refresh tier's 12 hours) and
   the L1 hold, through one planner call each, so a run that only came for a retried Jamf Pro

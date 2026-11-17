@@ -124,6 +124,9 @@ jamf_cli:
   # titles in time; patch screens and the patch score factor then have no data.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
+  # How long a scheduled run may hold the lock before it leaves the rest of its sources for
+  # its next run (minutes, 10 to 240). Raise it for a slow server.
+  run_budget_minutes: 45
 
 
 # =============================================================================

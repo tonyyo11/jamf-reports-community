@@ -111,6 +111,25 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
     /// or not a boolean reads as false (`ReportEngine.reducingComputers`).
     var keepAccountNames: Bool?
+    /// `run_budget_minutes`: how long a scheduled run may hold the lock before it leaves the
+    /// rest for the next run. `scan_budget_minutes`: the same for one pass of a per-device
+    /// scan. Absent or not a whole number reads as the default.
+    var runBudgetMinutes: Int?
+    var scanBudgetMinutes: Int?
+
+    static let defaultRunBudgetMinutes = 45
+    static let defaultScanBudgetMinutes = 30
+    static let runBudgetRange = 10...240
+    static let scanBudgetRange = 5...240
+
+    var resolvedRunBudgetMinutes: Int {
+        min(max(runBudgetMinutes ?? Self.defaultRunBudgetMinutes,
+                Self.runBudgetRange.lowerBound), Self.runBudgetRange.upperBound)
+    }
+    var resolvedScanBudgetMinutes: Int {
+        min(max(scanBudgetMinutes ?? Self.defaultScanBudgetMinutes,
+                Self.scanBudgetRange.lowerBound), Self.scanBudgetRange.upperBound)
+    }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case dataDir = "data_dir"
@@ -120,6 +139,8 @@ struct JamfCLIConfig: Decodable, Sendable {
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
         case keepAccountNames = "keep_account_names"
+        case runBudgetMinutes = "run_budget_minutes"
+        case scanBudgetMinutes = "scan_budget_minutes"
     }
 
     var keepsAccountNames: Bool { keepAccountNames ?? false }
@@ -154,6 +175,8 @@ extension JamfCLIConfig {
         maxCacheAgeHours = try c.decodeIfPresent(Int.self, forKey: .maxCacheAgeHours)
         collectSkip = try c.decodeIfPresent([String].self, forKey: .collectSkip)
         keepAccountNames = try? c.decodeIfPresent(Bool.self, forKey: .keepAccountNames)
+        runBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .runBudgetMinutes)
+        scanBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .scanBudgetMinutes)
     }
 }
 

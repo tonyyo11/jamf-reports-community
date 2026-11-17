@@ -294,6 +294,14 @@ versions in this repository map to git tags.
   Before, a source that had never landed counted as due in every collect, so each one waited on
   it again. The run log names it under "timed out repeatedly, left to the next day's run", and
   Collect now still tries it.
+- A manual refresh no longer gets "A scheduled run is in progress". The app asks the scheduled
+  run to stop after the source it is on, waits for it (the status bar says so), then refreshes.
+  The scheduled run logs why it stopped and collects what is left on its next run.
+- A scheduled run gives the lock back after 45 minutes and leaves the rest for its next run, an
+  hour later, instead of holding it until every source is done. `jamf_cli.run_budget_minutes`
+  (10 to 240) changes the limit for a slower server.
+- Jamf Protect and Jamf Security Cloud are no longer collected again by every automatic collect:
+  like other sources they wait 12 hours after landing, and a day after two timeouts in a row.
 - A data source that took more than two minutes on its last run now runs after the others,
   shortest first, so one slow source no longer holds up the rest of the day's data. The run log
   names them in a "running last" line. Jamf School sources are ordered the same way.
