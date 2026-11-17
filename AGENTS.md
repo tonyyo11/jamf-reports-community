@@ -683,6 +683,13 @@ seconds in `<kind>.took` (`StateFileStore.recordDuration`, `lastDuration(for:)`;
 outside the manifest). `ReportEngine.slowLast` moves the planned sources whose last attempt took
 over `slowSourceThreshold` (120 s) to the end, shortest first; everything else keeps the matrix
 order, and `slowLastLine` logs `[plan] running last (slow on their last run): …`.
+**Refused for size (2.12).** `BoundedFile.readLogged` records a snapshot over its limit as a
+`SizeRefusal` (kind, MB, limit; `allSizeRefusals`, reset by `resetSizeRefusals` at the start of
+`generate` and `generateHTML`). `CoreDashboardError`/`SchoolDashboardError.noCachedData` word the
+skip line from it ("the ea-results snapshot is 402 MB, over the 256 MB this Mac reads; left
+out"), `ReportEngine.reportSizeRefusals` logs one `[warn]` per kind and raises
+`AttentionCode.snapshotTooLarge` (cleared by a workbook run with none), and the HTML appendix
+lists it under "Not included". The per-device scan kinds are inventory kinds (256 MB).
 **Early summary (2.12).** Before the first slow source and before a due device scan, `collect`
 writes today's summary once (`writeEarlySummary`), only when every source attempted so far
 landed, so the dead-run verdicts at the end still decide a run with a failure; the end of the

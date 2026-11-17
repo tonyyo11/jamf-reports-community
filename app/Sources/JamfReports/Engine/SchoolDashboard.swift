@@ -767,6 +767,9 @@ enum SchoolDashboardError: Error, LocalizedError, SheetSkippable {
     var skipReason: String {
         switch self {
         case .noCachedData(let names):
+            if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
+                return "\(refusal.sentence); left out"
+            }
             return "No cached school snapshot found for: \(names.joined(separator: ", "))"
         }
     }

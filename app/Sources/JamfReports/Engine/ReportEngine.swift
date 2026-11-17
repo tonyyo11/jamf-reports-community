@@ -105,6 +105,7 @@ struct ReportEngine: Sendable {
         // Build the sheet registry from the dashboard's plan, then dispatch in
         // template order rather than plan order. Unknown SheetID values are skipped
         // with a warning — they are engine-team follow-ups, not fatal errors.
+        BoundedFile.resetSizeRefusals()
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
                                  provenance: prov, aiNarrative: aiNarrative, onLine: onLine)
         let registry = SheetRegistry(plan: core.sheetPlan)
@@ -134,6 +135,7 @@ struct ReportEngine: Sendable {
         }
 
         let eaWritten = eaSheets?.writeAll(sheets: sheets) ?? []
+        Self.reportSizeRefusals(artifact: "tabs", onLine: onLine)
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
         // Standalone PNGs land next to the xlsx via ExportNaming conventions.
@@ -2699,6 +2701,28 @@ struct ReportEngine: Sendable {
         return error
     }
 
+    /// One `[warn]` and a Needs attention item per snapshot this report could not read for its
+    /// size; clears the item when there is none. `artifact` is what the data was left out of.
+    static func reportSizeRefusals(
+        artifact: String, clearsWhenNone: Bool = true,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
+        let refusals = BoundedFile.allSizeRefusals
+        guard !refusals.isEmpty else {
+            if clearsWhenNone { AttentionLog.clear(.snapshotTooLarge) }
+            return
+        }
+        for refusal in refusals {
+            let text = "[warn] \(refusal.sentence): the \(artifact) that use it are left out"
+            AppLogger.report.warning("\(text, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: text))
+        }
+        let kinds = refusals.map(\.kind).joined(separator: ", ")
+        AttentionLog.raise(
+            .snapshotTooLarge,
+            "Too large to read, so left out of reports: \(kinds). See the run log for sizes.")
+    }
+
     /// Fetches the SOFA feeds when the plan lists `sofa`, records the outcome in the state
     /// store and logs it. A failed fetch is a `[warn]`, never `[partial]`: the cached feed
     /// stays in use. Shared by the Jamf Pro and Jamf School collects.
@@ -3756,6 +3780,7 @@ struct ReportEngine: Sendable {
         // generation too — otherwise the GUI's "Require snapshot manifest"
         // toggle would be a false promise for users who generate HTML reports.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
+        BoundedFile.resetSizeRefusals()
         let report = htmlReport(
             config: config, dataDir: dataDir, workspace: workspace, template: template,
             aiNarrative: aiNarrative, expandAll: false, locateJamfCLI: locateJamfCLI,
@@ -3764,6 +3789,8 @@ struct ReportEngine: Sendable {
         let digest = try await report.generate(
             outputURL: outputURL, profileName: configProfile, sections: template.htmlSections
         )
+        // Never clears: the workbook of the same run may have raised it for another source.
+        reportSizeRefusals(artifact: "sections", clearsWhenNone: false, onLine: onLine)
         // Write SHA-256 manifest alongside the HTML artifact.
         writeManifestStatic(for: outputURL, profile: configProfile, template: template.identifier)
         // T-13 integrity envelope: surface the embedded fingerprint via the log

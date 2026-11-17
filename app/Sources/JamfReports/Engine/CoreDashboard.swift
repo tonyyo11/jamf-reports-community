@@ -3825,6 +3825,9 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
         case .protectDisabled:
             return "protect.enabled is off"
         case .noCachedData(let names):
+            if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
+                return "\(refusal.sentence); left out"
+            }
             return "No cached jamf-cli snapshot found for: \(names.joined(separator: ", "))"
         }
     }

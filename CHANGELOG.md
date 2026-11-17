@@ -312,6 +312,11 @@ versions in this repository map to git tags.
 - A data source that took more than two minutes on its last run now runs after the others,
   shortest first, so one slow source no longer holds up the rest of the day's data. The run log
   names them in a "running last" line. Jamf School sources are ordered the same way.
+- A snapshot too large for the app to read (over 256 MB) is now named, with its size, wherever
+  a report leaves its data out: in the run log, on the skipped tab's line, in the HTML report's
+  "Not included" list and as a Needs attention item. Before, the report said no snapshot had
+  been found and lost the tab without saying why. The per-device scan snapshots now share the
+  256 MB limit instead of 64 MB.
 - The patch title report and the patch failures scan now share one timeout count, because both
   start with the same request to Jamf Pro. On one large server each of them waited 12 minutes
   on it, twice, before being left alone; now two timeouts between them hold both.

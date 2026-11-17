@@ -221,11 +221,13 @@ collecting every source: a cadence skip there would land nothing and read as a d
    which is a few hundred GB a year at daily inventory. Proposed: Config Doctor suggests
    retention when the data folder passes 20 GB; no default changes.
 
-4. **Large snapshots** (agreed by the owner on 2026-11-17, not built). First, whatever the
-   limit: a snapshot refused for size must be reported as refused, by name and size, in the
-   report's log, in "Not included" and as a Needs attention item, never as "no snapshot". And
-   the per-device scan kinds (`ddm-device-status`, `mdm-command-health`,
-   `school-device-detail`) join the inventory kinds, since their rows grow with the fleet. An inventory snapshot
+4. **Large snapshots** (agreed by the owner on 2026-11-17). Built: a snapshot refused for
+   size is reported as refused, by name and size, in the report's log, on the skipped tab's
+   line, in "Not included" and as a Needs attention item, never as "no snapshot"; and the
+   per-device scan kinds (`ddm-device-status`, `mdm-command-health`, `school-device-detail`)
+   are inventory kinds. Checked on the 12,000-Mac fleet at twice production density. The owner
+   accepts losing those tabs at that size, as long as it is said. Not built: the rest of this
+   item. Not covered yet: the app's own screens that read the same snapshot. An inventory snapshot
    over 256 MB (`BoundedFile.inventoryLimit`) is refused as unreadable. One production server
    holds about 20 KB of extension attribute results per Mac (93 results each, a few very long
    values), so `ea-results` reaches the limit near 12,800 Macs, and near 6,400 at twice that
@@ -243,9 +245,13 @@ collecting every source: a cadence skip there would land nothing and read as a d
    - Check the collect side too: whether jamf-cli's output is bounded while it is captured,
      before it is saved.
    - Jamf School and mobile inventory use the same limit and the same rule.
-   Two follow-ups this does not replace: reading `ea-results` as a stream (a higher limit
-   otherwise trades "refused" for a multi-GB decode), and an optional cap on stored value
-   length, off by default because it discards data.
+   Follow-ups this does not replace: reading `ea-results` as a stream (a higher limit
+   otherwise trades "refused" for a multi-GB decode); an optional cap on stored value length,
+   off by default because it discards data; and, for 2.13 or later (owner, 2026-11-17),
+   collecting only the extension attributes the workspace names (the mSCP ones, the security
+   agents, the configured `custom_eas`), so compliance scoring and agent coverage keep working
+   on a fleet whose full results are too large. That needs a jamf-cli call that returns chosen
+   attributes only, which has not been checked.
 
 ## L6 — Sites
 
