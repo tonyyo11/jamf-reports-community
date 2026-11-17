@@ -2564,7 +2564,7 @@ struct ReportEngine: Sendable {
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
-            workspace: workspace, profile: profile,
+            workspace: workspace, profile: profile, stoppedEarly: stoppedEarly,
             afterMatrix: stoppedEarly ? [] : afterMatrix, bin: bin,
             dataDir: dataDir, savedKinds: savedKinds, nothingLandedReason: nothingLandedReason,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
@@ -2782,6 +2782,7 @@ struct ReportEngine: Sendable {
     private static func finalizeCollect(
         workspace: WorkspaceID,
         profile: String,
+        stoppedEarly: Bool = false,
         afterMatrix: [String],
         bin: URL,
         dataDir: URL,
@@ -2866,7 +2867,13 @@ struct ReportEngine: Sendable {
         // "Trends updated". The marker belongs here rather than inside
         // `emitSummaryJSON` because `generate` calls that after any workbook,
         // where having no jamf-cli snapshots is the normal, correct state.
-        if let unwritten {
+        if let unwritten, stoppedEarly {
+            // The run was stopped, not failed: its retry collects the rest and writes the
+            // summary, so this is not Partial.
+            onLine(.init(timestamp: Date(), level: .info, text:
+                "[info] summary not written yet: \(unwritten) — the run stopped before its "
+                    + "sources were done"))
+        } else if let unwritten {
             let msg = "\(Self.summaryNotWrittenMarker) \(unwritten) — Trends did not advance"
             AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))

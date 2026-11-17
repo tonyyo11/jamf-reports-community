@@ -256,16 +256,14 @@ final class RunStopTests: XCTestCase {
         XCTAssertTrue(stopLine.contains("left for the next run"), stopLine)
         XCTAssertFalse(lines.all.contains { $0.contains("collecting sofa") },
                        "nothing else starts after the stop")
-        XCTAssertFalse(
-            lines.all.contains { $0.contains(ReportEngine.unlandedSourcesMarker) },
-            "a source the run did not start is not one that failed to land: \(lines.all)")
+        // On a workspace with nothing to summarize yet, a stopped run is still not Partial: the
+        // summary line is information, and the retry writes the summary.
+        XCTAssertFalse(lines.all.contains { $0.hasPrefix("[partial]") }, "\(lines.all)")
+        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[info] summary not written yet:") })
+        XCTAssertFalse(watcher.incomplete)
         XCTAssertTrue(watcher.retryCouldHelp(profile: profile),
                       "the background item comes back for what is left")
-        // The stop alone is not Partial (the stub's empty rows are why no summary was written).
-        let stopOnly = CollectHonestyWatcher()
-        stopOnly.observe(stopLine)
-        XCTAssertFalse(stopOnly.incomplete)
-        XCTAssertTrue(stopOnly.retryCouldHelp(profile: profile))
+        let stopOnly = watcher
         // Exit 0 that does not end the retries: `TickScheduler` retries it after its backoff.
         let outcome = ScheduleRunOutcome(
             exitCode: 0, incomplete: stopOnly.incomplete,

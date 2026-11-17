@@ -706,7 +706,7 @@ file in Application Support the app posts, 35-minute lifetime) and `.budgetUsed`
 held the lock for `jamf_cli.run_budget_minutes` (default 45, clamped 10-240;
 `scan_budget_minutes`, default 30, is decoded for the scan passes). A stop logs
 `ReportEngine.stoppedEarlyMarker` with what is left, records nothing for those sources, is never
-`[partial]`, and `CollectHonestyWatcher` reads the marker as `retryCouldHelp`, so the tick's
+`[partial]` (a summary it could not write yet is `[info] summary not written yet:`), and `CollectHonestyWatcher` reads the marker as `retryCouldHelp`, so the tick's
 same-day retry is the run that picks the rest up. `WorkspaceStore.manualCollectMayStart` (the
 three GUI collect paths) posts the request when a scheduled run in another process holds the
 lock or an automatic collect runs in this app (`automaticCollectsRunning`), waits up to `manualRefreshWait` (30 minutes; 0 under XCTest) polling the lock, then
