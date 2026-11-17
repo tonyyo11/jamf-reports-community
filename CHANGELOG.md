@@ -148,6 +148,15 @@ versions in this repository map to git tags.
   pass scans as before.
 - The workbook's DDM Device Status and MDM Command Health tabs gain one column at the end,
   Scanned: when that Mac was last scanned. No other tab, column or row moved.
+- The weekly per-device scan of a Jamf School fleet runs in the same passes: those scanned
+  longest ago first, stopping after `jamf_cli.scan_budget_minutes` or when someone waits to
+  refresh in the app, the rest in one pass a day. The Device health card says "Scan in progress:
+  N of M devices scanned this round" while a round is open. A device that did not answer keeps
+  its earlier result for up to 21 days, and the more-than-a-quarter-failed rule is judged over
+  the round. Running out of time is no longer a failed scan. A School fleet that fits in one pass
+  scans as before.
+- The Jamf School workbook's Device Inventory tab gains one column at the end, Scanned: when that
+  device was last scanned. No other tab, column or row moved.
 - Run History shows a run in progress with a grey RUNNING pill instead of a gold one, which read
   as a warning.
 - Jamf Protect Insights are removed, because Jamf removed the Compliance feature from Jamf

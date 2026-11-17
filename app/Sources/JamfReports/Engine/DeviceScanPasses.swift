@@ -200,7 +200,7 @@ enum DeviceScanPasses {
         rows.compactMap { scanDate($0.scannedAt, fileStamp: fileStamp) }.min()
     }
 
-    private static func latestDates<Row: DeviceScanRow>(_ rows: [Row]) -> [String: Date] {
+    static func latestDates<Row: DeviceScanRow>(_ rows: [Row]) -> [String: Date] {
         var out: [String: Date] = [:]
         for row in rows {
             guard let d = scanDate(row.scannedAt, fileStamp: nil) else { continue }

@@ -341,11 +341,15 @@ enum CollectRouter {
         guard detected.type == .jamfSchool, let mdm = environment.mdm else { return }
         if landed.schoolScanPlan == .due,
            ReportEngine.stopsRun(left: ["device scan"], onLine: onLine) { return }
+        var limits = schoolScanLimits
+        limits.budget = limits.budget ?? config?.jamfCli.map {
+            TimeInterval($0.resolvedScanBudgetMinutes * 60)
+        }
         await ReportEngine.runSchoolDeviceScanStep(
             workspace: workspace, school: mdm, workspacePaths: workspacePaths,
             plan: landed.schoolScanPlan ?? .stateUnavailable,
             devicesData: landed.schoolDevices, locateJamfCLI: locateJamfCLI,
-            limits: schoolScanLimits, now: now, onLine: onLine)
+            limits: limits, now: now, onLine: onLine)
     }
 
     private static func runProducts(

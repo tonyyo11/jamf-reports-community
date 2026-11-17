@@ -166,7 +166,7 @@ per workspace.
 advance in the first minutes of the day's run, and no run holds the lock longer than the budget
 plus one source.
 
-## L3 — The per-device scan in passes (built, Jamf Pro)
+## L3 — The per-device scan in passes (built, Jamf Pro and Jamf School)
 
 The snapshot stays whole; the scan stops being all-or-nothing.
 
@@ -190,9 +190,14 @@ scanned this round" only while a round is open; the workbook tabs carry a Scanne
 HTML report is unchanged. A forced scan (Collect now) scans the whole fleet; a forced run without
 the scan tier (the app's background refresh) takes no pass. The `[ok]` and device-gap `[partial]`
 lines print only when a round ends. Demo mode shows no line. `config.example.yaml` documents
-`jamf_cli.scan_budget_minutes`. Jamf School is not converted: its scan stamps the attempt when it
-starts, treats its one-hour deadline as a failure that writes nothing, and takes 25% of the whole
-fleet rather than of the attempts, so passes there need their own change.
+`jamf_cli.scan_budget_minutes`. Jamf School is covered too (`school-device-detail`), with
+the same `scannedAt`, round file, merge and round-level 25% rule. Where it differs: School has
+no forced scan (every GUI collect passes `force`), so every pass is budgeted and an unreadable
+earlier snapshot is replaced only by a scan of every device; the plan also reads the attempt
+stamp, which a peer's pass writes when it starts; the budget replaces the one-hour deadline;
+and the order is oldest first without locations, since the captured `school-devices` rows carry
+none. The card reads "Scan in progress: N of M devices scanned this round", and the Device
+Inventory tab gains a Scanned column last.
 
 - Each row gains `scannedAt`. A pass picks the Macs with the oldest `scannedAt` first (never
   scanned first), scans as many as fit its time budget (30 minutes by default,

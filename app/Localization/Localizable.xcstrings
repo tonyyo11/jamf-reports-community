@@ -110875,6 +110875,52 @@
         }
       }
     },
+    "Scan in progress: %lld of %lld devices scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Geräten in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld devices scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld dispositivos analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld appareils analysés sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld dispositivi analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたデバイス %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld dispositivos verificados nesta rodada"
+          }
+        }
+      }
+    },
     "Schedule" : {
       "localizations" : {
         "de" : {
