@@ -540,14 +540,7 @@ private func scheduledRunSingleBody(
             // collect-then-generate forces past School's 12 h cadence (`forcesCollect`).
             // A scheduled run gives the lock up between sources once its budget is used or
             // someone asks for a refresh in the app; what is left stays due.
-            let budget = routingConfig?.jamfCli?.resolvedRunBudgetMinutes
-                ?? JamfCLIConfig.defaultRunBudgetMinutes
-            let lockHeldSince = Date()
-            try await ReportEngine.$runStop.withValue({
-                ReportEngine.RunStop.evaluate(
-                    started: lockHeldSince, budgetMinutes: budget,
-                    manualRefreshPending: ManualRefreshRequest.isPending())
-            }) {
+            try await ReportEngine.stoppingBetweenSources(profile: profile) {
                 try await CollectRouter.run(
                     workspace: try WorkspaceID(validating: profile),
                     tiers: resolvedTiers,

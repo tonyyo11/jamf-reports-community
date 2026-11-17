@@ -87,6 +87,82 @@ final class RunStopTests: XCTestCase {
         XCTAssertFalse(ManualRefreshRequest.isPending(now: posted, appSupport: support))
     }
 
+    /// Protect and Security Cloud figures reach the daily summary from the run that landed
+    /// them, so the cadence holds only within a local day.
+    func testAnAddOnSourceIsDueOnEachLocalDaysFirstUnforcedRun() throws {
+        let stateDir = root.appendingPathComponent("state", isDirectory: true)
+        let store = StateFileStore(directory: stateDir)
+        let calendar = Calendar.current
+        let evening = try XCTUnwrap(calendar.date(
+            from: DateComponents(year: 2026, month: 11, day: 16, hour: 22)))
+        store.record(.landed, report: "protect-computers", at: evening)
+        let commands = [(args: ["x"], kind: "protect-computers")]
+        func skip(at now: Date) -> ReportEngine.CollectSkipReason? {
+            ReportEngine.$addOnCollectForced.withValue(false) {
+                ReportEngine.planAddOn(commands: commands, stateStore: store, now: now)[0].skip
+            }
+        }
+        XCTAssertNotNil(skip(at: evening.addingTimeInterval(3_600)), "same day, inside 12 hours")
+        XCTAssertNil(skip(at: evening.addingTimeInterval(8 * 3_600)),
+                     "the next morning is under 12 hours later and still collects")
+        XCTAssertNil(ReportEngine.planAddOn(
+            commands: commands, stateStore: store, now: evening.addingTimeInterval(60))[0].skip,
+                     "a direct or forced call collects everything")
+    }
+
+    func testAProtectCollectStopsBeforeItsNextSource() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        let stub = root.appendingPathComponent("bin/stub-cli")
+        let calls = root.appendingPathComponent("protect-calls")
+        try "#!/bin/sh\necho x >> '\(calls.path)'\nprintf '[]'\n"
+            .write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let asked = Counter()
+        let lines = Lines()
+        let landed = try await ReportEngine.$runStop.withValue({
+            asked.next() > 1 ? .manualRefresh : nil
+        }) {
+            try await ReportEngine.protectCollect(
+                profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: lines.add)
+        }
+        let first = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
+        XCTAssertEqual(landed, [first])
+        XCTAssertEqual(
+            try String(contentsOf: calls, encoding: .utf8).split(separator: "\n").count, 1)
+        XCTAssertTrue(lines.all.contains {
+            $0.hasPrefix(ReportEngine.stoppedEarlyMarker + "stopped for a manual refresh")
+        }, "\(lines.all)")
+        XCTAssertFalse(lines.all.contains { $0.hasPrefix("[partial]") }, "\(lines.all)")
+    }
+
+    /// The app's own background refresh, self-repair and catch-up stop for a manual refresh
+    /// too: the click waits for them instead of getting "A refresh is already running".
+    @MainActor
+    func testAManualRefreshWaitsForAnAutomaticCollectInThisApp() async throws {
+        let lock = useTemporaryTickLock()
+        _ = lock
+        let store = WorkspaceStore(
+            demoMode: false, tickerRegistrar: StubTickerRegistrar(),
+            jamfCLIProfileNames: { [] }, discoverProfiles: { [] }, jamfCLIInstallation: { nil })
+        store.manualRefreshWait = 5
+        store.manualRefreshPoll = 0.05
+        let idle = await store.manualCollectMayStart()
+        XCTAssertTrue(idle, "nothing is running")
+
+        WorkspaceStore.automaticCollectsRunning.withLock { $0 += 1 }
+        let finishing = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            XCTAssertTrue(ManualRefreshRequest.isPending(), "the automatic collect is asked to stop")
+            WorkspaceStore.automaticCollectsRunning.withLock { $0 -= 1 }
+        }
+        let mayStart = await store.manualCollectMayStart()
+        await finishing.value
+        XCTAssertTrue(mayStart)
+        XCTAssertFalse(ManualRefreshRequest.isPending(), "the request is withdrawn")
+        XCTAssertNil(store.globalStatus)
+    }
+
     func testAStoppedRunLeavesTheRestDueAndIsNotPartial() async throws {
         try "jamf_cli:\n  profile: \"\(profile)\"\n".write(
             to: try XCTUnwrap(ProfileService.workspaceURL(for: profile))
@@ -136,6 +212,12 @@ final class RunStopTests: XCTestCase {
         stopOnly.observe(stopLine)
         XCTAssertFalse(stopOnly.incomplete)
         XCTAssertTrue(stopOnly.retryCouldHelp(profile: profile))
+        // Exit 0 that does not end the retries: `TickScheduler` retries it after its backoff.
+        let outcome = ScheduleRunOutcome(
+            exitCode: 0, incomplete: stopOnly.incomplete,
+            retryCouldHelp: stopOnly.retryCouldHelp(profile: profile, exitCode: 0, since: Date()))
+        XCTAssertFalse(outcome.endsRetries)
+        XCTAssertFalse(outcome.incomplete)
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         let matrix = ReportEngine.collectCommandMatrix(profile: profile, staleDays: 30)
         let left = matrix.map(\.kind).filter {

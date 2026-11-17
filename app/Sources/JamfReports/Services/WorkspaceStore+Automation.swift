@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 // MARK: - Automation health (dead-man switch, 2.6 trust trio #2)
 
@@ -827,10 +828,19 @@ extension WorkspaceStore {
         _ run: @escaping @Sendable (@escaping @Sendable (CLIBridge.LogLine) -> Void)
             async throws -> Int32
     ) async throws {
+        // Stops between sources like a scheduled run, so a manual refresh can take over.
+        automaticCollectsRunning.withLock { $0 += 1 }
+        defer { automaticCollectsRunning.withLock { $0 -= 1 } }
         _ = try await recordingCollect(
             profile: profile, label: appRefreshRunLabel, keep: keptAppRefreshRuns,
-            honesty: CollectHonestyWatcher(), run)
+            honesty: CollectHonestyWatcher()
+        ) { onLine in
+            try await ReportEngine.stoppingBetweenSources(profile: profile) { try await run(onLine) }
+        }
     }
+
+    /// Self-repair, catch-up and background refresh collects running in this app now.
+    nonisolated static let automaticCollectsRunning = Mutex(0)
 
     /// One-click "Run now" for a failing/overdue managed row on the
     /// Automation Health card. Spawns `JamfReports --tick --now <label>`

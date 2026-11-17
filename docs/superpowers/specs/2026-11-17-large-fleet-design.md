@@ -100,7 +100,9 @@ Items 1, 2, 4 and 5 are built (Jamf Pro and Jamf School). Benchmark reports and 
 do not record a duration yet, so they keep their place. As built: the budget stops the run
 before any further source, slow or not (the slow ones are last anyway); the app waits up to 30
 minutes for the source in progress and does not yet name it in the status line; the pickup is
-the background item's same-day retry (an hour later, then two, then four).
+the background item's same-day retry (an hour later, then two, then four). The app's own
+automatic collects (background refresh, self-repair, catch-up) stop the same way; the budget is
+per workspace.
 
 1. **Record how long each source took.** The run log already prints `<kind> took Ns`; keep the
    last value in the state folder (`<kind>.took`, outside the manifest).
@@ -160,7 +162,9 @@ does the walking inside one call. They stay skippable and fall under L1.
 Built, except duration ordering for benchmark reports. A Protect-only environment keeps
 collecting every source: a cadence skip there would land nothing and read as a dead run.
 
-- Give `protectCommandMatrix` and `security-risk` a cadence (the refresh tier's 12 hours) and
+- Give `protectCommandMatrix` and `security-risk` a cadence (the refresh tier's 12 hours, held
+  only within a local day, since the daily summary takes their figures from the run that landed
+  them) and
   the L1 hold, through one planner call each, so a run that only came for a retried Jamf Pro
   source does not collect all of Protect again.
 - Benchmark reports run per title already; record and order them by duration like any source

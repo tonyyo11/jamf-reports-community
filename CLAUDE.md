@@ -683,8 +683,10 @@ seconds in `<kind>.took` (`StateFileStore.recordDuration`, `lastDuration(for:)`;
 outside the manifest). `ReportEngine.slowLast` moves the planned sources whose last attempt took
 over `slowSourceThreshold` (120 s) to the end, shortest first; everything else keeps the matrix
 order, and `slowLastLine` logs `[plan] running last (slow on their last run): …`.
-**Stopping between sources (2.12).** `ReportEngine.runStop` (task-local, set only by
-`scheduledRunSingle`) is asked before each source of the Jamf Pro, School, Protect and Security
+**Stopping between sources (2.12).** `ReportEngine.runStop` (task-local, set through
+`stoppingBetweenSources(profile:)` by `scheduledRunSingle` and by the app's automatic collects:
+`recordingAutomaticCollect` for self-repair and catch-up, `runBackgroundRefresh`; the budget is
+per workspace, so a multi-profile schedule gets one each) is asked before each source of the Jamf Pro, School, Protect and Security
 Cloud loops, before the device scans and before the after-matrix sources (`stopsRun`).
 `RunStop.evaluate` answers `.manualRefresh` while `ManualRefreshRequest.isPending` (a per-Mac
 file in Application Support the app posts, 35-minute lifetime) and `.budgetUsed` once the run has
@@ -694,11 +696,12 @@ held the lock for `jamf_cli.run_budget_minutes` (default 45, clamped 10-240;
 `[partial]`, and `CollectHonestyWatcher` reads the marker as `retryCouldHelp`, so the tick's
 same-day retry is the run that picks the rest up. `WorkspaceStore.manualCollectMayStart` (the
 three GUI collect paths) posts the request when a scheduled run in another process holds the
-lock, waits up to `manualRefreshWait` (30 minutes; 0 under XCTest) polling the lock, then
+lock or an automatic collect runs in this app (`automaticCollectsRunning`), waits up to `manualRefreshWait` (30 minutes; 0 under XCTest) polling the lock, then
 collects; `manualCollectMustWait` still refuses for an in-process collect or a jamf-cli update.
 **Add-on products (2.12).** `planAddOn` plans `protectCommandMatrix` and `security-risk`: unforced
 (`ReportEngine.addOnCollectForced` false, set by `CollectRouter.run` from `force`) a source waits
-the refresh cadence and the timeout hold; a Protect-only environment always collects everything.
+the refresh cadence, but only within the local day it last landed (the daily summary takes these
+figures from the run that landed them), and the timeout hold; a Protect-only environment always collects everything.
 `patch-release-dates` walks the `patch-status` snapshot and records nothing without one, so
 `evaluateFreshness` leaves it out until `patch-status` has landed, and `collectSkipKinds` adds it
 whenever `patch-status` is listed.

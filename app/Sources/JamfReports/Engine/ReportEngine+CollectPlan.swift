@@ -155,6 +155,23 @@ extension ReportEngine {
         }
     }
 
+    /// Runs `body` as an automatic run that may stop between sources: once it has held the lock
+    /// for `profile`'s `jamf_cli.run_budget_minutes`, or while someone waits to refresh in the
+    /// app. The budget is per workspace: a schedule over several holds the lock for each.
+    static func stoppingBetweenSources<T: Sendable>(
+        profile: String, _ body: @Sendable () async throws -> T
+    ) async rethrows -> T {
+        let budget = ProfileService.workspaceURL(for: profile)
+            .flatMap { try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml")) }?
+            .jamfCli?.resolvedRunBudgetMinutes ?? JamfCLIConfig.defaultRunBudgetMinutes
+        let started = Date()
+        return try await $runStop.withValue({
+            RunStop.evaluate(
+                started: started, budgetMinutes: budget,
+                manualRefreshPending: ManualRefreshRequest.isPending())
+        }, operation: body)
+    }
+
     /// Starts every line that says a run stopped before its sources were done.
     static let stoppedEarlyMarker = "[info] stopped early: "
 
@@ -384,7 +401,10 @@ extension ReportEngine {
                 skip = nil
             } else if let until = stateStore?.timeoutHoldUntil(report: kind), now < until {
                 skip = .repeatedTimeouts(retryAfter: until)
-            } else if !CadenceResolver.isDue(lastRun: last, cadence: cadence, now: now) {
+            } else if let last, Calendar.current.isDate(last, inSameDayAs: now),
+                      !CadenceResolver.isDue(lastRun: last, cadence: cadence, now: now) {
+                // Only within a local day: the daily summary takes these figures from the run
+                // that landed them, so each day's first run must collect them.
                 skip = .notDue(lastRun: last, cadence: cadence)
             } else {
                 skip = nil
