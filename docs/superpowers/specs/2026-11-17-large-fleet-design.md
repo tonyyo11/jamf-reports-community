@@ -124,8 +124,11 @@ place where the app, not jamf-cli or the server, walks the fleet.
   (latest version, up to date, out of date). When the report times out the app walks the
   titles in the same run, saves the usual `patch-status` snapshot if every title answered, and
   goes straight to titles for the next 7 days. Checked live on a test server: 65 titles in 18
-  seconds, every row equal to the report's. Not checked: that these two requests answer on the
-  reported server, where only the bulk list is known to hang.
+  seconds, every row equal to the report's. On the reported server the Classic title list
+  times out as well (48 patch titles, 120 seconds, jamf-cli 1.37.0), so the walk cannot start
+  there: that server's patch requests do not answer at all, which is a server matter. For that
+  case the hold starts after one run in which both timed out, and a source that has timed out
+  four times in a row is tried weekly.
 
 Effect on the reported fleet: `patch-status` costs about 12 minutes on each of two runs, then
 once a day, instead of 24 minutes several times a day; or nothing, when it is listed in

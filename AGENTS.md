@@ -724,7 +724,9 @@ timeouts in a row (the app's limit or jamf-cli's own "did not answer in time", t
 `FailureCause.exitCountingServerTimeout`, which the device scan and the release-date walk use
 too), on exit 3, 5, 6 or 8, or when `runStop` answers (then nothing is recorded and the run
 logs the stop marker). A walk that fails after the report's own timeout records nothing more,
-so the report's timeout streak and hold stand. `patchStatusRow` builds the report's row
+so the report's timeout streak and hold stand, unless the walk timed out too (the title list or
+three titles in a row): that is a second timeout in the run, so the hold starts at once. A streak
+of `StateFileStore.chronicTimeouts` (4) holds for `chronicTimeoutHold` (7 days) instead of 20 hours. `patchStatusRow` builds the report's row
 (`compliance_pct` rounded as jamf-cli rounds it, `N/A` with no devices). The snapshot is saved
 only when every title answered; otherwise the kind records a failure and nothing is written. A
 landed walk writes `state/patch-status.by-title`, and for `patchByTitlePeriod` (7 days,

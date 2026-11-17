@@ -173,17 +173,55 @@ final class PatchByTitleTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             calls(containing: "patch-summary"), 3 + ReportEngine.patchByTitleConcurrency,
             "three timeouts in a row end the walk; the calls already started finish: \(first)")
-        XCTAssertEqual(store.consecutiveTimeouts(for: "patch-status"), 1,
-                       "the report's timeout stands; the failed walk does not reset or add to it")
-        XCTAssertNil(store.patchByTitleUntil())
-
-        _ = await collect(stub, force: false)
+        // The report and the titles both timed out: two timeouts on the server's patch
+        // requests in one run, so the hold starts now.
         XCTAssertEqual(store.consecutiveTimeouts(for: "patch-status"), 2)
         XCTAssertNotNil(store.timeoutHoldUntil(report: "patch-status"))
+        XCTAssertNil(store.patchByTitleUntil())
         let before = (calls(containing: "report patch-status"), calls(containing: "patch-summary"))
-        let third = await collect(stub, force: false)
-        XCTAssertEqual(calls(containing: "report patch-status"), before.0, "held: \(third)")
+        let second = await collect(stub, force: false)
+        XCTAssertEqual(calls(containing: "report patch-status"), before.0, "held: \(second)")
         XCTAssertEqual(calls(containing: "patch-summary"), before.1)
+    }
+
+    /// The reported server: the title list hangs too. One run is enough to hold the source.
+    func testATitleListThatTimesOutToo_HoldsAfterOneRun() async throws {
+        let stub = root.appendingPathComponent("bin/stub-cli")
+        try """
+        #!/bin/sh
+        [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
+        echo "$*" >> '\(calls.path)'
+        case "$*" in
+          *"report patch-status"*|*"classic-patch-titles list"*)
+            printf '%s' '{"error":"general","message":"the server did not answer in time"}'
+            exit 1 ;;
+          *) printf '[]' ;;
+        esac
+        """.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        _ = await collect(stub, force: false)
+        XCTAssertEqual(calls(containing: "classic-patch-titles list"), 1)
+        XCTAssertEqual(calls(containing: "patch-summary"), 0)
+        XCTAssertNotNil(store.timeoutHoldUntil(report: "patch-status"))
+        XCTAssertNotNil(store.timeoutHoldUntil(report: "patch-device-failures"),
+                        "the failures scan starts with the same request")
+        _ = await collect(stub, force: false)
+        XCTAssertEqual(calls(containing: "report patch-status"), 1, "nothing more is asked")
+    }
+
+    /// A source that has timed out four times in a row is tried weekly, not daily.
+    func testAChronicTimeoutIsHeldForAWeek() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let at = Date(timeIntervalSince1970: 1_790_000_000)
+        for _ in 1...3 {
+            store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut), report: "ea-results", at: at)
+        }
+        XCTAssertEqual(store.timeoutHoldUntil(report: "ea-results"),
+                       at.addingTimeInterval(StateFileStore.timeoutHold))
+        store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut), report: "ea-results", at: at)
+        XCTAssertEqual(store.timeoutHoldUntil(report: "ea-results"),
+                       at.addingTimeInterval(StateFileStore.chronicTimeoutHold))
     }
 
     /// The state of a workspace upgrading from rc2: the failures scan timed out twice. Once

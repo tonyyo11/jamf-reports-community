@@ -167,6 +167,10 @@ struct StateFileStore: Sendable {
     /// Under a day: the failure is stamped with its run's start, so a daily schedule that
     /// starts a few seconds earlier the next day must find the hold over.
     static let timeoutHold: TimeInterval = 72_000
+    /// The hold once `chronicTimeouts` in a row have timed out: a server that has not answered
+    /// for days is tried weekly, not daily, so it stops costing every day's run its wait.
+    static let chronicTimeoutHold: TimeInterval = 7 * 86_400
+    static let chronicTimeouts = 4
 
     /// When an unforced collect may try `report` again: `timeoutHold` (20 h) after its last failure,
     /// once `WorkspaceStore.repeatedTimeoutsBeforeBackoff` failures in a row timed out. nil
@@ -175,11 +179,13 @@ struct StateFileStore: Sendable {
         // While patch-status is collected title by title, the failures scan would only wait
         // on the request that does not answer: it has no per-title form.
         if report == "patch-device-failures", let until = patchByTitleUntil() { return until }
-        guard consecutiveTimeouts(for: report) >= WorkspaceStore.repeatedTimeoutsBeforeBackoff,
+        let streak = consecutiveTimeouts(for: report)
+        guard streak >= WorkspaceStore.repeatedTimeoutsBeforeBackoff,
               let last = Self.sharedRequestKinds(report)
                 .filter({ ownConsecutiveTimeouts(for: $0) > 0 })
                 .compactMap({ failures(report: $0)?.last }).max() else { return nil }
-        return last.addingTimeInterval(Self.timeoutHold)
+        return last.addingTimeInterval(
+            streak >= Self.chronicTimeouts ? Self.chronicTimeoutHold : Self.timeoutHold)
     }
 
     private func validFailureFields(report: String) -> [Substring]? {

@@ -64,7 +64,10 @@ extension ReportEngine {
         }
         func failed(_ exitCode: Int32, _ why: String) -> KindCollectResult {
             say(.warn, "[warn] \(kind) title by title: \(why) — not written")
-            if !afterReportTimeout {
+            // After the report's timeout, a walk that failed some other way adds nothing. One
+            // that timed out as well is a second timeout on the server's patch requests in
+            // this run, so the hold starts now instead of after another run like it.
+            if !afterReportTimeout || exitCode == CLIBridge.exitCodeTimedOut {
                 stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
             }
             return KindCollectResult(

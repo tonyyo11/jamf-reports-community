@@ -346,6 +346,9 @@ versions in this repository map to git tags.
   matched the report row for row. The patch failures scan has no such path and is left out
   while this is in effect. It reads the same patch titles the report reads; if a login can run
   the report but not this path, the run log says which request was refused.
+- When the patch report and the patch title list both time out in one run, the patch sources
+  are held straight away instead of after a second run like it. A source that has timed out four
+  times in a row is then tried once a week rather than once a day.
 - A daily summary holding a negative device count is now refused as damaged, like any other
   out-of-range summary, instead of being read.
 - A compliance tab left out because the extension attribute results hold no values for the
