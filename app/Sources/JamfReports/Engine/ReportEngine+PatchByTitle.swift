@@ -49,20 +49,24 @@ extension ReportEngine {
     }
 
     /// Collects `patch-status` title by title and saves it only when every title answered: a
-    /// snapshot missing titles would change the fleet's patch figure without saying so.
+    /// snapshot missing titles would change the fleet's patch figure without saying so. nil
+    /// when the run was stopped part-way (`runStop`): nothing is recorded and nothing failed.
+    /// `afterReportTimeout`: the report's own timeout is already on record, so a walk that
+    /// fails too records nothing more and the timeout streak stands.
     static func collectPatchStatusByTitle(
         profile: String, bin: URL, bridge: CLIBridge, dataDir: URL, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date, limits: DeviceCallLimits,
-        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws -> KindCollectResult {
+        afterReportTimeout: Bool, onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async throws -> KindCollectResult? {
         let kind = "patch-status"
         func say(_ level: CLIBridge.LogLevel, _ text: String) {
             onLine(.init(timestamp: Date(), level: level, text: text))
         }
         func failed(_ exitCode: Int32, _ why: String) -> KindCollectResult {
             say(.warn, "[warn] \(kind) title by title: \(why) — not written")
-            stateStore?.record(
-                .failed(exitCode: exitCode), report: kind, at: collectStart)
+            if !afterReportTimeout {
+                stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+            }
             return KindCollectResult(
                 outcome: CollectOutcome(kind: kind, exitCode: exitCode), saved: false)
         }
@@ -73,23 +77,19 @@ extension ReportEngine {
             onLine: { _ in })
         guard let (listExit, listData) = list, listExit == 0,
               let ids = patchTitleIDs(from: listData) else {
-            return failed(list?.0 ?? launchFailureExitCode, "the title list did not answer")
+            let exit = list.map { FailureCause.exitCountingServerTimeout($0.0, stdout: $0.1) }
+            return failed(exit ?? launchFailureExitCode, "the title list did not answer")
         }
         say(.info, "[info] \(kind): collecting \(ids.count) title(s) one at a time")
         let answers = await patchSummaries(
             ids: ids, profile: profile, bin: bin, bridge: bridge, limits: limits)
         let rows = ids.compactMap { answers.rows[$0] }
         guard rows.count == ids.count else {
-            if answers.stoppedForRun {
-                // Stopped, not failed: nothing is recorded and the next run starts over.
-                say(.info, "[info] \(kind): stopped after \(rows.count) of \(ids.count) titles; "
-                    + "not written")
-                return KindCollectResult(
-                    outcome: CollectOutcome(kind: kind, exitCode: 0), saved: false)
-            }
+            if answers.stoppedForRun { return nil }
             return failed(
-                answers.lastFailure ?? 1,
-                "\(ids.count - rows.count) of \(ids.count) titles did not answer")
+                answers.stopExit ?? answers.lastFailure ?? 1,
+                answers.stopExit.map { "stopped (\(exitText($0)))" }
+                    ?? "\(ids.count - rows.count) of \(ids.count) titles did not answer")
         }
         let data = try JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys])
         try saveSnapshot(
@@ -103,28 +103,45 @@ extension ReportEngine {
         return KindCollectResult(outcome: CollectOutcome(kind: kind, exitCode: 0), saved: true)
     }
 
-    /// The summaries of `ids`, at most `patchByTitleConcurrency` at a time. Stops starting
-    /// titles after `limits.stopAfterTimeouts` timeouts in a row, or when the run is stopped.
-    private static func patchSummaries(
-        ids: [String], profile: String, bin: URL, bridge: CLIBridge, limits: DeviceCallLimits
-    ) async -> (rows: [String: [String: Any]], lastFailure: Int32?, stoppedForRun: Bool) {
+    private struct PatchSummaryAnswers {
         var rows: [String: [String: Any]] = [:]
         var lastFailure: Int32?
+        /// The exit that ended the walk early: three timeouts in a row, or 3, 5, 6 or 8, which
+        /// every later title would repeat.
+        var stopExit: Int32?
         var stoppedForRun = false
+    }
+
+    /// The summaries of `ids`, at most `patchByTitleConcurrency` at a time. Stops starting
+    /// titles after `limits.stopAfterTimeouts` timeouts in a row (the app's limit or jamf-cli's
+    /// own), on an exit every title would repeat, or when the run is stopped.
+    private static func patchSummaries(
+        ids: [String], profile: String, bin: URL, bridge: CLIBridge, limits: DeviceCallLimits
+    ) async -> PatchSummaryAnswers {
+        var answers = PatchSummaryAnswers()
         var timeoutStreak = 0
         let stop = runStop
+        let repeating: Set<Int32> = [
+            CLIBridge.exitCodeUnauthorized, CLIBridge.exitCodePermissionDenied,
+            CLIBridge.exitCodeRateLimited, CLIBridge.exitCodeRefusedByPolicy,
+        ]
         await withTaskGroup(of: (String, Int32, Data).self) { group in
             var inFlight = 0
             func take(_ done: (String, Int32, Data)) {
-                let (id, exit, data) = done
+                let (id, rawExit, data) = done
+                let exit = FailureCause.exitCountingServerTimeout(rawExit, stdout: data)
                 timeoutStreak = exit == CLIBridge.exitCodeTimedOut ? timeoutStreak + 1 : 0
                 if exit == 0, let object = try? JSONSerialization.jsonObject(with: data),
                    let summary = (object as? [String: Any])
                     ?? (object as? [[String: Any]])?.first,
                    let row = patchStatusRow(id: id, summary: summary) {
-                    rows[id] = row
-                } else {
-                    lastFailure = exit == 0 ? 1 : exit
+                    answers.rows[id] = row
+                    return
+                }
+                answers.lastFailure = exit == 0 ? 1 : exit
+                if answers.stopExit == nil,
+                   repeating.contains(exit) || timeoutStreak >= limits.stopAfterTimeouts {
+                    answers.stopExit = exit
                 }
             }
             for id in ids {
@@ -132,8 +149,8 @@ extension ReportEngine {
                     inFlight -= 1
                     take(done)
                 }
-                if timeoutStreak >= limits.stopAfterTimeouts { break }
-                if stop?() != nil { stoppedForRun = true; break }
+                if answers.stopExit != nil { break }
+                if stop?() != nil { answers.stoppedForRun = true; break }
                 inFlight += 1
                 group.addTask {
                     let result = try? await bridge.runAndCapture(
@@ -146,6 +163,6 @@ extension ReportEngine {
             }
             for await done in group { take(done) }
         }
-        return (rows, lastFailure, stoppedForRun)
+        return answers
     }
 }

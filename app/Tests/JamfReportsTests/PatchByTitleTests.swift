@@ -137,6 +137,96 @@ final class PatchByTitleTests: XCTestCase {
         XCTAssertNil(store.patchByTitleUntil(), "title mode starts only once it has worked")
     }
 
+    /// A server where no title answers either: jamf-cli gives up on each with exit 1 and its
+    /// "did not answer in time" message, before the app's own limit. The walk must stop after
+    /// three, not wait out every title.
+    private func makeHungStub(titles: Int) throws -> URL {
+        let stub = root.appendingPathComponent("bin/stub-cli")
+        let list = (1...titles).map { #"{"id":"\#($0)","name":"T\#($0)"}"# }.joined(separator: ",")
+        try """
+        #!/bin/sh
+        [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
+        echo "$*" >> '\(calls.path)'
+        case "$*" in
+          *"classic-patch-titles list"*) printf '%s' '[\(list)]' ;;
+          *"report patch-status"*|*"patch-summary"*)
+            printf '%s' '{"error":"error","message":"the server did not answer in time"}'
+            exit 1 ;;
+          *) printf '[]' ;;
+        esac
+        """.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        return stub
+    }
+
+    private func calls(containing text: String) -> Int {
+        ((try? String(contentsOf: calls, encoding: .utf8)) ?? "")
+            .split(separator: "\n").filter { $0.contains(text) }.count
+    }
+
+    func testAWalkOnAServerThatAnswersNoTitleStopsAndTheHoldStillEngages() async throws {
+        let stub = try makeHungStub(titles: 40)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+
+        let first = await collect(stub, force: false)
+        XCTAssertNil(try snapshot())
+        XCTAssertLessThanOrEqual(
+            calls(containing: "patch-summary"), 3 + ReportEngine.patchByTitleConcurrency,
+            "three timeouts in a row end the walk; the calls already started finish: \(first)")
+        XCTAssertEqual(store.consecutiveTimeouts(for: "patch-status"), 1,
+                       "the report's timeout stands; the failed walk does not reset or add to it")
+        XCTAssertNil(store.patchByTitleUntil())
+
+        _ = await collect(stub, force: false)
+        XCTAssertEqual(store.consecutiveTimeouts(for: "patch-status"), 2)
+        XCTAssertNotNil(store.timeoutHoldUntil(report: "patch-status"))
+        let before = (calls(containing: "report patch-status"), calls(containing: "patch-summary"))
+        let third = await collect(stub, force: false)
+        XCTAssertEqual(calls(containing: "report patch-status"), before.0, "held: \(third)")
+        XCTAssertEqual(calls(containing: "patch-summary"), before.1)
+    }
+
+    /// The state of a workspace upgrading from rc2: the failures scan timed out twice. Once
+    /// titles are being walked, that must not hold `patch-status`, which no longer makes the
+    /// shared request.
+    func testTheFailuresScansTimeoutsDoNotHoldPatchStatusInTitleMode() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let now = Date()
+        store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut),
+                     report: "patch-device-failures", at: now)
+        store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut),
+                     report: "patch-device-failures", at: now)
+        XCTAssertNotNil(store.timeoutHoldUntil(report: "patch-status"), "before title mode")
+        store.recordPatchByTitle(at: now)
+        XCTAssertNil(store.timeoutHoldUntil(report: "patch-status"))
+        XCTAssertNotNil(store.timeoutHoldUntil(report: "patch-device-failures"))
+    }
+
+    func testAWalkStoppedForARefreshIsNotAFailure() async throws {
+        let stub = try makeStub()
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.recordPatchByTitle(at: Date())
+        let lines = Lines()
+        let summaryCalls = calls
+        // Lets the run reach the walk, then asks it to stop before its first title.
+        _ = try? await ReportEngine.$runStop.withValue({
+            let text = (try? String(contentsOf: summaryCalls, encoding: .utf8)) ?? ""
+            return text.contains("classic-patch-titles") ? .manualRefresh : nil
+        }) {
+            try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
+                profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
+                force: true, authConfirmationProbe: { _, _ in false },
+                locateJamfCLI: { stub }, refreshSOFA: { _ in (.empty, []) }, onLine: lines.add)
+        }
+        XCTAssertNil(try snapshot())
+        XCTAssertNil(store.failures(report: "patch-status"), "stopped, not failed")
+        XCTAssertTrue(lines.all.contains { $0.hasPrefix(ReportEngine.stoppedEarlyMarker) },
+                      "\(lines.all)")
+        XCTAssertFalse(lines.all.contains { $0.contains(ReportEngine.unlandedSourcesMarker) },
+                       "\(lines.all)")
+    }
+
     func testTheRowIsBuiltFromASummary() {
         let row = ReportEngine.patchStatusRow(
             id: "4", summary: ["title": "T", "latestVersion": "2", "upToDate": 1, "outOfDate": 1])

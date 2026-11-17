@@ -425,10 +425,11 @@ extension ReportEngine {
             }
             result = retry
         }
+        let exit = FailureCause.exitCountingServerTimeout(result.exit, stdout: result.data)
         await gate.observe(
-            result.exit, stdout: result.data, keychainLocked: result.keychainLocked,
+            exit, stdout: result.data, keychainLocked: result.keychainLocked,
             for: type, onLine: onLine)
-        return .ran(exit: result.exit, data: result.data)
+        return .ran(exit: exit, data: result.data)
     }
 
     static func run(

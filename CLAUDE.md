@@ -720,7 +720,11 @@ app's limit, or `FailureCause.serverTimedOut`), `collectPatchStatusByTitle`
 (`ReportEngine+PatchByTitle.swift`) runs in the same collect: `pro classic-patch-titles list` for
 the ids (the same ids the report uses), then `pro patch-software-title-configurations
 patch-summary <id>` for each, 4 at a time under `patchDefinitionLimits`, stopping after three
-timeouts in a row or when `runStop` answers. `patchStatusRow` builds the report's row
+timeouts in a row (the app's limit or jamf-cli's own "did not answer in time", through
+`FailureCause.exitCountingServerTimeout`, which the device scan and the release-date walk use
+too), on exit 3, 5, 6 or 8, or when `runStop` answers (then nothing is recorded and the run
+logs the stop marker). A walk that fails after the report's own timeout records nothing more,
+so the report's timeout streak and hold stand. `patchStatusRow` builds the report's row
 (`compliance_pct` rounded as jamf-cli rounds it, `N/A` with no devices). The snapshot is saved
 only when every title answered; otherwise the kind records a failure and nothing is written. A
 landed walk writes `state/patch-status.by-title`, and for `patchByTitlePeriod` (7 days,

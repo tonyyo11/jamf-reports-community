@@ -344,7 +344,8 @@ versions in this repository map to git tags.
   smaller requests that return the same figures. For the next week it goes straight to that
   path, then gives the report one more try. On a test server 65 titles took 18 seconds and
   matched the report row for row. The patch failures scan has no such path and is left out
-  while this is in effect. Needs no new privilege beyond patch title read access.
+  while this is in effect. It reads the same patch titles the report reads; if a login can run
+  the report but not this path, the run log says which request was refused.
 - A daily summary holding a negative device count is now refused as damaged, like any other
   out-of-range summary, instead of being read.
 - A compliance tab left out because the extension attribute results hold no values for the

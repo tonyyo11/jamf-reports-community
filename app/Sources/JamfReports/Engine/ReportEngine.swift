@@ -2493,10 +2493,16 @@ struct ReportEngine: Sendable {
                 onLine(.init(timestamp: Date(), level: .info, text:
                     "[info] patch-status: the patch report timed out on this server; "
                         + "collecting title by title until \(collectLogDateLabel(until))"))
-                result = try await Self.collectPatchStatusByTitle(
+                guard let walked = try await Self.collectPatchStatusByTitle(
                     profile: profile, bin: bin, bridge: bridge, dataDir: dataDir,
                     recordManifest: recordManifest, stateStore: stateStore,
-                    collectStart: collectStart, limits: patchDefinitionLimits, onLine: onLine)
+                    collectStart: collectStart, limits: patchDefinitionLimits,
+                    afterReportTimeout: false, onLine: onLine) else {
+                    stoppedEarly = Self.stopsRun(
+                        left: plan[index...].filter { $0.skip == nil }.map(\.kind), onLine: onLine)
+                    break
+                }
+                result = walked
             } else {
                 // The log names the profile the command ran as (its argv carries it).
                 result = try await Self.collectOneKind(
@@ -2516,11 +2522,20 @@ struct ReportEngine: Sendable {
                                 || stateStore?.cause(for: kind)?.isTimeout == true {
                         // The one request behind the report never answered. The title list and
                         // the per-title summaries are separate, small requests.
-                        result = try await Self.collectPatchStatusByTitle(
+                        if let walked = try await Self.collectPatchStatusByTitle(
                             profile: profile, bin: bin, bridge: bridge, dataDir: dataDir,
                             recordManifest: recordManifest, stateStore: stateStore,
                             collectStart: collectStart, limits: patchDefinitionLimits,
-                            onLine: onLine)
+                            afterReportTimeout: true, onLine: onLine) {
+                            // A walk that failed too leaves the report's own outcome.
+                            if walked.saved { result = walked }
+                        } else {
+                            outcomes.append(result.outcome)
+                            stoppedEarly = Self.stopsRun(
+                                left: plan[index...].filter { $0.skip == nil }.map(\.kind),
+                                onLine: onLine)
+                            break
+                        }
                     }
                 }
             }
@@ -3634,7 +3649,9 @@ struct ReportEngine: Sendable {
                 executable: bin, arguments: args,
                 environment: CLIBridge.environmentForJamfCLI(),
                 timeout: limits.timeout, onLine: { _ in })
-            let timedOut = captureResult?.0 == CLIBridge.exitCodeTimedOut
+            let timedOut = captureResult.map {
+                FailureCause.exitCountingServerTimeout($0.0, stdout: $0.1)
+            } == CLIBridge.exitCodeTimedOut
             timeoutStreak = timedOut ? timeoutStreak + 1 : 0
             guard let (exitCode, data) = captureResult, exitCode == 0, !data.isEmpty else {
                 let what = Self.patchDefinitionFailureText(captureResult.map { ($0.0, $0.1) })

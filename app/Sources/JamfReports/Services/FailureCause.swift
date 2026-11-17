@@ -72,6 +72,13 @@ struct FailureCause: Codable, Equatable, Sendable {
 
     /// True for a failed call whose error envelope says the server never answered. Another try
     /// in the same run waits out the same limit, so `invokeWithRetry` skips it.
+    /// `exit`, or the app's timeout code when jamf-cli gave up on a server that never answered:
+    /// jamf-cli's own limit ends first, with exit 1, so a walk that counts only the app's
+    /// timeout would wait out every item on a hung server.
+    static func exitCountingServerTimeout(_ exit: Int32, stdout: Data) -> Int32 {
+        exit != 0 && isServerTimeout(stdout: stdout) ? CLIBridge.exitCodeTimedOut : exit
+    }
+
     static func isServerTimeout(stdout: Data) -> Bool {
         JamfCLIErrorEnvelope.parse(stdout)?.message?.contains(serverTimeoutMarker) == true
     }

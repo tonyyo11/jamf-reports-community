@@ -135,7 +135,12 @@ struct StateFileStore: Sendable {
     /// fleet `patch-status` and `patch-device-failures` each waited 12 minutes, twice, on the
     /// one patch-title request neither could get an answer to.
     func consecutiveTimeouts(for report: String) -> Int {
-        Self.sharedRequestKinds(report).reduce(0) { $0 + ownConsecutiveTimeouts(for: $1) }
+        // While patch-status is collected title by title it no longer makes the shared
+        // request, so the failures scan's timeouts are not its own.
+        if report == "patch-status", patchByTitleUntil() != nil {
+            return ownConsecutiveTimeouts(for: report)
+        }
+        return Self.sharedRequestKinds(report).reduce(0) { $0 + ownConsecutiveTimeouts(for: $1) }
     }
 
     /// The kinds whose first request is the same one as `report`'s, `report` included.
