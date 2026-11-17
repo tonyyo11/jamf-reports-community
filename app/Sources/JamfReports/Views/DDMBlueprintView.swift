@@ -15,6 +15,7 @@ struct DDMBlueprintView: View {
     @State private var reloads = 0
     @State private var deviceSnapshot: DDMDeviceStatusService.Snapshot = .empty
     @State private var fleetCounts: (enabled: Int, total: Int)? = (0, 0)
+    @State private var scanProgress: DeviceScanPasses.RoundProgress?
     @State private var showAllIdentifiers = false
     /// A Platform API profile, as profile discovery read it from jamf-cli.
     private var platformAvailable: Bool {
@@ -97,6 +98,9 @@ struct DDMBlueprintView: View {
             unlockedEmptyCard
         case .unlockedWithData:
             headerStrip
+            if !workspace.demoMode, let line = DeviceScanCoverage.line(scanProgress?.ddm) {
+                Text(line).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
+            }
             if showsPlatformSections {
                 adoptionCard
                 blueprintTableCard
@@ -441,6 +445,7 @@ struct DDMBlueprintView: View {
             snapshot = .empty
             deviceSnapshot = .empty
             fleetCounts = (0, 0)
+            scanProgress = nil
         }
         if workspace.demoMode {
             // The demo fleet: DDM on every Mac but the 17 on Monterey, with the
@@ -455,15 +460,17 @@ struct DDMBlueprintView: View {
         guard let loaded = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
             read: { () -> (DDMBlueprintService.Snapshot, DDMDeviceStatusService.Snapshot,
-                           (enabled: Int, total: Int)?) in
+                           (enabled: Int, total: Int)?, DeviceScanPasses.RoundProgress?) in
                 (DDMBlueprintService.load(profile: profile),
                  DDMDeviceStatusService.load(profile: profile),
-                 DDMDeviceStatusService.fleetDDMCounts(profile: profile))
+                 DDMDeviceStatusService.fleetDDMCounts(profile: profile),
+                 DeviceScanPasses.roundProgress(profile: profile))
             }
         ) else { return }
         snapshot = loaded.0
         deviceSnapshot = loaded.1
         fleetCounts = loaded.2
+        scanProgress = loaded.3
         loadedSource = source
     }
 
@@ -682,5 +689,16 @@ struct DDMBlueprintView: View {
         let source = entry.source.isEmpty ? L("Unnamed source") : entry.source
         let type = entry.type.isEmpty ? L("unknown type") : entry.type
         return L("\(source), \(type), \(HtmlSectionFormatters.plural(entry.devices, "device")), \(entry.successful) successful, \(entry.unsuccessful) unsuccessful")
+    }
+}
+
+/// The scan screens' one neutral line while a scan round is open.
+enum DeviceScanCoverage {
+    static func line(_ progress: (scanned: Int, total: Int)?) -> String? {
+        guard let progress else { return nil }
+        let (n, m) = progress
+        return m == 1
+            ? L("Scan in progress: \(n) of \(m) Mac scanned this round")
+            : L("Scan in progress: \(n) of \(m) Macs scanned this round")
     }
 }

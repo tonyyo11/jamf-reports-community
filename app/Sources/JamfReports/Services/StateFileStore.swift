@@ -430,6 +430,26 @@ struct StateFileStore: Sendable {
         try? atomicWrite(data: Data(String(max(seconds, 0)).utf8), to: tookURL(for: report))
     }
 
+    /// The per-device scan's open round (`device-scan.round`, outside the manifest); nil when
+    /// none is open or the file cannot be read, which starts the next round afresh.
+    func deviceScanRound() -> DeviceScanRound? {
+        BoundedFile.stateData(roundURL, limit: DeviceScanRound.fileLimit, inside: trustedRoot)
+            .flatMap { try? JSONDecoder().decode(DeviceScanRound.self, from: $0) }
+    }
+
+    func recordDeviceScanRound(_ round: DeviceScanRound) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try atomicWrite(data: JSONEncoder().encode(round), to: roundURL)
+    }
+
+    func clearDeviceScanRound() {
+        try? FileManager.default.removeItem(at: roundURL)
+    }
+
+    private var roundURL: URL {
+        directory.appendingPathComponent("device-scan.round", isDirectory: false)
+    }
+
     private func tookURL(for report: String) -> URL {
         directory.appendingPathComponent("\(report).took", isDirectory: false)
     }

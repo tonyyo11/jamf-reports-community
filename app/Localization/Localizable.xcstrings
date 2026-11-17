@@ -110783,6 +110783,98 @@
         }
       }
     },
+    "Scan in progress: %lld of %lld Mac scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Mac in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld Mac scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld Mac analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld Mac analysé sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld Mac analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたMac %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld Mac verificados nesta rodada"
+          }
+        }
+      }
+    },
+    "Scan in progress: %lld of %lld Macs scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Macs in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld Macs scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld Mac analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld Mac analysés sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld Mac analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたMac %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld Macs verificados nesta rodada"
+          }
+        }
+      }
+    },
     "Schedule" : {
       "localizations" : {
         "de" : {

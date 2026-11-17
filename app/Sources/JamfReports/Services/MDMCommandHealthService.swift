@@ -49,6 +49,11 @@ struct MDMCommandHealthService: Sendable {
         func record(forDeviceId id: String) -> MDMCommandHealthRecord? {
             records.first { $0.deviceId == id }
         }
+
+        /// The oldest row's scan time; nil when no row has a known one.
+        var oldestScannedAt: Date? {
+            DeviceScanPasses.oldestScan(records, fileStamp: snapshotDate)
+        }
     }
 
     static func load(profile: String) -> Snapshot {

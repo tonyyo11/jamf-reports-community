@@ -831,7 +831,37 @@ per-device fan-out inside `collect` — the jamf-cli feature request for
 server-side equivalents is what retires it. The DDM screen is no longer
 Platform-only: it unlocks from the per-device snapshot or from inventory
 saying DDM is enabled; the Blueprints sections remain Platform-gated and are
-absent, not locked, on-prem.
+absent, not locked, on-prem. **Passes (2.12, large-fleet L3):** each row carries an ISO 8601
+`scannedAt` (a row an older build wrote takes its file's snapshot stamp, `DeviceScanPasses.scanDate`;
+the snapshot stays a bare array). An unforced pass takes the Macs not yet attempted this round in
+`DeviceScanPasses.passOrder`: one site's Macs before the next (`general.site.id`, compared as
+numbers; "-1" or absent last), then oldest `scannedAt` first, never scanned first. It stops
+starting Macs after `jamf_cli.scan_budget_minutes` (default 30, 5 to 240) or when
+`ReportEngine.runStop` answers (`passShouldStop`); calls in flight finish. A forced scan (Collect
+now) scans the whole fleet. The saved snapshot is this pass's rows plus the newest earlier row of
+every other current target, a Mac whose call failed included, scanned within
+`DeviceScanPasses.rowAgeLimit` (21 days) (`merged`); a Mac gone from `computers` (or no longer
+DDM-enabled) is dropped. An earlier snapshot that is there but cannot be read skips the pass with
+one `[warn] device scan: <kind> snapshot could not be read; pass skipped` (a forced scan takes the whole fleet and replaces the file instead) and records nothing. The
+round lives in `state/device-scan.round` (`DeviceScanRound`: start, last pass, the ids attempted
+this round, how many are left, attempts and failures per call type; outside the manifest), read as
+untrusted through `DeviceScanPasses.round(in:now:)`: a start or last pass more than
+`SharedWorkspace.clockSkewTolerance` ahead, or a start older than 21 days, reads as no round, and
+`attempted` is intersected with the current targets (a round that covers them all starts afresh).
+While a round is open any unforced run, whatever its tiers, takes one pass a local day
+(`planDeviceScan`), honouring Skip expensive collections. A pass that leaves Macs for later records
+nothing (no `.last`, no failure, failures included) and logs one `[info] device scan: scanned N of
+M Macs this pass; K left for the next pass`, never `[partial]`; a pass that attempts no Mac writes
+nothing and leaves the round as it was. The pass that attempts the last Mac ends the round: a call
+type with more than a quarter of the round's attempts failed records its kind failed with the
+round's totals, otherwise the kind lands (the device-gap `[partial]` line gives the round's
+totals). A stopped call type (exit 3, 5, 6, 8, three timeouts) ends the round and records the
+failure as before. `WorkspaceStore.evaluateFreshness` leaves the two kinds out while
+`DeviceScanPasses.scanInProgress` (an open round whose last pass is within 2 days). The DDM screen
+and the Audit's command-health card show "Scan in progress: N of M Macs scanned this round"
+(`roundProgress`: the round's attempts among the de-duplicated, safe-id targets, the DDM-eligible
+ones on the DDM screen) only while a round is open, and both workbook tabs end with a Scanned
+column. The Jamf School scan does not take passes yet.
 
 **Collect plan (2.9).** `ReportEngine.collect` decides every skip once, before its first
 jamf-cli command (`ReportEngine+CollectPlan`: `planCollect` over the matrix, `planDeviceScan`

@@ -166,9 +166,33 @@ per workspace.
 advance in the first minutes of the day's run, and no run holds the lock longer than the budget
 plus one source.
 
-## L3 — The per-device scan in passes
+## L3 — The per-device scan in passes (built, Jamf Pro)
 
 The snapshot stays whole; the scan stops being all-or-nothing.
+
+As built, differing from the list below: there is no envelope, since an older build sharing the
+folder must still decode the file; the snapshot stays a bare array and each row carries
+`scannedAt` (a row without it takes its file's stamp). The round's state
+(`state/device-scan.round`) holds the round's start, the last pass, the ids a pass of this round
+attempted, how many are left, and attempts and failures per call type. A peer can write it, so it
+is read as untrusted: a date more than the clock-skew tolerance ahead, or a start older than the
+row-age limit, reads as no round, and the attempts are intersected with the current targets. A
+Mac is done for the round once attempted, answered or not, so a Mac that never answers cannot
+hold the round open; it keeps its earlier row while that is within 21 days. A pass orders one
+site's Macs before the next (`general.site.id`, numeric order, no site last), then oldest first.
+An open round takes one pass a local day on any unforced run, whatever its tiers. The 25% rule is
+judged over the round at its end; a stop (exit 3, 5, 6, 8, three timeouts) still ends the round
+and records the failure. A pass that attempts no Mac writes and records nothing; an earlier
+snapshot that cannot be read skips the pass. While a round is open and its last pass is within 2
+days, data freshness does not report the two kinds. Instead of "scanned N of M in the last 7
+days", the DDM screen and the Audit's command-health card show "Scan in progress: N of M Macs
+scanned this round" only while a round is open; the workbook tabs carry a Scanned column and the
+HTML report is unchanged. A forced scan (Collect now) scans the whole fleet; a forced run without
+the scan tier (the app's background refresh) takes no pass. The `[ok]` and device-gap `[partial]`
+lines print only when a round ends. Demo mode shows no line. `config.example.yaml` documents
+`jamf_cli.scan_budget_minutes`. Jamf School is not converted: its scan stamps the attempt when it
+starts, treats its one-hour deadline as a failure that writes nothing, and takes 25% of the whole
+fleet rather than of the attempts, so passes there need their own change.
 
 - Each row gains `scannedAt`. A pass picks the Macs with the oldest `scannedAt` first (never
   scanned first), scans as many as fit its time budget (30 minutes by default,

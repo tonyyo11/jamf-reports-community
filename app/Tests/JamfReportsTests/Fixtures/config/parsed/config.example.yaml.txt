@@ -27,6 +27,7 @@ jamf_cli.max_cache_age_hours = int 168
 jamf_cli.require_manifest = bool false
 jamf_cli.collect_skip = []
 jamf_cli.run_budget_minutes = int 45
+jamf_cli.scan_budget_minutes = int 30
 sheets.only = []
 sheets.skip = []
 sheets.order = []

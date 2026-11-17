@@ -127,6 +127,9 @@ jamf_cli:
   # How long a scheduled run may hold the lock before it leaves the rest of its sources for
   # its next run (minutes, 10 to 240). Raise it for a slow server.
   run_budget_minutes: 45
+  # How long one pass of the weekly per-device scan may run before it leaves the rest of the
+  # fleet for the next day's pass (minutes, 5 to 240). Collect now scans the whole fleet.
+  scan_budget_minutes: 30
 
 
 # =============================================================================

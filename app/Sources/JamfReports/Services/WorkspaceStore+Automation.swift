@@ -483,9 +483,14 @@ extension WorkspaceStore {
         // records nothing, so it would read as never collected and keep the refresh tier in
         // hourly self-repair; patch-status itself is the source that reports.
         let patchStatusLanded = store.lastRun(report: "patch-status") != nil
+        // An open scan round fills the two scan kinds over several days; they land when it ends.
+        let scanInProgress = DeviceScanPasses.scanInProgress(store, now: now)
+        let scanKinds: Set<String> = [ReportEngine.ddmDeviceStatusKind,
+                                      ReportEngine.mdmCommandHealthKind]
         let states = store.collectionStates(for: kinds).filter {
-            $0.kind != ReportEngine.patchReleaseDatesKind || patchStatusLanded
-                || $0.lastSuccess != nil || $0.consecutiveFailures > 0
+            ($0.kind != ReportEngine.patchReleaseDatesKind || patchStatusLanded
+                || $0.lastSuccess != nil || $0.consecutiveFailures > 0)
+                && !(scanInProgress && scanKinds.contains($0.kind))
         }
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.

@@ -58,6 +58,11 @@ struct DDMDeviceStatusService: Sendable {
             records.first { $0.deviceId == id }
         }
 
+        /// The oldest row's scan time; nil when no row has a known one.
+        var oldestScannedAt: Date? {
+            DeviceScanPasses.oldestScan(records, fileStamp: snapshotDate)
+        }
+
         /// Most affected devices first, then most devices, then identifier.
         var byIdentifier: [IdentifierSummary] {
             var order: [String] = []
