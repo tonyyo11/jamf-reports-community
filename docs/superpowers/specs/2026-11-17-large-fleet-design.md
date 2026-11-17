@@ -43,11 +43,11 @@ eight times the density of the one production export on hand.
 |---|---|---|---|---|---|
 | 1,000 | 8 s | 0.6 GB | 1.4 s | 0.2 GB | 69 MB |
 | 6,000 | 41 s | 3.0 GB | 6.7 s | 0.7 GB | 482 MB |
-| 12,000 | 94 s | 2.8 GB (see note) | 13 s | 1.5 GB | 772 MB |
+| 12,000 | 82 s | 6.3 GB | 13 s | 1.5 GB | 772 MB |
 
-Note: the 12,000 workbook figure is lower than at 6,000 and is unexplained. Builds and tests
-were running on the same Mac during that run, so it has to be measured again alone before the
-L5 target is set against it.
+The 12,000 workbook was measured alone (peak memory footprint); the other rows ran while builds
+were going on and report resident memory, so they may read low. Memory grows with the fleet:
+about 0.5 GB per 1,000 Macs at this density. On an 8 or 16 GB Mac the 12,000 workbook pages.
 
 Not measured: any screen in the app, the collect itself (no tenant of this size is available),
 the device scan's time per device, and any Protect, Platform API or Security Cloud call at size.
@@ -173,7 +173,7 @@ small real workspace and holds no tenant data):
 
 | Check | 1,000 | 6,000 | 12,000 |
 |---|---|---|---|
-| Workbook time | 10 s | 45 s | 100 s |
+| Workbook time | 10 s | 45 s | 90 s |
 | Workbook peak memory | 0.7 GB | 1.5 GB | 1.5 GB |
 | Longest lock hold of a scheduled run, slow-answer stub | budget + one source | same | same |
 | Summary written after the run starts | 5 min | 5 min | 10 min |
