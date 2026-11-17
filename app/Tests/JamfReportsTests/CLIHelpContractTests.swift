@@ -47,6 +47,7 @@ final class CLIHelpContractTests: XCTestCase {
     /// config.yaml key paths that look the same (`"protect", "profile"`).
     private static let argvLineCounts: [String: Int] = [
         "Engine/ReportEngine.swift": 3, "Engine/ReportEngine+DeviceScan.swift": 2,
+        "Engine/ReportEngine+PatchByTitle.swift": 2,
         "Engine/ReportEngine+ComplianceBenchmarks.swift": 1, "Services/CLIBridge.swift": 6,
         "Services/CLICommand.swift": 8, "Services/ConnectionCheck.swift": 2,
         "Services/JamfCLIInstaller.swift": 1, "Services/OnboardingFlow+StartOver.swift": 1,
@@ -107,10 +108,19 @@ final class CLIHelpContractTests: XCTestCase {
                     argv: ReportEngine.schoolDeviceArguments(profile: "p", udid: "u"),
                     positionals: 1)]
             case .patchDefinitions:
-                return [Invocation(
-                    label: "patch definitions",
-                    argv: ReportEngine.patchDefinitionArguments(profile: "p", titleId: "1"),
-                    positionals: 1)]
+                return [
+                    Invocation(
+                        label: "patch definitions",
+                        argv: ReportEngine.patchDefinitionArguments(profile: "p", titleId: "1"),
+                        positionals: 1),
+                    Invocation(
+                        label: "patch titles",
+                        argv: ReportEngine.patchTitleListArguments(profile: "p"), positionals: 0),
+                    Invocation(
+                        label: "patch summary",
+                        argv: ReportEngine.patchSummaryArguments(profile: "p", titleId: "1"),
+                        positionals: 1),
+                ]
             case .benchmarks:
                 let rows = ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
                     .filter { ["compliance-devices", "compliance-rules"].contains($0.kind) }

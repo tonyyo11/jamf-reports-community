@@ -2463,7 +2463,7 @@ struct ReportEngine: Sendable {
 
             // Every kind that got this far produces an outcome, launch failures
             // included — see `launchFailureExitCode` for why that matters.
-            let result: KindCollectResult
+            var result: KindCollectResult
             if Self.benchmarkReportKinds.contains(kind) {
                 result = try await Self.collectBenchmarkReport(
                     kind: kind, profile: platformProfile, arguments: args,
@@ -2487,6 +2487,16 @@ struct ReportEngine: Sendable {
                     useCachedData: useCachedData, stateStore: stateStore,
                     collectStart: collectStart, onLine: onLine
                 )
+            } else if kind == "patch-status",
+                      let until = stateStore?.patchByTitleUntil(), collectStart < until {
+                // The patch report timed out on this server recently: go straight to titles.
+                onLine(.init(timestamp: Date(), level: .info, text:
+                    "[info] patch-status: the patch report timed out on this server; "
+                        + "collecting title by title until \(collectLogDateLabel(until))"))
+                result = try await Self.collectPatchStatusByTitle(
+                    profile: profile, bin: bin, bridge: bridge, dataDir: dataDir,
+                    recordManifest: recordManifest, stateStore: stateStore,
+                    collectStart: collectStart, limits: patchDefinitionLimits, onLine: onLine)
             } else {
                 // The log names the profile the command ran as (its argv carries it).
                 result = try await Self.collectOneKind(
@@ -2499,6 +2509,20 @@ struct ReportEngine: Sendable {
                     useCachedData: useCachedData, stateStore: stateStore,
                     collectStart: collectStart, kindTimeout: kindTimeout, onLine: onLine
                 )
+                if kind == "patch-status" {
+                    if result.saved {
+                        stateStore?.clearPatchByTitle()
+                    } else if result.outcome.exitCode == CLIBridge.exitCodeTimedOut
+                                || stateStore?.cause(for: kind)?.isTimeout == true {
+                        // The one request behind the report never answered. The title list and
+                        // the per-title summaries are separate, small requests.
+                        result = try await Self.collectPatchStatusByTitle(
+                            profile: profile, bin: bin, bridge: bridge, dataDir: dataDir,
+                            recordManifest: recordManifest, stateStore: stateStore,
+                            collectStart: collectStart, limits: patchDefinitionLimits,
+                            onLine: onLine)
+                    }
+                }
             }
             outcomes.append(result.outcome)
             if result.saved { savedKinds.insert(kind) }

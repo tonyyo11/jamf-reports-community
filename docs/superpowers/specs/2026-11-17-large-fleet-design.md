@@ -119,6 +119,14 @@ place where the app, not jamf-cli or the server, walks the fleet.
   (`sharedRequestKinds`): a later log from the same fleet, on rc2, showed the failures scan
   waiting 721 seconds on the same patch-title request the title report had already given up on.
 
+- **Patch titles one at a time** (built). jamf-cli has two smaller requests that carry the same
+  data as the report: the Classic patch title list (ids and names) and a per-title summary
+  (latest version, up to date, out of date). When the report times out the app walks the
+  titles in the same run, saves the usual `patch-status` snapshot if every title answered, and
+  goes straight to titles for the next 7 days. Checked live on a test server: 65 titles in 18
+  seconds, every row equal to the report's. Not checked: that these two requests answer on the
+  reported server, where only the bulk list is known to hang.
+
 Effect on the reported fleet: `patch-status` costs about 12 minutes on each of two runs, then
 once a day, instead of 24 minutes several times a day; or nothing, when it is listed in
 `collect_skip`.

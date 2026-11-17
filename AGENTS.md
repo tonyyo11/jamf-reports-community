@@ -715,6 +715,18 @@ collects; `manualCollectMustWait` still refuses for an in-process collect or a j
 (`ReportEngine.addOnCollectForced` false, set by `CollectRouter.run` from `force`) a source waits
 the refresh cadence, but only within the local day it last landed (the daily summary takes these
 figures from the run that landed them), and the timeout hold; a Protect-only environment always collects everything.
+**Patch titles one at a time (2.12).** When `pro report patch-status` ends in a timeout (the
+app's limit, or `FailureCause.serverTimedOut`), `collectPatchStatusByTitle`
+(`ReportEngine+PatchByTitle.swift`) runs in the same collect: `pro classic-patch-titles list` for
+the ids (the same ids the report uses), then `pro patch-software-title-configurations
+patch-summary <id>` for each, 4 at a time under `patchDefinitionLimits`, stopping after three
+timeouts in a row or when `runStop` answers. `patchStatusRow` builds the report's row
+(`compliance_pct` rounded as jamf-cli rounds it, `N/A` with no devices). The snapshot is saved
+only when every title answered; otherwise the kind records a failure and nothing is written. A
+landed walk writes `state/patch-status.by-title`, and for `patchByTitlePeriod` (7 days,
+`StateFileStore.patchByTitleUntil`) `collect` skips the report and goes straight to titles, forced
+or not; the report landing again clears it. While it is in effect `timeoutHoldUntil` holds
+`patch-device-failures`, which has no per-title form.
 Kinds that start with the same request share one streak and one hold
 (`StateFileStore.sharedRequestKinds`: `patch-status` and `patch-device-failures`, both the
 patch-title list), and `collectSkipKinds` adds `patch-device-failures` when `patch-status` is listed.

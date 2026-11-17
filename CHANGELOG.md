@@ -339,6 +339,12 @@ versions in this repository map to git tags.
   "Not included" list and as a Needs attention item. Before, the report said no snapshot had
   been found and lost the tab without saying why. The per-device scan snapshots now share the
   256 MB limit instead of 64 MB.
+- **Patch data on a server that cannot answer the patch report.** When Jamf Pro never answers
+  the patch report, the app now collects the patch titles one at a time instead, through two
+  smaller requests that return the same figures. For the next week it goes straight to that
+  path, then gives the report one more try. On a test server 65 titles took 18 seconds and
+  matched the report row for row. The patch failures scan has no such path and is left out
+  while this is in effect. Needs no new privilege beyond patch title read access.
 - A daily summary holding a negative device count is now refused as damaged, like any other
   out-of-range summary, instead of being read.
 - A compliance tab left out because the extension attribute results hold no values for the

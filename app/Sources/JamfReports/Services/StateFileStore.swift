@@ -167,6 +167,9 @@ struct StateFileStore: Sendable {
     /// once `WorkspaceStore.repeatedTimeoutsBeforeBackoff` failures in a row timed out. nil
     /// for any other kind. A landed snapshot clears the count.
     func timeoutHoldUntil(report: String) -> Date? {
+        // While patch-status is collected title by title, the failures scan would only wait
+        // on the request that does not answer: it has no per-title form.
+        if report == "patch-device-failures", let until = patchByTitleUntil() { return until }
         guard consecutiveTimeouts(for: report) >= WorkspaceStore.repeatedTimeoutsBeforeBackoff,
               let last = Self.sharedRequestKinds(report)
                 .filter({ ownConsecutiveTimeouts(for: $0) > 0 })
@@ -414,6 +417,26 @@ struct StateFileStore: Sendable {
     /// `.last` files — is unaffected by failure bookkeeping.
     private func failureURL(for report: String) -> URL {
         directory.appendingPathComponent("\(report).fail", isDirectory: false)
+    }
+
+    /// Until when `patch-status` is collected title by title (`ReportEngine.patchByTitlePeriod`
+    /// after the run that last had to); nil when it is not, or the stamp is ahead of now.
+    func patchByTitleUntil(now: Date = Date()) -> Date? {
+        guard let text = BoundedFile.stateText(patchByTitleURL, inside: trustedRoot),
+              let stamp = ISO8601Time.parse(text),
+              stamp.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance else { return nil }
+        return stamp.addingTimeInterval(ReportEngine.patchByTitlePeriod)
+    }
+
+    func recordPatchByTitle(at date: Date) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? atomicWrite(data: Data(ISO8601Time.string(date).utf8), to: patchByTitleURL)
+    }
+
+    func clearPatchByTitle() { try? FileManager.default.removeItem(at: patchByTitleURL) }
+
+    private var patchByTitleURL: URL {
+        directory.appendingPathComponent("patch-status.by-title", isDirectory: false)
     }
 
     /// How many seconds `report`'s last attempt took, landed or not (`<report>.took`, outside
