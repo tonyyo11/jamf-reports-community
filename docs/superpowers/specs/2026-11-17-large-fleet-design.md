@@ -1,7 +1,7 @@
 # Large fleets — design
 
-Status: draft, awaiting the owner. Part L1 is built on the branch that carries this file; every
-other part waits for the decisions at the end. Written after a 2.12.0-rc1 report from a fleet of
+Status: approved by the owner on 2026-11-17, with the decisions recorded at the end. All of it
+is for 2.12. Part L1 is built on the branch that carries this file. Written after a 2.12.0-rc1 report from a fleet of
 about 5,900 Macs, where every manual refresh was refused because a scheduled run held the lock
 for most of the day.
 
@@ -104,14 +104,18 @@ that is L4, because it needs a cadence first.
 3. **Write the summary when its inputs have landed**, before the slow sources and the device
    scan. A later slow source that changes a summary figure rebuilds it, as a same-day collect
    already does (`freshSummaryIsBetter`).
-4. **A budget per scheduled run** (proposed: 30 minutes of lock hold). When it is used up the
+4. **A budget per scheduled run**: 45 minutes of lock hold by default,
+   `jamf_cli.run_budget_minutes` (clamped 10 to 240) for a slower server or Mac. When it is used up the
    run starts no further slow source or scan pass; what is left stays due and the next wake
    takes it. The log says `[info] run budget used; N sources left for the next run`. This is
    not Partial: nothing failed.
-5. **A manual refresh waits instead of being refused**, for up to the remainder of the source
-   in progress, with the status line naming what is running ("Waiting for the scheduled run:
-   collecting ea-results"). A scheduled run that sees a waiting manual request stops at the end
-   of its current source and gives up the lock. The run-now marker folder is the existing
+5. **A manual refresh interrupts a scheduled run between sources.** It waits for the source in
+   progress, with the status line naming it ("Waiting for the scheduled run: collecting
+   ea-results"), then the scheduled run stops, gives up the lock and logs
+   `[info] stopped for a manual refresh; N sources left for the next run` (not Partial). Run
+   History shows that notice on the scheduled run, and the app shows a notice that the
+   scheduled run was interrupted and will pick up what is left. This is also a troubleshooting
+   tool: a person can get the lock back without quitting anything. The run-now marker folder is the existing
    per-Mac place for such a request.
 
 1,000 devices: no source crosses the threshold; nothing changes. 6,000 and 12,000: Trends
@@ -123,7 +127,8 @@ plus one source.
 The snapshot stays whole; the scan stops being all-or-nothing.
 
 - Each row gains `scannedAt`. A pass picks the Macs with the oldest `scannedAt` first (never
-  scanned first), scans as many as fit its time budget (proposed: 20 minutes), then writes one
+  scanned first), scans as many as fit its time budget (30 minutes by default,
+  `jamf_cli.scan_budget_minutes`, clamped 5 to 240), then writes one
   snapshot: the rows it scanned, plus the newest earlier row of every other Mac still in the
   `computers` snapshot. Readers keep reading the newest file as the fleet.
 - A row older than a limit (proposed: 21 days) is dropped at merge, so a Mac that stopped
@@ -160,8 +165,9 @@ does the walking inside one call. They stay skippable and fall under L1.
    candidates. Target: under 1.5 GB at 12,000 Macs at this EA density. No design until
    measured.
 2. **Screens.** Time Computers, Extension Attributes, Overview and Trends on the 6,000 and
-   12,000 fleets with the existing signposts. Target: first paint under 2 s, no main-thread
-   block over 250 ms.
+   12,000 fleets with the existing signposts. Target on the reference Mac: first paint under
+   2 s, no main-thread block over 250 ms. The app runs on macOS Sequoia 15 and on older Apple
+   silicon, so a target is met only with half of it to spare.
 3. **Disk.** Two days of snapshots are 772 MB at 12,000 Macs and retention is off by default,
    which is a few hundred GB a year at daily inventory. Proposed: Config Doctor suggests
    retention when the data folder passes 20 GB; no default changes.
@@ -177,6 +183,10 @@ small real workspace and holds no tenant data):
 | Workbook peak memory | 0.7 GB | 1.5 GB | 1.5 GB |
 | Longest lock hold of a scheduled run, slow-answer stub | budget + one source | same | same |
 | Summary written after the run starts | 5 min | 5 min | 10 min |
+
+These are figures for the reference Mac (Apple silicon, 32 GB, macOS Golden Gate 27). A slower
+Mac or an older macOS gets the same order of work, not the same seconds, which is why both
+budgets are settings.
 
 A jamf-cli stub that answers each source after a set delay (and one that never answers) stands
 in for the server, since no test tenant is this large.
@@ -199,14 +209,14 @@ posted without a go-ahead.
 
 Micro-refresh (#421) stays out: it adds collects under the same lock.
 
-## Decisions for the owner
+## Decisions (owner, 2026-11-17)
 
-1. L1's hold is 20 hours, one try a day. A shorter hold (10 hours) tries twice a day.
-2. L2: the slow threshold (2 minutes) and the run budget (30 minutes).
-3. L2.5: may a manual refresh interrupt a scheduled run between sources, or only wait?
-4. L3: passes with oldest-first under a time budget, instead of fixed rings of 1,000.
-5. L3: the row age limit (21 days) and the wording "scanned N of M".
-6. L3: which release. It changes two workbook tabs (a Scanned column) and needs a CHANGELOG
-   Changed entry.
-7. L5.3: the disk suggestion at 20 GB.
-8. Whether any of L2 to L5 goes into 2.12 or all wait for 2.13.
+1. The spec is approved and all of it goes into 2.12.
+2. Time budgets get room for slower servers and Macs and for macOS versions before the newest:
+   the defaults above are raised (45 and 30 minutes) and both are settings.
+3. A manual refresh may interrupt a scheduled run between sources, with a notice (L2 item 5).
+4. Scan passes, oldest first under a time budget, instead of fixed rings.
+5. The workbook and layout changes L3 makes are approved; each is announced in the CHANGELOG.
+6. Left at the proposed values, to be confirmed when built: the L1 hold (20 hours), the slow
+   threshold (2 minutes), the scan row age limit (21 days), the wording "scanned N of M", and
+   the disk suggestion at 20 GB.
