@@ -289,12 +289,16 @@ versions in this repository map to git tags.
   time") is tried once per run instead of twice, and after two such runs in a row it is left to
   the next day like any other timeout. On one large server this source alone held each run for
   24 minutes, several times a day.
-- A data source that timed out two runs in a row is now left alone for a day by every automatic
-  collect (schedules, self-repair and catch-up), not only by the retries. Before, a source that
-  had never landed counted as due in every collect, so each one waited on it again. The run log
-  names it under "timed out repeatedly, waiting a day", and Collect now still tries it.
+- A data source that timed out two runs in a row is now left to the next day's run (20 hours)
+  by every automatic collect (schedules, self-repair and catch-up), not only by the retries.
+  Before, a source that had never landed counted as due in every collect, so each one waited on
+  it again. The run log names it under "timed out repeatedly, left to the next day's run", and
+  Collect now still tries it.
+- Patch release dates are no longer reported as "not collected yet" while the patch title report
+  itself has never landed; that kept an hourly background refresh running.
 - `jamf_cli.collect_skip` accepts `patch-status`, for a Jamf Pro server that cannot list its
-  patch titles in time. Patch screens and the patch score factor then have no data.
+  patch titles in time; the patch release dates that depend on it are skipped with it. Patch
+  screens and the patch score factor then have no data.
 - An Overview score card no longer shows an older day's figure as today's when the newest daily
   summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
   this profile", and the card's detail screen says "No data yet".

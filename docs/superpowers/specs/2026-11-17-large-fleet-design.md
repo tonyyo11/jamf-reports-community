@@ -45,8 +45,9 @@ eight times the density of the one production export on hand.
 | 6,000 | 41 s | 3.0 GB | 6.7 s | 0.7 GB | 482 MB |
 | 12,000 | 94 s | 2.8 GB (see note) | 13 s | 1.5 GB | 772 MB |
 
-Note: the 12,000 figure is resident memory and is lower than at 6,000, so the system was
-compressing or paging; the real demand is higher. On an 8 or 16 GB Mac this run would page.
+Note: the 12,000 workbook figure is lower than at 6,000 and is unexplained. Builds and tests
+were running on the same Mac during that run, so it has to be measured again alone before the
+L5 target is set against it.
 
 Not measured: any screen in the app, the collect itself (no tenant of this size is available),
 the device scan's time per device, and any Protect, Platform API or Security Cloud call at size.
@@ -66,17 +67,23 @@ place where the app, not jamf-cli or the server, walks the fleet.
 
 ## L1 — The planner holds a source that keeps timing out (built)
 
-- `StateFileStore.timeoutHoldUntil(report:)`: a day after the last failure, once two failures
-  in a row timed out (the app's limit, or jamf-cli's "the server did not answer in time").
+- `StateFileStore.timeoutHoldUntil(report:)`: 20 hours after the last failure, once two
+  failures in a row timed out (the app's limit, or jamf-cli's "the server did not answer in
+  time"). 20 hours, not 24: a failure is stamped with its run's start, and a daily schedule that
+  starts a few seconds earlier the next day must find the hold over.
 - `planCollect` and `planSchoolCollect` skip the source until then with
   `CollectSkipReason.repeatedTimeouts`, unless the run is forced. The `[plan]` block lists it
-  under "timed out repeatedly, waiting a day", and its `[skip]` line gives the time of the next
+  under "timed out repeatedly, left to the next day's run", and its `[skip]` line gives the time of the next
   automatic try.
 - A skipped source records nothing, so the run is not Partial and the summary is written. The
   earlier failure stays on disk, so the health banner still names the source.
 - Collect now forces, so a person who fixed the server is not kept waiting.
-- `jamf_cli.collect_skip` accepts `patch-status`. Patch screens and the patch score factor then
-  have no data (the factor's weight drops out; it is never 0).
+- `jamf_cli.collect_skip` accepts `patch-status`, and skips `patch-release-dates` with it.
+  Patch screens and the patch score factor then have no data (the factor's weight drops out; it
+  is never 0).
+- `patch-release-dates` walks the `patch-status` snapshot and records nothing without one. It
+  read as "not collected yet", which kept the refresh tier in hourly self-repair on the
+  reported fleet. The freshness check now leaves it out until `patch-status` has landed.
 - Jamf School: the same hold, through `planSchoolCollect`.
 
 Effect on the reported fleet: `patch-status` costs about 12 minutes on each of two runs, then
@@ -194,7 +201,7 @@ Micro-refresh (#421) stays out: it adds collects under the same lock.
 
 ## Decisions for the owner
 
-1. L1's hold is one day. A shorter hold (12 hours) tries twice a day.
+1. L1's hold is 20 hours, one try a day. A shorter hold (10 hours) tries twice a day.
 2. L2: the slow threshold (2 minutes) and the run budget (30 minutes).
 3. L2.5: may a manual refresh interrupt a scheduled run between sources, or only wait?
 4. L3: passes with oldest-first under a time budget, instead of fixed rings of 1,000.

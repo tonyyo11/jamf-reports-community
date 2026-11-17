@@ -64,7 +64,7 @@ extension ReportEngine {
                 return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later"
             case .tierNotSelected(let tier): return "tier \(tier.rawValue) not selected"
             case .notDue: return "not due"
-            case .repeatedTimeouts: return "timed out repeatedly, waiting a day"
+            case .repeatedTimeouts: return "timed out repeatedly, left to the next day's run"
             }
         }
 

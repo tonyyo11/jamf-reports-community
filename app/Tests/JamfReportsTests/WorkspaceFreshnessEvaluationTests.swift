@@ -47,6 +47,22 @@ final class WorkspaceFreshnessEvaluationTests: XCTestCase {
                       "A workspace that has never collected must not alarm on every kind")
     }
 
+    // MARK: - patch-release-dates follows patch-status
+
+    /// The release-date walk records nothing when there is no patch-status snapshot to walk.
+    /// Reported as never collected, it kept the refresh tier in hourly self-repair.
+    func testPatchReleaseDatesIsNotReportedUntilPatchStatusHasLanded() throws {
+        let store = try stateStore()
+        try store.record(.landed, report: "overview", at: now)
+        func reported() -> Set<String> {
+            Set(WorkspaceStore.evaluateFreshness(profile: profile, now: now).map(\.snapshotKind))
+        }
+        XCTAssertTrue(reported().contains("patch-status"))
+        XCTAssertFalse(reported().contains("patch-release-dates"))
+        try store.record(.landed, report: "patch-status", at: now)
+        XCTAssertTrue(reported().contains("patch-release-dates"), "it can run now, so it counts")
+    }
+
     // MARK: - skipExpensiveCollections toggle
 
     func testExpensiveKindsAreExcludedWhenSkipToggleIsOn() throws {

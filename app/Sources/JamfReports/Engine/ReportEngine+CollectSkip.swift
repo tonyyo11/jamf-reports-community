@@ -34,6 +34,9 @@ extension ReportEngine {
                 .lowercased()
                 .replacingOccurrences(of: "_", with: "-")
         }
-        return Set(names).intersection(skippableKinds)
+        var kinds = Set(names).intersection(skippableKinds)
+        // The release-date walk reads the patch-status snapshot and has nothing to walk without it.
+        if kinds.contains("patch-status") { kinds.insert(patchReleaseDatesKind) }
+        return kinds
     }
 }

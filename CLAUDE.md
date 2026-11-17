@@ -672,11 +672,15 @@ and the next day's run still try it. jamf-cli's own give-up on a server that nev
 (exit 1, message containing `FailureCause.serverTimeoutMarker`, "the server did not answer in
 time") counts toward that streak (`FailureCause.serverTimedOut`, `isTimeout`) and is not retried
 inside the run (`invokeWithRetry`): jamf-cli already waited out its limit at every page size.
-The planner holds the same streak: `StateFileStore.timeoutHoldUntil(report:)` is a day
-(`timeoutHold`) after the last failure once two in a row timed out, and `planCollect` and
+The planner holds the same streak: `StateFileStore.timeoutHoldUntil(report:)` is 20 hours
+(`timeoutHold`, under a daily schedule's cycle since the failure is stamped with its run's start)
+after the last failure once two in a row timed out, and `planCollect` and
 `planSchoolCollect` (`timeoutHold:`) skip the kind until then with
 `CollectSkipReason.repeatedTimeouts` unless `force`, because the due check reads the last
 success only and a kind that never landed is otherwise due in every collect of its tier.
+`patch-release-dates` walks the `patch-status` snapshot and records nothing without one, so
+`evaluateFreshness` leaves it out until `patch-status` has landed, and `collectSkipKinds` adds it
+whenever `patch-status` is listed.
 `runAndCapture` also stops waiting for pipe EOF
 `CLIBridge.eofGraceAfterExit` (3 s) after a normal exit, so a process the child left running
 cannot hold the call; it returns what was read.

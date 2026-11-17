@@ -145,9 +145,11 @@ struct StateFileStore: Sendable {
     /// Anything else reads as no record at all — a corrupt counter must not be
     /// able to silence the alarm it exists to raise.
     /// How long an unforced collect leaves alone a kind whose last failures all timed out.
-    static let timeoutHold: TimeInterval = 86_400
+    /// Under a day: the failure is stamped with its run's start, so a daily schedule that
+    /// starts a few seconds earlier the next day must find the hold over.
+    static let timeoutHold: TimeInterval = 72_000
 
-    /// When an unforced collect may try `report` again: `timeoutHold` after its last failure,
+    /// When an unforced collect may try `report` again: `timeoutHold` (20 h) after its last failure,
     /// once `WorkspaceStore.repeatedTimeoutsBeforeBackoff` failures in a row timed out. nil
     /// for any other kind. A landed snapshot clears the count.
     func timeoutHoldUntil(report: String) -> Date? {

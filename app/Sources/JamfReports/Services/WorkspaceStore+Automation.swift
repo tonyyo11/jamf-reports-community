@@ -478,7 +478,14 @@ extension WorkspaceStore {
         // The Overview's heavy-tier prompt reads the same list.
         let kinds = expectedKinds(
             profile: profile, jamfCLIVersion: jamfCLIVersion, auth: resolveAuth(profile))
-        let states = store.collectionStates(for: kinds)
+        // patch-release-dates walks the patch-status snapshot. With none it never runs and
+        // records nothing, so it would read as never collected and keep the refresh tier in
+        // hourly self-repair; patch-status itself is the source that reports.
+        let patchStatusLanded = store.lastRun(report: "patch-status") != nil
+        let states = store.collectionStates(for: kinds).filter {
+            $0.kind != ReportEngine.patchReleaseDatesKind || patchStatusLanded
+                || $0.lastSuccess != nil || $0.consecutiveFailures > 0
+        }
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.
         let hasCollectedBefore = states.contains { $0.lastSuccess != nil }
