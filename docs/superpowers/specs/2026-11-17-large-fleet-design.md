@@ -188,6 +188,76 @@ collecting every source: a cadence skip there would land nothing and read as a d
    which is a few hundred GB a year at daily inventory. Proposed: Config Doctor suggests
    retention when the data folder passes 20 GB; no default changes.
 
+## L6 — Sites
+
+Status: proposed on 2026-11-17, not built. A reporting feature, so it gets its own plan and its
+own pull request; only the scan order below rides with L3.
+
+An organization can have 20,000 devices with 5,000 of them in one Jamf Pro site. Sites are how
+such an organization reads its fleet, so the app should let it read by site.
+
+### What is true today
+
+- The `computers` snapshot carries each Mac's site as `general.site` (`id` and `name`, both
+  text; a Mac in no site has id `-1`). Mobile devices carry `general.siteId`. The `sites`
+  snapshot lists the sites (`id`, `name`). Nothing reads any of them.
+- Seen on a test tenant (4 Macs, 2 sites) and on one production export (no sites defined, every
+  Mac at `-1`). Not seen: a production server that uses sites.
+- The computer list cannot be filtered by site: jamf-cli's `--filter` for `pro computers list`
+  accepts about 60 fields and site is not among them. Lists are paged by jamf-cli already, and
+  the source that fails on the reported fleet has no device or site in it. So collecting one
+  site at a time is neither possible for the main inventory nor a fix for anything measured.
+- A login limited to some sites is detected since 2.12 (`SiteScope`): its reports say they cover
+  only what it sees. That stays as it is. What a login sees is decided by its API client and
+  role; the per-site view groups whatever that login returned, with no further check.
+
+### Three setups
+
+| Setup | Detected by | What the app does |
+|---|---|---|
+| Site-limited login | `SiteScope` (2.12) | Unchanged: the workspace is that login's view |
+| Whole-server login, sites in use | at least one site in `sites` and at least one device not at `-1` | Site filter, per-site reports and figures |
+| Whole-server login, no sites | no sites, or every device at `-1` | Nothing site-related is shown |
+
+Sites are detected, never typed in. A setting exists only for choices (below).
+
+### Parts
+
+1. **Model.** One reader of a device's site (computers and mobile devices) and one test for
+   "sites in use". A device in no site is "No site", a group of its own, never dropped.
+2. **Screens.** A site filter on Computers and Mobile Devices, and the site in the detail panel.
+   Hidden when sites are not in use.
+3. **Reports.** "This site only" when generating: the workbook, HTML and CSV folder hold that
+   site's devices, with the site named on the cover and in the file name. Server-wide tabs that
+   have no device rows (policies, patch titles, groups) are marked as server-wide or left out;
+   that is a decision below.
+4. **Daily summary.** Per-site device count, stale count and the main security shares as
+   `{met, of}` pairs keyed by site id, with the site's name beside it, so Trends and alert rules
+   can follow one site. A figure a site does not report is absent, never zero. A site that is
+   renamed keeps its history through the id.
+5. **Scan order (with L3).** A scan pass takes the Macs of one site before the next, oldest
+   first within it, so coverage reads by site. No change for a server without sites.
+6. **Setting.** `sites.skip` (ids or names to leave out of per-site figures) only if someone
+   asks for it; not in the first build.
+7. **Jamf School.** School has locations, which the School device rows already carry
+   (`locationId`). The same filter and "this location only" report apply; the summary figures
+   are the School ones (managed, stale, OS current).
+
+### Decisions needed before a plan
+
+1. Which release: 2.12 or 2.13.
+2. In a one-site report, are server-wide tabs left out or kept and marked?
+3. Which per-site figures go in the summary first (proposed: devices, stale, FileVault, OS
+   current), since every one is a new Trends series and alert key.
+4. Whether the fleet workbook for report groups gets a per-site sheet.
+
+### How it is tested
+
+The generator builds a fleet with sites (`--sites`, `--largest-site`, `--unassigned`): 20,000
+Macs in 12 sites with 5,000 in the largest and about 3% in none. Its workbook builds today in
+69 s at 5.4 GB peak, 8 extension attribute rows per Mac. A one-site report for the largest site
+should be about a quarter of that.
+
 ## How it is judged
 
 `loop-eval` style, on the generator (kept outside the repository; it clones row shapes from a
@@ -222,6 +292,7 @@ posted without a go-ahead.
    so it gets its own plan and an announced workbook change.
 5. L2 items 4 and 5 (budget, waiting refresh).
 6. L5, each item after its measurement.
+7. L6 (sites) on its own branch, after its decisions; its scan order lands with L3.
 
 Micro-refresh (#421) stays out: it adds collects under the same lock.
 
