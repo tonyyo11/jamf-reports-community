@@ -188,6 +188,28 @@ collecting every source: a cadence skip there would land nothing and read as a d
    which is a few hundred GB a year at daily inventory. Proposed: Config Doctor suggests
    retention when the data folder passes 20 GB; no default changes.
 
+4. **Large snapshots** (agreed by the owner on 2026-11-17, not built). An inventory snapshot
+   over 256 MB (`BoundedFile.inventoryLimit`) is refused as unreadable. One production server
+   holds about 20 KB of extension attribute results per Mac (93 results each, a few very long
+   values), so `ea-results` reaches the limit near 12,800 Macs, and near 6,400 at twice that
+   density. The limit exists because a workspace can be a shared folder and a planted file must
+   not exhaust this Mac's memory, so it is not switched off:
+   - A workspace on local storage holds only what this Mac's jamf-cli wrote. Its limit rises
+     with no setting (proposed: 2 GB).
+   - On shared storage (`CloudStorage.isSharedStorage`, or a workspace this Mac holds a pin
+     for) the limit stays, and a refused snapshot gets a Config Doctor row naming the source and
+     its size with a Confirm, "Allow large snapshots on this Mac". The answer is kept per Mac
+     (Application Support, beside the shared-config pin), never in config.yaml, which every Mac
+     sharing the folder can write. A configuration profile can set it for deployed Macs.
+   - Every refusal for size raises a Needs attention item naming the source and the fix. A
+     report never just loses a tab.
+   - Check the collect side too: whether jamf-cli's output is bounded while it is captured,
+     before it is saved.
+   - Jamf School and mobile inventory use the same limit and the same rule.
+   Two follow-ups this does not replace: reading `ea-results` as a stream (a higher limit
+   otherwise trades "refused" for a multi-GB decode), and an optional cap on stored value
+   length, off by default because it discards data.
+
 ## L6 — Sites
 
 Status: agreed for 2.13 by the owner on 2026-11-17, not built. A reporting feature, so it gets
