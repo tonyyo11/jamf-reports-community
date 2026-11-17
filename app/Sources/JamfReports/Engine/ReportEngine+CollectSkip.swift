@@ -35,8 +35,11 @@ extension ReportEngine {
                 .replacingOccurrences(of: "_", with: "-")
         }
         var kinds = Set(names).intersection(skippableKinds)
-        // The release-date walk reads the patch-status snapshot and has nothing to walk without it.
-        if kinds.contains("patch-status") { kinds.insert(patchReleaseDatesKind) }
+        // The release-date walk reads the patch-status snapshot and has nothing to walk without
+        // it, and the failures scan starts with the same patch-title request.
+        if kinds.contains("patch-status") {
+            kinds.formUnion([patchReleaseDatesKind, "patch-device-failures"])
+        }
         return kinds
     }
 }

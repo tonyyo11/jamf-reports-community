@@ -708,6 +708,9 @@ collects; `manualCollectMustWait` still refuses for an in-process collect or a j
 (`ReportEngine.addOnCollectForced` false, set by `CollectRouter.run` from `force`) a source waits
 the refresh cadence, but only within the local day it last landed (the daily summary takes these
 figures from the run that landed them), and the timeout hold; a Protect-only environment always collects everything.
+Kinds that start with the same request share one streak and one hold
+(`StateFileStore.sharedRequestKinds`: `patch-status` and `patch-device-failures`, both the
+patch-title list), and `collectSkipKinds` adds `patch-device-failures` when `patch-status` is listed.
 `patch-release-dates` walks the `patch-status` snapshot and records nothing without one, so
 `evaluateFreshness` leaves it out until `patch-status` has landed, and `collectSkipKinds` adds it
 whenever `patch-status` is listed.

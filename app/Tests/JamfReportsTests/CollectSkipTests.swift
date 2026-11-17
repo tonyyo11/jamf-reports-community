@@ -26,6 +26,10 @@ final class CollectSkipTests: XCTestCase {
         XCTAssertEqual(
             ReportEngine.collectSkipKinds(all), Set(all + ["patch-release-dates"]),
             "skipping patch-status also skips the release-date walk that reads it")
+        XCTAssertEqual(
+            ReportEngine.collectSkipKinds(["patch-status"]),
+            ["patch-status", "patch-release-dates", "patch-device-failures"],
+            "and the failures scan, which starts with the same request")
         XCTAssertFalse(
             ReportEngine.collectSkipKinds(["update-status"]).contains("patch-release-dates"))
         XCTAssertEqual(

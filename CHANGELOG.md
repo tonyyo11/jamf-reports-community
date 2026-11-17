@@ -312,6 +312,10 @@ versions in this repository map to git tags.
 - A data source that took more than two minutes on its last run now runs after the others,
   shortest first, so one slow source no longer holds up the rest of the day's data. The run log
   names them in a "running last" line. Jamf School sources are ordered the same way.
+- The patch title report and the patch failures scan now share one timeout count, because both
+  start with the same request to Jamf Pro. On one large server each of them waited 12 minutes
+  on it, twice, before being left alone; now two timeouts between them hold both.
+  `collect_skip: [patch-status]` skips the failures scan as well.
 - Patch release dates are no longer reported as "not collected yet" while the patch title report
   itself has never landed; that kept an hourly background refresh running.
 - `jamf_cli.collect_skip` accepts `patch-status`, for a Jamf Pro server that cannot list its

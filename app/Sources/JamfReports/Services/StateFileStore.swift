@@ -130,7 +130,21 @@ struct StateFileStore: Sendable {
     /// Kept in `<report>.timeouts`, beside the `.fail` file rather than in it: an older build
     /// reads only the two- and three-field forms of `.fail` and would see a longer one as no
     /// record at all.
+    ///
+    /// Kinds that make the same request share one streak (`sharedRequestKinds`): on a 5,900-Mac
+    /// fleet `patch-status` and `patch-device-failures` each waited 12 minutes, twice, on the
+    /// one patch-title request neither could get an answer to.
     func consecutiveTimeouts(for report: String) -> Int {
+        Self.sharedRequestKinds(report).reduce(0) { $0 + ownConsecutiveTimeouts(for: $1) }
+    }
+
+    /// The kinds whose first request is the same one as `report`'s, `report` included.
+    static func sharedRequestKinds(_ report: String) -> [String] {
+        let patchTitles = ["patch-status", "patch-device-failures"]
+        return patchTitles.contains(report) ? patchTitles : [report]
+    }
+
+    private func ownConsecutiveTimeouts(for report: String) -> Int {
         guard lastFailureExitCode(for: report) == CLIBridge.exitCodeTimedOut
                 || cause(for: report)?.serverTimedOut == true,
               let text = BoundedFile.stateText(timeoutsURL(for: report), inside: trustedRoot),
@@ -154,7 +168,9 @@ struct StateFileStore: Sendable {
     /// for any other kind. A landed snapshot clears the count.
     func timeoutHoldUntil(report: String) -> Date? {
         guard consecutiveTimeouts(for: report) >= WorkspaceStore.repeatedTimeoutsBeforeBackoff,
-              let last = failures(report: report)?.last else { return nil }
+              let last = Self.sharedRequestKinds(report)
+                .filter({ ownConsecutiveTimeouts(for: $0) > 0 })
+                .compactMap({ failures(report: $0)?.last }).max() else { return nil }
         return last.addingTimeInterval(Self.timeoutHold)
     }
 

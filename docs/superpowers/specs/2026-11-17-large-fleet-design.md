@@ -115,6 +115,10 @@ place where the app, not jamf-cli or the server, walks the fleet.
   reported fleet. The freshness check now leaves it out until `patch-status` has landed.
 - Jamf School: the same hold, through `planSchoolCollect`.
 
+- `patch-status` and `patch-device-failures` share one streak and one hold
+  (`sharedRequestKinds`): a later log from the same fleet, on rc2, showed the failures scan
+  waiting 721 seconds on the same patch-title request the title report had already given up on.
+
 Effect on the reported fleet: `patch-status` costs about 12 minutes on each of two runs, then
 once a day, instead of 24 minutes several times a day; or nothing, when it is listed in
 `collect_skip`.
