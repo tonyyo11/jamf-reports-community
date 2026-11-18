@@ -313,6 +313,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The
+  Total Titles tile now reads "Patch titles tracked" instead of "Patch policies tracked". The
+  EA definitions table (it stopped at 100) and the OS Updates failed-plans and error-devices
+  tables (50 each) also show every row.
 - Report workbooks are now compressed. They were written uncompressed, so a workbook for a
   fleet of 6,000 Macs with many extension attributes was 89 MB.
 - The background item no longer retries, the same day, a data source that timed out twice in a

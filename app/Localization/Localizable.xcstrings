@@ -65447,86 +65447,6 @@
         }
       }
     },
-    "Generated reports include every definition." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erstellte Berichte enthalten jede Definition."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los informes generados incluyen todas las definiciones."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les rapports générés incluent toutes les définitions."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I report generati includono ogni definizione."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "生成されたレポートにはすべての定義が含まれます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Os relatórios gerados incluem todas as definições."
-          }
-        }
-      }
-    },
-    "Generated reports include every patch title." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erstellte Berichte enthalten jeden Patch-Titel."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los informes generados incluyen todos los títulos de parches."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les rapports générés incluent tous les titres de correctifs."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I report generati includono ogni titolo patch."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "生成されたレポートにはすべてのパッチタイトルが含まれます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Os relatórios gerados incluem todos os títulos de patch."
-          }
-        }
-      }
-    },
     "Generates a redacted diagnostic bundle and reveals it in Finder." : {
       "localizations" : {
         "de" : {
@@ -96819,42 +96739,42 @@
         }
       }
     },
-    "Patch policies tracked" : {
+    "Patch titles tracked" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verfolgte Patch-Richtlinien"
+            "value" : "Verfolgte Patch-Titel"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Políticas de parches con seguimiento"
+            "value" : "Títulos de parches con seguimiento"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stratégies de correctifs suivies"
+            "value" : "Titres de correctifs suivis"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Policy di patch monitorate"
+            "value" : "Titoli di patch monitorati"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "追跡中のパッチポリシー"
+            "value" : "追跡中のパッチタイトル"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Políticas de patch monitoradas"
+            "value" : "Títulos de patch monitorados"
           }
         }
       }
